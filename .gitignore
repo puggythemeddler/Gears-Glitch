@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Environment — never commit real secrets
+.env
+
+# Database files
+data/store.db
+data/store.db-shm
+data/store.db-wal
+
+# Log files
+data/emails.log
+
+# Uploaded user files
+data/uploads/
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
