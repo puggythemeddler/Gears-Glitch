@@ -1,0 +1,335 @@
+{
+  "currency": "KES",
+  "products": [
+    {
+      "id": "gl-aurora-15",
+      "category": "gaming-laptops",
+      "name": "Aurora 15 Gaming Laptop",
+      "price": 1299,
+      "specs": ["RTX 4060", "16GB RAM", "512GB SSD", "15.6\" 144Hz"],
+      "inStock": true,
+      "imageAlt": "Black gaming laptop"
+    },
+    {
+      "id": "gl-strike-17",
+      "category": "gaming-laptops",
+      "name": "Strike 17 Pro",
+      "price": 1899,
+      "specs": ["RTX 4070", "32GB RAM", "1TB SSD", "17\" QHD 165Hz"],
+      "inStock": true,
+      "imageAlt": "Large-screen gaming laptop"
+    },
+    {
+      "id": "gl-compact-g14",
+      "category": "gaming-laptops",
+      "name": "Compact G14",
+      "price": 999,
+      "specs": ["RTX 4050", "16GB RAM", "512GB SSD", "14\" 120Hz"],
+      "inStock": false,
+      "imageAlt": "Portable gaming laptop"
+    },
+    {
+      "id": "wl-probook-14",
+      "category": "windows-laptops",
+      "name": "ProBook 14 Work",
+      "price": 649,
+      "specs": ["Intel i5", "16GB RAM", "512GB SSD", "14\" FHD"],
+      "inStock": true,
+      "imageAlt": "Slim silver Windows laptop"
+    },
+    {
+      "id": "wl-ultralite-13",
+      "category": "windows-laptops",
+      "name": "UltraLite 13",
+      "price": 799,
+      "specs": ["Intel i7", "16GB RAM", "1TB SSD", "13.3\" touchscreen"],
+      "inStock": true,
+      "imageAlt": "Lightweight Windows ultrabook"
+    },
+    {
+      "id": "wl-student-15",
+      "category": "windows-laptops",
+      "name": "Student 15",
+      "price": 449,
+      "specs": ["Intel i3", "8GB RAM", "256GB SSD", "15.6\" FHD"],
+      "inStock": true,
+      "imageAlt": "Budget Windows laptop"
+    },
+    {
+      "id": "ml-air-m2",
+      "category": "mac-laptops",
+      "name": "MacBook Air M2 (Refurb)",
+      "price": 899,
+      "specs": ["Apple M2", "8GB RAM", "256GB SSD", "13.6\" Retina"],
+      "inStock": true,
+      "imageAlt": "MacBook Air style laptop"
+    },
+    {
+      "id": "ml-pro-14",
+      "category": "mac-laptops",
+      "name": "MacBook Pro 14\" M3 Pro",
+      "price": 2199,
+      "specs": ["Apple M3 Pro", "18GB RAM", "512GB SSD", "14\" Liquid Retina XDR"],
+      "inStock": true,
+      "imageAlt": "MacBook Pro style laptop"
+    },
+    {
+      "id": "ml-air-15",
+      "category": "mac-laptops",
+      "name": "MacBook Air 15\" M2",
+      "price": 1149,
+      "specs": ["Apple M2", "16GB RAM", "512GB SSD", "15.3\" Retina"],
+      "inStock": false,
+      "imageAlt": "Large MacBook Air style laptop"
+    },
+    {
+      "id": "gp-nebula-rx",
+      "category": "gaming-pcs",
+      "name": "Nebula RX Gaming PC",
+      "price": 1499,
+      "specs": ["RTX 4070", "Ryzen 7", "32GB RAM", "1TB NVMe"],
+      "inStock": true,
+      "imageAlt": "RGB gaming desktop tower"
+    },
+    {
+      "id": "gp-titan-ultra",
+      "category": "gaming-pcs",
+      "name": "Titan Ultra",
+      "price": 2499,
+      "specs": ["RTX 4080", "Ryzen 9", "64GB RAM", "2TB NVMe"],
+      "inStock": true,
+      "imageAlt": "High-end gaming PC"
+    },
+    {
+      "id": "gp-entry-storm",
+      "category": "gaming-pcs",
+      "name": "Storm Entry",
+      "price": 899,
+      "specs": ["RTX 4060", "Ryzen 5", "16GB RAM", "512GB NVMe"],
+      "inStock": true,
+      "imageAlt": "Entry-level gaming PC"
+    },
+    {
+      "id": "bp-office-slim",
+      "category": "business-pcs",
+      "name": "Office Slim SFF",
+      "price": 549,
+      "specs": ["Intel i5", "16GB RAM", "512GB SSD", "Windows 11 Pro"],
+      "inStock": true,
+      "imageAlt": "Small form factor business PC"
+    },
+    {
+      "id": "bp-workstation-tower",
+      "category": "business-pcs",
+      "name": "Workstation Tower",
+      "price": 1199,
+      "specs": ["Intel i7", "32GB RAM", "1TB SSD", "Quad display ready"],
+      "inStock": true,
+      "imageAlt": "Business desktop tower"
+    },
+    {
+      "id": "bp-micro-desk",
+      "category": "business-pcs",
+      "name": "Micro Desk Mini",
+      "price": 399,
+      "specs": ["Intel i3", "8GB RAM", "256GB SSD", "Compact chassis"],
+      "inStock": true,
+      "imageAlt": "Mini business desktop"
+    },
+    {
+      "id": "md-studio-m2",
+      "category": "mac-desktops",
+      "name": "Studio Desktop M2 Style",
+      "price": 1699,
+      "specs": ["M2 Max class", "32GB RAM", "1TB SSD", "Silent cooling"],
+      "inStock": true,
+      "imageAlt": "All-in-one style desktop"
+    },
+    {
+      "id": "md-mini-m2",
+      "category": "mac-desktops",
+      "name": "Mini Desktop M2 Style",
+      "price": 699,
+      "specs": ["M2 class", "16GB RAM", "512GB SSD", "Compact metal body"],
+      "inStock": true,
+      "imageAlt": "Small desktop computer"
+    },
+    {
+      "id": "md-pro-tower",
+      "category": "mac-desktops",
+      "name": "Pro Tower Workstation",
+      "price": 2899,
+      "specs": ["M2 Ultra class", "64GB RAM", "2TB SSD", "Expandable storage"],
+      "inStock": false,
+      "imageAlt": "Professional desktop tower"
+    },
+    {
+      "id": "rs-rack-2u-a",
+      "category": "rack-servers",
+      "name": "Rack Server 2U Alpha",
+      "price": 3299,
+      "specs": ["Dual Xeon", "64GB ECC", "4× 2.5\" bays", "Redundant PSU"],
+      "inStock": true,
+      "imageAlt": "2U rack server"
+    },
+    {
+      "id": "rs-rack-1u-b",
+      "category": "rack-servers",
+      "name": "Rack Server 1U Bravo",
+      "price": 2199,
+      "specs": ["Single Xeon", "32GB ECC", "2× NVMe", "iDRAC ready"],
+      "inStock": true,
+      "imageAlt": "1U rack server"
+    },
+    {
+      "id": "rs-rack-4u-storage",
+      "category": "rack-servers",
+      "name": "Storage Node 4U",
+      "price": 4599,
+      "specs": ["12-bay SAS", "128GB RAM", "Hardware RAID", "10GbE"],
+      "inStock": false,
+      "imageAlt": "Storage rack server"
+    },
+    {
+      "id": "ts-tower-entry",
+      "category": "tower-servers",
+      "name": "Tower Server Entry",
+      "price": 1499,
+      "specs": ["Xeon E", "32GB ECC", "2TB HDD RAID1", "Quiet operation"],
+      "inStock": true,
+      "imageAlt": "Tower server chassis"
+    },
+    {
+      "id": "ts-tower-pro",
+      "category": "tower-servers",
+      "name": "Tower Server Pro",
+      "price": 2799,
+      "specs": ["Dual Xeon", "64GB ECC", "4TB storage", "Hot-swap drives"],
+      "inStock": true,
+      "imageAlt": "Professional tower server"
+    },
+    {
+      "id": "ts-tower-smb",
+      "category": "tower-servers",
+      "name": "SMB Tower Bundle",
+      "price": 999,
+      "specs": ["Xeon E-23xx", "16GB ECC", "1TB SSD", "Backup software included"],
+      "inStock": true,
+      "imageAlt": "Small business tower server"
+    },
+    {
+      "id": "bs-blade-chassis",
+      "category": "blade-servers",
+      "name": "Blade Chassis 10-slot",
+      "price": 5999,
+      "specs": ["10 blade slots", "Redundant fabrics", "KVM module", "Rails included"],
+      "inStock": true,
+      "imageAlt": "Blade server enclosure"
+    },
+    {
+      "id": "bs-blade-node",
+      "category": "blade-servers",
+      "name": "Blade Compute Node",
+      "price": 1899,
+      "specs": ["Dual CPU", "128GB RAM", "2× 480GB SSD", "Fits standard chassis"],
+      "inStock": true,
+      "imageAlt": "Server blade module"
+    },
+    {
+      "id": "bs-blade-storage",
+      "category": "blade-servers",
+      "name": "Blade Storage Module",
+      "price": 2499,
+      "specs": ["6× 2.5\" SAS", "Hardware RAID", "Shared storage pool"],
+      "inStock": false,
+      "imageAlt": "Storage blade module"
+    },
+    {
+      "id": "pr-laser-office",
+      "category": "printers",
+      "name": "Office Laser Pro M404",
+      "price": 279,
+      "specs": ["38 ppm mono", "Duplex", "Ethernet & Wi-Fi", "250-sheet tray"],
+      "inStock": true,
+      "imageAlt": "Office laser printer"
+    },
+    {
+      "id": "pr-inkjet-home",
+      "category": "printers",
+      "name": "Home Inkjet All-in-One",
+      "price": 89,
+      "specs": ["Print/scan/copy", "Wi-Fi", "Mobile app", "Borderless photo"],
+      "inStock": true,
+      "imageAlt": "Home inkjet printer"
+    },
+    {
+      "id": "pr-label-industrial",
+      "category": "printers",
+      "name": "Industrial Label Printer",
+      "price": 449,
+      "specs": ["Thermal transfer", "USB & LAN", "4\" print width"],
+      "inStock": true,
+      "imageAlt": "Label printer"
+    },
+    {
+      "id": "rp-screen-laptop",
+      "category": "repairs",
+      "name": "Laptop Screen Replacement",
+      "price": 89,
+      "specs": ["Parts + fitting", "Most 13–15\" models", "1-day turnaround typical"],
+      "inStock": true,
+      "imageAlt": "Laptop screen repair service"
+    },
+    {
+      "id": "rp-virus-tuneup",
+      "category": "repairs",
+      "name": "Virus Removal & Tune-up",
+      "price": 49,
+      "specs": ["Malware scan", "OS cleanup", "Driver updates", "Health report"],
+      "inStock": true,
+      "imageAlt": "Software repair service"
+    },
+    {
+      "id": "rp-data-recovery",
+      "category": "repairs",
+      "name": "Data Recovery Assessment",
+      "price": 79,
+      "specs": ["Diagnostics", "Quote for recovery", "No fix, no recovery fee"],
+      "inStock": true,
+      "imageAlt": "Data recovery service"
+    },
+    {
+      "id": "feat-gl-aurora",
+      "category": "featured",
+      "name": "Aurora 15 Gaming Laptop",
+      "price": 1299,
+      "specs": ["RTX 4060", "16GB RAM", "512GB SSD"],
+      "inStock": true,
+      "imageAlt": "Featured gaming laptop",
+      "sourceCategory": "gaming-laptops",
+      "sourceId": "gl-aurora-15"
+    },
+    {
+      "id": "feat-bp-office",
+      "category": "featured",
+      "name": "Office Slim SFF",
+      "price": 549,
+      "specs": ["Intel i5", "16GB RAM", "512GB SSD"],
+      "inStock": true,
+      "imageAlt": "Featured business PC",
+      "sourceCategory": "business-pcs",
+      "sourceId": "bp-office-slim"
+    },
+    {
+      "id": "feat-pr-laser",
+      "category": "featured",
+      "name": "Office Laser Pro M404",
+      "price": 279,
+      "specs": ["38 ppm", "Duplex", "Wi-Fi"],
+      "inStock": true,
+      "imageAlt": "Featured printer",
+      "sourceCategory": "printers",
+      "sourceId": "pr-laser-office"
+    }
+  ]
+}
