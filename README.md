@@ -1,0 +1,648 @@
+# Gear&Glitch — Full-Stack Shop & Management System
+
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 4 storefront layout themes (Original, Amazon, Jumia, Mobile), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, and dark/light theme toggle. Runs on Node.js + SQLite (backend) with Next.js (frontend), no external database required.
+
+---
+
+## Architecture
+
+Three layers, cleanly separated:
+
+| Layer | Tech | Port | Purpose |
+|-------|------|------|---------|
+| **Frontend** | Next.js 14 (Pages Router) + TypeScript | 3000 | UI rendering, client-side routing |
+| **Backend** | Express + TypeScript | 8020 | REST API, JWT auth (24h staff / 7d customer), file uploads, M-Pesa |
+| **Database** | SQLite via `better-sqlite3` | — | File `data/store.db` + per-client databases in `data/clients/` |
+
+**Security middleware** applied globally: Helmet (CSP disabled), CORS (configurable via `CORS_ORIGIN`), rate limiting (200 req/15min global, 10 req/15min on auth endpoints). The Next.js dev server proxies `/api/*` and `/uploads/*` to the Express backend automatically.
+
+---
+
+## Quick Start
+
+```bash
+git clone <repo>
+cd GearAndGlitch
+npm install
+copy .env.example .env
+cd frontend && npm install && cd ..
+npm install -g tsx          # for running TypeScript directly
+npm run dev:all              # starts both servers
+```
+
+Opens **http://localhost:3000** in a browser.
+
+---
+
+## Default Accounts (dev only — no accounts auto-seeded in production)
+
+| Role | URL | Credentials (dev) | Env vars to set in production |
+|------|-----|-------------------|-------------------------------|
+| **Admin** | `/admin` | `admin@gearandglitch.com` / `admin123` | `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
+| **Owner** | `/owner` | same admin credential (role-based access) | — |
+| **Technician** | `/backoffice` | `technician` or `tech@gearandglitch.com` / `tech123` | `TECH_USERNAME`, `TECH_EMAIL`, `TECH_PASSWORD` |
+| **Customer** | `/dashboard` | `customer@gearandglitch.com` / `customer123` | not seeded in production |
+| **Provider** | `/dashboard` | `provider@gearandglitch.com` / `provider123` | not seeded in production |
+
+- **Demo accounts** (`customer123`, `provider123`) are only seeded when `NODE_ENV !== "production"`.
+- **Admin/Technician** use a fallback dev password if the env var is unset, but **in production the server skips user creation** if the password env var is missing.
+- **Password minimum length** is 8 characters across all endpoints.
+- On first run the database table `actor_role` is auto-migrated for the audit log. The Owner role uses the same admin login but with elevated access — see the Owner panel section below.
+
+---
+
+## URLs & Who They're For
+
+| URL | Who | What You Can Do |
+|-----|-----|-----------------|
+| `/` | Everyone | Browse products by category |
+| `/product?id=xxx` | Everyone | Product details, specs, image gallery with lightbox |
+| `/pos` | Staff | Point of Sale — product grid, cart, payment method selector (configurable), customer lookup, cash change calculator, thermal receipt & A4 invoice print |
+| `/login` | Everyone | Unified sign-in — customer, staff, provider (Google Sign-In supported) |
+| `/dashboard` | Customers & Providers | Orders, repairs, wishlist, messages (customer) or subscription, invoices (provider) |
+| `/about` | Everyone | About Us page — content editable by admin/owner |
+| `/cart` | Customers | Checkout with county shipping + M-Pesa STK Push |
+| `/repair-book` | Customers | Book a repair with detailed device/issue form |
+| `/my-repairs` | Customers | Track your repair tickets, view cost estimates, accept/decline quotes, send messages |
+| `/repair-ticket?id=xxx` | Customers | Single repair ticket detail — device info, cost estimate with Accept/Decline, update timeline, send messages |
+| `/wishlist` | Customers | Saved products with quote generation |
+| `/account` | Customers | Account details |
+| `/admin` | Admin staff | Full management — products, orders, staff, plans, providers, invoices, settings, stock take, spec templates, shop subscription (approve/reject requests) |
+| `/owner` | Admin/Owner role | Business oversight — dashboard, products, providers, customers, messages, quotes, reports, stock control, stock take, tech repairs, audit log (non-admin actions only), shop subscription (request plan changes) |
+| `/backoffice` | Staff (admin/technician) | Repair tickets with cost editing and quote sending, calendar, dashboard, stock control, parts, purchasing, reports |
+| `/stock-take/[id]` | Admin/Owner | Dedicated stock take session page with table input, stat cards, variance report, auto-apply adjustments |
+
+---
+
+## Key Panels
+
+### Admin Panel (`/admin`)
+
+Full store management with 18 sections:
+
+- **Dashboard** — Stats overview with clickable animated counters (products, staff, pending subscription requests)
+- **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking
+- **Coupons** — Create discount/promo codes (percentage or fixed amount), set min order, max uses, expiry date, usage tracking per order
+- **Categories** — Manage product categories + subcategories (shareable across categories)
+- **Orders** — View all customer orders with shipping details, status updates, branch assignment, coupon discount display
+- **Users & Permissions** — Staff management, fine-grained role-based permissions (editable for all roles)
+- **Roles** — Define custom roles with granular permission toggles
+- **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes
+- **Providers** — View providers, assign plans, custom pricing, status
+- **Invoices** — Generate invoices per provider, mark paid
+- **Reports** — Sales Report with combined/per-branch filtering, export to Excel (CSV) or printable PDF
+- **Stock on Hand** — Current stock levels, snapshot history, low-stock alerts
+- **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow
+- **Stock Take** — Create sessions, count inventory, view variance, auto-apply adjustments
+- **Spec Templates** — Define per-category spec fields for products
+- **Suppliers** — Manage vendor/supplier directory with contact details, active status
+- **Branches** — Manage physical store locations (name, address, contact info)
+- **Clients** — Multi-tenant client management with per-client branches
+- **About Us** — Edit title, content, mission, vision for the /about page
+- **Storefront** — Choose layout theme (Original, Amazon, Jumia, Mobile), manage promotional banners
+- **Shop Subscription** — View current plan, activate new plan, approve/reject owner requests
+- **Settings** — Store info, M-Pesa config, logo upload, currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings)
+
+### Owner Panel (`/owner`)
+
+Business oversight with 13 sections:
+
+- **Dashboard** — Stats with animated counters (open repairs, due today, total orders, revenue, products in stock, low stock items), all cards clickable to navigate
+- **Products** — View products catalog
+- **Providers** — View provider list
+- **Customers** — View customer list
+- **Messages** — Two-panel chat UI with real-time polling, unread badges, notification bell
+- **Quotes** — Create hardware quotes for customers (product search, line items editor, price/quantity)
+- **Reports** — Sales Report with per-branch and combined filtering
+- **Stock Control** — Snapshot management (view/take snapshots, date picker, history), current stock levels with low-stock alerts
+- **Stock Take** — Create/delete sessions, navigate to session page
+- **Tech Repairs** — Technician performance reports (filterable by date range)
+- **About Us** — Edit the /about page content
+- **Storefront** — Change layout theme, manage promotional banners (only if role is Admin)
+- **Shop Subscription** — View current plan, request plan change (admin approves)
+- **Audit Log** — View all actions except admin actions (owner sees non-admin activity with user names, timestamps, entity details)
+
+### Back Office (`/backoffice`)
+
+Staff operations:
+- Dashboard (open repairs, due today, scheduled, unassigned counts)
+- Repair tickets (assign technicians, update status, notes, parts, pricing, images, **send cost estimates to customers**)
+- Calendar view
+- Parts management
+- Stock control (levels, low-stock alerts, movement history)
+- Purchasing (purchase orders, itemised receiving)
+- Reports (tech performance, sales)
+- Quick link to public site
+
+---
+
+## Design System & UI/UX (2026 Refactor)
+
+### CSS Design Tokens (`globals.css`)
+
+A comprehensive token-based design system with CSS custom properties:
+
+| Token Category | Examples |
+|----------------|---------|
+| **Spacing** | `--space-1` through `--space-12` (4px–48px scale) |
+| **Typography** | `--text-xs` through `--text-3xl`, `--font-*` weights, `--leading-*` line heights |
+| **Colors** | `--text`, `--text-secondary`, `--text-tertiary`, `--bg`, `--surface`, `--border`, `--primary`, `--primary-subtle`, semantic colors (`--success`, `--danger`, `--warning`, `--info`) with light variants |
+| **Shadows** | `--shadow-sm` through `--shadow-2xl` |
+| **Radii** | `--radius-sm` through `--radius-full` |
+| **Animation** | `--duration-fast`, `--duration-normal`, `--duration-slow`, `--ease-out`, `--ease-bounce` |
+
+Dark/light themes use `[data-theme="dark"]` / `[data-theme="light"]` selectors, persisted in `localStorage`.
+
+### Animation System (`animations.css`)
+
+350+ lines of GPU-accelerated animations with `prefers-reduced-motion` support:
+
+| Category | Effects |
+|----------|---------|
+| **Page transitions** | Fade, slide up/down/left/right, scale, blur, `page-enter` class |
+| **Button effects** | Ripple on click, press bounce (`.micro-bounce`), loading spinner, variants |
+| **Tables** | Row fade-in stagger, shimmer skeleton placeholders |
+| **Forms** | Focus scale + glow |
+| **Dashboard** | Stat grid stagger entrance, card hover lift, animated counters |
+| **Loading** | Shimmer skeleton, loading bar, full-screen gear loading screen |
+| **Toast** | Slide-in/out notifications, auto-dismiss |
+| **Skeleton** | Shimmer animation for all placeholder sizes |
+| **Scroll reveal** | IntersectionObserver-based entrance animations (up/left/right/scale) |
+
+### Reusable Component Library (`components/ui/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `Button` | Variants (primary/secondary/ghost/danger/subtle), sizes (sm/md/lg), loading state, block mode, ripple effect |
+| `ButtonLink` | Anchor tag styled as a button |
+| `Card` | With optional `hover`, `clickable`, `padding` props; sub-components `CardHeader`, `CardBody`, `CardFooter` |
+| `Input` | With label, error message, hint, accessible `aria-*` attributes |
+| `Select` | Dropdown with label + error state |
+| `Textarea` | Textarea with label + error state |
+| `Modal` | Overlay dialog with title, body, footer, size variants (sm/md/lg/xl), ESC to close, backdrop click to close |
+| `Badge` | Variants (default/primary/success/warning/danger/info) |
+| `StatCard` | Animated counter, icon, trend indicator (up/down), color accent |
+| `Skeleton` | Text, heading, avatar, thumbnail, card, table, stats — all shimmer-based |
+| `EmptyState` | Icon + title + description + optional CTA |
+
+### Legacy Components (pre-refactor, still in use)
+
+| Component | Purpose |
+|-----------|---------|
+| `LoadingScreen` | Full-screen loading overlay with animated SVG gears, progress bar, percentage, cycling messages, smooth fade-out+zoom exit |
+| `Toast` | Context-based notification system — success/error/warning/info types, auto-dismiss (4s), slide-in/out, backdrop blur, accessible `aria-live` |
+| `AnimatedCounter` | Number counting animation with cubic-bezier easing, requestAnimationFrame, tabular-nums |
+| `RippleButton` | Pre-refactor button with ripple effect, press bounce, loading spinner, variant prop |
+| `ScrollReveal` | IntersectionObserver-based entrance animations on scroll (up/left/right/scale) |
+| `NotificationBell` | Unread message count badge with 30s polling |
+
+### Layout Refactor
+
+The main `Layout.tsx` now uses a responsive header with:
+- `.header-left` / `.header-right` split layout
+- `.main-nav-desktop` — horizontal nav (visible on screens >768px)
+- `.mobile-menu-toggle` — hamburger button (visible on mobile)
+- `.main-nav-mobile` — full-screen overlay menu (shown on toggle, hidden by default)
+- Close-on-navigate behavior for mobile menu
+
+### Error Handling
+
+- **ErrorBoundary** in `_app.tsx` catches runtime render errors with a recovery UI (warning icon, message, refresh button)
+- **Page transition wrapper** applies `page-enter` animation class on route change via `key={router.asPath}`
+
+### Skeleton Loading States
+
+All data-fetching pages now render shimmer skeleton placeholders instead of bare `<p>Loading...</p>` text:
+- `index.tsx` — skeleton hero + grid of 8 product card skeletons
+- `[category].tsx` — grid of 8 product card skeletons
+- `cart.tsx` — skeleton cart items with image + text placeholders
+- `product.tsx` — skeleton gallery + info side-by-side
+- `my-repairs.tsx` — skeleton ticket cards
+- `order.tsx` — skeleton card with shipping + items placeholder
+- `repair-ticket.tsx` — skeleton card
+
+### File Splitting (admin.tsx)
+
+`admin.tsx` (1874 lines) has been partially split:
+- **`components/admin/shared.tsx`** — extracted `useFetch`, `Spinner`, `ErrorMsg`, `formatPrice`, `escapeHtml` utilities
+- **`components/admin/AdminProducts.tsx`** — extracted Products section (212 lines)
+- More sections will follow progressively
+
+---
+
+## Project Structure
+
+```
+frontend/                 # Next.js 14 (Pages Router + TypeScript)
+├── components/
+│   ├── ui/                   # Reusable component library
+│   │   ├── index.ts             # Re-exports
+│   │   ├── Button.tsx           # Variants, sizes, loading, ripple
+│   │   ├── Card.tsx             # Card + Header/Body/Footer
+│   │   ├── Input.tsx            # Input, Select, Textarea with labels/errors
+│   │   ├── Modal.tsx            # Overlay dialog with sizes
+│   │   ├── Badge.tsx            # Semantic badge variants
+│   │   ├── StatCard.tsx         # Animated counter card
+│   │   ├── Skeleton.tsx         # Re-export from legacy
+│   │   └── EmptyState.tsx       # Re-export from legacy
+│   ├── admin/                 # Admin panel extracted components
+│   │   ├── shared.tsx            # useFetch, Spinner, ErrorMsg, formatPrice, escapeHtml
+│   │   └── AdminProducts.tsx     # Products CRUD section
+│   ├── owner/                 # Owner panel extracted components
+│   ├── Layout.tsx            # Responsive header with mobile menu
+│   ├── ProductCard.tsx       # Product card
+│   ├── LoadingScreen.tsx     # Full-screen gear loading animation
+│   ├── Toast.tsx             # Toast notification system (context + provider)
+│   ├── AnimatedCounter.tsx   # Number counting animation
+│   ├── Skeleton.tsx          # Skeleton loading components
+│   ├── EmptyState.tsx        # Empty state illustrations
+│   ├── RippleButton.tsx      # Button with ripple + press effects
+│   ├── ScrollReveal.tsx      # IntersectionObserver entrance animations
+│   └── NotificationBell.tsx  # Unread message count badge with 30s polling
+├── lib/
+│   ├── api.ts                # API client with token management
+│   ├── app-context.tsx       # React context — auth, theme, cart, settings
+│   ├── types.ts              # TypeScript interfaces
+│   └── features.ts           # useFeature() hook for subscription feature gating
+├── layouts/               # Storefront layout themes
+│   ├── index.tsx              # Layout registry, provider, engine
+│   ├── shared.ts              # formatPrice, escapeHtml utilities
+│   ├── original.tsx           # Original theme (clean, default site nav)
+│   ├── amazon.tsx             # Amazon-style theme
+│   ├── jumia.tsx              # Jumia-style theme
+│   └── mobile.tsx             # Mobile-optimised theme
+├── pages/
+│   ├── _app.tsx              # App wrapper with ErrorBoundary, page transitions
+│   ├── _document.tsx         # Custom Document (data-theme attribute)
+│   ├── index.tsx             # Home — skeleton loading + error state
+│   ├── about.tsx             # About Us — editable by admin/owner
+│   ├── [category].tsx        # Dynamic category pages — skeleton loading
+│   ├── product.tsx           # Product detail — skeleton loading
+│   ├── cart.tsx              # Checkout with shipping + M-Pesa — skeleton loading
+│   ├── login.tsx             # Unified login (customer + staff)
+│   ├── dashboard.tsx         # Role-based dashboard
+│   ├── wishlist.tsx          # Wishlist + quotes
+│   ├── contact.tsx           # Contact form
+│   ├── repairs.tsx           # Repair services overview
+│   ├── repair-book.tsx       # Repair booking form
+│   ├── my-repairs.tsx        # Ticket tracking — skeleton loading
+│   ├── orders.tsx            # Order history
+│   ├── account.tsx           # Account details
+│   ├── admin.tsx             # Admin panel (16 sections)
+│   ├── owner.tsx             # Owner panel (1630 lines, 12 sections)
+│   ├── backoffice.tsx        # Back office (repairs, stock, reports)
+│   └── stock-take/
+│       └── [id].tsx          # Dedicated stock take session page
+├── styles/
+│   ├── globals.css           # Design token system (dark/light via [data-theme])
+│   └── animations.css        # 350+ lines — keyframes, utility classes,
+│                               skeleton, toast, loading screen, scroll reveal
+├── .babelrc                  # Babel config (SWC disabled on this platform)
+├── next.config.js            # Proxies /api/* and /uploads/* to Express
+├── tsconfig.json
+└── package.json
+
+server/                   # Express backend (TypeScript)
+├── index.ts              # Express server — all API routes + static serving
+├── db.ts                 # SQLite database layer (CRUD, migrations, seed)
+├── auth.ts               # JWT auth middleware + login/register
+├── repairs.ts            # Repair ticket lifecycle
+├── permissions.ts        # Role-based permissions + assignRoleToUser
+├── categories.ts         # Category definitions (seeded into DB, editable via admin)
+├── upload.ts             # Multer image upload
+├── shipping.ts           # Kenyan counties with tiered fees
+├── mpesa.ts              # Daraja API STK Push
+└── notify.ts             # Email notifications
+
+products.json             # Seed data (34 products)
+data/
+├── store.db              # SQLite database (auto-created)
+└── uploads/              # Product images, gallery, logos
+```
+
+---
+
+## API Overview
+
+### Public (no auth)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Health check |
+| GET | `/api/public-settings` | Store name, phone, email, currency, logo, M-Pesa till |
+| GET | `/api/storefront` | Storefront config, layout, banners, Google Client ID |
+| GET | `/api/products` | All products |
+| GET | `/api/products/:id` | Single product |
+| GET | `/api/products/:id/images` | Gallery images |
+| GET | `/api/categories` | All categories + subcategories |
+| GET | `/api/categories/:id/subcategories` | Subcategories for a category |
+| GET | `/api/subcategories` | All subcategories |
+| GET | `/api/plans` | Active subscription plans |
+| GET | `/api/shipping/counties` | All 47 Kenyan counties with fees |
+| GET | `/api/repairs/statuses` | Repair status labels |
+| GET | `/api/shop/features` | Active subscription features for feature-gating UI |
+
+### Customer
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/customer/login` | Login with email + password |
+| POST | `/api/customer/google-login` | Login/signup with Google credential token |
+| GET | `/api/orders` | Customer order list |
+| GET | `/api/orders/:id` | Order detail |
+| GET | `/api/orders/:id/invoice` | HTML invoice/receipt (shipped/delivered orders only) |
+| GET | `/api/repairs/mine` | Customer's repair tickets |
+| GET | `/api/repairs/mine/:id` | Single ticket detail with visible updates |
+| POST | `/api/repairs` | Create a repair ticket |
+| POST | `/api/repairs/mine/:id/message` | Send message on a ticket |
+| POST | `/api/repairs/:id/quote-response` | Accept/decline a cost estimate |
+| GET | `/api/cart` | Cart items |
+| POST | `/api/cart` | Add to cart |
+| PATCH | `/api/cart/:productId` | Update quantity |
+| DELETE | `/api/cart/:productId` | Remove from cart |
+| GET | `/api/wishlist` | Saved products |
+| POST | `/api/wishlist` | Add to wishlist |
+| DELETE | `/api/wishlist/:productId` | Remove from wishlist |
+| GET | `/api/quotes` | Hardware quotes |
+| POST | `/api/quotes/from-wishlist` | Request quote from wishlist items |
+| PATCH | `/api/quotes/:id/status` | Update quote status |
+| POST | `/api/orders` | Place order with M-Pesa payment |
+| GET | `/api/messages` | Messages with providers |
+| POST | `/api/messages` | Send message to provider |
+
+### Staff (any staff role)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/login` | Staff login (email or username) |
+| GET | `/api/auth/me` | Current user |
+| POST | `/api/auth/change-password` | Change own password |
+| GET | `/api/backoffice/stats` | Dashboard stats |
+| GET | `/api/staff/technicians` | Staff list |
+| GET | `/api/reports/sales` | Sales report (filterable by date) |
+| GET | `/api/reports/stock-summary` | Stock levels summary |
+| GET | `/api/stock-on-hand/current` | Current stock levels (requires `stock:on_hand`) |
+| GET | `/api/stock-on-hand/history` | Snapshot date history (requires `stock:on_hand`) |
+| GET | `/api/stock-on-hand/:date` | Stock on hand for a specific date (requires `stock:on_hand`) |
+| POST | `/api/stock-on-hand/snapshot` | Create stock snapshot (requires `stock:on_hand`) |
+| GET | `/api/stock-transfers` | List stock transfers (requires `stock:transfer`) |
+| POST | `/api/stock-transfers` | Create a stock transfer (requires `stock:transfer`) |
+| POST | `/api/stock-transfers/:id/complete` | Complete a pending transfer (requires `stock:transfer`) |
+| POST | `/api/stock-transfers/:id/reject` | Reject a pending transfer (requires `stock:transfer`) |
+| GET | `/api/rates` | Public exchange rates (auto-fetched from open.er-api.com, cached 1h) |
+| PUT | `/api/rates` | Set manual exchange rates (requires `settings:update`) |
+| DELETE | `/api/rates` | Clear manual rates, resume auto-fetch (requires `settings:update`) |
+| GET | `/api/admin/quotes` | List all quotes (requires `reports:view`) |
+| POST | `/api/admin/quotes` | Create a quote for a customer (requires `reports:view`) |
+| GET | `/api/stock-take` | List stock take sessions |
+| POST | `/api/stock-take/start` | Start new session |
+| DELETE | `/api/stock-take/:id` | Delete empty session |
+| GET | `/api/stock-take/:id` | Session details |
+| POST | `/api/stock-take/:id/items` | Save counted items |
+| POST | `/api/stock-take/:id/complete` | Complete session, apply adjustments |
+| GET | `/api/audit-log` | Audit trail (owner: excludes admin actions) |
+| GET | `/api/shop/subscription` | Current shop subscription |
+| POST | `/api/shop/subscription/request` | Request plan change (owner) |
+| GET | `/api/shop/subscription/requests` | All requests (admin) |
+| PUT | `/api/shop/subscription/request/:id` | Approve/reject request (admin) |
+| PUT | `/api/shop/subscription` | Activate plan directly (admin) |
+
+### Admin
+
+Full CRUD for products, categories (including subcategories), staff, roles, plans, providers, orders, invoices, settings, stock, spec templates, M-Pesa configuration, storefront layout/themes, about-us content.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/products/import` | Bulk import products from JSON array (admin/owner only) — validates name, price, category on every row; aborts entire import on any invalid row |
+| POST | `/api/admin/products/bulk-edit` | Bulk update product price, category, inStock for selected product IDs |
+| GET | `/api/admin/products/:id/price-history` | Price change history for a product (last 50 changes) |
+| GET | `/api/admin/coupons` | List all coupons |
+| POST | `/api/admin/coupons` | Create a coupon |
+| PUT | `/api/admin/coupons/:id` | Update a coupon |
+| DELETE | `/api/admin/coupons/:id` | Delete a coupon |
+| POST | `/api/coupons/validate` | Validate a coupon code at checkout (customer auth) |
+| GET | `/api/admin/suppliers` | List all suppliers |
+| POST | `/api/admin/suppliers` | Create a supplier |
+| PUT | `/api/admin/suppliers/:id` | Update a supplier |
+| DELETE | `/api/admin/suppliers/:id` | Delete a supplier |
+| GET | `/api/reports/sales/trends` | Daily revenue trend data for charting (filterable by date and branch) |
+| GET | `/api/admin/backup` | Download full database backup file |
+
+### Provider
+
+Provider registration, login, subscription details, invoices, products at tier, messaging with customers.
+
+---
+
+## Authentication & Permissions
+
+1. **Unified login** at `/login` with customer + staff/provider tabs
+2. **Google Sign-In** via Google Identity Services — button appears on Customer tab when `GOOGLE_CLIENT_ID` is configured in `.env`
+3. **Three token types** stored in localStorage: `customerStoreToken`, `computerStoreToken`, `providerToken`
+4. **JWT tokens**: Signed with `JWT_SECRET` (required — server fails without it). Staff tokens expire in **24 hours**, customer tokens in **7 days**. No query-string token support.
+5. **Rate limiting**: 10 login/register/password-reset attempts per IP per 15 minutes.
+6. **Role-based access**:
+   - Admin: full access to `/admin` and `/backoffice`
+   - Owner: access to `/owner` (elevated business oversight)
+   - Technician: restricted to `/backoffice` (repairs, stock)
+7. **Permission system**: `hasPermission()` checks both `role_permissions` and `user_permissions` tables; `assignRoleToUser()` syncs `users.role` to `user_roles`. Built-in roles (admin, manager, technician, owner) can have their permissions customized. Permissions include `staff:*`, `repair:*`, `product:*`, `stock:*` (list, update, view_low, on_hand, transfer), `settings:*`, `calendar:*`, `reports:*`.
+8. **Audit log permission model**: Admin sees all actions; Owner sees all non-admin actions (filtered by `actor_role != 'admin'`)
+
+---
+
+## Branch Management
+
+### Branches
+- Create and manage physical store locations from the **Branches** page
+- Each branch has a name, address, phone, email, and active status
+- Branches are used for order assignment and stock transfer tracking
+
+### Stock on Hand
+- Standalone page in the admin Operations nav
+- View current stock levels with low-stock alerts
+- Take daily snapshots to record inventory at a point in time
+- Browse historical snapshots by date
+
+### Stock Transfers
+- Move stock between branches with a pending/complete/reject workflow
+- Protected by the `stock:transfer` permission
+- Accessible from the **Stock Transfers** page in the admin Operations nav
+- Tracks source branch, destination branch, product, quantity, and notes
+
+## Stock Take Workflow
+
+1. Start a session from admin or owner panel
+2. Navigate to `/stock-take/[id]` for the dedicated session page
+3. Count items using the table input (product name, expected qty, counted qty)
+4. View variance report (green = match, yellow = over, red = under)
+5. Complete the session to auto-apply inventory adjustments
+6. Sessions with counted items cannot be deleted (only empty sessions)
+
+---
+
+## Known Issues
+
+- **Production build**: Corrupt `@next/swc-win32-x64-msvc` binary — must use Babel (`.babelrc` enables it). Run with `node node_modules\next\dist\bin\next dev -p 3000` (frontend) and `npm run dev` (backend) in separate terminals
+- **Babel runtime**: `@babel/runtime` must be v7.x (v8.0.0 breaks subpath exports). Locked to `^7.26.0`
+- **Dev startup**: `npm run dev` in the root fails due to path spaces on Windows; use `npm run dev:all` or start servers separately. The backend `npm run dev` now uses `tsx watch` for auto-restart on file changes.
+- **JWT_SECRET change invalidates all sessions**: After deployment or restart with a new secret, all users must re-login. There is no token refresh/revocation mechanism — tokens expire on their own (24h staff, 7d customer).
+- **M-Pesa callback**: Validates that the body contains `Body.stkCallback.CheckoutRequestID` but does not verify an HMAC signature — add IP allowlisting at the reverse proxy level for production.
+
+---
+
+## Theme System
+
+- Dark mode by default, light/dark toggle in header and all admin panels
+- Persists in `localStorage`
+- CSS custom properties via `[data-theme="dark"]` / `[data-theme="light"]` selectors in `globals.css` (`--bg`, `--surface`, `--text`, `--primary`, `--border`, etc.)
+- `prefers-reduced-motion` respected — all animations disabled when user prefers reduced motion
+- GPU acceleration via `will-change` and `transform`/`opacity`-only animations
+
+## Storefront Layouts
+
+Four layout themes controlled by admin via the Storefront panel:
+
+| Layout | Key | Description |
+|--------|-----|-------------|
+| **Original** | `original` | Clean default layout with the standard site header |
+| **Amazon Style** | `amazon` | Large search bar, horizontal categories, product recommendations, featured deals |
+| **Jumia Style** | `jumia` | Promotional sliders, flash sales, daily deals, category icons |
+| **Mobile** | `mobile` | Premium minimalist, hero banners, brand chips, compare specs |
+
+Each layout provides its own `Header`, `Footer`, `HomePage`, and `LayoutStyles` components. The admin can switch layouts and manage promotional banners from both the Admin and Owner panels.
+
+---
+
+## Google Sign-In Setup
+
+To enable Google sign-in for customers and staff:
+
+1. **Go to** [console.cloud.google.com](https://console.cloud.google.com/apis/credentials)
+2. **Create a project** (or select an existing one) from the top dropdown
+3. **Configure OAuth consent screen** — navigate to **APIs & Services → OAuth consent screen**
+   - Choose **External** user type (Internal only works for Google Workspace)
+   - Fill in **App name**, **User support email**, and **Developer contact information**
+   - Skip the Scopes and Test users sections for now (you can come back later)
+4. **Create credentials** — go to **APIs & Services → Credentials**
+   - Click **+ Create Credentials → OAuth client ID**
+   - Application type: **Web application**
+   - Name: e.g. "Gear&Glitch Web Client"
+   - Under **Authorized JavaScript origins**, add:
+     - `http://localhost:8020` (for development)
+     - `https://your-domain.com` (for production)
+   - Click **Create**
+5. **Copy the Client ID** shown in the popup and add it to `.env`:
+
+   ```env
+   GOOGLE_CLIENT_ID=123456789-xxxxx.apps.googleusercontent.com
+   ```
+
+6. **Restart the server** — the Google sign-in button will now appear on the Customer login page and the Admin login page (when `GOOGLE_CLIENT_ID` is set).
+
+> **Note:** Publishing the OAuth consent screen is only required for production. In testing, you must add each test user's email under **OAuth consent screen → Test users**. Up to 100 test users are allowed without verification.
+
+---
+
+## Security
+
+### CSV Injection Prevention (Excel Export)
+The sales report Excel export feature (`admin.tsx: exportExcel`) generates CSV files with a dedicated `csvCell()` sanitizer that:
+- Wraps all cell values in double quotes with proper escaping of embedded quotes
+- Prefixes cell values starting with `=`, `+`, `-`, or `@` with a single quote (`'`) to prevent Excel from interpreting them as executable formulas
+- Includes a UTF-8 BOM (`\uFEFF`) for correct encoding detection by Excel
+
+### XSS Escaping in PDF Export
+The PDF export feature (`admin.tsx: exportPdf`) renders report data into a printable HTML document. All user-controlled values (customer names, product names, branch names, order statuses) are passed through the existing `escapeHtml()` utility before being interpolated into the HTML template, preventing stored cross-site scripting.
+
+### Admin-Only Import Endpoint
+The `POST /api/products/import` bulk product import endpoint is guarded by `ownerAuthMiddleware` (admin/owner role only), not the broader staff permission system. This ensures only store administrators can perform bulk imports, not technicians or staff with `product:create` permissions.
+
+### POS Security
+The POS checkout endpoint (`POST /api/pos/checkout`) enforces:
+- **Quantity validation** — non-integer or `<= 0` quantities rejected with a clear error
+- **Stock validation** — `getStockLevel()` checked per item; insufficient stock rejected before order creation
+- **Payment method validation** — method must match one of the configured methods (admin-managed via Settings)
+- **Idempotency** — client sends an `idempotencyKey`; duplicate requests return the cached order instead of re-charging
+- **Request size limit** — maximum 100 items per checkout request
+- **Staff audit trail** — `processed_by` column records which staff member processed each POS order
+
+### eTIMS / KRA Compliance
+The system supports both VSCU (local JAR bridge) and OSCU (cloud API) eTIMS modes selectable in admin settings. See `eTIMS_INTEGRATION.md` for the full compliance document, including invoice number format, SHA-256 control codes, two-step sales pipeline, tax type codes (A/E), QR code generation, and all invoice templates (customer, admin, POS thermal/A4).
+
+---
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 8020 | Server port |
+| `JWT_SECRET` | — | **Required.** Server fails to start if unset or placeholder. Use a long random string. |
+| `ADMIN_USERNAME` | admin | Admin username |
+| `ADMIN_EMAIL` | admin@gearandglitch.com | Admin email |
+| `ADMIN_PASSWORD` | `admin123` (dev) | **Required in production** — skips admin creation if unset |
+| `TECH_USERNAME` | technician | Technician username |
+| `TECH_EMAIL` | tech@gearandglitch.com | Technician email |
+| `TECH_PASSWORD` | `tech123` (dev) | **Required in production** — skips tech creation if unset |
+| `NODE_ENV` | — | Set to `production` to disable demo accounts and weak-password fallbacks |
+| `CORS_ORIGIN` | `true` (allow all) | Allowed origin(s) for CORS. Set to your frontend URL in production. |
+| `SMTP_HOST` | (blank) | SMTP server |
+| `SMTP_PORT` | 587 | SMTP port |
+| `SMTP_USER` | | SMTP username |
+| `SMTP_PASS` | | SMTP password |
+| `SITE_NAME` | Gear&Glitch | Brand name in emails |
+| `GOOGLE_CLIENT_ID` | | Google OAuth client ID |
+| `MPESA_CONSUMER_KEY` | | Set via admin UI or env |
+| `MPESA_CONSUMER_SECRET` | | |
+| `MPESA_PASSKEY` | | |
+| `MPESA_SHORTCODE` | | |
+| `MPESA_TILL_NUMBER` | | Displayed at checkout |
+| `MPESA_ENV` | sandbox | `sandbox` or `production` |
+
+---
+
+## Development
+
+### Commands
+
+```bash
+npm run dev:all          # Both servers in one terminal
+npm start                # Express production (port 8020)
+npm run dev              # Express dev with auto-restart
+npm run typecheck        # TypeScript check
+
+cd frontend
+npm run dev              # Next.js dev server (port 3000)
+npm run build            # Production build
+npm start                # Serve production build
+```
+
+### Notes
+
+- Backend only exposes `/uploads` to clients
+- Images stored in `data/uploads/` (JPEG, PNG, WebP, GIF, max 5MB). Cache-busting via `?v=<timestamp>` on image URLs and `Cache-Control: no-store` on `/uploads` static middleware.
+- M-Pesa STK Push — simulated when credentials not configured. Callback validates `Body.stkCallback.CheckoutRequestID`. Phone numbers masked in `data/mpesa.log`.
+- All 47 Kenyan counties with tiered delivery fees
+- Delete `data/store.db` to reset and regenerate
+- Security headers applied via Helmet (CSP disabled for inline styles). CORS origin configurable via `CORS_ORIGIN`. Rate limiting: 200 req/15min global, 10 req/15min on auth routes.
+- Error responses return generic messages — internal error details are not exposed to clients.
+- **Tax system**: Global tax rate configurable in Settings (default 16%). Each product has a taxable toggle (eTims-compatible).
+- **Currency system**: Storefront auto-detects user's currency via timezone/locale. Exchange rates auto-fetched from open.er-api.com (cached 1h). Admin can override with custom rates in Settings. Currency selector appears in all storefront layout headers.
+- **Quotations**: Admin panel has a dedicated Quotations section under Sales for creating and managing hardware quotes.
+- **Sales Report**: Includes per-branch breakdown table when viewing combined data, plus date range and branch filter, daily revenue trend chart (SVG), and export to Excel (CSV) or printable PDF.
+- **Coupons**: Admin can create percentage or fixed discount codes with min order, max uses, and expiry. Customers apply at checkout. Discount recorded per order.
+- **Bulk Edit**: Products table supports multi-select with checkboxes and bulk price/category/stock updates.
+- **Price History**: Every price change is automatically recorded and viewable per product.
+- **Database Backup**: One-click backup download from Settings page.
+
+---
+
+## Deployment Checklist
+
+1. **Set `JWT_SECRET`** to a long random string — server will not start without it
+2. **Set `ADMIN_PASSWORD` and `TECH_PASSWORD`** — users won't be created if unset in production
+3. **Set `NODE_ENV=production`** — disables demo accounts, disables weak-password fallbacks
+4. **Set `CORS_ORIGIN`** to your frontend URL (e.g. `https://mystore.com`)
+5. **Configure `SMTP_*`** for real email
+6. **Use HTTPS** behind a reverse proxy (nginx, Caddy, Cloudflare) — all traffic (passwords, tokens, M-Pesa data) is unprotected without TLS
+7. Build backend: `npm run build`
+8. Build frontend: `cd frontend && npm run build`
+9. Run with a process manager (PM2, systemd, etc.)
+10. Back up `data/store.db` and `data/uploads/` regularly
