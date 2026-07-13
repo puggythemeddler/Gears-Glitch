@@ -19,3 +19,6 @@ data/uploads/
 .DS_Store
 Thumbs.db
 *.swp
+
+dist/
+frontend/tsconfig.tsbuildinfo
