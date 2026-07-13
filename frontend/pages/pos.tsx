@@ -1,10 +1,14 @@
 import React, { useEffect, useState, useRef } from "react";
-import { api, isCustomerLoggedIn } from "@/lib/api";
+import { api, getRole, getTokenForRole } from "@/lib/api";
 import type { Product } from "@/lib/types";
+import PinLock from "@/components/PinLock";
+import { useApp } from "@/lib/app-context";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
 }
+
+function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
 
 interface POSItem {
   productId: string;
@@ -30,6 +34,7 @@ interface PaymentMethod {
 }
 
 export default function POSPage() {
+  const { isDark, toggleDark } = useApp();
   const [products, setProducts] = useState<Product[]>([]);
   const [filtered, setFiltered] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
@@ -46,6 +51,9 @@ export default function POSPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [pinUnlocked, setPinUnlocked] = useState(false);
+  const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
 
@@ -54,7 +62,10 @@ export default function POSPage() {
   const change = needsTender && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
 
   useEffect(() => {
-    setLoggedIn(isCustomerLoggedIn());
+    setLoggedIn(!!getRole());
+    if (sessionStorage.getItem("posUnlocked")) setPinUnlocked(true);
+    const savedCat = sessionStorage.getItem("posCategory");
+    if (savedCat) setSelectedCategory(savedCat);
     api<{ products: Product[] }>("/api/products").then((d) => {
       setProducts(d.products || []);
       setFiltered(d.products || []);
@@ -64,13 +75,19 @@ export default function POSPage() {
       setPaymentMethods(methods);
       if (methods.length > 0 && !paymentMethod) setPaymentMethod(methods[0].id);
     }).catch(() => {});
+    api<{ categories: { id: string; label: string }[] }>("/api/pos/categories").then((d) => {
+      setCategories(d.categories || []);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
     const q = search.toLowerCase().trim();
-    if (!q) { setFiltered(products); return; }
-    setFiltered(products.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)));
-  }, [search, products]);
+    const cat = selectedCategory;
+    let list = products;
+    if (cat) list = list.filter((p) => p.category === cat);
+    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q));
+    setFiltered(list);
+  }, [search, products, selectedCategory]);
 
   useEffect(() => {
     if (customerQuery.trim().length < 2) { setCustomers([]); return; }
@@ -144,24 +161,49 @@ export default function POSPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
         <div className="panel" style={{ textAlign: "center" }}>
           <h2>Point of Sale</h2>
-          <p>Please sign in to use POS.</p>
-          <a href="/login?redirect=/pos" className="btn btn-primary">Sign in</a>
+          <p>Please log in to use POS.</p>
+          <a href="/dashboard" className="btn btn-primary">Go to Dashboard</a>
         </div>
       </div>
     );
   }
 
+  if (!pinUnlocked) {
+    return <PinLock storageKey="posPin" title="POS PIN" onUnlock={() => { sessionStorage.setItem("posUnlocked", "1"); setPinUnlocked(true); }} />;
+  }
+
   return (
     <div style={{ display: "flex", height: "calc(100vh - var(--nav-height, 60px))", overflow: "hidden" }}>
+
+      {/* Category sidebar */}
+      <div style={{ width: 160, borderRight: "1px solid var(--border)", overflowY: "auto", background: "var(--surface)", padding: "0.5rem 0", flexShrink: 0 }}>
+        <button
+          onClick={() => { setSelectedCategory(""); sessionStorage.removeItem("posCategory"); }}
+          style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: !selectedCategory ? "var(--primary)" : "transparent", color: !selectedCategory ? "#fff" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: !selectedCategory ? 600 : 400 }}
+        >
+          All
+        </button>
+        {categories.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => { setSelectedCategory(cat.id); sessionStorage.setItem("posCategory", cat.id); }}
+            style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: selectedCategory === cat.id ? "var(--primary)" : "transparent", color: selectedCategory === cat.id ? "#fff" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: selectedCategory === cat.id ? 600 : 400 }}
+          >
+            {cat.label}
+          </button>
+        ))}
+      </div>
+
       <div style={{ flex: 1, display: "flex", flexDirection: "column", borderRight: "1px solid var(--border)" }}>
-        <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)" }}>
-          <input ref={searchRef} type="text" className="input" placeholder="Search products by name or ID..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: "100%", fontSize: "1.1rem" }} autoFocus />
+        <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <input ref={searchRef} type="text" className="input" placeholder="Search products by name or ID..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, fontSize: "1.1rem" }} autoFocus />
+          <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, whiteSpace: "nowrap" }}>{isDark ? "☀️" : "🌙"}</button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "0.5rem", padding: "0.75rem" }}>
           {filtered.map((p) => (
             <button key={p.id} type="button" className="panel" style={{ cursor: "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)" }} onClick={() => addToCart(p)}>
-              {p.imageUrl ? <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 100, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{p.name.charAt(0)}</div>}
-              <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+              {p.imageUrl ? <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 100, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
+              <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
               <div style={{ fontSize: "0.9rem", color: "var(--primary)" }}>{formatPrice(p.price)}</div>
             </button>
           ))}
@@ -170,7 +212,10 @@ export default function POSPage() {
       </div>
 
       <div style={{ width: 380, display: "flex", flexDirection: "column", background: "var(--surface)" }}>
-        <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: "1.1rem" }}>Cart ({cart.length})</div>
+        <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: "1.1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Cart ({cart.length})</span>
+          <button onClick={() => { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); setPinUnlocked(false); setSelectedCategory(""); }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline" }}>Change PIN</button>
+        </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "0.5rem" }}>
           {cart.length === 0 ? <p className="muted" style={{ textAlign: "center", padding: "2rem" }}>Cart is empty</p> : cart.map((item) => (
             <div key={item.productId} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0", borderBottom: "1px solid var(--border)" }}>
@@ -228,10 +273,10 @@ export default function POSPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               <div style={{ fontSize: "0.9rem", textAlign: "center" }}>Order #{lastOrderId}</div>
               {lastChange > 0 && <div style={{ fontSize: "1rem", textAlign: "center", color: "#16a34a", fontWeight: 700 }}>Change: {formatPrice(lastChange)}</div>}
-              <a href={`/api/pos/receipt/${lastOrderId}?format=thermal`} target="_blank" className="btn btn-primary btn-block" style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}>
+              <a href={`/api/pos/receipt/${lastOrderId}?format=thermal&token=${encodeURIComponent(getTokenForRole() || "")}`} target="_blank" className="btn btn-primary btn-block" style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}>
                 Print Thermal Receipt
               </a>
-              <a href={`/api/pos/receipt/${lastOrderId}?format=a4`} target="_blank" className="btn btn-ghost btn-block" style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}>
+              <a href={`/api/pos/receipt/${lastOrderId}?format=a4&token=${encodeURIComponent(getTokenForRole() || "")}`} target="_blank" className="btn btn-ghost btn-block" style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}>
                 Print A4 Invoice
               </a>
               <button className="btn btn-ghost btn-block" onClick={() => { setLastOrderId(null); setStatus(""); setLastChange(0); }} style={{ fontSize: "0.9rem", padding: "0.4rem" }}>

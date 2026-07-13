@@ -17,6 +17,14 @@ export function getProviderToken(): string | null {
   return localStorage.getItem(PROVIDER_TOKEN_KEY);
 }
 
+export function getTokenForRole(role?: string): string | null {
+  const r = role || getRole();
+  if (r === "customer") return getCustomerToken();
+  if (r === "staff") return getStaffToken();
+  if (r === "provider") return getProviderToken();
+  return null;
+}
+
 export function getRole(): "customer" | "staff" | "provider" | null {
   if (getStaffToken()) return "staff";
   if (getCustomerToken()) return "customer";
@@ -48,14 +56,6 @@ export function clearAllSessions() {
   clearCustomerSession();
   clearStaffSession();
   clearProviderSession();
-}
-
-function getTokenForRole(role?: string): string | null {
-  const r = role || getRole();
-  if (r === "customer") return getCustomerToken();
-  if (r === "staff") return getStaffToken();
-  if (r === "provider") return getProviderToken();
-  return null;
 }
 
 export async function api<T = any>(

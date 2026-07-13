@@ -43,6 +43,7 @@ import {
   getStockMovements,
   getLowStockItems,
   listCategories,
+  listPosCategories,
   getCategory,
   createCategory,
   updateCategory,
@@ -62,6 +63,7 @@ import {
   findProviderById,
   listProviders,
   createProvider,
+  verifyProviderPin,
   updateProvider,
   updateProviderStatus,
   getProviderSubscription,
@@ -82,6 +84,10 @@ import {
   getInvoiceRevenue,
   listOrderInvoices,
   markOrderInvoicePaid,
+  createCreditNote,
+  getCreditNote,
+  listCreditNotes,
+  submitCreditNoteToEtims,
   getProductImages,
   addProductImage,
   deleteProductImage,
@@ -202,6 +208,7 @@ import {
   staffAuthMiddleware,
   customerAuthMiddleware,
   providerAuthMiddleware,
+  posAuthMiddleware,
   loginStaff,
   loginCustomer,
   registerCustomer,
@@ -359,7 +366,7 @@ app.get("/api/settings", staffAuthMiddleware, requirePermission("settings:view")
   settings.googleClientId = getStoreSetting("google_client_id") || process.env.GOOGLE_CLIENT_ID || "";
   settings.kraPin = (getDb().prepare("SELECT value FROM settings WHERE key = 'kra_pin'").get() as any)?.value || "";
   settings.etimsSerialPrefix = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_serial_prefix'").get() as any)?.value || "01";
-  settings.etimsMode = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "vscu";
+  settings.etimsMode = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "off";
   settings.etimsBranchId = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_branch_id'").get() as any)?.value || "00";
   settings.etimsDeviceSerial = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_device_serial'").get() as any)?.value || "dvc001";
   settings.etimsVscuUrl = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_vscu_url'").get() as any)?.value || "http://localhost:8088";
@@ -849,7 +856,11 @@ app.get("/api/pos/payment-methods", (_req: Request, res: Response) => {
   res.json({ methods: getPaymentMethods() });
 });
 
-app.post("/api/pos/checkout", staffAuthMiddleware, async (req: Request, res: Response) => {
+app.get("/api/pos/categories", (_req: Request, res: Response) => {
+  res.json({ categories: listPosCategories() });
+});
+
+app.post("/api/pos/checkout", posAuthMiddleware, async (req: Request, res: Response) => {
   const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey } = req.body || {};
   if (!items || !Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "Items are required." }); return; }
   if (items.length > 100) { res.status(400).json({ error: "Too many items (max 100)." }); return; }
@@ -864,10 +875,17 @@ app.post("/api/pos/checkout", staffAuthMiddleware, async (req: Request, res: Res
   const pmtCode = pmtConfig.kraCode;
   const staff = (req as any).user;
   const staffName = staff.username || staff.email || `Staff #${staff.sub}`;
-  let customerId = staff.sub;
+  let customerId: number;
   if (selectedCustomerId && Number(selectedCustomerId) > 0) {
     const found = findCustomerById(Number(selectedCustomerId));
-    if (found) customerId = found.id;
+    if (found) { customerId = found.id; } else { res.status(400).json({ error: "Customer not found." }); return; }
+  } else {
+    let walkIn = getDb().prepare("SELECT id FROM customers WHERE email = 'walkin@pos'").get() as any;
+    if (!walkIn) {
+      const r = getDb().prepare("INSERT INTO customers (name, email, password_hash, phone) VALUES (?, ?, ?, ?)").run("Walk-in Customer", "walkin@pos", "", "0");
+      walkIn = { id: r.lastInsertRowid };
+    }
+    customerId = walkIn.id;
   }
   const db = getDb();
   let subtotal = 0;
@@ -908,7 +926,7 @@ app.post("/api/pos/checkout", staffAuthMiddleware, async (req: Request, res: Res
   res.status(201).json({ order: updated, change });
 });
 
-app.get("/api/pos/receipt/:orderId", staffAuthMiddleware, (req: Request, res: Response) => {
+app.get("/api/pos/receipt/:orderId", posAuthMiddleware, (req: Request, res: Response) => {
   const order = getOrder(Number(req.params.orderId));
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
   const format = (req.query.format as string) || "thermal";
@@ -917,7 +935,7 @@ app.get("/api/pos/receipt/:orderId", staffAuthMiddleware, (req: Request, res: Re
   const storeEmail = settings.email || "info@gearandglitch.com";
   const currency = settings.currency || "KES";
   const kraPin = (getDb().prepare("SELECT value FROM settings WHERE key = 'kra_pin'").get() as any)?.value || "P051234567Z";
-  const etimsMode = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "vscu";
+  const etimsMode = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "off";
   const invoice = (getDb().prepare("SELECT * FROM order_invoices WHERE order_id = ?").get(order.id) as any);
   const etimsNumber = invoice?.etims_invoice_number || "";
   const controlCode = invoice?.control_code || "";
@@ -928,19 +946,26 @@ app.get("/api/pos/receipt/:orderId", staffAuthMiddleware, (req: Request, res: Re
   const vscuReceiptNo = invoice?.vscu_receipt_no || "";
   const taxRate = Number(settings.taxRate || 16);
   const total = order.subtotal + (order.shippingFee || 0);
-  const modeLabel = etimsMode === "vscu" ? "VSCU" : "OSCU";
-  const itemsHtml = order.items.map((i: any) => {
+  const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
+  const hasEtims = !!(invoice?.etims_invoice_number);
+  const thermalItemsHtml = order.items.map((i: any) => {
     const isTx = i.taxable !== false;
     const vat = isTx ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0;
     const tt = isTx ? taxType : "E";
-    return `<tr><td>${escapeHtml(i.name)}</td><td>${i.quantity}</td><td>${currency} ${i.lineTotal.toLocaleString()}</td><td>${isTx ? currency + " " + vat.toLocaleString() : "N/A"}</td><td style="font-size:0.7rem">${tt}</td></tr>`;
+    let warrantyLine = "";
+    if (i.hasWarranty) {
+      const expiry = new Date(order.createdAt);
+      expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
+      warrantyLine = `<div style="font-size:0.65rem;color:#6b7280;">Warranty: ${i.warrantyDuration}mo (exp ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})</div>`;
+    }
+    return `<tr><td>${escapeHtml(i.name)}${warrantyLine ? "<br>" + warrantyLine : ""}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A"}</td><td style="font-size:0.7rem;text-align:center">${tt}</td></tr>`;
   }).join("");
   const totalVat = order.items.reduce((s: number, i: any) => {
     return s + (i.taxable !== false ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0);
   }, 0);
   const qrData = JSON.stringify({ inv: etimsNumber, dc: controlCode, pin: kraPin, amt: total, dt: order.createdAt, ri: vscuReceiptNo });
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}`;
-  const qrSmall = format === "thermal" ? qrUrl.replace("size=120x120", "size=100x100") : qrUrl;
+  const qrUrl = hasEtims ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}` : "";
+  const qrSmall = format === "thermal" && qrUrl ? qrUrl.replace("size=120x120", "size=100x100") : qrUrl;
 
   if (format === "a4") {
     const a4ItemsHtml = order.items.map((i: any) => {
@@ -953,8 +978,10 @@ app.get("/api/pos/receipt/:orderId", staffAuthMiddleware, (req: Request, res: Re
         expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
         warranty = `Yes (exp: ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})`;
       }
-      return `<tr><td>${escapeHtml(i.name)}</td><td>${i.quantity}</td><td>${currency} ${i.price.toLocaleString()}</td><td>${currency} ${i.lineTotal.toLocaleString()}</td><td>${isTx ? currency + " " + vat.toLocaleString() : "Exempt"}</td><td style="font-size:0.75rem">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
+      return `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
     }).join("");
+    const title = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
+    const subtitle = hasEtims ? `Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}` : `Invoice #${order.id}`;
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
@@ -963,8 +990,8 @@ app.get("/api/pos/receipt/:orderId", staffAuthMiddleware, (req: Request, res: Re
   .header h1 { margin: 0; font-size: 1.5rem; }
   .header .meta { font-size: 0.9rem; color: #6b7280; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-  th { font-size: 0.75rem; text-transform: uppercase; color: #6b7280; }
+  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
   .total-row { font-weight: 700; font-size: 1.1rem; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
   .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
@@ -978,7 +1005,7 @@ app.get("/api/pos/receipt/:orderId", staffAuthMiddleware, (req: Request, res: Re
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div><h1>E-TIMS TAX INVOICE / RECEIPT</h1><p class="meta">Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}</p></div>
+    <div><h1>${title}</h1><p class="meta">${subtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -995,26 +1022,29 @@ app.get("/api/pos/receipt/:orderId", staffAuthMiddleware, (req: Request, res: Re
       <div>Date: ${receiptDate || new Date(order.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}</div>
       <div>Status: ${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</div>
       <div>Tax Type: ${taxType === "A" ? "VAT A (16%)" : "Not Subject (E)"}</div>
-      <div>Mode: ${modeLabel}</div>
+      ${hasEtims ? `<div>Mode: ${modeLabel}</div>` : ""}
     </div>
   </div>
-  <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th><th>VAT</th><th>TT</th><th>Warranty</th></tr></thead><tbody>
+  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th><th style="text-align:right">VAT</th><th style="text-align:center">TT</th><th>Warranty</th></tr></thead><tbody>
     ${a4ItemsHtml}
   </tbody></table>
   <div style="text-align:right;">
-    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString()}</div>
-    <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString()}</div>
-    <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString()}</div>
-    <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString()}</div>
+    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
   </div>
   ${internalData ? `<div class="vscu-data"><strong>Internal Data:</strong> ${escapeHtml(internalData)}<br><strong>Signature Data:</strong> ${escapeHtml(signatureData)}</div>` : ""}
   ${order.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(order.notes)}</p>` : ""}
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
+  ${hasEtims ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
     <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
   <button class="print-btn" onclick="window.print()">Print</button>
-  <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>
+  <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>` : `
+  <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
+  <button class="print-btn" onclick="window.print()">Print</button>`}
+  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`);
     return;
@@ -1022,40 +1052,44 @@ app.get("/api/pos/receipt/:orderId", staffAuthMiddleware, (req: Request, res: Re
 
   res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>POS Receipt #${order.id} — ${store}</title>
 <style>
-  body { font-family: monospace; max-width: 300px; margin: 0 auto; padding: 0.5rem; font-size: 0.8rem; color: #1f2937; }
-  h1 { font-size: 1rem; text-align: center; margin: 0.5rem 0; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { padding: 0.25rem 0; text-align: left; }
-  .total { font-weight: 700; font-size: 1rem; border-top: 1px dashed #000; padding-top: 0.5rem; }
+  body { font-family: monospace; max-width: 380px; margin: 0 auto; padding: 0.75rem; font-size: 0.9rem; color: #1f2937; line-height: 1.6; }
+  h1 { font-size: 1.15rem; text-align: center; margin: 0.75rem 0; }
+  table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; }
+  th, td { padding: 0.35rem 0; text-align: left; }
+  .total { font-weight: 700; font-size: 1.1rem; border-top: 1px dashed #000; padding-top: 0.6rem; }
   .center { text-align: center; }
-  hr { border: none; border-top: 1px dashed #000; margin: 0.5rem 0; }
+  hr { border: none; border-top: 1px dashed #000; margin: 0.75rem 0; }
   .print-btn { display: block; margin: 1rem auto; padding: 0.5rem 1.5rem; background: #1f2937; color: #fff; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
+  .footer-note { text-align: center; font-size: 0.7rem; color: #9ca3af; margin-top: 0.75rem; border-top: 1px solid #e5e7eb; padding-top: 0.5rem; }
   @media print { body { margin: 0; } .print-btn { display: none; } }
 </style></head><body>
 <h1>${escapeHtml(store)}</h1>
-<div class="center">${escapeHtml(storeEmail)}<br>KRA PIN: ${escapeHtml(kraPin)}<br>Mode: ${modeLabel}</div>
+<div class="center">${escapeHtml(storeEmail)}</div>
 <hr>
-<div class="center"><strong>E-TIMS TAX RECEIPT</strong></div>
+<div class="center"><strong>${hasEtims ? "E-TIMS TAX RECEIPT" : "SALES RECEIPT"}</strong></div>
+${hasEtims ? `
 <div>eTIMS No: ${escapeHtml(etimsNumber)}</div>
 <div>Control Code: ${escapeHtml(controlCode)}</div>
 <div>Receipt No (${modeLabel}): ${vscuReceiptNo}</div>
-${internalData ? `<div style="font-size:0.65rem;word-break:break-all">Int Data: ${escapeHtml(internalData.slice(0, 20))}...</div>` : ""}
+${internalData ? `<div style="font-size:0.65rem;word-break:break-all">Int Data: ${escapeHtml(internalData.slice(0, 20))}...</div>` : ""}` : ""}
 <div>Date: ${receiptDate || new Date(order.createdAt).toLocaleString("en-GB")}</div>
 <div>Receipt #: ${order.id}</div>
+${hasEtims ? `<div>KRA PIN: ${escapeHtml(kraPin)}</div>` : ""}
 <div>Tax Type: ${taxType === "A" ? "VAT 16% (A)" : "Not Subject (E)"}</div>
-<div>Mode: ${modeLabel}</div>
+${hasEtims ? `<div>Mode: ${modeLabel}</div>` : ""}
 <hr>
-<table><thead><tr><th>Item</th><th>Qty</th><th>Total</th><th>VAT</th><th>T</th></tr></thead><tbody>${itemsHtml}</tbody></table>
+<table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th><th style="text-align:right">VAT</th><th style="text-align:center">T</th></tr></thead><tbody>${thermalItemsHtml}</tbody></table>
 <hr>
-<div class="total">Total: ${currency} ${total.toLocaleString()}</div>
-<div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString()}</div>
+<div class="total">Total: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+<div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 <hr>
-<div class="center">${qrUrl ? `<img src="${qrSmall}" alt="eTIMS QR" style="width:80px;height:80px;" /><br>` : ""}Verify at https://itax.kra.go.ke</div>
-<button class="print-btn" onclick="window.print()">Print Receipt</button>
+${hasEtims ? `<div class="center">${qrUrl ? `<img src="${qrSmall}" alt="eTIMS QR" style="width:80px;height:80px;" /><br>` : ""}Verify at https://itax.kra.go.ke</div>` : ""}
+<button class="print-btn" onclick="window.print()">${hasEtims ? "Print Receipt" : "Print"}</button>
+<div class="footer-note">Provided by ${escapeHtml(store)}</div>
 </body></html>`);
 });
 
-app.get("/api/pos/customers", staffAuthMiddleware, (req: Request, res: Response) => {
+app.get("/api/pos/customers", posAuthMiddleware, (req: Request, res: Response) => {
   const q = (req.query.q as string || "").trim();
   if (q.length < 2) { res.json({ customers: [] }); return; }
   const like = `%${q}%`;
@@ -1149,7 +1183,7 @@ app.get("/api/admin/orders/:id/invoice", (req: Request, res: Response) => {
   const storeEmail = settings.email || "info@gearandglitch.com";
   const currency = settings.currency || "KES";
   const kraPin = (getDb().prepare("SELECT value FROM settings WHERE key = 'kra_pin'").get() as any)?.value || "P051234567Z";
-  const etimsMode = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "vscu";
+  const etimsMode = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "off";
   const invoice = (getDb().prepare("SELECT * FROM order_invoices WHERE order_id = ?").get(order.id) as any);
   const etimsNumber = invoice?.etims_invoice_number || "";
   const controlCode = invoice?.control_code || "";
@@ -1159,6 +1193,7 @@ app.get("/api/admin/orders/:id/invoice", (req: Request, res: Response) => {
   const taxType = invoice?.tax_type || "A";
   const vscuReceiptNo = invoice?.vscu_receipt_no || "";
   const taxRate = Number(settings.taxRate || 16);
+  const hasEtims = !!(invoice?.etims_invoice_number);
   const itemsHtml = order.items.map((i: any) => {
     let warranty = "\u2014";
     if (i.hasWarranty) {
@@ -1169,15 +1204,17 @@ app.get("/api/admin/orders/:id/invoice", (req: Request, res: Response) => {
     const isTx = i.taxable !== false;
     const vat = isTx ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0;
     const tt = isTx ? taxType : "E";
-    return `<tr><td>${escapeHtml(i.name)}</td><td>${i.quantity}</td><td>${currency} ${i.price.toLocaleString()}</td><td>${currency} ${i.lineTotal.toLocaleString()}</td><td>${isTx ? currency + " " + vat.toLocaleString() : "Exempt"}</td><td style="font-size:0.75rem">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
+    return `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
   }).join("");
   const total = order.subtotal + (order.shippingFee || 0);
   const totalVat = order.items.reduce((s: number, i: any) => {
     return s + (i.taxable !== false ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0);
   }, 0);
   const qrData = JSON.stringify({ inv: etimsNumber, dc: controlCode, pin: kraPin, amt: total, dt: order.createdAt, ri: vscuReceiptNo });
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}`;
-  const modeLabel = etimsMode === "vscu" ? "VSCU" : "OSCU";
+  const qrUrl = hasEtims ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}` : "";
+  const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
+  const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
+  const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}` : `Invoice #${order.id}`;
   res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
@@ -1186,8 +1223,8 @@ app.get("/api/admin/orders/:id/invoice", (req: Request, res: Response) => {
   .header h1 { margin: 0; font-size: 1.5rem; }
   .header .meta { font-size: 0.9rem; color: #6b7280; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-  th { font-size: 0.75rem; text-transform: uppercase; color: #6b7280; }
+  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
   .total-row { font-weight: 700; font-size: 1.1rem; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
   .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
@@ -1201,7 +1238,7 @@ app.get("/api/admin/orders/:id/invoice", (req: Request, res: Response) => {
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div><h1>E-TIMS TAX INVOICE / RECEIPT</h1><p class="meta">Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}</p></div>
+    <div><h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -1218,26 +1255,29 @@ app.get("/api/admin/orders/:id/invoice", (req: Request, res: Response) => {
       <div>Date: ${receiptDate || new Date(order.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}</div>
       <div>Status: ${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</div>
       <div>Tax Type: ${taxType === "A" ? "VAT A (16%)" : "Not Subject (E)"}</div>
-      <div>Mode: ${modeLabel}</div>
+      ${hasEtims ? `<div>Mode: ${modeLabel}</div>` : ""}
     </div>
   </div>
-  <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th><th>VAT</th><th>TT</th><th>Warranty</th></tr></thead><tbody>
+  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th><th style="text-align:right">VAT</th><th style="text-align:center">TT</th><th>Warranty</th></tr></thead><tbody>
     ${itemsHtml}
   </tbody></table>
   <div style="text-align:right;">
-    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString()}</div>
-    <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString()}</div>
-    <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString()}</div>
-    <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString()}</div>
+    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
   </div>
   ${internalData ? `<div class="vscu-data"><strong>Internal Data:</strong> ${escapeHtml(internalData)}<br><strong>Signature Data:</strong> ${escapeHtml(signatureData)}</div>` : ""}
   ${order.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(order.notes)}</p>` : ""}
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
+  ${hasEtims ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
     <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
   <button class="print-btn" onclick="window.print()">Print</button>
-  <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>
+  <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>` : `
+  <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
+  <button class="print-btn" onclick="window.print()">Print</button>`}
+  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`);
 });
@@ -1259,7 +1299,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, (req: Request, res: R
   const storeEmail = settings.email || "info@gearandglitch.com";
   const currency = settings.currency || "KES";
   const kraPin = (getDb().prepare("SELECT value FROM settings WHERE key = 'kra_pin'").get() as any)?.value || "P051234567Z";
-  const etimsMode = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "vscu";
+  const etimsMode = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "off";
   const invoice = (getDb().prepare("SELECT * FROM order_invoices WHERE order_id = ?").get(order.id) as any);
   const etimsNumber = invoice?.etims_invoice_number || "";
   const controlCode = invoice?.control_code || "";
@@ -1269,6 +1309,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, (req: Request, res: R
   const taxType = invoice?.tax_type || "A";
   const vscuReceiptNo = invoice?.vscu_receipt_no || "";
   const taxRate = Number(settings.taxRate || 16);
+  const hasEtims = !!(invoice?.etims_invoice_number);
   const itemsHtml = order.items.map((i: any) => {
     let warranty = "\u2014";
     if (i.hasWarranty) {
@@ -1279,15 +1320,17 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, (req: Request, res: R
     const isTx = i.taxable !== false;
     const vat = isTx ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0;
     const tt = isTx ? taxType : "E";
-    return `<tr><td>${escapeHtml(i.name)}</td><td>${i.quantity}</td><td>${currency} ${i.price.toLocaleString()}</td><td>${currency} ${i.lineTotal.toLocaleString()}</td><td>${isTx ? currency + " " + vat.toLocaleString() : "Exempt"}</td><td style="font-size:0.75rem">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
+    return `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
   }).join("");
   const total = order.subtotal + (order.shippingFee || 0);
   const totalVat = order.items.reduce((s: number, i: any) => {
     return s + (i.taxable !== false ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0);
   }, 0);
   const qrData = JSON.stringify({ inv: etimsNumber, dc: controlCode, pin: kraPin, amt: total, dt: order.createdAt, ri: vscuReceiptNo });
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}`;
-  const modeLabel = etimsMode === "vscu" ? "VSCU" : "OSCU";
+  const qrUrl = hasEtims ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}` : "";
+  const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
+  const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
+  const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}` : `Invoice #${order.id}`;
   res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
@@ -1296,8 +1339,8 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, (req: Request, res: R
   .header h1 { margin: 0; font-size: 1.5rem; }
   .header .meta { font-size: 0.9rem; color: #6b7280; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-  th { font-size: 0.75rem; text-transform: uppercase; color: #6b7280; }
+  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
   .total-row { font-weight: 700; font-size: 1.1rem; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
   .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
@@ -1311,7 +1354,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, (req: Request, res: R
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div><h1>E-TIMS TAX INVOICE / RECEIPT</h1><p class="meta">Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}</p></div>
+    <div><h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -1328,26 +1371,29 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, (req: Request, res: R
       <div>Date: ${receiptDate || new Date(order.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}</div>
       <div>Status: ${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</div>
       <div>Tax Type: ${taxType === "A" ? "VAT A (16%)" : "Not Subject (E)"}</div>
-      <div>Mode: ${modeLabel}</div>
+      ${hasEtims ? `<div>Mode: ${modeLabel}</div>` : ""}
     </div>
   </div>
-  <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th><th>VAT</th><th>TT</th><th>Warranty</th></tr></thead><tbody>
+  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th><th style="text-align:right">VAT</th><th style="text-align:center">TT</th><th>Warranty</th></tr></thead><tbody>
     ${itemsHtml}
   </tbody></table>
   <div style="text-align:right;">
-    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString()}</div>
-    <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString()}</div>
-    <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString()}</div>
-    <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString()}</div>
+    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
   </div>
   ${internalData ? `<div class="vscu-data"><strong>Internal Data:</strong> ${escapeHtml(internalData)}<br><strong>Signature Data:</strong> ${escapeHtml(signatureData)}</div>` : ""}
   ${order.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(order.notes)}</p>` : ""}
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
+  ${hasEtims ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
     <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
   <button class="print-btn" onclick="window.print()">Print</button>
-  <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>
+  <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>` : `
+  <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
+  <button class="print-btn" onclick="window.print()">Print</button>`}
+  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`);
 });
@@ -1404,6 +1450,115 @@ app.post("/api/admin/order-invoices/:id/pay", ownerAuthMiddleware, (req: Request
   res.json({ ok: true });
 });
 
+// ============ CREDIT NOTES ============
+
+app.get("/api/admin/credit-notes", ownerAuthMiddleware, (_req: Request, res: Response) => {
+  res.json({ creditNotes: listCreditNotes() });
+});
+
+app.get("/api/admin/credit-notes/:id", ownerAuthMiddleware, (req: Request, res: Response) => {
+  const cn = getCreditNote(Number(req.params.id));
+  if (!cn) { res.status(404).json({ error: "Credit note not found." }); return; }
+  res.json(cn);
+});
+
+app.post("/api/admin/credit-notes", ownerAuthMiddleware, (req: Request, res: Response) => {
+  const { orderId, reason, reasonCode } = req.body || {};
+  if (!orderId) { res.status(400).json({ error: "orderId is required." }); return; }
+  const user = (req as any).user;
+  const resolvedReasonCode = typeof reasonCode === "string" && reasonCode.trim() ? reasonCode : "13";
+  const cn = createCreditNote(Number(orderId), reason || "", user.sub, resolvedReasonCode);
+  if (!cn) { res.status(400).json({ error: "Order not found or credit note creation failed." }); return; }
+
+  submitCreditNoteToEtims(cn.id, resolvedReasonCode);
+  const finalCn = getCreditNote(cn.id);
+  res.status(201).json(finalCn || cn);
+});
+
+app.get("/api/admin/credit-notes/:id/view", (req: Request, res: Response) => {
+  const cn = getCreditNote(Number(req.params.id));
+  if (!cn) { res.status(404).send("Credit note not found."); return; }
+  const order = getOrder(cn.orderId);
+  if (!order) { res.status(404).send("Order not found."); return; }
+  const settings = getSettings();
+  const store = settings.storeName || "Gear&Glitch";
+  const storeEmail = settings.email || "";
+  const currency = settings.currency || "KES";
+  const invoice = (() => { try { return getDb().prepare("SELECT * FROM order_invoices WHERE order_id = ?").get(cn.orderId) as any; } catch { return null; } })();
+  const etimsNumber = cn.etimsCnNumber || "";
+  const controlCode = cn.etimsControlCode || "";
+  const etimsSerialNumber = cn.etimsSerialNumber ? String(cn.etimsSerialNumber) : "";
+  const submissionStatus = cn.status === "submitted" ? "Submitted to eTIMS" : "Pending eTIMS submission";
+  const submittedAt = cn.etimsSubmittedAt || "";
+  const internalData = cn.etimsInternalData || "";
+  const signatureData = cn.etimsSignatureData || "";
+
+  const itemsHtml = cn.items.map((i: any) =>
+    `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`
+  ).join("");
+
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Credit Note #${cn.id} — ${store}</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
+  .cn { border: 2px solid #dc2626; border-radius: 16px; padding: 2rem; }
+  .header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem; border-bottom: 2px solid #dc2626; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+  .header h1 { margin: 0; font-size: 1.5rem; color: #dc2626; }
+  .header .meta { font-size: 0.9rem; color: #6b7280; }
+  table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
+  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
+  .total-row { font-weight: 700; font-size: 1.1rem; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
+  .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
+  .footer { margin-top: 2rem; font-size: 0.85rem; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
+  .print-btn { display: block; margin: 1.5rem auto 0; padding: 0.6rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  .print-btn:hover { background: #b91c1c; }
+  .badge { display: inline-block; background: #fee2e2; color: #dc2626; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
+  @media print { body { margin: 0; } .cn { border: none; } .print-btn { display: none; } }
+</style></head><body>
+<div class="cn">
+  <div class="header">
+    <div><h1>CREDIT NOTE</h1><p class="meta">Credit Note #${cn.id} | Original Order #${cn.orderId}${etimsNumber ? " | eTIMS Invoice: " + escapeHtml(etimsNumber) : ""}</p></div>
+    <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <span class="badge">${cn.status.toUpperCase()}</span>
+    <span style="font-size:0.9rem;color:#6b7280;">Issued: ${new Date(cn.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+  </div>
+  ${cn.reason ? `<p style="background:#fef2f2;padding:0.75rem;border-radius:8px;font-size:0.9rem;"><strong>Reason:</strong> ${escapeHtml(cn.reason)}</p>` : ""}
+  <div class="info-grid">
+    <div>
+      <div class="label">Original Order</div>
+      <div><strong>Order #${cn.orderId}</strong></div>
+      <div>Customer: ${escapeHtml(order.shippingName || order.customerName || "—")}</div>
+      <div>Date: ${new Date(order.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}</div>
+    </div>
+    <div>
+      <div class="label">eTIMS Credit Note</div>
+      <div><strong>${escapeHtml(submissionStatus)}</strong></div>
+      <div>Credit Note No: ${etimsNumber ? escapeHtml(etimsNumber) : "Pending"}</div>
+      <div>Control Code: ${controlCode ? escapeHtml(controlCode) : "Pending"}</div>
+      ${etimsSerialNumber ? `<div>Serial No: ${escapeHtml(etimsSerialNumber)}</div>` : ""}
+      ${submittedAt ? `<div>Submitted: ${escapeHtml(submittedAt)}</div>` : ""}
+    </div>
+  </div>
+  ${(internalData || signatureData) ? `<div class="etims-box">
+    <div class="label">eTIMS Audit Data</div>
+    ${internalData ? `<div><strong>Internal Data:</strong> ${escapeHtml(internalData)}</div>` : ""}
+    ${signatureData ? `<div><strong>Signature Data:</strong> ${escapeHtml(signatureData)}</div>` : ""}
+  </div>` : ""}
+  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead><tbody>
+    ${itemsHtml}
+  </tbody></table>
+  <div style="text-align:right;">
+    <div class="total-row">Total Credit: ${currency} ${cn.totalAmount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+  </div>
+  <button class="print-btn" onclick="window.print()">Print Credit Note</button>
+  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
+</div>
+</body></html>`);
+});
+
 // ============ EXAMPLE INVOICE ============
 
 app.get("/api/invoices/example/:id", (req: Request, res: Response) => {
@@ -1442,9 +1597,9 @@ app.get("/api/invoices/example/:id", (req: Request, res: Response) => {
   <p><strong>Plan:</strong> ${inv.planName}</p>
   <p><strong>Period:</strong> ${inv.period}</p>
   <table><thead><tr><th>Description</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>
-    ${inv.items.map(i => `<tr><td>${i.desc}</td><td>${i.qty}</td><td>KES ${i.price.toLocaleString()}</td><td>KES ${(i.price * i.qty).toLocaleString()}</td></tr>`).join("")}
+    ${inv.items.map(i => `<tr><td>${i.desc}</td><td>${i.qty}</td><td>KES ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td>KES ${(i.price * i.qty).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`).join("")}
   </tbody></table>
-  <div class="total">Total: KES ${inv.amount.toLocaleString()}</div>
+  <div class="total">Total: KES ${inv.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
   <p><span class="status ${inv.status}">${inv.status.toUpperCase()}</span> ${inv.paidAt ? "Paid on " + new Date(inv.paidAt).toLocaleDateString("en-GB") : ""}</p>
   <div class="footer">Gear&Glitch — M-Pesa Till: 123456 | payments@gearandglitch.com</div>
 </div>
@@ -1525,7 +1680,7 @@ app.get("/api/categories", (_req: Request, res: Response) => {
 });
 
 app.post("/api/categories", adminAuthMiddleware, (req: Request, res: Response) => {
-  const { id, label, group } = req.body || {};
+  const { id, label, group, showOnPos } = req.body || {};
   if (!id || !label) {
     res.status(400).json({ error: "Category id and label are required." });
     return;
@@ -1538,15 +1693,17 @@ app.post("/api/categories", adminAuthMiddleware, (req: Request, res: Response) =
     id: String(id).trim(),
     label: String(label).trim(),
     group: String(group || "").trim(),
+    showOnPos: showOnPos !== false,
   });
   res.status(201).json({ category });
 });
 
 app.put("/api/categories/:id", adminAuthMiddleware, (req: Request, res: Response) => {
-  const { label, group } = req.body || {};
+  const { label, group, showOnPos } = req.body || {};
   const category = updateCategory(String(req.params.id), {
     label: String(label || "").trim(),
     group: String(group || "").trim(),
+    showOnPos: showOnPos !== undefined ? (showOnPos ? 1 : 0) : undefined,
   });
   if (!category) { res.status(404).json({ error: "Category not found." }); return; }
   res.json({ category });
@@ -2520,16 +2677,49 @@ app.get("/api/reports/purchases", adminAuthMiddleware, (_req: Request, res: Resp
 
 // ============ ADMIN CREATE PROVIDER ============
 app.post("/api/admin/providers", ownerAuthMiddleware, (req: Request, res: Response) => {
-  const { companyName, contactName, email, password, phone } = req.body || {};
+  const { companyName, contactName, email, password, phone, pin } = req.body || {};
   if (!companyName || !contactName || !email || !password) { res.status(400).json({ error: "companyName, contactName, email, password are required." }); return; }
+  if (pin && (pin.length < 6 || !/^\d+$/.test(pin))) { res.status(400).json({ error: "PIN must be at least 6 digits." }); return; }
   const existing = findProviderByEmail(email);
   if (existing) { res.status(400).json({ error: "Provider with this email already exists." }); return; }
-  const provider = createProvider(companyName, contactName, email, password, phone || "");
+  const provider = createProvider(companyName, contactName, email, password, phone || "", pin || "");
   if (!provider) { res.status(400).json({ error: "Could not create provider." }); return; }
-  // Assign starter plan by default
   const starter = getSubscriptionPlan("starter");
   if (starter) assignPlanToProvider(provider.id, starter.id, { createdBy: (req as any).user.sub, startDate: new Date().toISOString().slice(0, 10) });
   res.status(201).json(provider);
+});
+
+app.put("/api/admin/providers/:id", ownerAuthMiddleware, (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = findProviderById(id);
+  if (!existing) { res.status(404).json({ error: "Provider not found." }); return; }
+  const { companyName, contactName, email, phone, pin, password } = req.body || {};
+  if (email && email !== existing.email) {
+    const dup = findProviderByEmail(email);
+    if (dup) { res.status(400).json({ error: "Email already in use." }); return; }
+  }
+  if (pin !== undefined && pin !== "" && (pin.length < 6 || !/^\d+$/.test(pin))) { res.status(400).json({ error: "PIN must be at least 6 digits." }); return; }
+  const ok = updateProvider(id, {
+    company_name: companyName,
+    contact_name: contactName,
+    email,
+    phone,
+    pin: pin === "" ? "" : pin,
+    password,
+  });
+  if (!ok) { res.status(400).json({ error: "No fields to update." }); return; }
+  res.json(findProviderById(id));
+});
+
+app.post("/api/provider/verify-pin", providerAuthMiddleware, (req: Request, res: Response) => {
+  const { pin } = req.body || {};
+  if (!pin) { res.status(400).json({ error: "PIN is required." }); return; }
+  const providerId = (req as any).provider.sub;
+  if (verifyProviderPin(providerId, pin)) {
+    res.json({ ok: true });
+  } else {
+    res.status(401).json({ error: "Wrong PIN." });
+  }
 });
 
 // ============ WISHLIST ============
@@ -2755,6 +2945,69 @@ app.put("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports
   if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
   if (!customerId && !notes && !items) { res.status(400).json({ error: "Nothing to update." }); return; }
   res.json({ message: "Quote updated." });
+});
+
+app.get("/api/admin/quotes/:id/generate", staffAuthMiddleware, requirePermission("reports:view"), (req: Request, res: Response) => {
+  const quote = getQuote(Number(req.params.id));
+  if (!quote) { res.status(404).json({ error: "Quote not found." }); return; }
+  const customer = getCustomerDetails(quote.customerId);
+  const settings = getSettings();
+  const store = settings.storeName || "Gear&Glitch";
+  const storeEmail = settings.email || "info@gearandglitch.com";
+  const currency = settings.currency || "KES";
+  const itemsHtml = (quote.items || []).map((i: any) =>
+    `<tr><td>${escapeHtml(i.productName)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${Number(i.unitPrice).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${Number(i.lineTotal).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`
+  ).join("");
+  const total = (quote.items || []).reduce((s: number, i: any) => s + Number(i.lineTotal), 0);
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Quote #${quote.quoteNumber} — ${store}</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
+  .quote { border: 1px solid #e5e7eb; border-radius: 16px; padding: 2rem; }
+  .header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem; border-bottom: 2px solid #1f2937; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+  .header h1 { margin: 0; font-size: 1.5rem; }
+  .header .meta { font-size: 0.9rem; color: #6b7280; }
+  table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
+  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
+  .total-row { font-weight: 700; font-size: 1.1rem; }
+  .footer { margin-top: 2rem; font-size: 0.85rem; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
+  .print-btn { display: block; margin: 1.5rem auto 0; padding: 0.6rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  .print-btn:hover { background: #374151; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
+  .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
+  @media print { body { margin: 0; } .quote { border: none; } .print-btn { display: none; } }
+</style></head><body>
+<div class="quote">
+  <div class="header">
+    <div><h1>PRICE QUOTATION</h1><p class="meta">Quote #${escapeHtml(quote.quoteNumber)}</p></div>
+    <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
+  </div>
+  <div class="info-grid">
+    <div>
+      <div class="label">Bill to</div>
+      <div><strong>${escapeHtml(customer?.name || "—")}</strong></div>
+      ${customer?.email ? `<div>${escapeHtml(customer.email)}</div>` : ""}
+      ${customer?.phone ? `<div>${escapeHtml(customer.phone)}</div>` : ""}
+    </div>
+    <div>
+      <div class="label">Quote details</div>
+      <div>Date: ${quote.createdAt ? new Date(quote.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }) : "—"}</div>
+      <div>Status: ${quote.status || "draft"}</div>
+      
+    </div>
+  </div>
+  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead><tbody>
+    ${itemsHtml}
+  </tbody></table>
+  <div style="text-align:right;">
+    <div class="total-row">Total: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+  </div>
+  ${quote.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(quote.notes)}</p>` : ""}
+  <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
+  <button class="print-btn" onclick="window.print()">Print</button>
+  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
+</div>
+</body></html>`);
 });
 
 app.get("/api/reports/sales/trends", ownerAuthMiddleware, requirePermission("reports:view"), (req: Request, res: Response) => {

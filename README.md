@@ -92,6 +92,7 @@ Full store management with 18 sections:
 - **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes
 - **Providers** — View providers, assign plans, custom pricing, status
 - **Invoices** — Generate invoices per provider, mark paid
+- **Credit Notes** — Create eTIMS-compliant credit notes from invoices in admin and owner views, with printable audit details and submission tracking
 - **Reports** — Sales Report with combined/per-branch filtering, export to Excel (CSV) or printable PDF
 - **Stock on Hand** — Current stock levels, snapshot history, low-stock alerts
 - **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow

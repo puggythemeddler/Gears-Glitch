@@ -19,7 +19,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[] = [
   {
@@ -52,6 +52,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "plans", label: "Plans" },
       { key: "providers", label: "Providers" },
       { key: "invoices", label: "Invoices" },
+      { key: "credit-notes", label: "Credit Notes" },
       { key: "reports", label: "Reports" },
       { key: "stock-on-hand", label: "Stock on Hand" },
       { key: "stock-transfers", label: "Stock Transfers" },
@@ -296,6 +297,7 @@ export default function AdminPage() {
             {view === "plans" && <AdminPlans />}
             {view === "providers" && <AdminProviders />}
             {view === "invoices" && <AdminInvoices />}
+            {view === "credit-notes" && <AdminCreditNotes />}
             {view === "reports" && <AdminReports />}
             {view === "stock-on-hand" && <AdminStockOnHand />}
             {view === "stock-transfers" && <AdminStockTransfers />}
@@ -352,6 +354,7 @@ function AdminCategories() {
   const [detail, setDetail] = useState<{ mode: "add" | "edit"; cat: any } | null>(null);
   const [formLabel, setFormLabel] = useState("");
   const [formGroup, setFormGroup] = useState("");
+  const [formShowOnPos, setFormShowOnPos] = useState(true);
   const [catSubs, setCatSubs] = useState<any[]>([]);
   const [newSubId, setNewSubId] = useState("");
   const [newSubName, setNewSubName] = useState("");
@@ -368,9 +371,9 @@ function AdminCategories() {
     try {
       if (detail?.mode === "add") {
         const id = formLabel.trim().toLowerCase().replace(/\s+/g, "-");
-        await api("/api/categories", { method: "POST", body: JSON.stringify({ id, label: formLabel.trim(), group: formGroup.trim() }) });
+        await api("/api/categories", { method: "POST", body: JSON.stringify({ id, label: formLabel.trim(), group: formGroup.trim(), showOnPos: formShowOnPos }) });
       } else if (detail?.mode === "edit") {
-        await api(`/api/categories/${encodeURIComponent(detail.cat.id)}`, { method: "PUT", body: JSON.stringify({ label: formLabel.trim(), group: formGroup.trim() }) });
+        await api(`/api/categories/${encodeURIComponent(detail.cat.id)}`, { method: "PUT", body: JSON.stringify({ label: formLabel.trim(), group: formGroup.trim(), showOnPos: formShowOnPos }) });
       }
       setDetail(null); refetch();
     } catch { alert("Failed to save category"); }
@@ -410,12 +413,12 @@ function AdminCategories() {
 
   function openAdd() {
     setDetail({ mode: "add", cat: null });
-    setFormLabel(""); setFormGroup(""); setCatSubs([]);
+    setFormLabel(""); setFormGroup(""); setFormShowOnPos(true); setCatSubs([]);
   }
 
   function openEdit(cat: any) {
     setDetail({ mode: "edit", cat });
-    setFormLabel(cat.label); setFormGroup(cat.group || "");
+    setFormLabel(cat.label); setFormGroup(cat.group || ""); setFormShowOnPos(cat.showOnPos !== false);
     fetch(`/api/categories/${encodeURIComponent(cat.id)}/subcategories`).then(r => r.json()).then(d => setCatSubs(d.subcategories || [])).catch(() => setCatSubs([]));
   }
 
@@ -437,6 +440,7 @@ function AdminCategories() {
         <div className="panel" style={{ maxWidth: 600, marginBottom: "1.5rem" }}>
           <div className="field"><label>Label<input value={formLabel} onChange={(e) => setFormLabel(e.target.value)} placeholder="Laptops" /></label></div>
           <div className="field"><label>Group<input value={formGroup} onChange={(e) => setFormGroup(e.target.value)} placeholder="e.g. Laptops, PCs" /></label></div>
+          <div className="field" style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}><label style={{ margin: 0 }}>Show on POS</label><input type="checkbox" checked={formShowOnPos} onChange={(e) => setFormShowOnPos(e.target.checked)} style={{ width: "auto" }} /></div>
           {isNew && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>ID will be auto-generated as: <code>{catId}</code></p>}
           <RippleButton onClick={saveCat}>Save Category</RippleButton>
         </div>
@@ -497,7 +501,7 @@ function AdminCategories() {
       </div>
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>ID</th><th>Label</th><th>Group</th><th>Subcategories</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Label</th><th>Group</th><th>POS</th><th>Subcategories</th><th></th></tr></thead>
           <tbody>
             {categories.map((c: any) => {
               const subs = allSubs.filter((s: any) => s.category_ids.includes(c.id));
@@ -506,6 +510,7 @@ function AdminCategories() {
                   <td><code>{c.id}</code></td>
                   <td>{escapeHtml(c.label)}</td>
                   <td style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{c.group || "—"}</td>
+                  <td style={{ fontSize: "0.85rem", textAlign: "center" }}>{c.showOnPos !== false ? "✓" : "✗"}</td>
                   <td style={{ fontSize: "0.85rem" }}>{subs.map((s: any) => s.name).join(", ") || "—"}</td>
                   <td>
                     <RippleButton size="small" variant="ghost" onClick={() => openEdit(c)}>Edit</RippleButton>
@@ -627,7 +632,20 @@ function AdminOrders() {
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
           <h2 style={{ margin: 0 }}>Items</h2>
-          <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <RippleButton onClick={async () => {
+              const reason = prompt("Reason for credit note (optional):");
+              if (reason === null) return;
+              try {
+                await api("/api/admin/credit-notes", {
+                  method: "POST",
+                  body: JSON.stringify({ orderId: o.id, reason: reason || "" }),
+                });
+                alert("Credit note created.");
+              } catch { alert("Failed to create credit note."); }
+            }} style={{ background: "var(--primary)", color: "#fff" }}>Credit Note</RippleButton>
+            <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>
+          </div>
         </div>
         <div className="table-wrap">
           <table className="data-table">
@@ -1219,7 +1237,32 @@ function AdminPlans() {
 
 // ===================== PROVIDERS =====================
 function AdminProviders() {
-  const { data: pData, loading, error } = useFetch(() => api<{ providers: Provider[] }>("/api/admin/providers"), []);
+  const { data: pData, loading, error, refetch } = useFetch(() => api<{ providers: Provider[] }>("/api/admin/providers"), []);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" });
+  const [editing, setEditing] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function createProvider(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true);
+    try {
+      await api("/api/admin/providers", { method: "POST", body: JSON.stringify(form) });
+      setShowForm(false); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch();
+    } catch (err: any) { alert(err.message); } finally { setSaving(false); }
+  }
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true);
+    try {
+      await api(`/api/admin/providers/${editing.id}`, { method: "PUT", body: JSON.stringify(form) });
+      setEditing(null); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch();
+    } catch (err: any) { alert(err.message); } finally { setSaving(false); }
+  }
+
+  function openEdit(p: any) {
+    setForm({ companyName: p.companyName, contactName: p.contactName, email: p.email, password: "", phone: p.phone || "", pin: "" });
+    setEditing(p);
+  }
 
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
@@ -1227,10 +1270,34 @@ function AdminProviders() {
 
   return (
     <>
-      <h1>Providers</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <h1 style={{ margin: 0 }}>Providers</h1>
+        {!editing && <RippleButton size="small" onClick={() => setShowForm(!showForm)}>{showForm ? "Cancel" : "+ Add"}</RippleButton>}
+      </div>
+      {(showForm || editing) && (
+        <div className="panel" style={{ marginBottom: "1rem", maxWidth: 400 }}>
+          <form onSubmit={editing ? saveEdit : createProvider}>
+            <h3 style={{ marginTop: 0 }}>{editing ? `Edit ${escapeHtml(editing.companyName)}` : "New Provider"}</h3>
+            <div className="field"><label>Company<input value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} required /></label></div>
+            <div className="field"><label>Contact name<input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} required /></label></div>
+            <div className="field"><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label></div>
+            {editing ? (
+              <div className="field"><label>New password (leave blank to keep)<input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label></div>
+            ) : (
+              <div className="field"><label>Password<input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label></div>
+            )}
+            <div className="field"><label>Phone<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label></div>
+            <div className="field"><label>PIN (min 6 digits, leave blank to keep)<input type="tel" value={form.pin} onChange={(e) => { const v = e.target.value.replace(/\D/g, ""); setForm({ ...form, pin: v }); }} placeholder="e.g. 123456" minLength={6} /></label></div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <RippleButton type="submit" loading={saving}>{editing ? "Save" : "Add provider"}</RippleButton>
+              {editing && <RippleButton variant="ghost" onClick={() => { setEditing(null); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); }}>Cancel</RippleButton>}
+            </div>
+          </form>
+        </div>
+      )}
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th></tr></thead>
+          <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {providers.map((p) => (
               <tr key={p.id}>
@@ -1239,9 +1306,10 @@ function AdminProviders() {
                 <td>{escapeHtml(p.email)}</td>
                 <td>{escapeHtml(p.phone || "—")}</td>
                 <td><span className="plan-status">{p.status}</span></td>
+                <td><RippleButton size="small" variant="ghost" onClick={() => openEdit(p)}>Edit</RippleButton></td>
               </tr>
             ))}
-            {providers.length === 0 && <tr><td colSpan={5}><EmptyState icon="default" title="No providers" description="Provider companies will appear here once added." /></td></tr>}
+            {providers.length === 0 && <tr><td colSpan={6}><EmptyState icon="default" title="No providers" description="Provider companies will appear here once added." /></td></tr>}
           </tbody>
         </table>
       </div>
@@ -1622,6 +1690,20 @@ function AdminInvoices() {
     try { await api("/api/admin/invoices/generate", { method: "POST" }); refetch(); } catch { alert("Generation failed"); }
   }
 
+  async function createCreditNote(orderId: number) {
+    const reason = window.prompt("Reason for credit note (optional):");
+    if (reason === null) return;
+    try {
+      const created = await api<any>("/api/admin/credit-notes", {
+        method: "POST",
+        body: JSON.stringify({ orderId, reason: reason.trim() }),
+      });
+      window.open(`/api/admin/credit-notes/${created.id}/view`, "_blank", "noopener,noreferrer");
+    } catch (err: any) {
+      alert(err.message || "Failed to create credit note.");
+    }
+  }
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -1687,6 +1769,7 @@ function AdminInvoices() {
                         <td>
                           {inv.status !== "paid" && <button className="btn btn-sm" onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
                           <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); window.open(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch { alert("Failed"); } }}>View</button>
+                          <button className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "var(--primary)", color: "#fff" }} onClick={() => createCreditNote(inv.orderId)}>Credit Note</button>
                         </td>
                       </tr>
                     ))}
@@ -1698,6 +1781,46 @@ function AdminInvoices() {
           })()}
         </>
       )}
+    </>
+  );
+}
+
+// ===================== CREDIT NOTES =====================
+function AdminCreditNotes() {
+  const { data, loading, error, refetch } = useFetch(() => api<{ creditNotes: any[] }>('/api/admin/credit-notes'), []);
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+
+  const creditNotes = data?.creditNotes || [];
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h1 style={{ margin: 0 }}>Credit Notes</h1>
+        <RippleButton size="small" onClick={() => refetch()}>Refresh</RippleButton>
+      </div>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>#</th><th>Order</th><th>Customer</th><th>Amount</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {creditNotes.map((note: any) => (
+              <tr key={note.id}>
+                <td>#{note.id}</td>
+                <td>#{note.orderId}</td>
+                <td>{escapeHtml(note.customerName || note.customer_name || '—')}</td>
+                <td>{formatPrice(note.totalAmount || 0)}</td>
+                <td>{escapeHtml(note.reason || '—')}</td>
+                <td><span className="plan-status" style={{ background: note.status === 'submitted' ? '#d1fae5' : '#fef3c7', color: note.status === 'submitted' ? '#065f46' : '#92400e' }}>{note.status}</span></td>
+                <td>
+                  <button className="btn btn-sm btn-ghost" onClick={() => window.open(`/api/admin/credit-notes/${note.id}/view`, '_blank', 'noopener,noreferrer')}>View</button>
+                </td>
+              </tr>
+            ))}
+            {creditNotes.length === 0 && <tr><td colSpan={7}><EmptyState icon="invoices" title="No credit notes" description="Credit notes created from invoices will appear here." /></td></tr>}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }
@@ -1955,7 +2078,7 @@ function AdminSettings() {
   const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
-  const [etimsMode, setEtimsMode] = useState("vscu");
+  const [etimsMode, setEtimsMode] = useState("off");
   useEffect(() => { if (settings?.etimsMode) setEtimsMode(settings.etimsMode); }, [settings?.etimsMode]);
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
@@ -2032,7 +2155,7 @@ function AdminSettings() {
           <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
             VSCU (Virtual Sales Control Unit) uses a local JAR bridge. OSCU (Online Sales Control Unit) communicates directly with KRA's cloud API.
           </p>
-          <div className="field"><label>Integration Mode<select name="etimsMode" value={etimsMode} onChange={(e) => setEtimsMode(e.target.value)}><option value="vscu">VSCU (Local JAR)</option><option value="oscu">OSCU (Cloud API)</option></select></label></div>
+          <div className="field"><label>Integration Mode<select name="etimsMode" value={etimsMode} onChange={(e) => setEtimsMode(e.target.value)}><option value="off">Off</option><option value="vscu">VSCU (Local JAR)</option><option value="oscu">OSCU (Cloud API)</option></select></label></div>
           <div className="field"><label>KRA PIN<input name="kraPin" defaultValue={settings?.kraPin || ""} placeholder="P051234567Z" /></label></div>
           {etimsMode === "vscu" ? <>
             <div className="field"><label>Branch ID<input name="etimsBranchId" defaultValue={settings?.etimsBranchId || "00"} placeholder="00" /></label></div>
@@ -2332,11 +2455,12 @@ function AdminQuotations() {
               <thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead>
               <tbody>
                 {(q.items || []).map((i: any) => (
-                  <tr key={i.id}><td>{escapeHtml(i.productName)}</td><td>{i.quantity}</td><td>{formatPrice(i.unitPrice)}</td><td>{formatPrice(i.lineTotal)}</td></tr>
+                  <tr key={i.id}><td>{escapeHtml(i.productName)}</td><td style={{textAlign:"center"}}>{i.quantity}</td><td style={{textAlign:"right",whiteSpace:"nowrap"}}>{formatPrice(i.unitPrice)}</td><td style={{textAlign:"right",whiteSpace:"nowrap"}}>{formatPrice(i.lineTotal)}</td></tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <RippleButton size="small" style={{marginTop:"1rem"}} onClick={() => window.open(`/api/admin/quotes/${q.id}/generate`, "_blank")}>Generate</RippleButton>
         </div>
       </>
     );

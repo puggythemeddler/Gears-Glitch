@@ -122,10 +122,12 @@ interface Provider {
   email: string;
   phone: string;
   status: string;
+  hasPin: boolean;
 }
 
 interface ProviderWithPassword extends Provider {
   password_hash: string;
+  pin_hash: string;
 }
 
 interface ProviderPlanAssignment {
@@ -239,12 +241,14 @@ interface CategoryRow {
   id: string;
   label: string;
   group_name: string;
+  show_on_pos: number;
 }
 
 interface Category {
   id: string;
   label: string;
   group: string;
+  showOnPos: boolean;
 }
 
 const DATA_DIR: string = path.join(__dirname, "..", "data");
@@ -326,6 +330,16 @@ function runMigrations(): void {
   if (!userCols.find((c: any) => c.name === "email")) {
     getDb().exec(`ALTER TABLE users ADD COLUMN email TEXT`);
     getDb().prepare(`UPDATE users SET email = username || '@gearandglitch.com' WHERE email IS NULL`).run();
+  }
+
+  const providerCols = getDb().prepare("PRAGMA table_info(providers)").all() as any[];
+  if (!providerCols.find((c: any) => c.name === "pin_hash")) {
+    getDb().exec(`ALTER TABLE providers ADD COLUMN pin_hash TEXT NOT NULL DEFAULT ''`);
+  }
+
+  const catCols = getDb().prepare("PRAGMA table_info(categories)").all() as any[];
+  if (!catCols.find((c: any) => c.name === "show_on_pos")) {
+    getDb().exec(`ALTER TABLE categories ADD COLUMN show_on_pos INTEGER NOT NULL DEFAULT 1`);
   }
 
   getDb().exec(`
@@ -430,6 +444,7 @@ function runMigrations(): void {
       contact_name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE COLLATE NOCASE,
       password_hash TEXT NOT NULL,
+      pin_hash TEXT NOT NULL DEFAULT '',
       phone TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'trial',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -990,9 +1005,51 @@ function runMigrations(): void {
   try { getDb().exec(`ALTER TABLE orders ADD COLUMN processed_by TEXT`); } catch {}
   try { getDb().exec(`ALTER TABLE orders ADD COLUMN idempotency_key TEXT`); } catch {}
   try { getDb().exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key)`); } catch {}
-  // OSCU / VSCU mode
+  // Credit notes table
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS credit_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      total_amount REAL NOT NULL,
+      reason TEXT NOT NULL DEFAULT '',
+      reason_code TEXT NOT NULL DEFAULT '13',
+      status TEXT NOT NULL DEFAULT 'issued',
+      created_by INTEGER NOT NULL,
+      etims_cn_number TEXT,
+      etims_control_code TEXT,
+      etims_serial_number INTEGER,
+      etims_internal_data TEXT,
+      etims_signature_data TEXT,
+      etims_submitted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (order_id) REFERENCES orders(id)
+    );
+    CREATE TABLE IF NOT EXISTS credit_note_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      credit_note_id INTEGER NOT NULL,
+      order_item_id INTEGER NOT NULL,
+      product_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      price REAL NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      line_total REAL NOT NULL DEFAULT 0,
+      FOREIGN KEY (credit_note_id) REFERENCES credit_notes(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_credit_notes_order ON credit_notes(order_id);
+  `);
+  try { getDb().exec(`ALTER TABLE credit_notes ADD COLUMN reason_code TEXT NOT NULL DEFAULT '13'`); } catch {}
+  try { getDb().exec(`ALTER TABLE credit_notes ADD COLUMN etims_cn_number TEXT`); } catch {}
+  try { getDb().exec(`ALTER TABLE credit_notes ADD COLUMN etims_control_code TEXT`); } catch {}
+  try { getDb().exec(`ALTER TABLE credit_notes ADD COLUMN etims_serial_number INTEGER`); } catch {}
+  try { getDb().exec(`ALTER TABLE credit_notes ADD COLUMN etims_internal_data TEXT`); } catch {}
+  try { getDb().exec(`ALTER TABLE credit_notes ADD COLUMN etims_signature_data TEXT`); } catch {}
+  try { getDb().exec(`ALTER TABLE credit_notes ADD COLUMN etims_submitted_at TEXT`); } catch {}
+  // OSCU / VSCU mode — off by default
   if (!getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get()) {
-    getDb().prepare("INSERT INTO settings (key, value) VALUES ('etims_mode', 'vscu')").run();
+    getDb().prepare("INSERT INTO settings (key, value) VALUES ('etims_mode', 'off')").run();
+  } else {
+    const cur = (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value;
+    if (cur !== "off") getDb().prepare("UPDATE settings SET value = 'off' WHERE key = 'etims_mode'").run();
   }
   if (!getDb().prepare("SELECT value FROM settings WHERE key = 'etims_branch_id'").get()) {
     getDb().prepare("INSERT INTO settings (key, value) VALUES ('etims_branch_id', '00')").run();
@@ -1134,30 +1191,38 @@ function ensureDefaultCategories(): void {
 
 function listCategories(): Category[] {
   return getDb()
-    .prepare("SELECT id, label, group_name FROM categories ORDER BY group_name, label")
+    .prepare("SELECT id, label, group_name, show_on_pos FROM categories ORDER BY group_name, label")
     .all()
-    .map((row: any) => ({ id: row.id, label: row.label, group: row.group_name }));
+    .map((row: any) => ({ id: row.id, label: row.label, group: row.group_name, showOnPos: row.show_on_pos === 1 }));
+}
+
+function listPosCategories(): Category[] {
+  return getDb()
+    .prepare("SELECT id, label, group_name, show_on_pos FROM categories WHERE show_on_pos = 1 ORDER BY group_name, label")
+    .all()
+    .map((row: any) => ({ id: row.id, label: row.label, group: row.group_name, showOnPos: true }));
 }
 
 function getCategory(id: string): CategoryRow | undefined {
-  return getDb().prepare("SELECT id, label, group_name FROM categories WHERE id = ?").get(id) as CategoryRow | undefined;
+  return getDb().prepare("SELECT id, label, group_name, show_on_pos FROM categories WHERE id = ?").get(id) as CategoryRow | undefined;
 }
 
-function createCategory(category: { id: string; label: string; group?: string }): CategoryRow | undefined {
+function createCategory(category: { id: string; label: string; group?: string; showOnPos?: boolean }): CategoryRow | undefined {
   getDb()
-    .prepare("INSERT INTO categories (id, label, group_name) VALUES (@id, @label, @group)")
-    .run({ id: category.id, label: category.label, group: category.group || "" });
+    .prepare("INSERT INTO categories (id, label, group_name, show_on_pos) VALUES (@id, @label, @group, @show_on_pos)")
+    .run({ id: category.id, label: category.label, group: category.group || "", show_on_pos: category.showOnPos !== false ? 1 : 0 });
   return getCategory(category.id);
 }
 
-function updateCategory(id: string, updates: { label?: string; group?: string }): CategoryRow | undefined | null {
+function updateCategory(id: string, updates: { label?: string; group?: string; showOnPos?: number }): CategoryRow | undefined | null {
   const existing = getCategory(id);
   if (!existing) return null;
   const label = updates.label ?? existing.label;
   const group = updates.group ?? existing.group_name;
+  const showOnPos = updates.showOnPos !== undefined ? updates.showOnPos : existing.show_on_pos;
   getDb()
-    .prepare("UPDATE categories SET label = @label, group_name = @group WHERE id = @id")
-    .run({ id, label, group });
+    .prepare("UPDATE categories SET label = @label, group_name = @group, show_on_pos = @show_on_pos WHERE id = @id")
+    .run({ id, label, group, show_on_pos: showOnPos });
   return getCategory(id);
 }
 
@@ -2373,6 +2438,7 @@ function getClientSchemaSQL(): string {
       contact_name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE COLLATE NOCASE,
       password_hash TEXT NOT NULL,
+      pin_hash TEXT NOT NULL DEFAULT '',
       phone TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'trial',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -2844,22 +2910,29 @@ function findProviderByEmail(email: string): ProviderWithPassword | undefined {
 
 function findProviderById(id: number): Provider | undefined {
   return getDb()
-    .prepare("SELECT id, company_name, contact_name, email, phone, status, created_at FROM providers WHERE id = ?")
+    .prepare("SELECT id, company_name AS companyName, contact_name AS contactName, email, phone, status, created_at AS createdAt, pin_hash != '' AS hasPin FROM providers WHERE id = ?")
     .get(id) as any;
 }
 
 function listProviders(): Provider[] {
   return getDb()
-    .prepare("SELECT id, company_name, contact_name, email, phone, status, created_at FROM providers ORDER BY company_name")
+    .prepare("SELECT id, company_name AS companyName, contact_name AS contactName, email, phone, status, created_at AS createdAt, pin_hash != '' AS hasPin FROM providers ORDER BY company_name")
     .all() as any[];
 }
 
-function createProvider(companyName: string, contactName: string, email: string, password: string, phone: string = ""): Provider | undefined {
+function createProvider(companyName: string, contactName: string, email: string, password: string, phone: string = "", pin: string = ""): Provider | undefined {
   const passwordHash = bcrypt.hashSync(password, 10);
+  const pinHash = pin ? bcrypt.hashSync(pin, 10) : "";
   const result = getDb()
-    .prepare("INSERT INTO providers (company_name, contact_name, email, password_hash, phone, status) VALUES (?, ?, ?, ?, ?, 'trial')")
-    .run(companyName, contactName, email, passwordHash, phone);
+    .prepare("INSERT INTO providers (company_name, contact_name, email, password_hash, pin_hash, phone, status) VALUES (?, ?, ?, ?, ?, ?, 'trial')")
+    .run(companyName, contactName, email, passwordHash, pinHash, phone);
   return findProviderById(result.lastInsertRowid as number);
+}
+
+function verifyProviderPin(providerId: number, pin: string): boolean {
+  const row = getDb().prepare("SELECT pin_hash FROM providers WHERE id = ?").get(providerId) as any;
+  if (!row || !row.pin_hash) return false;
+  return bcrypt.compareSync(pin, row.pin_hash);
 }
 
 function updateProviderStatus(id: number, status: string): boolean {
@@ -2867,12 +2940,15 @@ function updateProviderStatus(id: number, status: string): boolean {
   return result.changes > 0;
 }
 
-function updateProvider(id: number, fields: { company_name?: string; contact_name?: string; phone?: string }): boolean {
+function updateProvider(id: number, fields: { company_name?: string; contact_name?: string; email?: string; phone?: string; pin?: string; password?: string }): boolean {
   const sets: string[] = [];
   const vals: any[] = [];
   if (fields.company_name !== undefined) { sets.push("company_name = ?"); vals.push(fields.company_name); }
   if (fields.contact_name !== undefined) { sets.push("contact_name = ?"); vals.push(fields.contact_name); }
+  if (fields.email !== undefined) { sets.push("email = ?"); vals.push(fields.email); }
   if (fields.phone !== undefined) { sets.push("phone = ?"); vals.push(fields.phone); }
+  if (fields.pin !== undefined) { sets.push("pin_hash = ?"); vals.push(fields.pin ? bcrypt.hashSync(fields.pin, 10) : ""); }
+  if (fields.password !== undefined) { sets.push("password_hash = ?"); vals.push(bcrypt.hashSync(fields.password, 10)); }
   if (sets.length === 0) return false;
   vals.push(id);
   const result = getDb().prepare(`UPDATE providers SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
@@ -3291,7 +3367,7 @@ function getInvoiceRevenue(): { total: number; paid: number; pending: number } {
 // Step 2: saveSalesInvc — register the invoice, get InternalData + SignatureData
 
 function getEtimsMode(): string {
-  return (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "vscu";
+  return (getDb().prepare("SELECT value FROM settings WHERE key = 'etims_mode'").get() as any)?.value || "off";
 }
 
 function generateEtimsInvoiceNumber(): { etimsInvoiceNumber: string; controlCode: string; serialNumber: number } {
@@ -3312,8 +3388,6 @@ function generateEtimsInvoiceNumber(): { etimsInvoiceNumber: string; controlCode
 
 // Step 1: Register the sales transaction with eTIMS (simulated VSCU/OSCU call)
 function createEtimsSalesTransaction(orderId: number, order: any): boolean {
-  const existing = getDb().prepare("SELECT id FROM etims_sales_transactions WHERE order_id = ?").get(orderId) as any;
-  if (existing) return true;
   try {
     getDb().exec(`CREATE TABLE IF NOT EXISTS etims_sales_transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3325,49 +3399,61 @@ function createEtimsSalesTransaction(orderId: number, order: any): boolean {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`);
   } catch {}
+  const existing = getDb().prepare("SELECT id FROM etims_sales_transactions WHERE order_id = ?").get(orderId) as any;
+  if (existing) return true;
   getDb().prepare("INSERT OR IGNORE INTO etims_sales_transactions (order_id, tx_date, customer_name, total_amount) VALUES (?, ?, ?, ?)")
     .run(orderId, order.createdAt, order.shippingName || order.customerName, order.subtotal + (order.shippingFee || 0));
   return true;
 }
 
-// Step 2: Register the sales invoice, simulate VSCU/OSCU response with InternalData + SignatureData
+// Step 2: Register the sales invoice
 function createOrderInvoice(orderId: number, amount: number, currency: string): OrderInvoice | undefined {
   const existing = getDb().prepare("SELECT * FROM order_invoices WHERE order_id = ?").get(orderId) as any;
   if (existing) return existing;
 
-  // Step 1 must happen first
-  const order = getOrder(orderId);
-  if (order) createEtimsSalesTransaction(orderId, order);
-
-  const { etimsInvoiceNumber, controlCode, serialNumber } = generateEtimsInvoiceNumber();
-  const kraPin = (getDb().prepare("SELECT value FROM settings WHERE key = 'kra_pin'").get() as any)?.value || "P051234567Z";
   const mode = getEtimsMode();
+  const order = getOrder(orderId);
 
-  // Simulate VSCU/OSCU response: generate InternalData and SignatureData
-  let vscuReceiptCnt = Number((getDb().prepare("SELECT value FROM settings WHERE key = 'etims_vscu_receipt_counter'").get() as any)?.value || 0);
-  vscuReceiptCnt++;
-  getDb().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('etims_vscu_receipt_counter', ?)").run(String(vscuReceiptCnt));
-
-  const crypto = require("crypto");
-  const receiptDate = new Date().toISOString().slice(0, 19).replace("T", " ");
-  const modePrefix = mode === "vscu" ? "VSCU" : "OSCU";
-  const internalData = crypto.createHash("sha256").update(`${modePrefix}_INTERNAL_${kraPin}_${serialNumber}_${receiptDate}`).digest("hex").toUpperCase();
-  const signatureData = crypto.createHash("sha256").update(`${modePrefix}_SIG_${kraPin}_${serialNumber}_${internalData}`).digest("hex").toUpperCase();
-
-  // Determine tax type — check if ALL items are non-taxable → use 'E' (Not Subject), else 'A' (16% VAT)
+  // Determine tax type
   const items = order?.items || [];
   const allNonTaxable = items.length > 0 && items.every((i: any) => i.taxable === false);
   const taxType = allNonTaxable ? "E" : "A";
 
-  // Payment type default 04 (Mobile Payment / M-Pesa)
-  const paymentType = "04";
+  if (mode !== "off") {
+    // Step 1 must happen first
+    if (order) createEtimsSalesTransaction(orderId, order);
 
+    const { etimsInvoiceNumber, controlCode, serialNumber } = generateEtimsInvoiceNumber();
+    const kraPin = (getDb().prepare("SELECT value FROM settings WHERE key = 'kra_pin'").get() as any)?.value || "P051234567Z";
+
+    // Simulate VSCU/OSCU response: generate InternalData and SignatureData
+    let vscuReceiptCnt = Number((getDb().prepare("SELECT value FROM settings WHERE key = 'etims_vscu_receipt_counter'").get() as any)?.value || 0);
+    vscuReceiptCnt++;
+    getDb().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('etims_vscu_receipt_counter', ?)").run(String(vscuReceiptCnt));
+
+    const crypto = require("crypto");
+    const receiptDate = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const modePrefix = mode === "vscu" ? "VSCU" : "OSCU";
+    const internalData = crypto.createHash("sha256").update(`${modePrefix}_INTERNAL_${kraPin}_${serialNumber}_${receiptDate}`).digest("hex").toUpperCase();
+    const signatureData = crypto.createHash("sha256").update(`${modePrefix}_SIG_${kraPin}_${serialNumber}_${internalData}`).digest("hex").toUpperCase();
+
+    // Payment type default 04 (Mobile Payment / M-Pesa)
+    const paymentType = "04";
+
+    const result = getDb().prepare(`INSERT INTO order_invoices
+      (order_id, amount, currency, status, etims_invoice_number, control_code, kra_pin, serial_number,
+       internal_data, signature_data, receipt_date, receipt_counter, total_receipts, tax_type, payment_type, vscu_receipt_no)
+      VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(orderId, amount, currency, etimsInvoiceNumber, controlCode, kraPin, serialNumber,
+           internalData, signatureData, receiptDate, 1, 1, taxType, paymentType, vscuReceiptCnt);
+    return getDb().prepare("SELECT * FROM order_invoices WHERE id = ?").get(result.lastInsertRowid) as any;
+  }
+
+  // Off mode — simple invoice without eTIMS data
   const result = getDb().prepare(`INSERT INTO order_invoices
-    (order_id, amount, currency, status, etims_invoice_number, control_code, kra_pin, serial_number,
-     internal_data, signature_data, receipt_date, receipt_counter, total_receipts, tax_type, payment_type, vscu_receipt_no)
-    VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(orderId, amount, currency, etimsInvoiceNumber, controlCode, kraPin, serialNumber,
-         internalData, signatureData, receiptDate, 1, 1, taxType, paymentType, vscuReceiptCnt);
+    (order_id, amount, currency, status, tax_type)
+    VALUES (?, ?, ?, 'issued', ?)`)
+    .run(orderId, amount, currency, taxType);
   return getDb().prepare("SELECT * FROM order_invoices WHERE id = ?").get(result.lastInsertRowid) as any;
 }
 
@@ -3382,6 +3468,164 @@ function listOrderInvoices(): any[] {
 
 function markOrderInvoicePaid(id: number): boolean {
   return getDb().prepare("UPDATE order_invoices SET status = 'paid' WHERE id = ?").run(id).changes > 0;
+}
+
+// ============ CREDIT NOTES ============
+
+interface CreditNote {
+  id: number;
+  orderId: number;
+  totalAmount: number;
+  reason: string;
+  reasonCode: string;
+  status: string;
+  createdBy: number;
+  createdAt: string;
+  items: CreditNoteItem[];
+  etimsCnNumber?: string;
+  etimsControlCode?: string;
+  etimsSerialNumber?: number;
+  etimsInternalData?: string;
+  etimsSignatureData?: string;
+  etimsSubmittedAt?: string;
+}
+
+interface CreditNoteItem {
+  id: number;
+  creditNoteId: number;
+  orderItemId: number;
+  productId: string;
+  name: string;
+  price: number;
+  quantity: number;
+  lineTotal: number;
+}
+
+function createCreditNote(orderId: number, reason: string, userId: number, reasonCode: string = "13"): CreditNote | null {
+  const order = getOrder(orderId);
+  if (!order) return null;
+
+  getDb().prepare("INSERT INTO credit_notes (order_id, total_amount, reason, reason_code, created_by) VALUES (?, ?, ?, ?, ?)")
+    .run(orderId, order.subtotal + (order.shippingFee || 0), reason, reasonCode, userId);
+
+  const cnId = (getDb().prepare("SELECT last_insert_rowid() as id").get() as any).id;
+
+  // Copy order items to credit note items
+  const insertItem = getDb().prepare(
+    "INSERT INTO credit_note_items (credit_note_id, order_item_id, product_id, name, price, quantity, line_total) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  );
+  for (const item of order.items) {
+    insertItem.run(cnId, item.id, item.productId, item.name, item.price, item.quantity, item.lineTotal);
+  }
+
+  // Reverse stock for each item
+  for (const item of order.items) {
+    const sl = getStockLevel(item.productId);
+    if (sl) {
+      const newQty = sl.quantityInStock + item.quantity;
+      getDb().prepare("UPDATE stock_levels SET quantity_in_stock = ?, updated_at = datetime('now') WHERE product_id = ?")
+        .run(newQty, item.productId);
+      recordStockMovement(item.productId, "credit_note_return", item.quantity, {
+        referenceType: "credit_note",
+        referenceId: String(cnId),
+        notes: `Credit note #${cnId} for order #${orderId}: ${reason}`,
+        createdBy: String(userId),
+      });
+    }
+  }
+
+  return getCreditNote(cnId);
+}
+
+// Submit a credit note to eTIMS (OSCU/VSCU) following the same two-step flow as order invoices
+function submitCreditNoteToEtims(cnId: number, reasonCode: string): boolean {
+  const cn = getCreditNote(cnId);
+  if (!cn) return false;
+
+  const mode = getEtimsMode();
+  if (mode === "off") return false;
+
+  const order = getOrder(cn.orderId);
+  if (!order) return false;
+
+  // Ensure the original order has an eTIMS transaction
+  createEtimsSalesTransaction(cn.orderId, order);
+
+  // Generate eTIMS credit note number (reuse the invoice number generator for serial tracking)
+  const { etimsInvoiceNumber, controlCode, serialNumber } = generateEtimsInvoiceNumber();
+  const kraPin = (getDb().prepare("SELECT value FROM settings WHERE key = 'kra_pin'").get() as any)?.value || "P051234567Z";
+  const modePrefix = mode === "vscu" ? "VSCU" : "OSCU";
+
+  // Internal data and signature for credit note
+  const crypto = require("crypto");
+  const submitDate = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const internalData = crypto.createHash("sha256").update(`${modePrefix}_CN_INTERNAL_${kraPin}_${serialNumber}_${submitDate}`).digest("hex").toUpperCase();
+  const signatureData = crypto.createHash("sha256").update(`${modePrefix}_CN_SIG_${kraPin}_${serialNumber}_${internalData}`).digest("hex").toUpperCase();
+
+  // Update credit note with eTIMS data
+  getDb().prepare(`UPDATE credit_notes SET
+    reason_code = ?,
+    etims_cn_number = ?,
+    etims_control_code = ?,
+    etims_serial_number = ?,
+    etims_internal_data = ?,
+    etims_signature_data = ?,
+    etims_submitted_at = datetime('now'),
+    status = 'submitted'
+  WHERE id = ?`)
+    .run(reasonCode, etimsInvoiceNumber, controlCode, serialNumber, internalData, signatureData, cnId);
+
+  return true;
+}
+
+function getCreditNote(id: number): CreditNote | null {
+  const row = getDb().prepare("SELECT * FROM credit_notes WHERE id = ?").get(id) as any;
+  if (!row) return null;
+  const items = getDb().prepare("SELECT * FROM credit_note_items WHERE credit_note_id = ?").all(id).map((r: any) => ({
+    id: r.id,
+    creditNoteId: r.credit_note_id,
+    orderItemId: r.order_item_id,
+    productId: r.product_id,
+    name: r.name,
+    price: r.price,
+    quantity: r.quantity,
+    lineTotal: r.line_total,
+  }));
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    totalAmount: row.total_amount,
+    reason: row.reason,
+    reasonCode: row.reason_code,
+    status: row.status,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    etimsCnNumber: row.etims_cn_number,
+    etimsControlCode: row.etims_control_code,
+    etimsSerialNumber: row.etims_serial_number,
+    etimsInternalData: row.etims_internal_data,
+    etimsSignatureData: row.etims_signature_data,
+    etimsSubmittedAt: row.etims_submitted_at,
+    items,
+  };
+}
+
+function listCreditNotes(): any[] {
+  return getDb().prepare(`
+    SELECT cn.*, o.shipping_name AS customer_name
+    FROM credit_notes cn
+    JOIN orders o ON o.id = cn.order_id
+    ORDER BY cn.created_at DESC
+  `).all().map((r: any) => ({
+    id: r.id,
+    orderId: r.order_id,
+    totalAmount: r.total_amount,
+    reason: r.reason,
+    status: r.status,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    customerName: r.customer_name,
+  }));
 }
 
 // ============ REPAIR IMAGES ============
@@ -4126,6 +4370,7 @@ export {
   completeStockTransfer,
   rejectStockTransfer,
   listCategories,
+  listPosCategories,
   getCategory,
   createCategory,
   updateCategory,
@@ -4147,6 +4392,7 @@ export {
   findProviderById,
   listProviders,
   createProvider,
+  verifyProviderPin,
   updateProvider,
   updateProviderStatus,
   // Provider plan assignments
@@ -4186,6 +4432,16 @@ export {
   listOrderInvoices,
   markOrderInvoicePaid,
   generateEtimsInvoiceNumber,
+  // Credit notes
+  createCreditNote,
+  getCreditNote,
+  listCreditNotes,
+  submitCreditNoteToEtims,
+  submitCreditNoteToEtims,
+  submitCreditNoteToEtims,
+  submitCreditNoteToEtims,
+  submitCreditNoteToEtims,
+  submitCreditNoteToEtims,
   // Messages
   getMessagesForCustomer,
   getMessagesForProvider,

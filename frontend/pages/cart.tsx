@@ -4,9 +4,7 @@ import { useApp } from "@/lib/app-context";
 import type { CartItem, County } from "@/lib/types";
 
 function escapeHtml(text: string) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 export default function CartPage() {

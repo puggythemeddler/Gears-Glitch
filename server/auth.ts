@@ -57,8 +57,7 @@ function verifyToken(token: string): JwtPayload {
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization || "";
   if (header.startsWith("Bearer ")) return header.slice(7);
-  const queryToken = String(req.query?.token || "");
-  return queryToken || null;
+  return null;
 }
 
 function staffAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
@@ -273,12 +272,27 @@ function ownerAuthMiddleware(req: Request, res: Response, next: NextFunction): v
   } catch { res.status(401).json({ error: "Session expired. Please log in again." }); }
 }
 
+function posAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+  let token = getBearerToken(req);
+  if (!token && req.query.token) token = String(req.query.token);
+  if (!token) { res.status(401).json({ error: "Login required." }); return; }
+  try {
+    const user = verifyToken(token);
+    if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician" && user.role !== "provider") {
+      res.status(403).json({ error: "Access restricted." }); return;
+    }
+    (req as any).user = user;
+    next();
+  } catch { res.status(401).json({ error: "Session expired. Please log in again." }); }
+}
+
 export {
   adminAuthMiddleware,
   ownerAuthMiddleware,
   staffAuthMiddleware,
   customerAuthMiddleware,
   providerAuthMiddleware,
+  posAuthMiddleware,
   loginStaff,
   loginCustomer,
   registerCustomer,
