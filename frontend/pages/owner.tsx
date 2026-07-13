@@ -175,14 +175,26 @@ function OwnerDashboard({ onNavigate }: { onNavigate: (v: OwnerView) => void }) 
 
 // ===================== PRODUCTS =====================
 const COMMON_FEATURES_LIST = [
-  "Product listing", "Order management", "Customer management", "Repair ticketing",
-  "Analytics dashboard", "API access", "Custom branding", "Priority support",
-  "Bulk import/export", "Multiple staff accounts", "M-Pesa integration",
-  "SMS notifications", "Email notifications", "Dedicated account manager",
-  "Multi-currency support", "POS integration", "Barcode scanning",
-  "Inventory forecasting", "Purchase order management",
-  "Returns management", "Loyalty program", "Discount/coupon management",
-  "Messaging",
+  "Analytics dashboard", "API access", "Audit log",
+  "Barcode scanning", "Branch management", "Bulk import/export",
+  "Bulk product edit", "Client/tenant management",
+  "Custom branding", "Customer management",
+  "Dedicated account manager", "Discount/coupon management",
+  "Email notifications", "eTIMS/KRA compliance",
+  "Google Sign-In", "Inventory forecasting",
+  "Low stock alerts", "Loyalty program",
+  "Messaging", "M-Pesa integration",
+  "Multi-branch support", "Multi-currency support",
+  "Multiple staff accounts", "Order management",
+  "Payment method configuration", "POS integration",
+  "Price history tracking", "Priority support",
+  "Product listing", "Product reviews & ratings",
+  "Purchase order management", "Quotations",
+  "Repair ticketing", "Returns management",
+  "Shop subscription", "SMS notifications",
+  "Spec templates", "Stock take / inventory count",
+  "Stock transfers", "Supplier management",
+  "Theme customization",
 ];
 
 function OwnerOrders() {
