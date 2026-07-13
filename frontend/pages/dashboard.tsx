@@ -3,6 +3,7 @@ import { api, getRole, getCustomerToken, getProviderToken, clearAllSessions } fr
 import type { Order, RepairTicket, WishlistItem, Message, Quote } from "@/lib/types";
 import { useToast } from "@/components/Toast";
 import { useFeature } from "@/lib/features";
+import PinLock from "@/components/PinLock";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
@@ -32,6 +33,7 @@ export default function DashboardPage() {
   const [salesTo, setSalesTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+  const [pinUnlocked, setPinUnlocked] = useState(false);
 
   const isCustomer = role === "customer";
   const isProvider = role === "provider";
@@ -133,6 +135,23 @@ export default function DashboardPage() {
 
   const visibleSections = sections.filter((s) => s.show && (s.key !== "messages" || messagingEnabled));
 
+  if (isProvider && profile?.hasPin && !pinUnlocked) {
+    return (
+      <div className="dash-layout">
+        <div className="dash-content" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <PinLock
+            storageKey="provider_pin"
+            title="Provider PIN"
+            onUnlock={() => setPinUnlocked(true)}
+            verifyPin={async (pin) => {
+              try { await api("/api/provider/verify-pin", { method: "POST", body: JSON.stringify({ pin }) }); return true; } catch { return false; }
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="dash-layout">
       <nav className="dash-nav">
@@ -145,6 +164,7 @@ export default function DashboardPage() {
             {s.label}
           </button>
         ))}
+        {isProvider && <button onClick={() => window.location.href = "/pos"} style={{ color: "var(--primary)" }}>POS</button>}
         <button onClick={logout} style={{ marginTop: "auto", color: "var(--primary)" }}>Sign out</button>
       </nav>
 

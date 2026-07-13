@@ -15,9 +15,9 @@ function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
 }
 
-function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
+function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 
-type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "about-us" | "quotes";
+type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "credit-notes" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "about-us" | "quotes";
 
 const NAV_ITEMS: { key: OwnerView; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -29,6 +29,7 @@ const NAV_ITEMS: { key: OwnerView; label: string }[] = [
   { key: "messages", label: "Messages" },
   { key: "reports", label: "Reports" },
   { key: "invoices", label: "Invoices" },
+  { key: "credit-notes", label: "Credit Notes" },
   { key: "stock-control", label: "Stock Control" },
   { key: "stock-take", label: "Stock Take" },
   { key: "tech-repairs", label: "Tech Repairs" },
@@ -116,6 +117,7 @@ export default function OwnerPage() {
             {view === "messages" && (messagingEnabled ? <OwnerMessages /> : <p className="muted">Messaging is not included in your current plan.</p>)}
             {view === "reports" && <OwnerReports />}
             {view === "invoices" && <OwnerInvoices />}
+            {view === "credit-notes" && <OwnerCreditNotes />}
             {view === "stock-control" && <OwnerStockControl />}
             {view === "stock-take" && <OwnerStockTake />}
             {view === "tech-repairs" && <OwnerTechRepairs />}
@@ -523,13 +525,28 @@ function OwnerProducts() {
 function OwnerProviders() {
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ providers: Provider[] }>("/api/admin/providers"), []);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ companyName: "", contactName: "", email: "", password: "", phone: "" });
+  const [form, setForm] = useState({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" });
+  const [editing, setEditing] = useState<any>(null);
   const [saving, setSaving] = useState(false);
 
   async function addProvider(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    try { await api("/api/admin/providers", { method: "POST", body: JSON.stringify(form) }); setShowForm(false); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "" }); refetch(); } catch (err: any) { alert(err.message); } finally { setSaving(false); }
+    try { await api("/api/admin/providers", { method: "POST", body: JSON.stringify(form) }); setShowForm(false); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch(); } catch (err: any) { alert(err.message); } finally { setSaving(false); }
+  }
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api(`/api/admin/providers/${editing.id}`, { method: "PUT", body: JSON.stringify(form) });
+      setEditing(null); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch();
+    } catch (err: any) { alert(err.message); } finally { setSaving(false); }
+  }
+
+  function openEdit(p: any) {
+    setForm({ companyName: p.companyName, contactName: p.contactName, email: p.email, password: "", phone: p.phone || "", pin: "" });
+    setEditing(p);
   }
 
   if (loading) return <Spinner />;
@@ -540,28 +557,40 @@ function OwnerProviders() {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Providers</h1>
-        <RippleButton size="small" onClick={() => setShowForm(!showForm)}>{showForm ? "Cancel" : "+ Add"}</RippleButton>
+        {!editing && <RippleButton size="small" onClick={() => setShowForm(!showForm)}>{showForm ? "Cancel" : "+ Add"}</RippleButton>}
       </div>
-      {showForm && (
+      {(showForm || editing) && (
         <div className="panel" style={{ marginBottom: "1rem", maxWidth: 400 }}>
-          <form onSubmit={addProvider}>
+          <form onSubmit={editing ? saveEdit : addProvider}>
+            <h3 style={{ marginTop: 0 }}>{editing ? `Edit ${escapeHtml(editing.companyName)}` : "New Provider"}</h3>
             <div className="field"><label>Company<input value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} required /></label></div>
             <div className="field"><label>Contact name<input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} required /></label></div>
             <div className="field"><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label></div>
-            <div className="field"><label>Password<input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label></div>
+            {editing ? (
+              <div className="field"><label>New password (leave blank to keep)<input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label></div>
+            ) : (
+              <div className="field"><label>Password<input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label></div>
+            )}
             <div className="field"><label>Phone<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label></div>
-            <RippleButton type="submit" loading={saving}>Add provider</RippleButton>
+            <div className="field"><label>PIN (min 6 digits, leave blank to keep)<input type="tel" value={form.pin} onChange={(e) => { const v = e.target.value.replace(/\D/g, ""); setForm({ ...form, pin: v }); }} placeholder="e.g. 123456" minLength={6} /></label></div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <RippleButton type="submit" loading={saving}>{editing ? "Save" : "Add provider"}</RippleButton>
+              {editing && <RippleButton variant="ghost" onClick={() => { setEditing(null); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); }}>Cancel</RippleButton>}
+            </div>
           </form>
         </div>
       )}
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th></tr></thead>
+          <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {providers.map((p) => (
-              <tr key={p.id}><td><strong>{escapeHtml(p.companyName)}</strong></td><td>{escapeHtml(p.contactName)}</td><td>{escapeHtml(p.email)}</td><td>{escapeHtml(p.phone || "—")}</td><td><span className="plan-status">{p.status}</span></td></tr>
+              <tr key={p.id}>
+                <td><strong>{escapeHtml(p.companyName)}</strong></td><td>{escapeHtml(p.contactName)}</td><td>{escapeHtml(p.email)}</td><td>{escapeHtml(p.phone || "—")}</td><td><span className="plan-status">{p.status}</span></td>
+                <td><RippleButton size="small" variant="ghost" onClick={() => openEdit(p)}>Edit</RippleButton></td>
+              </tr>
             ))}
-            {providers.length === 0 && <tr><td colSpan={5}><EmptyState icon="default" title="No providers" description="Provider companies will appear here once added." /></td></tr>}
+            {providers.length === 0 && <tr><td colSpan={6}><EmptyState icon="default" title="No providers" description="Provider companies will appear here once added." /></td></tr>}
           </tbody>
         </table>
       </div>
@@ -739,14 +768,15 @@ function OwnerQuotes() {
                 {(created.items || []).map((i: any) => (
                   <tr key={i.id}>
                     <td>{escapeHtml(i.productName)}</td>
-                    <td>{i.quantity}</td>
-                    <td>{formatPrice(i.unitPrice)}</td>
-                    <td>{formatPrice(i.lineTotal)}</td>
+                    <td style={{textAlign:"center"}}>{i.quantity}</td>
+                    <td style={{textAlign:"right",whiteSpace:"nowrap"}}>{formatPrice(i.unitPrice)}</td>
+                    <td style={{textAlign:"right",whiteSpace:"nowrap"}}>{formatPrice(i.lineTotal)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <RippleButton size="small" style={{marginTop:"1rem"}} onClick={() => window.open(`/api/admin/quotes/${created.id}/generate`, "_blank")}>Generate</RippleButton>
         </div>
       </>
     );
@@ -1588,6 +1618,20 @@ function OwnerInvoices() {
     try { await api("/api/admin/invoices/generate", { method: "POST" }); load(); } catch { alert("Generation failed"); }
   }
 
+  async function createCreditNote(orderId: number) {
+    const reason = window.prompt("Reason for credit note (optional):");
+    if (reason === null) return;
+    try {
+      const created = await api<any>("/api/admin/credit-notes", {
+        method: "POST",
+        body: JSON.stringify({ orderId, reason: reason.trim() }),
+      });
+      window.open(`/api/admin/credit-notes/${created.id}/view`, "_blank", "noopener,noreferrer");
+    } catch (err: any) {
+      alert(err.message || "Failed to create credit note.");
+    }
+  }
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -1643,6 +1687,7 @@ function OwnerInvoices() {
                       <td>
                         {inv.status !== "paid" && <RippleButton size="small" onClick={() => markOiPaid(inv.id)}>Mark paid</RippleButton>}
                         <RippleButton size="small" variant="ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); window.open(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch { alert("Failed"); } }}>View</RippleButton>
+                        <RippleButton size="small" style={{ marginLeft: "0.25rem" }} onClick={() => createCreditNote(inv.orderId)}>Credit Note</RippleButton>
                       </td>
                     </tr>
                   ))}
@@ -1653,6 +1698,45 @@ function OwnerInvoices() {
           )}
         </>
       )}
+    </>
+  );
+}
+
+function OwnerCreditNotes() {
+  const { data, loading, error, refetch } = useFetch(() => api<{ creditNotes: any[] }>('/api/admin/credit-notes'), []);
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+
+  const creditNotes = data?.creditNotes || [];
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h1 style={{ margin: 0 }}>Credit Notes</h1>
+        <RippleButton size="small" onClick={() => refetch()}>Refresh</RippleButton>
+      </div>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>#</th><th>Order</th><th>Customer</th><th>Amount</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {creditNotes.map((note: any) => (
+              <tr key={note.id}>
+                <td>#{note.id}</td>
+                <td>#{note.orderId}</td>
+                <td>{escapeHtml(note.customerName || note.customer_name || '—')}</td>
+                <td>{formatPrice(note.totalAmount || 0)}</td>
+                <td>{escapeHtml(note.reason || '—')}</td>
+                <td><span className="plan-status" style={{ background: note.status === 'submitted' ? '#d1fae5' : '#fef3c7', color: note.status === 'submitted' ? '#065f46' : '#92400e' }}>{note.status}</span></td>
+                <td>
+                  <RippleButton size="small" variant="ghost" onClick={() => window.open(`/api/admin/credit-notes/${note.id}/view`, '_blank', 'noopener,noreferrer')}>View</RippleButton>
+                </td>
+              </tr>
+            ))}
+            {creditNotes.length === 0 && <tr><td colSpan={7}><EmptyState icon="invoices" title="No credit notes" description="Credit notes created from invoices will appear here." /></td></tr>}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }

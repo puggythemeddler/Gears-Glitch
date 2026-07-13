@@ -18,17 +18,22 @@ const frontend = spawn(
   { cwd: FRONTEND, stdio: "inherit" }
 );
 
+backend.on("error", (err) => {
+  console.error("Backend failed to start:", err.message);
+});
+
+frontend.on("error", (err) => {
+  console.error("Frontend failed to start:", err.message);
+});
+
 console.log("\n  Backend:  http://localhost:8020");
 console.log("  Frontend: http://localhost:3000\n");
 
-process.on("SIGINT", () => {
-  backend.kill();
-  frontend.kill();
+function cleanup() {
+  try { backend.kill(); } catch {}
+  try { frontend.kill(); } catch {}
   process.exit();
-});
+}
 
-process.on("SIGTERM", () => {
-  backend.kill();
-  frontend.kill();
-  process.exit();
-});
+process.on("SIGINT", cleanup);
+process.on("SIGTERM", cleanup);

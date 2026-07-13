@@ -11,6 +11,8 @@ data/store.db-wal
 
 # Log files
 data/emails.log
+data/mpesa.log
+data/mpesa-callback.log
 
 # Uploaded user files
 data/uploads/

@@ -1,9 +1,10 @@
-import React, { Component } from "react";
+import React, { Component, useState, useEffect } from "react";
 import type { AppProps } from "next/app";
 import { AppProvider } from "@/lib/app-context";
 import { LayoutProvider, LayoutStyles } from "@/layouts";
 import Layout from "@/components/Layout";
 import { ToastProvider } from "@/components/Toast";
+import OfflinePage from "@/components/OfflinePage";
 import "@/styles/globals.css";
 import "@/styles/animations.css";
 import "@/styles/marketing.css";
@@ -61,6 +62,27 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 
 export default function MyApp({ Component, pageProps, router }: AppProps) {
   const activeNav = getActiveNav(router.asPath);
+  const [offline, setOffline] = useState<false | "active" | "dismissing">(false);
+
+  useEffect(() => {
+    if (!navigator.onLine) setOffline("active");
+    const goOnline = () => {
+      if (offline) setOffline("dismissing");
+    };
+    const goOffline = () => setOffline("active");
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, [offline]);
+
+  useEffect(() => {
+    if (offline !== "dismissing") return;
+    const t = setTimeout(() => setOffline(false), 700);
+    return () => clearTimeout(t);
+  }, [offline]);
 
   return (
     <AppProvider>
@@ -76,6 +98,7 @@ export default function MyApp({ Component, pageProps, router }: AppProps) {
           </LayoutProvider>
         </ToastProvider>
       </ErrorBoundary>
+      {offline && <OfflinePage dismissing={offline === "dismissing"} />}
     </AppProvider>
   );
 }

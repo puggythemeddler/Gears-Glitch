@@ -6,7 +6,7 @@ function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
 }
 
-function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
+function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);

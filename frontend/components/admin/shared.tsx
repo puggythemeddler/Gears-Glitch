@@ -5,9 +5,7 @@ export function formatPrice(amount: number) {
 }
 
 export function escapeHtml(v: string) {
-  const d = document.createElement("div");
-  d.textContent = v;
-  return d.innerHTML;
+  return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 export function useFetch<T>(fetcher: () => Promise<T>, deps: any[] = []) {

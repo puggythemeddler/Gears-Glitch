@@ -129,6 +129,17 @@ internalData = SHA-256("VSCU_INTERNAL_${kraPin}_${serial}_${date}")
 signatureData = SHA-256("VSCU_SIG_${kraPin}_${serial}_${internalData}")
 ```
 
+### 3.5 Credit Note Workflow
+
+The platform now supports credit-note creation from the admin and owner invoice views. When a credit note is created, the server:
+
+1. creates the note and copies the original order items,
+2. reverses stock movement for the returned items,
+3. submits the credit-note transaction through the same eTIMS pipeline used for sales invoices,
+4. stores the resulting credit-note number, control code, serial number, internal data, signature data, and submission timestamp.
+
+The printable credit-note document displays the eTIMS credit note number, control code, submission status, and audit data so it is suitable for operational and compliance review. The workflow also supports configurable reason codes, with `13` used as the default for a standard credit note.
+
 ---
 
 ## 4. Tax Types
