@@ -21,13 +21,15 @@ Three layers, cleanly separated:
 ## Quick Start
 
 ```bash
-git clone <repo>
-cd GearAndGlitch
+git clone https://github.com/gearandglitch/shop.git
+cd shop
 npm install
 copy .env.example .env
-cd frontend && npm install && cd ..
-npm install -g tsx          # for running TypeScript directly
-npm run dev:all              # starts both servers
+cd frontend
+npm install
+cd ..
+npm install -g tsx
+npm run dev:all
 ```
 
 Opens **http://localhost:3000** in a browser.
