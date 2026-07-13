@@ -15,7 +15,7 @@ export default function CurrencySelector() {
   return (
     <select
       value={selectedCurrency || "KES"}
-      onChange={(e) => setCurrency(e.target.value)}
+      onChange={(e) => { setCurrency(e.target.value); window.location.reload(); }}
       style={{
         fontSize: "0.8rem", padding: "0.2rem 0.4rem", borderRadius: 6,
         border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)",
