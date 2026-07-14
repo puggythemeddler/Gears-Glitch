@@ -2112,6 +2112,7 @@ function AdminExchangeRates() {
 }
 
 function AdminSettings() {
+  const { refreshSettings } = useApp();
   const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
