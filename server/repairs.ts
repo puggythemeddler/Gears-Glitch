@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { query, queryOne, queryAll } from "./db-helpers";
 
 interface RepairType {
   id: string;
@@ -159,12 +159,13 @@ function isValidStatus(status: string): boolean {
   return STATUSES.includes(status);
 }
 
-function generateTicketId(): string {
+async function generateTicketId(): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `REP-${year}-`;
-  const row = getDb()
-    .prepare("SELECT id FROM repair_tickets WHERE id LIKE ? ORDER BY id DESC LIMIT 1")
-    .get(`${prefix}%`) as { id: string } | undefined;
+  const row = await queryOne(
+    "SELECT id FROM repair_tickets WHERE id LIKE $1 ORDER BY id DESC LIMIT 1",
+    [`${prefix}%`]
+  ) as { id: string } | undefined;
   let seq = 1;
   if (row) {
     const part = row.id.split("-").pop();
@@ -195,18 +196,17 @@ function mapUpdate(row: any, staffName?: string): RepairUpdate {
   };
 }
 
-function getRepairTypeName(typeId: string | null): string {
+async function getRepairTypeName(typeId: string | null): Promise<string> {
   if (!typeId) return "";
-  const row = getDb().prepare("SELECT name FROM repair_types WHERE id = ?").get(typeId) as { name: string } | undefined;
+  const row = await queryOne("SELECT name FROM repair_types WHERE id = $1", [typeId]) as { name: string } | undefined;
   return row?.name || "";
 }
 
-function calculateRepairCost(typeId: string | null, hardwareValue: number, partsCost: number, softwareInstall: boolean, softwareLicense: boolean): number {
+async function calculateRepairCost(typeId: string | null, hardwareValue: number, partsCost: number, softwareInstall: boolean, softwareLicense: boolean): Promise<number> {
   let total = 0;
   if (typeId) {
-    const rt = getDb().prepare("SELECT base_price FROM repair_types WHERE id = ?").get(typeId) as { basePrice?: number } | undefined;
-    if (rt?.basePrice) total += rt.basePrice;
-    // Hardware-based pricing: labor scales with hardware value (5% of hardware value for high-end devices)
+    const rt = await queryOne("SELECT base_price FROM repair_types WHERE id = $1", [typeId]) as { base_price?: number } | undefined;
+    if (rt?.base_price) total += rt.base_price;
     if (hardwareValue > 0) {
       total += Math.round(hardwareValue * 0.05);
     }
@@ -217,7 +217,7 @@ function calculateRepairCost(typeId: string | null, hardwareValue: number, parts
   return total;
 }
 
-function mapTicket(row: TicketRow, extras: any = {}): Ticket {
+async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
   return {
     id: row.id,
     customerId: row.customer_id,
@@ -236,7 +236,7 @@ function mapTicket(row: TicketRow, extras: any = {}): Ticket {
     workNotes: row.work_notes || "",
     customerNotes: row.customer_notes || "",
     repairType: row.repair_type || null,
-    repairTypeName: getRepairTypeName(row.repair_type),
+    repairTypeName: await getRepairTypeName(row.repair_type),
     hardwareValue: row.hardware_value || 0,
     laborCost: row.labor_cost || 0,
     partsCost: row.parts_cost || 0,
@@ -254,41 +254,37 @@ function mapTicket(row: TicketRow, extras: any = {}): Ticket {
   };
 }
 
-function loadTicketDetails(ticketId: string): Ticket | null {
-  const row = getDb()
-    .prepare(
-      `SELECT t.*, c.name AS customer_name, c.email AS customer_email,
-              u.username AS assigned_name
-       FROM repair_tickets t
-       JOIN customers c ON c.id = t.customer_id
-       LEFT JOIN users u ON u.id = t.assigned_to
-       WHERE t.id = ?`
-    )
-    .get(ticketId) as TicketRow | undefined;
+async function loadTicketDetails(ticketId: string): Promise<Ticket | null> {
+  const row = await queryOne(
+    `SELECT t.*, c.name AS customer_name, c.email AS customer_email,
+            u.username AS assigned_name
+     FROM repair_tickets t
+     JOIN customers c ON c.id = t.customer_id
+     LEFT JOIN users u ON u.id = t.assigned_to
+     WHERE t.id = $1`,
+    [ticketId]
+  ) as TicketRow | undefined;
 
   if (!row) return null;
 
-  const parts: Part[] = getDb()
-    .prepare("SELECT * FROM repair_parts_used WHERE ticket_id = ? ORDER BY id")
-    .all(ticketId)
-    .map((r: any) => mapPart(r));
+  const partRows = await queryAll("SELECT * FROM repair_parts_used WHERE ticket_id = $1 ORDER BY id", [ticketId]);
+  const parts: Part[] = partRows.map((r: any) => mapPart(r));
 
-  const updates: RepairUpdate[] = getDb()
-    .prepare(
-      `SELECT ru.*, u.username AS staff_name
-       FROM repair_updates ru
-       LEFT JOIN users u ON u.id = ru.staff_id
-       WHERE ru.ticket_id = ?
-       ORDER BY ru.created_at ASC`
-    )
-    .all(ticketId)
-    .map((u: any) => mapUpdate(u, u.staff_name));
+  const updateRows = await queryAll(
+    `SELECT ru.*, u.username AS staff_name
+     FROM repair_updates ru
+     LEFT JOIN users u ON u.id = ru.staff_id
+     WHERE ru.ticket_id = $1
+     ORDER BY ru.created_at ASC`,
+    [ticketId]
+  );
+  const updates: RepairUpdate[] = updateRows.map((u: any) => mapUpdate(u, u.staff_name));
 
   return mapTicket(row, { parts, updates });
 }
 
-function createRepairTicket(customerId: number, data: any): TicketResult {
-  const id = generateTicketId();
+async function createRepairTicket(customerId: number, data: any): Promise<TicketResult> {
+  const id = await generateTicketId();
   const deviceType = String(data.deviceType || "").trim();
   const issueDescription = String(data.issueDescription || "").trim();
 
@@ -296,112 +292,99 @@ function createRepairTicket(customerId: number, data: any): TicketResult {
     return { ok: false, error: "Device type and problem description are required." };
   }
 
-  getDb()
-    .prepare(
-      `INSERT INTO repair_tickets (
-        id, customer_id, device_type, device_model, issue_description,
-        status, eta_at, created_at, updated_at
-      ) VALUES (
-        @id, @customer_id, @device_type, @device_model, @issue_description,
-        'received', datetime('now', '+48 hours'), datetime('now'), datetime('now')
-      )`
-    )
-    .run({
-      id,
-      customer_id: customerId,
-      device_type: deviceType,
-      device_model: String(data.deviceModel || "").trim(),
-      issue_description: issueDescription,
-    });
+  await query(
+    `INSERT INTO repair_tickets (id, customer_id, device_type, device_model, issue_description, status, eta_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 'received', (NOW() + interval '48 hours')::text, NOW()::text, NOW()::text)`,
+    [id, customerId, deviceType, String(data.deviceModel || "").trim(), issueDescription]
+  );
 
-  addRepairUpdate(id, null, "status", "Ticket created. Estimated completion within 48 hours.", true);
+  await addRepairUpdate(id, null, "status", "Ticket created. Estimated completion within 48 hours.", true);
 
-  return { ok: true, ticket: loadTicketDetails(id)! };
+  const ticket = await loadTicketDetails(id);
+  return { ok: true, ticket: ticket! };
 }
 
-function listRepairsForCustomer(customerId: number): Ticket[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT t.*, c.name AS customer_name, c.email AS customer_email,
-              u.username AS assigned_name
-       FROM repair_tickets t
-       JOIN customers c ON c.id = t.customer_id
-       LEFT JOIN users u ON u.id = t.assigned_to
-       WHERE t.customer_id = ?
-       ORDER BY t.created_at DESC`
-    )
-    .all(customerId) as TicketRow[];
+async function listRepairsForCustomer(customerId: number): Promise<Ticket[]> {
+  const rows = await queryAll(
+    `SELECT t.*, c.name AS customer_name, c.email AS customer_email,
+            u.username AS assigned_name
+     FROM repair_tickets t
+     JOIN customers c ON c.id = t.customer_id
+     LEFT JOIN users u ON u.id = t.assigned_to
+     WHERE t.customer_id = $1
+     ORDER BY t.created_at DESC`,
+    [customerId]
+  ) as TicketRow[];
 
-  return rows.map((row) => {
-    const ticket = mapTicket(row);
-    const updates = getDb()
-      .prepare(
-        `SELECT ru.*, u.username AS staff_name
-         FROM repair_updates ru
-         LEFT JOIN users u ON u.id = ru.staff_id
-         WHERE ru.ticket_id = ? AND ru.customer_visible = 1
-         ORDER BY ru.created_at ASC`
-      )
-      .all(ticket.id)
-      .map((u: any) => mapUpdate(u, u.staff_name));
-    ticket.updates = updates;
-    return ticket;
-  });
+  const tickets: Ticket[] = [];
+  for (const row of rows) {
+    const ticket = await mapTicket(row);
+    const updateRows = await queryAll(
+      `SELECT ru.*, u.username AS staff_name
+       FROM repair_updates ru
+       LEFT JOIN users u ON u.id = ru.staff_id
+       WHERE ru.ticket_id = $1 AND ru.customer_visible = 1
+       ORDER BY ru.created_at ASC`,
+      [ticket.id]
+    );
+    ticket.updates = updateRows.map((u: any) => mapUpdate(u, u.staff_name));
+    tickets.push(ticket);
+  }
+  return tickets;
 }
 
-function listRepairsForCustomerPaged(customerId: number, options: CustomerPagedFilter = {}): PagedResult {
+async function listRepairsForCustomerPaged(customerId: number, options: CustomerPagedFilter = {}): Promise<PagedResult> {
   const { status, page = 1, pageSize = 10 } = options;
-  const whereClauses: string[] = ["t.customer_id = ?"];
+  const whereClauses: string[] = ["t.customer_id = $1"];
   const params: any[] = [customerId];
+  let idx = 2;
   if (status) {
-    whereClauses.push("t.status = ?");
+    whereClauses.push(`t.status = $${idx}`);
     params.push(status);
+    idx++;
   }
 
   const where = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
-  const countRow = getDb()
-    .prepare(`SELECT COUNT(*) AS cnt FROM repair_tickets t ${where}`)
-    .get(...params) as { cnt: number };
-  const total = countRow ? countRow.cnt : 0;
+  const countRow = await queryOne(`SELECT COUNT(*) AS cnt FROM repair_tickets t ${where}`, params) as { cnt: number };
+  const total = countRow ? Number(countRow.cnt) : 0;
 
   const offset = (Number(page) - 1) * Number(pageSize);
+  params.push(Number(pageSize), offset);
 
-  const query = `
-    SELECT t.*, c.name AS customer_name, c.email AS customer_email,
-           u.username AS assigned_name
-    FROM repair_tickets t
-    JOIN customers c ON c.id = t.customer_id
-    LEFT JOIN users u ON u.id = t.assigned_to
-    ${where}
-    ORDER BY t.created_at DESC
-    LIMIT ? OFFSET ?
-  `;
+  const rows = await queryAll(
+    `SELECT t.*, c.name AS customer_name, c.email AS customer_email,
+            u.username AS assigned_name
+     FROM repair_tickets t
+     JOIN customers c ON c.id = t.customer_id
+     LEFT JOIN users u ON u.id = t.assigned_to
+     ${where}
+     ORDER BY t.created_at DESC
+     LIMIT $${idx} OFFSET $${idx + 1}`,
+    params
+  ) as TicketRow[];
 
-  const rows = getDb().prepare(query).all(...params, Number(pageSize), offset) as TicketRow[];
-
-  const tickets = rows.map((row) => {
-    const ticket = mapTicket(row);
-    const updates = getDb()
-      .prepare(
-        `SELECT ru.*, u.username AS staff_name
-         FROM repair_updates ru
-         LEFT JOIN users u ON u.id = ru.staff_id
-         WHERE ru.ticket_id = ? AND ru.customer_visible = 1
-         ORDER BY ru.created_at ASC`
-      )
-      .all(ticket.id)
-      .map((u: any) => mapUpdate(u, u.staff_name));
-    ticket.updates = updates;
-    return ticket;
-  });
+  const tickets: Ticket[] = [];
+  for (const row of rows) {
+    const ticket = await mapTicket(row);
+    const updateRows = await queryAll(
+      `SELECT ru.*, u.username AS staff_name
+       FROM repair_updates ru
+       LEFT JOIN users u ON u.id = ru.staff_id
+       WHERE ru.ticket_id = $1 AND ru.customer_visible = 1
+       ORDER BY ru.created_at ASC`,
+      [ticket.id]
+    );
+    ticket.updates = updateRows.map((u: any) => mapUpdate(u, u.staff_name));
+    tickets.push(ticket);
+  }
 
   return { tickets, total, page: Number(page), pageSize: Number(pageSize) };
 }
 
-function listRepairsForStaff(options: StaffFilter = {}): Ticket[] {
+async function listRepairsForStaff(options: StaffFilter = {}): Promise<Ticket[]> {
   const { status, assignedTo } = options;
-  let query = `
+  let sql = `
     SELECT t.*, c.name AS customer_name, c.email AS customer_email,
            u.username AS assigned_name
     FROM repair_tickets t
@@ -410,139 +393,170 @@ function listRepairsForStaff(options: StaffFilter = {}): Ticket[] {
     WHERE 1=1
   `;
   const params: any[] = [];
+  let idx = 1;
 
   if (status) {
-    query += " AND t.status = ?";
+    sql += ` AND t.status = $${idx}`;
     params.push(status);
+    idx++;
   }
   if (assignedTo) {
-    query += " AND t.assigned_to = ?";
+    sql += ` AND t.assigned_to = $${idx}`;
     params.push(assignedTo);
+    idx++;
   }
 
-  query += " ORDER BY t.created_at DESC";
+  sql += " ORDER BY t.created_at DESC";
 
-  return (getDb().prepare(query).all(...params) as TicketRow[]).map((row) => mapTicket(row));
+  const rows = await queryAll(sql, params) as TicketRow[];
+  const tickets: Ticket[] = [];
+  for (const row of rows) {
+    tickets.push(await mapTicket(row));
+  }
+  return tickets;
 }
 
-function listCalendarRepairs(from: string, to: string, assignedTo?: number): Ticket[] {
-  let query = `
+async function listCalendarRepairs(from: string, to: string, assignedTo?: number): Promise<Ticket[]> {
+  let sql = `
     SELECT t.*, c.name AS customer_name, c.email AS customer_email,
            u.username AS assigned_name
     FROM repair_tickets t
     JOIN customers c ON c.id = t.customer_id
     LEFT JOIN users u ON u.id = t.assigned_to
     WHERE t.scheduled_at IS NOT NULL
-      AND t.scheduled_at >= ?
-      AND t.scheduled_at < ?
+      AND t.scheduled_at >= $1
+      AND t.scheduled_at < $2
       AND t.status NOT IN ('collected', 'cancelled')
   `;
   const params: any[] = [from, to];
+  let idx = 3;
 
   if (assignedTo) {
-    query += " AND t.assigned_to = ?";
+    sql += ` AND t.assigned_to = $${idx}`;
     params.push(assignedTo);
+    idx++;
   }
 
-  query += " ORDER BY t.scheduled_at ASC";
+  sql += " ORDER BY t.scheduled_at ASC";
 
-  return (getDb().prepare(query).all(...params) as TicketRow[]).map((row) => mapTicket(row));
+  const rows = await queryAll(sql, params) as TicketRow[];
+  const tickets: Ticket[] = [];
+  for (const row of rows) {
+    tickets.push(await mapTicket(row));
+  }
+  return tickets;
 }
 
-function updateRepairTicket(ticketId: string, updates: TicketUpdates, staffId?: number): Ticket | { error: string } | null {
-  const existing = loadTicketDetails(ticketId);
+async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staffId?: number): Promise<Ticket | { error: string } | null> {
+  const existing = await loadTicketDetails(ticketId);
   if (!existing) return null;
 
   const fields: string[] = [];
-  const params: { [key: string]: any } = { id: ticketId };
+  const params: any[] = [];
+  let idx = 1;
 
   if (updates.status !== undefined) {
     if (!isValidStatus(updates.status)) return { error: "Invalid status." };
-    fields.push("status = @status");
-    params.status = updates.status;
+    fields.push(`status = $${idx}`);
+    params.push(updates.status);
+    idx++;
     if (updates.status === "collected") {
-      fields.push("completed_at = datetime('now')");
+      fields.push("completed_at = NOW()::text");
     }
   }
   if (updates.assignedTo !== undefined) {
-    fields.push("assigned_to = @assigned_to");
-    params.assigned_to = updates.assignedTo || null;
+    fields.push(`assigned_to = $${idx}`);
+    params.push(updates.assignedTo || null);
+    idx++;
   }
   if (updates.etaAt !== undefined) {
-    fields.push("eta_at = @eta_at");
-    params.eta_at = updates.etaAt || null;
+    fields.push(`eta_at = $${idx}`);
+    params.push(updates.etaAt || null);
+    idx++;
   }
   if (updates.scheduledAt !== undefined) {
-    fields.push("scheduled_at = @scheduled_at");
-    params.scheduled_at = updates.scheduledAt || null;
+    fields.push(`scheduled_at = $${idx}`);
+    params.push(updates.scheduledAt || null);
+    idx++;
   }
   if (updates.diagnosis !== undefined) {
-    fields.push("diagnosis = @diagnosis");
-    params.diagnosis = updates.diagnosis;
+    fields.push(`diagnosis = $${idx}`);
+    params.push(updates.diagnosis);
+    idx++;
   }
   if (updates.workNotes !== undefined) {
-    fields.push("work_notes = @work_notes");
-    params.work_notes = updates.workNotes;
+    fields.push(`work_notes = $${idx}`);
+    params.push(updates.workNotes);
+    idx++;
   }
   if (updates.customerNotes !== undefined) {
-    fields.push("customer_notes = @customer_notes");
-    params.customer_notes = updates.customerNotes;
+    fields.push(`customer_notes = $${idx}`);
+    params.push(updates.customerNotes);
+    idx++;
   }
   if (updates.deviceType !== undefined) {
-    fields.push("device_type = @device_type");
-    params.device_type = updates.deviceType;
+    fields.push(`device_type = $${idx}`);
+    params.push(updates.deviceType);
+    idx++;
   }
   if (updates.deviceModel !== undefined) {
-    fields.push("device_model = @device_model");
-    params.device_model = updates.deviceModel;
+    fields.push(`device_model = $${idx}`);
+    params.push(updates.deviceModel);
+    idx++;
   }
   if (updates.issueDescription !== undefined) {
-    fields.push("issue_description = @issue_description");
-    params.issue_description = updates.issueDescription;
+    fields.push(`issue_description = $${idx}`);
+    params.push(updates.issueDescription);
+    idx++;
   }
   if (updates.repairType !== undefined) {
-    fields.push("repair_type = @repair_type");
-    params.repair_type = updates.repairType || null;
+    fields.push(`repair_type = $${idx}`);
+    params.push(updates.repairType || null);
+    idx++;
   }
   if (updates.hardwareValue !== undefined) {
-    fields.push("hardware_value = @hardware_value");
-    params.hardware_value = updates.hardwareValue;
+    fields.push(`hardware_value = $${idx}`);
+    params.push(updates.hardwareValue);
+    idx++;
   }
   if (updates.softwareInstall !== undefined) {
-    fields.push("software_install = @software_install");
-    params.software_install = updates.softwareInstall ? 1 : 0;
+    fields.push(`software_install = $${idx}`);
+    params.push(updates.softwareInstall ? 1 : 0);
+    idx++;
   }
   if (updates.softwareLicense !== undefined) {
-    fields.push("software_license = @software_license");
-    params.software_license = updates.softwareLicense ? 1 : 0;
+    fields.push(`software_license = $${idx}`);
+    params.push(updates.softwareLicense ? 1 : 0);
+    idx++;
   }
 
-  if (!fields.length) return loadTicketDetails(ticketId);
+  if (!fields.length) return await loadTicketDetails(ticketId);
 
-  // Calculate the total cost from parts and pricing fields
-  const pCost = getDb().prepare("SELECT COALESCE(SUM(quantity * unit_cost), 0) AS c FROM repair_parts_used WHERE ticket_id = ?").get(ticketId) as { c: number };
+  const pCost = await queryOne("SELECT COALESCE(SUM(quantity * unit_cost), 0) AS c FROM repair_parts_used WHERE ticket_id = $1", [ticketId]) as { c: number };
   const partsCost = pCost?.c || 0;
   const repairType = updates.repairType !== undefined ? updates.repairType : existing.repairType;
   const hwValue = updates.hardwareValue !== undefined ? updates.hardwareValue : existing.hardwareValue;
   const swInstall = updates.softwareInstall !== undefined ? updates.softwareInstall : existing.softwareInstall;
   const swLicense = updates.softwareLicense !== undefined ? updates.softwareLicense : existing.softwareLicense;
-  const totalCost = calculateRepairCost(repairType, hwValue, partsCost, swInstall, swLicense);
+  const totalCost = await calculateRepairCost(repairType, hwValue, partsCost, swInstall, swLicense);
   const laborCost = totalCost - partsCost;
 
-  fields.push("labor_cost = @labor_cost");
-  params.labor_cost = laborCost;
-  fields.push("parts_cost = @parts_cost");
-  params.parts_cost = partsCost;
-  fields.push("total_cost = @total_cost");
-  params.total_cost = totalCost;
-  fields.push("updated_at = datetime('now')");
+  fields.push(`labor_cost = $${idx}`);
+  params.push(laborCost);
+  idx++;
+  fields.push(`parts_cost = $${idx}`);
+  params.push(partsCost);
+  idx++;
+  fields.push(`total_cost = $${idx}`);
+  params.push(totalCost);
+  idx++;
+  fields.push("updated_at = NOW()::text");
 
-  getDb()
-    .prepare(`UPDATE repair_tickets SET ${fields.join(", ")} WHERE id = @id`)
-    .run(params);
+  params.push(ticketId);
+  await query(`UPDATE repair_tickets SET ${fields.join(", ")} WHERE id = $${idx}`, params);
 
   if (updates.status && updates.status !== existing.status) {
-    addRepairUpdate(
+    await addRepairUpdate(
       ticketId,
       staffId || null,
       "status",
@@ -551,103 +565,85 @@ function updateRepairTicket(ticketId: string, updates: TicketUpdates, staffId?: 
     );
   }
 
-  return loadTicketDetails(ticketId);
+  return await loadTicketDetails(ticketId);
 }
 
-function addRepairUpdate(ticketId: string, staffId: number | null, updateType: string, message: string, customerVisible: boolean = false): void {
-  getDb()
-    .prepare(
-      `INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible)
-       VALUES (?, ?, ?, ?, ?)`
-    )
-    .run(ticketId, staffId, updateType, message, customerVisible ? 1 : 0);
+async function addRepairUpdate(ticketId: string, staffId: number | null, updateType: string, message: string, customerVisible: boolean = false): Promise<void> {
+  await query(
+    `INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [ticketId, staffId, updateType, message, customerVisible ? 1 : 0]
+  );
 }
 
-function addRepairPart(ticketId: string, data: any): TicketResult {
+async function addRepairPart(ticketId: string, data: any): Promise<TicketResult> {
   const desc = String(data.description || "").trim();
   if (!desc) return { ok: false, error: "Part description is required." };
 
   const qty = Math.max(1, Number(data.quantity) || 1);
   const cost = Number(data.unitCost) || 0;
 
-  const result = getDb()
-    .prepare(
-      `INSERT INTO repair_parts_used (ticket_id, description, product_id, quantity, unit_cost)
-       VALUES (?, ?, ?, ?, ?)`
-    )
-    .run(ticketId, desc, data.productId || null, qty, cost);
+  const result = await query(
+    `INSERT INTO repair_parts_used (ticket_id, description, product_id, quantity, unit_cost)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [ticketId, desc, data.productId || null, qty, cost]
+  );
+  const newId = result.rows[0]?.id;
 
-  // Recalculate costs when parts change
-  recalculateTicketCost(ticketId);
+  await recalculateTicketCost(ticketId);
 
-  return {
-    ok: true,
-    part: mapPart(getDb().prepare("SELECT * FROM repair_parts_used WHERE id = ?").get(result.lastInsertRowid) as any),
-  };
+  const partRow = await queryOne("SELECT * FROM repair_parts_used WHERE id = $1", [newId]) as any;
+  return { ok: true, part: mapPart(partRow) };
 }
 
-function removeRepairPart(ticketId: string, partId: number): boolean {
-  const result = getDb()
-    .prepare("DELETE FROM repair_parts_used WHERE id = ? AND ticket_id = ?")
-    .run(partId, ticketId);
-  if (result.changes > 0) recalculateTicketCost(ticketId);
-  return result.changes > 0;
+async function removeRepairPart(ticketId: string, partId: number): Promise<boolean> {
+  const r = await query("DELETE FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]);
+  if ((r.rowCount ?? 0) > 0) await recalculateTicketCost(ticketId);
+  return (r.rowCount ?? 0) > 0;
 }
 
-function recalculateTicketCost(ticketId: string): void {
-  const ticket = loadTicketDetails(ticketId);
+async function recalculateTicketCost(ticketId: string): Promise<void> {
+  const ticket = await loadTicketDetails(ticketId);
   if (!ticket) return;
-  const pCost = getDb().prepare("SELECT COALESCE(SUM(quantity * unit_cost), 0) AS c FROM repair_parts_used WHERE ticket_id = ?").get(ticketId) as { c: number };
+  const pCost = await queryOne("SELECT COALESCE(SUM(quantity * unit_cost), 0) AS c FROM repair_parts_used WHERE ticket_id = $1", [ticketId]) as { c: number };
   const partsCost = pCost?.c || 0;
-  const totalCost = calculateRepairCost(ticket.repairType, ticket.hardwareValue, partsCost, ticket.softwareInstall, ticket.softwareLicense);
+  const totalCost = await calculateRepairCost(ticket.repairType, ticket.hardwareValue, partsCost, ticket.softwareInstall, ticket.softwareLicense);
   const laborCost = totalCost - partsCost;
-  getDb().prepare("UPDATE repair_tickets SET labor_cost = ?, parts_cost = ?, total_cost = ?, updated_at = datetime('now') WHERE id = ?").run(laborCost, partsCost, totalCost, ticketId);
+  await query("UPDATE repair_tickets SET labor_cost = $1, parts_cost = $2, total_cost = $3, updated_at = NOW()::text WHERE id = $4", [laborCost, partsCost, totalCost, ticketId]);
 }
 
-function getDashboardStats(): DashboardStats {
-  const open = getDb()
-    .prepare(`SELECT COUNT(*) AS c FROM repair_tickets WHERE status NOT IN ('collected', 'cancelled')`)
-    .get() as { c: number };
-  const dueToday = getDb()
-    .prepare(`SELECT COUNT(*) AS c FROM repair_tickets
-       WHERE status NOT IN ('collected', 'cancelled')
-       AND date(eta_at) <= date('now')`)
-    .get() as { c: number };
-  const scheduledToday = getDb()
-    .prepare(`SELECT COUNT(*) AS c FROM repair_tickets
-       WHERE scheduled_at IS NOT NULL
-       AND date(scheduled_at) = date('now')
-       AND status NOT IN ('collected', 'cancelled')`)
-    .get() as { c: number };
-  const unassigned = getDb()
-    .prepare(`SELECT COUNT(*) AS c FROM repair_tickets
-       WHERE assigned_to IS NULL AND status NOT IN ('collected', 'cancelled')`)
-    .get() as { c: number };
+async function getDashboardStats(): Promise<DashboardStats> {
+  const open = await queryOne(`SELECT COUNT(*) AS c FROM repair_tickets WHERE status NOT IN ('collected', 'cancelled')`) as { c: number };
+  const dueToday = await queryOne(`SELECT COUNT(*) AS c FROM repair_tickets
+     WHERE status NOT IN ('collected', 'cancelled')
+     AND (eta_at::date) <= (NOW()::date)`) as { c: number };
+  const scheduledToday = await queryOne(`SELECT COUNT(*) AS c FROM repair_tickets
+     WHERE scheduled_at IS NOT NULL
+     AND (scheduled_at::date) = (NOW()::date)
+     AND status NOT IN ('collected', 'cancelled')`) as { c: number };
+  const unassigned = await queryOne(`SELECT COUNT(*) AS c FROM repair_tickets
+     WHERE assigned_to IS NULL AND status NOT IN ('collected', 'cancelled')`) as { c: number };
 
-  return { openRepairs: open.c, dueToday: dueToday.c, scheduledToday: scheduledToday.c, unassigned: unassigned.c };
+  return { openRepairs: Number(open?.c || 0), dueToday: Number(dueToday?.c || 0), scheduledToday: Number(scheduledToday?.c || 0), unassigned: Number(unassigned?.c || 0) };
 }
 
-function listRepairTypes(): RepairType[] {
-  return getDb().prepare("SELECT id, name, description, base_price AS basePrice FROM repair_types ORDER BY name").all() as RepairType[];
+async function listRepairTypes(): Promise<RepairType[]> {
+  return await queryAll("SELECT id, name, description, base_price AS \"basePrice\" FROM repair_types ORDER BY name") as RepairType[];
 }
 
-function sendRepairQuote(ticketId: string): boolean {
-  const ticket = loadTicketDetails(ticketId);
+async function sendRepairQuote(ticketId: string): Promise<boolean> {
+  const ticket = await loadTicketDetails(ticketId);
   if (!ticket) return false;
-  getDb()
-    .prepare(`UPDATE repair_tickets SET quote_sent_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
-    .run(ticketId);
-  addRepairUpdate(ticketId, null, "quote_sent", "A cost estimate has been sent. Please review and respond.", true);
+  await query(`UPDATE repair_tickets SET quote_sent_at = NOW()::text, updated_at = NOW()::text WHERE id = $1`, [ticketId]);
+  await addRepairUpdate(ticketId, null, "quote_sent", "A cost estimate has been sent. Please review and respond.", true);
   return true;
 }
 
-function respondToRepairQuote(ticketId: string, response: "accepted" | "declined"): boolean {
-  const ticket = loadTicketDetails(ticketId);
+async function respondToRepairQuote(ticketId: string, response: "accepted" | "declined"): Promise<boolean> {
+  const ticket = await loadTicketDetails(ticketId);
   if (!ticket || !ticket.quoteSentAt) return false;
-  getDb()
-    .prepare(`UPDATE repair_tickets SET quote_response = ?, quote_responded_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
-    .run(response, ticketId);
-  addRepairUpdate(ticketId, null, "quote_" + response, `Customer ${response} the cost estimate.`, true);
+  await query(`UPDATE repair_tickets SET quote_response = $1, quote_responded_at = NOW()::text, updated_at = NOW()::text WHERE id = $2`, [response, ticketId]);
+  await addRepairUpdate(ticketId, null, "quote_" + response, `Customer ${response} the cost estimate.`, true);
   return true;
 }
 

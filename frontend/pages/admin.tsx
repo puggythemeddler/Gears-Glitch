@@ -2662,9 +2662,9 @@ function AdminCoupons() {
     const body: any = { code: fd.get("code"), type: fd.get("type"), value: fd.get("value"), min_order_amount: fd.get("min_order_amount"), max_uses: fd.get("max_uses"), expires_at: fd.get("expires_at") || null, is_active: fd.get("is_active") === "on" };
     try {
       if (editing) {
-        await api(`/api/admin/coupons/${editing.id}`, { method: "PUT", body });
+        await api(`/api/admin/coupons/${editing.id}`, { method: "PUT", body: JSON.stringify(body) });
       } else {
-        await api("/api/admin/coupons", { method: "POST", body });
+        await api("/api/admin/coupons", { method: "POST", body: JSON.stringify(body) });
       }
       setShowForm(false); setEditing(null); refetch();
     } catch (e: any) { setMsg(e.message); }
@@ -2741,8 +2741,8 @@ function AdminSuppliers() {
     const fd = new FormData(e.target as HTMLFormElement);
     const body = { name: fd.get("name"), contact_name: fd.get("contact_name"), email: fd.get("email"), phone: fd.get("phone"), address: fd.get("address"), notes: fd.get("notes"), is_active: fd.get("is_active") === "on" };
     try {
-      if (editing) { await api(`/api/admin/suppliers/${editing.id}`, { method: "PUT", body }); }
-      else { await api("/api/admin/suppliers", { method: "POST", body }); }
+      if (editing) { await api(`/api/admin/suppliers/${editing.id}`, { method: "PUT", body: JSON.stringify(body) }); }
+      else { await api("/api/admin/suppliers", { method: "POST", body: JSON.stringify(body) }); }
       setShowForm(false); setEditing(null); refetch();
     } catch (e: any) { setMsg(e.message); }
     finally { setSaving(false); }

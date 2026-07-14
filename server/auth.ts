@@ -119,10 +119,9 @@ function customerAuthMiddleware(req: Request, res: Response, next: NextFunction)
 
 async function loginStaff(login: string, password: string): Promise<AuthResult> {
   const isEmail = login.includes("@");
-  let user = isEmail ? findStaffByEmail(login) as StaffUser | undefined : findStaffByUsername(login) as StaffUser | undefined;
-  // Fallback: try username lookup for email input, or email lookup for username input
+  let user = isEmail ? await findStaffByEmail(login) as StaffUser | undefined : await findStaffByUsername(login) as StaffUser | undefined;
   if (!user) {
-    user = isEmail ? findStaffByUsername(login) as StaffUser | undefined : findStaffByEmail(login + "@gearandglitch.com") as StaffUser | undefined;
+    user = isEmail ? await findStaffByUsername(login) as StaffUser | undefined : await findStaffByEmail(login + "@gearandglitch.com") as StaffUser | undefined;
   }
   if (!user) {
     return { ok: false, error: "Invalid username/email or password." };
@@ -150,11 +149,11 @@ async function registerCustomer({ name, email, password }: { name: string; email
   if (password.length < 8) {
     return { ok: false, error: "Password must be at least 8 characters." };
   }
-  if (findCustomerByEmail(trimmedEmail)) {
+  if (await findCustomerByEmail(trimmedEmail)) {
     return { ok: false, error: "An account with this email already exists." };
   }
 
-  const customer = createCustomer(trimmedName, trimmedEmail, password) as CustomerUser;
+  const customer = await createCustomer(trimmedName, trimmedEmail, password) as CustomerUser;
   const token = signToken({
     sub: customer.id,
     email: customer.email,
@@ -165,7 +164,7 @@ async function registerCustomer({ name, email, password }: { name: string; email
 }
 
 async function loginCustomer(email: string, password: string): Promise<AuthResult> {
-  const customer = findCustomerByEmail(String(email || "").trim().toLowerCase()) as CustomerUser | undefined;
+  const customer = await findCustomerByEmail(String(email || "").trim().toLowerCase()) as CustomerUser | undefined;
   if (!customer) {
     return { ok: false, error: "Invalid email or password." };
   }
@@ -204,7 +203,7 @@ function providerAuthMiddleware(req: Request, res: Response, next: NextFunction)
 }
 
 async function loginProvider(email: string, password: string): Promise<AuthResult> {
-  const provider = findProviderByEmail(String(email || "").trim().toLowerCase()) as any;
+  const provider = await findProviderByEmail(String(email || "").trim().toLowerCase()) as any;
   if (!provider) {
     return { ok: false, error: "Invalid email or password." };
   }
@@ -223,7 +222,7 @@ async function loginProvider(email: string, password: string): Promise<AuthResul
 }
 
 async function googleLogin(googleToken: string): Promise<AuthResult> {
-  const clientId = getStoreSetting("google_client_id") || process.env.GOOGLE_CLIENT_ID || "";
+  const clientId = (await getStoreSetting("google_client_id")) || process.env.GOOGLE_CLIENT_ID || "";
   if (!clientId) {
     return { ok: false, error: "Google login is not configured." };
   }
@@ -237,17 +236,17 @@ async function googleLogin(googleToken: string): Promise<AuthResult> {
     const email = payload.email.toLowerCase();
     const name = payload.name || email.split("@")[0];
 
-    let customer = findCustomerByEmail(email);
+    let customer = await findCustomerByEmail(email);
     if (!customer) {
       const { createCustomer } = require("./db");
       const randomPass = crypto.randomBytes(16).toString("hex");
-      customer = createCustomer(name, email, randomPass);
+      customer = await createCustomer(name, email, randomPass);
       if (!customer) {
         return { ok: false, error: "Failed to create account." };
       }
     }
 
-    updateCustomerLastLogin(customer.id);
+    await updateCustomerLastLogin(customer.id);
 
     const token = signToken({
       sub: customer.id,

@@ -62,7 +62,7 @@ export default function AdminProducts() {
       }
       if (errors.length > 0) { setImportMsg(`Error: ${errors.length} row(s) with errors:\n${errors.slice(0, 10).join("\n")}${errors.length > 10 ? `\n...and ${errors.length - 10} more` : ""}`); setImporting(false); return; }
       if (rows.length === 0) { setImportMsg("Error: No valid rows to import"); setImporting(false); return; }
-      const res = await api<{ imported: number }>("/api/products/import", { method: "POST", body: { products: rows } });
+      const res = await api<{ imported: number }>("/api/products/import", { method: "POST", body: JSON.stringify({ products: rows }) });
       setImportMsg(`Success: Imported ${res.imported} product(s)`);
       refetch();
       if (importFileRef.current) importFileRef.current.value = "";
@@ -95,7 +95,7 @@ export default function AdminProducts() {
     if (inStock !== null && inStock !== "") updates.inStock = inStock === "true";
     if (Object.keys(updates).length === 0) { setBulkMsg("Set at least one field to update."); setBulkSaving(false); return; }
     try {
-      const res = await api<{ updated: number }>("/api/admin/products/bulk-edit", { method: "POST", body: { productIds, updates } });
+      const res = await api<{ updated: number }>("/api/admin/products/bulk-edit", { method: "POST", body: JSON.stringify({ productIds, updates }) });
       setBulkMsg(`Updated ${res.updated} product(s).`);
       setSelectedIds(new Set()); setShowBulk(false); refetch();
     } catch (e: any) { setBulkMsg(e.message || "Bulk edit failed."); }

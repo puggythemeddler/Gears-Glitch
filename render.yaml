@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: gear-glitch-backend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npx tsc
+    startCommand: node dist/server/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 8020
+      - key: BASE_URL
+        value: https://gear-glitch-backend.onrender.com
+    healthCheckPath: /api/health
+    autoDeploy: true

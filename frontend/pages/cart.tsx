@@ -80,15 +80,13 @@ export default function CartPage() {
     if (!couponCode.trim()) return;
     setCouponMsg("");
     try {
-      const res = await api<{ coupon: any; discount: number }>("/api/coupons/validate", { method: "POST", body: { code: couponCode.trim(), subtotal } });
+      const res = await api<{ coupon: any; discount: number }>("/api/coupons/validate", { method: "POST", body: JSON.stringify({ code: couponCode.trim(), subtotal }) });
       setCouponDiscount(res.discount);
       setCouponMsg(`Coupon applied! You save ${formatPrice(res.discount)}`);
     } catch (e: any) {
       setCouponDiscount(0);
         setCouponMsg(e.message || "Invalid coupon");
     }
-  }
-
   }
 
   async function checkout() {

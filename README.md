@@ -1,6 +1,6 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 4 storefront layout themes (Original, Amazon, Jumia, Mobile), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, and dark/light theme toggle. Runs on Node.js + SQLite (backend) with Next.js (frontend), no external database required.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 4 storefront layout themes (Original, Amazon, Jumia, Mobile), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, and dark/light theme toggle. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ---
 
@@ -12,7 +12,7 @@ Three layers, cleanly separated:
 |-------|------|------|---------|
 | **Frontend** | Next.js 14 (Pages Router) + TypeScript | 3000 | UI rendering, client-side routing |
 | **Backend** | Express + TypeScript | 8020 | REST API, JWT auth (24h staff / 7d customer), file uploads, M-Pesa |
-| **Database** | SQLite via `better-sqlite3` | — | File `data/store.db` + per-client databases in `data/clients/` |
+| **Database** | PostgreSQL via `pg` Pool | — | Cloud database (Neon) with schema-per-client multi-tenancy |
 
 **Security middleware** applied globally: Helmet (CSP disabled), CORS (configurable via `CORS_ORIGIN`), rate limiting (200 req/15min global, 10 req/15min on auth endpoints). The Next.js dev server proxies `/api/*` and `/uploads/*` to the Express backend automatically.
 
@@ -25,6 +25,7 @@ git clone https://github.com/gearandglitch/shop.git
 cd shop
 npm install
 copy .env.example .env
+# Edit .env and set DATABASE_URL, JWT_SECRET, and other required vars
 cd frontend
 npm install
 cd ..
@@ -33,6 +34,8 @@ npm run dev:all
 ```
 
 Opens **http://localhost:3000** in a browser.
+
+> **Note:** You need a PostgreSQL database (e.g. [Neon](https://neon.tech), Railway, or local). Set `DATABASE_URL` in `.env` before starting the server.
 
 ---
 
@@ -307,7 +310,9 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 
 server/                   # Express backend (TypeScript)
 ├── index.ts              # Express server — all API routes + static serving
-├── db.ts                 # SQLite database layer (CRUD, migrations, seed)
+├── db.ts                 # PostgreSQL database layer (async CRUD, migrations, seed)
+├── db-helpers.ts         # Query utility functions (query, queryOne, queryAll, transaction)
+├── schema.sql            # PostgreSQL schema (52 tables)
 ├── auth.ts               # JWT auth middleware + login/register
 ├── repairs.ts            # Repair ticket lifecycle
 ├── permissions.ts        # Role-based permissions + assignRoleToUser
@@ -317,9 +322,10 @@ server/                   # Express backend (TypeScript)
 ├── mpesa.ts              # Daraja API STK Push
 └── notify.ts             # Email notifications
 
-products.json             # Seed data (34 products)
+render.yaml              # Render.com deployment config
+vercel.json              # Vercel deployment config
+products.json            # Seed data (34 products)
 data/
-├── store.db              # SQLite database (auto-created)
 └── uploads/              # Product images, gallery, logos
 ```
 
@@ -577,6 +583,7 @@ The system supports both VSCU (local JAR bridge) and OSCU (cloud API) eTIMS mode
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | 8020 | Server port |
+| `DATABASE_URL` | — | **Required.** PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/dbname`) |
 | `JWT_SECRET` | — | **Required.** Server fails to start if unset or placeholder. Use a long random string. |
 | `ADMIN_USERNAME` | admin | Admin username |
 | `ADMIN_EMAIL` | admin@gearandglitch.com | Admin email |
@@ -623,7 +630,7 @@ npm start                # Serve production build
 - Images stored in `data/uploads/` (JPEG, PNG, WebP, GIF, max 5MB). Cache-busting via `?v=<timestamp>` on image URLs and `Cache-Control: no-store` on `/uploads` static middleware.
 - M-Pesa STK Push — simulated when credentials not configured. Callback validates `Body.stkCallback.CheckoutRequestID`. Phone numbers masked in `data/mpesa.log`.
 - All 47 Kenyan counties with tiered delivery fees
-- Delete `data/store.db` to reset and regenerate
+- To reset the database, drop and recreate the PostgreSQL schema (tables are auto-created on server start)
 - Security headers applied via Helmet (CSP disabled for inline styles). CORS origin configurable via `CORS_ORIGIN`. Rate limiting: 200 req/15min global, 10 req/15min on auth routes.
 - Error responses return generic messages — internal error details are not exposed to clients.
 - **Tax system**: Global tax rate configurable in Settings (default 16%). Each product has a taxable toggle (eTims-compatible).
@@ -633,19 +640,21 @@ npm start                # Serve production build
 - **Coupons**: Admin can create percentage or fixed discount codes with min order, max uses, and expiry. Customers apply at checkout. Discount recorded per order.
 - **Bulk Edit**: Products table supports multi-select with checkboxes and bulk price/category/stock updates.
 - **Price History**: Every price change is automatically recorded and viewable per product.
-- **Database Backup**: One-click backup download from Settings page.
+- **Database Backup**: PostgreSQL backups are handled by your provider (Neon, Railway, etc.) — enable automatic backups. For file uploads, back up `data/uploads/` regularly.
 
 ---
 
 ## Deployment Checklist
 
-1. **Set `JWT_SECRET`** to a long random string — server will not start without it
-2. **Set `ADMIN_PASSWORD` and `TECH_PASSWORD`** — users won't be created if unset in production
-3. **Set `NODE_ENV=production`** — disables demo accounts, disables weak-password fallbacks
-4. **Set `CORS_ORIGIN`** to your frontend URL (e.g. `https://mystore.com`)
-5. **Configure `SMTP_*`** for real email
-6. **Use HTTPS** behind a reverse proxy (nginx, Caddy, Cloudflare) — all traffic (passwords, tokens, M-Pesa data) is unprotected without TLS
-7. Build backend: `npm run build`
-8. Build frontend: `cd frontend && npm run build`
-9. Run with a process manager (PM2, systemd, etc.)
-10. Back up `data/store.db` and `data/uploads/` regularly
+1. **Provision PostgreSQL** — create a database on [Neon](https://neon.tech), Railway, or Render Postgres
+2. **Set `DATABASE_URL`** — PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/dbname`)
+3. **Set `JWT_SECRET`** to a long random string — server will not start without it
+4. **Set `ADMIN_PASSWORD` and `TECH_PASSWORD`** — users won't be created if unset in production
+5. **Set `NODE_ENV=production`** — disables demo accounts, disables weak-password fallbacks
+6. **Set `CORS_ORIGIN`** to your frontend URL (e.g. `https://mystore.com`)
+7. **Configure `SMTP_*`** for real email
+8. **Use HTTPS** behind a reverse proxy (nginx, Caddy, Cloudflare) — all traffic (passwords, tokens, M-Pesa data) is unprotected without TLS
+9. Build backend: `npm run build`
+10. Build frontend: `cd frontend && npm run build`
+11. Run with a process manager (PM2, systemd, etc.) or deploy to Render.com / Vercel
+12. Back up `data/uploads/` regularly — PostgreSQL is managed by your provider
