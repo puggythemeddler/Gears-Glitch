@@ -103,7 +103,7 @@ export default function ProductPage() {
     if (!reviewRating) { setReviewMsg("Please select a rating."); return; }
     setReviewSubmitting(true); setReviewMsg("");
     try {
-      await api(`/api/products/${encodeURIComponent(id as string)}/reviews`, { method: "POST", body: { rating: reviewRating, title: reviewTitle, comment: reviewComment } });
+      await api(`/api/products/${encodeURIComponent(id as string)}/reviews`, { method: "POST", body: JSON.stringify({ rating: reviewRating, title: reviewTitle, comment: reviewComment }) });
       setReviewMsg("Review submitted!");
       setUserReviewed(true);
       const d = await api<{ reviews: any[]; rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(id as string)}/reviews`);

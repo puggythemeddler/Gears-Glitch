@@ -1,4 +1,4 @@
-import Database = require("better-sqlite3");
+import { query, queryOne, queryAll } from "./db-helpers";
 
 interface PermissionMap {
   [key: string]: string;
@@ -17,8 +17,6 @@ interface UserRole {
   name: string;
   description: string | null;
 }
-
-type Db = Database.Database;
 
 const PERMISSIONS: PermissionMap = {
   "staff:list": "View staff members",
@@ -87,51 +85,15 @@ const DEFAULT_ROLES: DefaultRoles = {
   ],
 };
 
-function initRoles(db: Db): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS roles (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      description TEXT,
-      is_custom INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS role_permissions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      role_id TEXT NOT NULL,
-      permission TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (role_id, permission),
-      FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
-    );
-    CREATE TABLE IF NOT EXISTS user_roles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      role_id TEXT NOT NULL,
-      assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (user_id, role_id),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
-    );
-    CREATE TABLE IF NOT EXISTS user_permissions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      permission TEXT NOT NULL,
-      assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (user_id, permission),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-  `);
-
-  const roleInsert = db.prepare("INSERT OR IGNORE INTO roles (id, name, description, is_custom) VALUES (?, ?, ?, 0)");
+async function initRoles(): Promise<void> {
   for (const [roleId] of Object.entries(DEFAULT_ROLES)) {
-    roleInsert.run(roleId, roleId.charAt(0).toUpperCase() + roleId.slice(1), `Default ${roleId} role`);
+    const name = roleId.charAt(0).toUpperCase() + roleId.slice(1);
+    await query("INSERT INTO roles (id, name, description, is_custom) VALUES ($1, $2, $3, 0) ON CONFLICT(id) DO NOTHING", [roleId, name, `Default ${roleId} role`]);
   }
 
-  const permInsert = db.prepare("INSERT OR IGNORE INTO role_permissions (role_id, permission) VALUES (?, ?)");
   for (const [roleId, permissions] of Object.entries(DEFAULT_ROLES)) {
     for (const permission of permissions) {
-      permInsert.run(roleId, permission);
+      await query("INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2) ON CONFLICT(role_id, permission) DO NOTHING", [roleId, permission]);
     }
   }
 }
@@ -140,15 +102,15 @@ function getAllPermissions(): PermissionMap {
   return PERMISSIONS;
 }
 
-function listRoles(db: Db): RoleInfo[] {
-  const rows: any[] = db.prepare(`
+async function listRoles(): Promise<RoleInfo[]> {
+  const rows: any[] = await queryAll(`
     SELECT r.id, r.name, r.description, r.is_custom,
-           GROUP_CONCAT(rp.permission) AS permissions
+           STRING_AGG(rp.permission, ',') AS permissions
     FROM roles r
     LEFT JOIN role_permissions rp ON r.id = rp.role_id
     GROUP BY r.id
     ORDER BY r.name
-  `).all();
+  `);
 
   return rows.map((row: any) => ({
     id: row.id,
@@ -159,11 +121,11 @@ function listRoles(db: Db): RoleInfo[] {
   }));
 }
 
-function getRole(db: Db, roleId: string): RoleInfo | null {
-  const role: any = db.prepare("SELECT * FROM roles WHERE id = ?").get(roleId);
+async function getRole(roleId: string): Promise<RoleInfo | null> {
+  const role: any = await queryOne("SELECT * FROM roles WHERE id = $1", [roleId]);
   if (!role) return null;
 
-  const permissions: any[] = db.prepare("SELECT permission FROM role_permissions WHERE role_id = ? ORDER BY permission").all(roleId);
+  const permissions: any[] = await queryAll("SELECT permission FROM role_permissions WHERE role_id = $1 ORDER BY permission", [roleId]);
   return {
     id: role.id,
     name: role.name,
@@ -173,118 +135,115 @@ function getRole(db: Db, roleId: string): RoleInfo | null {
   };
 }
 
-function createRole(db: Db, roleId: string, name: string, description: string, permissions: string[]): RoleInfo | null {
-  const insert = db.prepare("INSERT INTO roles (id, name, description, is_custom) VALUES (?, ?, ?, 1)");
-  insert.run(roleId, name, description || "");
+async function createRole(roleId: string, name: string, description: string, permissions: string[]): Promise<RoleInfo | null> {
+  await query("INSERT INTO roles (id, name, description, is_custom) VALUES ($1, $2, $3, 1)", [roleId, name, description || ""]);
 
-  const permInsert = db.prepare("INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)");
   for (const permission of permissions || []) {
     if (PERMISSIONS[permission]) {
-      permInsert.run(roleId, permission);
+      await query("INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING", [roleId, permission]);
     }
   }
 
-  return getRole(db, roleId);
+  return getRole(roleId);
 }
 
-function updateRole(db: Db, roleId: string, updates: { name?: string; description?: string; permissions?: string[] }): RoleInfo | null {
-  const role = getRole(db, roleId);
+async function updateRole(roleId: string, updates: { name?: string; description?: string; permissions?: string[] }): Promise<RoleInfo | null> {
+  const role = await getRole(roleId);
   if (!role) return null;
 
   if (updates.name || updates.description) {
-    db.prepare("UPDATE roles SET name = ?, description = ? WHERE id = ?")
-      .run(updates.name || role.name, updates.description || role.description, roleId);
+    await query("UPDATE roles SET name = $1, description = $2 WHERE id = $3", [updates.name || role.name, updates.description || role.description, roleId]);
   }
 
   if (updates.permissions) {
-    db.prepare("DELETE FROM role_permissions WHERE role_id = ?").run(roleId);
-    const insert = db.prepare("INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)");
+    await query("DELETE FROM role_permissions WHERE role_id = $1", [roleId]);
     for (const permission of updates.permissions) {
       if (PERMISSIONS[permission]) {
-        insert.run(roleId, permission);
+        await query("INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2)", [roleId, permission]);
       }
     }
   }
 
-  return getRole(db, roleId);
+  return getRole(roleId);
 }
 
-function deleteRole(db: Db, roleId: string): boolean {
-  const role = getRole(db, roleId);
+async function deleteRole(roleId: string): Promise<boolean> {
+  const role = await getRole(roleId);
   if (!role || !role.isCustom) return false;
-  return db.prepare("DELETE FROM roles WHERE id = ?").run(roleId).changes > 0;
+  const r = await query("DELETE FROM roles WHERE id = $1", [roleId]);
+  return (r.rowCount ?? 0) > 0;
 }
 
-function getUserRoles(db: Db, userId: number): UserRole[] {
-  return db.prepare(`
+async function getUserRoles(userId: number): Promise<UserRole[]> {
+  return await queryAll(`
     SELECT r.id, r.name, r.description
     FROM user_roles ur
     JOIN roles r ON ur.role_id = r.id
-    WHERE ur.user_id = ?
+    WHERE ur.user_id = $1
     ORDER BY r.name
-  `).all(userId) as UserRole[];
+  `, [userId]) as UserRole[];
 }
 
-function getUserPermissions(db: Db, userId: number): string[] {
-  const rolePerms: any[] = db.prepare(`
+async function getUserPermissions(userId: number): Promise<string[]> {
+  const rolePerms: any[] = await queryAll(`
     SELECT DISTINCT rp.permission
     FROM user_roles ur
     JOIN role_permissions rp ON ur.role_id = rp.role_id
-    WHERE ur.user_id = ?
+    WHERE ur.user_id = $1
     ORDER BY rp.permission
-  `).all(userId);
+  `, [userId]);
 
-  const directPerms: any[] = db.prepare(`
-    SELECT DISTINCT permission FROM user_permissions WHERE user_id = ? ORDER BY permission
-  `).all(userId);
+  const directPerms: any[] = await queryAll(`
+    SELECT DISTINCT permission FROM user_permissions WHERE user_id = $1 ORDER BY permission
+  `, [userId]);
 
   const combined = [...rolePerms.map(p => p.permission), ...directPerms.map(p => p.permission)];
   return [...new Set(combined)].sort();
 }
 
-function getUserDirectPermissions(db: Db, userId: number): string[] {
-  const perms: any[] = db.prepare("SELECT permission FROM user_permissions WHERE user_id = ? ORDER BY permission").all(userId);
+async function getUserDirectPermissions(userId: number): Promise<string[]> {
+  const perms: any[] = await queryAll("SELECT permission FROM user_permissions WHERE user_id = $1 ORDER BY permission", [userId]);
   return perms.map(p => p.permission);
 }
 
-function setUserDirectPermissions(db: Db, userId: number, permissions: string[]): void {
-  db.prepare("DELETE FROM user_permissions WHERE user_id = ?").run(userId);
-  const insert = db.prepare("INSERT INTO user_permissions (user_id, permission) VALUES (?, ?)");
+async function setUserDirectPermissions(userId: number, permissions: string[]): Promise<void> {
+  await query("DELETE FROM user_permissions WHERE user_id = $1", [userId]);
   for (const perm of permissions) {
     if (PERMISSIONS[perm]) {
-      insert.run(userId, perm);
+      await query("INSERT INTO user_permissions (user_id, permission) VALUES ($1, $2)", [userId, perm]);
     }
   }
 }
 
-function hasPermission(db: Db, userId: number, permission: string): boolean {
-  const roleResult: any = db.prepare(`
+async function hasPermission(userId: number, permission: string): Promise<boolean> {
+  const roleResult: any = await queryOne(`
     SELECT COUNT(*) as count FROM role_permissions rp
     JOIN user_roles ur ON rp.role_id = ur.role_id
-    WHERE ur.user_id = ? AND rp.permission = ?
-  `).get(userId, permission);
-  if (roleResult.count > 0) return true;
+    WHERE ur.user_id = $1 AND rp.permission = $2
+  `, [userId, permission]);
+  if (Number(roleResult?.count) > 0) return true;
 
-  const directResult: any = db.prepare(`
-    SELECT COUNT(*) as count FROM user_permissions WHERE user_id = ? AND permission = ?
-  `).get(userId, permission);
-  return directResult.count > 0;
+  const directResult: any = await queryOne(`
+    SELECT COUNT(*) as count FROM user_permissions WHERE user_id = $1 AND permission = $2
+  `, [userId, permission]);
+  return Number(directResult?.count) > 0;
 }
 
-function assignRoleToUser(db: Db, userId: number, roleId: string): boolean {
-  const role = getRole(db, roleId);
+async function assignRoleToUser(userId: number, roleId: string): Promise<boolean> {
+  const role = await getRole(roleId);
   if (!role) return false;
 
   try {
-    db.prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)").run(userId, roleId);
+    await query("INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [userId, roleId]);
     return true;
   } catch {
     return false;
   }
 }
 
-function removeRoleFromUser(db: Db, userId: number, roleId: string): boolean {
-  return db.prepare("DELETE FROM user_roles WHERE user_id = ? AND role_id = ?").run(userId, roleId).changes > 0;
+async function removeRoleFromUser(userId: number, roleId: string): Promise<boolean> {
+  const r = await query("DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2", [userId, roleId]);
+  return (r.rowCount ?? 0) > 0;
 }
 
 export {
