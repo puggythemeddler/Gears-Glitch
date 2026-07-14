@@ -84,6 +84,9 @@ export default function AdminPage() {
   const [forgotMsg, setForgotMsg] = useState("");
   const [forgotSending, setForgotSending] = useState(false);
   const [googleClientId, setGoogleClientId] = useState("");
+  const [faviconFile, setFaviconFile] = useState<File | null>(null);
+  const [faviconUploading, setFaviconUploading] = useState(false);
+  const [faviconMsg, setFaviconMsg] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const gisLoadedRef = useRef(false);
