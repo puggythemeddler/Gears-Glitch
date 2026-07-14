@@ -1230,7 +1230,7 @@ async function ensureDefaultSubscriptionPlans(): Promise<void> {
     { id: "starter", name: "Starter", description: "Perfect for small shops", price: 0, tier_level: 1, max_products: 50, max_branches: 1, features: JSON.stringify(["Up to 50 products", "1 branch", "Basic support"]) },
     { id: "growth", name: "Growth", description: "For growing businesses", price: 2500, tier_level: 2, max_products: 500, max_branches: 3, features: JSON.stringify(["Up to 500 products", "3 branches", "Priority support", "Analytics"]) },
     { id: "pro", name: "Pro", description: "For established shops", price: 5000, tier_level: 3, max_products: null, max_branches: 10, features: JSON.stringify(["Unlimited products", "10 branches", "Premium support", "Advanced analytics", "Custom branding"]) },
-    { id: "enterprise", name: "Enterprise", description: "Custom solutions", price: 15000, tier_level: 4, max_products: null, max_branches: null, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations"]) },
+    { id: "enterprise", name: "Enterprise", description: "Custom solutions", price: 15000, tier_level: 4, max_products: null, max_branches: 999, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations"]) },
   ];
   for (const p of plans) {
     await query("INSERT INTO subscription_plans (id, name, description, price, tier_level, max_products, max_branches, features) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [p.id, p.name, p.description, p.price, p.tier_level, p.max_products, p.max_branches, p.features]);
