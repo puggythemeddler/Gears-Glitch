@@ -4,7 +4,7 @@ services:
     runtime: node
     region: oregon
     plan: free
-    buildCommand: npm install && npx tsc
+    buildCommand: cd frontend && npm install && cd .. && npm install && npx tsc
     startCommand: node dist/server/index.js
     envVars:
       - key: NODE_ENV
