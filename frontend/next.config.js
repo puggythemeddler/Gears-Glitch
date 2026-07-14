@@ -2,7 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
   async rewrites() {
-    const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "").trim() || "https://gears-glitch.onrender.com";
+    // Rewrites run on the Next.js server, so this must not use a NEXT_PUBLIC_
+    // variable. A stale public Vercel variable previously overrode the working
+    // backend and sent every product and login request to a retired URL.
+    const backendUrl = (process.env.BACKEND_URL || "https://gears-glitch.onrender.com")
+      .trim()
+      .replace(/\/$/, "");
     return [
       {
         source: "/api/:path*",
