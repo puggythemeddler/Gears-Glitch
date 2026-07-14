@@ -1,6 +1,6 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 4 storefront layout themes (Original, Amazon, Jumia, Mobile), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, and dark/light theme toggle. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, and dark/light theme toggle. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ---
 
@@ -132,7 +132,7 @@ Business oversight with 13 sections:
 - **Stock Take** — Create/delete sessions, navigate to session page
 - **Tech Repairs** — Technician performance reports (filterable by date range)
 - **About Us** — Edit the /about page content
-- **Storefront** — Change layout theme, manage promotional banners (only if role is Admin)
+- **Storefront** — Change layout theme, manage promotional banners (only if role is Admin) and select the active storefront theme for the public site
 - **Shop Subscription** — View current plan, request plan change (admin approves)
 - **Audit Log** — View all actions except admin actions (owner sees non-admin activity with user names, timestamps, entity details)
 
@@ -517,7 +517,7 @@ Provider registration, login, subscription details, invoices, products at tier, 
 
 ## Storefront Layouts
 
-Four layout themes controlled by admin via the Storefront panel:
+Five layout themes controlled by admin via the Storefront panel:
 
 | Layout | Key | Description |
 |--------|-----|-------------|
@@ -525,6 +525,7 @@ Four layout themes controlled by admin via the Storefront panel:
 | **Amazon Style** | `amazon` | Large search bar, horizontal categories, product recommendations, featured deals |
 | **Jumia Style** | `jumia` | Promotional sliders, flash sales, daily deals, category icons |
 | **Mobile** | `mobile` | Premium minimalist, hero banners, brand chips, compare specs |
+| **Custom** | `custom` | Flexible layout for custom hero sections, featured categories, and responsive card panels |
 
 Each layout provides its own `Header`, `Footer`, `HomePage`, and `LayoutStyles` components. The admin can switch layouts and manage promotional banners from both the Admin and Owner panels.
 
