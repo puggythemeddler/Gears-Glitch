@@ -124,7 +124,7 @@ export default function OwnerPage() {
             {view === "branches" && <OwnerBranches />}
             {view === "shop-subscription" && <OwnerShopSubscription />}
             {view === "about-us" && <OwnerAboutUs />}
-            {view === "storefront" && <OwnerStorefront />}
+            {view === "storefront" && <OwnerStorefront staffRole={staffRole} />}
             {view === "audit" && <OwnerAuditLog />}
           </div>
       </div>
@@ -1517,7 +1517,7 @@ function OwnerAboutUs() {
   );
 }
 
-function OwnerStorefront() {
+function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
   const [cfg, setCfg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1552,6 +1552,18 @@ function OwnerStorefront() {
   }
 
   if (loading) return <Spinner />;
+
+  if (staffRole !== "admin") {
+    return (
+      <>
+        <h1>Storefront Layout</h1>
+        <p className="muted">Only admin users can manage the public storefront layout.</p>
+        <div className="panel">
+          <p className="muted">Your current role is <strong>{staffRole || "staff"}</strong>. Contact an admin to update the storefront design and banners.</p>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

@@ -5,6 +5,7 @@ import * as original from "./original";
 import * as amazon from "./amazon";
 import * as jumia from "./jumia";
 import * as mobile from "./mobile";
+import * as custom from "./custom";
 
 export interface LayoutModule {
   LAYOUT_KEY: string;
@@ -16,7 +17,7 @@ export interface LayoutModule {
   HomePage: (props: { products: Product[]; categories: { id: string; label: string }[]; banners: any[] }) => React.JSX.Element;
 }
 
-const LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia, mobile };
+const LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia, mobile, custom };
 
 export function getLayout(layoutKey: string): LayoutModule {
   return LAYOUTS[layoutKey] || LAYOUTS.original;
