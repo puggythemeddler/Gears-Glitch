@@ -252,7 +252,7 @@ import {
   respondToRepairQuote,
 } from "./repairs";
 import * as notifier from "./notify";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, imageUrlForProduct } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
@@ -379,7 +379,7 @@ app.get("/api/settings", staffAuthMiddleware, requirePermission("settings:view")
 });
 
 app.get("/api/public-settings", async (_req: Request, res: Response) => {
-  const { storeName, phone, email, currency, storeLogo, taxRate } = await getSettings();
+  const { storeName, phone, email, currency, storeLogo, taxRate, storeFavicon } = await getSettings();
   const mpesaCfg = getMpesaConfig();
   const layout = await getStoreSetting("store_layout") || "original";
   let banners: any[] = [];
@@ -392,6 +392,7 @@ app.get("/api/public-settings", async (_req: Request, res: Response) => {
     email,
     currency,
     storeLogo,
+    storeFavicon,
     taxRate,
     layout,
     banners,
@@ -551,6 +552,16 @@ app.post("/api/settings/logo", adminAuthMiddleware, (req: Request, res: Response
     const logoUrl = `/uploads/${(req.file as any).filename}`;
     await updateSettings({ storeLogo: logoUrl });
     res.json({ logoUrl });
+  });
+});
+
+app.post("/api/settings/favicon", adminAuthMiddleware, (req: Request, res: Response) => {
+  uploadFavicon(req, res, async (err: any) => {
+    if (err) { res.status(400).json({ error: "Upload failed." }); return; }
+    if (!req.file) { res.status(400).json({ error: "No file provided." }); return; }
+    const faviconUrl = `/uploads/${(req.file as any).filename}`;
+    await updateSettings({ storeFavicon: faviconUrl });
+    res.json({ faviconUrl });
   });
 });
 

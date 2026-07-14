@@ -3,6 +3,8 @@ import { isCustomerLoggedIn, getCustomerToken, setCustomerSession, clearAllSessi
 import type { Settings } from "./types";
 import { setFormatConfig } from "@/layouts/shared";
 
+const DEFAULT_FAVICON = "/default-favicon.png";
+
 const TIMEZONE_CURRENCY: Record<string, string> = {
   "Africa/Nairobi": "KES", "Africa/Lagos": "NGN", "Africa/Johannesburg": "ZAR",
   "Africa/Cairo": "EGP", "Africa/Casablanca": "MAD", "Africa/Accra": "GHS",
@@ -137,10 +139,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => {});
   }
 
+  function applyFavicon(url: string) {
+    if (typeof document === "undefined") return;
+    const href = url || DEFAULT_FAVICON;
+    const updateLink = (rel: string, type?: string) => {
+      let link = document.querySelector<HTMLLinkElement>(`link[rel='${rel}']`);
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = rel;
+        if (type) link.type = type;
+        document.head.appendChild(link);
+      }
+      if (type) link.type = type;
+      link.href = href;
+    };
+    updateLink("shortcut icon");
+    updateLink("icon", "image/png");
+  }
+
   function refreshSettings() {
     api<any>("/api/public-settings").then((d) => {
-      if (d) setState((s) => ({ ...s, settings: d }));
-    }).catch(() => {});
+      if (d) {
+        setState((s) => ({ ...s, settings: d }));
+        applyFavicon(d.storeFavicon || DEFAULT_FAVICON);
+      }
+    }).catch(() => {
+      applyFavicon(DEFAULT_FAVICON);
+    });
   }
 
   function refreshCartCount() {

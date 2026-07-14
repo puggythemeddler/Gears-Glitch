@@ -159,6 +159,7 @@ export interface Settings {
   storeEmail: string;
   currency: string;
   storeLogo: string;
+  storeFavicon: string;
   taxRate: number;
   mpesaTillNumber: string;
   mpesaConfigured: boolean;

@@ -229,6 +229,7 @@ interface Settings {
   email: string;
   currency: string;
   storeLogo: string;
+  storeFavicon: string;
   taxRate: number;
 }
 
@@ -695,7 +696,7 @@ async function runMigrations(): Promise<void> {
 
 async function ensureDefaultSettings(): Promise<void> {
   const defaults: { [key: string]: string } = {
-    storeName: "Gear&Glitch", phone: "01234 567890", email: "sales@computerstore.example", currency: "KES", storeLogo: "",
+    storeName: "Gear&Glitch", phone: "01234 567890", email: "sales@computerstore.example", currency: "KES", storeLogo: "", storeFavicon: "",
   };
   const existing = await queryOne("SELECT COUNT(*) AS count FROM settings") as { count: number } | undefined;
   if (existing && Number(existing.count) > 0) return;
@@ -913,7 +914,15 @@ async function getSettings(): Promise<Settings> {
   const rows = await queryAll("SELECT key, value FROM settings") as { key: string; value: string }[];
   const s: { [key: string]: string } = {};
   for (const row of rows) s[row.key] = row.value;
-  return { storeName: s.storeName || "Gear&Glitch", phone: s.phone || "", email: s.email || "", currency: s.currency || "KES", storeLogo: s.storeLogo || "", taxRate: Number(s.taxRate) || 0 };
+  return {
+    storeName: s.storeName || "Gear&Glitch",
+    phone: s.phone || "",
+    email: s.email || "",
+    currency: s.currency || "KES",
+    storeLogo: s.storeLogo || "",
+    storeFavicon: s.storeFavicon || "",
+    taxRate: Number(s.taxRate) || 0,
+  };
 }
 
 async function getPaymentMethods(): Promise<PaymentMethod[]> {
@@ -927,7 +936,7 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 }
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
-  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "taxRate"];
+  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate"];
   if (updates.paymentMethods) await setPaymentMethods(updates.paymentMethods);
   await transaction(async (client) => {
     for (const key of allowed) {

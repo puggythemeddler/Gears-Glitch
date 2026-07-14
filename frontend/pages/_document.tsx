@@ -7,6 +7,8 @@ export default class MyDocument extends Document {
         <Head>
           <meta name="description" content="Gear&Glitch — Computer store" />
           <meta id="themeColorMeta" name="theme-color" content="#0b1120" />
+          <link rel="shortcut icon" href="/default-favicon.png" />
+          <link rel="icon" type="image/png" href="/default-favicon.png" />
           <link rel="manifest" href="/manifest.webmanifest" />
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

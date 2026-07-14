@@ -73,7 +73,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
 ];
 
 export default function AdminPage() {
-  const { isDark, toggleDark, settings } = useApp();
+  const { isDark, toggleDark, settings, refreshSettings } = useApp();
   const [authed, setAuthed] = useState(false);
   const [view, setView] = useState<AdminView>("dashboard");
   const [loginUsername, setLoginUsername] = useState("");
@@ -108,6 +108,33 @@ export default function AdminPage() {
       renderGoogleBtn();
     }
   }, [googleClientId]);
+
+  function handleFaviconChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setFaviconMsg("");
+    setFaviconFile(e.target.files?.[0] || null);
+  }
+
+  async function handleFaviconUpload(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!faviconFile) {
+      setFaviconMsg("Select a favicon file first.");
+      return;
+    }
+    setFaviconUploading(true);
+    setFaviconMsg("");
+    const formData = new FormData();
+    formData.append("favicon", faviconFile);
+    try {
+      await api("/api/settings/favicon", { method: "POST", body: formData }, "staff");
+      setFaviconMsg("Favicon updated successfully.");
+      setFaviconFile(null);
+      refreshSettings();
+    } catch (err: any) {
+      setFaviconMsg("Error: " + err.message);
+    } finally {
+      setFaviconUploading(false);
+    }
+  }
 
   function renderGoogleBtn() {
     if (!window.google || !googleBtnRef.current) return;
@@ -2085,8 +2112,38 @@ function AdminSettings() {
   const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [faviconFile, setFaviconFile] = useState<File | null>(null);
+  const [faviconUploading, setFaviconUploading] = useState(false);
+  const [faviconMsg, setFaviconMsg] = useState("");
   const [etimsMode, setEtimsMode] = useState("off");
   useEffect(() => { if (settings?.etimsMode) setEtimsMode(settings.etimsMode); }, [settings?.etimsMode]);
+
+  function handleFaviconChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setFaviconMsg("");
+    setFaviconFile(e.target.files?.[0] || null);
+  }
+
+  async function handleFaviconUpload(e: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>) {
+    if (e) e.preventDefault?.();
+    if (!faviconFile) {
+      setFaviconMsg("Select a favicon file first.");
+      return;
+    }
+    setFaviconUploading(true);
+    setFaviconMsg("");
+    const formData = new FormData();
+    formData.append("favicon", faviconFile);
+    try {
+      await api("/api/settings/favicon", { method: "POST", body: formData }, "staff");
+      setFaviconMsg("Favicon updated successfully.");
+      setFaviconFile(null);
+      refreshSettings();
+    } catch (err: any) {
+      setFaviconMsg("Error: " + err.message);
+    } finally {
+      setFaviconUploading(false);
+    }
+  }
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -2139,6 +2196,35 @@ function AdminSettings() {
           <div className="field"><label>Email<input name="email" defaultValue={settings?.email || ""} /></label></div>
           <div className="field"><label>Currency<input name="currency" defaultValue={settings?.currency || "KES"} /></label></div>
           <div className="field"><label>Tax Rate (%)<input name="taxRate" type="number" min="0" max="100" step="0.01" defaultValue={settings?.taxRate ?? 16} /></label></div>
+        </div>
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <h3 style={{ marginTop: 0 }}>Store favicon</h3>
+          <div className="field" style={{ gap: "0.75rem", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+              {settings?.storeFavicon ? (
+                <img src={settings.storeFavicon} alt="Current favicon" style={{ width: 48, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid #ddd" }} />
+              ) : (
+                <div style={{ width: 48, height: 48, borderRadius: 8, background: "#f1f5f9", border: "1px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 12, color: "#334155" }}>default</span>
+                </div>
+              )}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600 }}>Current favicon</p>
+                <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>
+                  Upload a PNG, ICO, SVG, JPEG, or WEBP file to replace the favicon.
+                </p>
+              </div>
+            </div>
+            <input
+              type="file"
+              accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.ico,.svg"
+              onChange={handleFaviconChange}
+            />
+            <RippleButton type="button" onClick={handleFaviconUpload} loading={faviconUploading} disabled={!faviconFile}>
+              Upload favicon
+            </RippleButton>
+            {faviconMsg && <p style={{ margin: 0, color: faviconMsg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{faviconMsg}</p>}
+          </div>
         </div>
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <h3 style={{ marginTop: 0 }}>M-Pesa Configuration</h3>

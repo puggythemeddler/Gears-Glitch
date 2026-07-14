@@ -15,17 +15,16 @@ const storage = multer.diskStorage({
   filename: (req: any, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
     const productId: string | undefined = req.params?.id;
     const ext: string = path.extname(file.originalname).toLowerCase() || ".jpg";
-    const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) ? ext : ".jpg";
-    cb(null, productId ? `${productId}${safeExt}` : `store-logo${safeExt}`);
-  },
+  const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".jpg";
+  cb(null, productId ? `${productId}${safeExt}` : `store-logo${safeExt}`);
+},
 });
 
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Only image files are allowed."));
+    if (!file.mimetype.startsWith("image/") && file.mimetype !== "image/x-icon" && file.mimetype !== "image/vnd.microsoft.icon") {
     }
     cb(null, true);
   },
@@ -53,19 +52,38 @@ function deleteProductImages(productId: string): void {
 }
 
 const uploadProductImage = upload.single("image");
+
+const uploadFavicon = multer({
+  storage: multer.diskStorage({
+    destination: (_req: any, _file: any, cb) => cb(null, UPLOAD_DIR),
+    filename: (_req: any, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
+      const ext: string = path.extname(file.originalname).toLowerCase() || ".png";
+      const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".png";
+      cb(null, `store-favicon${safeExt}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    if (!file.mimetype.startsWith("image/") && file.mimetype !== "image/x-icon" && file.mimetype !== "image/vnd.microsoft.icon") {
+      return cb(new Error("Only image files are allowed."));
+    }
+    cb(null, true);
+  },
+}).single("favicon");
+
 const uploadGalleryImage = multer({
   storage: multer.diskStorage({
     destination: (_req: any, _file: any, cb) => cb(null, UPLOAD_DIR),
     filename: (req: any, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
       const productId: string | undefined = req.params?.id;
       const ext: string = path.extname(file.originalname).toLowerCase() || ".jpg";
-      const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) ? ext : ".jpg";
+      const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".jpg";
       cb(null, `${productId}-gallery-${Date.now()}${safeExt}`);
     },
   }),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    if (!file.mimetype.startsWith("image/")) return cb(new Error("Only image files are allowed."));
+    if (!file.mimetype.startsWith("image/") && file.mimetype !== "image/x-icon" && file.mimetype !== "image/vnd.microsoft.icon") return cb(new Error("Only image files are allowed."));
     cb(null, true);
   },
 }).single("image");
@@ -77,7 +95,7 @@ const uploadRepairImage = multer({
       const ticketId: string | undefined = req.params?.id;
       const type: string = req.body?.imageType || "before";
       const ext: string = path.extname(file.originalname).toLowerCase() || ".jpg";
-      const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) ? ext : ".jpg";
+      const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".jpg";
       cb(null, `repair-${ticketId}-${type}-${Date.now()}${safeExt}`);
     },
   }),
@@ -88,4 +106,4 @@ const uploadRepairImage = multer({
   },
 }).single("image");
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, imageUrlForProduct, deleteProductImages };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, deleteProductImages };
