@@ -23,7 +23,7 @@ export default function CategoryPage() {
         if (!cancelled) {
           const c = (d.categories || []).find((x: any) => x.id === category);
           if (c) setCatName(c.label);
-          const subs = (d.subcategories || []).filter((s: any) => s.category_ids.includes(category));
+          const subs = (d.subcategories || []).filter((s: any) => Array.isArray(s.category_ids) && s.category_ids.includes(category));
           setSubcategories(subs);
         }
       }),

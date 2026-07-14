@@ -14,6 +14,7 @@ export default function AdminProducts() {
   const [galleryLoading, setGalleryLoading] = useState(false);
   const galleryRef = useRef<HTMLInputElement>(null);
   const [selCategory, setSelCategory] = useState("");
+  const [categories, setCategories] = useState<any[]>([]);
   const [subcategories, setSubcategories] = useState<any[]>([]);
   const [specFields, setSpecFields] = useState<any[]>([]);
   const [specValues, setSpecValues] = useState<Record<string, string>>({});
@@ -103,6 +104,10 @@ export default function AdminProducts() {
   }
 
   const empty: Product = { id: "", name: "", price: 0, currency: "KES", imageUrl: "", category: "", subcategory: "", inStock: true, isNonStock: false, hasWarranty: false, warrantyDuration: 0, taxable: true, specs: [], minTier: 0 };
+
+  useEffect(() => {
+    fetch("/api/categories").then(r => r.json()).then((d) => setCategories(d.categories || [])).catch(() => setCategories([]));
+  }, []);
 
   useEffect(() => {
     const cat = creating ? selCategory : (editing?.category || "");
@@ -216,7 +221,19 @@ export default function AdminProducts() {
             )}
             <div className="field"><label>Name<input name="name" defaultValue={editing?.name} required /></label></div>
             <div className="field"><label>Price (KES)<input name="price" type="number" defaultValue={editing?.price} required /></label></div>
-            <div className="field"><label>Category<input name="category" defaultValue={editing?.category} onChange={(e) => setSelCategory(e.target.value)} /></label></div>
+            <div className="field">
+              <label>Category
+                <select
+                  name="category"
+                  value={selCategory || editing?.category || ""}
+                  onChange={(e) => setSelCategory(e.target.value)}
+                  required
+                >
+                  <option value="">-- Select --</option>
+                  {categories.map((cat: any) => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
+                </select>
+              </label>
+            </div>
             {subcategories.length > 0 && (
               <div className="field"><label>Subcategory<select name="subcategory" defaultValue={editing?.subcategory || ""}><option value="">None</option>{subcategories.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label></div>
             )}

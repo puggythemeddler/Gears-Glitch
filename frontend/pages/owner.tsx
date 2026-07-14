@@ -334,9 +334,14 @@ function OwnerProducts() {
   const [galleryLoading, setGalleryLoading] = useState(false);
   const galleryRef = useRef<HTMLInputElement>(null);
   const [selCategory, setSelCategory] = useState("");
+  const [categories, setCategories] = useState<any[]>([]);
   const [specFields, setSpecFields] = useState<any[]>([]);
   const [specValues, setSpecValues] = useState<Record<string, string>>({});
   const empty: Product = { id: "", name: "", price: 0, currency: "KES", imageUrl: "", category: "", subcategory: "", inStock: true, isNonStock: false, specs: [], minTier: 0 };
+
+  useEffect(() => {
+    fetch("/api/categories").then((r) => r.json()).then((d) => setCategories(d.categories || [])).catch(() => setCategories([]));
+  }, []);
 
   useEffect(() => {
     const cat = creating ? selCategory : (editing?.category || "");
@@ -433,7 +438,19 @@ function OwnerProducts() {
             )}
             <div className="field"><label>Name<input name="name" defaultValue={editing?.name} required /></label></div>
             <div className="field"><label>Price (KES)<input name="price" type="number" defaultValue={editing?.price} required /></label></div>
-            <div className="field"><label>Category<input name="category" defaultValue={editing?.category} onChange={(e) => setSelCategory(e.target.value)} /></label></div>
+            <div className="field">
+              <label>Category
+                <select
+                  name="category"
+                  value={selCategory || editing?.category || ""}
+                  onChange={(e) => setSelCategory(e.target.value)}
+                  required
+                >
+                  <option value="">-- Select --</option>
+                  {categories.map((cat: any) => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
+                </select>
+              </label>
+            </div>
             <div className="field"><label>In stock<select name="inStock" defaultValue={String(editing?.inStock ?? true)}><option value="true">Yes</option><option value="false">No</option></select></label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="isNonStock" defaultChecked={editing?.isNonStock ?? false} /> Non-stock item</label></div>
             <div className="field"><label>Add images (multiple)<input type="file" ref={galleryRef} accept="image/*" multiple /></label></div>
