@@ -1,6 +1,6 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 4 built-in storefront layout themes (Original, Amazon, Jumia, Mobile) plus an importable custom layout workflow, subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, and dark/light theme toggle. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 4 storefront layout themes (Original, Amazon, Jumia, Mobile), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, and dark/light theme toggle. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ---
 
@@ -113,7 +113,7 @@ Full store management with 18 sections:
 - **Branches** — Manage physical store locations (name, address, contact info)
 - **Clients** — Multi-tenant client management with per-client branches
 - **About Us** — Edit title, content, mission, vision for the /about page
-- **Storefront** — Choose layout theme (Original, Amazon, Jumia, Mobile, Custom), import a JSON preset for a custom storefront layout, manage promotional banners
+- **Storefront** — Choose layout theme (Original, Amazon, Jumia, Mobile), manage promotional banners
 - **Shop Subscription** — View current plan, activate new plan, approve/reject owner requests
 - **Settings** — Store info, M-Pesa config, logo upload, currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings)
 
@@ -132,26 +132,9 @@ Business oversight with 13 sections:
 - **Stock Take** — Create/delete sessions, navigate to session page
 - **Tech Repairs** — Technician performance reports (filterable by date range)
 - **About Us** — Edit the /about page content
-- **Storefront** — Change layout theme, import a JSON preset for a custom storefront, manage promotional banners (only if role is Admin)
+- **Storefront** — Change layout theme, manage promotional banners (only if role is Admin)
 - **Shop Subscription** — View current plan, request plan change (admin approves)
 - **Audit Log** — View all actions except admin actions (owner sees non-admin activity with user names, timestamps, entity details)
-
-### Custom layout import
-
-You can add another storefront look without changing the core code by importing a JSON preset from the admin or owner storefront settings. A template is available in [frontend/layouts/CUSTOM_LAYOUT_TEMPLATE.json](frontend/layouts/CUSTOM_LAYOUT_TEMPLATE.json), and a full guide is available in [frontend/layouts/README.md](frontend/layouts/README.md).
-
-Required preset fields:
-- `label`
-- `heroTitle`
-- `heroSubtitle`
-- `ctaLabel`
-- `ctaUrl`
-- `accentColor`
-- `heroImageUrl`
-- `showCategories`
-- `showProducts`
-- `productsLimit`
-- `productsHeading`
 
 ### Back Office (`/backoffice`)
 

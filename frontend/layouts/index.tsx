@@ -5,7 +5,6 @@ import * as original from "./original";
 import * as amazon from "./amazon";
 import * as jumia from "./jumia";
 import * as mobile from "./mobile";
-import * as custom from "./custom";
 
 export interface LayoutModule {
   LAYOUT_KEY: string;
@@ -14,10 +13,10 @@ export interface LayoutModule {
   LayoutStyles: () => React.JSX.Element;
   Header: (props: { categories: { id: string; label: string }[]; settings: any; isLoggedIn?: boolean; userName?: string; cartCount?: number; isDark?: boolean; toggleDark?: () => void; logout?: () => void; isStaff?: boolean }) => React.JSX.Element | null;
   Footer: (props: { settings: any }) => React.JSX.Element | null;
-  HomePage: (props: any) => React.JSX.Element;
+  HomePage: (props: { products: Product[]; categories: { id: string; label: string }[]; banners: any[] }) => React.JSX.Element;
 }
 
-const LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia, mobile, custom };
+const LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia, mobile };
 
 export function getLayout(layoutKey: string): LayoutModule {
   return LAYOUTS[layoutKey] || LAYOUTS.original;
@@ -31,7 +30,6 @@ interface StorefrontConfig {
   layout: string;
   banners: any[];
   features: any[];
-  customLayout: any;
 }
 
 interface LayoutContextType extends StorefrontConfig {
@@ -50,7 +48,7 @@ export function useLayout(): LayoutContextType {
 }
 
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfig] = useState<StorefrontConfig>({ layout: "original", banners: [], features: [], customLayout: null });
+  const [config, setConfig] = useState<StorefrontConfig>({ layout: "original", banners: [], features: [] });
   const [configLoading, setConfigLoading] = useState(true);
 
   function refreshConfig() {
@@ -89,11 +87,11 @@ export function LayoutEngine({
   banners: any[];
   settings: any;
 }) {
-  const { layout, customLayout } = useLayout();
+  const { layout } = useLayout();
   const mod = getLayout(layout);
 
   if (page === "home") {
-    return <mod.HomePage products={products} categories={categories} banners={banners} customLayout={customLayout} />;
+    return <mod.HomePage products={products} categories={categories} banners={banners} />;
   }
   return null;
 }

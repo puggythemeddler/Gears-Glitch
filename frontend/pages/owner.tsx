@@ -1522,8 +1522,6 @@ function OwnerStorefront() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [bannerInputs, setBannerInputs] = useState<{ title: string; subtitle: string }[]>([]);
-  const [importText, setImportText] = useState("");
-  const [importLoading, setImportLoading] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -1553,22 +1551,6 @@ function OwnerStorefront() {
     finally { setSaving(false); }
   }
 
-  async function importLayoutPreset() {
-    if (!importText.trim()) return;
-    try {
-      const parsed = JSON.parse(importText);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Preset must be a JSON object.");
-      setImportLoading(true);
-      await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ layout: "custom", customLayout: parsed }) });
-      await load();
-      setImportText("");
-    } catch (e: any) {
-      alert(e.message || "Failed to import layout preset.");
-    } finally {
-      setImportLoading(false);
-    }
-  }
-
   if (loading) return <Spinner />;
 
   return (
@@ -1587,13 +1569,6 @@ function OwnerStorefront() {
             {cfg?.layout === l.key && <span className="badge badge-green" style={{ marginTop: "0.5rem" }}>Active</span>}
           </div>
         ))}
-      </div>
-
-      <div className="panel" style={{ marginBottom: "1rem" }}>
-        <h3>Import Custom Layout</h3>
-        <p className="muted" style={{ fontSize: "0.85rem" }}>Paste a JSON preset to activate a custom storefront layout. See the layout guide in the project docs for the required fields.</p>
-        <textarea value={importText} onChange={(e) => setImportText(e.target.value)} rows={8} style={{ width: "100%", marginBottom: "0.75rem" }} placeholder={`{"label":"My Layout","heroTitle":"New season","heroSubtitle":"Fresh branding","ctaLabel":"Shop now","ctaUrl":"/","accentColor":"#2563eb","heroImageUrl":"","showCategories":true,"showProducts":true,"productsLimit":8,"productsHeading":"Featured products"}`} />
-        <RippleButton size="small" onClick={importLayoutPreset} loading={importLoading}>Import Layout</RippleButton>
       </div>
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
