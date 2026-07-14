@@ -458,7 +458,9 @@ app.get("/api/storefront-config", async (_req: Request, res: Response) => {
   try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
   let features: any[] = [];
   try { features = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
-  res.json({ layout, banners, features });
+  let customLayout: any = null;
+  try { customLayout = JSON.parse(await getStoreSetting("store_custom_layout") || "null"); } catch {}
+  res.json({ layout, banners, features, customLayout });
 });
 
 app.get("/api/admin/storefront-layout", adminAuthMiddleware, async (_req: Request, res: Response) => {
@@ -467,24 +469,34 @@ app.get("/api/admin/storefront-layout", adminAuthMiddleware, async (_req: Reques
   try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
   let features: any[] = [];
   try { features = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
-  res.json({ layout, banners, features });
+  let customLayout: any = null;
+  try { customLayout = JSON.parse(await getStoreSetting("store_custom_layout") || "null"); } catch {}
+  res.json({ layout, banners, features, customLayout });
 });
 
 app.put("/api/admin/storefront-layout", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const { layout, banners, features } = req.body || {};
+  const { layout, banners, features, customLayout } = req.body || {};
   if (layout) {
-    const valid = ["original", "amazon", "jumia", "mobile"];
+    const valid = ["original", "amazon", "jumia", "mobile", "custom"];
     if (!valid.includes(layout)) { res.status(400).json({ error: "Invalid layout. Valid: " + valid.join(", ") }); return; }
     await setStoreSetting("store_layout", layout);
   }
   if (banners !== undefined) await setStoreSetting("store_banners", JSON.stringify(banners));
   if (features !== undefined) await setStoreSetting("store_features", JSON.stringify(features));
-  const currentLayout = await getStoreSetting("store_layout") || "amazon";
+  if (customLayout !== undefined) {
+    if (customLayout !== null && (typeof customLayout !== "object" || Array.isArray(customLayout))) {
+      res.status(400).json({ error: "customLayout must be a JSON object or null." }); return;
+    }
+    await setStoreSetting("store_custom_layout", JSON.stringify(customLayout));
+  }
+  const currentLayout = await getStoreSetting("store_layout") || "original";
   let currentBanners: any[] = [];
   try { currentBanners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
   let currentFeatures: any[] = [];
   try { currentFeatures = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
-  res.json({ layout: currentLayout, banners: currentBanners, features: currentFeatures });
+  let currentCustomLayout: any = null;
+  try { currentCustomLayout = JSON.parse(await getStoreSetting("store_custom_layout") || "null"); } catch {}
+  res.json({ layout: currentLayout, banners: currentBanners, features: currentFeatures, customLayout: currentCustomLayout });
 });
 
 // ============ ABOUT US ============
