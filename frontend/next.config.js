@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   async rewrites() {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8020";
+    const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "").trim() || "https://gear-glitch-backend.onrender.com";
     return [
       {
         source: "/api/:path*",
