@@ -59,7 +59,6 @@ export default function POSPage() {
 
   const pmtConfig = paymentMethods.find((m) => m.id === paymentMethod);
   const needsTender = pmtConfig?.needsTender ?? false;
-  const change = needsTender && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
 
   useEffect(() => {
     setLoggedIn(!!getRole());
@@ -124,6 +123,7 @@ export default function POSPage() {
   }
 
   const subtotal = cart.reduce((s, i) => s + i.lineTotal, 0);
+  const change = needsTender && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
 
   async function checkout() {
     if (cart.length === 0) return;
