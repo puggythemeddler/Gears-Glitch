@@ -529,6 +529,52 @@ Five layout themes controlled by admin via the Storefront panel:
 
 Each layout provides its own `Header`, `Footer`, `HomePage`, and `LayoutStyles` components. The admin can switch layouts and manage promotional banners from both the Admin and Owner panels.
 
+## Adding a New Storefront Layout
+
+To add a new storefront layout theme, create a new module under `frontend/layouts/` and register it in `frontend/layouts/index.tsx`.
+
+1. Create a new file, for example `frontend/layouts/custom.tsx`.
+2. Export these members from the module:
+   - `LAYOUT_KEY` – a unique string key for the layout
+   - `LAYOUT_LABEL` – a friendly name shown in the admin selector
+   - `LAYOUT_DESC` – a short description
+   - `LayoutStyles()` – layout-specific CSS/JSX style declarations
+   - `Header(props)` – the marketplace header component
+   - `Footer(props)` – the storefront footer component
+   - `HomePage(props)` – the homepage content renderer
+3. Register the layout in `frontend/layouts/index.tsx`:
+   - import the layout module
+   - add it to the `LAYOUTS` record
+4. The layout becomes available in the admin storefront selector once the app reloads and the `layout` setting matches the new `LAYOUT_KEY`.
+
+### Example module shape
+
+```tsx
+export const LAYOUT_KEY = "custom";
+export const LAYOUT_LABEL = "Custom";
+export const LAYOUT_DESC = "Flexible layout with hero banners and featured cards.";
+
+export function LayoutStyles() {
+  return <style>{`/* custom layout styles */`}</style>;
+}
+
+export function Header({ categories, settings, isLoggedIn, userName, cartCount, isDark, toggleDark, logout, isStaff }) {
+  return <header>...custom header markup...</header>;
+}
+
+export function Footer({ settings }) {
+  return <footer>...custom footer markup...</footer>;
+}
+
+export function HomePage({ products, categories, banners }) {
+  return <main>...homepage content...</main>;
+}
+```
+
+### Current limitation
+
+This project does not yet support runtime upload/import of layout files through the admin UI. Layouts are integrated by adding a new source file and registering it in `frontend/layouts/index.tsx`.
+
 ---
 
 ## Google Sign-In Setup
