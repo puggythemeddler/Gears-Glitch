@@ -2,6 +2,12 @@
 
 Step-by-step guide to run Gear&Glitch on your Windows machine.
 
+## Recent updates
+
+- Product categories in the admin and owner forms are now selected from the live categories list.
+- Storefront category pages now display subcategories as clickable links.
+- The frontend production build has been verified locally and is compatible with Vercel/Render-style deployment flows.
+
 ---
 
 ## Prerequisites
@@ -42,8 +48,8 @@ CREATE DATABASE laptop_sale;
 ## 3. Clone & Install
 
 ```bash
-git clone https://github.com/gearandglitch/shop.git
-cd shop
+git clone https://github.com/puggythemeddler/Gears-Glitch.git
+cd Gears-Glitch
 npm install
 cd frontend
 npm install

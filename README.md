@@ -2,6 +2,12 @@
 
 A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, and dark/light theme toggle. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
+## Recent highlights
+
+- Admin and owner product forms now use a dropdown populated from the live categories API instead of a free-text category field.
+- Storefront category pages now surface subcategories as clickable navigation links so shoppers can browse more easily.
+- The frontend build has been verified for deployment compatibility, and the TypeScript config was updated to avoid newer toolchain deprecation issues.
+
 ---
 
 ## Mobile & tablet experience
@@ -29,8 +35,8 @@ Three layers, cleanly separated:
 ## Quick Start
 
 ```bash
-git clone https://github.com/gearandglitch/shop.git
-cd shop
+git clone https://github.com/puggythemeddler/Gears-Glitch.git
+cd Gears-Glitch
 npm install
 copy .env.example .env
 # Edit .env and set DATABASE_URL, JWT_SECRET, and other required vars
