@@ -1316,10 +1316,16 @@
    RESPONSIVE
    ============================================================ */
 @media (max-width: 768px) {
-  .mk-section { padding: 60px 16px; }
-  .mk-hero { padding: 100px 16px 60px; min-height: auto; }
+  .mk-section { padding: 64px 16px; }
+  .mk-section-header { margin-bottom: 40px; }
+  .mk-section-subtitle { font-size: 1rem; }
+  .mk-hero { padding: 80px 16px 48px; min-height: auto; }
   .mk-hero h1 { font-size: 2rem; }
+  .mk-hero-badge { margin-bottom: 20px; }
+  .mk-hero-sub { margin-bottom: 28px; line-height: 1.6; }
   .mk-hero-preview { margin-top: 40px; }
+  .mk-hero-preview-frame { padding: 12px; transform: none; animation: none; }
+  .mk-dashboard-card-header { align-items: flex-start; flex-direction: column; gap: 4px; }
   .mk-dashboard-grid { grid-template-columns: 1fr; }
   .mk-solution-branches { flex-direction: column; align-items: center; }
   .mk-solution-branch { max-width: 100%; width: 100%; }
@@ -1329,15 +1335,46 @@
   .mk-testimonials-grid { grid-template-columns: 1fr; }
   .mk-hero-actions { flex-direction: column; align-items: center; }
   .mk-btn { width: 100%; justify-content: center; }
+  .mk-hero-scroll { display: none; }
+  .mk-problem-card,
+  .mk-feature-card,
+  .mk-why-card,
+  .mk-testimonial-card { padding: 22px 20px; }
+  .mk-cta { padding: 80px 16px; }
   .mk-faq-question { font-size: 0.9rem; }
 }
 
 @media (max-width: 480px) {
+  .mk-section { padding: 48px 14px; }
+  .mk-section-label { font-size: 0.65rem; letter-spacing: 1.2px; }
+  .mk-section-label::before,
+  .mk-section-label::after { width: 14px; margin: 0 4px; }
+  .mk-section-title { font-size: 1.75rem; }
+  .mk-hero { padding: 64px 14px 40px; }
+  .mk-hero h1 { font-size: 1.85rem; }
+  .mk-hero-badge { font-size: 0.7rem; padding: 7px 12px; }
+  .mk-hero-preview { margin-top: 28px; }
+  .mk-dashboard-card { padding: 12px; }
+  .mk-dashboard-card-value { font-size: 1rem; }
+  .mk-dashboard-stat { padding: 6px; }
+  .mk-dashboard-stat-num { font-size: 0.9rem; }
+  .mk-dashboard-stat-label { font-size: 0.6rem; }
+  .mk-solution-hub { padding: 20px 14px; width: 100%; }
+  .mk-solution-hub-title { font-size: 1.05rem; }
+  .mk-solution-hub-tagline { font-size: 0.78rem; }
+  .mk-downstream-item { width: 100%; justify-content: center; }
+  .mk-solution-benefits { grid-template-columns: 1fr; }
   .mk-stats-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
   .mk-stat-number { font-size: 1.8rem; }
   .mk-problem-grid,
   .mk-industries-grid,
-  .mk-features-grid { grid-template-columns: 1fr; }
+  .mk-features-grid,
+  .mk-why-grid,
+  .mk-testimonials-grid { grid-template-columns: minmax(0, 1fr); }
+  .mk-cta { padding: 64px 14px; }
+  .mk-cta p { font-size: 1rem; margin-bottom: 28px; }
+  .mk-footer { padding: 40px 16px 28px; }
+  .mk-footer-links { gap: 14px; }
 }
 
 /* ----- Reduced motion ----- */

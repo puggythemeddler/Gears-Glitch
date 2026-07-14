@@ -57,6 +57,8 @@ function verifyToken(token: string): JwtPayload {
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization || "";
   if (header.startsWith("Bearer ")) return header.slice(7);
+  const queryToken = req.query?.token;
+  if (typeof queryToken === "string" && queryToken.trim()) return queryToken.trim();
   return null;
 }
 
@@ -277,7 +279,7 @@ function posAuthMiddleware(req: Request, res: Response, next: NextFunction): voi
   if (!token) { res.status(401).json({ error: "Login required." }); return; }
   try {
     const user = verifyToken(token);
-    if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician" && user.role !== "provider") {
+    if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician" && user.role !== "provider" && user.role !== "staff") {
       res.status(403).json({ error: "Access restricted." }); return;
     }
     (req as any).user = user;

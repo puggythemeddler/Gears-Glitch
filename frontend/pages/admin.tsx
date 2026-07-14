@@ -1973,15 +1973,22 @@ function AdminPaymentMethods({ initial }: { initial: any[] }) {
 
   return (
     <div>
-      <div className="table-wrap" style={{ marginBottom: "0.5rem" }}>
-        <table className="data-table">
+      <div className="table-wrap payment-methods-table-wrap" style={{ marginBottom: "0.5rem" }}>
+        <table className="data-table payment-methods-table">
+          <colgroup>
+            <col className="payment-methods-table__id" />
+            <col className="payment-methods-table__name" />
+            <col className="payment-methods-table__kra" />
+            <col className="payment-methods-table__tender" />
+            <col className="payment-methods-table__actions" />
+          </colgroup>
           <thead><tr><th>ID</th><th>Name</th><th>KRA Code</th><th>Needs Tender</th><th></th></tr></thead>
           <tbody>
             {methods.map((m, i) => (
               <tr key={i}>
-                <td><input value={m.id} onChange={(e) => updateMethod(i, "id", e.target.value)} style={{ width: 80, fontSize: "0.85rem" }} placeholder="e.g. paypal" /></td>
-                <td><input value={m.name} onChange={(e) => updateMethod(i, "name", e.target.value)} style={{ width: 140, fontSize: "0.85rem" }} placeholder="e.g. PayPal" /></td>
-                <td><select value={m.kraCode} onChange={(e) => updateMethod(i, "kraCode", e.target.value)} style={{ fontSize: "0.85rem" }}>
+                <td><input className="payment-methods-table__input" value={m.id} onChange={(e) => updateMethod(i, "id", e.target.value)} placeholder="e.g. paypal" /></td>
+                <td><input className="payment-methods-table__input" value={m.name} onChange={(e) => updateMethod(i, "name", e.target.value)} placeholder="e.g. PayPal" /></td>
+                <td><select className="payment-methods-table__input" value={m.kraCode} onChange={(e) => updateMethod(i, "kraCode", e.target.value)}>
                   <option value="01">01 — Cash</option>
                   <option value="02">02 — Card</option>
                   <option value="03">03 — Cheque</option>
@@ -1989,8 +1996,8 @@ function AdminPaymentMethods({ initial }: { initial: any[] }) {
                   <option value="05">05 — Bank Transfer</option>
                   <option value="06">06 — Other</option>
                 </select></td>
-                <td><input type="checkbox" checked={m.needsTender} onChange={(e) => updateMethod(i, "needsTender", e.target.checked)} /></td>
-                <td><RippleButton size="small" variant="danger" onClick={() => removeMethod(i)}>Del</RippleButton></td>
+                <td className="payment-methods-table__checkbox"><input type="checkbox" checked={m.needsTender} onChange={(e) => updateMethod(i, "needsTender", e.target.checked)} aria-label={`Needs tender for ${m.name || "payment method"}`} /></td>
+                <td className="payment-methods-table__delete"><RippleButton size="small" variant="danger" onClick={() => removeMethod(i)}>Delete</RippleButton></td>
               </tr>
             ))}
           </tbody>
@@ -2173,7 +2180,7 @@ function AdminSettings() {
         <RippleButton type="submit" loading={saving}>Save settings</RippleButton>
       </form>
 
-      <div className="panel" style={{ marginBottom: "1rem", maxWidth: 500 }}>
+      <div className="panel payment-methods-panel" style={{ marginBottom: "1rem" }}>
         <h3 style={{ marginTop: 0 }}>Payment Methods</h3>
         <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
           Configure payment methods shown on the POS page. Each method needs a unique ID, display name, KRA tax code, and whether it requires a tendered amount.

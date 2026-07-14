@@ -838,6 +838,43 @@ textarea:not(.input)::placeholder {
   background: var(--surface-hover);
 }
 
+/* ----- Payment methods table ----- */
+.payment-methods-panel {
+  width: 100%;
+  max-width: 760px;
+}
+
+.payment-methods-table {
+  min-width: 640px;
+  table-layout: fixed;
+}
+
+.payment-methods-table__id { width: 17%; }
+.payment-methods-table__name { width: 24%; }
+.payment-methods-table__kra { width: 30%; }
+.payment-methods-table__tender { width: 14%; }
+.payment-methods-table__actions { width: 15%; }
+
+.payment-methods-table th,
+.payment-methods-table td {
+  padding: var(--space-3);
+  vertical-align: middle;
+}
+
+.payment-methods-table__input {
+  width: 100%;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.payment-methods-table__checkbox {
+  text-align: center !important;
+}
+
+.payment-methods-table__delete {
+  white-space: nowrap;
+}
+
 /* ----- Stat Grid ----- */
 .stat-grid {
   display: grid;
