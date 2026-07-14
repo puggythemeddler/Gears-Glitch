@@ -13,9 +13,7 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true,
-    "ignoreDeprecations": "6.0",
-    "types": ["node"]
+    "sourceMap": true
   },
   "include": ["server/**/*.ts"],
   "exclude": ["node_modules", "dist", "data", "admin", "backoffice", "user manual", "Town project"]
