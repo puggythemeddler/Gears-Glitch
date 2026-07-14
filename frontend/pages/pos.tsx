@@ -173,10 +173,10 @@ export default function POSPage() {
   }
 
   return (
-    <div style={{ display: "flex", height: "calc(100vh - var(--nav-height, 60px))", overflow: "hidden" }}>
+    <div className="pos-shell">
 
       {/* Category sidebar */}
-      <div style={{ width: 160, borderRight: "1px solid var(--border)", overflowY: "auto", background: "var(--surface)", padding: "0.5rem 0", flexShrink: 0 }}>
+      <div className="pos-category-bar">
         <button
           onClick={() => { setSelectedCategory(""); sessionStorage.removeItem("posCategory"); }}
           style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: !selectedCategory ? "var(--primary)" : "transparent", color: !selectedCategory ? "#fff" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: !selectedCategory ? 600 : 400 }}
@@ -194,12 +194,12 @@ export default function POSPage() {
         ))}
       </div>
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", borderRight: "1px solid var(--border)" }}>
+      <div className="pos-main-column">
         <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <input ref={searchRef} type="text" className="input" placeholder="Search products by name or ID..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, fontSize: "1.1rem" }} autoFocus />
           <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, whiteSpace: "nowrap" }}>{isDark ? "☀️" : "🌙"}</button>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "0.5rem", padding: "0.75rem" }}>
+        <div className="pos-product-grid">
           {filtered.map((p) => (
             <button key={p.id} type="button" className="panel" style={{ cursor: "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)" }} onClick={() => addToCart(p)}>
               {p.imageUrl ? <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 100, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
@@ -211,7 +211,7 @@ export default function POSPage() {
         </div>
       </div>
 
-      <div style={{ width: 380, display: "flex", flexDirection: "column", background: "var(--surface)" }}>
+      <div className="pos-cart-panel">
         <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: "1.1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span>Cart ({cart.length})</span>
           <button onClick={() => { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); setPinUnlocked(false); setSelectedCategory(""); }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline" }}>Change PIN</button>

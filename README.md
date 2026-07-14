@@ -4,6 +4,14 @@ A complete multi-branch sales & management system with product catalog, customer
 
 ---
 
+## Mobile & tablet experience
+The storefront, POS, auth, and dashboard flows now adapt better for phones and tablets.
+
+- Header navigation and search wrap cleanly on narrow screens.
+- POS switches to a stacked layout on tablet and mobile screens so the product grid and cart stay usable.
+- Tables, forms, and auth panels become scrollable or full-width where needed for touch-friendly use.
+- Core actions keep larger tap targets and calmer spacing on small screens.
+
 ## Architecture
 
 Three layers, cleanly separated:
