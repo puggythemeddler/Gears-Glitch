@@ -5,7 +5,7 @@ const nextConfig = {
     // Rewrites run on the Next.js server, so this must not use a NEXT_PUBLIC_
     // variable. A stale public Vercel variable previously overrode the working
     // backend and sent every product and login request to a retired URL.
-    const backendUrl = (process.env.BACKEND_URL || "https://gears-glitch.onrender.com")
+    const backendUrl = (process.env.BACKEND_URL || (process.env.NODE_ENV === "production" ? "https://gears-glitch.onrender.com" : "http://localhost:8020"))
       .trim()
       .replace(/\/$/, "");
     return [
