@@ -15,6 +15,7 @@ const CATEGORIES: Category[] = [
   { id: "tower-servers", label: "Tower Servers", group: "Servers" },
   { id: "blade-servers", label: "Blade Servers", group: "Servers" },
   { id: "printers", label: "Printers", group: "Printers" },
+  { id: "graphics-cards", label: "Graphics Cards", group: "Components" },
   { id: "repairs", label: "Repairs", group: "Services" },
 ];
 
