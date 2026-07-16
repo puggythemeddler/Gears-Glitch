@@ -871,71 +871,78 @@ app.get("/api/pos/categories", async (_req: Request, res: Response) => {
 });
 
 app.post("/api/pos/checkout", posAuthMiddleware, async (req: Request, res: Response) => {
-  const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey } = req.body || {};
-  if (!items || !Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "Items are required." }); return; }
-  if (items.length > 100) { res.status(400).json({ error: "Too many items (max 100)." }); return; }
-  if (idempotencyKey) {
-    const existing = await queryOne("SELECT id FROM orders WHERE idempotency_key = $1", [idempotencyKey]) as any;
-    if (existing) { const dup = await getOrder(existing.id); if (dup) { res.status(200).json({ order: dup }); return; } }
-  }
-  const paymentMethods = await getPaymentMethods();
-  const pmt = paymentMethod || "cash";
-  const pmtConfig = paymentMethods.find((m: any) => m.id === pmt);
-  if (!pmtConfig) { res.status(400).json({ error: "Invalid payment method." }); return; }
-  const pmtCode = pmtConfig.kraCode;
-  const staff = (req as any).user;
-  const staffName = staff.username || staff.email || `Staff #${staff.sub}`;
-  let customerId: number;
-  if (selectedCustomerId && Number(selectedCustomerId) > 0) {
-    const found = await findCustomerById(Number(selectedCustomerId));
-    if (found) { customerId = found.id; } else { res.status(400).json({ error: "Customer not found." }); return; }
-  } else {
-    let walkIn = await queryOne("SELECT id FROM customers WHERE email = 'walkin@pos'") as any;
-    if (!walkIn) {
-      const r = await queryOne(
-      "INSERT INTO customers (name, email, password_hash, phone) VALUES ($1, $2, $3, $4) RETURNING id", ["Walk-in Customer", "walkin@pos", "", "0"]) as any;
-      walkIn = { id: r!.id };
+  try {
+    const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey } = req.body || {};
+    if (!items || !Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "Items are required." }); return; }
+    if (items.length > 100) { res.status(400).json({ error: "Too many items (max 100)." }); return; }
+    if (idempotencyKey) {
+      const existing = await queryOne("SELECT id FROM orders WHERE idempotency_key = $1", [idempotencyKey]) as any;
+      if (existing) { const dup = await getOrder(existing.id); if (dup) { res.status(200).json({ order: dup }); return; } }
     }
-    customerId = walkIn.id;
+    const paymentMethods = await getPaymentMethods();
+    const pmt = paymentMethod || "cash";
+    const pmtConfig = paymentMethods.find((m: any) => m.id === pmt);
+    if (!pmtConfig) { res.status(400).json({ error: "Invalid payment method." }); return; }
+    const staff = (req as any).user;
+    const staffName = staff.username || staff.email || `Staff #${staff.sub}`;
+    let customerId: number;
+    if (selectedCustomerId && Number(selectedCustomerId) > 0) {
+      const found = await findCustomerById(Number(selectedCustomerId));
+      if (found) { customerId = found.id; } else { res.status(400).json({ error: "Customer not found." }); return; }
+    } else {
+      let walkIn = await queryOne("SELECT id FROM customers WHERE email = 'walkin@pos'") as any;
+      if (!walkIn) {
+        const r = await queryOne(
+        "INSERT INTO customers (name, email, password_hash, phone) VALUES ($1, $2, $3, $4) RETURNING id", ["Walk-in Customer", "walkin@pos", "", "0"]) as any;
+        walkIn = { id: r!.id };
+      }
+      customerId = walkIn.id;
+    }
+    let subtotal = 0;
+    const resolvedItems: any[] = [];
+    for (const item of items) {
+      const product = await getProduct(item.productId);
+      if (!product) { res.status(400).json({ error: `Product ${item.productId} not found.` }); return; }
+      const qty = Number(item.quantity);
+      if (!Number.isInteger(qty) || qty <= 0) { res.status(400).json({ error: `Invalid quantity for ${product.name}.` }); return; }
+      const stock = await getStockLevel(item.productId);
+      if (stock && stock.quantityInStock < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${stock.quantityInStock}).` }); return; }
+      const lineTotal = product.price * qty;
+      subtotal += lineTotal;
+      resolvedItems.push({ ...product, quantity: qty, lineTotal });
+    }
+    const notes = `POS sale | ${pmt.toUpperCase()} | by ${staffName}`;
+    let orderId: number;
+    if (idempotencyKey) {
+      const r = await queryOne(
+        "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6) RETURNING id",
+        [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey]
+      ) as any;
+      if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
+      orderId = r.id;
+    } else {
+      const r = await queryOne(
+        "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5) RETURNING id",
+        [customerId, customerName || "POS Customer", notes, subtotal, staffName]
+      ) as any;
+      if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
+      orderId = r.id;
+    }
+    for (const item of resolvedItems) {
+      const hw = item.hasWarranty ? 1 : 0;
+      const wd = item.warrantyDuration || 0;
+      const tx = (item.taxable !== false) ? 1 : 0;
+      await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [orderId, item.id, item.name, item.price, item.quantity, item.lineTotal, hw, wd, tx]);
+    }
+    await updateOrderStatus(orderId, "delivered");
+    const updated = await getOrder(orderId);
+    if (!updated) { res.status(500).json({ error: "Order created but could not be retrieved." }); return; }
+    const change = pmt === "cash" && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
+    res.status(201).json({ order: updated, change });
+  } catch (err: any) {
+    console.error("[POS Checkout Error]", err);
+    if (!res.headersSent) res.status(500).json({ error: err?.message || "Checkout failed. Please try again." });
   }
-  let subtotal = 0;
-  const resolvedItems: any[] = [];
-  for (const item of items) {
-    const product = await getProduct(item.productId);
-    if (!product) { res.status(400).json({ error: `Product ${item.productId} not found.` }); return; }
-    const qty = Number(item.quantity);
-    if (!Number.isInteger(qty) || qty <= 0) { res.status(400).json({ error: `Invalid quantity for ${product.name}.` }); return; }
-    const stock = await getStockLevel(item.productId);
-    if (stock && stock.quantityInStock < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${stock.quantityInStock}).` }); return; }
-    const lineTotal = product.price * qty;
-    subtotal += lineTotal;
-    resolvedItems.push({ ...product, quantity: qty, lineTotal });
-  }
-  const notes = `POS sale | ${pmt.toUpperCase()} | by ${staffName}`;
-  let orderId: number;
-  if (idempotencyKey) {
-    const r = await queryOne(
-      "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6) RETURNING id",
-      [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey]
-    ) as any;
-    orderId = r!.id;
-  } else {
-    const r = await queryOne(
-      "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5) RETURNING id",
-      [customerId, customerName || "POS Customer", notes, subtotal, staffName]
-    ) as any;
-    orderId = r!.id;
-  }
-  for (const item of resolvedItems) {
-    const hw = item.hasWarranty ? 1 : 0;
-    const wd = item.warrantyDuration || 0;
-    const tx = (item.taxable !== false) ? 1 : 0;
-    await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [orderId, item.id, item.name, item.price, item.quantity, item.lineTotal, hw, wd, tx]);
-  }
-  await updateOrderStatus(orderId, "delivered");
-  const updated = await getOrder(orderId);
-  const change = pmt === "cash" && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
-  res.status(201).json({ order: updated, change });
 });
 
 app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res: Response) => {
@@ -1493,6 +1500,8 @@ app.post("/api/admin/credit-notes", ownerAuthMiddleware, async (req: Request, re
   if (!orderId) { res.status(400).json({ error: "orderId is required." }); return; }
   const user = (req as any).user;
   const resolvedReasonCode = typeof reasonCode === "string" && reasonCode.trim() ? reasonCode : "13";
+  const existingNotes = await listCreditNotes(Number(orderId));
+  if (existingNotes.length > 0) { res.status(400).json({ error: "A credit note has already been created for this order." }); return; }
   const order = await getOrder(Number(orderId));
   if (!order) { res.status(400).json({ error: "Order not found or credit note creation failed." }); return; }
   const orderItems = (order.items || []).map((i: any) => ({
@@ -1513,7 +1522,19 @@ app.post("/api/admin/credit-notes", ownerAuthMiddleware, async (req: Request, re
   res.status(201).json(finalCn || cn);
 });
 
-app.get("/api/admin/credit-notes/:id/view", adminAuthMiddleware, async (req: Request, res: Response) => {
+app.get("/api/admin/credit-notes/order-status", ownerAuthMiddleware, async (req: Request, res: Response) => {
+  const { orderIds } = req.query;
+  if (!orderIds) { res.status(400).json({ error: "orderIds query param required." }); return; }
+  const ids = String(orderIds).split(",").map(Number).filter(Boolean);
+  const result: Record<number, boolean> = {};
+  for (const orderId of ids) {
+    const notes = await listCreditNotes(orderId);
+    result[orderId] = notes.length > 0;
+  }
+  res.json({ credited: result });
+});
+
+app.get("/api/admin/credit-notes/:id/view", async (req: Request, res: Response) => {
   const cn = await getCreditNote(Number(req.params.id));
   if (!cn) { res.status(404).send("Credit note not found."); return; }
   const order = await getOrder(cn.orderId);

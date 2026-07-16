@@ -1625,12 +1625,20 @@ function OwnerInvoices() {
   const [iLoading, setILoading] = useState(true);
   const [oiData, setOiData] = useState<any[]>([]);
   const [oiLoading, setOiLoading] = useState(true);
+  const [creditedOrders, setCreditedOrders] = useState<Record<number, boolean>>({});
 
   function load() {
     setILoading(true);
     api<{ invoices: any[] }>("/api/admin/invoices").then((d) => setIData(d.invoices || [])).catch(() => {}).finally(() => setILoading(false));
     setOiLoading(true);
-    api<{ invoices: any[] }>("/api/admin/order-invoices").then((d) => setOiData(d.invoices || [])).catch(() => {}).finally(() => setOiLoading(false));
+    api<{ invoices: any[] }>("/api/admin/order-invoices").then((d) => {
+      const invs = d.invoices || [];
+      setOiData(invs);
+      const ids = [...new Set(invs.map((inv: any) => inv.orderId))].join(",");
+      if (ids) {
+        api<{ credited: Record<number, boolean> }>(`/api/admin/credit-notes/order-status?orderIds=${ids}`).then((r) => setCreditedOrders(r.credited || {})).catch(() => {});
+      }
+    }).catch(() => {}).finally(() => setOiLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -1655,6 +1663,7 @@ function OwnerInvoices() {
         method: "POST",
         body: JSON.stringify({ orderId, reason: reason.trim() }),
       });
+      setCreditedOrders((prev) => ({ ...prev, [orderId]: true }));
       window.open(`/api/admin/credit-notes/${created.id}/view`, "_blank", "noopener,noreferrer");
     } catch (err: any) {
       alert(err.message || "Failed to create credit note.");
@@ -1716,7 +1725,11 @@ function OwnerInvoices() {
                       <td>
                         {inv.status !== "paid" && <RippleButton size="small" onClick={() => markOiPaid(inv.id)}>Mark paid</RippleButton>}
                         <RippleButton size="small" variant="ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); window.open(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch { alert("Failed"); } }}>View</RippleButton>
-                        <RippleButton size="small" style={{ marginLeft: "0.25rem" }} onClick={() => createCreditNote(inv.orderId)}>Credit Note</RippleButton>
+                        {creditedOrders[inv.orderId] ? (
+                          <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
+                        ) : (
+                          <RippleButton size="small" style={{ marginLeft: "0.25rem" }} onClick={() => createCreditNote(inv.orderId)}>Credit Note</RippleButton>
+                        )}
                       </td>
                     </tr>
                   ))}

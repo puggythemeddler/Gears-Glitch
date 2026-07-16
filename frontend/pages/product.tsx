@@ -33,9 +33,13 @@ export default function ProductPage() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const loggedIn = isCustomerLoggedIn();
   const [userReviewed, setUserReviewed] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [subcategories, setSubcategories] = useState<{ id: string; name: string }[]>([]);
+  const [categoryLabel, setCategoryLabel] = useState("");
 
   useEffect(() => {
     if (!id) return;
+    setLoadError("");
     api<Product>(`/api/products/${encodeURIComponent(id as string)}`).then((p) => {
       setProduct(p);
       const initImg: ProductImage = { id: 0, productId: p.id, imageUrl: p.imageUrl, sortOrder: -1, isPrimary: 1 };
@@ -49,7 +53,15 @@ export default function ProductPage() {
       if (isCustomerLoggedIn()) {
         api<{ hasReviewed: boolean }>(`/api/products/${encodeURIComponent(id as string)}/reviews/check`).then((d) => setUserReviewed(d.hasReviewed)).catch(() => {});
       }
-    }).catch(() => setProduct(null));
+      if (p.category) {
+        fetch("/api/categories").then((r) => r.json()).then((d) => {
+          const cat = (d.categories || []).find((c: any) => c.id === p.category);
+          if (cat) setCategoryLabel(cat.label);
+          const subs = (d.subcategories || []).filter((s: any) => Array.isArray(s.category_ids) && s.category_ids.includes(p.category));
+          setSubcategories(subs);
+        }).catch(() => {});
+      }
+    }).catch((e) => { setProduct(null); setLoadError(e.message || "Failed to load product."); });
   }, [id]);
 
   useEffect(() => {
@@ -113,6 +125,15 @@ export default function ProductPage() {
   }
 
   if (!product) {
+    if (loadError) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "40vh", padding: "2rem", textAlign: "center" }}>
+          <div style={{ fontSize: "3rem", marginBottom: "1rem", opacity: 0.3 }}>&#9888;&#65039;</div>
+          <p style={{ color: "var(--danger)", marginBottom: "1rem" }}>{loadError}</p>
+          <button className="btn btn-primary" onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      );
+    }
     return (
       <>
         <div className="skeleton" style={{ height: "1rem", width: "20%", marginBottom: "var(--space-4)" }} />
@@ -140,9 +161,21 @@ export default function ProductPage() {
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <ol>
           <li><a href="/">Home</a></li>
+          {product.category && <li><a href={`/${product.category}`}>{categoryLabel || product.category}</a></li>}
+          {product.subcategory && <li><a href={`/${product.category}?subcategory=${encodeURIComponent(product.subcategory)}`}>{product.subcategory}</a></li>}
           <li><span aria-current="page">{product.name}</span></li>
         </ol>
       </nav>
+
+      {subcategories.length > 0 && (
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "var(--space-4)", flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", fontWeight: 500 }}>Filter:</span>
+          <a href={`/${product.category}`} className={`btn btn-sm ${!product.subcategory ? "btn-primary" : "btn-secondary"}`}>All</a>
+          {subcategories.map((s: any) => (
+            <a key={s.id} href={`/${product.category}?subcategory=${encodeURIComponent(s.id)}`} className={`btn btn-sm ${product.subcategory === s.id ? "btn-primary" : "btn-secondary"}`}>{s.name}</a>
+          ))}
+        </div>
+      )}
 
       <article className="product-detail">
         <div className="product-detail__media">

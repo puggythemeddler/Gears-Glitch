@@ -562,6 +562,7 @@ function AdminOrders() {
   const [selected, setSelected] = useState<any | null>(null);
   const [customerDetail, setCustomerDetail] = useState<any | null>(null);
   const [statusMsg, setStatusMsg] = useState("");
+  const [creditedOrders, setCreditedOrders] = useState<Record<number, boolean>>({});
 
   async function updateStatus(orderId: number, status: string) {
     setStatusMsg("");
@@ -582,6 +583,12 @@ function AdminOrders() {
       } else { setCustomerDetail(null); }
     } catch { alert("Failed to load order"); }
   }
+
+  useEffect(() => {
+    if (!oData?.orders?.length) return;
+    const ids = oData.orders.map((o) => o.id).join(",");
+    api<{ credited: Record<number, boolean> }>(`/api/admin/credit-notes/order-status?orderIds=${ids}`).then((d) => setCreditedOrders(d.credited || {})).catch(() => {});
+  }, [oData]);
 
   async function printInvoice(orderId: number) {
     try {
@@ -663,17 +670,22 @@ function AdminOrders() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
           <h2 style={{ margin: 0 }}>Items</h2>
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <RippleButton onClick={async () => {
-              const reason = prompt("Reason for credit note (optional):");
-              if (reason === null) return;
-              try {
-                await api("/api/admin/credit-notes", {
-                  method: "POST",
-                  body: JSON.stringify({ orderId: o.id, reason: reason || "" }),
-                });
-                alert("Credit note created.");
-              } catch { alert("Failed to create credit note."); }
-            }} style={{ background: "var(--primary)", color: "#fff" }}>Credit Note</RippleButton>
+            {creditedOrders[o.id] ? (
+              <span className="btn btn-sm" style={{ background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credit Note Created</span>
+            ) : (
+              <RippleButton onClick={async () => {
+                const reason = prompt("Reason for credit note (optional):");
+                if (reason === null) return;
+                try {
+                  await api("/api/admin/credit-notes", {
+                    method: "POST",
+                    body: JSON.stringify({ orderId: o.id, reason: reason || "" }),
+                  });
+                  setCreditedOrders((prev) => ({ ...prev, [o.id]: true }));
+                  alert("Credit note created.");
+                } catch (e: any) { alert(e.message || "Failed to create credit note."); }
+              }} style={{ background: "var(--primary)", color: "#fff" }}>Credit Note</RippleButton>
+            )}
             <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>
           </div>
         </div>
@@ -1707,6 +1719,14 @@ function AdminInvoices() {
   const { data: iData, loading, error, refetch } = useFetch(() => api<{ invoices: any[] }>("/api/admin/invoices"), []);
   const { data: oiData, loading: oiLoading, error: oiError, refetch: refetchOi } = useFetch(() => api<{ invoices: any[] }>("/api/admin/order-invoices"), []);
   const [oiStatusMsg, setOiStatusMsg] = useState("");
+  const [creditedOrders, setCreditedOrders] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    if (tab !== "orders" || !oiData?.invoices?.length) return;
+    const ids = [...new Set(oiData.invoices.map((inv: any) => inv.orderId))].join(",");
+    if (!ids) return;
+    api<{ credited: Record<number, boolean> }>(`/api/admin/credit-notes/order-status?orderIds=${ids}`).then((d) => setCreditedOrders(d.credited || {})).catch(() => {});
+  }, [oiData, tab]);
 
   async function markPaid(id: number) {
     try { await api(`/api/admin/invoices/${id}/pay`, { method: "POST" }); refetch(); } catch { alert("Failed"); }
@@ -1728,6 +1748,7 @@ function AdminInvoices() {
         method: "POST",
         body: JSON.stringify({ orderId, reason: reason.trim() }),
       });
+      setCreditedOrders((prev) => ({ ...prev, [orderId]: true }));
       window.open(`/api/admin/credit-notes/${created.id}/view`, "_blank", "noopener,noreferrer");
     } catch (err: any) {
       alert(err.message || "Failed to create credit note.");
@@ -1799,7 +1820,11 @@ function AdminInvoices() {
                         <td>
                           {inv.status !== "paid" && <button className="btn btn-sm" onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
                           <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); window.open(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch { alert("Failed"); } }}>View</button>
-                          <button className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "var(--primary)", color: "#fff" }} onClick={() => createCreditNote(inv.orderId)}>Credit Note</button>
+                          {creditedOrders[inv.orderId] ? (
+                            <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
+                          ) : (
+                            <button className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "var(--primary)", color: "#fff" }} onClick={() => createCreditNote(inv.orderId)}>Credit Note</button>
+                          )}
                         </td>
                       </tr>
                     ))}
