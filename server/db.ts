@@ -640,6 +640,25 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_internal_data TEXT`); } catch {}
   try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_signature_data TEXT`); } catch {}
   try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_submitted_at TEXT`); } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS product_views (
+      id SERIAL PRIMARY KEY,
+      product_id TEXT NOT NULL REFERENCES products(id),
+      viewer_type TEXT NOT NULL DEFAULT 'anonymous',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_product_views_product ON product_views(product_id)`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS stored_images (
+      id SERIAL PRIMARY KEY,
+      ref_id TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      image_data TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_stored_images_ref ON stored_images(ref_id)`);
+  } catch {}
 
   const existingTypes = await queryOne("SELECT COUNT(*) AS c FROM repair_types") as any;
   if (existingTypes && Number(existingTypes.c) === 0) {

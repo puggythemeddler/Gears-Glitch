@@ -1871,10 +1871,15 @@ app.get("/api/products", async (_req: Request, res: Response) => {
 });
 
 app.get("/api/products/:id", async (req: Request, res: Response) => {
-  const product = await getProduct(String(req.params.id));
-  if (!product) { res.status(404).json({ error: "Product not found." }); return; }
-  await recordProductView(String(req.params.id), "anonymous");
-  res.json(product);
+  try {
+    const product = await getProduct(String(req.params.id));
+    if (!product) { res.status(404).json({ error: "Product not found." }); return; }
+    try { await recordProductView(String(req.params.id), "anonymous"); } catch {}
+    res.json(product);
+  } catch (err: any) {
+    console.error("GET /api/products/:id error:", err?.message || err);
+    res.status(500).json({ error: "Failed to load product." });
+  }
 });
 
 app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create"), async (req: Request, res: Response) => {
