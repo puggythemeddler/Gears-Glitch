@@ -262,10 +262,7 @@ import bcrypt from "bcryptjs";
 const PORT: number = Number(process.env.PORT) || 8020;
 const ROOT: string = path.join(__dirname, "..");
 
-(async () => {
-  await initDb();
-})();
-
+// Start server after DB is ready
 const app = express();
 
 // Security middleware
@@ -331,18 +328,27 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-// DB image backup helper — fetches image from URL and stores base64 in stored_images table
+// DB image backup helper — stores image as base64 in stored_images table
 async function backupImageToDb(refId: string, imageUrl: string): Promise<void> {
   try {
     const settings = await getSettings();
     if (!settings.backupImagesToDb) return;
-    if (!imageUrl.startsWith("http")) return;
-    const resp = await fetch(imageUrl);
-    if (!resp.ok) return;
-    const contentType = resp.headers.get("content-type") || "image/jpeg";
-    const buffer = Buffer.from(await resp.arrayBuffer());
-    const base64 = buffer.toString("base64");
-    await storeImage(refId, contentType, base64);
+    if (!imageUrl) return;
+    let buffer: Buffer;
+    let contentType: string;
+    if (imageUrl.startsWith("http")) {
+      const resp = await fetch(imageUrl);
+      if (!resp.ok) return;
+      contentType = resp.headers.get("content-type") || "image/jpeg";
+      buffer = Buffer.from(await resp.arrayBuffer());
+    } else {
+      const localPath = path.join(__dirname, "..", "data", imageUrl.replace(/^\//, ""));
+      if (!fs.existsSync(localPath)) return;
+      buffer = fs.readFileSync(localPath);
+      const ext = path.extname(localPath).toLowerCase();
+      contentType = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml" }[ext] || "image/jpeg";
+    }
+    await storeImage(refId, contentType, buffer.toString("base64"));
   } catch (err: any) {
     console.error("[Image Backup]", err?.message || err);
   }
@@ -2124,14 +2130,14 @@ app.delete("/api/products/:id/images/:imageId", ownerAuthMiddleware, requirePerm
   res.json({ ok: true });
 });
 
-app.put("/api/products/:id/images/reorder", adminAuthMiddleware, async (req: Request, res: Response) => {
+app.put("/api/products/:id/images/reorder", ownerAuthMiddleware, requirePermission("product:update"), async (req: Request, res: Response) => {
   const { orderedIds } = req.body || {};
   if (!Array.isArray(orderedIds)) { res.status(400).json({ error: "orderedIds array required." }); return; }
   await setProductImageOrder(String(req.params.id), orderedIds);
   res.json({ ok: true });
 });
 
-app.put("/api/products/:id/images/:imageId/primary", adminAuthMiddleware, async (req: Request, res: Response) => {
+app.put("/api/products/:id/images/:imageId/primary", ownerAuthMiddleware, requirePermission("product:update"), async (req: Request, res: Response) => {
   await setPrimaryImage(String(req.params.id), Number(req.params.imageId));
   const images = await getProductImages(String(req.params.id));
   const img = images.find(i => i.id === Number(req.params.imageId));
@@ -3270,6 +3276,9 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+(async () => {
+  await initDb();
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+})();

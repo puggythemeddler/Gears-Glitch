@@ -72,7 +72,8 @@ function safeExt(file: Express.Multer.File, fallback: string) {
 const uploadProductImage = multer({
   storage: resolveStorage("products", (req, file) => {
     const productId = req.params?.id || "unknown";
-    return `${productId}${safeExt(file, ".jpg")}`;
+    if (cloudinaryConfigured) return `${productId}${safeExt(file, ".jpg")}`;
+    return `${productId}-${Date.now()}${safeExt(file, ".jpg")}`;
   }),
   ...MULTER_OPTS,
   fileFilter: imageFileFilterLenient,
@@ -106,24 +107,29 @@ const uploadRepairImage = multer({
 function imageUrlForProduct(productId: string): string {
   if (cloudinaryConfigured) return "";
   const extensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+  // Find the most recent upload for this product
+  let bestFile = "";
+  let bestTime = 0;
   for (const ext of extensions) {
-    const filePath = path.join(UPLOAD_DIR, `${productId}${ext}`);
-    if (fs.existsSync(filePath)) {
-      return `/uploads/${productId}${ext}`;
+    // Also check timestamped files (productId-1234567890.ext)
+    const files = fs.readdirSync(UPLOAD_DIR).filter(f => f.startsWith(productId) && f.endsWith(ext));
+    for (const file of files) {
+      const fp = path.join(UPLOAD_DIR, file);
+      const stat = fs.statSync(fp);
+      if (stat.mtimeMs > bestTime) { bestTime = stat.mtimeMs; bestFile = file; }
     }
   }
-  return "";
+  return bestFile ? `/uploads/${bestFile}` : "";
 }
 
 function deleteProductImages(productId: string): void {
   if (cloudinaryConfigured) return;
-  const extensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
-  for (const ext of extensions) {
-    const filePath = path.join(UPLOAD_DIR, `${productId}${ext}`);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+  try {
+    const files = fs.readdirSync(UPLOAD_DIR).filter(f => f.startsWith(productId));
+    for (const file of files) {
+      fs.unlinkSync(path.join(UPLOAD_DIR, file));
     }
-  }
+  } catch {}
 }
 
 function getUploadedUrl(req: any): string {
