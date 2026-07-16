@@ -164,6 +164,10 @@ export interface Settings {
   mpesaTillNumber: string;
   mpesaConfigured: boolean;
   backupImagesToDb: boolean;
+  cloudinaryCloudName: string;
+  cloudinaryApiKey: string;
+  cloudinaryApiSecret: string;
+  cloudinaryFolder: string;
 }
 
 export interface SubscriptionPlan {

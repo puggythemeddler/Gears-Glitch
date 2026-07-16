@@ -2205,6 +2205,10 @@ function AdminSettings() {
           etimsOscuConsumerKey: fd.get("etimsOscuConsumerKey"),
           etimsOscuConsumerSecret: fd.get("etimsOscuConsumerSecret"),
           backupImagesToDb: fd.get("backupImagesToDb") === "on",
+          cloudinaryCloudName: fd.get("cloudinaryCloudName"),
+          cloudinaryApiKey: fd.get("cloudinaryApiKey"),
+          cloudinaryApiSecret: fd.get("cloudinaryApiSecret"),
+          cloudinaryFolder: fd.get("cloudinaryFolder"),
         }),
       });
       setMsg("Settings saved.");
@@ -2295,8 +2299,14 @@ function AdminSettings() {
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <h3 style={{ marginTop: 0 }}>Image Storage</h3>
           <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
-            Images are uploaded to Cloudinary (primary). Enable this to also keep a database backup of every uploaded image as a safety net. Backups are stored as base64 in PostgreSQL and served via <code>/api/images/:refId</code>.
+            Configure Cloudinary for cloud image storage. Leave blank to use local disk (not recommended in production — local files are lost on Render deploys). If set here, these override the environment variables.
           </p>
+          <div style={{ display: "grid", gap: "0.5rem", marginBottom: "0.75rem" }}>
+            <div className="field"><label>Cloud Name<input name="cloudinaryCloudName" defaultValue={settings?.cloudinaryCloudName || ""} placeholder="e.g. dxxxxxxx" /></label></div>
+            <div className="field"><label>API Key<input name="cloudinaryApiKey" defaultValue={settings?.cloudinaryApiKey || ""} placeholder="Cloudinary API key" /></label></div>
+            <div className="field"><label>API Secret<input name="cloudinaryApiSecret" type="password" defaultValue={settings?.cloudinaryApiSecret || ""} placeholder="Cloudinary API secret" /></label></div>
+            <div className="field"><label>Folder<input name="cloudinaryFolder" defaultValue={settings?.cloudinaryFolder || "gear-glitch"} placeholder="gear-glitch" /></label></div>
+          </div>
           <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
             <input type="checkbox" name="backupImagesToDb" defaultChecked={settings?.backupImagesToDb || false} style={{ width: 18, height: 18 }} />
             <span>Enable database backup for uploaded images</span>

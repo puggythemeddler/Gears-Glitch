@@ -232,6 +232,10 @@ interface Settings {
   storeFavicon: string;
   taxRate: number;
   backupImagesToDb: boolean;
+  cloudinaryCloudName: string;
+  cloudinaryApiKey: string;
+  cloudinaryApiSecret: string;
+  cloudinaryFolder: string;
 }
 
 interface CategoryRow {
@@ -943,6 +947,10 @@ async function getSettings(): Promise<Settings> {
     storeFavicon: s.storeFavicon || "",
     taxRate: Number(s.taxRate) || 0,
     backupImagesToDb: s.backupImagesToDb === "true",
+    cloudinaryCloudName: s.cloudinaryCloudName || process.env.CLOUDINARY_CLOUD_NAME || "",
+    cloudinaryApiKey: s.cloudinaryApiKey || process.env.CLOUDINARY_API_KEY || "",
+    cloudinaryApiSecret: s.cloudinaryApiSecret || process.env.CLOUDINARY_API_SECRET || "",
+    cloudinaryFolder: s.cloudinaryFolder || process.env.CLOUDINARY_FOLDER || "gear-glitch",
   };
 }
 
@@ -957,7 +965,7 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 }
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
-  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb"];
+  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder"];
   if (updates.paymentMethods) await setPaymentMethods(updates.paymentMethods);
   await transaction(async (client) => {
     for (const key of allowed) {

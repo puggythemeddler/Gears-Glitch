@@ -254,7 +254,7 @@ import {
   respondToRepairQuote,
 } from "./repairs";
 import * as notifier from "./notify";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, getUploadedUrl, cloudinaryConfigured } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
@@ -356,7 +356,8 @@ async function backupImageToDb(refId: string, imageUrl: string): Promise<void> {
 
 // Cloudinary status check
 app.get("/api/upload/status", ownerAuthMiddleware, async (_req: Request, res: Response) => {
-  res.json({ cloudinary: cloudinaryConfigured, cloudName: process.env.CLOUDINARY_CLOUD_NAME || "(not set)", hasApiKey: !!process.env.CLOUDINARY_API_KEY, hasApiSecret: !!process.env.CLOUDINARY_API_SECRET });
+  const settings = await getSettings();
+  res.json({ cloudinary: isCloudinaryConfigured(), cloudName: settings.cloudinaryCloudName || "(not set)", hasApiKey: !!settings.cloudinaryApiKey, hasApiSecret: !!settings.cloudinaryApiSecret });
 });
 
 // Serve DB-backed-up images
@@ -544,12 +545,12 @@ app.put("/api/admin/about-us", adminAuthMiddleware, async (req: Request, res: Re
 });
 
 app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update"), async (req: Request, res: Response) => {
-  const { storeName, phone, email, currency, taxRate, mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaShortcode, mpesaTillNumber, mpesaEnv, googleClientId, kraPin, etimsSerialPrefix } = req.body || {};
+  const { storeName, phone, email, currency, taxRate, mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaShortcode, mpesaTillNumber, mpesaEnv, googleClientId, kraPin, etimsSerialPrefix, cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret, cloudinaryFolder } = req.body || {};
   if (storeName !== undefined && !String(storeName).trim()) {
     res.status(400).json({ error: "Store name is required." });
     return;
   }
-  const settings = await updateSettings({ storeName, phone, email, currency, taxRate, paymentMethods: req.body.paymentMethods }) as any;
+  const settings = await updateSettings({ storeName, phone, email, currency, taxRate, paymentMethods: req.body.paymentMethods, cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret, cloudinaryFolder }) as any;
   if (googleClientId !== undefined) {
     await setStoreSetting("google_client_id", String(googleClientId).trim());
     settings.googleClientId = await getStoreSetting("google_client_id") || "";
@@ -581,6 +582,7 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
   if (mpesaTillNumber !== undefined) mpesaUpdates.tillNumber = mpesaTillNumber;
   if (mpesaEnv !== undefined) mpesaUpdates.env = mpesaEnv;
   if (Object.keys(mpesaUpdates).length) updateMpesaConfig(mpesaUpdates);
+  reconfigureCloudinary(settings.cloudinaryCloudName, settings.cloudinaryApiKey, settings.cloudinaryApiSecret, settings.cloudinaryFolder);
   const mpesaCfg = getMpesaConfig();
   res.json({ ...settings, paymentMethods: await getPaymentMethods(), mpesa: mpesaCfg });
 });
@@ -2046,7 +2048,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
 
     try {
       const imageUrl = getUploadedUrl(req) || imageUrlForProduct(String(req.params.id));
-      console.log("[Upload primary] imageUrl:", imageUrl, "cloudinary:", cloudinaryConfigured);
+      console.log("[Upload primary] imageUrl:", imageUrl, "cloudinary:", isCloudinaryConfigured());
       if (!imageUrl) { res.status(500).json({ error: "Image upload succeeded but no URL was returned. Check Cloudinary configuration." }); return; }
       await setProductImageUrl(String(req.params.id), imageUrl);
       backupImageToDb(`product:${req.params.id}`, imageUrl);
@@ -2112,7 +2114,7 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     try {
       const imageUrl = getUploadedUrl(req);
-      console.log("[Upload gallery] imageUrl:", imageUrl, "cloudinary:", cloudinaryConfigured);
+      console.log("[Upload gallery] imageUrl:", imageUrl, "cloudinary:", isCloudinaryConfigured());
       if (!imageUrl) { res.status(500).json({ error: "Image upload succeeded but no URL was returned. Check Cloudinary configuration." }); return; }
       const img = await addProductImage(String(req.params.id), imageUrl);
       backupImageToDb(`product:${req.params.id}:gallery:${img.id}`, imageUrl);
@@ -3278,6 +3280,8 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Start server
 (async () => {
   await initDb();
+  const startupSettings = await getSettings();
+  reconfigureCloudinary(startupSettings.cloudinaryCloudName, startupSettings.cloudinaryApiKey, startupSettings.cloudinaryApiSecret, startupSettings.cloudinaryFolder);
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
