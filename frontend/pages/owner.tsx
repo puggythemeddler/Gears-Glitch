@@ -366,6 +366,12 @@ function OwnerProducts() {
     finally { setGalleryLoading(false); }
   }
 
+  async function uploadPrimaryImage(productId: string, file: File) {
+    const fd = new FormData();
+    fd.append("image", file);
+    try { await api(`/api/products/${encodeURIComponent(productId)}/image`, { method: "POST", body: fd }); refetch(); } catch (err: any) { alert("Primary upload failed: " + err.message); }
+  }
+
   async function uploadGalleryImages(productId: string) {
     const files = galleryRef.current?.files;
     if (!files || files.length === 0) return;
@@ -434,6 +440,14 @@ function OwnerProducts() {
             {!creating && editing?.imageUrl && (
               <div style={{ marginBottom: "0.75rem", textAlign: "center" }}>
                 <img src={editing.imageUrl} alt="" style={{ maxWidth: 300, maxHeight: 180, borderRadius: 8, objectFit: "cover" }} />
+              </div>
+            )}
+            {!creating && (
+              <div style={{ marginBottom: "0.75rem", textAlign: "center" }}>
+                <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
+                  <label style={{ fontSize: "0.85rem", cursor: "pointer" }}>Replace primary image<input type="file" accept="image/*" style={{ display: "block", margin: "0.25rem auto" }} onChange={(e) => { const f = e.target.files?.[0]; if (f && editing) uploadPrimaryImage(editing.id, f); }} /></label>
+                  {editing?.imageUrl && <button type="button" onClick={async () => { if (!editing || !confirm("Remove primary image?")) return; try { await api(`/api/products/${encodeURIComponent(editing.id)}/image`, { method: "DELETE" }); refetch(); } catch (err: any) { alert("Failed: " + err.message); } }} style={{ fontSize: "0.8rem", color: "var(--danger)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Remove image</button>}
+                </div>
               </div>
             )}
             <div className="field"><label>Name<input name="name" defaultValue={editing?.name} required /></label></div>

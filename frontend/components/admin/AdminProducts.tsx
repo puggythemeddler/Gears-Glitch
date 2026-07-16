@@ -216,7 +216,10 @@ export default function AdminProducts() {
             {!creating && (
               <div style={{ marginBottom: "0.75rem", textAlign: "center" }}>
                 {editing?.imageUrl && <img src={editing.imageUrl} alt="" style={{ maxWidth: 300, maxHeight: 180, borderRadius: 8, objectFit: "cover", marginBottom: "0.5rem" }} />}
-                <div><label style={{ fontSize: "0.85rem", cursor: "pointer" }}>Replace primary image<input type="file" accept="image/*" style={{ display: "block", margin: "0.25rem auto" }} onChange={(e) => { const f = e.target.files?.[0]; if (f && editing) uploadPrimaryImage(editing.id, f); }} /></label></div>
+                <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
+                  <label style={{ fontSize: "0.85rem", cursor: "pointer" }}>Replace primary image<input type="file" accept="image/*" style={{ display: "block", margin: "0.25rem auto" }} onChange={(e) => { const f = e.target.files?.[0]; if (f && editing) uploadPrimaryImage(editing.id, f); }} /></label>
+                  {editing?.imageUrl && <RippleButton size="small" variant="danger" type="button" onClick={async () => { if (!editing || !confirm("Remove primary image?")) return; try { await api(`/api/products/${encodeURIComponent(editing.id)}/image`, { method: "DELETE" }); refetch(); } catch (err: any) { alert("Failed: " + err.message); } }}>Remove image</RippleButton>}
+                </div>
               </div>
             )}
             <div className="field"><label>Name<input name="name" defaultValue={editing?.name} required /></label></div>

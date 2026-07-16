@@ -348,6 +348,11 @@ async function backupImageToDb(refId: string, imageUrl: string): Promise<void> {
   }
 }
 
+// Cloudinary status check
+app.get("/api/upload/status", ownerAuthMiddleware, async (_req: Request, res: Response) => {
+  res.json({ cloudinary: cloudinaryConfigured, cloudName: process.env.CLOUDINARY_CLOUD_NAME || "(not set)", hasApiKey: !!process.env.CLOUDINARY_API_KEY, hasApiSecret: !!process.env.CLOUDINARY_API_SECRET });
+});
+
 // Serve DB-backed-up images
 app.get("/api/images/:refId", async (req: Request, res: Response) => {
   const img = await getImage(String(req.params.refId));
@@ -2030,20 +2035,34 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
   if (!product) { res.status(404).json({ error: "Product not found." }); return; }
 
   uploadProductImage(req, res, async (err: any) => {
-    if (err) { res.status(400).json({ error: "Upload failed." }); return; }
+    if (err) { console.error("[Upload primary]", err.message || err); res.status(400).json({ error: "Upload failed: " + (err.message || "Unknown error") }); return; }
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
 
-    const imageUrl = getUploadedUrl(req) || imageUrlForProduct(String(req.params.id));
-    await setProductImageUrl(String(req.params.id), imageUrl);
-    backupImageToDb(`product:${req.params.id}`, imageUrl);
-    // Also save to product_images gallery
-    const existing = await getProductImages(String(req.params.id));
-    if (!existing.find(i => i.image_url === imageUrl)) {
-      await addProductImage(String(req.params.id), imageUrl, -1);
+    try {
+      const imageUrl = getUploadedUrl(req) || imageUrlForProduct(String(req.params.id));
+      console.log("[Upload primary] imageUrl:", imageUrl, "cloudinary:", cloudinaryConfigured);
+      if (!imageUrl) { res.status(500).json({ error: "Image upload succeeded but no URL was returned. Check Cloudinary configuration." }); return; }
+      await setProductImageUrl(String(req.params.id), imageUrl);
+      backupImageToDb(`product:${req.params.id}`, imageUrl);
+      // Also save to product_images gallery
+      const existing = await getProductImages(String(req.params.id));
+      if (!existing.find(i => i.image_url === imageUrl)) {
+        await addProductImage(String(req.params.id), imageUrl, -1);
+      }
+      const updated = await getProduct(String(req.params.id));
+      res.json(updated);
+    } catch (e: any) {
+      console.error("[Upload primary] save error:", e.message || e);
+      res.status(500).json({ error: "Image uploaded but failed to save: " + (e.message || "Unknown error") });
     }
-    const updated = await getProduct(String(req.params.id));
-    res.json(updated);
   });
+});
+
+app.delete("/api/products/:id/image", ownerAuthMiddleware, requirePermission("product:update"), async (req: Request, res: Response) => {
+  const product = await getProduct(String(req.params.id));
+  if (!product) { res.status(404).json({ error: "Product not found." }); return; }
+  await setProductImageUrl(String(req.params.id), "");
+  res.json({ ok: true });
 });
 
 // Gallery images
@@ -2083,12 +2102,19 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
   const product = await getProduct(String(req.params.id));
   if (!product) { res.status(404).json({ error: "Product not found." }); return; }
   uploadGalleryImage(req, res, async (err: any) => {
-    if (err) { res.status(400).json({ error: "Upload failed." }); return; }
+    if (err) { console.error("[Upload gallery]", err.message || err); res.status(400).json({ error: "Upload failed: " + (err.message || "Unknown error") }); return; }
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
-    const imageUrl = getUploadedUrl(req);
-    const img = await addProductImage(String(req.params.id), imageUrl);
-    backupImageToDb(`product:${req.params.id}:gallery:${img.id}`, imageUrl);
-    res.json(img);
+    try {
+      const imageUrl = getUploadedUrl(req);
+      console.log("[Upload gallery] imageUrl:", imageUrl, "cloudinary:", cloudinaryConfigured);
+      if (!imageUrl) { res.status(500).json({ error: "Image upload succeeded but no URL was returned. Check Cloudinary configuration." }); return; }
+      const img = await addProductImage(String(req.params.id), imageUrl);
+      backupImageToDb(`product:${req.params.id}:gallery:${img.id}`, imageUrl);
+      res.json(img);
+    } catch (e: any) {
+      console.error("[Upload gallery] save error:", e.message || e);
+      res.status(500).json({ error: "Image uploaded but failed to save: " + (e.message || "Unknown error") });
+    }
   });
 });
 
