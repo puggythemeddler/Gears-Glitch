@@ -17,5 +17,13 @@ services:
         value: 8020
       - key: BASE_URL
         value: https://gears-glitch.onrender.com
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_FOLDER
+        value: gear-glitch
     healthCheckPath: /api/health
     autoDeploy: true

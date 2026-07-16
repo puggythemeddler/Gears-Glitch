@@ -25,7 +25,7 @@ Three layers, cleanly separated:
 | Layer | Tech | Port | Purpose |
 |-------|------|------|---------|
 | **Frontend** | Next.js 14 (Pages Router) + TypeScript | 3000 | UI rendering, client-side routing |
-| **Backend** | Express + TypeScript | 8020 | REST API, JWT auth (24h staff / 7d customer), file uploads, M-Pesa |
+| **Backend** | Express + TypeScript | 8020 | REST API, JWT auth (24h staff / 7d customer), Cloudinary image uploads, M-Pesa |
 | **Database** | PostgreSQL via `pg` Pool | — | Cloud database (Neon) with schema-per-client multi-tenancy |
 
 **Security middleware** applied globally: Helmet (CSP disabled), CORS (configurable via `CORS_ORIGIN`), rate limiting (200 req/15min global, 10 req/15min on auth endpoints). The Next.js dev server proxies `/api/*` and `/uploads/*` to the Express backend automatically.
@@ -331,7 +331,7 @@ server/                   # Express backend (TypeScript)
 ├── repairs.ts            # Repair ticket lifecycle
 ├── permissions.ts        # Role-based permissions + assignRoleToUser
 ├── categories.ts         # Category definitions (seeded into DB, editable via admin)
-├── upload.ts             # Multer image upload
+├── upload.ts             # Multer image upload (Cloudinary in production, local disk in dev)
 ├── shipping.ts           # Kenyan counties with tiered fees
 ├── mpesa.ts              # Daraja API STK Push
 └── notify.ts             # Email notifications
@@ -340,7 +340,7 @@ render.yaml              # Render.com deployment config
 vercel.json              # Vercel deployment config
 products.json            # Seed data (34 products)
 data/
-└── uploads/              # Product images, gallery, logos
+└── uploads/              # Local image storage (dev only; production uses Cloudinary)
 ```
 
 ---
@@ -666,6 +666,10 @@ The system supports both VSCU (local JAR bridge) and OSCU (cloud API) eTIMS mode
 | `MPESA_SHORTCODE` | | |
 | `MPESA_TILL_NUMBER` | | Displayed at checkout |
 | `MPESA_ENV` | sandbox | `sandbox` or `production` |
+| `CLOUDINARY_CLOUD_NAME` | | Cloudinary cloud name (required for image uploads in production) |
+| `CLOUDINARY_API_KEY` | | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | | Cloudinary API secret |
+| `CLOUDINARY_FOLDER` | gear-glitch | Cloudinary folder for uploaded images |
 
 ---
 
@@ -688,7 +692,7 @@ npm start                # Serve production build
 ### Notes
 
 - Backend only exposes `/uploads` to clients
-- Images stored in `data/uploads/` (JPEG, PNG, WebP, GIF, max 5MB). Cache-busting via `?v=<timestamp>` on image URLs and `Cache-Control: no-store` on `/uploads` static middleware.
+- Images stored on Cloudinary in production (free tier, 25GB) with automatic fallback to local `data/uploads/` in development. Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` env vars. Cache-busting via `?v=<timestamp>` on image URLs.
 - M-Pesa STK Push — simulated when credentials not configured. Callback validates `Body.stkCallback.CheckoutRequestID`. Phone numbers masked in `data/mpesa.log`.
 - All 47 Kenyan counties with tiered delivery fees
 - To reset the database, drop and recreate the PostgreSQL schema (tables are auto-created on server start)
@@ -701,7 +705,7 @@ npm start                # Serve production build
 - **Coupons**: Admin can create percentage or fixed discount codes with min order, max uses, and expiry. Customers apply at checkout. Discount recorded per order.
 - **Bulk Edit**: Products table supports multi-select with checkboxes and bulk price/category/stock updates.
 - **Price History**: Every price change is automatically recorded and viewable per product.
-- **Database Backup**: PostgreSQL backups are handled by your provider (Neon, Railway, etc.) — enable automatic backups. For file uploads, back up `data/uploads/` regularly.
+- **Database Backup**: PostgreSQL backups are handled by your provider (Neon, Railway, etc.) — enable automatic backups. Product images are stored on Cloudinary (production) or `data/uploads/` (dev).
 
 ---
 
@@ -714,8 +718,9 @@ npm start                # Serve production build
 5. **Set `NODE_ENV=production`** — disables demo accounts, disables weak-password fallbacks
 6. **Set `CORS_ORIGIN`** to your frontend URL (e.g. `https://mystore.com`)
 7. **Configure `SMTP_*`** for real email
-8. **Use HTTPS** behind a reverse proxy (nginx, Caddy, Cloudflare) — all traffic (passwords, tokens, M-Pesa data) is unprotected without TLS
+8. **Create a free [Cloudinary](https://cloudinary.com) account** — set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in Render env vars. Images uploaded without Cloudinary fall back to local disk (lost on Render redeploy).
+9. **Use HTTPS** behind a reverse proxy (nginx, Caddy, Cloudflare) — all traffic (passwords, tokens, M-Pesa data) is unprotected without TLS
 9. Build backend: `npm run build`
 10. Build frontend: `cd frontend && npm run build`
 11. Run with a process manager (PM2, systemd, etc.) or deploy to Render.com / Vercel
-12. Back up `data/uploads/` regularly — PostgreSQL is managed by your provider
+12. Back up images — Cloudinary stores uploads in production; local `data/uploads/` is ephemeral on Render

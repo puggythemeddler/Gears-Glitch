@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import multer from "multer";
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
 
 const UPLOAD_DIR: string = path.join(__dirname, "..", "data", "uploads");
 
@@ -8,29 +10,101 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-const storage = multer.diskStorage({
-  destination: (_req: any, _file: any, cb: (error: Error | null, destination: string) => void) => {
-    cb(null, UPLOAD_DIR);
-  },
-  filename: (req: any, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
-    const productId: string | undefined = req.params?.id;
-    const ext: string = path.extname(file.originalname).toLowerCase() || ".jpg";
-  const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".jpg";
-  cb(null, productId ? `${productId}${safeExt}` : `store-logo${safeExt}`);
-},
-});
+const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || "gear-glitch";
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    if (!file.mimetype.startsWith("image/") && file.mimetype !== "image/x-icon" && file.mimetype !== "image/vnd.microsoft.icon") {
-    }
-    cb(null, true);
-  },
-});
+const cloudinaryConfigured = !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
+
+if (cloudinaryConfigured) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+}
+
+function makeCloudinaryStorage(folder: string, filenameFn?: (req: any, file: Express.Multer.File) => string) {
+  return new CloudinaryStorage({
+    cloudinary,
+    params: (_req: any, file: Express.Multer.File) => {
+      const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
+      const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".jpg";
+      const base = filenameFn ? filenameFn(_req, file) : `file-${Date.now()}`;
+      return {
+        folder: `${CLOUDINARY_FOLDER}/${folder}`,
+        public_id: base.replace(/\.[^.]+$/, ""),
+        format: safeExt.replace(".", ""),
+        resource_type: "image",
+      };
+    },
+  });
+}
+
+function makeLocalDiskStorage(filenameFn: (req: any, file: Express.Multer.File) => string) {
+  return multer.diskStorage({
+    destination: (_req: any, _file: any, cb) => cb(null, UPLOAD_DIR),
+    filename: (req: any, file: Express.Multer.File, cb) => cb(null, filenameFn(req, file)),
+  });
+}
+
+function imageFileFilter(_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) {
+  if (!file.mimetype.startsWith("image/") && file.mimetype !== "image/x-icon" && file.mimetype !== "image/vnd.microsoft.icon") {
+    return cb(new Error("Only image files are allowed."));
+  }
+  cb(null, true);
+}
+
+function imageFileFilterLenient(_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) {
+  cb(null, true);
+}
+
+const MULTER_OPTS = { limits: { fileSize: 5 * 1024 * 1024 } };
+
+function resolveStorage(folder: string, filenameFn: (req: any, file: Express.Multer.File) => string) {
+  if (cloudinaryConfigured) return makeCloudinaryStorage(folder, filenameFn);
+  return makeLocalDiskStorage(filenameFn);
+}
+
+function safeExt(file: Express.Multer.File, fallback: string) {
+  const ext = path.extname(file.originalname).toLowerCase() || fallback;
+  return [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : fallback;
+}
+
+const uploadProductImage = multer({
+  storage: resolveStorage("products", (req, file) => {
+    const productId = req.params?.id || "unknown";
+    return `${productId}${safeExt(file, ".jpg")}`;
+  }),
+  ...MULTER_OPTS,
+  fileFilter: imageFileFilterLenient,
+}).single("image");
+
+const uploadFavicon = multer({
+  storage: resolveStorage("favicon", (_req, file) => `store-favicon${safeExt(file, ".png")}`),
+  ...MULTER_OPTS,
+  fileFilter: imageFileFilter,
+}).single("favicon");
+
+const uploadGalleryImage = multer({
+  storage: resolveStorage("gallery", (req, file) => {
+    const productId = req.params?.id || "unknown";
+    return `${productId}-gallery-${Date.now()}${safeExt(file, ".jpg")}`;
+  }),
+  ...MULTER_OPTS,
+  fileFilter: imageFileFilter,
+}).single("image");
+
+const uploadRepairImage = multer({
+  storage: resolveStorage("repairs", (req, file) => {
+    const ticketId = req.params?.id || "unknown";
+    const type = req.body?.imageType || "before";
+    return `repair-${ticketId}-${type}-${Date.now()}${safeExt(file, ".jpg")}`;
+  }),
+  ...MULTER_OPTS,
+  fileFilter: imageFileFilter,
+}).single("image");
 
 function imageUrlForProduct(productId: string): string {
+  if (cloudinaryConfigured) return "";
   const extensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
   for (const ext of extensions) {
     const filePath = path.join(UPLOAD_DIR, `${productId}${ext}`);
@@ -42,6 +116,7 @@ function imageUrlForProduct(productId: string): string {
 }
 
 function deleteProductImages(productId: string): void {
+  if (cloudinaryConfigured) return;
   const extensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
   for (const ext of extensions) {
     const filePath = path.join(UPLOAD_DIR, `${productId}${ext}`);
@@ -51,59 +126,11 @@ function deleteProductImages(productId: string): void {
   }
 }
 
-const uploadProductImage = upload.single("image");
+function getUploadedUrl(req: any): string {
+  const file = req.file;
+  if (!file) return "";
+  if (cloudinaryConfigured && file.path) return file.path;
+  return `/uploads/${file.filename}`;
+}
 
-const uploadFavicon = multer({
-  storage: multer.diskStorage({
-    destination: (_req: any, _file: any, cb) => cb(null, UPLOAD_DIR),
-    filename: (_req: any, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
-      const ext: string = path.extname(file.originalname).toLowerCase() || ".png";
-      const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".png";
-      cb(null, `store-favicon${safeExt}`);
-    },
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    if (!file.mimetype.startsWith("image/") && file.mimetype !== "image/x-icon" && file.mimetype !== "image/vnd.microsoft.icon") {
-      return cb(new Error("Only image files are allowed."));
-    }
-    cb(null, true);
-  },
-}).single("favicon");
-
-const uploadGalleryImage = multer({
-  storage: multer.diskStorage({
-    destination: (_req: any, _file: any, cb) => cb(null, UPLOAD_DIR),
-    filename: (req: any, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
-      const productId: string | undefined = req.params?.id;
-      const ext: string = path.extname(file.originalname).toLowerCase() || ".jpg";
-      const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".jpg";
-      cb(null, `${productId}-gallery-${Date.now()}${safeExt}`);
-    },
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    if (!file.mimetype.startsWith("image/") && file.mimetype !== "image/x-icon" && file.mimetype !== "image/vnd.microsoft.icon") return cb(new Error("Only image files are allowed."));
-    cb(null, true);
-  },
-}).single("image");
-
-const uploadRepairImage = multer({
-  storage: multer.diskStorage({
-    destination: (_req: any, _file: any, cb) => cb(null, UPLOAD_DIR),
-    filename: (req: any, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
-      const ticketId: string | undefined = req.params?.id;
-      const type: string = req.body?.imageType || "before";
-      const ext: string = path.extname(file.originalname).toLowerCase() || ".jpg";
-      const safeExt: string = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".jpg";
-      cb(null, `repair-${ticketId}-${type}-${Date.now()}${safeExt}`);
-    },
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    if (!file.mimetype.startsWith("image/")) return cb(new Error("Only image files are allowed."));
-    cb(null, true);
-  },
-}).single("image");
-
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, deleteProductImages };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, deleteProductImages, cloudinaryConfigured, getUploadedUrl };

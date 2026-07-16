@@ -252,7 +252,7 @@ import {
   respondToRepairQuote,
 } from "./repairs";
 import * as notifier from "./notify";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, getUploadedUrl } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
@@ -549,7 +549,7 @@ app.post("/api/settings/logo", adminAuthMiddleware, (req: Request, res: Response
   uploadProductImage(req, res, async (err: any) => {
     if (err) { res.status(400).json({ error: "Upload failed." }); return; }
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
-    const logoUrl = `/uploads/${(req.file as any).filename}`;
+    const logoUrl = getUploadedUrl(req);
     await updateSettings({ storeLogo: logoUrl });
     res.json({ logoUrl });
   });
@@ -559,7 +559,7 @@ app.post("/api/settings/favicon", adminAuthMiddleware, (req: Request, res: Respo
   uploadFavicon(req, res, async (err: any) => {
     if (err) { res.status(400).json({ error: "Upload failed." }); return; }
     if (!req.file) { res.status(400).json({ error: "No file provided." }); return; }
-    const faviconUrl = `/uploads/${(req.file as any).filename}`;
+    const faviconUrl = getUploadedUrl(req);
     await updateSettings({ storeFavicon: faviconUrl });
     res.json({ faviconUrl });
   });
@@ -1997,7 +1997,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
     if (err) { res.status(400).json({ error: "Upload failed." }); return; }
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
 
-    const imageUrl = imageUrlForProduct(String(req.params.id));
+    const imageUrl = getUploadedUrl(req) || imageUrlForProduct(String(req.params.id));
     await setProductImageUrl(String(req.params.id), imageUrl);
     // Also save to product_images gallery
     const existing = await getProductImages(String(req.params.id));
@@ -2048,7 +2048,7 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
   uploadGalleryImage(req, res, async (err: any) => {
     if (err) { res.status(400).json({ error: "Upload failed." }); return; }
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
-    const imageUrl = `/uploads/${(req.file as any).filename}`;
+    const imageUrl = getUploadedUrl(req);
     const img = await addProductImage(String(req.params.id), imageUrl);
     res.json(img);
   });
@@ -2658,7 +2658,7 @@ app.post("/api/repairs/:id/images", staffAuthMiddleware, (req: Request, res: Res
     if (!req.file) { res.status(400).json({ error: "No image uploaded." }); return; }
     const imageType = String(req.body.imageType || "before").toLowerCase();
     if (!["before", "after"].includes(imageType)) { res.status(400).json({ error: "imageType must be 'before' or 'after'." }); return; }
-    const imageUrl = `/uploads/${req.file.filename}`;
+    const imageUrl = getUploadedUrl(req);
     const image = await addRepairImage(String(req.params.id), imageUrl, imageType as "before" | "after", (req as any).user.sub);
     res.status(201).json(image);
   });
