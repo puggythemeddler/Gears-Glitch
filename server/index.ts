@@ -1878,8 +1878,9 @@ function normalizeSpecs(specs: any): any[] {
     .filter(Boolean);
 }
 
-app.get("/api/products", async (_req: Request, res: Response) => {
-  const products = await listProducts();
+app.get("/api/products", async (req: Request, res: Response) => {
+  const category = req.query.category as string | undefined;
+  const products = await listProducts(category);
   res.json({ products, currency: (await getSettings()).currency });
 });
 
@@ -2032,6 +2033,10 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
   if (body.specs !== undefined) updates.specs = normalizeSpecs(body.specs);
   if (body.inStock !== undefined) updates.inStock = Boolean(body.inStock);
   if (body.isNonStock !== undefined) updates.isNonStock = Boolean(body.isNonStock);
+  if (body.subcategory !== undefined) updates.subcategory = String(body.subcategory).trim();
+  if (body.hasWarranty !== undefined) updates.hasWarranty = Boolean(body.hasWarranty);
+  if (body.warrantyDuration !== undefined) updates.warrantyDuration = Number(body.warrantyDuration);
+  if (body.taxable !== undefined) updates.taxable = Boolean(body.taxable);
   if (body.imageAlt !== undefined) updates.imageAlt = String(body.imageAlt).trim();
 
   const product = await updateProduct(String(req.params.id), updates);
@@ -2154,6 +2159,13 @@ app.patch("/api/products/:id/price", adminAuthMiddleware, async (req: Request, r
     return;
   }
   const product = await updateProduct(String(req.params.id), { price });
+  if (!product) { res.status(404).json({ error: "Product not found." }); return; }
+  res.json(product);
+});
+
+app.patch("/api/products/:id/subcategory", adminAuthMiddleware, async (req: Request, res: Response) => {
+  const subcategory = String(req.body?.subcategory || "").trim();
+  const product = await updateProduct(String(req.params.id), { subcategory });
   if (!product) { res.status(404).json({ error: "Product not found." }); return; }
   res.json(product);
 });
