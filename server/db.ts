@@ -231,6 +231,7 @@ interface Settings {
   storeLogo: string;
   storeFavicon: string;
   taxRate: number;
+  backupImagesToDb: boolean;
 }
 
 interface CategoryRow {
@@ -922,6 +923,7 @@ async function getSettings(): Promise<Settings> {
     storeLogo: s.storeLogo || "",
     storeFavicon: s.storeFavicon || "",
     taxRate: Number(s.taxRate) || 0,
+    backupImagesToDb: s.backupImagesToDb === "true",
   };
 }
 
@@ -936,7 +938,7 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 }
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
-  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate"];
+  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb"];
   if (updates.paymentMethods) await setPaymentMethods(updates.paymentMethods);
   await transaction(async (client) => {
     for (const key of allowed) {
@@ -2030,6 +2032,21 @@ async function listSpecTemplates(): Promise<string[]> {
   return rows.map((r) => r.category);
 }
 
+async function storeImage(refId: string, mimeType: string, imageData: string): Promise<number> {
+  const row = await queryOne("INSERT INTO stored_images (ref_id, mime_type, image_data) VALUES ($1, $2, $3) RETURNING id", [refId, mimeType, imageData]) as any;
+  return row ? row.id : 0;
+}
+
+async function getImage(refId: string): Promise<{ id: number; refId: string; mimeType: string; imageData: string } | undefined> {
+  const row = await queryOne("SELECT * FROM stored_images WHERE ref_id = $1 ORDER BY id DESC LIMIT 1", [refId]) as any;
+  if (!row) return undefined;
+  return { id: row.id, refId: row.ref_id, mimeType: row.mime_type, imageData: row.image_data };
+}
+
+async function deleteImageByRef(refId: string): Promise<void> {
+  await query("DELETE FROM stored_images WHERE ref_id = $1", [refId]);
+}
+
 async function getLoyaltyPoints(customerId: number): Promise<number> {
   const row = await queryOne("SELECT points FROM loyalty_points WHERE customer_id = $1", [customerId]) as any;
   return row ? Number(row.points) : 0;
@@ -2345,4 +2362,5 @@ export {
   createReview, getProductReviews, getProductRating, hasCustomerReviewed,
   getLoyaltyPoints, earnLoyaltyPoints, redeemLoyaltyPoints, getLoyaltyTransactions, listAllLoyaltyCustomers,
   getDb,
+  storeImage, getImage, deleteImageByRef,
 };

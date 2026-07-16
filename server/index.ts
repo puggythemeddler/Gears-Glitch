@@ -199,6 +199,8 @@ import {
   getProductReviews,
   getProductRating,
   hasCustomerReviewed,
+  storeImage,
+  getImage,
 } from "./db";
 import { query, queryOne, queryAll } from "./db-helpers";
 import {
@@ -327,6 +329,33 @@ app.use("/uploads", express.static(path.join(ROOT, "data", "uploads"), {
 
 app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
+});
+
+// DB image backup helper — fetches image from URL and stores base64 in stored_images table
+async function backupImageToDb(refId: string, imageUrl: string): Promise<void> {
+  try {
+    const settings = await getSettings();
+    if (!settings.backupImagesToDb) return;
+    if (!imageUrl.startsWith("http")) return;
+    const resp = await fetch(imageUrl);
+    if (!resp.ok) return;
+    const contentType = resp.headers.get("content-type") || "image/jpeg";
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    const base64 = buffer.toString("base64");
+    await storeImage(refId, contentType, base64);
+  } catch (err: any) {
+    console.error("[Image Backup]", err?.message || err);
+  }
+}
+
+// Serve DB-backed-up images
+app.get("/api/images/:refId", async (req: Request, res: Response) => {
+  const img = await getImage(String(req.params.refId));
+  if (!img) { res.status(404).json({ error: "Image not found." }); return; }
+  const buffer = Buffer.from(img.imageData, "base64");
+  res.set("Content-Type", img.mimeType);
+  res.set("Cache-Control", "public, max-age=31536000");
+  res.send(buffer);
 });
 
 // Permission guard helper
@@ -551,6 +580,7 @@ app.post("/api/settings/logo", adminAuthMiddleware, (req: Request, res: Response
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     const logoUrl = getUploadedUrl(req);
     await updateSettings({ storeLogo: logoUrl });
+    backupImageToDb("logo", logoUrl);
     res.json({ logoUrl });
   });
 });
@@ -561,6 +591,7 @@ app.post("/api/settings/favicon", adminAuthMiddleware, (req: Request, res: Respo
     if (!req.file) { res.status(400).json({ error: "No file provided." }); return; }
     const faviconUrl = getUploadedUrl(req);
     await updateSettings({ storeFavicon: faviconUrl });
+    backupImageToDb("favicon", faviconUrl);
     res.json({ faviconUrl });
   });
 });
@@ -1999,6 +2030,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
 
     const imageUrl = getUploadedUrl(req) || imageUrlForProduct(String(req.params.id));
     await setProductImageUrl(String(req.params.id), imageUrl);
+    backupImageToDb(`product:${req.params.id}`, imageUrl);
     // Also save to product_images gallery
     const existing = await getProductImages(String(req.params.id));
     if (!existing.find(i => i.image_url === imageUrl)) {
@@ -2050,6 +2082,7 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     const imageUrl = getUploadedUrl(req);
     const img = await addProductImage(String(req.params.id), imageUrl);
+    backupImageToDb(`product:${req.params.id}:gallery:${img.id}`, imageUrl);
     res.json(img);
   });
 });
@@ -2660,6 +2693,7 @@ app.post("/api/repairs/:id/images", staffAuthMiddleware, (req: Request, res: Res
     if (!["before", "after"].includes(imageType)) { res.status(400).json({ error: "imageType must be 'before' or 'after'." }); return; }
     const imageUrl = getUploadedUrl(req);
     const image = await addRepairImage(String(req.params.id), imageUrl, imageType as "before" | "after", (req as any).user.sub);
+    backupImageToDb(`repair:${req.params.id}:${imageType}:${image.id}`, imageUrl);
     res.status(201).json(image);
   });
 });

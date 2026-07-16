@@ -121,7 +121,7 @@ Full store management with 18 sections:
 - **About Us** — Edit title, content, mission, vision for the /about page
 - **Storefront** — Choose layout theme (Original, Amazon, Jumia, Mobile), manage promotional banners
 - **Shop Subscription** — View current plan, activate new plan, approve/reject owner requests
-- **Settings** — Store info, M-Pesa config, logo upload, currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings)
+- **Settings** — Store info, M-Pesa config, logo upload, currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings), image storage (Cloudinary primary + optional database backup toggle)
 
 ### Owner Panel (`/owner`)
 
@@ -364,6 +364,7 @@ data/
 | GET | `/api/shipping/counties` | All 47 Kenyan counties with fees |
 | GET | `/api/repairs/statuses` | Repair status labels |
 | GET | `/api/shop/features` | Active subscription features for feature-gating UI |
+| GET | `/api/images/:refId` | DB-backed-up image (base64 served as binary) |
 
 ### Customer
 
@@ -692,7 +693,7 @@ npm start                # Serve production build
 ### Notes
 
 - Backend only exposes `/uploads` to clients
-- Images stored on Cloudinary in production (free tier, 25GB) with automatic fallback to local `data/uploads/` in development. Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` env vars. Cache-busting via `?v=<timestamp>` on image URLs.
+- Images stored on Cloudinary in production (free tier, 25GB) with automatic fallback to local `data/uploads/` in development. Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` env vars. Admin can enable **database backup** in Settings → Image Storage to also store every uploaded image as base64 in PostgreSQL via the `stored_images` table. Backed-up images are served at `/api/images/:refId`.
 - M-Pesa STK Push — simulated when credentials not configured. Callback validates `Body.stkCallback.CheckoutRequestID`. Phone numbers masked in `data/mpesa.log`.
 - All 47 Kenyan counties with tiered delivery fees
 - To reset the database, drop and recreate the PostgreSQL schema (tables are auto-created on server start)

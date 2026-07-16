@@ -663,3 +663,12 @@ CREATE TABLE IF NOT EXISTS user_permissions (
   UNIQUE (user_id, permission),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS stored_images (
+  id SERIAL PRIMARY KEY,
+  ref_id TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+  image_data TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_stored_images_ref ON stored_images(ref_id);

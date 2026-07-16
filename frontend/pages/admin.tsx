@@ -2204,6 +2204,7 @@ function AdminSettings() {
           etimsOscuApiUrl: fd.get("etimsOscuApiUrl"),
           etimsOscuConsumerKey: fd.get("etimsOscuConsumerKey"),
           etimsOscuConsumerSecret: fd.get("etimsOscuConsumerSecret"),
+          backupImagesToDb: fd.get("backupImagesToDb") === "on",
         }),
       });
       setMsg("Settings saved.");
@@ -2290,6 +2291,16 @@ function AdminSettings() {
             <div className="field"><label>Consumer Key<input name="etimsOscuConsumerKey" defaultValue={settings?.etimsOscuConsumerKey || ""} placeholder="OSCU consumer key" /></label></div>
             <div className="field"><label>Consumer Secret<input name="etimsOscuConsumerSecret" defaultValue={settings?.etimsOscuConsumerSecret || ""} placeholder="OSCU consumer secret" /></label></div>
           </>}
+        </div>
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <h3 style={{ marginTop: 0 }}>Image Storage</h3>
+          <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+            Images are uploaded to Cloudinary (primary). Enable this to also keep a database backup of every uploaded image as a safety net. Backups are stored as base64 in PostgreSQL and served via <code>/api/images/:refId</code>.
+          </p>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+            <input type="checkbox" name="backupImagesToDb" defaultChecked={settings?.backupImagesToDb || false} style={{ width: 18, height: 18 }} />
+            <span>Enable database backup for uploaded images</span>
+          </label>
         </div>
         {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", marginBottom: "0.75rem" }}>{msg}</p>}
         <RippleButton type="submit" loading={saving}>Save settings</RippleButton>

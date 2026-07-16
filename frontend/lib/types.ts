@@ -163,6 +163,7 @@ export interface Settings {
   taxRate: number;
   mpesaTillNumber: string;
   mpesaConfigured: boolean;
+  backupImagesToDb: boolean;
 }
 
 export interface SubscriptionPlan {
