@@ -4,9 +4,12 @@ A complete multi-branch sales & management system with product catalog, customer
 
 ## Recent highlights
 
-- Admin and owner product forms now use a dropdown populated from the live categories API instead of a free-text category field.
-- Storefront category pages now surface subcategories as clickable navigation links so shoppers can browse more easily.
-- The frontend build has been verified for deployment compatibility, and the TypeScript config was updated to avoid newer toolchain deprecation issues.
+- Product detail page fixed — `product_views` table auto-creates on startup, analytics failures no longer crash the endpoint.
+- Image uploads stored on Cloudinary (production) with optional database backup toggle (admin Settings → Image Storage). Images served at `/api/images/:refId`.
+- Responsive UI across all breakpoints (1024px / 900px / 768px / 480px) — storefront, POS, admin, owner panels.
+- Credit notes producible only once per invoice (backend + UI enforced).
+- Admin and owner product forms use a dropdown populated from the live categories API.
+- Storefront category pages surface subcategories as clickable navigation links.
 
 ---
 
@@ -725,3 +728,4 @@ npm start                # Serve production build
 10. Build frontend: `cd frontend && npm run build`
 11. Run with a process manager (PM2, systemd, etc.) or deploy to Render.com / Vercel
 12. Back up images — Cloudinary stores uploads in production; local `data/uploads/` is ephemeral on Render
+13. Optional: enable **database backup for images** in admin Settings → Image Storage (stores base64 in PostgreSQL `stored_images` table alongside Cloudinary)
