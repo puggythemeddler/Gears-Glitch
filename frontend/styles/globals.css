@@ -252,6 +252,8 @@ code, pre {
   scrollbar-width: none;
   -ms-overflow-style: none;
   white-space: nowrap;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .main-nav-desktop::-webkit-scrollbar { display: none; }
@@ -289,19 +291,16 @@ code, pre {
   align-items: center;
   gap: var(--space-2);
   white-space: nowrap;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 1;
+  flex-shrink: 0;
   min-width: 0;
 }
 
 @media (max-width: 768px) {
-  .brand { max-width: 120px; font-size: var(--text-base); }
+  .brand { font-size: var(--text-base); }
 }
 
 @media (max-width: 480px) {
-  .brand { max-width: 90px; font-size: var(--text-sm); }
+  .brand { font-size: var(--text-sm); }
 }
 
 .brand:hover { text-decoration: none; color: var(--primary); }

@@ -16,6 +16,7 @@ const NAV_LINKS = [
   { id: "home", label: "Home", href: "/" },
   { id: "pc", label: "PCs", href: "/pc" },
   { id: "laptops", label: "Laptops", href: "/laptops" },
+  { id: "graphics-cards", label: "Graphics Cards", href: "/graphics-cards" },
   { id: "servers", label: "Servers", href: "/servers" },
   { id: "printers", label: "Printers", href: "/printers" },
   { id: "repairs", label: "Repairs", href: "/repairs" },
@@ -48,7 +49,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   }, []);
 
   const hideHeader = ["backoffice", "owner", "admin", "marketing"].includes(activeNav ?? "");
-  const isPublicStorefront = ["home", "pc", "laptops", "servers", "printers"].includes(activeNav ?? "");
+  const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
   const isThemedLayout = isPublicStorefront && !configLoading && layout !== "original";
 
   function closeMobile() { setMobileOpen(false); }
