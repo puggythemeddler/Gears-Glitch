@@ -405,6 +405,7 @@ function OwnerProducts() {
       name: fd.get("name"), price: Number(fd.get("price")), category: fd.get("category"),
       inStock: fd.get("inStock") === "true", isNonStock: fd.get("isNonStock") === "on",
       specs: buildSpecsArray(),
+      salePrice: fd.get("salePrice") ? Number(fd.get("salePrice")) : null,
     };
     try {
       if (creating) {
@@ -453,6 +454,7 @@ function OwnerProducts() {
             )}
             <div className="field"><label>Name<input name="name" defaultValue={editing?.name} required /></label></div>
             <div className="field"><label>Price (KES)<input name="price" type="number" defaultValue={editing?.price} required /></label></div>
+            <div className="field"><label>Sale Price (KES, optional)<input name="salePrice" type="number" min="0" step="0.01" defaultValue={editing?.salePrice || ""} placeholder="Leave empty for no sale" /></label></div>
             <div className="field">
               <label>Category
                 <select
@@ -536,7 +538,7 @@ function OwnerProducts() {
               <tr key={p.id}>
                 <td>{p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} /> : <span style={{ opacity: 0.3 }}>{'\u200B'}</span>}</td>
                 <td>{escapeHtml(p.name)}</td>
-                <td>{formatPrice(p.price)}</td>
+                <td>{p.salePrice ? <><span style={{ textDecoration: "line-through", color: "#999", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "#dc2626", fontWeight: 600 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}</td>
                 <td>{p.category || "—"}</td>
                 <td>{p.inStock ? <span style={{ color: "#16a34a" }}>In stock</span> : <span style={{ color: "#dc2626" }}>Out</span>}</td>
                 <td style={{ display: "flex", gap: "0.35rem" }}>

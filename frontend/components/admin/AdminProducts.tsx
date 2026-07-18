@@ -326,7 +326,7 @@ export default function AdminProducts() {
                 <td><input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} /></td>
                 <td>{p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} /> : <span style={{ opacity: 0.3 }}>{'\u200B'}</span>}</td>
                 <td>{escapeHtml(p.name)}</td>
-                <td>{formatPrice(p.price)}</td>
+                <td>{p.salePrice ? <><span style={{ textDecoration: "line-through", color: "#999", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "#dc2626", fontWeight: 600 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}</td>
                 <td>{p.category || "—"}</td>
                 <td>{p.inStock ? <span style={{ color: "#16a34a" }}>In stock</span> : <span style={{ color: "#dc2626" }}>Out</span>}</td>
                 <td style={{ display: "flex", gap: "0.35rem" }}>

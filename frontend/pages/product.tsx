@@ -220,7 +220,17 @@ export default function ProductPage() {
 
         <div className="product-detail__info">
           <h1>{product.name}</h1>
-          <p className="product-detail__price">{formatPrice(product.price)}</p>
+          <p className="product-detail__price" style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            {product.salePrice ? (
+              <>
+                <span style={{ textDecoration: "line-through", color: "var(--muted, #999)", fontSize: "0.8em" }}>{formatPrice(product.price)}</span>
+                <span style={{ color: "#dc2626", fontWeight: 700 }}>{formatPrice(product.salePrice)}</span>
+                <span style={{ display: "inline-block", background: "#dc2626", color: "#fff", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
+              </>
+            ) : (
+              formatPrice(product.price)
+            )}
+          </p>
           <p className={`product-stock ${product.inStock ? "in-stock" : "out-of-stock"}`}>
             {product.inStock ? "In stock" : "Enquire for availability"}
           </p>

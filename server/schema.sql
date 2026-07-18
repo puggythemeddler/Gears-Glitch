@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   warranty_duration INTEGER NOT NULL DEFAULT 0,
   taxable INTEGER NOT NULL DEFAULT 1,
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-  FOREIGN KEY (product_id) REFERENCES products(id)
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 
@@ -385,7 +385,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
   unit_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
-  FOREIGN KEY (product_id) REFERENCES products(id)
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_purchase_items_order ON purchase_order_items(purchase_order_id);
 
@@ -423,7 +423,7 @@ CREATE TABLE IF NOT EXISTS quote_items (
   line_total DOUBLE PRECISION NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (quote_id) REFERENCES quotes(id) ON DELETE CASCADE,
-  FOREIGN KEY (product_id) REFERENCES products(id)
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS stock_take_sessions (
@@ -438,7 +438,7 @@ CREATE TABLE IF NOT EXISTS stock_take_sessions (
 CREATE TABLE IF NOT EXISTS stock_take_items (
   id SERIAL PRIMARY KEY,
   session_id INTEGER NOT NULL REFERENCES stock_take_sessions(id) ON DELETE CASCADE,
-  product_id TEXT NOT NULL REFERENCES products(id),
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   product_name TEXT NOT NULL DEFAULT '',
   system_quantity INTEGER NOT NULL DEFAULT 0,
   counted_quantity INTEGER,
@@ -453,7 +453,7 @@ CREATE INDEX IF NOT EXISTS idx_stock_take_items_product ON stock_take_items(prod
 CREATE TABLE IF NOT EXISTS stock_snapshots (
   id SERIAL PRIMARY KEY,
   snapshot_date TEXT NOT NULL,
-  product_id TEXT NOT NULL REFERENCES products(id),
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   product_name TEXT NOT NULL,
   quantity INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
@@ -537,7 +537,7 @@ CREATE TABLE IF NOT EXISTS coupon_usage (
 
 CREATE TABLE IF NOT EXISTS price_history (
   id SERIAL PRIMARY KEY,
-  product_id TEXT NOT NULL REFERENCES products(id),
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   old_price DOUBLE PRECISION NOT NULL DEFAULT 0,
   new_price DOUBLE PRECISION NOT NULL DEFAULT 0,
   changed_at TEXT NOT NULL DEFAULT (NOW()::text)
@@ -559,7 +559,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
 
 CREATE TABLE IF NOT EXISTS product_reviews (
   id SERIAL PRIMARY KEY,
-  product_id TEXT NOT NULL REFERENCES products(id),
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   customer_id INTEGER NOT NULL REFERENCES customers(id),
   rating INTEGER NOT NULL,
   title TEXT NOT NULL DEFAULT '',

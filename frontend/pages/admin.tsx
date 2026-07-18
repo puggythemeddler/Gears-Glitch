@@ -2136,6 +2136,141 @@ function AdminExchangeRates() {
   );
 }
 
+function AdminSplashes() {
+  const [splashes, setSplashes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ title: "", text: "", bgColor: "#f59e0b", textColor: "#ffffff", isMarquee: true, isActive: true, startDate: "", endDate: "" });
+
+  useEffect(() => { loadSplashes(); }, []);
+
+  async function loadSplashes() {
+    setLoading(true);
+    try {
+      const d = await api<{ splashes: any[] }>("/api/admin/splashes");
+      setSplashes(d.splashes || []);
+    } catch {}
+    setLoading(false);
+  }
+
+  function resetForm() {
+    setForm({ title: "", text: "", bgColor: "#f59e0b", textColor: "#ffffff", isMarquee: true, isActive: true, startDate: "", endDate: "" });
+    setEditing(null);
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.text.trim()) return;
+    const body: any = { ...form };
+    if (!body.startDate) body.startDate = null;
+    if (!body.endDate) body.endDate = null;
+    try {
+      if (editing) {
+        await api(`/api/admin/splashes/${editing.id}`, { method: "PUT", body: JSON.stringify(body) });
+      } else {
+        await api("/api/admin/splashes", { method: "POST", body: JSON.stringify(body) });
+      }
+      resetForm();
+      loadSplashes();
+    } catch (err: any) { alert(err.message); }
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Delete this splash?")) return;
+    try { await api(`/api/admin/splashes/${id}`, { method: "DELETE" }); loadSplashes(); } catch (err: any) { alert(err.message); }
+  }
+
+  const presets = [
+    { label: "Black Friday", title: "Black Friday", text: "Massive deals this Black Friday! Up to 50% off on select items.", bgColor: "#111827", textColor: "#facc15" },
+    { label: "Happy Hour", title: "Happy Hour", text: "Flash sale! Limited time offers - grab them before they're gone.", bgColor: "#f59e0b", textColor: "#fff" },
+    { label: "Christmas", title: "Merry Christmas", text: "Season of giving! Special holiday prices for you and yours.", bgColor: "#dc2626", textColor: "#fff" },
+    { label: "New Year Sale", title: "New Year Sale", text: "Kick off the new year with incredible savings!", bgColor: "#16a34a", textColor: "#fff" },
+    { label: "Back to School", title: "Back to School", text: "Get ready for school with our tech deals for students.", bgColor: "#2563eb", textColor: "#fff" },
+    { label: "Custom", title: "", text: "", bgColor: "#6366f1", textColor: "#ffffff" },
+  ];
+
+  function applyPreset(p: typeof presets[0]) {
+    setForm({ ...form, title: p.title, text: p.text, bgColor: p.bgColor, textColor: p.textColor });
+  }
+
+  return (
+    <div style={{ marginTop: "1.5rem" }}>
+      <h3 style={{ marginTop: 0 }}>Promotional Banners &amp; Marquees</h3>
+      <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+        Configure scrolling text banners and promotional messages. Kenyan holidays are auto-detected and displayed with themed colors.
+      </p>
+
+      <div className="panel" style={{ marginBottom: "1rem" }}>
+        <h4 style={{ marginTop: 0 }}>Quick presets</h4>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginBottom: "0.75rem" }}>
+          {presets.map((p) => (
+            <button key={p.label} type="button" onClick={() => applyPreset(p)} style={{ padding: "0.3rem 0.7rem", border: `2px solid ${p.bgColor}`, background: p.bgColor, color: p.textColor, borderRadius: 6, cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={handleSave} style={{ maxWidth: 500 }}>
+          <div className="field"><label>Title (optional)<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Black Friday" /></label></div>
+          <div className="field"><label>Banner text *<input value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} required placeholder="e.g. Up to 50% off!" /></label></div>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <div className="field"><label>Background color<input type="color" value={form.bgColor} onChange={(e) => setForm({ ...form, bgColor: e.target.value })} style={{ width: 48, height: 32, padding: 0 }} /></label></div>
+            <div className="field"><label>Text color<input type="color" value={form.textColor} onChange={(e) => setForm({ ...form, textColor: e.target.value })} style={{ width: 48, height: 32, padding: 0 }} /></label></div>
+          </div>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.85rem" }}>
+              <input type="checkbox" checked={form.isMarquee} onChange={(e) => setForm({ ...form, isMarquee: e.target.checked })} style={{ width: 16, height: 16 }} />
+              Scrolling marquee
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.85rem" }}>
+              <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} style={{ width: 16, height: 16 }} />
+              Active
+            </label>
+          </div>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <div className="field"><label>Start date<input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></label></div>
+            <div className="field"><label>End date<input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></label></div>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+            <RippleButton type="submit" size="small">{editing ? "Update" : "Add banner"}</RippleButton>
+            {editing && <RippleButton size="small" variant="secondary" type="button" onClick={resetForm}>Cancel</RippleButton>}
+          </div>
+        </form>
+      </div>
+
+      {loading ? <Spinner /> : (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead><tr><th>Preview</th><th>Text</th><th>Type</th><th>Dates</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              {splashes.map((s) => (
+                <tr key={s.id}>
+                  <td style={{ minWidth: 200 }}>
+                    <div style={{ background: s.bgColor, color: s.textColor, padding: "0.3rem 0.6rem", borderRadius: 4, fontSize: "0.75rem", fontWeight: 600, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", maxWidth: 200 }}>
+                      {s.title ? `${s.title}: ` : ""}{s.text}
+                    </div>
+                  </td>
+                  <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{escapeHtml(s.title || s.text)}</td>
+                  <td>{s.isMarquee ? "Marquee" : "Static"}</td>
+                  <td style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>{s.startDate || "—"} to {s.endDate || "—"}</td>
+                  <td><span className={`plan-status`} style={{ background: s.isActive ? "#d1fae5" : "#fee2e2", color: s.isActive ? "#065f46" : "#991b1b" }}>{s.isActive ? "Active" : "Inactive"}</span></td>
+                  <td>
+                    <div style={{ display: "flex", gap: "0.3rem" }}>
+                      <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(s); setForm({ title: s.title, text: s.text, bgColor: s.bgColor, textColor: s.textColor, isMarquee: s.isMarquee, isActive: s.isActive, startDate: s.startDate || "", endDate: s.endDate || "" }); }}>Edit</button>
+                      <button className="btn btn-sm btn-ghost" style={{ color: "#dc2626" }} onClick={() => handleDelete(s.id)}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {splashes.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: "1.5rem", color: "var(--muted)" }}>No banners configured. Kenyan holidays will auto-display.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminSettings() {
   const { refreshSettings } = useApp();
   const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
@@ -2395,6 +2530,8 @@ function AdminSettings() {
       <h3 style={{ marginTop: "1.5rem" }}>Exchange Rates</h3>
       <p className="muted" style={{ fontSize: "0.85rem" }}>Rates auto-fetch from open.er-api.com. Set custom rates below to override. Leave empty to use auto rates.</p>
       <AdminExchangeRates />
+
+      <AdminSplashes />
 
       <h3 style={{ marginTop: "1.5rem" }}>Database Backup</h3>
       <p className="muted" style={{ fontSize: "0.85rem" }}>Download a full backup of the store database.</p>

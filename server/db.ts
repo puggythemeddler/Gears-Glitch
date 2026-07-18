@@ -8,6 +8,7 @@ interface ProductRow {
   category: string;
   name: string;
   price: number;
+  sale_price: number;
   specs: string;
   in_stock: number;
   is_non_stock: number;
@@ -27,6 +28,7 @@ interface Product {
   category: string;
   name: string;
   price: number;
+  salePrice: number | null;
   specs: any[];
   inStock: boolean;
   isNonStock: boolean;
@@ -508,6 +510,7 @@ function mapProduct(row: ProductRow | null): Product | null {
     category: row.category,
     name: row.name,
     price: row.price,
+    salePrice: row.sale_price || null,
     specs: JSON.parse(row.specs || "[]"),
     inStock: Boolean(row.in_stock),
     isNonStock: Boolean(row.is_non_stock),
@@ -663,6 +666,22 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS discount_value DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_number TEXT`); } catch {}
   try { await query(`INSERT INTO settings (key, value) SELECT 'logo_position', 'top-left' WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'logo_position')`); } catch {}
+  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DOUBLE PRECISION`); } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS splashes (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      text TEXT NOT NULL DEFAULT '',
+      bg_color TEXT NOT NULL DEFAULT '#f59e0b',
+      text_color TEXT NOT NULL DEFAULT '#ffffff',
+      is_marquee INTEGER NOT NULL DEFAULT 1,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      start_date TEXT,
+      end_date TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  } catch {}
   try {
     await query(`CREATE TABLE IF NOT EXISTS product_views (
       id SERIAL PRIMARY KEY,
@@ -698,6 +717,54 @@ async function runMigrations(): Promise<void> {
       await query(`UPDATE products SET stock_on_hand = $1 WHERE id = $2`, [seed, p.id]);
     }
   } catch {}
+
+  // Fix FK constraints on product-referencing tables to allow CASCADE deletes
+  const cascadeFks = [
+    { table: "order_items", col: "product_id" },
+    { table: "quote_items", col: "product_id" },
+    { table: "purchase_order_items", col: "product_id" },
+    { table: "stock_take_items", col: "product_id" },
+    { table: "stock_snapshots", col: "product_id" },
+    { table: "price_history", col: "product_id" },
+    { table: "product_reviews", col: "product_id" },
+  ];
+  for (const fk of cascadeFks) {
+    try {
+      const conRows = await queryAll(
+        `SELECT con.conname FROM pg_constraint con JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = ANY(con.conkey) WHERE con.conrelid = $1::regclass AND con.confrelid = 'products'::regclass AND a.attname = $2`,
+        [fk.table, fk.col]
+      ) as any[];
+      for (const con of conRows) {
+        if (con.conname && !con.conname.includes("cascade")) {
+          await query(`ALTER TABLE ${fk.table} DROP CONSTRAINT ${con.conname}`);
+          await query(`ALTER TABLE ${fk.table} ADD CONSTRAINT ${fk.table}_${fk.col}_fkey FOREIGN KEY (${fk.col}) REFERENCES products(id) ON DELETE CASCADE`);
+        }
+      }
+    } catch {}
+  }
+
+  // Delete old placeholder/test products that were never ordered
+  const oldProductIds = [
+    "46231", "bp-office-slim", "gl-strike-17", "ml-pro-14", "wl-student-15",
+    "bs-blade-storage", "md-pro-tower", "rs-rack-4u-storage", "bp-workstation-tower",
+    "gl-aurora-15", "feat-bp-office", "ts-tower-smb", "rp-data-recovery",
+    "rp-virus-tuneup", "pr-label-industrial", "pr-inkjet-home", "bs-blade-node",
+    "bs-blade-chassis", "ts-tower-pro", "rs-rack-1u-b", "rs-rack-2u-a",
+    "md-studio-m2", "bp-micro-desk", "gp-entry-storm", "gl-compact-g14",
+    "ml-air-15", "ml-air-m2", "wl-probook-14", "wl-ultralite-13",
+    "feat-pr-laser", "feat-gl-aurora", "gp-titan-ultra", "rp-screen-laptop",
+    "pr-laser-office", "ts-tower-entry", "md-mini-m2", "gl-aurora-15",
+  ];
+  for (const pid of oldProductIds) {
+    try { await query(`DELETE FROM order_items WHERE product_id = $1`, [pid]); } catch {}
+    try { await query(`DELETE FROM quote_items WHERE product_id = $1`, [pid]); } catch {}
+    try { await query(`DELETE FROM purchase_order_items WHERE product_id = $1`, [pid]); } catch {}
+    try { await query(`DELETE FROM stock_take_items WHERE product_id = $1`, [pid]); } catch {}
+    try { await query(`DELETE FROM stock_snapshots WHERE product_id = $1`, [pid]); } catch {}
+    try { await query(`DELETE FROM price_history WHERE product_id = $1`, [pid]); } catch {}
+    try { await query(`DELETE FROM product_reviews WHERE product_id = $1`, [pid]); } catch {}
+    try { await query(`DELETE FROM products WHERE id = $1`, [pid]); } catch {}
+  }
 
   const existingTypes = await queryOne("SELECT COUNT(*) AS c FROM repair_types") as any;
   if (existingTypes && Number(existingTypes.c) === 0) {
@@ -1106,22 +1173,23 @@ async function generateProductId(category: string): Promise<string> {
   return `${prefix}-${String(num).padStart(3, "0")}`;
 }
 
-async function createProduct(product: { id: string; category: string; name: string; price: number; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
+async function createProduct(product: { id: string; category: string; name: string; price: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
   await query(
-    `INSERT INTO products (id, category, name, price, specs, in_stock, is_non_stock, subcategory, has_warranty, warranty_duration, taxable, image_alt, image_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-    [product.id, product.category, product.name, product.price, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
+    `INSERT INTO products (id, category, name, price, sale_price, specs, in_stock, is_non_stock, subcategory, has_warranty, warranty_duration, taxable, image_alt, image_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [product.id, product.category, product.name, product.price, product.salePrice || null, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
   );
   return (await getProduct(product.id))!;
 }
 
-async function updateProduct(id: string, updates: { category?: string; name?: string; price?: number; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
+async function updateProduct(id: string, updates: { category?: string; name?: string; price?: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
   const existing = await getProduct(id);
   if (!existing) return undefined;
   const fields: string[] = []; const params: any[] = []; let idx = 1;
   if (updates.category !== undefined) { fields.push(`category = $${idx}`); params.push(updates.category); idx++; }
   if (updates.name !== undefined) { fields.push(`name = $${idx}`); params.push(updates.name); idx++; }
   if (updates.price !== undefined) { fields.push(`price = $${idx}`); params.push(updates.price); idx++; }
+  if (updates.salePrice !== undefined) { fields.push(`sale_price = $${idx}`); params.push(updates.salePrice); idx++; }
   if (updates.specs !== undefined) { fields.push(`specs = $${idx}`); params.push(JSON.stringify(updates.specs)); idx++; }
   if (updates.inStock !== undefined) { fields.push(`in_stock = $${idx}`); params.push(updates.inStock ? 1 : 0); idx++; }
   if (updates.isNonStock !== undefined) { fields.push(`is_non_stock = $${idx}`); params.push(updates.isNonStock ? 1 : 0); idx++; }
@@ -1139,6 +1207,7 @@ async function updateProduct(id: string, updates: { category?: string; name?: st
 }
 
 async function deleteProduct(id: string): Promise<boolean> {
+  try { deleteProductImages(id); } catch {}
   const result = await query("DELETE FROM products WHERE id = $1", [id]);
   return (result.rowCount ?? 0) > 0;
 }
@@ -2489,6 +2558,85 @@ async function hasCustomerReviewed(productId: string, customerId: number): Promi
   return !!row;
 }
 
+interface Splash {
+  id: number;
+  title: string;
+  text: string;
+  bgColor: string;
+  textColor: string;
+  isMarquee: boolean;
+  isActive: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function mapSplash(row: any): Splash {
+  return {
+    id: row.id,
+    title: row.title || "",
+    text: row.text || "",
+    bgColor: row.bg_color || "#f59e0b",
+    textColor: row.text_color || "#ffffff",
+    isMarquee: Boolean(row.is_marquee),
+    isActive: Boolean(row.is_active),
+    startDate: row.start_date || null,
+    endDate: row.end_date || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listActiveSplashes(): Promise<Splash[]> {
+  const now = new Date().toISOString();
+  const rows = await queryAll(
+    "SELECT * FROM splashes WHERE is_active = 1 AND (start_date IS NULL OR start_date <= $1) AND (end_date IS NULL OR end_date >= $1) ORDER BY created_at DESC",
+    [now]
+  );
+  return rows.map(mapSplash);
+}
+
+async function listAllSplashes(): Promise<Splash[]> {
+  const rows = await queryAll("SELECT * FROM splashes ORDER BY created_at DESC");
+  return rows.map(mapSplash);
+}
+
+async function getSplash(id: number): Promise<Splash | undefined> {
+  const row = await queryOne("SELECT * FROM splashes WHERE id = $1", [id]);
+  return row ? mapSplash(row) : undefined;
+}
+
+async function createSplash(data: { title?: string; text: string; bgColor?: string; textColor?: string; isMarquee?: boolean; isActive?: boolean; startDate?: string; endDate?: string }): Promise<Splash> {
+  const result = await query(
+    "INSERT INTO splashes (title, text, bg_color, text_color, is_marquee, is_active, start_date, end_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+    [data.title || "", data.text, data.bgColor || "#f59e0b", data.textColor || "#ffffff", data.isMarquee !== false ? 1 : 0, data.isActive !== false ? 1 : 0, data.startDate || null, data.endDate || null]
+  );
+  return (await getSplash(result.rows[0].id))!;
+}
+
+async function updateSplash(id: number, data: { title?: string; text?: string; bgColor?: string; textColor?: string; isMarquee?: boolean; isActive?: boolean; startDate?: string; endDate?: string }): Promise<Splash | undefined> {
+  const fields: string[] = []; const params: any[] = []; let idx = 1;
+  if (data.title !== undefined) { fields.push(`title = $${idx}`); params.push(data.title); idx++; }
+  if (data.text !== undefined) { fields.push(`text = $${idx}`); params.push(data.text); idx++; }
+  if (data.bgColor !== undefined) { fields.push(`bg_color = $${idx}`); params.push(data.bgColor); idx++; }
+  if (data.textColor !== undefined) { fields.push(`text_color = $${idx}`); params.push(data.textColor); idx++; }
+  if (data.isMarquee !== undefined) { fields.push(`is_marquee = $${idx}`); params.push(data.isMarquee ? 1 : 0); idx++; }
+  if (data.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(data.isActive ? 1 : 0); idx++; }
+  if (data.startDate !== undefined) { fields.push(`start_date = $${idx}`); params.push(data.startDate || null); idx++; }
+  if (data.endDate !== undefined) { fields.push(`end_date = $${idx}`); params.push(data.endDate || null); idx++; }
+  fields.push(`updated_at = NOW()`);
+  if (fields.length === 1) return await getSplash(id);
+  params.push(id);
+  await query(`UPDATE splashes SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+  return await getSplash(id);
+}
+
+async function deleteSplash(id: number): Promise<boolean> {
+  const result = await query("DELETE FROM splashes WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
 export {
   initDb, runMigrations, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
   seedDemoProvider, seedDemoCustomer, assignInitialRoles, seedProductsIfEmpty, ensureDefaultSubscriptionPlans,
@@ -2534,6 +2682,7 @@ export {
   listSuppliers, getSupplier, createSupplier, updateSupplier, deleteSupplier,
   createReview, getProductReviews, getProductRating, hasCustomerReviewed,
   getLoyaltyPoints, earnLoyaltyPoints, redeemLoyaltyPoints, getLoyaltyTransactions, listAllLoyaltyCustomers,
+  listActiveSplashes, listAllSplashes, getSplash, createSplash, updateSplash, deleteSplash,
   getDb,
   storeImage, getImage, deleteImageByRef,
 };

@@ -61,7 +61,21 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
       )}
       <h3>{product.name}</h3>
-      <div className="price">{formatPrice(product.price)}</div>
+      <div className="price" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+        {product.salePrice ? (
+          <>
+            <span style={{ textDecoration: "line-through", color: "var(--muted, #999)", fontSize: "0.85em" }}>{formatPrice(product.price)}</span>
+            <span style={{ color: "#dc2626", fontWeight: 700 }}>{formatPrice(product.salePrice)}</span>
+          </>
+        ) : (
+          formatPrice(product.price)
+        )}
+      </div>
+      {product.salePrice && (
+        <span style={{ display: "inline-block", background: "#dc2626", color: "#fff", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, marginBottom: "0.5rem", textTransform: "uppercase" }}>
+          Sale
+        </span>
+      )}
       <div className={`stock-badge ${product.inStock ? "in-stock" : "out-of-stock"}`}>
         {product.inStock ? "In stock" : "Enquire for availability"}
       </div>

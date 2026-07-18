@@ -5,6 +5,7 @@ import { useLayout, LayoutHeader, LayoutFooter } from "@/layouts";
 import { getStaffToken, getCustomerToken, getProviderToken } from "@/lib/api";
 import NotificationBell from "./NotificationBell";
 import CurrencySelector from "./CurrencySelector";
+import MarqueeBanner from "./MarqueeBanner";
 import { useFeature } from "@/lib/features";
 
 interface LayoutProps {
@@ -163,6 +164,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
 
   return (
     <>
+      {!hideHeader && <MarqueeBanner />}
       {isThemedLayout ? (
         <LayoutHeader
           categories={categories}

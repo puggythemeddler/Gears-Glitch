@@ -115,10 +115,11 @@ export default function POSPage() {
 
   function addToCart(product: Product) {
     if (typeof product.stockOnHand === "number" && product.stockOnHand <= 0) return;
+    const effectivePrice = product.salePrice && product.salePrice > 0 ? product.salePrice : product.price;
     setCart((prev) => {
       const existing = prev.find((i) => i.productId === product.id);
       if (existing) return prev.map((i) => i.productId === product.id ? { ...i, quantity: i.quantity + 1, lineTotal: (i.quantity + 1) * i.price } : i);
-      return [...prev, { productId: product.id, name: product.name, price: product.price, quantity: 1, lineTotal: product.price, imageUrl: product.imageUrl }];
+      return [...prev, { productId: product.id, name: product.name, price: effectivePrice, quantity: 1, lineTotal: effectivePrice, imageUrl: product.imageUrl }];
     });
     setSearch("");
     searchRef.current?.focus();
@@ -211,7 +212,9 @@ export default function POSPage() {
             <button key={p.id} type="button" className="panel" style={{ cursor: "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} onClick={() => addToCart(p)}>
               {p.imageUrl ? <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 100, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
               <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{escapeHtml(p.name)}</div>
-              <div style={{ fontSize: "0.9rem", color: "var(--primary)" }}>{formatPrice(p.price)}</div>
+              <div style={{ fontSize: "0.9rem", color: "var(--primary)" }}>
+                {p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted, #999)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "#dc2626", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}
+              </div>
               {typeof p.stockOnHand === "number" && (
                 <div style={{ fontSize: "0.7rem", color: p.stockOnHand <= 0 ? "#dc2626" : p.stockOnHand <= 5 ? "#f59e0b" : "var(--text-secondary)", marginTop: 2 }}>
                   {p.stockOnHand <= 0 ? "Out of stock" : `Stock: ${p.stockOnHand}`}

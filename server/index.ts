@@ -205,6 +205,12 @@ import {
   getProductReviews,
   getProductRating,
   hasCustomerReviewed,
+  listActiveSplashes,
+  listAllSplashes,
+  getSplash,
+  createSplash,
+  updateSplash,
+  deleteSplash,
   storeImage,
   getImage,
 } from "./db";
@@ -1102,7 +1108,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${title}</h1><p class="meta">${subtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -1123,7 +1129,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
     </div>
   </div>
   <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th><th style="text-align:right">VAT</th><th style="text-align:center">TT</th><th>Warranty</th></tr></thead><tbody>
-    ${itemsHtml}
+    ${a4ItemsHtml}
   </tbody></table>
   <div style="text-align:right;">
     <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -2074,6 +2080,7 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
   if (body.category !== undefined) updates.category = body.category;
   if (body.name !== undefined) updates.name = String(body.name).trim();
   if (body.price !== undefined) updates.price = Number(body.price);
+  if (body.salePrice !== undefined) updates.salePrice = body.salePrice === null || body.salePrice === "" ? null : Number(body.salePrice);
   if (body.specs !== undefined) updates.specs = normalizeSpecs(body.specs);
   if (body.inStock !== undefined) updates.inStock = Boolean(body.inStock);
   if (body.isNonStock !== undefined) updates.isNonStock = Boolean(body.isNonStock);
@@ -3090,6 +3097,37 @@ app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("rep
   <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
 </div>
 </body></html>`);
+});
+
+// ============ SPLASHES / PROMOTIONS ============
+
+app.get("/api/splashes", async (_req: Request, res: Response) => {
+  const splashes = await listActiveSplashes();
+  res.json({ splashes });
+});
+
+app.get("/api/admin/splashes", staffAuthMiddleware, requirePermission("reports:view"), async (_req: Request, res: Response) => {
+  const splashes = await listAllSplashes();
+  res.json({ splashes });
+});
+
+app.post("/api/admin/splashes", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const { title, text, bgColor, textColor, isMarquee, isActive, startDate, endDate } = req.body || {};
+  if (!text) { res.status(400).json({ error: "text is required." }); return; }
+  const splash = await createSplash({ title, text, bgColor, textColor, isMarquee, isActive, startDate, endDate });
+  res.status(201).json(splash);
+});
+
+app.put("/api/admin/splashes/:id", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const splash = await updateSplash(Number(req.params.id), req.body || {});
+  if (!splash) { res.status(404).json({ error: "Splash not found." }); return; }
+  res.json(splash);
+});
+
+app.delete("/api/admin/splashes/:id", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const ok = await deleteSplash(Number(req.params.id));
+  if (!ok) { res.status(404).json({ error: "Splash not found." }); return; }
+  res.json({ ok: true });
 });
 
 // ============ SHOP SUBSCRIPTION ============
