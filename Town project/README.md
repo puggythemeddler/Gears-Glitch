@@ -57,6 +57,12 @@ Logo upload via admin Settings with configurable position (top-left/top-middle/t
 ### FK cascade fix for product deletion
 All product-referencing tables now use `ON DELETE CASCADE`, fixing the 502 crash when deleting products with order/quote/stock history. 37 old placeholder products cleaned up.
 
+### Cloudinary cleanup on delete
+When gallery images, primary images, or entire products are deleted, the corresponding files are automatically removed from Cloudinary. Extracts the `public_id` from the image URL and calls `cloudinary.uploader.destroy()`. Applies to primary image delete, gallery image delete, and full product delete (cleans all associated images). Failures are logged as warnings, never block the request.
+
+### Drag-and-drop gallery reorder
+Admin and owner product edit pages support drag-and-drop reordering of gallery images. Visual feedback: dragged image fades to 40%, drop target gets an accent outline. Reorder persists immediately via `PUT /api/products/:id/images/reorder`. Owner gallery also gained a "Set primary" button per image (was missing).
+
 ## Responsive updates
 - Shared headers and navigation adapt for smaller screens.
 - The POS screen stacks the product grid and cart more cleanly on narrow devices.
