@@ -63,6 +63,19 @@ When gallery images, primary images, or entire products are deleted, the corresp
 ### Drag-and-drop gallery reorder
 Admin and owner product edit pages support drag-and-drop reordering of gallery images. Visual feedback: dragged image fades to 40%, drop target gets an accent outline. Reorder persists immediately via `PUT /api/products/:id/images/reorder`. Owner gallery also gained a "Set primary" button per image (was missing).
 
+### Product positioning editor
+Admin and owner panels have a new "Product Positioning" section (feature-gated via "Product positioning" in plan features). Drag products to reorder them on the storefront. The `products` table now has a `sort_order` column; `listProducts()` queries use `ORDER BY sort_order ASC, created_at DESC`. Admin enables this feature by adding "Product positioning" to a subscription plan's features.
+
+### Auto-email system
+Full email notification framework (`server/email.ts`) with:
+- Nodemailer transport configured from admin settings (sender email, display name) + SMTP env vars
+- HTML email templates for messages, quotes, credit notes, order status changes
+- Owner receives CC on all customer-provider messages
+- Email logs tracked in `email_logs` table (to, subject, type, status, error)
+- Test email endpoint (`POST /api/admin/email/test`)
+- Toggle on/off from admin Settings
+- Configurable sender email address and display name
+
 ## Responsive updates
 - Shared headers and navigation adapt for smaller screens.
 - The POS screen stacks the product grid and cart more cleanly on narrow devices.

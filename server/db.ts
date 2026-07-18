@@ -241,6 +241,9 @@ interface Settings {
   cloudinaryApiSecret: string;
   cloudinaryFolder: string;
   logoPosition: string;
+  emailSender: string;
+  emailSenderName: string;
+  emailNotificationsEnabled: boolean;
 }
 
 interface CategoryRow {
@@ -701,6 +704,22 @@ async function runMigrations(): Promise<void> {
     )`);
     await query(`CREATE INDEX IF NOT EXISTS idx_stored_images_ref ON stored_images(ref_id)`);
   } catch {}
+  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS email_logs (
+      id SERIAL PRIMARY KEY,
+      to_email TEXT NOT NULL,
+      from_email TEXT NOT NULL DEFAULT '',
+      subject TEXT NOT NULL DEFAULT '',
+      body_html TEXT NOT NULL DEFAULT '',
+      type TEXT NOT NULL DEFAULT 'general',
+      status TEXT NOT NULL DEFAULT 'sent',
+      error_message TEXT DEFAULT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_type ON email_logs(type)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at)`);
+  } catch {}
 
   // Fix sequences after potential manual deletes or migrations
   for (const seq of ["orders_id_seq", "order_items_id_seq"]) {
@@ -1054,6 +1073,9 @@ async function getSettings(): Promise<Settings> {
     cloudinaryApiSecret: s.cloudinaryApiSecret || process.env.CLOUDINARY_API_SECRET || "",
     cloudinaryFolder: s.cloudinaryFolder || process.env.CLOUDINARY_FOLDER || "gear-glitch",
     logoPosition: s.logoPosition || "top-left",
+    emailSender: s.emailSender || process.env.FROM_EMAIL || "",
+    emailSenderName: s.emailSenderName || process.env.SITE_NAME || "Gear&Glitch",
+    emailNotificationsEnabled: s.emailNotificationsEnabled !== "false",
   };
 }
 
@@ -1068,7 +1090,7 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 }
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
-  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition"];
+  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled"];
   if (updates.paymentMethods) await setPaymentMethods(updates.paymentMethods);
   await transaction(async (client) => {
     for (const key of allowed) {
@@ -1092,7 +1114,7 @@ async function setStoreSetting(key: string, value: string): Promise<void> {
 async function listProducts(category?: string): Promise<Product[]> {
   let sql = "SELECT * FROM products"; const params: any[] = [];
   if (category && category !== "all") { sql += " WHERE category = $1"; params.push(category); }
-  sql += " ORDER BY created_at DESC";
+  sql += " ORDER BY sort_order ASC, created_at DESC";
   const rows = await queryAll(sql, params) as ProductRow[];
   return rows.map(mapProduct) as Product[];
 }
@@ -1370,10 +1392,10 @@ async function ensureDefaultSubscriptionPlans(): Promise<void> {
   const row = await queryOne("SELECT COUNT(*) AS count FROM subscription_plans") as any;
   if (row && Number(row.count) > 0) return;
   const plans = [
-    { id: "starter", name: "Starter", description: "Perfect for small shops", price: 0, tier_level: 1, max_products: 50, max_branches: 1, features: JSON.stringify(["Up to 50 products", "1 branch", "Basic support", "Order management", "Invoice/quote PDF downloads", "Messaging"]) },
-    { id: "growth", name: "Growth", description: "For growing businesses", price: 2500, tier_level: 2, max_products: 500, max_branches: 3, features: JSON.stringify(["Up to 500 products", "3 branches", "Priority support", "Analytics dashboard", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management"]) },
-    { id: "pro", name: "Pro", description: "For established shops", price: 5000, tier_level: 3, max_products: null, max_branches: 10, features: JSON.stringify(["Unlimited products", "10 branches", "Premium support", "Advanced analytics", "Custom branding", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program"]) },
-    { id: "enterprise", name: "Enterprise", description: "Custom solutions", price: 15000, tier_level: 4, max_products: null, max_branches: 999, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Admin messaging", "Product listing", "Customer management", "Stock transfers", "Supplier management"]) },
+    { id: "starter", name: "Starter", description: "Perfect for small shops", price: 0, tier_level: 1, max_products: 50, max_branches: 1, features: JSON.stringify(["Up to 50 products", "1 branch", "Basic support", "Order management", "Invoice/quote PDF downloads", "Messaging", "Product positioning", "Email notifications"]) },
+    { id: "growth", name: "Growth", description: "For growing businesses", price: 2500, tier_level: 2, max_products: 500, max_branches: 3, features: JSON.stringify(["Up to 500 products", "3 branches", "Priority support", "Analytics dashboard", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Product positioning", "Email notifications"]) },
+    { id: "pro", name: "Pro", description: "For established shops", price: 5000, tier_level: 3, max_products: null, max_branches: 10, features: JSON.stringify(["Unlimited products", "10 branches", "Premium support", "Advanced analytics", "Custom branding", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Product positioning", "Email notifications"]) },
+    { id: "enterprise", name: "Enterprise", description: "Custom solutions", price: 15000, tier_level: 4, max_products: null, max_branches: 999, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Admin messaging", "Product listing", "Customer management", "Stock transfers", "Supplier management", "Product positioning", "Email notifications"]) },
   ];
   for (const p of plans) {
     await query("INSERT INTO subscription_plans (id, name, description, price, tier_level, max_products, max_branches, features) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [p.id, p.name, p.description, p.price, p.tier_level, p.max_products, p.max_branches, p.features]);
@@ -2637,6 +2659,22 @@ async function deleteSplash(id: number): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
+async function updateProductSortOrder(productIds: string[]): Promise<void> {
+  await transaction(async (client) => {
+    for (let i = 0; i < productIds.length; i++) {
+      await client.query("UPDATE products SET sort_order = $1 WHERE id = $2", [i, productIds[i]]);
+    }
+  });
+}
+
+async function logEmail(toEmail: string, fromEmail: string, subject: string, bodyHtml: string, type: string, status: string, errorMessage?: string): Promise<void> {
+  await query("INSERT INTO email_logs (to_email, from_email, subject, body_html, type, status, error_message) VALUES ($1, $2, $3, $4, $5, $6, $7)", [toEmail, fromEmail, subject, bodyHtml, type, status, errorMessage || null]);
+}
+
+async function listEmailLogs(limit: number = 50): Promise<any[]> {
+  return await queryAll("SELECT id, to_email, from_email, subject, type, status, error_message, created_at FROM email_logs ORDER BY created_at DESC LIMIT $1", [limit]);
+}
+
 export {
   initDb, runMigrations, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
   seedDemoProvider, seedDemoCustomer, assignInitialRoles, seedProductsIfEmpty, ensureDefaultSubscriptionPlans,
@@ -2683,6 +2721,7 @@ export {
   createReview, getProductReviews, getProductRating, hasCustomerReviewed,
   getLoyaltyPoints, earnLoyaltyPoints, redeemLoyaltyPoints, getLoyaltyTransactions, listAllLoyaltyCustomers,
   listActiveSplashes, listAllSplashes, getSplash, createSplash, updateSplash, deleteSplash,
+  updateProductSortOrder, logEmail, listEmailLogs,
   getDb,
   storeImage, getImage, deleteImageByRef,
 };

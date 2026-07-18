@@ -19,13 +19,14 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages" | "product-positioning" | "email-settings";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[] = [
   {
     label: "Sales",
     items: [
       { key: "products", label: "Products" },
+      { key: "product-positioning", label: "Product Positioning" },
       { key: "categories", label: "Categories" },
       { key: "orders", label: "Orders" },
       { key: "coupons", label: "Coupons" },
@@ -58,6 +59,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "stock-transfers", label: "Stock Transfers" },
       { key: "stock-take", label: "Stock Take" },
       { key: "messages", label: "Messages" },
+      { key: "email-settings", label: "Email" },
     ],
   },
   {
@@ -342,6 +344,8 @@ export default function AdminPage() {
             {view === "storefront" && <AdminStorefront />}
             {view === "settings" && <AdminSettings />}
             {view === "messages" && <AdminMessages />}
+            {view === "product-positioning" && <AdminProductPositioning />}
+            {view === "email-settings" && <AdminEmailSettings />}
           </div>
           </div>
       </div>
@@ -1113,7 +1117,7 @@ const COMMON_FEATURES = [
   "Multiple staff accounts", "Order management",
   "Payment method configuration", "POS integration",
   "Price history tracking", "Priority support",
-  "Product listing", "Product reviews & ratings",
+  "Product listing", "Product positioning", "Product reviews & ratings",
   "Purchase order management", "Quotations",
   "Repair ticketing", "Returns management",
   "Shop subscription", "SMS notifications",
@@ -3768,6 +3772,190 @@ function AdminStockTake() {
             ))}
           </tbody>
         </table>
+      </div>
+    </>
+  );
+}
+
+// ===================== PRODUCT POSITIONING =====================
+function AdminProductPositioning() {
+  const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products"), []);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dropIdx, setDropIdx] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [products, setProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    if (pData?.products) setProducts(pData.products);
+  }, [pData]);
+
+  function onDragStart(idx: number) { setDragIdx(idx); }
+  function onDragOver(e: React.DragEvent, idx: number) { e.preventDefault(); setDropIdx(idx); }
+  function onDragEnd() { setDragIdx(null); setDropIdx(null); }
+  function onDrop(idx: number) {
+    if (dragIdx === null || dragIdx === idx) { setDragIdx(null); setDropIdx(null); return; }
+    const next = [...products];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(idx, 0, moved);
+    setProducts(next);
+    setDragIdx(null);
+    setDropIdx(null);
+  }
+
+  async function saveOrder() {
+    setSaving(true); setMsg("");
+    try {
+      await api("/api/admin/products/reorder", { method: "PUT", body: JSON.stringify({ orderedIds: products.map((p) => p.id) }) });
+      setMsg("Order saved!");
+    } catch (e: any) { setMsg("Failed: " + e.message); }
+    finally { setSaving(false); }
+  }
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <div>
+          <h1 style={{ margin: 0 }}>Product Positioning</h1>
+          <p style={{ margin: "4px 0 0", color: "var(--text-secondary)", fontSize: "0.85rem" }}>Drag products to set their display order on the storefront. This controls the order products appear in category pages.</p>
+        </div>
+        <RippleButton onClick={saveOrder} loading={saving}>Save Order</RippleButton>
+      </div>
+      {msg && <div className="panel" style={{ marginBottom: "1rem", padding: "0.75rem 1rem", borderRadius: 8, background: msg.startsWith("Failed") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Failed") ? "#991b1b" : "#065f46", fontSize: "0.85rem" }}>{msg}</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0.75rem" }}>
+        {products.map((p, idx) => (
+          <div
+            key={p.id}
+            draggable
+            onDragStart={() => onDragStart(idx)}
+            onDragOver={(e) => onDragOver(e, idx)}
+            onDragEnd={onDragEnd}
+            onDrop={() => onDrop(idx)}
+            style={{
+              display: "flex", alignItems: "center", gap: "0.75rem",
+              padding: "0.75rem", borderRadius: 8,
+              background: "var(--surface)", border: "1px solid var(--border)",
+              cursor: "grab", opacity: dragIdx === idx ? 0.4 : 1,
+              outline: dropIdx === idx ? "2px solid var(--accent)" : "none",
+              outlineOffset: 2, transition: "opacity 0.15s",
+            }}
+          >
+            <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", minWidth: 20 }}>{idx + 1}</span>
+            {p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} /> : <div style={{ width: 48, height: 48, borderRadius: 6, background: "var(--border)", flexShrink: 0 }} />}
+            <div style={{ overflow: "hidden" }}>
+              <div style={{ fontWeight: 600, fontSize: "0.85rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{p.category}{p.salePrice ? " • Sale" : ""}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ===================== EMAIL SETTINGS =====================
+function AdminEmailSettings() {
+  const [settings, setSettings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testEmail, setTestEmail] = useState("");
+  const [testMsg, setTestMsg] = useState("");
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  useEffect(() => {
+    api<any>("/api/settings").then((s) => { setSettings(s); setLoading(false); }).catch(() => setLoading(false));
+    loadLogs();
+  }, []);
+
+  async function loadLogs() {
+    setLogsLoading(true);
+    try { const d = await api<{ logs: any[] }>("/api/admin/email-logs"); setLogs(d.logs || []); } catch { setLogs([]); }
+    finally { setLogsLoading(false); }
+  }
+
+  async function saveEmailSettings() {
+    if (!settings) return;
+    setSaving(true);
+    try {
+      const updated = await api<any>("/api/settings", { method: "PUT", body: JSON.stringify({ emailSender: settings.emailSender, emailSenderName: settings.emailSenderName, emailNotificationsEnabled: settings.emailNotificationsEnabled }) });
+      setSettings(updated);
+      alert("Email settings saved.");
+    } catch (e: any) { alert("Failed: " + e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function sendTestEmail() {
+    if (!testEmail) return;
+    setTestMsg("Sending...");
+    try { const d = await api<{ ok: boolean; message: string }>("/api/admin/email/test", { method: "POST", body: JSON.stringify({ to: testEmail }) }); setTestMsg(d.message); }
+    catch (e: any) { setTestMsg("Error: " + e.message); }
+  }
+
+  if (loading) return <Spinner />;
+
+  return (
+    <>
+      <h1 style={{ marginTop: 0 }}>Email Settings</h1>
+      <div className="panel" style={{ maxWidth: 600, marginBottom: "1.5rem" }}>
+        <h3 style={{ marginTop: 0 }}>Configuration</h3>
+        <div className="field">
+          <label>Sender Email Address
+            <input type="email" value={settings?.emailSender || ""} onChange={(e) => setSettings({ ...settings, emailSender: e.target.value })} placeholder="noreply@yourstore.com" />
+          </label>
+        </div>
+        <div className="field">
+          <label>Sender Display Name
+            <input type="text" value={settings?.emailSenderName || ""} onChange={(e) => setSettings({ ...settings, emailSenderName: e.target.value })} placeholder="Gear&Glitch" />
+          </label>
+        </div>
+        <div className="field">
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+            <input type="checkbox" checked={settings?.emailNotificationsEnabled !== false} onChange={(e) => setSettings({ ...settings, emailNotificationsEnabled: e.target.checked })} />
+            Enable email notifications
+          </label>
+        </div>
+        <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: "0.5rem 0 1rem" }}>
+          SMTP server is configured via environment variables (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS). The sender address above is used as the "From" field.
+        </p>
+        <RippleButton onClick={saveEmailSettings} loading={saving}>Save</RippleButton>
+      </div>
+
+      <div className="panel" style={{ maxWidth: 600, marginBottom: "1.5rem" }}>
+        <h3 style={{ marginTop: 0 }}>Test Email</h3>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+          <div className="field" style={{ flex: 1, marginBottom: 0 }}><label>Email address<input type="email" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="test@example.com" /></label></div>
+          <RippleButton onClick={sendTestEmail}>Send Test</RippleButton>
+        </div>
+        {testMsg && <p style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: testMsg.includes("Error") || testMsg.includes("failed") ? "var(--danger)" : "var(--success)" }}>{testMsg}</p>}
+      </div>
+
+      <div className="panel" style={{ maxWidth: 800 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+          <h3 style={{ margin: 0 }}>Email Log</h3>
+          <RippleButton size="small" variant="ghost" onClick={loadLogs}>Refresh</RippleButton>
+        </div>
+        {logsLoading ? <Spinner /> : logs.length === 0 ? <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>No emails sent yet.</p> : (
+          <div className="table-wrap">
+            <table className="data-table" style={{ fontSize: "0.8rem" }}>
+              <thead><tr><th>To</th><th>Subject</th><th>Type</th><th>Status</th><th>Date</th></tr></thead>
+              <tbody>
+                {logs.map((l: any) => (
+                  <tr key={l.id}>
+                    <td>{escapeHtml(l.to_email)}</td>
+                    <td>{escapeHtml(l.subject)}</td>
+                    <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: 4, background: "var(--border)" }}>{l.type}</span></td>
+                    <td><span style={{ color: l.status === "sent" ? "var(--success)" : l.status === "failed" ? "var(--danger)" : "var(--text-secondary)" }}>{l.status}</span></td>
+                    <td>{new Date(l.created_at).toLocaleString("en-GB")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </>
   );

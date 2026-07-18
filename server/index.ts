@@ -213,6 +213,9 @@ import {
   deleteSplash,
   storeImage,
   getImage,
+  updateProductSortOrder,
+  logEmail,
+  listEmailLogs,
 } from "./db";
 import { query, queryOne, queryAll } from "./db-helpers";
 import {
@@ -266,6 +269,7 @@ import {
   respondToRepairQuote,
 } from "./repairs";
 import * as notifier from "./notify";
+import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail } from "./email";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
@@ -596,6 +600,18 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
   if (mpesaEnv !== undefined) mpesaUpdates.env = mpesaEnv;
   if (Object.keys(mpesaUpdates).length) updateMpesaConfig(mpesaUpdates);
   reconfigureCloudinary(settings.cloudinaryCloudName, settings.cloudinaryApiKey, settings.cloudinaryApiSecret, settings.cloudinaryFolder);
+  const { emailSender, emailSenderName, emailNotificationsEnabled } = req.body || {};
+  const emailUpdates: any = {};
+  if (emailSender !== undefined) emailUpdates.emailSender = String(emailSender).trim();
+  if (emailSenderName !== undefined) emailUpdates.emailSenderName = String(emailSenderName).trim();
+  if (emailNotificationsEnabled !== undefined) emailUpdates.emailNotificationsEnabled = String(emailNotificationsEnabled);
+  if (Object.keys(emailUpdates).length) {
+    const updatedSettings = await updateSettings(emailUpdates);
+    settings.emailSender = updatedSettings.emailSender;
+    settings.emailSenderName = updatedSettings.emailSenderName;
+    settings.emailNotificationsEnabled = updatedSettings.emailNotificationsEnabled;
+    resetTransporter();
+  }
   const mpesaCfg = getMpesaConfig();
   res.json({ ...settings, paymentMethods: await getPaymentMethods(), mpesa: mpesaCfg });
 });
@@ -609,6 +625,20 @@ app.post("/api/settings/logo", adminAuthMiddleware, (req: Request, res: Response
     backupImageToDb("logo", logoUrl);
     res.json({ logoUrl });
   });
+});
+
+app.get("/api/admin/email-logs", adminAuthMiddleware, async (req: Request, res: Response) => {
+  const limit = Number(req.query.limit) || 50;
+  const logs = await listEmailLogs(limit);
+  res.json({ logs });
+});
+
+app.post("/api/admin/email/test", adminAuthMiddleware, async (req: Request, res: Response) => {
+  const { to } = req.body || {};
+  if (!to) { res.status(400).json({ error: "Email address required." }); return; }
+  const settings = await getSettings();
+  const ok = await sendEmail(to, "Test email from Gear&Glitch", `<!DOCTYPE html><html><body><p>This is a test email from <strong>${settings.storeName || "Gear&Glitch"}</strong>.</p><p>If you received this, email notifications are working correctly.</p></body></html>`, "test");
+  res.json({ ok, message: ok ? "Test email sent." : "Email failed. Check SMTP configuration." });
 });
 
 app.post("/api/settings/favicon", adminAuthMiddleware, (req: Request, res: Response) => {
@@ -1270,6 +1300,11 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, async (req: Reque
   const ok = await updateOrderStatus(Number(req.params.id), status);
   if (!ok) { res.status(404).json({ error: "Order not found." }); return; }
   res.json({ ok: true });
+  const order = await getOrder(Number(req.params.id));
+  if (order && order.customerEmail) {
+    const { subject: emailSub, html } = orderStatusEmail(order.customerName || "Customer", `#${order.id}`, status, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`);
+    sendEmail(order.customerEmail, emailSub, html, "order_status");
+  }
 });
 
 app.patch("/api/admin/order-items/:id/warranty", ownerAuthMiddleware, async (req: Request, res: Response) => {
@@ -1656,6 +1691,11 @@ app.post("/api/admin/credit-notes", ownerAuthMiddleware, async (req: Request, re
   await submitCreditNoteToEtims(cn.id, etimsData);
   const finalCn = await getCreditNote(cn.id);
   res.status(201).json(finalCn || cn);
+  if (order.customerEmail) {
+    const settings = await getSettings();
+    const { subject: emailSub, html } = creditNoteEmail(order.customerName || "Customer", cn.id, reason || "", String(cn.totalAmount || order.subtotal || 0), settings.currency, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`);
+    sendEmail(order.customerEmail, emailSub, html, "credit_note");
+  }
 });
 
 app.get("/api/admin/credit-notes/order-status", ownerAuthMiddleware, async (req: Request, res: Response) => {
@@ -1846,6 +1886,14 @@ app.post("/api/messages", customerAuthMiddleware, async (req: Request, res: Resp
   if (!providerId || !body) { res.status(400).json({ error: "Provider ID and message body are required." }); return; }
   const msg = await sendMessage(customerId, Number(providerId), subject || "", body, "customer", productId);
   res.status(201).json(msg);
+  const customer = await findCustomerById(customerId);
+  const provider = await findProviderById(Number(providerId));
+  if (customer && provider) {
+    const { subject: emailSub, html } = messageNotificationEmail(customer.name || customer.email || "Customer", "customer", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+    sendEmail(provider.email, emailSub, html, "message");
+    const settings = await getSettings();
+    if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+  }
 });
 
 app.post("/api/provider/messages", providerAuthMiddleware, requireProviderFeature("Customer management"), async (req: Request, res: Response) => {
@@ -1854,6 +1902,14 @@ app.post("/api/provider/messages", providerAuthMiddleware, requireProviderFeatur
   if (!customerId || !body) { res.status(400).json({ error: "Customer ID and message body are required." }); return; }
   const msg = await sendMessage(Number(customerId), providerId, subject || "", body, "provider", productId);
   res.status(201).json(msg);
+  const customer = await findCustomerById(Number(customerId));
+  const provider = await findProviderById(providerId);
+  if (customer && provider) {
+    const { subject: emailSub, html } = messageNotificationEmail(provider.companyName || provider.contactName || "Provider", "provider", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+    if (customer.email) sendEmail(customer.email, emailSub, html, "message");
+    const settings = await getSettings();
+    if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+  }
 });
 
 app.patch("/api/messages/:id/read", customerAuthMiddleware, async (req: Request, res: Response) => {
@@ -2277,6 +2333,13 @@ app.patch("/api/products/:id/price", adminAuthMiddleware, async (req: Request, r
   const product = await updateProduct(String(req.params.id), { price });
   if (!product) { res.status(404).json({ error: "Product not found." }); return; }
   res.json(product);
+});
+
+app.put("/api/admin/products/reorder", ownerAuthMiddleware, requirePermission("product:update"), async (req: Request, res: Response) => {
+  const { orderedIds } = req.body || {};
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) { res.status(400).json({ error: "orderedIds array required." }); return; }
+  await updateProductSortOrder(orderedIds);
+  res.json({ ok: true });
 });
 
 app.patch("/api/products/:id/subcategory", adminAuthMiddleware, async (req: Request, res: Response) => {
@@ -3079,6 +3142,12 @@ app.post("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:vi
     const quote = await createQuote({ customerId, customerName: customerName || "", customerPhone: customerPhone || "", items, notes: notes || "", discountType: discountType || "", discountValue: discountValue || 0 });
     await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_created", "quote", String(quote.id), JSON.stringify({ quoteNumber: quote.quoteNumber, total: quote.total }), (req as any).user.role);
     res.status(201).json(quote);
+    const cust = await findCustomerById(customerId);
+    if (cust && cust.email && cust.email !== "walkin@pos") {
+      const settings = await getSettings();
+      const { subject: emailSub, html } = quoteEmail(cust.name || customerName || "Customer", quote.quoteNumber, String(quote.total), settings.currency, notes || "", `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+      sendEmail(cust.email, emailSub, html, "quote");
+    }
   } catch (err: any) {
     console.error("[quotes] create error:", err?.message || err);
     res.status(500).json({ error: "Failed to create quote." });
