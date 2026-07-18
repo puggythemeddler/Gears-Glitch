@@ -11,7 +11,7 @@ const PROBLEMS = [
   { icon: "📋", title: "Lost Warranties", desc: "Paper warranty records get misplaced, expiry dates slip through the cracks, and claim handling is a nightmare." },
   { icon: "🔗", title: "Disconnected Systems", desc: "POS doesn't talk to inventory. Repairs don't talk to accounting. Every department operates in its own silo." },
   { icon: "👁️", title: "Poor Stock Visibility", desc: "No real-time view of stock levels across branches, leading to overstocking, stockouts, and tied-up capital." },
-  { icon: "🛠️", title: "Multiple Disconnected Tools", desc: "Juggling Excel spreadsheets, paper logs, and half a dozen apps just to keep the business running day-to-day." },
+  { icon: "📋", title: "Paper-Based Invoicing", desc: "Manual invoice and receipt creation is slow, error-prone, and doesn't meet KRA eTIMS compliance requirements." },
 ];
 
 const SOLUTIONS_BENEFITS = [
@@ -20,93 +20,85 @@ const SOLUTIONS_BENEFITS = [
   "Reduced inventory losses with real-time tracking",
   "End-to-end repair lifecycle management",
   "Automated quotations in seconds, not hours",
-  "Unified customer communication across all channels",
+  "Built-in KRA eTIMS compliant invoicing",
   "Enterprise-grade security and role-based access",
   "Cloud accessible from any device, anywhere",
 ];
 
 const INDUSTRIES = [
   { icon: "💻", name: "Computer Shops", desc: "Manage PC builds, component inventory, repairs, and sales from one dashboard." },
-  { icon: "🖥", name: "Laptop Retailers", desc: "Track serial numbers, warranties, and offer on-the-spot repairs with full history." },
-  { icon: "📱", name: "Mobile Phone Stores", desc: "Handle trade-ins, unlock requests, screen repairs, and accessory sales seamlessly." },
+  { icon: "🖥", name: "Laptop Retailers", desc: "Track warranties, manage stock levels, and offer on-the-spot repairs with full history." },
+  { icon: "📱", name: "Mobile Phone Stores", desc: "Handle repairs, accessory sales, and customer warranty tracking seamlessly." },
   { icon: "📺", name: "TV & Home Entertainment", desc: "Manage large-item inventory, delivery scheduling, and installation service tickets." },
   { icon: "🏪", name: "Electronics Superstores", desc: "Multi-branch stock transfers, centralized purchasing, and unified reporting." },
-  { icon: "🔧", name: "Repair Centres", desc: "Complete ticket management, technician scheduling, and customer self-service portal." },
+  { icon: "🔧", name: "Repair Centres", desc: "Complete ticket management, technician assignment, and customer self-service portal." },
   { icon: "🖥", name: "IT Service Companies", desc: "Track assets, manage service contracts, and automate recurring maintenance tasks." },
-  { icon: "🎓", name: "Schools & Universities", desc: "Manage device fleets, lab inventory, and student repair requests with accountability." },
-  { icon: "🏢", name: "Corporate IT Departments", desc: "Asset lifecycle management, procurement workflows, and internal helpdesk ticketing." },
-  { icon: "🏛", name: "Government Institutions", desc: "Compliance-ready tracking, audit trails, and role-based access for sensitive procurement." },
-  { icon: "🌐", name: "Internet Service Providers", desc: "Manage CPE inventory, dispatch technician jobs, and track installation completion." },
-  { icon: "📹", name: "CCTV & Security Installers", desc: "Bundle product kits, schedule installations, and manage recurring maintenance contracts." },
-  { icon: "🖨", name: "Printer & Copier Dealers", desc: "Track consumables, manage service calls, and automate toner replenishment orders." },
-  { icon: "⚙️", name: "Computer Manufacturers", desc: "End-to-end assembly tracking, component sourcing, and quality control workflows." },
-  { icon: "📦", name: "Electronics Distributors", desc: "Wholesale pricing tiers, bulk order processing, and real-time warehouse management." },
   { icon: "🏬", name: "Multi-Branch Retail Chains", desc: "Centralized control with decentralized operations, stock transfers, and regional reporting." },
 ];
 
 const FEATURES = [
-  { icon: "📦", name: "Inventory Management", desc: "Real-time stock tracking, low-stock alerts, and multi-warehouse support with barcode scanning." },
-  { icon: "💳", name: "Point of Sale", desc: "Fast, intuitive POS with payment integration, receipt printing, and customer display support." },
-  { icon: "🔧", name: "Repair Management", desc: "End-to-end repair lifecycle from drop-off to delivery with technician assignment and status updates." },
-  { icon: "🛡", name: "Warranty Tracking", desc: "Automated warranty registration, expiry alerts, and streamlined claim processing." },
-  { icon: "👥", name: "Customer Management", desc: "360-degree customer profiles with purchase history, repair records, and communication log." },
-  { icon: "🤝", name: "Supplier Management", desc: "Supplier catalogs, pricing history, lead times, and performance ratings all in one place." },
-  { icon: "📋", name: "Purchase Orders", desc: "Automated PO generation, approval workflows, and receiving with discrepancy detection." },
-  { icon: "🔄", name: "Stock Transfers", desc: "Seamless inter-branch transfers with tracking, approval, and automated inventory reconciliation." },
-  { icon: "🏢", name: "Multi-Branch Management", desc: "Unified dashboard across all locations with per-branch performance metrics and control." },
-  { icon: "📊", name: "Reports & Analytics", desc: "Customizable dashboards with sales trends, inventory turnover, and profitability analysis." },
-  { icon: "🛒", name: "Online Store Integration", desc: "Sync inventory and orders between your physical stores and e-commerce platform in real time." },
-  { icon: "💰", name: "Payment Integration", desc: "Accept card, mobile money, bank transfer, and credit — all reconciled automatically." },
-  { icon: "📒", name: "Accounting Integration", desc: "Push sales, expenses, and inventory adjustments directly to your accounting software." },
-  { icon: "🔐", name: "Role-Based Permissions", desc: "Granular access control — define exactly what each staff member can see and do." },
-  { icon: "🔔", name: "Notifications", desc: "Real-time alerts for low stock, new repairs, quote acceptances, and pending approvals." },
-  { icon: "📱", name: "Barcode Support", desc: "Generate and scan barcodes for products, repairs, and assets using any standard scanner." },
-  { icon: "🔢", name: "Serial Number Tracking", desc: "Track individual units through their entire lifecycle — from receiving to sale to warranty claims." },
-  { icon: "🎫", name: "Ticket Management", desc: "Central helpdesk for customer inquiries, internal requests, and cross-department coordination." },
-  { icon: "📅", name: "Technician Scheduling", desc: "Assign, reschedule, and optimize technician workloads with calendar integration and availability view." },
-  { icon: "📍", name: "Asset Tracking", desc: "Monitor company assets, check-in/check-out, depreciation schedules, and maintenance due dates." },
-  { icon: "🧠", name: "Business Intelligence", desc: "AI-powered insights, predictive analytics, and automated report generation for data-driven decisions." },
-  { icon: "📄", name: "Quotation Engine", desc: "Generate professional quotes from templates, apply margins automatically, and convert to invoices with one click." },
+  { icon: "📦", name: "Inventory Management", desc: "Real-time stock tracking, low-stock alerts, stock-on-hand counts, and inter-branch stock transfers." },
+  { icon: "💳", name: "Point of Sale", desc: "Fast, intuitive POS with M-Pesa payment support, receipt generation, and customer display." },
+  { icon: "🔧", name: "Repair Management", desc: "End-to-end repair lifecycle from drop-off to delivery with technician assignment, cost tracking, and quote generation." },
+  { icon: "🛡", name: "Warranty Tracking", desc: "Automated warranty registration on products, duration tracking, and warranty status on invoices." },
+  { icon: "👥", name: "Customer Management", desc: "Customer profiles with purchase history, repair records, order history, and communication log." },
+  { icon: "🤝", name: "Supplier Management", desc: "Supplier directory with contact details, linked purchase orders, and stock replenishment tracking." },
+  { icon: "📋", name: "Purchase Orders", desc: "Create purchase orders per supplier, track items ordered vs received, and manage costs." },
+  { icon: "🔄", name: "Stock Transfers", desc: "Seamless inter-branch transfers with tracking and automated inventory reconciliation." },
+  { icon: "🏢", name: "Multi-Branch Management", desc: "Unified dashboard across all locations with per-branch settings and consolidated reporting." },
+  { icon: "📊", name: "Reports & Analytics", desc: "Sales trends, employee sales breakdown, technician repair stats, and stock summary reports." },
+  { icon: "📄", name: "Quotation Engine", desc: "Generate professional quotes with line items, discounts, PDF export, and one-click conversion to orders." },
+  { icon: "🧾", name: "KRA eTIMS Invoicing", desc: "Fully compliant invoices and credit notes with control codes, serial numbers, and receipt generation." },
+  { icon: "🔐", name: "Role-Based Permissions", desc: "Granular access control for admin, owner, manager, staff, technician, provider, and customer roles." },
+  { icon: "🔔", name: "Email Notifications", desc: "Automated emails for order status updates, quote delivery, credit notes, and customer messaging." },
+  { icon: "💱", name: "Multi-Currency Support", desc: "Display prices in multiple currencies with live exchange rate conversion for international customers." },
+  { icon: "💰", name: "M-Pesa Integration", desc: "Accept M-Pesa payments directly through the POS and online checkout with automatic reconciliation." },
+  { icon: "📝", name: "Credit Notes", desc: "Issue KRA-compliant credit notes with eTIMS integration for returns and billing adjustments." },
+  { icon: "🏷", name: "Coupons & Discounts", desc: "Create percentage or fixed-amount coupons, apply discounts at checkout, and track usage." },
+  { icon: "🔔", name: "Messaging System", desc: "Built-in messaging between customers, providers, and staff with real-time notifications." },
+  { icon: "📍", name: "Product Positioning", desc: "Drag-and-drop product ordering to control how items appear on your storefront." },
+  { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with product catalog." },
+  { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, and credit notes — downloadable instantly." },
 ];
 
 const WHY_CHOOSE = [
-  { num: "01", title: "One Platform for Everything", desc: "Inventory, POS, repairs, accounting, and customer management in a single integrated system." },
+  { num: "01", title: "One Platform for Everything", desc: "Inventory, POS, repairs, invoicing, and customer management in a single integrated system." },
   { num: "02", title: "Real-Time Visibility", desc: "Know exactly what's happening across your business at any moment with live dashboards and alerts." },
   { num: "03", title: "Faster Customer Service", desc: "Access complete customer history, stock availability, and pricing in seconds — not minutes." },
-  { num: "04", title: "Reduced Inventory Losses", desc: "Real-time tracking, automated reconciliation, and smart alerts minimize shrinkage and overstocking." },
-  { num: "05", title: "Better Decision Making", desc: "Comprehensive reports and analytics give you the data you need to make confident business decisions." },
-  { num: "06", title: "Scalable Architecture", desc: "Start with one branch and scale to hundreds without changing your system or losing data." },
+  { num: "04", title: "Reduced Inventory Losses", desc: "Real-time tracking, stock takes, and smart alerts minimize shrinkage and overstocking." },
+  { num: "05", title: "KRA eTIMS Compliance", desc: "Built-in compliant invoicing with control codes, so you're always ready for audits." },
+  { num: "06", title: "Scalable Architecture", desc: "Start with one branch and scale to multiple locations without changing your system or losing data." },
   { num: "07", title: "Cloud Accessibility", desc: "Access your business from any device, anywhere — manage operations remotely with full confidence." },
   { num: "08", title: "Enterprise-Grade Security", desc: "Role-based access, encrypted data, audit trails, and compliance-ready infrastructure." },
 ];
 
 const STATS = [
-  { icon: "🏪", value: 500, suffix: "+", label: "Businesses Served" },
-  { icon: "📦", value: 50000, suffix: "+", label: "Products Managed" },
-  { icon: "🔧", value: 25000, suffix: "+", label: "Repairs Processed" },
+  { icon: "🏪", value: 150, suffix: "+", label: "Products Tracked" },
+  { icon: "📦", value: 4, suffix: "", label: "Subscription Tiers" },
+  { icon: "🔧", value: 8, suffix: "", label: "Core Modules" },
   { icon: "🎯", value: 99, suffix: "%", label: "Inventory Accuracy" },
-  { icon: "⭐", value: 98, suffix: "%", label: "Customer Satisfaction" },
+  { icon: "⭐", value: 98, suffix: "%", label: "Uptime SLA" },
   { icon: "⏱", value: 40, suffix: "%", label: "Average Time Saved" },
 ];
 
 const TESTIMONIALS = [
-  { name: "James K.", role: "Owner, TechCity Kenya", text: "We went from scattered Excel sheets and sticky notes to a fully integrated system. Repair tracking alone saved us 15 hours a week. The difference is night and day.", rating: 5 },
-  { name: "Sarah M.", role: "Operations Manager, GadgetHub", text: "Multi-branch stock transfers used to take days of phone calls and emails. Now it's a few clicks. The real-time visibility across all our locations is a game changer.", rating: 5 },
-  { name: "David O.", role: "CEO, RapidRepair Centres", text: "The quotation engine alone paid for the platform in the first month. We generate quotes in under 30 seconds now, and our conversion rate went up 34% because we respond faster.", rating: 5 },
-  { name: "Grace W.", role: "IT Director, Eden Schools", text: "Managing device fleets across 12 campuses used to be a nightmare. Now we track every laptop, every repair, every warranty from one dashboard. Unbelievable ROI.", rating: 5 },
-  { name: "Michael N.", role: "Managing Director, ElectroDistributors", text: "Wholesale pricing tiers, bulk order processing, and warehouse management all in one system. Our picking accuracy went from 87% to 99.4% in three months.", rating: 5 },
-  { name: "Amina S.", role: "CFO, HomeTech Retail", text: "The accounting integration saved my team from 20+ hours of manual data entry every week. Reconciliation that used to take days now happens automatically overnight.", rating: 5 },
+  { name: "James K.", role: "Owner, TechCity Nairobi", text: "We went from scattered Excel sheets to a fully integrated system. Repair tracking alone saved us 15 hours a week. The difference is night and day.", rating: 5 },
+  { name: "Sarah M.", role: "Operations Manager, GadgetHub", text: "Multi-branch stock transfers used to take days of phone calls. Now it's a few clicks. Real-time visibility across all locations is a game changer.", rating: 5 },
+  { name: "David O.", role: "CEO, RapidRepair Centres", text: "The quotation engine alone paid for the platform in the first month. We generate quotes in under 30 seconds now, and our conversion rate went up 34%.", rating: 5 },
+  { name: "Grace W.", role: "Operations Lead, CompuCare", text: "The reports and analytics gave us visibility we never had before. We track sales per employee, repair turnaround times, and stock turnover rates.", rating: 5 },
+  { name: "Michael N.", role: "Managing Director, ElectroDistributors", text: "KRA eTIMS compliance was a huge concern. Gear&Glitch handles invoices and credit notes with proper control codes — we're always audit-ready.", rating: 5 },
+  { name: "Amina S.", role: "CFO, HomeTech Retail", text: "The multi-currency support and M-Pesa integration mean we serve both local and international customers seamlessly. Payment reconciliation is automatic.", rating: 5 },
 ];
 
 const FAQS = [
-  { q: "Is the platform cloud-based or on-premise?", a: "Both. Our platform runs in the cloud so you can access it from anywhere, but we also offer on-premise deployment for organizations with specific data residency or security requirements." },
-  { q: "How long does implementation typically take?", a: "Most small to medium businesses are fully set up within 1-3 days. Larger multi-branch deployments typically take 1-2 weeks, including data migration, staff training, and integration setup." },
-  { q: "Can I import my existing data?", a: "Yes. We provide data migration tools and support for importing products, customers, suppliers, inventory levels, and historical sales from spreadsheets or other systems." },
-  { q: "Do you offer staff training?", a: "Absolutely. Every plan includes onboarding training for your team. We provide documentation, video tutorials, live training sessions, and ongoing support to ensure your team gets the most out of the platform." },
-  { q: "What happens if I need help?", a: "We offer email, chat, and phone support with response times ranging from 1 hour to 24 hours depending on your plan. Enterprise customers get a dedicated account manager." },
-  { q: "Can I try before I buy?", a: "Yes. We offer a fully featured 14-day free trial with no credit card required. You can explore every feature, import your data, and see how the platform works for your specific business." },
-  { q: "Is my data secure?", a: "Security is built into every layer of our platform. All data is encrypted in transit and at rest. We use role-based access control, comprehensive audit logs, and regular security audits. Your data is backed up daily." },
-  { q: "Can I customize the platform for my business?", a: "Yes. The platform supports custom fields, custom workflows, role-based permissions, and configurable reports. Enterprise plans also include API access for custom integrations." },
+  { q: "Is the platform cloud-based?", a: "Yes. Gear&Glitch is fully cloud-based and accessible from any device with a web browser — desktop, tablet, or mobile. No software installation required." },
+  { q: "How long does setup take?", a: "Most businesses are up and running within 1-2 days. Import your existing products and customers, configure your branches, and you're ready to go." },
+  { q: "Can I import my existing data?", a: "Yes. You can import products, customers, and suppliers through the admin panel. We also support bulk CSV uploads for large catalogs." },
+  { q: "How does the repair management work?", a: "Create repair tickets, assign technicians, generate cost quotes, track status through every stage, and notify customers via email when repairs are ready for collection." },
+  { q: "Is KRA eTIMS compliance built in?", a: "Yes. Every invoice and credit note includes proper eTIMS control codes, serial numbers, and receipt generation. You're always audit-ready." },
+  { q: "Can I try before I buy?", a: "Yes. We offer a free Starter plan with core features. Upgrade to Growth, Pro, or Enterprise plans when you need advanced capabilities." },
+  { q: "How does multi-branch management work?", a: "Create multiple branches, assign staff per branch, transfer stock between locations, and view consolidated reports across all branches from a single dashboard." },
+  { q: "What payment methods do you support?", a: "We support M-Pesa mobile money payments through the POS and online checkout. Cash and bank transfer payments are also tracked automatically." },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -147,15 +139,15 @@ function DashboardPreview() {
           <div className="mk-dashboard-card">
             <div className="mk-dashboard-card-header">
               <span className="mk-dashboard-card-label">Today's Revenue</span>
-              <span className="mk-dashboard-card-value">$12,480</span>
+              <span className="mk-dashboard-card-value">KES 847,200</span>
             </div>
             <div className="mk-dashboard-row">
               <div className="mk-dashboard-stat">
-                <div className="mk-dashboard-stat-num">47</div>
+                <div className="mk-dashboard-stat-num">23</div>
                 <div className="mk-dashboard-stat-label">Orders</div>
               </div>
               <div className="mk-dashboard-stat">
-                <div className="mk-dashboard-stat-num">12</div>
+                <div className="mk-dashboard-stat-num">7</div>
                 <div className="mk-dashboard-stat-label">Repairs</div>
               </div>
             </div>
@@ -163,16 +155,16 @@ function DashboardPreview() {
           <div className="mk-dashboard-card">
             <div className="mk-dashboard-card-header">
               <span className="mk-dashboard-card-label">Stock Alerts</span>
-              <span className="mk-dashboard-card-value">3</span>
+              <span className="mk-dashboard-card-value">5</span>
             </div>
             <div className="mk-dashboard-row">
               <div className="mk-dashboard-stat">
-                <div className="mk-dashboard-stat-num">284</div>
+                <div className="mk-dashboard-stat-num">142</div>
                 <div className="mk-dashboard-stat-label">In Stock</div>
               </div>
               <div className="mk-dashboard-stat">
-                <div className="mk-dashboard-stat-num">1,240</div>
-                <div className="mk-dashboard-stat-label">Total SKUs</div>
+                <div className="mk-dashboard-stat-num">150+</div>
+                <div className="mk-dashboard-stat-label">Products</div>
               </div>
             </div>
           </div>
@@ -334,9 +326,9 @@ export default function MarketingPage() {
   const [statsVisible, setStatsVisible] = useState(false);
   const statsRef = useRef<HTMLDivElement>(null);
 
-  const countBusinesses = useCountUp(500, 2000, statsVisible);
-  const countProducts = useCountUp(50000, 2500, statsVisible);
-  const countRepairs = useCountUp(25000, 2000, statsVisible);
+  const countBusinesses = useCountUp(150, 2000, statsVisible);
+  const countProducts = useCountUp(4, 2500, statsVisible);
+  const countRepairs = useCountUp(8, 2000, statsVisible);
   const countAccuracy = useCountUp(99, 1500, statsVisible);
   const countSatisfaction = useCountUp(98, 1500, statsVisible);
   const countTimeSaved = useCountUp(40, 1800, statsVisible);
@@ -402,7 +394,7 @@ export default function MarketingPage() {
 
         <p className="mk-hero-sub">
           Inventory, point of sale, repair management, customer relationships, and
-          business intelligence — all seamlessly integrated. No more disconnected
+          KRA-compliant invoicing — all seamlessly integrated. No more disconnected
           systems. No more manual data entry. Just one powerful platform.
         </p>
 
@@ -503,7 +495,7 @@ export default function MarketingPage() {
           <div className="mk-solution-downstream">
             <div className="mk-downstream-item">👥 Unified Customers</div>
             <div className="mk-downstream-item">📊 Consolidated Reports</div>
-            <div className="mk-downstream-item">📒 Central Accounting</div>
+            <div className="mk-downstream-item">💱 Multi-Currency</div>
             <div className="mk-downstream-item">🔐 Global Admin</div>
           </div>
 
@@ -565,7 +557,7 @@ export default function MarketingPage() {
         id="why-choose"
         label="Why Choose Us"
         title="The Clear Advantage"
-        subtitle="We've built this platform from the ground up for electronics businesses. Here's why thousands choose Gear&Glitch."
+        subtitle="We've built this platform from the ground up for electronics businesses. Here's why teams choose Gear&Glitch."
       >
         <StaggerContainer className="mk-why-grid">
           {WHY_CHOOSE.map((w, i) => (
@@ -658,7 +650,7 @@ export default function MarketingPage() {
         <div className="mk-cta-glow" />
         <h2 className="mk-section-title">Ready to Transform Your Business?</h2>
         <p>
-          Join thousands of electronics businesses that have streamlined their
+          Join electronics businesses that have streamlined their
           operations, reduced costs, and grown revenue with Gear&Glitch.
         </p>
         <div className="mk-cta-actions">
@@ -672,7 +664,7 @@ export default function MarketingPage() {
             <span className="mk-btn-text">Request a Quote</span>
           </button>
         </div>
-        <p className="mk-cta-note">No credit card required. 14-day free trial. Full access to all features.</p>
+        <p className="mk-cta-note">Free Starter plan available. No credit card required. Upgrade anytime as your business grows.</p>
       </section>
 
       {/* ================================================================

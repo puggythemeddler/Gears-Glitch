@@ -1,10 +1,14 @@
 import React from "react";
 import { useApp, CURRENCY_NAMES } from "@/lib/app-context";
+import { useFeature } from "@/lib/features";
 
 const POPULAR_CURRENCIES = ["KES", "USD", "EUR", "GBP", "NGN", "ZAR"];
 
 export default function CurrencySelector() {
+  const multiCurrencyEnabled = useFeature("Multi-currency support");
   const { selectedCurrency, exchangeRates, setCurrency } = useApp();
+
+  if (!multiCurrencyEnabled) return null;
 
   const available = Object.keys(exchangeRates).length > 0
     ? POPULAR_CURRENCIES.filter((c) => c === "KES" || exchangeRates[c])

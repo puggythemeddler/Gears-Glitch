@@ -728,10 +728,10 @@ app.get("/api/admin/plans", adminAuthMiddleware, async (_req: Request, res: Resp
 });
 
 app.post("/api/admin/plans", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const { id, name, description, price, tierLevel, maxProducts, features } = req.body || {};
+  const { id, name, description, price, priceAnnual, tierLevel, maxProducts, features } = req.body || {};
   if (!id || !name) { res.status(400).json({ error: "Plan ID and name are required." }); return; }
   if (await getSubscriptionPlan(id)) { res.status(409).json({ error: "A plan with this ID already exists." }); return; }
-  const plan = await createSubscriptionPlan({ id, name, description, price, tierLevel, maxProducts, maxBranches: 1, features, isActive: true });
+  const plan = await createSubscriptionPlan({ id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches: 1, features, isActive: true });
   if (!plan) { res.status(500).json({ error: "Failed to create plan." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "plan", id, { name }, (req as any).user.role);
   res.status(201).json({ plan });

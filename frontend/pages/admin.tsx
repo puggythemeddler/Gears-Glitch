@@ -96,6 +96,14 @@ export default function AdminPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Administration"]);
   const messagingEnabled = useFeature("Messaging");
+  const creditNotesEnabled = useFeature("Credit notes");
+  const quotationsEnabled = useFeature("Quotations");
+  const techRepairsEnabled = useFeature("Repair ticketing");
+  const productPositioningEnabled = useFeature("Product positioning");
+  const emailNotificationsEnabled = useFeature("Email notifications");
+  const stockTransfersEnabled = useFeature("Stock transfers");
+  const supplierManagementEnabled = useFeature("Supplier management");
+  const branchManagementEnabled = useFeature("Branch management");
 
   useEffect(() => {
     api<{ googleClientId: string }>("/api/storefront").then((d) => setGoogleClientId(d.googleClientId || "")).catch(() => {});
@@ -1131,7 +1139,7 @@ function AdminPlans() {
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ plans: SubscriptionPlan[] }>("/api/admin/plans"), []);
   const [editing, setEditing] = useState<SubscriptionPlan | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ id: "", name: "", price: 0, maxProducts: 10, features: [] as string[] });
+  const [form, setForm] = useState({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, features: [] as string[] });
   const [customInput, setCustomInput] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -1148,13 +1156,13 @@ function AdminPlans() {
 
   function openNew() {
     setEditing(null);
-    setForm({ id: "", name: "", price: 0, maxProducts: 10, features: [] });
+    setForm({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, features: [] });
     setShowForm(true);
   }
 
   function openEdit(plan: SubscriptionPlan) {
     setEditing(plan);
-    setForm({ id: plan.id, name: plan.name, price: plan.price, maxProducts: plan.maxProducts, features: parseFeatures(plan.features) });
+    setForm({ id: plan.id, name: plan.name, price: plan.price, priceAnnual: plan.priceAnnual || 0, maxProducts: plan.maxProducts, features: parseFeatures(plan.features) });
     setShowForm(true);
   }
 
@@ -1179,6 +1187,7 @@ function AdminPlans() {
         id: form.id || toId(form.name),
         name: form.name,
         price: Number(form.price),
+        priceAnnual: Number(form.priceAnnual) || null,
         maxProducts: Number(form.maxProducts),
         features: form.features,
       };
@@ -1215,7 +1224,8 @@ function AdminPlans() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
               <div className="field"><label>Plan ID (slug)<input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} placeholder={toId(form.name) || "e.g. premium"} /></label></div>
               <div className="field"><label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label></div>
-              <div className="field"><label>Price (KES)<input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} required /></label></div>
+              <div className="field"><label>Monthly price (KES)<input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} required /></label></div>
+              <div className="field"><label>Annual price (KES)<input type="number" value={form.priceAnnual} onChange={(e) => setForm({ ...form, priceAnnual: Number(e.target.value) })} placeholder="0 = no annual" /></label></div>
               <div className="field"><label>Max products<input type="number" value={form.maxProducts} onChange={(e) => setForm({ ...form, maxProducts: Number(e.target.value) })} required /></label></div>
             </div>
             <div className="field">
@@ -1271,6 +1281,7 @@ function AdminPlans() {
               </div>
               <h3 style={{ marginTop: 0 }}>{escapeHtml(p.name)}</h3>
               <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--primary)", margin: "0 0 0.25rem" }}>{formatPrice(p.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>
+              {p.priceAnnual != null && p.priceAnnual > 0 && <p style={{ fontSize: "0.9rem", color: "var(--primary)", margin: "0 0 0.25rem" }}>{formatPrice(p.priceAnnual)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/yr</span></p>}
               <p className="muted" style={{ margin: "0 0 0.5rem" }}>Up to {p.maxProducts} products</p>
               {features.length > 0 && (
                 <ul className="features-list" style={{ margin: 0, flex: 1 }}>{features.map((f, i) => <li key={i} style={{ fontSize: "0.85rem" }}>{f}</li>)}</ul>
@@ -2985,7 +2996,7 @@ function AdminQuotations() {
     try { return new Date(d).toLocaleDateString("en-GB"); } catch { return d; }
   }
 
-  if (created || viewing) {
+  if ((created && Object.keys(created).length > 0) || viewing) {
     const q = created || viewing;
     return (
       <>

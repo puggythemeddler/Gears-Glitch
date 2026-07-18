@@ -107,6 +107,7 @@ interface SubscriptionPlan {
   name: string;
   description: string;
   price: number;
+  priceAnnual: number | null;
   tierLevel: number;
   maxProducts: number | null;
   maxBranches: number;
@@ -535,6 +536,7 @@ function mapPlan(row: any): SubscriptionPlan {
     name: row.name,
     description: row.description,
     price: row.price,
+    priceAnnual: row.price_annual ?? null,
     tierLevel: row.tier_level,
     maxProducts: row.max_products,
     maxBranches: row.max_branches ?? 1,
@@ -719,6 +721,33 @@ async function runMigrations(): Promise<void> {
     )`);
     await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_type ON email_logs(type)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at)`);
+  } catch {}
+  try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_annual DOUBLE PRECISION`); } catch {}
+
+  // Update default plan pricing and features
+  try {
+    await query(`UPDATE subscription_plans SET price = 4999, price_annual = 47990 WHERE id = 'growth'`);
+    await query(`UPDATE subscription_plans SET price = 12999, price_annual = 124790 WHERE id = 'pro'`);
+    await query(`UPDATE subscription_plans SET price = 29999, price_annual = 287990 WHERE id = 'enterprise'`);
+    // Add Multi-currency support to plans that should have it
+    const growthPlan = await queryOne(`SELECT features FROM subscription_plans WHERE id = 'growth'`) as any;
+    if (growthPlan && !growthPlan.features.includes("Multi-currency support")) {
+      const updated = JSON.parse(growthPlan.features);
+      updated.push("Multi-currency support");
+      await query(`UPDATE subscription_plans SET features = $1 WHERE id = 'growth'`, [JSON.stringify(updated)]);
+    }
+    const proPlan = await queryOne(`SELECT features FROM subscription_plans WHERE id = 'pro'`) as any;
+    if (proPlan && !proPlan.features.includes("Multi-currency support")) {
+      const updated = JSON.parse(proPlan.features);
+      updated.push("Multi-currency support");
+      await query(`UPDATE subscription_plans SET features = $1 WHERE id = 'pro'`, [JSON.stringify(updated)]);
+    }
+    const entPlan = await queryOne(`SELECT features FROM subscription_plans WHERE id = 'enterprise'`) as any;
+    if (entPlan && !entPlan.features.includes("Multi-currency support")) {
+      const updated = JSON.parse(entPlan.features);
+      updated.push("Multi-currency support");
+      await query(`UPDATE subscription_plans SET features = $1 WHERE id = 'enterprise'`, [JSON.stringify(updated)]);
+    }
   } catch {}
 
   // Fix sequences after potential manual deletes or migrations
@@ -1392,13 +1421,13 @@ async function ensureDefaultSubscriptionPlans(): Promise<void> {
   const row = await queryOne("SELECT COUNT(*) AS count FROM subscription_plans") as any;
   if (row && Number(row.count) > 0) return;
   const plans = [
-    { id: "starter", name: "Starter", description: "Perfect for small shops", price: 0, tier_level: 1, max_products: 50, max_branches: 1, features: JSON.stringify(["Up to 50 products", "1 branch", "Basic support", "Order management", "Invoice/quote PDF downloads", "Messaging", "Product positioning", "Email notifications"]) },
-    { id: "growth", name: "Growth", description: "For growing businesses", price: 2500, tier_level: 2, max_products: 500, max_branches: 3, features: JSON.stringify(["Up to 500 products", "3 branches", "Priority support", "Analytics dashboard", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Product positioning", "Email notifications"]) },
-    { id: "pro", name: "Pro", description: "For established shops", price: 5000, tier_level: 3, max_products: null, max_branches: 10, features: JSON.stringify(["Unlimited products", "10 branches", "Premium support", "Advanced analytics", "Custom branding", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Product positioning", "Email notifications"]) },
-    { id: "enterprise", name: "Enterprise", description: "Custom solutions", price: 15000, tier_level: 4, max_products: null, max_branches: 999, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Admin messaging", "Product listing", "Customer management", "Stock transfers", "Supplier management", "Product positioning", "Email notifications"]) },
+    { id: "starter", name: "Starter", description: "Perfect for small shops starting out", price: 0, price_annual: 0, tier_level: 1, max_products: 50, max_branches: 1, features: JSON.stringify(["Up to 50 products", "1 branch", "Basic support", "Order management", "Invoice/quote PDF downloads", "Messaging", "Product positioning", "Email notifications"]) },
+    { id: "growth", name: "Growth", description: "For growing businesses", price: 4999, price_annual: 47990, tier_level: 2, max_products: 500, max_branches: 3, features: JSON.stringify(["Up to 500 products", "3 branches", "Priority support", "Analytics dashboard", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Product positioning", "Email notifications", "Multi-currency support"]) },
+    { id: "pro", name: "Pro", description: "For established shops", price: 12999, price_annual: 124790, tier_level: 3, max_products: null, max_branches: 10, features: JSON.stringify(["Unlimited products", "10 branches", "Premium support", "Advanced analytics", "Custom branding", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Product positioning", "Email notifications", "Multi-currency support"]) },
+    { id: "enterprise", name: "Enterprise", description: "Custom solutions for large operations", price: 29999, price_annual: 287990, tier_level: 4, max_products: null, max_branches: 999, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Admin messaging", "Product listing", "Customer management", "Stock transfers", "Supplier management", "Product positioning", "Email notifications", "Multi-currency support"]) },
   ];
   for (const p of plans) {
-    await query("INSERT INTO subscription_plans (id, name, description, price, tier_level, max_products, max_branches, features) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [p.id, p.name, p.description, p.price, p.tier_level, p.max_products, p.max_branches, p.features]);
+    await query("INSERT INTO subscription_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [p.id, p.name, p.description, p.price, p.price_annual, p.tier_level, p.max_products, p.max_branches, p.features]);
   }
 }
 
@@ -1414,7 +1443,7 @@ async function getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undef
 
 async function createSubscriptionPlan(plan: Omit<SubscriptionPlan, "id"> & { id?: string }): Promise<SubscriptionPlan> {
   const id = plan.id || slugify(plan.name);
-  await query("INSERT INTO subscription_plans (id, name, description, price, tier_level, max_products, max_branches, features) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [id, plan.name, plan.description, plan.price, plan.tierLevel, plan.maxProducts, plan.maxBranches, JSON.stringify(plan.features)]);
+  await query("INSERT INTO subscription_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [id, plan.name, plan.description, plan.price, plan.priceAnnual ?? null, plan.tierLevel, plan.maxProducts, plan.maxBranches, JSON.stringify(plan.features)]);
   return (await getSubscriptionPlan(id))!;
 }
 
@@ -1425,6 +1454,7 @@ async function updateSubscriptionPlan(id: string, updates: Partial<SubscriptionP
   if (updates.name !== undefined) { fields.push(`name = $${idx}`); params.push(updates.name); idx++; }
   if (updates.description !== undefined) { fields.push(`description = $${idx}`); params.push(updates.description); idx++; }
   if (updates.price !== undefined) { fields.push(`price = $${idx}`); params.push(updates.price); idx++; }
+  if (updates.priceAnnual !== undefined) { fields.push(`price_annual = $${idx}`); params.push(updates.priceAnnual); idx++; }
   if (updates.tierLevel !== undefined) { fields.push(`tier_level = $${idx}`); params.push(updates.tierLevel); idx++; }
   if (updates.maxProducts !== undefined) { fields.push(`max_products = $${idx}`); params.push(updates.maxProducts); idx++; }
   if (updates.maxBranches !== undefined) { fields.push(`max_branches = $${idx}`); params.push(updates.maxBranches); idx++; }

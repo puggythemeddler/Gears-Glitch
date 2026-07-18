@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   price DOUBLE PRECISION NOT NULL DEFAULT 0,
+  price_annual DOUBLE PRECISION,
   tier_level INTEGER NOT NULL DEFAULT 0,
   max_products INTEGER,
   max_branches INTEGER NOT NULL DEFAULT 1,

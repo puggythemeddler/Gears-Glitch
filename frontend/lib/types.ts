@@ -177,6 +177,7 @@ export interface SubscriptionPlan {
   id: string;
   name: string;
   price: number;
+  priceAnnual: number | null;
   maxProducts: number;
   maxBranches: number;
   features: string;

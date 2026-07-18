@@ -52,6 +52,12 @@ export default function OwnerPage() {
   const [staffRole, setStaffRole] = useState<string | null>(null);
   const messagingEnabled = useFeature("Messaging");
   const branchManagementEnabled = useFeature("Branch management");
+  const creditNotesEnabled = useFeature("Credit notes");
+  const quotationsEnabled = useFeature("Quotations");
+  const techRepairsEnabled = useFeature("Repair ticketing");
+  const productPositioningEnabled = useFeature("Product positioning");
+  const emailNotificationsEnabled = useFeature("Email notifications");
+  const stockTransfersEnabled = useFeature("Stock transfers");
 
   useEffect(() => {
     if (getStaffToken()) {
@@ -61,7 +67,15 @@ export default function OwnerPage() {
   }, []);
 
   const visibleNav = staffRole === "admin" ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.key !== "storefront");
-  const filteredNav = visibleNav.filter((item) => (item.key !== "messages" || messagingEnabled) && (item.key !== "branches" || branchManagementEnabled));
+  const filteredNav = visibleNav.filter((item) =>
+    (item.key !== "messages" || messagingEnabled) &&
+    (item.key !== "branches" || branchManagementEnabled) &&
+    (item.key !== "credit-notes" || creditNotesEnabled) &&
+    (item.key !== "quotes" || quotationsEnabled) &&
+    (item.key !== "tech-repairs" || techRepairsEnabled) &&
+    (item.key !== "product-positioning" || productPositioningEnabled) &&
+    (item.key !== "stock-control" || stockTransfersEnabled)
+  );
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -113,18 +127,18 @@ export default function OwnerPage() {
             {view === "dashboard" && <OwnerDashboard onNavigate={setView} />}
             {view === "orders" && <OwnerOrders />}
             {view === "products" && <OwnerProducts />}
-            {view === "product-positioning" && <OwnerProductPositioning />}
+            {view === "product-positioning" && (productPositioningEnabled ? <OwnerProductPositioning /> : <p className="muted">Product positioning is not included in your current plan.</p>)}
             {view === "providers" && <OwnerProviders />}
             {view === "customers" && <OwnerCustomers />}
-            {view === "quotes" && <OwnerQuotes />}
+            {view === "quotes" && (quotationsEnabled ? <OwnerQuotes /> : <p className="muted">Quotations are not included in your current plan.</p>)}
             {view === "messages" && (messagingEnabled ? <OwnerMessages /> : <p className="muted">Messaging is not included in your current plan.</p>)}
             {view === "reports" && <OwnerReports />}
             {view === "invoices" && <OwnerInvoices />}
-            {view === "credit-notes" && <OwnerCreditNotes />}
-            {view === "stock-control" && <OwnerStockControl />}
+            {view === "credit-notes" && (creditNotesEnabled ? <OwnerCreditNotes /> : <p className="muted">Credit notes are not included in your current plan.</p>)}
+            {view === "stock-control" && (stockTransfersEnabled ? <OwnerStockControl /> : <p className="muted">Stock control is not included in your current plan.</p>)}
             {view === "stock-take" && <OwnerStockTake />}
-            {view === "tech-repairs" && <OwnerTechRepairs />}
-            {view === "branches" && <OwnerBranches />}
+            {view === "tech-repairs" && (techRepairsEnabled ? <OwnerTechRepairs /> : <p className="muted">Repair ticketing is not included in your current plan.</p>)}
+            {view === "branches" && (branchManagementEnabled ? <OwnerBranches /> : <p className="muted">Branch management is not included in your current plan.</p>)}
             {view === "shop-subscription" && <OwnerShopSubscription />}
             {view === "about-us" && <OwnerAboutUs />}
             {view === "storefront" && <OwnerStorefront staffRole={staffRole} />}
@@ -1294,6 +1308,12 @@ function OwnerShopSubscription() {
     finally { setSaving(false); }
   }
 
+  function parseFeatures(raw: any): string[] {
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === "string") { try { const p = JSON.parse(raw); if (Array.isArray(p)) return p; } catch {} return raw.split(",").map((s: string) => s.trim()).filter(Boolean); }
+    return [];
+  }
+
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
   const currentPlan = subData?.plan;
@@ -1304,15 +1324,44 @@ function OwnerShopSubscription() {
       <h1>Shop Subscription</h1>
       {msg && <div className="panel" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{msg}</div>}
 
-      <div className="stat-grid">
-        <div className="stat-card">
-          <div className="stat-card__value">{currentPlan ? escapeHtml(currentPlan.name) : "—"}</div>
-          <div className="stat-card__label">Current Plan</div>
-          {currentPlan && <p style={{ fontSize: "1.1rem", fontWeight: 600, color: "var(--primary)", margin: "0.5rem 0 0" }}>{formatPrice(currentPlan.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>}
+      {currentPlan && (
+        <div className="stat-grid" style={{ marginBottom: "1.5rem" }}>
+          <div className="stat-card">
+            <div className="stat-card__value">{escapeHtml(currentPlan.name)}</div>
+            <div className="stat-card__label">Current Plan</div>
+            <p style={{ fontSize: "1.1rem", fontWeight: 600, color: "var(--primary)", margin: "0.5rem 0 0" }}>{formatPrice(currentPlan.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>
+            {currentPlan.priceAnnual != null && currentPlan.priceAnnual > 0 && <p style={{ fontSize: "0.9rem", color: "var(--primary)", margin: "0.25rem 0 0" }}>{formatPrice(currentPlan.priceAnnual)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/yr (save {Math.round((1 - currentPlan.priceAnnual / (currentPlan.price * 12)) * 100)}%)</span></p>}
+          </div>
+        </div>
+      )}
+
+      <div className="panel" style={{ marginBottom: "1.5rem" }}>
+        <h3 style={{ marginTop: 0 }}>Available Plans</h3>
+        <p className="muted">All prices shown as monthly and annual. Annual billing saves you money.</p>
+        <div className="product-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", marginTop: "1rem" }}>
+          {allPlans.map((p) => {
+            const features = parseFeatures(p.features);
+            const isCurrent = p.id === currentPlan?.id;
+            const monthlySaved = p.priceAnnual != null && p.priceAnnual > 0 && p.price > 0 ? Math.round((1 - p.priceAnnual / (p.price * 12)) * 100) : 0;
+            return (
+              <div key={p.id} className="panel" style={{ border: isCurrent ? "2px solid var(--primary)" : undefined, opacity: isCurrent ? 0.7 : 1, display: "flex", flexDirection: "column" }}>
+                <h3 style={{ marginTop: 0 }}>{escapeHtml(p.name)}</h3>
+                <p style={{ fontSize: "1.4rem", fontWeight: 700, color: "var(--primary)", margin: "0" }}>{formatPrice(p.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>
+                {p.priceAnnual != null && p.priceAnnual > 0 && <p style={{ fontSize: "0.95rem", fontWeight: 600, color: "var(--primary)", margin: "0.25rem 0 0" }}>{formatPrice(p.priceAnnual)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/yr{monthlySaved > 0 && ` (save ${monthlySaved}%)`}</span></p>}
+                <p className="muted" style={{ margin: "0.5rem 0" }}>Up to {p.maxProducts} products &bull; {p.maxBranches} branch{p.maxBranches !== 1 ? "es" : ""}</p>
+                {features.length > 0 && <ul style={{ margin: "0.5rem 0", padding: "0 0 0 1.2rem", flex: 1, fontSize: "0.85rem" }}>{features.map((f, i) => <li key={i}>{f}</li>)}</ul>}
+                {isCurrent ? (
+                  <span className="plan-status" style={{ display: "inline-block", marginTop: "0.5rem", padding: "0.3rem 0.8rem", borderRadius: 6, background: "#d1fae5", color: "#065f46", fontSize: "0.85rem", fontWeight: 600, textAlign: "center" }}>Current Plan</span>
+                ) : (
+                  <RippleButton size="small" style={{ marginTop: "0.5rem" }} onClick={() => { setSelectedPlan(p.id); document.getElementById("request-form")?.scrollIntoView({ behavior: "smooth" }); }}>Switch to {escapeHtml(p.name)}</RippleButton>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      <div className="panel" style={{ marginBottom: "1rem", maxWidth: 500 }}>
+      <div id="request-form" className="panel" style={{ maxWidth: 500 }}>
         <h3 style={{ marginTop: 0 }}>Request Plan Change</h3>
         <p className="muted">Submit a request to change your subscription plan. Admin will review and approve it.</p>
         <div className="field"><label>Plan<select value={selectedPlan} onChange={(e) => setSelectedPlan(e.target.value)}><option value="">Select...</option>{allPlans.map((p) => <option key={p.id} value={p.id} disabled={p.id === currentPlan?.id}>{escapeHtml(p.name)} {p.id === currentPlan?.id ? "(current)" : ""}</option>)}</select></label></div>

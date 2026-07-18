@@ -1,6 +1,7 @@
 {
   "name": "computer-store",
   "version": "1.0.0",
+  "author": "puggythemeddler",
   "description": "Gear&Glitch — website and store management system",
   "main": "dist/server/index.js",
   "scripts": {
