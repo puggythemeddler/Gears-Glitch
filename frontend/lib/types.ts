@@ -173,6 +173,7 @@ export interface Settings {
   cloudinaryApiSecret: string;
   cloudinaryFolder: string;
   logoPosition?: string;
+  springboardMenu?: boolean;
 }
 
 export interface SubscriptionPlan {

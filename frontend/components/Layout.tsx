@@ -32,8 +32,10 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [isStaff, setIsStaff] = useState(false);
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [springboardOpen, setSpringboardOpen] = useState(false);
   const { configLoading, layout } = useLayout();
   const messagingEnabled = useFeature("Messaging");
+  const springboardMenu = settings?.springboardMenu ?? false;
 
   useEffect(() => { setIsStaff(!!getStaffToken()); }, []);
 
@@ -44,45 +46,88 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   }, []);
 
   useEffect(() => {
-    const handler = () => setMobileOpen(false);
+    const handler = () => { setMobileOpen(false); setSpringboardOpen(false); };
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);
   }, []);
+
+  useEffect(() => {
+    if (!springboardOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".springboard-wrap")) setSpringboardOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [springboardOpen]);
 
   const hideHeader = ["backoffice", "owner", "admin", "marketing"].includes(activeNav ?? "");
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
   const isThemedLayout = isPublicStorefront && !configLoading && layout !== "original";
 
-  function closeMobile() { setMobileOpen(false); }
+  function closeMobile() { setMobileOpen(false); setSpringboardOpen(false); }
 
   if (hideHeader) return <>{children}</>;
 
   const defaultHeader = (
     <header className="site-header">
       <div className="header-inner">
-        <nav className="main-nav-desktop" aria-label="Main">
-          {NAV_LINKS.map((link) => (
-            <Link
-              key={link.id}
-              href={link.href}
-              className={activeNav === link.id ? "active" : ""}
-              aria-current={activeNav === link.id ? "page" : undefined}
+        <Link className="brand" href="/" onClick={closeMobile}>
+          {settings?.storeLogo ? (
+            <img src={settings.storeLogo} alt={settings.storeName || "Store"} className="site-logo" />
+          ) : (
+            settings?.storeName || "Gear&Glitch"
+          )}
+        </Link>
+        {springboardMenu ? (
+          <div className="springboard-wrap">
+            <button
+              type="button"
+              className="springboard-btn"
+              onClick={() => setSpringboardOpen((o) => !o)}
+              aria-expanded={springboardOpen}
+              aria-label="Browse categories"
             >
-              {link.label}
-              {link.id === "cart" && cartCount > 0 && (
-                <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
-              )}
-            </Link>
-          ))}
-        </nav>
-        <div className="header-right">
-          <Link className="brand" href="/" onClick={closeMobile}>
-            {settings?.storeLogo ? (
-              <img src={settings.storeLogo} alt={settings.storeName || "Store"} className="site-logo" />
-            ) : (
-              settings?.storeName || "Gear&Glitch"
+              <span className="springboard-icon">☰</span>
+              <span className="springboard-label">Categories</span>
+              <span className={`springboard-arrow${springboardOpen ? " open" : ""}`}>▾</span>
+            </button>
+            {springboardOpen && (
+              <div className="springboard-dropdown">
+                {NAV_LINKS.map((link) => (
+                  <Link
+                    key={link.id}
+                    href={link.href}
+                    className={`springboard-item${activeNav === link.id ? " active" : ""}`}
+                    onClick={closeMobile}
+                  >
+                    {link.label}
+                    {link.id === "cart" && cartCount > 0 && (
+                      <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
+                    )}
+                  </Link>
+                ))}
+              </div>
             )}
-          </Link>
+          </div>
+        ) : (
+          <nav className="main-nav-desktop" aria-label="Main">
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.id}
+                href={link.href}
+                className={activeNav === link.id ? "active" : ""}
+                aria-current={activeNav === link.id ? "page" : undefined}
+              >
+                {link.label}
+                {link.id === "cart" && cartCount > 0 && (
+                  <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
+                )}
+              </Link>
+            ))}
+          </nav>
+        )}
+        <div className="header-right">
           {(getCustomerToken() || getProviderToken() || isStaff) && messagingEnabled && (
             <NotificationBell onClick={() => {
               window.location.href = isStaff ? "/owner" : "/dashboard";

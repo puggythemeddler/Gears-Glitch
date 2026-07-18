@@ -467,6 +467,7 @@ app.get("/api/public-settings", async (_req: Request, res: Response) => {
     googleClientId: await getStoreSetting("google_client_id") || process.env.GOOGLE_CLIENT_ID || "",
     mpesaTillNumber: mpesaCfg.tillNumber,
     mpesaConfigured: isMpesaConfigured(),
+    springboardMenu: (await getStoreSetting("springboard_menu")) === "true",
   });
 });
 
@@ -581,6 +582,9 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
     await setStoreSetting("google_client_id", String(googleClientId).trim());
     settings.googleClientId = await getStoreSetting("google_client_id") || "";
   }
+  if ((req.body as any).springboardMenu !== undefined) {
+    await setStoreSetting("springboard_menu", (req.body as any).springboardMenu ? "true" : "false");
+  }
   if (kraPin !== undefined) {
     await query("INSERT INTO settings (key, value) VALUES ('kra_pin', $1) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [String(kraPin).trim()]);
     settings.kraPin = String(kraPin).trim();
@@ -622,7 +626,7 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
     resetTransporter();
   }
   const mpesaCfg = getMpesaConfig();
-  res.json({ ...settings, paymentMethods: await getPaymentMethods(), mpesa: mpesaCfg });
+  res.json({ ...settings, paymentMethods: await getPaymentMethods(), mpesa: mpesaCfg, springboardMenu: (await getStoreSetting("springboard_menu")) === "true" });
 });
 
 app.post("/api/settings/logo", adminAuthMiddleware, (req: Request, res: Response) => {

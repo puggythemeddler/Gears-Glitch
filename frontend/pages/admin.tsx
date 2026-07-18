@@ -2448,6 +2448,7 @@ function AdminSettings() {
           cloudinaryApiSecret: fd.get("cloudinaryApiSecret"),
           cloudinaryFolder: fd.get("cloudinaryFolder"),
           logoPosition: fd.get("logoPosition"),
+          springboardMenu: fd.get("springboardMenu") === "on",
         }),
       });
       setMsg("Settings saved.");
@@ -2534,6 +2535,13 @@ function AdminSettings() {
               <option value="top-middle">Top center</option>
               <option value="top-right">Top right</option>
             </select>
+          </div>
+          <div className="field" style={{ marginTop: "0.75rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+              <input type="checkbox" name="springboardMenu" defaultChecked={settings?.springboardMenu ?? false} style={{ width: "auto" }} />
+              Springboard category menu (dropdown instead of horizontal nav)
+            </label>
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "0.25rem 0 0" }}>Replaces the horizontal category links with a collapsible dropdown menu for a cleaner header.</p>
           </div>
         </div>
         <div className="panel" style={{ marginBottom: "1rem" }}>

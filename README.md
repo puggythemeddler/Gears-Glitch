@@ -5,6 +5,7 @@ A complete multi-branch sales & management system with product catalog, customer
 ## Recent highlights
 
 - **Two-step checkout with delivery details** — Clicking Checkout now immediately creates a pending order and redirects to the order detail page where customers fill in delivery details (name, address, county, phone), select a payment method, and add delivery instructions. Orders start as `pending` and progress through `confirmed` → `shipped` → `delivered`. Customers can only edit details while the order is still pending.
+- **Springboard category menu** — Admin-toggleable header mode that replaces horizontal category links with a collapsible dropdown button. Brand name sits at the far left, springboard button next to it, and actions (search, theme, currency, account) on the right. Enabled from admin Settings panel. Provides a cleaner header layout when categories are numerous.
 - **Provider order management** — Providers can view all orders, cancel individual items that are unavailable, and update order status (confirm, ship, deliver, cancel). Item-level cancellation shows strikethrough on the customer's order page. Status changes trigger email notifications to customers.
 - **Customer invoice download** — Orders list page now shows an inline "Invoice" button on shipped/delivered orders. Order detail page also has a Download Invoice button for shipped/delivered orders. No need to navigate away from the orders list.
 - **Product rating & review system** — Customers can rate products (1–5 stars) with an interactive clickable star widget. Each customer gets one review per product, with editable and deletable reviews. Product detail page shows a rating distribution bar chart, average rating display, and paginated review list. Product cards show real average ratings on category pages. Admin panel has a Reviews management section under Operations for moderation (view all reviews, delete). DB enforced via `UNIQUE(product_id, customer_id)` constraint, `CHECK(rating >= 1 AND rating <= 5)`, and performance indexes on `product_id` and `customer_id`.
@@ -252,12 +253,23 @@ Dark/light themes use `[data-theme="dark"]` / `[data-theme="light"]` selectors, 
 
 ### Layout Refactor
 
-The main `Layout.tsx` now uses a responsive header with:
+The main `Layout.tsx` now uses a responsive header with two modes:
+
+**Default mode:**
 - `.main-nav-desktop` — horizontal category nav spanning full width on the left (visible on screens >768px)
-- `.header-right` — brand name pushed to the far right, with search, theme toggle, currency selector, and account actions
+- `.header-right` — brand name, search, theme toggle, currency selector, and account actions
+
+**Springboard mode** (admin-toggleable via Settings):
+- Brand name at far left
+- `.springboard-wrap` — dropdown button with hamburger icon + "Categories" label + arrow
+- `.springboard-dropdown` — animated dropdown panel with all category links
+- Click-outside to close, arrow rotates on open
+- On mobile: label hides, only hamburger icon shows
+
+Both modes share:
 - `.mobile-menu-toggle` — hamburger button (visible on mobile)
 - `.main-nav-mobile` — full-screen overlay menu (shown on toggle, hidden by default)
-- Close-on-navigate behavior for mobile menu
+- Close-on-navigate behavior for mobile menu and springboard
 
 ### Error Handling
 
