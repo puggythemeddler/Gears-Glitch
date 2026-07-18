@@ -24,7 +24,7 @@ export default function LoginPage() {
   const gisLoadedRef = useRef(false);
 
   useEffect(() => {
-    api<{ googleClientId: string }>("/api/storefront").then((d) => setGoogleClientId(d.googleClientId || "")).catch(() => {});
+    api<{ googleClientId: string }>("/api/public-settings").then((d) => setGoogleClientId(d.googleClientId || "")).catch(() => {});
   }, []);
 
   useEffect(() => {

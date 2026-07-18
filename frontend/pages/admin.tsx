@@ -120,7 +120,7 @@ export default function AdminPage() {
   const branchManagementEnabled = useFeature("Branch management");
 
   useEffect(() => {
-    api<{ googleClientId: string }>("/api/storefront").then((d) => setGoogleClientId(d.googleClientId || "")).catch(() => {});
+    api<{ googleClientId: string }>("/api/public-settings").then((d) => setGoogleClientId(d.googleClientId || "")).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1831,7 +1831,7 @@ function AdminMessages() {
   async function loadProvidersAndCustomers() {
     try {
       const [pRes, cRes] = await Promise.all([
-        api<{ providers: any[] }>("/api/providers").catch(() => ({ providers: [] })),
+        api<{ providers: any[] }>("/api/admin/providers").catch(() => ({ providers: [] })),
         api<{ customers: any[] }>("/api/admin/customers").catch(() => ({ customers: [] })),
       ]);
       setProviders(pRes.providers || []);
