@@ -61,7 +61,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, [springboardOpen]);
 
-  const hideHeader = ["backoffice", "owner", "admin", "marketing"].includes(activeNav ?? "");
+  const hideHeader = ["backoffice", "owner", "admin", "marketing", "stock-take", "suppliers"].includes(activeNav ?? "");
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
   const isThemedLayout = isPublicStorefront && !configLoading && layout !== "original";
 

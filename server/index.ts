@@ -341,6 +341,18 @@ app.use("/api/provider/register", authLimiter);
 app.use("/api/auth/request-password-reset", authLimiter);
 app.use("/api/auth/request-admin-password-reset", authLimiter);
 
+// ============ INPUT VALIDATION HELPERS ============
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isEmail(v: unknown): boolean { return typeof v === "string" && v.length <= 320 && EMAIL_RE.test(v); }
+function isStr(v: unknown, max = 500): v is string { return typeof v === "string" && v.length > 0 && v.length <= max; }
+function isNum(v: unknown): v is number { return typeof v === "number" && isFinite(v); }
+function isInt(v: unknown): v is number { return isNum(v) && Number.isInteger(v); }
+function isPosInt(v: unknown): v is number { return isInt(v) && v > 0; }
+function isNonNegNum(v: unknown): v is number { return isNum(v) && v >= 0; }
+function isArr(v: unknown): v is unknown[] { return Array.isArray(v); }
+function inSet<T extends string>(v: unknown, set: readonly T[]): v is T { return typeof v === "string" && (set as readonly string[]).includes(v); }
+function okLen(v: unknown, min: number, max: number): boolean { return typeof v === "string" && v.length >= min && v.length <= max; }
+
 app.use(express.json({ limit: "1mb" }));
 app.use("/uploads", express.static(path.join(ROOT, "data", "uploads"), {
   maxAge: 0,
@@ -531,7 +543,9 @@ app.get("/api/storefront-config", async (_req: Request, res: Response) => {
   try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
   let features: any[] = [];
   try { features = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
-  res.json({ layout, banners, features });
+  let hero: any = { enabled: true };
+  try { hero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch {}
+  res.json({ layout, banners, features, hero });
 });
 
 app.get("/api/admin/storefront-layout", adminAuthMiddleware, async (_req: Request, res: Response) => {
@@ -540,11 +554,13 @@ app.get("/api/admin/storefront-layout", adminAuthMiddleware, async (_req: Reques
   try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
   let features: any[] = [];
   try { features = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
-  res.json({ layout, banners, features });
+  let hero: any = { enabled: true };
+  try { hero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch {}
+  res.json({ layout, banners, features, hero });
 });
 
 app.put("/api/admin/storefront-layout", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const { layout, banners, features } = req.body || {};
+  const { layout, banners, features, hero } = req.body || {};
   if (layout) {
     const valid = ["original", "amazon", "jumia", "mobile"];
     if (!valid.includes(layout)) { res.status(400).json({ error: "Invalid layout. Valid: " + valid.join(", ") }); return; }
@@ -552,12 +568,19 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, async (req: Request
   }
   if (banners !== undefined) await setStoreSetting("store_banners", JSON.stringify(banners));
   if (features !== undefined) await setStoreSetting("store_features", JSON.stringify(features));
+  if (hero !== undefined) {
+    const heroData = typeof hero === "object" && hero !== null ? hero : {};
+    if (typeof heroData.enabled !== "boolean") heroData.enabled = true;
+    await setStoreSetting("hero_config", JSON.stringify(heroData));
+  }
   const currentLayout = await getStoreSetting("store_layout") || "amazon";
   let currentBanners: any[] = [];
   try { currentBanners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
   let currentFeatures: any[] = [];
   try { currentFeatures = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
-  res.json({ layout: currentLayout, banners: currentBanners, features: currentFeatures });
+  let currentHero: any = { enabled: true };
+  try { currentHero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch {}
+  res.json({ layout: currentLayout, banners: currentBanners, features: currentFeatures, hero: currentHero });
 });
 
 // ============ ABOUT US ============
@@ -3696,6 +3719,12 @@ app.get("/api/admin/suppliers", ownerAuthMiddleware, async (_req: Request, res: 
 
 app.post("/api/admin/suppliers", ownerAuthMiddleware, async (req: Request, res: Response) => {
   res.status(201).json(await createSupplier(req.body || {}));
+});
+
+app.get("/api/admin/suppliers/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
+  const supplier = await getSupplier(Number(req.params.id));
+  if (!supplier) { res.status(404).json({ error: "Supplier not found." }); return; }
+  res.json({ supplier });
 });
 
 app.put("/api/admin/suppliers/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {

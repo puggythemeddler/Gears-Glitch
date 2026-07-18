@@ -1439,10 +1439,10 @@ async function ensureDefaultSubscriptionPlans(): Promise<void> {
   const row = await queryOne("SELECT COUNT(*) AS count FROM subscription_plans") as any;
   if (row && Number(row.count) > 0) return;
   const plans = [
-    { id: "starter", name: "Starter", description: "Perfect for small shops starting out", price: 0, price_annual: 0, tier_level: 1, max_products: 50, max_branches: 1, features: JSON.stringify(["Up to 50 products", "1 branch", "Basic support", "Order management", "Invoice/quote PDF downloads", "Messaging", "Product positioning", "Email notifications"]) },
-    { id: "growth", name: "Growth", description: "For growing businesses", price: 4999, price_annual: 47990, tier_level: 2, max_products: 500, max_branches: 3, features: JSON.stringify(["Up to 500 products", "3 branches", "Priority support", "Analytics dashboard", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Product positioning", "Email notifications", "Multi-currency support"]) },
-    { id: "pro", name: "Pro", description: "For established shops", price: 12999, price_annual: 124790, tier_level: 3, max_products: null, max_branches: 10, features: JSON.stringify(["Unlimited products", "10 branches", "Premium support", "Advanced analytics", "Custom branding", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Product positioning", "Email notifications", "Multi-currency support"]) },
-    { id: "enterprise", name: "Enterprise", description: "Custom solutions for large operations", price: 29999, price_annual: 287990, tier_level: 4, max_products: null, max_branches: 999, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Admin messaging", "Product listing", "Customer management", "Stock transfers", "Supplier management", "Product positioning", "Email notifications", "Multi-currency support"]) },
+    { id: "starter", name: "Starter", description: "Perfect for small shops starting out", price: 0, price_annual: 0, tier_level: 1, max_products: 50, max_branches: 1, features: JSON.stringify(["Up to 50 products", "1 branch", "Basic support", "Order management", "Invoice/quote PDF downloads", "Messaging", "Product positioning", "Email notifications", "Customer reviews"]) },
+    { id: "growth", name: "Growth", description: "For growing businesses", price: 4999, price_annual: 47990, tier_level: 2, max_products: 500, max_branches: 3, features: JSON.stringify(["Up to 500 products", "3 branches", "Priority support", "Analytics dashboard", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Product positioning", "Email notifications", "Multi-currency support", "Hero customization", "Customer reviews"]) },
+    { id: "pro", name: "Pro", description: "For established shops", price: 12999, price_annual: 124790, tier_level: 3, max_products: null, max_branches: 10, features: JSON.stringify(["Unlimited products", "10 branches", "Premium support", "Advanced analytics", "Custom branding", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Product positioning", "Email notifications", "Multi-currency support", "Hero customization", "Customer reviews"]) },
+    { id: "enterprise", name: "Enterprise", description: "Custom solutions for large operations", price: 29999, price_annual: 287990, tier_level: 4, max_products: null, max_branches: 999, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Admin messaging", "Product listing", "Customer management", "Stock transfers", "Supplier management", "Product positioning", "Email notifications", "Multi-currency support", "Hero customization", "Customer reviews"]) },
   ];
   for (const p of plans) {
     await query("INSERT INTO subscription_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [p.id, p.name, p.description, p.price, p.price_annual, p.tier_level, p.max_products, p.max_branches, p.features]);
@@ -2198,7 +2198,17 @@ async function updatePurchaseOrderStatus(id: number, status: string): Promise<bo
 }
 
 async function receivePurchaseOrderItem(itemId: number, quantityReceived: number): Promise<void> {
+  const item = await queryOne("SELECT product_id, quantity_received FROM purchase_order_items WHERE id = $1", [itemId]) as any;
+  if (!item) return;
+  const previousReceived = Number(item.quantity_received) || 0;
+  const delta = quantityReceived - previousReceived;
   await query("UPDATE purchase_order_items SET quantity_received = $1 WHERE id = $2", [quantityReceived, itemId]);
+  if (delta > 0 && item.product_id) {
+    const current = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1", [item.product_id]) as any;
+    const currentQty = current ? Number(current.quantity_in_stock) : 0;
+    await updateStockLevel(item.product_id, currentQty + delta);
+    try { await recordStockMovement(item.product_id, "purchase_receive", delta, "purchase_order", String(itemId), `Received ${delta} units from PO item #${itemId}`); } catch {}
+  }
 }
 
 async function autoReorderLowStock(): Promise<PurchaseOrder | null> {
@@ -2288,7 +2298,18 @@ async function getTechnicianRepairStats(): Promise<any[]> {
 
 async function createStockTakeSession(notes?: string, createdBy?: number): Promise<StockTakeSession> {
   const result = await query("INSERT INTO stock_take_sessions (status, notes, created_by) VALUES ('in_progress', $1, $2) RETURNING *", [notes || "", createdBy || null]);
-  return result.rows[0] as StockTakeSession;
+  const session = result.rows[0] as StockTakeSession;
+  try {
+    await query(
+      `INSERT INTO stock_take_items (session_id, product_id, product_name, system_quantity, counted_quantity, variance, notes)
+       SELECT $1, p.id, p.name, COALESCE(sl.quantity_in_stock, 0), NULL, 0, ''
+       FROM products p
+       LEFT JOIN stock_levels sl ON sl.product_id = p.id
+       ON CONFLICT (session_id, product_id) DO NOTHING`,
+      [session.id]
+    );
+  } catch (e) { console.error("[stock-take] auto-populate products failed:", e); }
+  return session;
 }
 
 async function getStockTakeSession(id: number): Promise<StockTakeSession | undefined> {

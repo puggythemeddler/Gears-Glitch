@@ -1149,6 +1149,7 @@ const COMMON_FEATURES = [
   "Stock transfers", "Supplier management",
   "Technician accounts", "Theme customization",
   "Credit notes", "Admin messaging",
+  "Hero customization", "Customer reviews",
 ];
 
 function AdminPlans() {
@@ -1774,7 +1775,7 @@ function AdminInvoices() {
                         <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                         <td>
                           {inv.status !== "paid" && <button className="btn btn-sm" onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
-                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); await downloadPdf(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${inv.orderId}.pdf`); } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); } }}>View</button>
+                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); window.open(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, "_blank"); } catch (e: any) { alert("Failed to open invoice: " + (e?.message || "Unknown error")); } }}>View</button>
                           {creditedOrders[inv.orderId] ? (
                             <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
                           ) : (
@@ -3009,25 +3010,10 @@ function AdminCoupons() {
 
 function AdminSuppliers() {
   const { data, loading, error, refetch } = useFetch(() => api<{ suppliers: any[] }>("/api/admin/suppliers"), []);
-  const [editing, setEditing] = useState<any>(null);
-  const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
   const suppliers = data?.suppliers || [];
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true); setMsg("");
-    const fd = new FormData(e.target as HTMLFormElement);
-    const body = { name: fd.get("name"), contact_name: fd.get("contact_name"), email: fd.get("email"), phone: fd.get("phone"), address: fd.get("address"), notes: fd.get("notes"), is_active: fd.get("is_active") === "on" };
-    try {
-      if (editing) { await api(`/api/admin/suppliers/${editing.id}`, { method: "PUT", body: JSON.stringify(body) }); }
-      else { await api("/api/admin/suppliers", { method: "POST", body: JSON.stringify(body) }); }
-      setShowForm(false); setEditing(null); refetch();
-    } catch (e: any) { setMsg(e.message); }
-    finally { setSaving(false); }
-  }
 
   async function del(id: number) {
     if (!confirm("Delete supplier?")) return;
@@ -3038,21 +3024,8 @@ function AdminSuppliers() {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Suppliers</h1>
-        <RippleButton size="small" onClick={() => { setEditing(null); setShowForm(!showForm); setMsg(""); }}>{showForm ? "Cancel" : "+ Add Supplier"}</RippleButton>
+        <a href="/suppliers/new" className="btn btn-primary btn-sm">+ Add Supplier</a>
       </div>
-      {showForm && (
-        <form className="panel" onSubmit={save} style={{ maxWidth: 500, marginBottom: "1rem" }}>
-          {msg && <ErrorMsg msg={msg} />}
-          <div className="field"><label>Company Name<input name="name" defaultValue={editing?.name || ""} required /></label></div>
-          <div className="field"><label>Contact Person<input name="contact_name" defaultValue={editing?.contact_name || ""} /></label></div>
-          <div className="field"><label>Email<input name="email" type="email" defaultValue={editing?.email || ""} /></label></div>
-          <div className="field"><label>Phone<input name="phone" defaultValue={editing?.phone || ""} /></label></div>
-          <div className="field"><label>Address<input name="address" defaultValue={editing?.address || ""} /></label></div>
-          <div className="field"><label>Notes<textarea name="notes" rows={3} defaultValue={editing?.notes || ""} /></label></div>
-          <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><input name="is_active" type="checkbox" defaultChecked={editing ? editing.is_active : true} /> Active</label></div>
-          <RippleButton type="submit" loading={saving}>Save</RippleButton>
-        </form>
-      )}
       {loading && <Spinner />}
       {error && <ErrorMsg msg={error} />}
       <div className="table-wrap">
@@ -3067,7 +3040,7 @@ function AdminSuppliers() {
                 <td>{escapeHtml(s.phone || "—")}</td>
                 <td>{s.is_active ? "Yes" : "No"}</td>
                 <td style={{ display: "flex", gap: "0.35rem" }}>
-                  <RippleButton size="small" variant="ghost" onClick={() => { setEditing(s); setShowForm(true); setMsg(""); }}>Edit</RippleButton>
+                  <a href={`/suppliers/${s.id}`} className="btn btn-sm btn-ghost">Edit</a>
                   <RippleButton size="small" variant="danger" onClick={() => del(s.id)}>Delete</RippleButton>
                 </td>
               </tr>
@@ -3567,8 +3540,8 @@ function AdminPurchases() {
 
   async function loadOrder(id: number) {
     try {
-      const d = await api<{ order: any }>(`/api/purchases/${id}`);
-      setViewing(d.order);
+      const d = await api<any>(`/api/purchases/${id}`);
+      setViewing(d.order || d);
     } catch (err: any) { setMsg(err.message); }
   }
 

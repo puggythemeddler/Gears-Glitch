@@ -77,6 +77,13 @@ export default function StockTakeSessionPage() {
   async function completeSession() {
     setSaving(true);
     try {
+      const unsavedItems = items.filter((item: any) => {
+        const localQty = counts[item.productId];
+        return localQty !== undefined && localQty !== item.countedQuantity;
+      });
+      for (const item of unsavedItems) {
+        await api(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId: item.productId, countedQuantity: counts[item.productId] }) });
+      }
       const data = await api<any>(`/api/stock-take/${id}/complete`, { method: "POST" });
       setMsg("Stock take completed and stock levels adjusted!");
       if (data.report) setReport(data.report);
@@ -119,7 +126,7 @@ export default function StockTakeSessionPage() {
         <p style={{ fontSize: "0.85rem", opacity: 0.6 }}>Created: {new Date(session.createdAt || session.created_at).toLocaleDateString("en-GB")}</p>
       </nav>
       <div className="dash-content" style={{ maxWidth: 900 }}>
-        {msg && <div className="panel" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{msg}</div>}
+        {msg && <div className="panel" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "var(--danger-light, #fee2e2)" : "var(--success-light, #d1fae5)", color: msg.startsWith("Error") ? "var(--danger, #991b1b)" : "var(--success, #065f46)" }}>{msg}</div>}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h1 style={{ margin: 0 }}>Stock Take #{session.id}</h1>
@@ -127,7 +134,7 @@ export default function StockTakeSessionPage() {
             {session.status === "in_progress" && (
               <>
                 <button className="button button-small" onClick={completeSession} disabled={saving}>Complete & Apply</button>
-                <button className="button button-small button-ghost" style={{ color: "#dc2626" }} onClick={deleteSession}>Delete</button>
+                <button className="button button-small button-ghost" style={{ color: "var(--danger, #dc2626)" }} onClick={deleteSession}>Delete</button>
               </>
             )}
           </div>
@@ -198,7 +205,7 @@ export default function StockTakeSessionPage() {
                       disabled={session.status === "completed"}
                     />
                   </td>
-                  <td style={{ textAlign: "right", color: item.countedQuantity !== null ? (item.variance > 0 ? "#16a34a" : item.variance < 0 ? "#dc2626" : "inherit") : "inherit" }}>
+                  <td style={{ textAlign: "right", color: item.countedQuantity !== null ? (item.variance > 0 ? "var(--success, #16a34a)" : item.variance < 0 ? "var(--danger, #dc2626)" : "inherit") : "inherit" }}>
                     {item.countedQuantity !== null && item.countedQuantity > 0 ? (item.variance > 0 ? "+" : "") + item.variance : "\u2014"}
                   </td>
                 </tr>
@@ -254,7 +261,7 @@ export default function StockTakeSessionPage() {
                         <td>{escapeHtml(i.productName)}</td>
                         <td style={{ textAlign: "right" }}>{i.systemQuantity}</td>
                         <td style={{ textAlign: "right" }}>{i.countedQuantity}</td>
-                        <td style={{ textAlign: "right", color: i.variance > 0 ? "#16a34a" : "#dc2626" }}>
+                        <td style={{ textAlign: "right", color: i.variance > 0 ? "var(--success, #16a34a)" : "var(--danger, #dc2626)" }}>
                           {i.variance > 0 ? "+" : ""}{i.variance}
                         </td>
                       </tr>

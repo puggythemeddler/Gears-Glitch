@@ -222,6 +222,7 @@ const COMMON_FEATURES_LIST = [
   "Stock transfers", "Supplier management",
   "Theme customization",
   "Credit notes", "Admin messaging",
+  "Hero customization", "Customer reviews",
 ];
 
 function OwnerOrders() {

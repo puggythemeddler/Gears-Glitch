@@ -31,6 +31,7 @@ interface StorefrontConfig {
   layout: string;
   banners: any[];
   features: any[];
+  hero: any;
 }
 
 interface LayoutContextType extends StorefrontConfig {
@@ -49,7 +50,7 @@ export function useLayout(): LayoutContextType {
 }
 
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfig] = useState<StorefrontConfig>({ layout: "original", banners: [], features: [] });
+  const [config, setConfig] = useState<StorefrontConfig>({ layout: "original", banners: [], features: [], hero: { enabled: true } });
   const [configLoading, setConfigLoading] = useState(true);
 
   function refreshConfig() {

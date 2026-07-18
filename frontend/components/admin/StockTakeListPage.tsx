@@ -36,7 +36,7 @@ export default function StockTakeListPage() {
         <h1 style={{ margin: 0 }}>Stock Take</h1>
         <RippleButton size="small" onClick={startSession}>+ New Session</RippleButton>
       </div>
-      {msg && <div className="panel" style={{ marginBottom: "1rem", background: "#fee2e2", color: "#991b1b" }}>{msg}</div>}
+      {msg && <div className="panel" style={{ marginBottom: "1rem", background: "var(--danger-light, #fee2e2)", color: "var(--danger, #991b1b)" }}>{msg}</div>}
       <div className="table-wrap">
         <table className="data-table">
           <thead>
@@ -53,7 +53,7 @@ export default function StockTakeListPage() {
             {sessionList.map((s: any) => (
               <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => window.location.href = `/stock-take/${s.id}`}>
                 <td>{s.id}</td>
-                <td><span className="plan-status" style={{ background: s.status === "completed" ? "#d1fae5" : "#fef3c7", color: s.status === "completed" ? "#065f46" : "#92400e" }}>{s.status}</span></td>
+                <td><span className="plan-status" style={{ background: s.status === "completed" ? "var(--success-light, #d1fae5)" : "var(--warning-light, #fef3c7)", color: s.status === "completed" ? "var(--success, #065f46)" : "var(--warning, #92400e)" }}>{s.status}</span></td>
                 <td>{new Date(s.createdAt || s.created_at).toLocaleDateString("en-GB")}</td>
                 <td>{s.completedAt || s.completed_at ? new Date(s.completedAt || s.completed_at).toLocaleDateString("en-GB") : "—"}</td>
                 <td>
