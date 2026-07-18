@@ -1,16 +1,17 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management, and auto-email notifications. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management, auto-email notifications, and product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ## Recent highlights
 
+- **Product rating & review system** — Customers can rate products (1–5 stars) with an interactive clickable star widget. Each customer gets one review per product, with editable and deletable reviews. Product detail page shows a rating distribution bar chart, average rating display, and paginated review list. Product cards show real average ratings on category pages. Admin panel has a Reviews management section under Operations for moderation (view all reviews, delete). DB enforced via `UNIQUE(product_id, customer_id)` constraint, `CHECK(rating >= 1 AND rating <= 5)`, and performance indexes on `product_id` and `customer_id`.
 - **Component unification** — 6 near-identical admin/owner component pairs extracted to shared files (`ProvidersPage`, `CreditNotesPage`, `AboutUsPage`, `ProductPositioningPage`, `StockTakeListPage`, `StockOnHandPage`). Admin and owner panels now import the same components, eliminating ~1,600 lines of duplicated code. Feature gating in the owner panel is preserved at the routing level.
 - **POS invoice save & print** — After completing a POS sale, the post-charge UI now offers Save Invoice (downloads PDF) and Print Invoice (opens print dialog) buttons for both thermal receipt and A4 invoice formats.
 - **Purchase orders** — Full purchase order management with supplier selection, product line items, status workflow (pending → ordered → received), per-item receiving, and admin sidebar integration under the Stock group.
 - **Admin reports expanded** — Reports tab now includes 5 sub-tabs: Sales Report, Employee Sales, Technician Performance, Purchases Report, and Stock Summary.
 - **Unified product pages** — Admin and owner product pages now use the same `AdminProducts` component with full sale price, subcategory, warranty, taxable, CSV import/export, and bulk edit support.
 - **Unified quotations** — Admin quotations panel now uses the full-featured `QuotesPage` component with status management, approve/cancel workflows, PDF downloads, and discounts.
-- **Marketing page** — Full marketing landing page with problems, solutions, industries, features (22 real modules), testimonials, stats, FAQ, and CTA. All content verified against actual implemented features.
+- **Marketing page** — Full marketing landing page with problems, solutions, industries, features (23 real modules), testimonials, stats, FAQ, and CTA. All content verified against actual implemented features.
 - **Annual pricing** — Subscription plans now support both monthly and annual pricing. Plans table has `price_annual` column. Admin plans UI shows both Monthly and Annual price fields. Owner subscription page displays both prices with percentage savings for annual billing.
 - **Multi-currency feature gating** — `CurrencySelector` checks `useFeature("Multi-currency support")` and returns null when the plan doesn't include it. Multi-currency support added to Growth, Pro, and Enterprise plan features.
 - **Provider PIN fix** — Removed `PinLock` from dashboard page entirely. Providers now log in and see the dashboard immediately. PIN lock only appears when clicking POS (which has its own correct PinLock).
@@ -121,7 +122,7 @@ Opens **http://localhost:3000** in a browser.
 
 ### Admin Panel (`/admin`)
 
-Full store management with 21 sections:
+Full store management with 29 sections:
 
 - **Dashboard** — Stats overview with clickable animated counters (products, staff, pending subscription requests)
 - **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking, sale price (strikethrough pricing)
@@ -140,6 +141,7 @@ Full store management with 21 sections:
 - **Stock Take** — Create sessions, count inventory, view variance, auto-apply adjustments
 - **Purchases** — Create and manage purchase orders with supplier selection, product line items, status workflow (pending → ordered → received), per-item receiving, and cost tracking
 - **Messages** — Admin messaging panel: conversation list with unread badges, chat view with read receipts, inline reply, compose new messages (pick customer + provider). Auto-polls every 30 seconds.
+- **Reviews** — View all product reviews with customer name, product, rating, date, and comment. Delete reviews for moderation. Paginated list.
 - **Spec Templates** — Define per-category spec fields for products
 - **Suppliers** — Manage vendor/supplier directory with contact details, active status
 - **Branches** — Manage physical store locations (name, address, contact info)
@@ -392,11 +394,11 @@ data/
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
-| GET | `/api/public-settings` | Store name, phone, email, currency, logo, M-Pesa till |
-| GET | `/api/storefront` | Storefront config, layout, banners, Google Client ID |
+| GET | `/api/public-settings` | Store name, phone, email, currency, logo, Google Client ID, M-Pesa till |
 | GET | `/api/products` | All products |
 | GET | `/api/products/:id` | Single product |
 | GET | `/api/products/:id/images` | Gallery images |
+| GET | `/api/products/:id/reviews` | Product reviews (paginated, returns distribution + total) |
 | GET | `/api/categories` | All categories + subcategories |
 | GET | `/api/categories/:id/subcategories` | Subcategories for a category |
 | GET | `/api/subcategories` | All subcategories |
@@ -434,6 +436,10 @@ data/
 | POST | `/api/orders` | Place order with M-Pesa payment |
 | GET | `/api/messages` | Messages with providers |
 | POST | `/api/messages` | Send message to provider |
+| GET | `/api/products/:id/reviews/check` | Check if current customer has reviewed this product |
+| POST | `/api/products/:id/reviews` | Submit a review (1–5 star rating, optional title + comment) |
+| PUT | `/api/products/:id/reviews/:reviewId` | Edit own review |
+| DELETE | `/api/products/:id/reviews/:reviewId` | Delete own review |
 
 ### Staff (any staff role)
 
@@ -497,6 +503,8 @@ Full CRUD for products, categories (including subcategories), staff, roles, plan
 | PUT | `/api/admin/suppliers/:id` | Update a supplier |
 | DELETE | `/api/admin/suppliers/:id` | Delete a supplier |
 | GET | `/api/reports/sales/trends` | Daily revenue trend data for charting (filterable by date and branch) |
+| GET | `/api/admin/reviews` | All reviews with pagination (admin moderation) |
+| DELETE | `/api/admin/products/:id/reviews/:reviewId` | Delete a review (admin moderation) |
 | GET | `/api/admin/backup` | Download full database backup file |
 
 ### Provider
@@ -752,6 +760,7 @@ npm start                # Serve production build
 - **Server-side PDF Generation**: Uses `puppeteer-core` + `@sparticuz/chromium` for serverless-friendly PDF generation. Any HTML document endpoint (invoices, credit notes, quotes) supports `?format=pdf` to return a real PDF file. Falls back to HTML on error. Chromium browser instance is reused across requests and gracefully shuts down on SIGTERM/SIGINT.
 - **Admin Messaging**: Full messaging panel in the admin Operations section. Conversation list with partner names, unread badges, and last message preview. Chat view with bubble messages, sender labels, timestamps, and read receipts. Compose new messages between customers and providers. Auto-polls every 30 seconds.
 - **Sale Price / Strikethrough Pricing**: Products support an optional sale price field. When set, all UI surfaces (product cards, product detail, POS grid, admin/owner tables) show the original price with strikethrough and the sale price in red. POS charges the sale price automatically.
+- **Product Rating & Review System**: Customers can rate products (1–5 stars) and leave reviews. One review per customer per product enforced at the DB level (`UNIQUE INDEX`). Product detail page shows a clickable star rating widget, rating distribution bar chart, average rating with visual stars, and paginated reviews (10 per page). Customers can edit and delete their own reviews. Product cards on category pages show the real average star rating fetched from the DB. Admin panel has a Reviews management section for moderation (view all, delete). DB constraints: `CHECK(rating >= 1 AND rating <= 5)`, indexes on `product_id` and `customer_id`. Uses `RETURNING *` for immediate response after insert.
 - **Promotional Banners (Splashes)**: Admin can create marquee or static banners with custom colors, date ranges, and on/off toggle. Quick presets for common events. The MarqueeBanner component also auto-displays Kenyan public holidays with themed gradients and taglines.
 - **Store Logo**: Upload a store logo from admin Settings. Logo appears on POS receipts (thermal + A4), customer invoices, admin order invoices, credit notes, and quote PDFs. Position configurable (top-left/top-middle/top-right).
 - **Product Deletion**: All product-referencing tables use `ON DELETE CASCADE`. Deleting a product automatically removes related order items, quote items, stock records, price history, and reviews.

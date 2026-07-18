@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS branches (
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
   customer_id INTEGER NOT NULL,
+  customer_name TEXT NOT NULL DEFAULT '',
+  customer_email TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
   shipping_name TEXT NOT NULL DEFAULT '',
   shipping_address TEXT NOT NULL DEFAULT '',
@@ -104,6 +106,7 @@ CREATE TABLE IF NOT EXISTS orders (
   coupon_id INTEGER,
   discount_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
   processed_by TEXT,
+  invoice_number TEXT,
   idempotency_key TEXT,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),

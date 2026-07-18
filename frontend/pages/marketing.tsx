@@ -23,6 +23,7 @@ const SOLUTIONS_BENEFITS = [
   "Built-in KRA eTIMS compliant invoicing",
   "Enterprise-grade security and role-based access",
   "Cloud accessible from any device, anywhere",
+  "Customer reviews and ratings to build trust and drive sales",
 ];
 
 const INDUSTRIES = [
@@ -57,6 +58,7 @@ const FEATURES = [
   { icon: "🏷", name: "Coupons & Discounts", desc: "Create percentage or fixed-amount coupons, apply discounts at checkout, and track usage." },
   { icon: "🔔", name: "Messaging System", desc: "Built-in messaging between customers, providers, and staff with real-time notifications." },
   { icon: "📍", name: "Product Positioning", desc: "Drag-and-drop product ordering to control how items appear on your storefront." },
+  { icon: "⭐", name: "Product Reviews & Ratings", desc: "Customers rate products 1–5 stars, leave reviews, and help others decide. One review per customer enforced. Admin moderation built in." },
   { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with product catalog." },
   { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, and credit notes — downloadable instantly." },
 ];
@@ -393,8 +395,8 @@ export default function MarketingPage() {
         </h1>
 
         <p className="mk-hero-sub">
-          Inventory, point of sale, purchase orders, repair management, customer relationships, and
-          KRA-compliant invoicing — all seamlessly integrated. No more disconnected
+          Inventory, point of sale, purchase orders, repair management, customer relationships,
+          KRA-compliant invoicing, and customer reviews — all seamlessly integrated. No more disconnected
           systems. No more manual data entry. Just one powerful platform.
         </p>
 
@@ -537,7 +539,7 @@ export default function MarketingPage() {
         id="features"
         label="Features"
         title="Everything You Need to Succeed"
-        subtitle="Twenty-two powerful modules that work together to run every part of your electronics business."
+        subtitle="Twenty-three powerful modules that work together to run every part of your electronics business."
       >
         <StaggerContainer className="mk-features-grid">
           {FEATURES.map((f, i) => (
