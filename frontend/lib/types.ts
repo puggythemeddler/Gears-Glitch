@@ -16,6 +16,7 @@ export interface Product {
   description?: string;
   minTier: number;
   viewCount?: number;
+  stockOnHand?: number;
 }
 
 export interface ProductImage {

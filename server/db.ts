@@ -17,6 +17,7 @@ interface ProductRow {
   has_warranty: number;
   warranty_duration: number;
   taxable: number;
+  stock_on_hand: number;
   created_at: string;
   updated_at: string;
 }
@@ -35,6 +36,7 @@ interface Product {
   taxable: boolean;
   imageAlt: string;
   imageUrl: string;
+  stockOnHand: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -508,6 +510,7 @@ function mapProduct(row: ProductRow | null): Product | null {
     taxable: Boolean(row.taxable),
     imageAlt: row.image_alt || "",
     imageUrl,
+    stockOnHand: row.stock_on_hand ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -644,6 +647,7 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_internal_data TEXT`); } catch {}
   try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_signature_data TEXT`); } catch {}
   try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_submitted_at TEXT`); } catch {}
+  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_on_hand INTEGER NOT NULL DEFAULT 0`); } catch {}
   try {
     await query(`CREATE TABLE IF NOT EXISTS product_views (
       id SERIAL PRIMARY KEY,
@@ -662,6 +666,22 @@ async function runMigrations(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
     await query(`CREATE INDEX IF NOT EXISTS idx_stored_images_ref ON stored_images(ref_id)`);
+  } catch {}
+
+  // Fix sequences after potential manual deletes or migrations
+  for (const seq of ["orders_id_seq", "order_items_id_seq"]) {
+    try {
+      await query(`SELECT setval('${seq}', COALESCE((SELECT MAX(id) FROM ${seq.replace('_id_seq', '')}), 1))`);
+    } catch {}
+  }
+
+  // Seed stock_on_hand for products that have 0 (run once per migration)
+  try {
+    const zeroStock = await queryAll(`SELECT id FROM products WHERE stock_on_hand = 0 AND is_non_stock = 0`) as any[];
+    for (const p of zeroStock) {
+      const seed = Math.floor(Math.random() * 20) + 5;
+      await query(`UPDATE products SET stock_on_hand = $1 WHERE id = $2`, [seed, p.id]);
+    }
   } catch {}
 
   const existingTypes = await queryOne("SELECT COUNT(*) AS c FROM repair_types") as any;

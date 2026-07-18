@@ -949,6 +949,10 @@ app.post("/api/pos/checkout", posAuthMiddleware, async (req: Request, res: Respo
       if (!product) { res.status(400).json({ error: `Product ${item.productId} not found.` }); return; }
       const qty = Number(item.quantity);
       if (!Number.isInteger(qty) || qty <= 0) { res.status(400).json({ error: `Invalid quantity for ${product.name}.` }); return; }
+      // Check stock_on_hand on the product itself
+      if (product.stockOnHand !== undefined && product.stockOnHand > 0 && product.stockOnHand < qty) {
+        res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${product.stockOnHand}).` }); return;
+      }
       const stock = await getStockLevel(item.productId);
       if (stock && stock.quantityInStock < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${stock.quantityInStock}).` }); return; }
       const lineTotal = product.price * qty;
@@ -957,26 +961,45 @@ app.post("/api/pos/checkout", posAuthMiddleware, async (req: Request, res: Respo
     }
     const notes = `POS sale | ${pmt.toUpperCase()} | by ${staffName}`;
     let orderId: number;
-    if (idempotencyKey) {
-      const r = await queryOne(
-        "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6) RETURNING id",
-        [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey]
-      ) as any;
-      if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
-      orderId = r.id;
-    } else {
-      const r = await queryOne(
-        "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5) RETURNING id",
-        [customerId, customerName || "POS Customer", notes, subtotal, staffName]
-      ) as any;
-      if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
-      orderId = r.id;
+    try {
+      if (idempotencyKey) {
+        const r = await queryOne(
+          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6) RETURNING id",
+          [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey]
+        ) as any;
+        if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
+        orderId = r.id;
+      } else {
+        const r = await queryOne(
+          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5) RETURNING id",
+          [customerId, customerName || "POS Customer", notes, subtotal, staffName]
+        ) as any;
+        if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
+        orderId = r.id;
+      }
+    } catch (insertErr: any) {
+      if (insertErr?.code === "23505") {
+        // Duplicate primary key — fix sequence and retry once
+        await query("SELECT setval('orders_id_seq', COALESCE((SELECT MAX(id) FROM orders), 1))");
+        const r2 = await queryOne(
+          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5) RETURNING id",
+          [customerId, customerName || "POS Customer", notes, subtotal, staffName]
+        ) as any;
+        if (!r2) { res.status(500).json({ error: "Failed to create order after retry." }); return; }
+        orderId = r2.id;
+      } else { throw insertErr; }
     }
     for (const item of resolvedItems) {
       const hw = item.hasWarranty ? 1 : 0;
       const wd = item.warrantyDuration || 0;
       const tx = (item.taxable !== false) ? 1 : 0;
       await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [orderId, item.id, item.name, item.price, item.quantity, item.lineTotal, hw, wd, tx]);
+    }
+    // Deduct stock_on_hand for each product
+    for (const item of resolvedItems) {
+      try {
+        await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2`, [item.quantity, item.id]);
+      } catch {}
     }
     await updateOrderStatus(orderId, "delivered");
     const updated = await getOrder(orderId);

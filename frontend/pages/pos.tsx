@@ -51,7 +51,10 @@ export default function POSPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
-  const [pinUnlocked, setPinUnlocked] = useState(false);
+  const [pinUnlocked, setPinUnlocked] = useState(() => {
+    if (typeof window !== "undefined" && sessionStorage.getItem("posUnlocked")) return true;
+    return false;
+  });
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -61,8 +64,11 @@ export default function POSPage() {
   const needsTender = pmtConfig?.needsTender ?? false;
 
   useEffect(() => {
-    setLoggedIn(!!getRole());
+    const role = getRole();
+    setLoggedIn(!!role);
     if (sessionStorage.getItem("posUnlocked")) setPinUnlocked(true);
+    // Skip PIN lock for already-logged-in staff/technician/owner — they're already authenticated
+    else if (role && role !== "customer") setPinUnlocked(true);
     const savedCat = sessionStorage.getItem("posCategory");
     if (savedCat) setSelectedCategory(savedCat);
     api<{ products: Product[] }>("/api/products").then((d) => {
@@ -108,6 +114,7 @@ export default function POSPage() {
   }, []);
 
   function addToCart(product: Product) {
+    if (typeof product.stockOnHand === "number" && product.stockOnHand <= 0) return;
     setCart((prev) => {
       const existing = prev.find((i) => i.productId === product.id);
       if (existing) return prev.map((i) => i.productId === product.id ? { ...i, quantity: i.quantity + 1, lineTotal: (i.quantity + 1) * i.price } : i);
@@ -201,10 +208,15 @@ export default function POSPage() {
         </div>
         <div className="pos-product-grid">
           {filtered.map((p) => (
-            <button key={p.id} type="button" className="panel" style={{ cursor: "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)" }} onClick={() => addToCart(p)}>
+            <button key={p.id} type="button" className="panel" style={{ cursor: "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} onClick={() => addToCart(p)}>
               {p.imageUrl ? <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 100, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
-              <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
+              <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{escapeHtml(p.name)}</div>
               <div style={{ fontSize: "0.9rem", color: "var(--primary)" }}>{formatPrice(p.price)}</div>
+              {typeof p.stockOnHand === "number" && (
+                <div style={{ fontSize: "0.7rem", color: p.stockOnHand <= 0 ? "#dc2626" : p.stockOnHand <= 5 ? "#f59e0b" : "var(--text-secondary)", marginTop: 2 }}>
+                  {p.stockOnHand <= 0 ? "Out of stock" : `Stock: ${p.stockOnHand}`}
+                </div>
+              )}
             </button>
           ))}
           {filtered.length === 0 && <p className="muted" style={{ gridColumn: "1 / -1", textAlign: "center", padding: "2rem" }}>No products found.</p>}
