@@ -44,6 +44,15 @@ const PERMISSIONS: PermissionMap = {
   "calendar:schedule": "Schedule repairs",
   "reports:view": "View reports",
   "reports:export": "Export reports",
+  "messaging:view": "View messages",
+  "messaging:send": "Send messages",
+  "invoice:view": "View invoices",
+  "invoice:download": "Download invoice PDFs",
+  "credit_note:view": "View credit notes",
+  "credit_note:create": "Create credit notes",
+  "quote:view": "View quotes",
+  "quote:create": "Create quotes",
+  "quote:update": "Update quotes",
 };
 
 interface DefaultRoles {
@@ -60,10 +69,15 @@ const DEFAULT_ROLES: DefaultRoles = {
     "settings:view", "settings:update",
     "calendar:view", "calendar:schedule",
     "reports:view", "reports:export",
+    "messaging:view", "messaging:send",
+    "invoice:view", "invoice:download",
+    "credit_note:view", "credit_note:create",
+    "quote:view", "quote:create", "quote:update",
   ],
   technician: [
     "repair:list", "repair:view", "repair:update",
     "calendar:view", "calendar:schedule", "product:list",
+    "messaging:view", "messaging:send",
   ],
   manager: [
     "staff:list",
@@ -72,6 +86,10 @@ const DEFAULT_ROLES: DefaultRoles = {
     "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer",
     "calendar:view", "calendar:schedule",
     "reports:view", "reports:export",
+    "messaging:view", "messaging:send",
+    "invoice:view", "invoice:download",
+    "credit_note:view", "credit_note:create",
+    "quote:view", "quote:create",
   ],
   owner: [
     "staff:list", "staff:create", "staff:update", "staff:delete",
@@ -82,6 +100,10 @@ const DEFAULT_ROLES: DefaultRoles = {
     "settings:view", "settings:update",
     "calendar:view", "calendar:schedule",
     "reports:view", "reports:export",
+    "messaging:view", "messaging:send",
+    "invoice:view", "invoice:download",
+    "credit_note:view", "credit_note:create",
+    "quote:view", "quote:create", "quote:update",
   ],
 };
 

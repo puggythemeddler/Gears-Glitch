@@ -1,9 +1,13 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, and configurable logo position. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, and feature-gated subscription plans. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ## Recent highlights
 
+- **Server-side PDF downloads** — Invoices, credit notes, and quotes can be downloaded as real PDF files via Puppeteer (`puppeteer-core` + `@sparticuz/chromium`). Add `?format=pdf` to any document endpoint to get a PDF instead of HTML. All frontend buttons now trigger actual file downloads.
+- **Admin messaging panel** — New "Messages" section under Operations in the admin panel. Conversation list with unread badges, chat-style message view with read receipts, inline reply, compose new messages (pick customer + provider). Auto-polls every 30 seconds. Notification bell links to the panel.
+- **Feature-gated subscription plans** — Plans now carry actual feature flags (Messaging, Invoice/quote PDF downloads, Credit notes, Quotations, Branch management, Repair ticketing, Technician accounts, etc.). Frontend `useFeature()` hook conditionally shows/hides nav items and UI sections. Server-side `requireProviderFeature()` middleware blocks provider API access per plan tier. Four default plans (Starter, Growth, Pro, Enterprise) seeded with progressive feature sets.
+- **Expanded role permissions** — New permissions: `messaging:view`, `messaging:send`, `invoice:view`, `invoice:download`, `credit_note:view`, `credit_note:create`, `quote:view`, `quote:create`, `quote:update`. Default roles (admin, owner, manager, technician) updated with appropriate permission sets. Admin and owner have full access; manager gets messaging + invoicing; technician gets messaging for customer communication.
 - **Sale price / strikethrough pricing** — Products support an optional sale price. Strikethrough original + red sale price displayed on product cards, product detail page, owner products table, POS grid, and admin products table. POS automatically charges the sale price when adding to cart.
 - **Promotional banners / Splashes** — Admin can create marquee or static promotional banners with custom background/text colors, active date ranges, and on/off toggle. Quick presets for Black Friday, Happy Hour, Christmas, New Year Sale, and Back to School.
 - **Kenyan holiday calendar** — Auto-displayed marquee banners for 12 Kenyan public holidays (New Year's Day, Eid el-Fitr, Good Friday, Easter Monday, Labour Day, Madaraka Day, Eid el-Adha, Mazingira Day, Black Friday, Jamhuri Day, Christmas Day, Boxing Day) plus seasonal auto-banners (Christmas Season, New Year Sale, Year End Sale). Each holiday has unique Kenya flag-themed gradient colors and catchy taglines.
@@ -105,7 +109,7 @@ Opens **http://localhost:3000** in a browser.
 
 ### Admin Panel (`/admin`)
 
-Full store management with 20 sections:
+Full store management with 21 sections:
 
 - **Dashboard** — Stats overview with clickable animated counters (products, staff, pending subscription requests)
 - **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking, sale price (strikethrough pricing)
@@ -113,15 +117,16 @@ Full store management with 20 sections:
 - **Categories** — Manage product categories + subcategories (shareable across categories)
 - **Orders** — View all customer orders with shipping details, status updates, branch assignment, coupon discount display
 - **Users & Permissions** — Staff management, fine-grained role-based permissions (editable for all roles)
-- **Roles** — Define custom roles with granular permission toggles
-- **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes
+- **Roles** — Define custom roles with granular permission toggles (messaging, invoicing, credit notes, quotes, etc.)
+- **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes (45+ available features)
 - **Providers** — View providers, assign plans, custom pricing, status
-- **Invoices** — Generate invoices per provider, mark paid
-- **Credit Notes** — Create eTIMS-compliant credit notes from invoices in admin and owner views, with printable audit details and submission tracking
+- **Invoices** — Generate invoices per provider, mark paid, PDF download for order invoices
+- **Credit Notes** — Create eTIMS-compliant credit notes from invoices in admin and owner views, with printable audit details and submission tracking, PDF download
 - **Reports** — Sales Report with combined/per-branch filtering, export to Excel (CSV) or printable PDF
 - **Stock on Hand** — Current stock levels, snapshot history, low-stock alerts
 - **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow
 - **Stock Take** — Create sessions, count inventory, view variance, auto-apply adjustments
+- **Messages** — Admin messaging panel: conversation list with unread badges, chat view with read receipts, inline reply, compose new messages (pick customer + provider). Auto-polls every 30 seconds.
 - **Spec Templates** — Define per-category spec fields for products
 - **Suppliers** — Manage vendor/supplier directory with contact details, active status
 - **Branches** — Manage physical store locations (name, address, contact info)
@@ -486,7 +491,7 @@ Provider registration, login, subscription details, invoices, products at tier, 
    - Admin: full access to `/admin` and `/backoffice`
    - Owner: access to `/owner` (elevated business oversight)
    - Technician: restricted to `/backoffice` (repairs, stock)
-7. **Permission system**: `hasPermission()` checks both `role_permissions` and `user_permissions` tables; `assignRoleToUser()` syncs `users.role` to `user_roles`. Built-in roles (admin, manager, technician, owner) can have their permissions customized. Permissions include `staff:*`, `repair:*`, `product:*`, `stock:*` (list, update, view_low, on_hand, transfer), `settings:*`, `calendar:*`, `reports:*`.
+7. **Permission system**: `hasPermission()` checks both `role_permissions` and `user_permissions` tables; `assignRoleToUser()` syncs `users.role` to `user_roles`. Built-in roles (admin, manager, technician, owner) can have their permissions customized. Permissions include `staff:*`, `repair:*`, `product:*`, `stock:*` (list, update, view_low, on_hand, transfer), `settings:*`, `calendar:*`, `reports:*`, `messaging:*` (view, send), `invoice:*` (view, download), `credit_note:*` (view, create), `quote:*` (view, create, update).
 8. **Audit log permission model**: Admin sees all actions; Owner sees all non-admin actions (filtered by `actor_role != 'admin'`)
 
 ---
@@ -718,7 +723,9 @@ npm start                # Serve production build
 - Error responses return generic messages — internal error details are not exposed to clients.
 - **Tax system**: Global tax rate configurable in Settings (default 16%). Each product has a taxable toggle (eTims-compatible).
 - **Currency system**: Storefront auto-detects user's currency via timezone/locale. Exchange rates auto-fetched from open.er-api.com (cached 1h). Admin can override with custom rates in Settings. Currency selector appears in all storefront layout headers.
-- **Quotations**: Admin panel has a dedicated Quotations section under Sales for creating and managing hardware quotes. Quote PDFs include the store logo.
+- **Quotations**: Admin panel has a dedicated Quotations section under Sales for creating and managing hardware quotes. Quote PDFs include the store logo. PDF downloads available via `?format=pdf` query param.
+- **Server-side PDF Generation**: Uses `puppeteer-core` + `@sparticuz/chromium` for serverless-friendly PDF generation. Any HTML document endpoint (invoices, credit notes, quotes) supports `?format=pdf` to return a real PDF file. Falls back to HTML on error. Chromium browser instance is reused across requests and gracefully shuts down on SIGTERM/SIGINT.
+- **Admin Messaging**: Full messaging panel in the admin Operations section. Conversation list with partner names, unread badges, and last message preview. Chat view with bubble messages, sender labels, timestamps, and read receipts. Compose new messages between customers and providers. Auto-polls every 30 seconds.
 - **Sale Price / Strikethrough Pricing**: Products support an optional sale price field. When set, all UI surfaces (product cards, product detail, POS grid, admin/owner tables) show the original price with strikethrough and the sale price in red. POS charges the sale price automatically.
 - **Promotional Banners (Splashes)**: Admin can create marquee or static banners with custom colors, date ranges, and on/off toggle. Quick presets for common events. The MarqueeBanner component also auto-displays Kenyan public holidays with themed gradients and taglines.
 - **Store Logo**: Upload a store logo from admin Settings. Logo appears on POS receipts (thermal + A4), customer invoices, admin order invoices, credit notes, and quote PDFs. Position configurable (top-left/top-middle/top-right).

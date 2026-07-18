@@ -1107,7 +1107,7 @@ const COMMON_FEATURES = [
   "Dedicated account manager", "Discount/coupon management",
   "Email notifications", "eTIMS/KRA compliance",
   "Google Sign-In", "Inventory forecasting",
-  "Low stock alerts", "Loyalty program",
+  "Invoice/quote PDF downloads", "Low stock alerts", "Loyalty program",
   "Messaging", "M-Pesa integration",
   "Multi-branch support", "Multi-currency support",
   "Multiple staff accounts", "Order management",
@@ -1120,6 +1120,7 @@ const COMMON_FEATURES = [
   "Spec templates", "Stock take / inventory count",
   "Stock transfers", "Supplier management",
   "Technician accounts", "Theme customization",
+  "Credit notes", "Admin messaging",
 ];
 
 function AdminPlans() {

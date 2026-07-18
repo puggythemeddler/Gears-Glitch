@@ -4,6 +4,24 @@ This workspace contains the Gear&Glitch storefront, backend services, and suppor
 
 ## Recent updates
 
+### Server-side PDF downloads
+Invoices, credit notes, and quotes can be downloaded as real PDF files. Server uses `puppeteer-core` + `@sparticuz/chromium` (lightweight Chromium for serverless). Add `?format=pdf` to any document endpoint to generate a PDF. All frontend buttons (admin invoice View, credit note View, quote Generate PDF, customer Invoice) now trigger file downloads. Falls back to HTML on error.
+
+### Admin messaging panel
+New "Messages" section under Operations in the admin panel. Features:
+- Conversation list sidebar with partner names, unread badges, last message preview, timestamps
+- Chat-style message view with bubble messages, sender labels, timestamps, read receipts (✓/✓✓)
+- Inline reply with Enter-to-send
+- Compose new messages (pick customer + provider, add subject/body)
+- Auto-polls every 30 seconds for new messages
+- Notification bell links to the messaging panel
+
+### Feature-gated subscription plans
+Plans now carry actual feature flags that control UI visibility and API access. 45+ available features including Messaging, Invoice/quote PDF downloads, Credit notes, Quotations, Branch management, Repair ticketing, Technician accounts, POS integration, Inventory forecasting, Loyalty program, etc. Four default plans (Starter, Growth, Pro, Enterprise) with progressive feature sets. Frontend `useFeature()` hook conditionally shows/hides UI sections. Server-side `requireProviderFeature()` blocks provider API access per plan tier.
+
+### Expanded role permissions
+New permissions: `messaging:view`, `messaging:send`, `invoice:view`, `invoice:download`, `credit_note:view`, `credit_note:create`, `quote:view`, `quote:create`, `quote:update`. Default roles (admin, owner, manager, technician) updated with appropriate permission sets.
+
 ### Sale price / strikethrough pricing
 Products support an optional sale price. When set, the original price shows with strikethrough and the sale price appears in red across product cards, product detail pages, POS grid, owner products table, and admin products table. POS automatically charges the sale price when adding to cart.
 

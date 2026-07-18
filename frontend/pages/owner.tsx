@@ -185,7 +185,7 @@ const COMMON_FEATURES_LIST = [
   "Dedicated account manager", "Discount/coupon management",
   "Email notifications", "eTIMS/KRA compliance",
   "Google Sign-In", "Inventory forecasting",
-  "Low stock alerts", "Loyalty program",
+  "Invoice/quote PDF downloads", "Low stock alerts", "Loyalty program",
   "Messaging", "M-Pesa integration",
   "Multi-branch support", "Multi-currency support",
   "Multiple staff accounts", "Order management",
@@ -198,6 +198,7 @@ const COMMON_FEATURES_LIST = [
   "Spec templates", "Stock take / inventory count",
   "Stock transfers", "Supplier management",
   "Theme customization",
+  "Credit notes", "Admin messaging",
 ];
 
 function OwnerOrders() {
