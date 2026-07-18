@@ -74,7 +74,7 @@ export default function OrderDetailPage() {
         </div>
         {(order.status === "shipped" || order.status === "delivered") && (
           <div style={{ marginBottom: "1rem" }}>
-            <RippleButton onClick={async () => { try { const r = await api<{ token: string }>("/api/orders/invoice-token/" + order.id, { method: "POST" }); window.open(`/api/orders/${order.id}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch { alert("Failed"); } }}>Invoice</RippleButton>
+            <RippleButton onClick={async () => { try { const r = await api<{ token: string }>("/api/orders/invoice-token/" + order.id, { method: "POST" }); window.open(`/api/orders/${order.id}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch (e: any) { alert("Failed to view invoice: " + (e?.message || "Unknown error")); } }}>Invoice</RippleButton>
           </div>
         )}
 

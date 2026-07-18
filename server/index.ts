@@ -1143,10 +1143,10 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
     <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
-  <button class="print-btn" onclick="window.print()">Print</button>
+  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
   <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>` : `
   <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
-  <button class="print-btn" onclick="window.print()">Print</button>`}
+  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>`}
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`);
@@ -1188,7 +1188,7 @@ ${hasEtims ? `<div>Mode: ${modeLabel}</div>` : ""}
 <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 <hr>
 ${hasEtims ? `<div class="center">${qrUrl ? `<img src="${qrSmall}" alt="eTIMS QR" style="width:80px;height:80px;" /><br>` : ""}Verify at https://itax.kra.go.ke</div>` : ""}
-<button class="print-btn" onclick="window.print()">${hasEtims ? "Print Receipt" : "Print"}</button>
+<button class="print-btn" onclick="window.print()">${hasEtims ? "Print Receipt" : "Print / Save PDF"}</button>
 <div class="footer-note">Provided by ${escapeHtml(store)}</div>
 </body></html>`);
 });
@@ -1277,11 +1277,16 @@ app.patch("/api/admin/order-items/:id/warranty", ownerAuthMiddleware, async (req
   res.json({ ok: true });
 });
 
-app.post("/api/admin/invoice-token/:orderId", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const order = await getOrder(Number(req.params.orderId));
-  if (!order) { res.status(404).json({ error: "Order not found." }); return; }
-  const token = signToken({ sub: (req as any).user.sub, role: (req as any).user.role, orderId: Number(req.params.orderId), purpose: "invoice" }, "5m");
-  res.json({ token });
+app.post("/api/admin/invoice-token/:orderId", staffAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const order = await getOrder(Number(req.params.orderId));
+    if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+    const token = signToken({ sub: (req as any).user.sub, role: (req as any).user.role, orderId: Number(req.params.orderId), purpose: "invoice" }, "5m");
+    res.json({ token });
+  } catch (err: any) {
+    console.error("[invoice-token] error:", err?.message || err);
+    res.status(500).json({ error: "Failed to generate invoice token." });
+  }
 });
 
 app.get("/api/admin/orders/:id/invoice", async (req: Request, res: Response) => {
@@ -1294,6 +1299,7 @@ app.get("/api/admin/orders/:id/invoice", async (req: Request, res: Response) => 
     }
     (req as any).user = payload;
   } catch { res.status(401).json({ error: "Session expired." }); return; }
+  try {
   const order = await getOrder(Number(req.params.id));
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
   const settings = await getSettings();
@@ -1391,13 +1397,17 @@ app.get("/api/admin/orders/:id/invoice", async (req: Request, res: Response) => 
     <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
-  <button class="print-btn" onclick="window.print()">Print</button>
+  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
   <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>` : `
   <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
-  <button class="print-btn" onclick="window.print()">Print</button>`}
+  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>`}
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`);
+  } catch (err: any) {
+    console.error("[invoice] admin invoice error:", err?.message || err);
+    res.status(500).send("<h1>Failed to generate invoice</h1><p>Please try again.</p>");
+  }
 });
 
 app.post("/api/orders/invoice-token/:orderId", customerAuthMiddleware, async (req: Request, res: Response) => {
@@ -1409,6 +1419,7 @@ app.post("/api/orders/invoice-token/:orderId", customerAuthMiddleware, async (re
 });
 
 app.get("/api/orders/:id/invoice", customerAuthMiddleware, async (req: Request, res: Response) => {
+  try {
   const order = await getOrder(Number(req.params.id));
   if (!order || order.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Order not found." }); return; }
   if (order.status !== "shipped" && order.status !== "delivered") { res.status(400).json({ error: "Invoice is only available for shipped or delivered orders." }); return; }
@@ -1507,13 +1518,17 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, async (req: Request, 
     <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
-  <button class="print-btn" onclick="window.print()">Print</button>
+  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
   <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>` : `
   <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
-  <button class="print-btn" onclick="window.print()">Print</button>`}
+  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>`}
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`);
+  } catch (err: any) {
+    console.error("[invoice] customer invoice error:", err?.message || err);
+    res.status(500).send("<h1>Failed to generate invoice</h1><p>Please try again.</p>");
+  }
 });
 
 function escapeHtml(v: string) {
@@ -1629,6 +1644,7 @@ app.get("/api/admin/credit-notes/order-status", ownerAuthMiddleware, async (req:
 });
 
 app.get("/api/admin/credit-notes/:id/view", async (req: Request, res: Response) => {
+  try {
   const cn = await getCreditNote(Number(req.params.id));
   if (!cn) { res.status(404).send("Credit note not found."); return; }
   const order = await getOrder(cn.orderId);
@@ -1707,10 +1723,14 @@ app.get("/api/admin/credit-notes/:id/view", async (req: Request, res: Response) 
   <div style="text-align:right;">
     <div class="total-row">Total Credit: ${currency} ${cn.totalAmount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
   </div>
-  <button class="print-btn" onclick="window.print()">Print Credit Note</button>
+  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`);
+  } catch (err: any) {
+    console.error("[credit-notes] view error:", err?.message || err);
+    res.status(500).send("<html><body><h1>Error loading credit note</h1><p>" + escapeHtml(err?.message || "Unknown error") + "</p></body></html>");
+  }
 });
 
 // ============ EXAMPLE INVOICE ============
@@ -2990,40 +3010,55 @@ app.get("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports
 });
 
 app.post("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
-  const { customerName, customerPhone, customerId: cid, notes, items, discountType, discountValue } = req.body || {};
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    res.status(400).json({ error: "items array is required." }); return;
-  }
-  let customerId = Number(cid) || 0;
-  if (!customerId && customerName) {
-    let walkIn = await queryOne("SELECT id FROM customers WHERE email = 'walkin@pos'") as any;
-    if (!walkIn) {
-      const r = await queryOne("INSERT INTO customers (name, email, password_hash, phone) VALUES ($1, $2, $3, $4) RETURNING id", [customerName, "walkin@pos", "", customerPhone || ""]) as any;
-      walkIn = { id: r!.id };
+  try {
+    const { customerName, customerPhone, customerId: cid, notes, items, discountType, discountValue } = req.body || {};
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ error: "items array is required." }); return;
     }
-    customerId = walkIn.id;
+    let customerId = Number(cid) || 0;
+    if (!customerId && customerName) {
+      let walkIn = await queryOne("SELECT id FROM customers WHERE email = 'walkin@pos'") as any;
+      if (!walkIn) {
+        const r = await queryOne("INSERT INTO customers (name, email, password_hash, phone) VALUES ($1, $2, $3, $4) RETURNING id", [customerName, "walkin@pos", "", customerPhone || ""]) as any;
+        if (r && r.id) walkIn = { id: r.id };
+      }
+      if (walkIn) customerId = walkIn.id;
+    }
+    if (!customerId) { res.status(400).json({ error: "customerId or customerName is required." }); return; }
+    const quote = await createQuote({ customerId, customerName: customerName || "", customerPhone: customerPhone || "", items, notes: notes || "", discountType: discountType || "", discountValue: discountValue || 0 });
+    await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_created", "quote", String(quote.id), JSON.stringify({ quoteNumber: quote.quoteNumber, total: quote.total }), (req as any).user.role);
+    res.status(201).json(quote);
+  } catch (err: any) {
+    console.error("[quotes] create error:", err?.message || err);
+    res.status(500).json({ error: "Failed to create quote." });
   }
-  if (!customerId) { res.status(400).json({ error: "customerId or customerName is required." }); return; }
-  const quote = await createQuote({ customerId, customerName: customerName || "", customerPhone: customerPhone || "", items, notes: notes || "", discountType: discountType || "", discountValue: discountValue || 0 });
-  await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_created", "quote", String(quote.id), JSON.stringify({ quoteNumber: quote.quoteNumber, total: quote.total }), (req as any).user.role);
-  res.status(201).json(quote);
 });
 
 app.put("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-  const existing = await getQuote(id);
-  if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
-  const updated = await updateQuote(id, req.body || {});
-  res.json({ quote: updated });
+  try {
+    const id = Number(req.params.id);
+    const existing = await getQuote(id);
+    if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
+    const updated = await updateQuote(id, req.body || {});
+    res.json({ quote: updated });
+  } catch (err: any) {
+    console.error("[quotes] update error:", err?.message || err);
+    res.status(500).json({ error: "Failed to update quote." });
+  }
 });
 
 app.delete("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-  const existing = await getQuote(id);
-  if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
-  await deleteQuote(id);
-  await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_deleted", "quote", String(id), JSON.stringify({ quoteNumber: existing.quoteNumber }), (req as any).user.role);
-  res.json({ ok: true });
+  try {
+    const id = Number(req.params.id);
+    const existing = await getQuote(id);
+    if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
+    await deleteQuote(id);
+    await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_deleted", "quote", String(id), JSON.stringify({ quoteNumber: existing.quoteNumber }), (req as any).user.role);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[quotes] delete error:", err?.message || err);
+    res.status(500).json({ error: "Failed to delete quote." });
+  }
 });
 
 app.post("/api/admin/quotes/:id/approve", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {

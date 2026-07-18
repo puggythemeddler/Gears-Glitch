@@ -594,8 +594,8 @@ function AdminOrders() {
     try {
       const res = await api<{ token: string }>("/api/admin/invoice-token/" + orderId, { method: "POST" });
       window.open(`/api/admin/orders/${orderId}/invoice?token=${encodeURIComponent(res.token)}`, "_blank");
-    } catch {
-      alert("Failed to generate invoice link.");
+    } catch (e: any) {
+      alert("Failed to generate invoice link: " + (e?.message || "Unknown error"));
     }
   }
 
@@ -1819,7 +1819,7 @@ function AdminInvoices() {
                         <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                         <td>
                           {inv.status !== "paid" && <button className="btn btn-sm" onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
-                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); window.open(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch { alert("Failed"); } }}>View</button>
+                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); window.open(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch (e: any) { alert("Failed to view invoice: " + (e?.message || "Unknown error")); } }}>View</button>
                           {creditedOrders[inv.orderId] ? (
                             <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
                           ) : (

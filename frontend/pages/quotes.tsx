@@ -192,15 +192,68 @@ export default function QuotesPage() {
   );
 }
 
-function QuoteDetail({ quote, onBack, onRefresh }: { quote: Quote; onBack: () => void; onRefresh: () => void }) {
+function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote; onBack: () => void; onRefresh: () => void }) {
+  const [quote, setQuote] = useState<Quote>(initialQuote);
   const [actionLoading, setActionLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productSearch, setProductSearch] = useState("");
+  const [editItems, setEditItems] = useState<{ productId: string; productName: string; quantity: number; unitPrice: number; discountType: string; discountValue: number }[]>([]);
+  const [editDiscountType, setEditDiscountType] = useState(quote.discountType || "");
+  const [editDiscountValue, setEditDiscountValue] = useState(quote.discountValue || 0);
+  const [editNotes, setEditNotes] = useState(quote.notes || "");
   const cfg = STATUS_CONFIG[quote.status] || STATUS_CONFIG.pending;
-  const subtotalBeforeDiscount = quote.items.reduce((s, i) => {
-    let base = i.unitPrice * i.quantity;
-    if (i.discountType === "percentage" && i.discountValue) base -= base * (i.discountValue / 100);
-    else if (i.discountType === "amount" && i.discountValue) base -= i.discountValue;
-    return s + (base > 0 ? base : 0);
-  }, 0);
+  const isPending = quote.status === "pending";
+
+  async function startEditing() {
+    setEditItems(quote.items.map((i) => ({ productId: i.productId, productName: i.productName, quantity: i.quantity, unitPrice: i.unitPrice, discountType: i.discountType, discountValue: i.discountValue })));
+    setEditDiscountType(quote.discountType || "");
+    setEditDiscountValue(quote.discountValue || 0);
+    setEditNotes(quote.notes || "");
+    try {
+      const d = await api<{ products: Product[] }>("/api/products");
+      setProducts(d.products || []);
+    } catch {}
+    setEditing(true);
+  }
+
+  function toggleEditProduct(product: Product) {
+    setEditItems((prev) => {
+      const exists = prev.find((i) => i.productId === product.id);
+      if (exists) return prev.filter((i) => i.productId !== product.id);
+      return [...prev, { productId: product.id, productName: product.name, quantity: 1, unitPrice: product.salePrice && product.salePrice > 0 ? product.salePrice : product.price, discountType: "", discountValue: 0 }];
+    });
+  }
+
+  function updateEditItemQty(productId: string, qty: number) {
+    if (qty <= 0) { setEditItems((prev) => prev.filter((i) => i.productId !== productId)); return; }
+    setEditItems((prev) => prev.map((i) => i.productId === productId ? { ...i, quantity: qty } : i));
+  }
+
+  function updateEditItemDiscount(productId: string, dt: string, dv: number) {
+    setEditItems((prev) => prev.map((i) => i.productId === productId ? { ...i, discountType: dt, discountValue: dv } : i));
+  }
+
+  function calcEditItemTotal(item: { unitPrice: number; quantity: number; discountType: string; discountValue: number }) {
+    let total = item.unitPrice * item.quantity;
+    if (item.discountType === "percentage" && item.discountValue) total -= total * (item.discountValue / 100);
+    else if (item.discountType === "amount" && item.discountValue) total -= item.discountValue;
+    return total < 0 ? 0 : total;
+  }
+
+  async function saveEdits() {
+    if (editItems.length === 0) { alert("Quote must have at least one item."); return; }
+    setActionLoading(true);
+    try {
+      const d = await api<{ quote: Quote }>(`/api/admin/quotes/${quote.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ items: editItems, discountType: editDiscountType, discountValue: editDiscountValue, notes: editNotes }),
+      });
+      setQuote(d.quote);
+      setEditing(false);
+    } catch (e: any) { alert(e.message || "Failed to save."); }
+    setActionLoading(false);
+  }
 
   async function approve() {
     if (!confirm(`Approve quote ${quote.quoteNumber}? This will create an order/invoice.`)) return;
@@ -235,6 +288,109 @@ function QuoteDetail({ quote, onBack, onRefresh }: { quote: Quote; onBack: () =>
 
   function openPdf() {
     window.open(`/api/admin/quotes/${quote.id}/pdf?token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
+  }
+
+  const editSubtotal = editItems.reduce((s, i) => s + calcEditItemTotal(i), 0);
+  let editGrandTotal = editSubtotal;
+  if (editDiscountType === "percentage" && editDiscountValue) editGrandTotal -= editGrandTotal * (editDiscountValue / 100);
+  else if (editDiscountType === "amount" && editDiscountValue) editGrandTotal -= editDiscountValue;
+  if (editGrandTotal < 0) editGrandTotal = 0;
+
+  if (editing) {
+    const editFiltered = productSearch ? products.filter((p) => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.id.toLowerCase().includes(productSearch.toLowerCase())) : products;
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+          <button className="btn btn-sm btn-ghost" onClick={() => setEditing(false)}>&larr; Cancel Edit</button>
+          <h1 style={{ margin: 0 }}>Edit: {escapeHtml(quote.quoteNumber)}</h1>
+        </div>
+        <div className="panel" style={{ padding: "1rem", marginBottom: "1rem" }}>
+          <input className="input" placeholder="Search products to add..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} style={{ width: "100%" }} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+          <div className="panel" style={{ padding: "1rem", maxHeight: 450, overflowY: "auto" }}>
+            <h3 style={{ marginTop: 0 }}>Products ({editFiltered.length})</h3>
+            {editFiltered.map((p) => {
+              const selected = editItems.some((i) => i.productId === p.id);
+              return (
+                <button key={p.id} onClick={() => toggleEditProduct(p)}
+                  style={{ display: "flex", alignItems: "center", gap: "0.5rem", width: "100%", textAlign: "left", padding: "0.5rem", marginBottom: "0.25rem", border: selected ? "2px solid var(--primary)" : "1px solid var(--border)", borderRadius: 8, background: selected ? "var(--primary-subtle)" : "var(--bg)", cursor: "pointer", color: "var(--text)" }}>
+                  {p.imageUrl && <img src={p.imageUrl} alt="" style={{ width: 36, height: 36, borderRadius: 4, objectFit: "cover" }} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--primary)" }}>{formatPrice(p.salePrice && p.salePrice > 0 ? p.salePrice : p.price)}</div>
+                  </div>
+                  {selected && <span style={{ color: "#10b981", fontWeight: 700 }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+          <div className="panel" style={{ padding: "1rem", maxHeight: 450, overflowY: "auto" }}>
+            <h3 style={{ marginTop: 0 }}>Selected Items ({editItems.length})</h3>
+            {editItems.length === 0 && <p style={{ color: "var(--text-secondary)" }}>Click products on the left to add them.</p>}
+            {editItems.map((item) => (
+              <div key={item.productId} style={{ padding: "0.5rem 0", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{escapeHtml(item.productName)}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => setEditItems((prev) => prev.filter((i) => i.productId !== item.productId))}>&times;</button>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.25rem", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    <span style={{ fontSize: "0.8rem" }}>Qty:</span>
+                    <input type="number" className="input" value={item.quantity} onChange={(e) => updateEditItemQty(item.productId, Number(e.target.value))} min={1} style={{ width: 60, padding: "0.2rem 0.4rem", fontSize: "0.8rem" }} />
+                  </div>
+                  <div style={{ fontSize: "0.8rem" }}>@ {formatPrice(item.unitPrice)}</div>
+                </div>
+                <div style={{ display: "flex", gap: "0.25rem", marginTop: "0.25rem", alignItems: "center" }}>
+                  <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "percentage" ? "var(--primary)" : "var(--bg)", color: item.discountType === "percentage" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+                    onClick={() => updateEditItemDiscount(item.productId, item.discountType === "percentage" ? "" : "percentage", item.discountType === "percentage" ? 0 : 0)}>
+                    % Discount
+                  </button>
+                  <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "amount" ? "var(--primary)" : "var(--bg)", color: item.discountType === "amount" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+                    onClick={() => updateEditItemDiscount(item.productId, item.discountType === "amount" ? "" : "amount", item.discountType === "amount" ? 0 : 0)}>
+                    KES Discount
+                  </button>
+                  {item.discountType && (
+                    <input type="number" className="input" value={item.discountValue || ""} onChange={(e) => updateEditItemDiscount(item.productId, item.discountType, Number(e.target.value))} min={0} placeholder="0" style={{ width: 70, padding: "2px 4px", fontSize: "0.75rem" }} />
+                  )}
+                </div>
+                <div style={{ textAlign: "right", fontWeight: 600, fontSize: "0.85rem", marginTop: "0.25rem" }}>{formatPrice(calcEditItemTotal(item))}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="panel" style={{ padding: "1rem", marginTop: "1rem" }}>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>Quote Discount:</span>
+            <button className="btn btn-sm" style={{ background: editDiscountType === "percentage" ? "var(--primary)" : "var(--bg)", color: editDiscountType === "percentage" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+              onClick={() => setEditDiscountType(editDiscountType === "percentage" ? "" : "percentage")}>Percentage</button>
+            <button className="btn btn-sm" style={{ background: editDiscountType === "amount" ? "var(--primary)" : "var(--bg)", color: editDiscountType === "amount" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+              onClick={() => setEditDiscountType(editDiscountType === "amount" ? "" : "amount")}>Amount</button>
+            {editDiscountType && (
+              <input type="number" className="input" value={editDiscountValue || ""} onChange={(e) => setEditDiscountValue(Number(e.target.value))} min={0} placeholder="0" style={{ width: 100, padding: "0.3rem", fontSize: "0.85rem" }} />
+            )}
+          </div>
+          <div className="field" style={{ marginTop: "0.75rem" }}>
+            <label style={{ fontSize: "0.85rem" }}>Notes</label>
+            <textarea className="input" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} placeholder="Optional notes..." />
+          </div>
+          <div style={{ textAlign: "right", marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "2px solid var(--border)" }}>
+            {editDiscountType && editDiscountValue > 0 && (
+              <div style={{ fontSize: "0.9rem", color: "#10b981", marginBottom: "0.25rem" }}>
+                Discount: {editDiscountType === "percentage" ? `${editDiscountValue}%` : formatPrice(editDiscountValue)}
+              </div>
+            )}
+            <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>Grand Total: {formatPrice(editGrandTotal)}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+          <button className="btn btn-ghost" onClick={() => setEditing(false)} disabled={actionLoading}>Cancel</button>
+          <button className="btn btn-primary" onClick={saveEdits} disabled={actionLoading || editItems.length === 0}>
+            {actionLoading ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -299,6 +455,9 @@ function QuoteDetail({ quote, onBack, onRefresh }: { quote: Quote; onBack: () =>
 
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         <button className="btn btn-primary" onClick={openPdf} disabled={actionLoading}>Download PDF</button>
+        {isPending && (
+          <button className="btn" style={{ background: "#8b5cf6", color: "#fff" }} onClick={startEditing} disabled={actionLoading}>Edit Items</button>
+        )}
         {(quote.status === "pending" || quote.status === "waiting_for_approval") && (
           <>
             <button className="btn" style={{ background: "#10b981", color: "#fff" }} onClick={approve} disabled={actionLoading}>Approve &amp; Convert to Invoice</button>
