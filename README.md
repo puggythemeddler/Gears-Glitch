@@ -1,9 +1,12 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management, auto-email notifications, and product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management, auto-email notifications, product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation, two-step checkout with delivery details and payment method selection, provider order management (view, cancel items, update status), and customer invoice download from order history. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ## Recent highlights
 
+- **Two-step checkout with delivery details** — Clicking Checkout now immediately creates a pending order and redirects to the order detail page where customers fill in delivery details (name, address, county, phone), select a payment method, and add delivery instructions. Orders start as `pending` and progress through `confirmed` → `shipped` → `delivered`. Customers can only edit details while the order is still pending.
+- **Provider order management** — Providers can view all orders, cancel individual items that are unavailable, and update order status (confirm, ship, deliver, cancel). Item-level cancellation shows strikethrough on the customer's order page. Status changes trigger email notifications to customers.
+- **Customer invoice download** — Orders list page now shows an inline "Invoice" button on shipped/delivered orders. Order detail page also has a Download Invoice button for shipped/delivered orders. No need to navigate away from the orders list.
 - **Product rating & review system** — Customers can rate products (1–5 stars) with an interactive clickable star widget. Each customer gets one review per product, with editable and deletable reviews. Product detail page shows a rating distribution bar chart, average rating display, and paginated review list. Product cards show real average ratings on category pages. Admin panel has a Reviews management section under Operations for moderation (view all reviews, delete). DB enforced via `UNIQUE(product_id, customer_id)` constraint, `CHECK(rating >= 1 AND rating <= 5)`, and performance indexes on `product_id` and `customer_id`.
 - **Component unification** — 6 near-identical admin/owner component pairs extracted to shared files (`ProvidersPage`, `CreditNotesPage`, `AboutUsPage`, `ProductPositioningPage`, `StockTakeListPage`, `StockOnHandPage`). Admin and owner panels now import the same components, eliminating ~1,600 lines of duplicated code. Feature gating in the owner panel is preserved at the routing level.
 - **POS invoice save & print** — After completing a POS sale, the post-charge UI now offers Save Invoice (downloads PDF) and Print Invoice (opens print dialog) buttons for both thermal receipt and A4 invoice formats.
@@ -105,7 +108,9 @@ Opens **http://localhost:3000** in a browser.
 | `/login` | Everyone | Unified sign-in — customer, staff, provider (Google Sign-In supported) |
 | `/dashboard` | Customers & Providers | Orders, repairs, wishlist, messages (customer) or subscription, invoices (provider) |
 | `/about` | Everyone | About Us page — content editable by admin/owner |
-| `/cart` | Customers | Checkout with county shipping + M-Pesa STK Push |
+| `/cart` | Customers | Shopping cart — manage quantities, then Checkout creates pending order and redirects to order detail |
+| `/order?id=xxx` | Customers | Order detail — fill in delivery details + payment method (pending), view items, download invoice (shipped/delivered) |
+| `/orders` | Customers | Order history with inline invoice download for shipped/delivered orders |
 | `/repair-book` | Customers | Book a repair with detailed device/issue form |
 | `/my-repairs` | Customers | Track your repair tickets, view cost estimates, accept/decline quotes, send messages |
 | `/repair-ticket?id=xxx` | Customers | Single repair ticket detail — device info, cost estimate with Accept/Decline, update timeline, send messages |
@@ -248,8 +253,8 @@ Dark/light themes use `[data-theme="dark"]` / `[data-theme="light"]` selectors, 
 ### Layout Refactor
 
 The main `Layout.tsx` now uses a responsive header with:
-- `.header-left` / `.header-right` split layout
-- `.main-nav-desktop` — horizontal nav (visible on screens >768px)
+- `.main-nav-desktop` — horizontal category nav spanning full width on the left (visible on screens >768px)
+- `.header-right` — brand name pushed to the far right, with search, theme toggle, currency selector, and account actions
 - `.mobile-menu-toggle` — hamburger button (visible on mobile)
 - `.main-nav-mobile` — full-screen overlay menu (shown on toggle, hidden by default)
 - Close-on-navigate behavior for mobile menu
@@ -434,6 +439,8 @@ data/
 | POST | `/api/quotes/from-wishlist` | Request quote from wishlist items |
 | PATCH | `/api/quotes/:id/status` | Update quote status |
 | POST | `/api/orders` | Place order with M-Pesa payment |
+| POST | `/api/orders/create-pending` | Create pending order from cart (no details required, redirects to order detail) |
+| PATCH | `/api/orders/:id` | Update pending order delivery details + payment method |
 | GET | `/api/messages` | Messages with providers |
 | POST | `/api/messages` | Send message to provider |
 | GET | `/api/products/:id/reviews/check` | Check if current customer has reviewed this product |
@@ -509,7 +516,14 @@ Full CRUD for products, categories (including subcategories), staff, roles, plan
 
 ### Provider
 
-Provider registration, login, subscription details, invoices, products at tier, messaging with customers.
+Provider registration, login, subscription details, invoices, products at tier, messaging with customers, order management.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/provider/orders` | View all orders |
+| GET | `/api/provider/orders/:id` | View single order detail |
+| PATCH | `/api/provider/orders/:id/items/:itemId/cancel` | Cancel an individual order item |
+| PATCH | `/api/provider/orders/:id/status` | Update order status (confirmed/shipped/delivered/cancelled) — sends email to customer |
 
 ---
 
