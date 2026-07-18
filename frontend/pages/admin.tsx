@@ -623,7 +623,7 @@ function AdminOrders() {
   async function printInvoice(orderId: number) {
     try {
       const res = await api<{ token: string }>("/api/admin/invoice-token/" + orderId, { method: "POST" });
-      await downloadPdf(`/api/admin/orders/${orderId}/invoice?token=${encodeURIComponent(res.token)}`, `invoice-${orderId}.pdf`);
+      await downloadPdf(`/api/admin/orders/${orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(res.token)}`, `invoice-${orderId}.pdf`);
     } catch (e: any) {
       alert("Failed to download invoice: " + (e?.message || "Unknown error"));
     }
@@ -1774,7 +1774,7 @@ function AdminInvoices() {
                         <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                         <td>
                           {inv.status !== "paid" && <button className="btn btn-sm" onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
-                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); await downloadPdf(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, `invoice-${inv.orderId}.pdf`); } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); } }}>View</button>
+                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); await downloadPdf(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${inv.orderId}.pdf`); } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); } }}>View</button>
                           {creditedOrders[inv.orderId] ? (
                             <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
                           ) : (

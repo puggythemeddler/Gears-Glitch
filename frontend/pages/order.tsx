@@ -67,7 +67,7 @@ export default function OrderDetailPage() {
   async function downloadInvoice() {
     try {
       const r = await api<{ token: string }>("/api/orders/invoice-token/" + order!.id, { method: "POST" });
-      await downloadPdf(`/api/orders/${order!.id}/invoice?token=${encodeURIComponent(r.token)}`, `invoice-${order!.id}.pdf`);
+      await downloadPdf(`/api/orders/${order!.id}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${order!.id}.pdf`);
     } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); }
   }
 

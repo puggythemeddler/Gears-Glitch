@@ -287,7 +287,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
   }
 
   function openPdf() {
-    downloadPdf(`/api/admin/quotes/${quote.id}/pdf?token=${encodeURIComponent(getTokenForRole() || "")}`, `quote-${quote.quoteNumber || quote.id}.pdf`).catch((e: any) => alert("Failed to download quote: " + (e?.message || "Unknown error")));
+    downloadPdf(`/api/admin/quotes/${quote.id}/pdf?allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, `quote-${quote.quoteNumber || quote.id}.pdf`).catch((e: any) => alert("Failed to download quote: " + (e?.message || "Unknown error")));
   }
 
   const editSubtotal = editItems.reduce((s, i) => s + calcEditItemTotal(i), 0);

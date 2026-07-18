@@ -310,7 +310,7 @@ export default function POSPage() {
                 className="btn btn-ghost btn-block"
                 style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}
                 onClick={() => {
-                  window.open(`/api/pos/receipt/${lastOrderId}?format=a4&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
+                  window.open(`/api/pos/receipt/${lastOrderId}?format=a4&allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
                 }}
               >
                 Print Invoice

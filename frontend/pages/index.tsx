@@ -1,9 +1,13 @@
 import React, { useEffect, useState } from "react";
+import Head from "next/head";
 import type { Product } from "@/lib/types";
 import { getProducts } from "@/components/ProductCard";
 import { useLayout, LayoutEngine } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import { useRouter } from "next/router";
+
+const SITE = "Gear&Glitch";
+const BASE = "https://gearsandglitch.co.ke";
 
 export default function HomePage() {
   const router = useRouter();
@@ -59,6 +63,15 @@ export default function HomePage() {
 
   return (
     <>
+      <Head>
+        <title>{SITE} — Premium PCs, Laptops & Expert Repair in Kenya</title>
+        <meta name="description" content="Kenya's all-in-one platform for premium PC hardware, laptops, graphics cards, servers, printers, and expert repair services. Shop now with nationwide delivery." />
+        <link rel="canonical" href={BASE} />
+        <meta property="og:title" content={`${SITE} — Premium Tech Hardware & Repair in Kenya`} />
+        <meta property="og:description" content="Buy PCs, laptops, graphics cards, servers, and printers in Kenya. Expert repair services with real-time tracking. Shop now." />
+        <meta property="og:url" content={BASE} />
+        <meta property="og:type" content="website" />
+      </Head>
       {q && (
         <div style={{ marginBottom: "1rem" }}>
           <p style={{ color: "var(--text-secondary)" }}>

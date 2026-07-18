@@ -309,8 +309,8 @@ app.use(helmet({
 const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
   : process.env.NODE_ENV === "production"
-    ? [`http://localhost:3000`, `https://${process.env.BASE_URL ? new URL(process.env.BASE_URL).host : "localhost"}`]
-    : true;
+    ? [`https://${process.env.BASE_URL ? new URL(process.env.BASE_URL).host : "gears-glitch.onrender.com"}`]
+    : ["http://localhost:3000"];
 app.use(cors({
   origin: corsOrigins,
   credentials: true,
@@ -335,6 +335,9 @@ const authLimiter = rateLimit({
 });
 app.use("/api/auth/login", authLimiter);
 app.use("/api/customer/register", authLimiter);
+app.use("/api/customer/login", authLimiter);
+app.use("/api/provider/login", authLimiter);
+app.use("/api/provider/register", authLimiter);
 app.use("/api/auth/request-password-reset", authLimiter);
 app.use("/api/auth/request-admin-password-reset", authLimiter);
 
@@ -414,8 +417,9 @@ app.get("/api/shipping/counties", (_req: Request, res: Response) => {
 // M-Pesa callback (called by Safaricom — body validated for expected structure)
 app.post("/api/mpesa/callback", (req: Request, res: Response) => {
   const data = req.body;
+  if (!data || typeof data !== "object") { return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid payload" }); }
   const checkoutId = data?.Body?.stkCallback?.CheckoutRequestID;
-  if (!checkoutId) {
+  if (!checkoutId || typeof checkoutId !== "string" || checkoutId.length > 200) {
     console.warn("[M-Pesa] Callback received without CheckoutRequestID — rejected");
     return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid callback" });
   }
@@ -751,7 +755,7 @@ app.post("/api/admin/plans", adminAuthMiddleware, async (req: Request, res: Resp
     res.status(201).json({ plan });
   } catch (err: any) {
     console.error("[plan create]", err?.message || err);
-    res.status(500).json({ error: err?.message || "Failed to create plan." });
+    res.status(500).json({ error: "Failed to create plan." });
   }
 });
 
@@ -763,7 +767,7 @@ app.put("/api/admin/plans/:id", adminAuthMiddleware, async (req: Request, res: R
     res.json({ plan });
   } catch (err: any) {
     console.error("[plan update]", err?.message || err);
-    res.status(500).json({ error: err?.message || "Failed to update plan." });
+    res.status(500).json({ error: "Failed to update plan." });
   }
 });
 
@@ -778,7 +782,7 @@ app.delete("/api/admin/plans/:id", adminAuthMiddleware, async (req: Request, res
     res.status(204).end();
   } catch (err: any) {
     console.error("[plan delete]", err?.message || err);
-    res.status(500).json({ error: err?.message || "Failed to delete plan." });
+    res.status(500).json({ error: "Failed to delete plan." });
   }
 });
 
@@ -1084,7 +1088,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, async (req: Request, res: Respo
     res.status(201).json({ order: { ...updated, invoiceNumber: invNum }, change });
   } catch (err: any) {
     console.error("[POS Checkout Error]", err);
-    if (!res.headersSent) res.status(500).json({ error: err?.message || "Checkout failed. Please try again." });
+    if (!res.headersSent) res.status(500).json({ error: "Checkout failed. Please try again." });
   }
 });
 
@@ -1143,7 +1147,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
       return `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
     }).join("");
     const title = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
-    const subtitle = hasEtims ? `Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}` : `Invoice #${order.id}`;
+    const subtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
@@ -1212,7 +1216,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
     return;
   }
 
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>POS Receipt #${order.id} — ${store}</title>
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>POS Receipt #${order.id} — ${escapeHtml(store)}</title>
 <style>
   body { font-family: monospace; max-width: 380px; margin: 0 auto; padding: 0.75rem; font-size: 0.9rem; color: #1f2937; line-height: 1.6; }
   h1 { font-size: 1.15rem; text-align: center; margin: 0.75rem 0; }
@@ -1301,7 +1305,7 @@ app.post("/api/orders", customerAuthMiddleware, async (req: Request, res: Respon
     res.status(201).json({ ...order, mpesaRequested, mpesaPhone: mpesaRequested ? mpesaPhone : undefined });
   } catch (err: any) {
     console.error("[order create]", err?.message || err);
-    res.status(500).json({ error: err?.message || "Failed to create order." });
+    res.status(500).json({ error: "Failed to create order." });
   }
 });
 
@@ -1340,7 +1344,7 @@ app.post("/api/orders/create-pending", customerAuthMiddleware, async (req: Reque
     res.status(201).json(order);
   } catch (err: any) {
     console.error("[order create-pending]", err?.message || err);
-    res.status(500).json({ error: err?.message || "Failed to create order." });
+    res.status(500).json({ error: "Failed to create order." });
   }
 });
 
@@ -1366,14 +1370,16 @@ app.patch("/api/orders/:id", customerAuthMiddleware, async (req: Request, res: R
     res.json(updated);
   } catch (err: any) {
     console.error("[order update]", err?.message || err);
-    res.status(500).json({ error: err?.message || "Failed to update order." });
+    res.status(500).json({ error: "Failed to update order." });
   }
 });
 
 app.get("/api/provider/orders", providerAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const orders = await listOrders();
-    res.json({ orders });
+    const providerId = (req as any).provider?.sub;
+    const filtered = orders.filter((o: any) => o.items?.some((i: any) => i.providerId === providerId));
+    res.json({ orders: filtered });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to load orders." });
   }
@@ -1515,7 +1521,7 @@ app.get("/api/admin/orders/:id/invoice", async (req: Request, res: Response) => 
   const qrUrl = hasEtims ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}` : "";
   const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
   const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
-  const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}` : `Invoice #${order.id}`;
+  const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
@@ -1649,7 +1655,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, async (req: Request, 
   const qrUrl = hasEtims ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}` : "";
   const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
   const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
-  const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}` : `Invoice #${order.id}`;
+  const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
@@ -1851,7 +1857,7 @@ app.get("/api/admin/credit-notes/order-status", ownerAuthMiddleware, async (req:
   res.json({ credited: result });
 });
 
-app.get("/api/admin/credit-notes/:id/view", async (req: Request, res: Response) => {
+app.get("/api/admin/credit-notes/:id/view", staffAuthMiddleware, async (req: Request, res: Response) => {
   try {
   const cn = await getCreditNote(Number(req.params.id));
   if (!cn) { res.status(404).send("Credit note not found."); return; }
@@ -1950,7 +1956,7 @@ app.get("/api/admin/credit-notes/:id/view", async (req: Request, res: Response) 
   }
   } catch (err: any) {
     console.error("[credit-notes] view error:", err?.message || err);
-    res.status(500).send("<html><body><h1>Error loading credit note</h1><p>" + escapeHtml(err?.message || "Unknown error") + "</p></body></html>");
+    res.status(500).send("<html><body><h1>Error loading credit note</h1><p>An error occurred. Please try again.</p></body></html>");
   }
 });
 
@@ -2077,6 +2083,7 @@ app.patch("/api/messages/:id/read", async (req: Request, res: Response) => {
   try {
     const token = getBearerToken(req);
     if (!token) { res.status(401).json({ error: "Login required." }); return; }
+    try { verifyToken(token); } catch { res.status(401).json({ error: "Session expired." }); return; }
     await markMessageRead(Number(req.params.id));
     res.json({ ok: true });
   } catch (err: any) {
@@ -2326,7 +2333,8 @@ app.get("/api/admin/backup", ownerAuthMiddleware, async (_req: Request, res: Res
     const tables = await q(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`);
     const backup: Record<string, unknown[]> = {};
     for (const row of tables.rows) {
-      const result = await q(`SELECT * FROM ${row.table_name}`);
+      if (!/^[a-z_][a-z0-9_]*$/.test(row.table_name)) continue;
+      const result = await q(`SELECT * FROM "${row.table_name}"`);
       backup[row.table_name] = result.rows;
     }
     const json = JSON.stringify(backup, null, 2);
@@ -2389,7 +2397,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
     try {
       const imageUrl = getUploadedUrl(req) || imageUrlForProduct(String(req.params.id));
       console.log("[Upload primary] imageUrl:", imageUrl, "cloudinary:", isCloudinaryConfigured());
-      if (!imageUrl) { res.status(500).json({ error: "Image upload succeeded but no URL was returned. Check Cloudinary configuration." }); return; }
+      if (!imageUrl) { res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
       await setProductImageUrl(String(req.params.id), imageUrl);
       backupImageToDb(`product:${req.params.id}`, imageUrl);
       // Also save to product_images gallery
@@ -2401,7 +2409,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
       res.json(updated);
     } catch (e: any) {
       console.error("[Upload primary] save error:", e.message || e);
-      res.status(500).json({ error: "Image uploaded but failed to save: " + (e.message || "Unknown error") });
+      res.status(500).json({ error: "Image uploaded but failed to save. Please try again." });
     }
   });
 });
@@ -2558,13 +2566,13 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
     try {
       const imageUrl = getUploadedUrl(req);
       console.log("[Upload gallery] imageUrl:", imageUrl, "cloudinary:", isCloudinaryConfigured());
-      if (!imageUrl) { res.status(500).json({ error: "Image upload succeeded but no URL was returned. Check Cloudinary configuration." }); return; }
+      if (!imageUrl) { res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
       const img = await addProductImage(String(req.params.id), imageUrl);
       backupImageToDb(`product:${req.params.id}:gallery:${img.id}`, imageUrl);
       res.json(img);
     } catch (e: any) {
       console.error("[Upload gallery] save error:", e.message || e);
-      res.status(500).json({ error: "Image uploaded but failed to save: " + (e.message || "Unknown error") });
+      res.status(500).json({ error: "Image uploaded but failed to save. Please try again." });
     }
   });
 });
@@ -2880,7 +2888,7 @@ app.post("/api/staff", adminAuthMiddleware, requirePermission("staff:create"), a
     res.status(201).json(staff);
   } catch (err: any) {
     console.error("[staff create]", err?.message || err);
-    res.status(500).json({ error: err?.message || "Failed to create staff account." });
+    res.status(500).json({ error: "Failed to create staff account." });
   }
 });
 
@@ -2896,9 +2904,14 @@ app.patch("/api/staff/:id", adminAuthMiddleware, requirePermission("staff:update
 });
 
 app.patch("/api/staff/:id/role", adminAuthMiddleware, requirePermission("staff:update"), async (req: Request, res: Response) => {
+  const targetId = Number(req.params.id);
   const newRole = req.body?.role;
   if (!["admin", "owner", "technician"].includes(newRole)) { res.status(400).json({ error: "Invalid role." }); return; }
-  await updateStaffRole(Number(req.params.id), newRole);
+  if (targetId === (req as any).user.sub && newRole !== "admin") {
+    res.status(400).json({ error: "Cannot downgrade your own admin role." });
+    return;
+  }
+  await updateStaffRole(targetId, newRole);
   res.json({ ok: true });
 });
 
@@ -2944,7 +2957,12 @@ app.post("/api/roles", adminAuthMiddleware, async (req: Request, res: Response) 
 });
 
 app.put("/api/roles/:roleId", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const role = await updateRole(String(req.params.roleId), req.body || {});
+  const roleId = String(req.params.roleId);
+  if (roleId === "admin" && req.body?.permissions && !req.body.permissions.includes("admin:access")) {
+    res.status(400).json({ error: "Cannot remove admin:access from the admin role." });
+    return;
+  }
+  const role = await updateRole(roleId, req.body || {});
   if (!role) { res.status(404).json({ error: "Role not found or cannot be modified." }); return; }
   res.json({ role });
 });
@@ -3640,7 +3658,7 @@ app.post("/api/admin/coupons", ownerAuthMiddleware, async (req: Request, res: Re
     res.status(201).json(coupon);
   } catch (err: any) {
     console.error("[coupon create]", err?.message || err);
-    res.status(400).json({ error: err?.message || "Failed to create coupon." });
+    res.status(400).json({ error: "Failed to create coupon." });
   }
 });
 
@@ -3650,7 +3668,7 @@ app.put("/api/admin/coupons/:id", ownerAuthMiddleware, async (req: Request, res:
     res.json(coupon);
   } catch (err: any) {
     console.error("[coupon update]", err?.message || err);
-    res.status(400).json({ error: err?.message || "Failed to update coupon." });
+    res.status(400).json({ error: "Failed to update coupon." });
   }
 });
 

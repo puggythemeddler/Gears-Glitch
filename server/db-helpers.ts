@@ -13,7 +13,7 @@ function getPool(): Pool {
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
-      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: process.env.DB_SSL_REJECT !== "false" } : false,
     });
     pool.on("error", (err) => {
       console.error("Unexpected PostgreSQL pool error:", err);

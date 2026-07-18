@@ -3,6 +3,10 @@ import { getSettings, logEmail } from "./db";
 let transporter: any = null;
 let nodemailer: any = null;
 
+function esc(s: string): string {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 try {
   nodemailer = require("nodemailer");
 } catch (_err) {}
@@ -66,25 +70,25 @@ function wrapTemplate(title: string, bodyHtml: string): string {
 }
 
 export function messageNotificationEmail(senderName: string, senderRole: string, subject: string, preview: string, dashboardUrl: string): { subject: string; html: string } {
-  const title = `New message from ${senderName}`;
+  const title = `New message from ${esc(senderName)}`;
   const html = wrapTemplate(title, `
-<p>You have a new message from <strong>${senderName}</strong> (${senderRole}):</p>
-${subject ? `<p><strong>Subject:</strong> ${subject}</p>` : ""}
-<div style="background:#f1f5f9;border-left:3px solid #3b82f6;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;white-space:pre-wrap;">${preview}</div>
+<p>You have a new message from <strong>${esc(senderName)}</strong> (${esc(senderRole)}):</p>
+${subject ? `<p><strong>Subject:</strong> ${esc(subject)}</p>` : ""}
+<div style="background:#f1f5f9;border-left:3px solid #3b82f6;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;white-space:pre-wrap;">${esc(preview)}</div>
 <p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View & Reply</a></p>
 `);
   return { subject: title, html };
 }
 
 export function quoteEmail(customerName: string, quoteNumber: string, total: string, currency: string, notes: string, dashboardUrl: string): { subject: string; html: string } {
-  const title = `Quote ${quoteNumber} from Gear&Glitch`;
+  const title = `Quote ${esc(quoteNumber)} from Gear&Glitch`;
   const html = wrapTemplate(title, `
-<p>Hi ${customerName},</p>
+<p>Hi ${esc(customerName)},</p>
 <p>A new quote has been prepared for you.</p>
 <div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
-<p style="margin:0;"><strong>Quote:</strong> ${quoteNumber}</p>
-<p style="margin:8px 0 0;"><strong>Total:</strong> ${currency} ${total}</p>
-${notes ? `<p style="margin:8px 0 0;"><strong>Notes:</strong> ${notes}</p>` : ""}
+<p style="margin:0;"><strong>Quote:</strong> ${esc(quoteNumber)}</p>
+<p style="margin:8px 0 0;"><strong>Total:</strong> ${esc(currency)} ${esc(total)}</p>
+${notes ? `<p style="margin:8px 0 0;"><strong>Notes:</strong> ${esc(notes)}</p>` : ""}
 </p></div>
 <p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Quote</a></p>
 `);
@@ -94,12 +98,12 @@ ${notes ? `<p style="margin:8px 0 0;"><strong>Notes:</strong> ${notes}</p>` : ""
 export function creditNoteEmail(customerName: string, creditNoteId: number, reason: string, amount: string, currency: string, dashboardUrl: string): { subject: string; html: string } {
   const title = `Credit Note #${creditNoteId} — Gear&Glitch`;
   const html = wrapTemplate(title, `
-<p>Hi ${customerName},</p>
+<p>Hi ${esc(customerName)},</p>
 <p>A credit note has been issued for your order.</p>
 <div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
 <p style="margin:0;"><strong>Credit Note:</strong> #${creditNoteId}</p>
-<p style="margin:8px 0 0;"><strong>Amount:</strong> ${currency} ${amount}</p>
-${reason ? `<p style="margin:8px 0 0;"><strong>Reason:</strong> ${reason}</p>` : ""}
+<p style="margin:8px 0 0;"><strong>Amount:</strong> ${esc(currency)} ${esc(amount)}</p>
+${reason ? `<p style="margin:8px 0 0;"><strong>Reason:</strong> ${esc(reason)}</p>` : ""}
 </div>
 <p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Details</a></p>
 `);
@@ -108,12 +112,12 @@ ${reason ? `<p style="margin:8px 0 0;"><strong>Reason:</strong> ${reason}</p>` :
 
 export function orderStatusEmail(customerName: string, orderNumber: string, status: string, dashboardUrl: string): { subject: string; html: string } {
   const statusLabels: Record<string, string> = { pending: "Pending", confirmed: "Confirmed", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled" };
-  const title = `Order ${orderNumber} — ${statusLabels[status] || status}`;
+  const title = `Order ${esc(orderNumber)} — ${statusLabels[status] || status}`;
   const html = wrapTemplate(title, `
-<p>Hi ${customerName},</p>
-<p>Your order <strong>${orderNumber}</strong> has been updated.</p>
+<p>Hi ${esc(customerName)},</p>
+<p>Your order <strong>${esc(orderNumber)}</strong> has been updated.</p>
 <div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;text-align:center;">
-<p style="margin:0;font-size:16px;font-weight:700;color:${status === "cancelled" ? "#dc2626" : "#16a34a"};">${statusLabels[status] || status}</p>
+<p style="margin:0;font-size:16px;font-weight:700;color:${status === "cancelled" ? "#dc2626" : "#16a34a"};">${esc(statusLabels[status] || status)}</p>
 </div>
 <p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Order</a></p>
 `);

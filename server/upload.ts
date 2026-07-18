@@ -107,7 +107,7 @@ const MULTER_OPTS = { limits: { fileSize: 5 * 1024 * 1024 } };
 
 function safeExt(file: Express.Multer.File, fallback: string) {
   const ext = path.extname(file.originalname).toLowerCase() || fallback;
-  return [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : fallback;
+  return [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"].includes(ext) ? ext : fallback;
 }
 
 const uploadProductImage = multer({
@@ -117,7 +117,7 @@ const uploadProductImage = multer({
     return `${productId}-${Date.now()}${safeExt(file, ".jpg")}`;
   }),
   ...MULTER_OPTS,
-  fileFilter: imageFileFilterLenient,
+  fileFilter: imageFileFilter,
 }).single("image");
 
 const uploadFavicon = multer({

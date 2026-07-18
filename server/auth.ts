@@ -57,8 +57,10 @@ function verifyToken(token: string): JwtPayload {
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization || "";
   if (header.startsWith("Bearer ")) return header.slice(7);
-  const queryToken = req.query?.token;
-  if (typeof queryToken === "string" && queryToken.trim()) return queryToken.trim();
+  if (req.query?.allowQueryToken === "1") {
+    const queryToken = req.query?.token;
+    if (typeof queryToken === "string" && queryToken.trim()) return queryToken.trim();
+  }
   return null;
 }
 
@@ -126,6 +128,7 @@ async function loginStaff(login: string, password: string): Promise<AuthResult> 
     user = isEmail ? await findStaffByUsername(login) as StaffUser | undefined : await findStaffByEmail(login + "@gearandglitch.com") as StaffUser | undefined;
   }
   if (!user) {
+    await bcrypt.compare(password, "$2a$10$xJwAL3vGpAe8xK9mPqRs7uKj2LmN4OpQ5RtY6UiO8AsD9FgH1JkLz");
     return { ok: false, error: "Invalid username/email or password." };
   }
 
@@ -134,7 +137,7 @@ async function loginStaff(login: string, password: string): Promise<AuthResult> 
     return { ok: false, error: "Invalid username/email or password." };
   }
 
-  const role = user.role || "admin";
+  const role = user.role || "technician";
   const userEmail = (user as any).email || `${user.username}@gearandglitch.com`;
   const token = signToken({ sub: user.id, username: user.username, email: userEmail, role });
   return { ok: true, token, username: user.username, email: userEmail, role };
@@ -168,6 +171,7 @@ async function registerCustomer({ name, email, password }: { name: string; email
 async function loginCustomer(email: string, password: string): Promise<AuthResult> {
   const customer = await findCustomerByEmail(String(email || "").trim().toLowerCase()) as CustomerUser | undefined;
   if (!customer) {
+    await bcrypt.compare(password, "$2a$10$xJwAL3vGpAe8xK9mPqRs7uKj2LmN4OpQ5RtY6UiO8AsD9FgH1JkLz");
     return { ok: false, error: "Invalid email or password." };
   }
 
@@ -207,6 +211,7 @@ function providerAuthMiddleware(req: Request, res: Response, next: NextFunction)
 async function loginProvider(email: string, password: string): Promise<AuthResult> {
   const provider = await findProviderByEmail(String(email || "").trim().toLowerCase()) as any;
   if (!provider) {
+    await bcrypt.compare(password, "$2a$10$xJwAL3vGpAe8xK9mPqRs7uKj2LmN4OpQ5RtY6UiO8AsD9FgH1JkLz");
     return { ok: false, error: "Invalid email or password." };
   }
   const match = await bcrypt.compare(password, provider.password_hash);
@@ -275,7 +280,7 @@ function ownerAuthMiddleware(req: Request, res: Response, next: NextFunction): v
 
 function posAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
   let token = getBearerToken(req);
-  if (!token && req.query.token) token = String(req.query.token);
+  if (!token && req.query.allowQueryToken === "1" && req.query.token) token = String(req.query.token);
   if (!token) { res.status(401).json({ error: "Login required." }); return; }
   try {
     const user = verifyToken(token);

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import Head from "next/head";
 import { useRouter } from "next/router";
 import { ProductCard, getProducts } from "@/components/ProductCard";
 import type { Product } from "@/lib/types";
