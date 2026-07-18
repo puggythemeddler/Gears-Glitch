@@ -327,9 +327,9 @@ export default function AdminProducts() {
                       transition: "opacity 0.15s",
                     }}
                   >
-                    <img src={img.image_url} alt="" style={{ width: 80, height: 80, borderRadius: 6, objectFit: "cover", border: img.is_primary ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
+                    <img src={img.imageUrl} alt="" style={{ width: 80, height: 80, borderRadius: 6, objectFit: "cover", border: img.isPrimary ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
                     <div style={{ marginTop: 2 }}>
-                      {!img.is_primary && <RippleButton size="small" variant="ghost" onClick={() => setPrimary(editing!.id, img.id)}>Set primary</RippleButton>}
+                      {!img.isPrimary && <RippleButton size="small" variant="ghost" onClick={() => setPrimary(editing!.id, img.id)}>Set primary</RippleButton>}
                     </div>
                     <RippleButton size="small" variant="danger" onClick={() => deleteGalleryImage(editing!.id, img.id)} style={{ position: "absolute", top: -6, right: -6, minWidth: 24, height: 24, width: 24, padding: 0, borderRadius: "50%", fontSize: 12, lineHeight: 1 }}>&times;</RippleButton>
                   </div>

@@ -2278,7 +2278,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
       backupImageToDb(`product:${req.params.id}`, imageUrl);
       // Also save to product_images gallery
       const existing = await getProductImages(String(req.params.id));
-      if (!existing.find(i => i.image_url === imageUrl)) {
+      if (!existing.find(i => i.imageUrl === imageUrl)) {
         await addProductImage(String(req.params.id), imageUrl, -1);
       }
       const updated = await getProduct(String(req.params.id));
@@ -2309,19 +2309,19 @@ app.get("/api/products/:id/images", async (req: Request, res: Response) => {
     const primaryNorm = product.imageUrl ? normalizeUrl(product.imageUrl) : "";
     const combined: any[] = [];
     if (primaryNorm) {
-      const primaryExists = images.some((img: any) => normalizeUrl(img.image_url) === primaryNorm);
+      const primaryExists = images.some((img: any) => normalizeUrl(img.imageUrl) === primaryNorm);
       if (!primaryExists) {
-        combined.push({ id: 0, product_id: product.id, image_url: product.imageUrl, sort_order: -1, is_primary: 1, created_at: "" });
+        combined.push({ id: 0, productId: product.id, imageUrl: product.imageUrl, sortOrder: -1, isPrimary: 1 });
       }
     }
     for (const img of images) {
-      const imgNorm = normalizeUrl(img.image_url);
-      if (!combined.some((c: any) => normalizeUrl(c.image_url) === imgNorm)) {
+      const imgNorm = normalizeUrl(img.imageUrl);
+      if (!combined.some((c: any) => normalizeUrl(c.imageUrl) === imgNorm)) {
         combined.push(img);
       }
     }
     if (combined.length === 0 && product.imageUrl) {
-      combined.push({ id: 0, product_id: product.id, image_url: product.imageUrl, sort_order: -1, is_primary: 1, created_at: "" });
+      combined.push({ id: 0, productId: product.id, imageUrl: product.imageUrl, sortOrder: -1, isPrimary: 1 });
     }
     res.json({ images: combined });
   } catch (err: any) {
@@ -2375,7 +2375,7 @@ app.delete("/api/products/:id/images/:imageId", ownerAuthMiddleware, requirePerm
   const img = images.find(i => i.id === Number(req.params.imageId));
   const ok = await deleteProductImage(Number(req.params.imageId));
   if (!ok) { res.status(404).json({ error: "Image not found." }); return; }
-  if (img?.image_url) deleteCloudinaryImage(img.image_url);
+  if (img?.imageUrl) deleteCloudinaryImage(img.imageUrl);
   res.json({ ok: true });
 });
 
@@ -2390,7 +2390,7 @@ app.put("/api/products/:id/images/:imageId/primary", ownerAuthMiddleware, requir
   await setPrimaryImage(String(req.params.id), Number(req.params.imageId));
   const images = await getProductImages(String(req.params.id));
   const img = images.find(i => i.id === Number(req.params.imageId));
-  if (img) await setProductImageUrl(String(req.params.id), img.image_url);
+  if (img) await setProductImageUrl(String(req.params.id), img.imageUrl);
   res.json({ ok: true });
 });
 
@@ -2424,7 +2424,7 @@ app.delete("/api/products/:id", ownerAuthMiddleware, requirePermission("product:
   const product = await getProduct(productId);
   if (!product) { res.status(404).json({ error: "Product not found." }); return; }
   const allImages = await getProductImages(productId);
-  const urls = [product.imageUrl, ...allImages.map(i => i.image_url)].filter(Boolean);
+  const urls = [product.imageUrl, ...allImages.map(i => i.imageUrl)].filter(Boolean);
   const removed = await deleteProduct(productId);
   if (!removed) { res.status(404).json({ error: "Product not found." }); return; }
   for (const url of urls) deleteCloudinaryImage(url);

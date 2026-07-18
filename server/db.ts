@@ -270,11 +270,10 @@ interface PaymentMethod {
 
 interface ProductImage {
   id: number;
-  product_id: string;
-  image_url: string;
-  sort_order: number;
-  is_primary: number;
-  created_at: string;
+  productId: string;
+  imageUrl: string;
+  sortOrder: number;
+  isPrimary: number;
 }
 
 interface Message {
@@ -1158,12 +1157,20 @@ async function setProductImageUrl(id: string, url: string): Promise<void> {
 }
 
 async function getProductImages(productId: string): Promise<ProductImage[]> {
-  return await queryAll("SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order", [productId]) as ProductImage[];
+  const rows = await queryAll("SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order", [productId]);
+  return rows.map((r: any) => ({
+    id: r.id,
+    productId: r.product_id,
+    imageUrl: r.image_url,
+    sortOrder: r.sort_order,
+    isPrimary: r.is_primary,
+  })) as ProductImage[];
 }
 
 async function addProductImage(productId: string, imageUrl: string, sortOrder: number = 0, isPrimary: number = 0): Promise<ProductImage> {
   const result = await query("INSERT INTO product_images (product_id, image_url, sort_order, is_primary) VALUES ($1, $2, $3, $4) RETURNING *", [productId, imageUrl, sortOrder, isPrimary]);
-  return result.rows[0] as ProductImage;
+  const r = result.rows[0] as any;
+  return { id: r.id, productId: r.product_id, imageUrl: r.image_url, sortOrder: r.sort_order, isPrimary: r.is_primary };
 }
 
 async function deleteProductImage(id: number): Promise<boolean> {
