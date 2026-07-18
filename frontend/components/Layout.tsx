@@ -60,7 +60,22 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const defaultHeader = (
     <header className="site-header">
       <div className="header-inner">
-        <div className="header-left">
+        <nav className="main-nav-desktop" aria-label="Main">
+          {NAV_LINKS.map((link) => (
+            <Link
+              key={link.id}
+              href={link.href}
+              className={activeNav === link.id ? "active" : ""}
+              aria-current={activeNav === link.id ? "page" : undefined}
+            >
+              {link.label}
+              {link.id === "cart" && cartCount > 0 && (
+                <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
+              )}
+            </Link>
+          ))}
+        </nav>
+        <div className="header-right">
           <Link className="brand" href="/" onClick={closeMobile}>
             {settings?.storeLogo ? (
               <img src={settings.storeLogo} alt={settings.storeName || "Store"} className="site-logo" />
@@ -68,23 +83,6 @@ export default function Layout({ children, activeNav }: LayoutProps) {
               settings?.storeName || "Gear&Glitch"
             )}
           </Link>
-          <nav className="main-nav-desktop" aria-label="Main">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.id}
-                href={link.href}
-                className={activeNav === link.id ? "active" : ""}
-                aria-current={activeNav === link.id ? "page" : undefined}
-              >
-                {link.label}
-                {link.id === "cart" && cartCount > 0 && (
-                  <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
-                )}
-              </Link>
-            ))}
-          </nav>
-        </div>
-        <div className="header-right">
           {(getCustomerToken() || getProviderToken() || isStaff) && messagingEnabled && (
             <NotificationBell onClick={() => {
               window.location.href = isStaff ? "/owner" : "/dashboard";
