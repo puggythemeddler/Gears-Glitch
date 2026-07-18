@@ -225,6 +225,9 @@ import {
   updateProductSortOrder,
   logEmail,
   listEmailLogs,
+  getWhatsAppConversations,
+  listWhatsAppLogs,
+  getWhatsAppStats,
 } from "./db";
 import { query, queryOne, queryAll } from "./db-helpers";
 import {
@@ -279,6 +282,7 @@ import {
 } from "./repairs";
 import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail } from "./email";
+import { handleWhatsAppWebhook, verifyWhatsAppChallenge, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection } from "./whatsapp";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
@@ -2074,6 +2078,7 @@ app.post("/api/messages", customerAuthMiddleware, async (req: Request, res: Resp
       sendEmail(provider.email, emailSub, html, "message");
       const settings = await getSettings();
       if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+      if (provider.phone) sendWhatsAppMessage(provider.phone, `[${subject || "New Message"}] ${body.substring(0, 500)}`, "provider", provider.id, provider.companyName || provider.contactName || "");
     }
   } catch (err: any) {
     console.error("[customer message send]", err?.message || err);
@@ -2095,6 +2100,7 @@ app.post("/api/provider/messages", providerAuthMiddleware, requireProviderFeatur
       if (customer.email) sendEmail(customer.email, emailSub, html, "message");
       const settings = await getSettings();
       if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+      if (customer.phone) sendWhatsAppMessage(customer.phone, `[${subject || "New Message"}] ${body.substring(0, 500)}`, "customer", customer.id, customer.name || "");
     }
   } catch (err: any) {
     console.error("[provider message send]", err?.message || err);
@@ -3799,6 +3805,8 @@ app.post("/api/admin/messages", ownerAuthMiddleware, async (req: Request, res: R
       if (provider.email) sendEmail(provider.email, emailSub, html, "message");
       const settings = await getSettings();
       if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+      if (customer.phone) sendWhatsAppMessage(customer.phone, `[${subject || "Message from Admin"}] ${body.substring(0, 500)}`, "customer", customer.id, customer.name || "");
+      if (provider.phone) sendWhatsAppMessage(provider.phone, `[${subject || "Message from Admin"}] ${body.substring(0, 500)}`, "provider", provider.id, provider.companyName || provider.contactName || "");
     }
   } catch (err: any) {
     console.error("[admin message send]", err?.message || err);
@@ -3986,6 +3994,52 @@ app.delete("/api/spec-templates/:id", ownerAuthMiddleware, async (req: Request, 
   const ok = await deleteSpecTemplateField(Number(req.params.id));
   if (!ok) { res.status(404).json({ error: "Spec field not found." }); return; }
   res.json({ ok: true });
+});
+
+// ============ WHATSAPP ============
+app.get("/api/webhooks/whatsapp", async (req: Request, res: Response) => {
+  const mode = String(req.query["hub.mode"] || "");
+  const token = String(req.query["hub.verify_token"] || "");
+  const challenge = String(req.query["hub.challenge"] || "");
+  const result = await verifyWhatsAppChallenge(mode, token, challenge);
+  if (result.ok && result.response) {
+    res.status(200).send(result.response);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+app.post("/api/webhooks/whatsapp", async (req: Request, res: Response) => {
+  try {
+    handleWhatsAppWebhook(req.body).catch(() => {});
+  } catch {}
+  res.sendStatus(200);
+});
+
+app.get("/api/admin/whatsapp/config", adminAuthMiddleware, async (_req: Request, res: Response) => {
+  const config = await getWhatsAppConfig();
+  res.json(config);
+});
+
+app.post("/api/admin/whatsapp/test", adminAuthMiddleware, async (_req: Request, res: Response) => {
+  const result = await testWhatsAppConnection();
+  res.json(result);
+});
+
+app.get("/api/admin/whatsapp/conversations", adminAuthMiddleware, async (_req: Request, res: Response) => {
+  const convos = await getWhatsAppConversations();
+  res.json({ conversations: convos });
+});
+
+app.get("/api/admin/whatsapp/logs", adminAuthMiddleware, async (req: Request, res: Response) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const logs = await listWhatsAppLogs(limit);
+  res.json({ logs });
+});
+
+app.get("/api/admin/whatsapp/stats", adminAuthMiddleware, async (_req: Request, res: Response) => {
+  const stats = await getWhatsAppStats();
+  res.json(stats);
 });
 
 // Global error handler

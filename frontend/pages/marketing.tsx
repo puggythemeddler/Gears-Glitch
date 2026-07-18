@@ -53,6 +53,7 @@ const FEATURES = [
   { icon: "🧾", name: "KRA eTIMS Invoicing", desc: "Fully compliant invoices and credit notes with control codes, serial numbers, and receipt generation." },
   { icon: "🔐", name: "Role-Based Permissions", desc: "Granular access control for admin, owner, manager, staff, technician, provider, and customer roles." },
   { icon: "🔔", name: "Email Notifications", desc: "Automated emails for order status updates, quote delivery, credit notes, and customer messaging." },
+  { icon: "📱", name: "WhatsApp Integration", desc: "Bidirectional WhatsApp messaging via Meta Cloud API. Send/receive messages, 24h window tracking, conversation logs." },
   { icon: "💱", name: "Multi-Currency Support", desc: "Display prices in multiple currencies with live exchange rate conversion for international customers." },
   { icon: "💰", name: "M-Pesa Integration", desc: "Accept M-Pesa payments directly through the POS and online checkout with automatic reconciliation." },
   { icon: "📝", name: "Credit Notes", desc: "Issue KRA-compliant credit notes with eTIMS integration for returns and billing adjustments." },

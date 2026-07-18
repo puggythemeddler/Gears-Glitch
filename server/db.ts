@@ -247,6 +247,12 @@ interface Settings {
   emailSender: string;
   emailSenderName: string;
   emailNotificationsEnabled: boolean;
+  whatsappEnabled: boolean;
+  whatsappPhoneNumberId: string;
+  whatsappAccessToken: string;
+  whatsappAppSecret: string;
+  whatsappVerifyToken: string;
+  whatsappBusinessAccountId: string;
 }
 
 interface CategoryRow {
@@ -876,6 +882,39 @@ async function runMigrations(): Promise<void> {
     const shopPhone = await getStoreSetting("phone") || "";
     await query("INSERT INTO clients (name, email, phone, settings) VALUES ($1, $2, $3, $4)", [shopName, shopEmail, shopPhone, JSON.stringify({ migrated: true })]);
   }
+
+  // WhatsApp tables
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS whatsapp_conversations (
+      id SERIAL PRIMARY KEY,
+      phone_number TEXT NOT NULL,
+      entity_type TEXT NOT NULL DEFAULT 'customer',
+      entity_id INTEGER NOT NULL,
+      entity_name TEXT NOT NULL DEFAULT '',
+      last_incoming_at TEXT,
+      last_outgoing_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (NOW()::text),
+      updated_at TEXT NOT NULL DEFAULT (NOW()::text),
+      UNIQUE (phone_number)
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_wa_conv_phone ON whatsapp_conversations(phone_number)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_wa_conv_entity ON whatsapp_conversations(entity_type, entity_id)`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS whatsapp_logs (
+      id SERIAL PRIMARY KEY,
+      phone_number TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      message_type TEXT NOT NULL DEFAULT 'text',
+      content TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'sent',
+      wa_message_id TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_wa_logs_phone ON whatsapp_logs(phone_number)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_wa_logs_status ON whatsapp_logs(status)`);
+  } catch {}
 }
 
 async function ensureDefaultSettings(): Promise<void> {
@@ -1115,6 +1154,12 @@ async function getSettings(): Promise<Settings> {
     emailSender: s.emailSender || process.env.FROM_EMAIL || "",
     emailSenderName: s.emailSenderName || process.env.SITE_NAME || "Gear&Glitch",
     emailNotificationsEnabled: s.emailNotificationsEnabled !== "false",
+    whatsappEnabled: s.whatsappEnabled === "true",
+    whatsappPhoneNumberId: s.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || "",
+    whatsappAccessToken: s.whatsappAccessToken || process.env.WHATSAPP_ACCESS_TOKEN || "",
+    whatsappAppSecret: s.whatsappAppSecret || process.env.WHATSAPP_APP_SECRET || "",
+    whatsappVerifyToken: s.whatsappVerifyToken || process.env.WHATSAPP_VERIFY_TOKEN || "gear-glitch-wa-verify",
+    whatsappBusinessAccountId: s.whatsappBusinessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
   };
 }
 
@@ -1129,7 +1174,7 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 }
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
-  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled"];
+  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled", "whatsappEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId"];
   if (updates.paymentMethods) await setPaymentMethods(updates.paymentMethods);
   await transaction(async (client) => {
     for (const key of allowed) {
@@ -2816,6 +2861,52 @@ async function logEmail(toEmail: string, fromEmail: string, subject: string, bod
   await query("INSERT INTO email_logs (to_email, from_email, subject, body_html, type, status, error_message) VALUES ($1, $2, $3, $4, $5, $6, $7)", [toEmail, fromEmail, subject, bodyHtml, type, status, errorMessage || null]);
 }
 
+async function upsertWhatsAppConversation(phoneNumber: string, entityType: string, entityId: number, entityName: string, direction: string): Promise<void> {
+  const field = direction === "inbound" ? "last_incoming_at" : "last_outgoing_at";
+  await query(
+    `INSERT INTO whatsapp_conversations (phone_number, entity_type, entity_id, entity_name, ${field}) VALUES ($1, $2, $3, $4, NOW()::text)
+     ON CONFLICT (phone_number) DO UPDATE SET ${field} = NOW()::text, entity_type = EXCLUDED.entity_type, entity_id = EXCLUDED.entity_id, entity_name = EXCLUDED.entity_name, updated_at = NOW()::text`,
+    [phoneNumber, entityType, entityId, entityName]
+  );
+}
+
+async function getWhatsAppConversationByPhone(phoneNumber: string): Promise<any | null> {
+  return await queryOne("SELECT * FROM whatsapp_conversations WHERE phone_number = $1", [phoneNumber]) || null;
+}
+
+async function getWhatsAppConversations(): Promise<any[]> {
+  return await queryAll("SELECT * FROM whatsapp_conversations ORDER BY updated_at DESC");
+}
+
+async function logWhatsAppMessage(phoneNumber: string, direction: string, messageType: string, content: string, status: string, waMessageId?: string, errorMessage?: string): Promise<void> {
+  await query(
+    "INSERT INTO whatsapp_logs (phone_number, direction, message_type, content, status, wa_message_id, error_message) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    [phoneNumber, direction, messageType, content, status, waMessageId || null, errorMessage || null]
+  );
+}
+
+async function listWhatsAppLogs(limit: number = 50): Promise<any[]> {
+  return await queryAll("SELECT * FROM whatsapp_logs ORDER BY created_at DESC LIMIT $1", [limit]);
+}
+
+async function getWhatsAppStats(): Promise<{ totalSent: number; totalReceived: number; failed: number; conversations: number }> {
+  const sent = await queryOne("SELECT COUNT(*) AS c FROM whatsapp_logs WHERE direction = 'outbound'") as any;
+  const received = await queryOne("SELECT COUNT(*) AS c FROM whatsapp_logs WHERE direction = 'inbound'") as any;
+  const failed = await queryOne("SELECT COUNT(*) AS c FROM whatsapp_logs WHERE status = 'failed'") as any;
+  const convos = await queryOne("SELECT COUNT(*) AS c FROM whatsapp_conversations") as any;
+  return { totalSent: Number(sent?.c || 0), totalReceived: Number(received?.c || 0), failed: Number(failed?.c || 0), conversations: Number(convos?.c || 0) };
+}
+
+async function findCustomerByPhone(phone: string): Promise<any | null> {
+  const digits = phone.replace(/\D/g, "");
+  return await queryOne("SELECT id, name, email, phone FROM customers WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE $1 AND is_active = 1", [`%${digits.slice(-9)}%`]) || null;
+}
+
+async function findProviderByPhone(phone: string): Promise<any | null> {
+  const digits = phone.replace(/\D/g, "");
+  return await queryOne("SELECT id, company_name, contact_name, phone FROM providers WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE $1", [`%${digits.slice(-9)}%`]) || null;
+}
+
 async function listEmailLogs(limit: number = 50): Promise<any[]> {
   return await queryAll("SELECT id, to_email, from_email, subject, type, status, error_message, created_at FROM email_logs ORDER BY created_at DESC LIMIT $1", [limit]);
 }
@@ -2867,6 +2958,7 @@ export {
   getLoyaltyPoints, earnLoyaltyPoints, redeemLoyaltyPoints, getLoyaltyTransactions, listAllLoyaltyCustomers,
   listActiveSplashes, listAllSplashes, getSplash, createSplash, updateSplash, deleteSplash,
   updateProductSortOrder, logEmail, listEmailLogs,
+  upsertWhatsAppConversation, getWhatsAppConversationByPhone, getWhatsAppConversations, logWhatsAppMessage, listWhatsAppLogs, getWhatsAppStats, findCustomerByPhone, findProviderByPhone,
   getDb,
   storeImage, getImage, deleteImageByRef,
 };
