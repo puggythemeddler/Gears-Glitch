@@ -1,9 +1,14 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, and dark/light theme toggle. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, and configurable logo position. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ## Recent highlights
 
+- **Sale price / strikethrough pricing** — Products support an optional sale price. Strikethrough original + red sale price displayed on product cards, product detail page, owner products table, POS grid, and admin products table. POS automatically charges the sale price when adding to cart.
+- **Promotional banners / Splashes** — Admin can create marquee or static promotional banners with custom background/text colors, active date ranges, and on/off toggle. Quick presets for Black Friday, Happy Hour, Christmas, New Year Sale, and Back to School.
+- **Kenyan holiday calendar** — Auto-displayed marquee banners for 12 Kenyan public holidays (New Year's Day, Eid el-Fitr, Good Friday, Easter Monday, Labour Day, Madaraka Day, Eid el-Adha, Mazingira Day, Black Friday, Jamhuri Day, Christmas Day, Boxing Day) plus seasonal auto-banners (Christmas Season, New Year Sale, Year End Sale). Each holiday has unique Kenya flag-themed gradient colors and catchy taglines.
+- **Store logo on all documents** — Logo automatically appears on POS receipts (thermal + A4), customer invoices, admin order invoices, credit notes, and quote PDFs. Configurable position (top-left, top-middle, top-right) via admin Settings.
+- **FK cascade fix for product deletion** — All product-referencing tables now use `ON DELETE CASCADE`, fixing the 502 crash when deleting products with order/quote/stock history. 37 old placeholder products cleaned up.
 - Product detail page fixed — `product_views` table auto-creates on startup, analytics failures no longer crash the endpoint.
 - Image uploads stored on Cloudinary (production) with optional database backup toggle (admin Settings → Image Storage). Images served at `/api/images/:refId`.
 - Responsive UI across all breakpoints (1024px / 900px / 768px / 480px) — storefront, POS, admin, owner panels.
@@ -100,10 +105,10 @@ Opens **http://localhost:3000** in a browser.
 
 ### Admin Panel (`/admin`)
 
-Full store management with 18 sections:
+Full store management with 20 sections:
 
 - **Dashboard** — Stats overview with clickable animated counters (products, staff, pending subscription requests)
-- **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking
+- **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking, sale price (strikethrough pricing)
 - **Coupons** — Create discount/promo codes (percentage or fixed amount), set min order, max uses, expiry date, usage tracking per order
 - **Categories** — Manage product categories + subcategories (shareable across categories)
 - **Orders** — View all customer orders with shipping details, status updates, branch assignment, coupon discount display
@@ -123,8 +128,9 @@ Full store management with 18 sections:
 - **Clients** — Multi-tenant client management with per-client branches
 - **About Us** — Edit title, content, mission, vision for the /about page
 - **Storefront** — Choose layout theme (Original, Amazon, Jumia, Mobile), manage promotional banners
+- **Splashes** — Create/edit/delete promotional banners with quick presets (Black Friday, Happy Hour, Christmas, New Year Sale, Back to School), custom background/text colors, marquee vs static toggle, active date ranges, and on/off toggle. Kenyan holidays auto-displayed with themed colors.
 - **Shop Subscription** — View current plan, activate new plan, approve/reject owner requests
-- **Settings** — Store info, M-Pesa config, logo upload, currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings), image storage (Cloudinary primary + optional database backup toggle)
+- **Settings** — Store info, M-Pesa config, store logo upload with position selector (top-left/top-middle/top-right), currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings), image storage (Cloudinary primary + optional database backup toggle), exchange rates
 
 ### Owner Panel (`/owner`)
 
@@ -273,7 +279,8 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │   │   └── AdminProducts.tsx     # Products CRUD section
 │   ├── owner/                 # Owner panel extracted components
 │   ├── Layout.tsx            # Responsive header with mobile menu
-│   ├── ProductCard.tsx       # Product card
+│   ├── ProductCard.tsx       # Product card — strikethrough sale price display
+│   ├── MarqueeBanner.tsx     # Kenyan holiday calendar + promotional banner marquee
 │   ├── LoadingScreen.tsx     # Full-screen gear loading animation
 │   ├── Toast.tsx             # Toast notification system (context + provider)
 │   ├── AnimatedCounter.tsx   # Number counting animation
@@ -329,7 +336,7 @@ server/                   # Express backend (TypeScript)
 ├── index.ts              # Express server — all API routes + static serving
 ├── db.ts                 # PostgreSQL database layer (async CRUD, migrations, seed)
 ├── db-helpers.ts         # Query utility functions (query, queryOne, queryAll, transaction)
-├── schema.sql            # PostgreSQL schema (52 tables)
+├── schema.sql            # PostgreSQL schema (54 tables)
 ├── auth.ts               # JWT auth middleware + login/register
 ├── repairs.ts            # Repair ticket lifecycle
 ├── permissions.ts        # Role-based permissions + assignRoleToUser
@@ -368,6 +375,7 @@ data/
 | GET | `/api/repairs/statuses` | Repair status labels |
 | GET | `/api/shop/features` | Active subscription features for feature-gating UI |
 | GET | `/api/images/:refId` | DB-backed-up image (base64 served as binary) |
+| GET | `/api/splashes` | Active promotional banners (public, filtered by date range) |
 
 ### Customer
 
@@ -443,6 +451,12 @@ Full CRUD for products, categories (including subcategories), staff, roles, plan
 | POST | `/api/products/import` | Bulk import products from JSON array (admin/owner only) — validates name, price, category on every row; aborts entire import on any invalid row |
 | POST | `/api/admin/products/bulk-edit` | Bulk update product price, category, inStock for selected product IDs |
 | GET | `/api/admin/products/:id/price-history` | Price change history for a product (last 50 changes) |
+| GET | `/api/admin/splashes` | List all promotional banners |
+| POST | `/api/admin/splashes` | Create a promotional banner |
+| PUT | `/api/admin/splashes/:id` | Update a promotional banner |
+| DELETE | `/api/admin/splashes/:id` | Delete a promotional banner |
+| POST | `/api/settings/logo` | Upload store logo (Cloudinary) |
+| PUT | `/api/settings/logo-position` | Update logo position (top-left/top-middle/top-right) |
 | GET | `/api/admin/coupons` | List all coupons |
 | POST | `/api/admin/coupons` | Create a coupon |
 | PUT | `/api/admin/coupons/:id` | Update a coupon |
@@ -704,7 +718,11 @@ npm start                # Serve production build
 - Error responses return generic messages — internal error details are not exposed to clients.
 - **Tax system**: Global tax rate configurable in Settings (default 16%). Each product has a taxable toggle (eTims-compatible).
 - **Currency system**: Storefront auto-detects user's currency via timezone/locale. Exchange rates auto-fetched from open.er-api.com (cached 1h). Admin can override with custom rates in Settings. Currency selector appears in all storefront layout headers.
-- **Quotations**: Admin panel has a dedicated Quotations section under Sales for creating and managing hardware quotes.
+- **Quotations**: Admin panel has a dedicated Quotations section under Sales for creating and managing hardware quotes. Quote PDFs include the store logo.
+- **Sale Price / Strikethrough Pricing**: Products support an optional sale price field. When set, all UI surfaces (product cards, product detail, POS grid, admin/owner tables) show the original price with strikethrough and the sale price in red. POS charges the sale price automatically.
+- **Promotional Banners (Splashes)**: Admin can create marquee or static banners with custom colors, date ranges, and on/off toggle. Quick presets for common events. The MarqueeBanner component also auto-displays Kenyan public holidays with themed gradients and taglines.
+- **Store Logo**: Upload a store logo from admin Settings. Logo appears on POS receipts (thermal + A4), customer invoices, admin order invoices, credit notes, and quote PDFs. Position configurable (top-left/top-middle/top-right).
+- **Product Deletion**: All product-referencing tables use `ON DELETE CASCADE`. Deleting a product automatically removes related order items, quote items, stock records, price history, and reviews.
 - **Sales Report**: Includes per-branch breakdown table when viewing combined data, plus date range and branch filter, daily revenue trend chart (SVG), and export to Excel (CSV) or printable PDF.
 - **Coupons**: Admin can create percentage or fixed discount codes with min order, max uses, and expiry. Customers apply at checkout. Discount recorded per order.
 - **Bulk Edit**: Products table supports multi-select with checkboxes and bulk price/category/stock updates.
