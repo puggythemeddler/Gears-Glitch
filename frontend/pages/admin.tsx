@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState, useRef } from "react";
-import { api, getStaffToken } from "@/lib/api";
+import { api, getStaffToken, downloadPdf } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import { SkeletonStats, SkeletonTable } from "@/components/Skeleton";
@@ -19,7 +19,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[] = [
   {
@@ -57,6 +57,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "stock-on-hand", label: "Stock on Hand" },
       { key: "stock-transfers", label: "Stock Transfers" },
       { key: "stock-take", label: "Stock Take" },
+      { key: "messages", label: "Messages" },
     ],
   },
   {
@@ -340,6 +341,7 @@ export default function AdminPage() {
             {view === "about-us" && <AdminAboutUs />}
             {view === "storefront" && <AdminStorefront />}
             {view === "settings" && <AdminSettings />}
+            {view === "messages" && <AdminMessages />}
           </div>
           </div>
       </div>
@@ -593,9 +595,9 @@ function AdminOrders() {
   async function printInvoice(orderId: number) {
     try {
       const res = await api<{ token: string }>("/api/admin/invoice-token/" + orderId, { method: "POST" });
-      window.open(`/api/admin/orders/${orderId}/invoice?token=${encodeURIComponent(res.token)}`, "_blank");
+      await downloadPdf(`/api/admin/orders/${orderId}/invoice?token=${encodeURIComponent(res.token)}`, `invoice-${orderId}.pdf`);
     } catch (e: any) {
-      alert("Failed to generate invoice link: " + (e?.message || "Unknown error"));
+      alert("Failed to download invoice: " + (e?.message || "Unknown error"));
     }
   }
 
@@ -1749,7 +1751,7 @@ function AdminInvoices() {
         body: JSON.stringify({ orderId, reason: reason.trim() }),
       });
       setCreditedOrders((prev) => ({ ...prev, [orderId]: true }));
-      window.open(`/api/admin/credit-notes/${created.id}/view`, "_blank", "noopener,noreferrer");
+      await downloadPdf(`/api/admin/credit-notes/${created.id}/view`, `credit-note-${created.id}.pdf`);
     } catch (err: any) {
       alert(err.message || "Failed to create credit note.");
     }
@@ -1819,7 +1821,7 @@ function AdminInvoices() {
                         <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                         <td>
                           {inv.status !== "paid" && <button className="btn btn-sm" onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
-                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); window.open(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch (e: any) { alert("Failed to view invoice: " + (e?.message || "Unknown error")); } }}>View</button>
+                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); await downloadPdf(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, `invoice-${inv.orderId}.pdf`); } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); } }}>View</button>
                           {creditedOrders[inv.orderId] ? (
                             <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
                           ) : (
@@ -1868,13 +1870,207 @@ function AdminCreditNotes() {
                 <td>{escapeHtml(note.reason || '—')}</td>
                 <td><span className="plan-status" style={{ background: note.status === 'submitted' ? '#d1fae5' : '#fef3c7', color: note.status === 'submitted' ? '#065f46' : '#92400e' }}>{note.status}</span></td>
                 <td>
-                  <button className="btn btn-sm btn-ghost" onClick={() => window.open(`/api/admin/credit-notes/${note.id}/view`, '_blank', 'noopener,noreferrer')}>View</button>
+                  <button className="btn btn-sm btn-ghost" onClick={() => downloadPdf(`/api/admin/credit-notes/${note.id}/view`, `credit-note-${note.id}.pdf`).catch((e: any) => alert("Failed to download credit note: " + (e?.message || "Unknown error")))}>View</button>
                 </td>
               </tr>
             ))}
             {creditNotes.length === 0 && <tr><td colSpan={7}><EmptyState icon="invoices" title="No credit notes" description="Credit notes created from invoices will appear here." /></td></tr>}
           </tbody>
         </table>
+      </div>
+    </>
+  );
+}
+
+// ===================== MESSAGES =====================
+function AdminMessages() {
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const [replyBody, setReplyBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [providers, setProviders] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeCustomerId, setComposeCustomerId] = useState<number | null>(null);
+  const [composeProviderId, setComposeProviderId] = useState<number | null>(null);
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeBody, setComposeBody] = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    loadMessages();
+    const iv = setInterval(loadMessages, 30000);
+    return () => clearInterval(iv);
+  }, []);
+
+  async function loadMessages() {
+    try {
+      const d = await api<{ messages: any[] }>("/api/admin/messages");
+      setMessages(d.messages || []);
+    } catch { }
+    setLoading(false);
+  }
+
+  async function loadProvidersAndCustomers() {
+    try {
+      const [pRes, cRes] = await Promise.all([
+        api<{ providers: any[] }>("/api/providers").catch(() => ({ providers: [] })),
+        api<{ customers: any[] }>("/api/admin/customers").catch(() => ({ customers: [] })),
+      ]);
+      setProviders(pRes.providers || []);
+      setCustomers(cRes.customers || []);
+    } catch { }
+  }
+
+  function groupConversations() {
+    const groups: Record<string, { partner: string; messages: any[]; lastAt: string; unread: number }> = {};
+    for (const m of messages) {
+      const key = m.senderRole === "customer" ? `customer:${m.customerId}` : `provider:${m.providerId}`;
+      if (!groups[key]) {
+        groups[key] = { partner: m.customerName || m.providerName || `#${key}`, messages: [], lastAt: m.createdAt, unread: 0 };
+      }
+      groups[key].messages.push(m);
+      if (m.createdAt > groups[key].lastAt) groups[key].lastAt = m.createdAt;
+      if (m.senderRole !== "admin" && !m.readAt) groups[key].unread++;
+    }
+    return Object.entries(groups).sort((a, b) => b[1].lastAt.localeCompare(a[1].lastAt));
+  }
+
+  async function sendReply() {
+    if (!replyBody.trim() || !selectedConversation) return;
+    const msgs = messages.filter((m) => {
+      const key = m.senderRole === "customer" ? `customer:${m.customerId}` : `provider:${m.providerId}`;
+      return key === selectedConversation;
+    });
+    const lastMsg = msgs[msgs.length - 1];
+    if (!lastMsg) return;
+    setSending(true);
+    try {
+      await api("/api/admin/messages", { method: "POST", body: JSON.stringify({ customerId: lastMsg.customerId, providerId: lastMsg.providerId, body: replyBody.trim(), subject: lastMsg.subject }) });
+      setReplyBody("");
+      await loadMessages();
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    } catch (e: any) { alert("Failed to send: " + (e?.message || "Unknown error")); }
+    setSending(false);
+  }
+
+  async function sendCompose() {
+    if (!composeBody.trim() || !composeCustomerId || !composeProviderId) { alert("Select customer, provider and enter a message."); return; }
+    setSending(true);
+    try {
+      await api("/api/admin/messages", { method: "POST", body: JSON.stringify({ customerId: composeCustomerId, providerId: composeProviderId, body: composeBody.trim(), subject: composeSubject.trim() }) });
+      setComposeOpen(false); setComposeBody(""); setComposeSubject(""); setComposeCustomerId(null); setComposeProviderId(null);
+      await loadMessages();
+    } catch (e: any) { alert("Failed to send: " + (e?.message || "Unknown error")); }
+    setSending(false);
+  }
+
+  async function markRead(conversationKey: string) {
+    const msgs = messages.filter((m) => {
+      const key = m.senderRole === "customer" ? `customer:${m.customerId}` : `provider:${m.providerId}`;
+      return key === conversationKey && !m.readAt;
+    });
+    for (const m of msgs) {
+      try { await api(`/api/admin/messages/${m.id}/read`, { method: "PATCH" }); } catch { }
+    }
+    loadMessages();
+  }
+
+  const convos = groupConversations();
+  const activeMsgs = selectedConversation ? messages.filter((m) => {
+    const key = m.senderRole === "customer" ? `customer:${m.customerId}` : `provider:${m.providerId}`;
+    return key === selectedConversation;
+  }).sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : [];
+
+  if (loading) return <><h1>Messages</h1><Spinner /></>;
+
+  return (
+    <>
+      <h1 className="anim-fade-in-down">Messages</h1>
+      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem" }}>
+        <RippleButton size="small" onClick={() => { setComposeOpen(!composeOpen); if (!composeOpen) loadProvidersAndCustomers(); }}>{composeOpen ? "Close" : "New Message"}</RippleButton>
+      </div>
+      {composeOpen && (
+        <div className="panel" style={{ marginBottom: "1rem", padding: "1rem" }}>
+          <h3 style={{ marginTop: 0 }}>Compose Message</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+            <div className="field" style={{ margin: 0 }}>
+              <label>Customer</label>
+              <select value={composeCustomerId || ""} onChange={(e) => setComposeCustomerId(Number(e.target.value) || null)}>
+                <option value="">Select customer...</option>
+                {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name || c.email}</option>)}
+              </select>
+            </div>
+            <div className="field" style={{ margin: 0 }}>
+              <label>Provider</label>
+              <select value={composeProviderId || ""} onChange={(e) => setComposeProviderId(Number(e.target.value) || null)}>
+                <option value="">Select provider...</option>
+                {providers.map((p: any) => <option key={p.id} value={p.id}>{p.company_name || p.contact_name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="field" style={{ margin: 0, marginBottom: "0.75rem" }}>
+            <label>Subject</label>
+            <input value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} placeholder="Optional subject" />
+          </div>
+          <div className="field" style={{ margin: 0, marginBottom: "0.75rem" }}>
+            <label>Message</label>
+            <textarea rows={3} value={composeBody} onChange={(e) => setComposeBody(e.target.value)} placeholder="Type your message..." />
+          </div>
+          <RippleButton size="small" onClick={sendCompose} loading={sending}>Send</RippleButton>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: "1rem", minHeight: "500px" }}>
+        <div style={{ flex: "0 0 280px", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: "0.85rem" }}>Conversations</div>
+          <div style={{ overflowY: "auto", maxHeight: "450px" }}>
+            {convos.length === 0 && <p style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>No messages yet.</p>}
+            {convos.map(([key, conv]) => (
+              <div key={key} onClick={() => { setSelectedConversation(key); markRead(key); }}
+                style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", cursor: "pointer", background: selectedConversation === key ? "var(--bg-secondary)" : "transparent", transition: "background 0.15s" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong style={{ fontSize: "0.85rem" }}>{conv.partner}</strong>
+                  {conv.unread > 0 && <span style={{ background: "var(--primary)", color: "#fff", borderRadius: 999, fontSize: "0.7rem", padding: "0.1rem 0.5rem", fontWeight: 600 }}>{conv.unread}</span>}
+                </div>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.78rem", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {conv.messages[conv.messages.length - 1]?.body}
+                </p>
+                <p style={{ margin: "0.15rem 0 0", fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+                  {new Date(conv.lastAt).toLocaleString("en-GB", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ flex: 1, border: "1px solid var(--border)", borderRadius: 8, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {!selectedConversation ? (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", fontSize: "0.9rem" }}>Select a conversation</div>
+          ) : (
+            <>
+              <div style={{ flex: 1, overflowY: "auto", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {activeMsgs.map((m: any) => {
+                  const isMe = m.senderRole === "admin";
+                  return (
+                    <div key={m.id} style={{ maxWidth: "75%", alignSelf: isMe ? "flex-end" : "flex-start", background: isMe ? "var(--primary)" : "var(--bg-secondary)", color: isMe ? "#fff" : "var(--text)", borderRadius: 12, padding: "0.6rem 0.9rem", fontSize: "0.85rem" }}>
+                      {!isMe && <div style={{ fontSize: "0.7rem", fontWeight: 600, marginBottom: "0.2rem", opacity: 0.7 }}>{m.senderRole === "customer" ? (m.customerName || "Customer") : (m.providerName || "Provider")}</div>}
+                      <div>{m.body}</div>
+                      <div style={{ fontSize: "0.65rem", opacity: 0.6, marginTop: "0.2rem", textAlign: isMe ? "right" : "left" }}>
+                        {new Date(m.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                        {isMe && m.readAt ? " ✓✓" : isMe ? " ✓" : ""}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={chatEndRef} />
+              </div>
+              <div style={{ borderTop: "1px solid var(--border)", padding: "0.75rem", display: "flex", gap: "0.5rem" }}>
+                <input style={{ flex: 1 }} value={replyBody} onChange={(e) => setReplyBody(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); } }} placeholder="Type a reply..." />
+                <RippleButton size="small" onClick={sendReply} loading={sending}>Send</RippleButton>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </>
   );
@@ -2808,7 +3004,7 @@ function AdminQuotations() {
               </tbody>
             </table>
           </div>
-          <RippleButton size="small" style={{marginTop:"1rem"}} onClick={() => window.open(`/api/admin/quotes/${q.id}/generate`, "_blank")}>Generate</RippleButton>
+          <RippleButton size="small" style={{marginTop:"1rem"}} onClick={() => downloadPdf(`/api/admin/quotes/${q.id}/pdf`, `quote-${q.quoteNumber || q.id}.pdf`).catch((e: any) => alert("Failed to download quote: " + (e?.message || "Unknown error")))}>Generate PDF</RippleButton>
         </div>
       </>
     );

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { api, getRole, getTokenForRole } from "@/lib/api";
+import { api, getRole, getTokenForRole, downloadPdf } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { useApp } from "@/lib/app-context";
 
@@ -287,7 +287,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
   }
 
   function openPdf() {
-    window.open(`/api/admin/quotes/${quote.id}/pdf?token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
+    downloadPdf(`/api/admin/quotes/${quote.id}/pdf?token=${encodeURIComponent(getTokenForRole() || "")}`, `quote-${quote.quoteNumber || quote.id}.pdf`).catch((e: any) => alert("Failed to download quote: " + (e?.message || "Unknown error")));
   }
 
   const editSubtotal = editItems.reduce((s, i) => s + calcEditItemTotal(i), 0);

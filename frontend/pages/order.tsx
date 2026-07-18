@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { api, isCustomerLoggedIn } from "@/lib/api";
+import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import type { Order } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 
@@ -74,7 +74,7 @@ export default function OrderDetailPage() {
         </div>
         {(order.status === "shipped" || order.status === "delivered") && (
           <div style={{ marginBottom: "1rem" }}>
-            <RippleButton onClick={async () => { try { const r = await api<{ token: string }>("/api/orders/invoice-token/" + order.id, { method: "POST" }); window.open(`/api/orders/${order.id}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch (e: any) { alert("Failed to view invoice: " + (e?.message || "Unknown error")); } }}>Invoice</RippleButton>
+            <RippleButton onClick={async () => { try { const r = await api<{ token: string }>("/api/orders/invoice-token/" + order.id, { method: "POST" }); await downloadPdf(`/api/orders/${order.id}/invoice?token=${encodeURIComponent(r.token)}`, `invoice-${order.id}.pdf`); } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); } }}>Invoice</RippleButton>
           </div>
         )}
 

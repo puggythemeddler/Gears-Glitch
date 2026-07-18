@@ -270,6 +270,7 @@ import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavico
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
+import { htmlToPdf, closeBrowser } from "./pdf";
 
 const PORT: number = Number(process.env.PORT) || 8020;
 const ROOT: string = path.join(__dirname, "..");
@@ -1339,7 +1340,7 @@ app.get("/api/admin/orders/:id/invoice", async (req: Request, res: Response) => 
   const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
   const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
   const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}` : `Invoice #${order.id}`;
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
   .invoice { border: 1px solid #e5e7eb; border-radius: 16px; padding: 2rem; }
@@ -1403,7 +1404,20 @@ app.get("/api/admin/orders/:id/invoice", async (req: Request, res: Response) => 
   <button class="print-btn" onclick="window.print()">Print / Save PDF</button>`}
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
-</body></html>`);
+</body></html>`;
+  if (req.query.format === "pdf") {
+    try {
+      const pdf = await htmlToPdf(html);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="invoice-${order.id}.pdf"`);
+      res.send(pdf);
+    } catch (pdfErr: any) {
+      console.error("[invoice] PDF generation error:", pdfErr?.message || pdfErr);
+      res.send(html);
+    }
+  } else {
+    res.send(html);
+  }
   } catch (err: any) {
     console.error("[invoice] admin invoice error:", err?.message || err);
     res.status(500).send("<h1>Failed to generate invoice</h1><p>Please try again.</p>");
@@ -1460,7 +1474,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, async (req: Request, 
   const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
   const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
   const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${modeLabel} Receipt #${vscuReceiptNo}` : `Invoice #${order.id}`;
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
   .invoice { border: 1px solid #e5e7eb; border-radius: 16px; padding: 2rem; }
@@ -1524,7 +1538,20 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, async (req: Request, 
   <button class="print-btn" onclick="window.print()">Print / Save PDF</button>`}
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
-</body></html>`);
+</body></html>`;
+  if (req.query.format === "pdf") {
+    try {
+      const pdf = await htmlToPdf(html);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="invoice-${order.id}.pdf"`);
+      res.send(pdf);
+    } catch (pdfErr: any) {
+      console.error("[invoice] customer PDF generation error:", pdfErr?.message || pdfErr);
+      res.send(html);
+    }
+  } else {
+    res.send(html);
+  }
   } catch (err: any) {
     console.error("[invoice] customer invoice error:", err?.message || err);
     res.status(500).send("<h1>Failed to generate invoice</h1><p>Please try again.</p>");
@@ -1665,7 +1692,7 @@ app.get("/api/admin/credit-notes/:id/view", async (req: Request, res: Response) 
     `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`
   ).join("");
 
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Credit Note #${cn.id} — ${store}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Credit Note #${cn.id} — ${store}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
   .cn { border: 2px solid #dc2626; border-radius: 16px; padding: 2rem; }
@@ -1726,7 +1753,20 @@ app.get("/api/admin/credit-notes/:id/view", async (req: Request, res: Response) 
   <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
-</body></html>`);
+</body></html>`;
+  if (req.query.format === "pdf") {
+    try {
+      const pdf = await htmlToPdf(html);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="credit-note-${cn.id}.pdf"`);
+      res.send(pdf);
+    } catch (pdfErr: any) {
+      console.error("[credit-notes] PDF generation error:", pdfErr?.message || pdfErr);
+      res.send(html);
+    }
+  } else {
+    res.send(html);
+  }
   } catch (err: any) {
     console.error("[credit-notes] view error:", err?.message || err);
     res.status(500).send("<html><body><h1>Error loading credit note</h1><p>" + escapeHtml(err?.message || "Unknown error") + "</p></body></html>");
@@ -3097,7 +3137,7 @@ app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("rep
   const total = quote.total;
   const statusColors: Record<string, string> = { pending: "#f59e0b", waiting_for_approval: "#3b82f6", cancelled: "#ef4444", approved: "#10b981" };
   const statusColor = statusColors[quote.status] || "#6b7280";
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Quote #${quote.quoteNumber}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Quote #${quote.quoteNumber}</title>
 <style>
   @page { size: A4; margin: 15mm; }
   body { font-family: system-ui, sans-serif; max-width: 750px; margin: 0 auto; padding: 1rem; color: #1f2937; font-size: 13px; }
@@ -3131,7 +3171,20 @@ app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("rep
   <div class="footer">${escapeHtml(store)} &mdash; ${escapeHtml(storeEmail)}</div>
   <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
 </div>
-</body></html>`);
+</body></html>`;
+  if (req.query.format === "pdf") {
+    try {
+      const pdf = await htmlToPdf(html);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="quote-${quote.quoteNumber}.pdf"`);
+      res.send(pdf);
+    } catch (pdfErr: any) {
+      console.error("[quotes] PDF generation error:", pdfErr?.message || pdfErr);
+      res.send(html);
+    }
+  } else {
+    res.send(html);
+  }
 });
 
 // ============ SPLASHES / PROMOTIONS ============
@@ -3465,4 +3518,6 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
+  process.on("SIGTERM", async () => { await closeBrowser(); process.exit(0); });
+  process.on("SIGINT", async () => { await closeBrowser(); process.exit(0); });
 })();

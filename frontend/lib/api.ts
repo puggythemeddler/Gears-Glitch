@@ -97,6 +97,28 @@ export function isCustomerLoggedIn(): boolean {
   return !!getCustomerToken();
 }
 
+export async function downloadPdf(url: string, filename: string): Promise<void> {
+  const token = getTokenForRole();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const separator = url.includes("?") ? "&" : "?";
+  const res = await fetch(`${url}${separator}format=pdf`, { headers });
+  if (!res.ok) {
+    let errMsg = `Failed (${res.status})`;
+    try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
+}
+
 export function requireCustomerLogin(redirect?: string): boolean {
   if (isCustomerLoggedIn()) return true;
   const target = redirect || (typeof window !== "undefined" ? window.location.pathname + window.location.search : "/");

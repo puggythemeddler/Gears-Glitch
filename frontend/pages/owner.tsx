@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useRef, useState } from "react";
-import { api, getStaffToken } from "@/lib/api";
+import { api, getStaffToken, downloadPdf } from "@/lib/api";
 import type { Product, Order, Provider, SubscriptionPlan, Customer, Branch } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import { getLayoutList } from "@/layouts";
@@ -1537,7 +1537,7 @@ function OwnerInvoices() {
         body: JSON.stringify({ orderId, reason: reason.trim() }),
       });
       setCreditedOrders((prev) => ({ ...prev, [orderId]: true }));
-      window.open(`/api/admin/credit-notes/${created.id}/view`, "_blank", "noopener,noreferrer");
+      await downloadPdf(`/api/admin/credit-notes/${created.id}/view`, `credit-note-${created.id}.pdf`);
     } catch (err: any) {
       alert(err.message || "Failed to create credit note.");
     }
@@ -1597,7 +1597,7 @@ function OwnerInvoices() {
                       <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                       <td>
                         {inv.status !== "paid" && <RippleButton size="small" onClick={() => markOiPaid(inv.id)}>Mark paid</RippleButton>}
-                        <RippleButton size="small" variant="ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); window.open(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, "_blank"); } catch (e: any) { alert("Failed to view invoice: " + (e?.message || "Unknown error")); } }}>View</RippleButton>
+                        <RippleButton size="small" variant="ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); await downloadPdf(`/api/admin/orders/${inv.orderId}/invoice?token=${encodeURIComponent(r.token)}`, `invoice-${inv.orderId}.pdf`); } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); } }}>View</RippleButton>
                         {creditedOrders[inv.orderId] ? (
                           <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
                         ) : (
@@ -1644,7 +1644,7 @@ function OwnerCreditNotes() {
                 <td>{escapeHtml(note.reason || '—')}</td>
                 <td><span className="plan-status" style={{ background: note.status === 'submitted' ? '#d1fae5' : '#fef3c7', color: note.status === 'submitted' ? '#065f46' : '#92400e' }}>{note.status}</span></td>
                 <td>
-                  <RippleButton size="small" variant="ghost" onClick={() => window.open(`/api/admin/credit-notes/${note.id}/view`, '_blank', 'noopener,noreferrer')}>View</RippleButton>
+                  <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/admin/credit-notes/${note.id}/view`, `credit-note-${note.id}.pdf`).catch((e: any) => alert("Failed to download credit note: " + (e?.message || "Unknown error")))}>View</RippleButton>
                 </td>
               </tr>
             ))}
