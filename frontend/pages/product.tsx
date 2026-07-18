@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback } from "react";
+﻿import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { api, isCustomerLoggedIn, requireCustomerLogin } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -36,6 +36,7 @@ export default function ProductPage() {
   const [loadError, setLoadError] = useState("");
   const [subcategories, setSubcategories] = useState<{ id: string; name: string }[]>([]);
   const [categoryLabel, setCategoryLabel] = useState("");
+  const userInteractedRef = useRef(false);
 
   useEffect(() => {
     if (!id) return;
@@ -45,7 +46,7 @@ export default function ProductPage() {
       const initImg: ProductImage = { id: 0, productId: p.id, imageUrl: p.imageUrl, sortOrder: -1, isPrimary: 1 };
       setImages([initImg]);
       api<{ images: ProductImage[] }>(`/api/products/${encodeURIComponent(id as string)}/images`).then((d) => {
-        if (d.images && d.images.length > 1) setImages(d.images);
+        if (d.images && d.images.length >= 1) setImages(d.images);
       }).catch(() => {});
       api<{ reviews: any[]; rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(id as string)}/reviews`).then((d) => {
         setReviews(d.reviews); setReviewsRating(d.rating);
@@ -74,12 +75,14 @@ export default function ProductPage() {
   const showImage = useCallback((index: number) => {
     const len = images.length;
     if (len === 0) return;
+    userInteractedRef.current = true;
     setCurrentIndex(((index % len) + len) % len);
   }, [images.length]);
 
   useEffect(() => {
     if (images.length <= 1) return;
     const timer = setInterval(() => {
+      if (userInteractedRef.current) return;
       setCurrentIndex((prev) => (prev + 1) % images.length);
     }, 4000);
     return () => clearInterval(timer);

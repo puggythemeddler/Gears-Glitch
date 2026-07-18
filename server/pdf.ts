@@ -19,7 +19,7 @@ export async function htmlToPdf(html: string, options?: { format?: string; lands
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: 30000 });
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
     const pdf = await page.pdf({
       format: (options?.format as any) || "A4",
       landscape: options?.landscape || false,

@@ -12,6 +12,13 @@ import { useFeature } from "@/lib/features";
 import { useToast } from "@/components/Toast";
 import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "@/components/admin/shared";
 import AdminProducts from "@/components/admin/AdminProducts";
+import QuotesPage from "./quotes";
+import ProvidersPage from "@/components/admin/ProvidersPage";
+import CreditNotesPage from "@/components/admin/CreditNotesPage";
+import AboutUsPage from "@/components/admin/AboutUsPage";
+import ProductPositioningPage from "@/components/admin/ProductPositioningPage";
+import StockTakeListPage from "@/components/admin/StockTakeListPage";
+import StockOnHandPage from "@/components/admin/StockOnHandPage";
 
 declare global {
   interface Window {
@@ -19,7 +26,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages" | "product-positioning" | "email-settings";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages" | "product-positioning" | "email-settings";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[] = [
   {
@@ -31,6 +38,16 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "orders", label: "Orders" },
       { key: "coupons", label: "Coupons" },
       { key: "quotations", label: "Quotations" },
+    ],
+  },
+  {
+    label: "Stock",
+    items: [
+      { key: "stock-on-hand", label: "Stock on Hand" },
+      { key: "stock-transfers", label: "Stock Transfers" },
+      { key: "stock-take", label: "Stock Take" },
+      { key: "purchases", label: "Purchase Orders" },
+      { key: "suppliers", label: "Suppliers" },
     ],
   },
   {
@@ -55,9 +72,6 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "invoices", label: "Invoices" },
       { key: "credit-notes", label: "Credit Notes" },
       { key: "reports", label: "Reports" },
-      { key: "stock-on-hand", label: "Stock on Hand" },
-      { key: "stock-transfers", label: "Stock Transfers" },
-      { key: "stock-take", label: "Stock Take" },
       { key: "messages", label: "Messages" },
       { key: "email-settings", label: "Email" },
     ],
@@ -66,7 +80,6 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
     label: "System",
     items: [
       { key: "spec-templates", label: "Spec Templates" },
-      { key: "suppliers", label: "Suppliers" },
       { key: "shop-subscription", label: "Shop Subscription" },
       { key: "about-us", label: "About Us" },
       { key: "storefront", label: "Storefront" },
@@ -343,6 +356,7 @@ export default function AdminPage() {
             {view === "stock-on-hand" && <AdminStockOnHand />}
             {view === "stock-transfers" && <AdminStockTransfers />}
             {view === "stock-take" && <AdminStockTake />}
+            {view === "purchases" && <AdminPurchases />}
             {view === "clients" && <AdminClients />}
             {view === "branches" && <AdminBranches />}
             {view === "spec-templates" && <AdminSpecTemplates />}
@@ -1296,86 +1310,7 @@ function AdminPlans() {
 }
 
 // ===================== PROVIDERS =====================
-function AdminProviders() {
-  const { data: pData, loading, error, refetch } = useFetch(() => api<{ providers: Provider[] }>("/api/admin/providers"), []);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" });
-  const [editing, setEditing] = useState<any>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function createProvider(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true);
-    try {
-      await api("/api/admin/providers", { method: "POST", body: JSON.stringify(form) });
-      setShowForm(false); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch();
-    } catch (err: any) { alert(err.message); } finally { setSaving(false); }
-  }
-
-  async function saveEdit(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true);
-    try {
-      await api(`/api/admin/providers/${editing.id}`, { method: "PUT", body: JSON.stringify(form) });
-      setEditing(null); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch();
-    } catch (err: any) { alert(err.message); } finally { setSaving(false); }
-  }
-
-  function openEdit(p: any) {
-    setForm({ companyName: p.companyName, contactName: p.contactName, email: p.email, password: "", phone: p.phone || "", pin: "" });
-    setEditing(p);
-  }
-
-  if (loading) return <Spinner />;
-  if (error) return <ErrorMsg msg={error} />;
-  const providers = pData?.providers || [];
-
-  return (
-    <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <h1 style={{ margin: 0 }}>Providers</h1>
-        {!editing && <RippleButton size="small" onClick={() => setShowForm(!showForm)}>{showForm ? "Cancel" : "+ Add"}</RippleButton>}
-      </div>
-      {(showForm || editing) && (
-        <div className="panel" style={{ marginBottom: "1rem", maxWidth: 400 }}>
-          <form onSubmit={editing ? saveEdit : createProvider}>
-            <h3 style={{ marginTop: 0 }}>{editing ? `Edit ${escapeHtml(editing.companyName)}` : "New Provider"}</h3>
-            <div className="field"><label>Company<input value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} required /></label></div>
-            <div className="field"><label>Contact name<input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} required /></label></div>
-            <div className="field"><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label></div>
-            {editing ? (
-              <div className="field"><label>New password (leave blank to keep)<input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label></div>
-            ) : (
-              <div className="field"><label>Password<input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label></div>
-            )}
-            <div className="field"><label>Phone<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label></div>
-            <div className="field"><label>PIN (min 6 digits, leave blank to keep)<input type="tel" value={form.pin} onChange={(e) => { const v = e.target.value.replace(/\D/g, ""); setForm({ ...form, pin: v }); }} placeholder="e.g. 123456" minLength={6} /></label></div>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <RippleButton type="submit" loading={saving}>{editing ? "Save" : "Add provider"}</RippleButton>
-              {editing && <RippleButton variant="ghost" onClick={() => { setEditing(null); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); }}>Cancel</RippleButton>}
-            </div>
-          </form>
-        </div>
-      )}
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            {providers.map((p) => (
-              <tr key={p.id}>
-                <td><strong>{escapeHtml(p.companyName)}</strong></td>
-                <td>{escapeHtml(p.contactName)}</td>
-                <td>{escapeHtml(p.email)}</td>
-                <td>{escapeHtml(p.phone || "—")}</td>
-                <td><span className="plan-status">{p.status}</span></td>
-                <td><RippleButton size="small" variant="ghost" onClick={() => openEdit(p)}>Edit</RippleButton></td>
-              </tr>
-            ))}
-            {providers.length === 0 && <tr><td colSpan={6}><EmptyState icon="default" title="No providers" description="Provider companies will appear here once added." /></td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-}
+const AdminProviders = ProvidersPage;
 
 // ===================== BRANCHES =====================
 function AdminClients() {
@@ -1859,44 +1794,7 @@ function AdminInvoices() {
 }
 
 // ===================== CREDIT NOTES =====================
-function AdminCreditNotes() {
-  const { data, loading, error, refetch } = useFetch(() => api<{ creditNotes: any[] }>('/api/admin/credit-notes'), []);
-
-  if (loading) return <Spinner />;
-  if (error) return <ErrorMsg msg={error} />;
-
-  const creditNotes = data?.creditNotes || [];
-
-  return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>Credit Notes</h1>
-        <RippleButton size="small" onClick={() => refetch()}>Refresh</RippleButton>
-      </div>
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead><tr><th>#</th><th>Order</th><th>Customer</th><th>Amount</th><th>Reason</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            {creditNotes.map((note: any) => (
-              <tr key={note.id}>
-                <td>#{note.id}</td>
-                <td>#{note.orderId}</td>
-                <td>{escapeHtml(note.customerName || note.customer_name || '—')}</td>
-                <td>{formatPrice(note.totalAmount || 0)}</td>
-                <td>{escapeHtml(note.reason || '—')}</td>
-                <td><span className="plan-status" style={{ background: note.status === 'submitted' ? '#d1fae5' : '#fef3c7', color: note.status === 'submitted' ? '#065f46' : '#92400e' }}>{note.status}</span></td>
-                <td>
-                  <button className="btn btn-sm btn-ghost" onClick={() => downloadPdf(`/api/admin/credit-notes/${note.id}/view`, `credit-note-${note.id}.pdf`).catch((e: any) => alert("Failed to download credit note: " + (e?.message || "Unknown error")))}>View</button>
-                </td>
-              </tr>
-            ))}
-            {creditNotes.length === 0 && <tr><td colSpan={7}><EmptyState icon="invoices" title="No credit notes" description="Credit notes created from invoices will appear here." /></td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-}
+const AdminCreditNotes = CreditNotesPage;
 
 // ===================== MESSAGES =====================
 function AdminMessages() {
@@ -1942,13 +1840,13 @@ function AdminMessages() {
   function groupConversations() {
     const groups: Record<string, { partner: string; messages: any[]; lastAt: string; unread: number }> = {};
     for (const m of messages) {
-      const key = m.senderRole === "customer" ? `customer:${m.customerId}` : `provider:${m.providerId}`;
+      const key = m.sender_role === "customer" ? `customer:${m.customer_id}` : `provider:${m.provider_id}`;
       if (!groups[key]) {
-        groups[key] = { partner: m.customerName || m.providerName || `#${key}`, messages: [], lastAt: m.createdAt, unread: 0 };
+        groups[key] = { partner: m.customerName || m.providerName || `#${key}`, messages: [], lastAt: m.created_at, unread: 0 };
       }
       groups[key].messages.push(m);
-      if (m.createdAt > groups[key].lastAt) groups[key].lastAt = m.createdAt;
-      if (m.senderRole !== "admin" && !m.readAt) groups[key].unread++;
+      if (m.created_at > groups[key].lastAt) groups[key].lastAt = m.created_at;
+      if (m.sender_role !== "admin" && !m.read_at) groups[key].unread++;
     }
     return Object.entries(groups).sort((a, b) => b[1].lastAt.localeCompare(a[1].lastAt));
   }
@@ -1956,14 +1854,14 @@ function AdminMessages() {
   async function sendReply() {
     if (!replyBody.trim() || !selectedConversation) return;
     const msgs = messages.filter((m) => {
-      const key = m.senderRole === "customer" ? `customer:${m.customerId}` : `provider:${m.providerId}`;
+      const key = m.sender_role === "customer" ? `customer:${m.customer_id}` : `provider:${m.provider_id}`;
       return key === selectedConversation;
     });
     const lastMsg = msgs[msgs.length - 1];
     if (!lastMsg) return;
     setSending(true);
     try {
-      await api("/api/admin/messages", { method: "POST", body: JSON.stringify({ customerId: lastMsg.customerId, providerId: lastMsg.providerId, body: replyBody.trim(), subject: lastMsg.subject }) });
+      await api("/api/admin/messages", { method: "POST", body: JSON.stringify({ customerId: lastMsg.customer_id, providerId: lastMsg.provider_id, body: replyBody.trim(), subject: lastMsg.subject }) });
       setReplyBody("");
       await loadMessages();
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -1984,8 +1882,8 @@ function AdminMessages() {
 
   async function markRead(conversationKey: string) {
     const msgs = messages.filter((m) => {
-      const key = m.senderRole === "customer" ? `customer:${m.customerId}` : `provider:${m.providerId}`;
-      return key === conversationKey && !m.readAt;
+      const key = m.sender_role === "customer" ? `customer:${m.customer_id}` : `provider:${m.provider_id}`;
+      return key === conversationKey && !m.read_at;
     });
     for (const m of msgs) {
       try { await api(`/api/admin/messages/${m.id}/read`, { method: "PATCH" }); } catch { }
@@ -1995,9 +1893,9 @@ function AdminMessages() {
 
   const convos = groupConversations();
   const activeMsgs = selectedConversation ? messages.filter((m) => {
-    const key = m.senderRole === "customer" ? `customer:${m.customerId}` : `provider:${m.providerId}`;
+    const key = m.sender_role === "customer" ? `customer:${m.customer_id}` : `provider:${m.provider_id}`;
     return key === selectedConversation;
-  }).sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : [];
+  }).sort((a, b) => a.created_at.localeCompare(b.created_at)) : [];
 
   if (loading) return <><h1>Messages</h1><Spinner /></>;
 
@@ -2066,14 +1964,14 @@ function AdminMessages() {
             <>
               <div style={{ flex: 1, overflowY: "auto", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {activeMsgs.map((m: any) => {
-                  const isMe = m.senderRole === "admin";
+                  const isMe = m.sender_role === "admin";
                   return (
                     <div key={m.id} style={{ maxWidth: "75%", alignSelf: isMe ? "flex-end" : "flex-start", background: isMe ? "var(--primary)" : "var(--bg-secondary)", color: isMe ? "#fff" : "var(--text)", borderRadius: 12, padding: "0.6rem 0.9rem", fontSize: "0.85rem" }}>
-                      {!isMe && <div style={{ fontSize: "0.7rem", fontWeight: 600, marginBottom: "0.2rem", opacity: 0.7 }}>{m.senderRole === "customer" ? (m.customerName || "Customer") : (m.providerName || "Provider")}</div>}
+                      {!isMe && <div style={{ fontSize: "0.7rem", fontWeight: 600, marginBottom: "0.2rem", opacity: 0.7 }}>{m.sender_role === "customer" ? (m.customerName || "Customer") : (m.providerName || "Provider")}</div>}
                       <div>{m.body}</div>
                       <div style={{ fontSize: "0.65rem", opacity: 0.6, marginTop: "0.2rem", textAlign: isMe ? "right" : "left" }}>
-                        {new Date(m.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-                        {isMe && m.readAt ? " ✓✓" : isMe ? " ✓" : ""}
+                        {new Date(m.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                        {isMe && m.read_at ? " ✓✓" : isMe ? " ✓" : ""}
                       </div>
                     </div>
                   );
@@ -2093,46 +1991,7 @@ function AdminMessages() {
 }
 
 // ===================== ABOUT US =====================
-function AdminAboutUs() {
-  const [data, setData] = useState({ title: "", content: "", mission: "", vision: "" });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  async function load() {
-    setLoading(true);
-    try {
-      const d = await api<any>("/api/admin/about-us");
-      setData({ title: d.title || "", content: d.content || "", mission: d.mission || "", vision: d.vision || "" });
-    } catch {}
-    finally { setLoading(false); }
-  }
-
-  useEffect(() => { load(); }, []);
-
-  async function save() {
-    setSaving(true);
-    try {
-      await api("/api/admin/about-us", { method: "PUT", body: JSON.stringify(data) });
-    } catch (e: any) { alert(e.message); }
-    finally { setSaving(false); }
-  }
-
-  if (loading) return <div className="loading">Loading...</div>;
-
-  return (
-    <>
-      <h1>About Us</h1>
-      <p className="muted">Edit the content shown on the /about page.</p>
-      <div className="panel" style={{ maxWidth: 700 }}>
-        <div className="field"><label>Title<input value={data.title} onChange={(e) => setData({ ...data, title: e.target.value })} /></label></div>
-        <div className="field"><label>Content<textarea value={data.content} onChange={(e) => setData({ ...data, content: e.target.value })} rows={4} /></label></div>
-        <div className="field"><label>Mission<textarea value={data.mission} onChange={(e) => setData({ ...data, mission: e.target.value })} rows={3} /></label></div>
-        <div className="field"><label>Vision<textarea value={data.vision} onChange={(e) => setData({ ...data, vision: e.target.value })} rows={3} /></label></div>
-        <RippleButton onClick={save} loading={saving}>Save Changes</RippleButton>
-      </div>
-    </>
-  );
-}
+const AdminAboutUs = AboutUsPage;
 
 // ===================== SETTINGS =====================
 function AdminStorefront() {
@@ -2942,177 +2801,29 @@ function AdminSpecTemplates() {
 
 // ===================== QUOTATIONS =====================
 function AdminQuotations() {
-  const { toast } = useToast();
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
-  const [quotes, setQuotes] = useState<any[]>([]);
-  const [customerId, setCustomerId] = useState<number | null>(null);
-  const [notes, setNotes] = useState("");
-  const [items, setItems] = useState<{ productId: string; productName: string; quantity: number; unitPrice: number }[]>([]);
-  const [search, setSearch] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState<any>(null);
-  const [viewing, setViewing] = useState<any>(null);
-
-  useEffect(() => {
-    api<{ customers: any[] }>("/api/admin/customers").then((d) => setCustomers(d.customers || [])).catch(() => {});
-    api<{ products: any[] }>("/api/products").then((d) => setProducts(d.products || [])).catch(() => {});
-    api<{ quotes: any[] }>("/api/admin/quotes").then((d) => setQuotes(d.quotes || [])).catch(() => {});
-  }, []);
-
-  const filteredProducts = search ? products.filter((p) =>
-    (p.name || "").toLowerCase().includes(search.toLowerCase())
-  ) : [];
-
-  function addItem(p: any) {
-    if (items.find((i) => i.productId === p.id)) return;
-    setItems([...items, { productId: p.id, productName: p.name || p.id, quantity: 1, unitPrice: Number(p.price) || 0 }]);
-    setSearch("");
-  }
-
-  function removeItem(idx: number) { setItems(items.filter((_, i) => i !== idx)); }
-
-  function updateItem(idx: number, field: string, value: any) {
-    const copy = [...items];
-    (copy[idx] as any)[field] = field === "quantity" ? Math.max(1, Number(value)) : Number(value);
-    setItems(copy);
-  }
-
-  async function createQuote() {
-    if (!customerId || items.length === 0) return;
-    setCreating(true);
-    try {
-      const result = await api<any>("/api/admin/quotes", {
-        method: "POST", body: JSON.stringify({ customerId, notes, items }),
-      });
-      setCreated(result);
-      api<{ quotes: any[] }>("/api/admin/quotes").then((d) => setQuotes(d.quotes || [])).catch(() => {});
-      toast("success", `Quote ${result.quoteNumber} created`);
-    } catch (err: any) { toast("error", err.message); }
-    finally { setCreating(false); }
-  }
-
-  function formatDate(d: string) {
-    try { return new Date(d).toLocaleDateString("en-GB"); } catch { return d; }
-  }
-
-  if ((created && Object.keys(created).length > 0) || viewing) {
-    const q = created || viewing;
-    return (
-      <>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-          <h1 style={{ margin: 0 }}>Quote {q.quoteNumber}</h1>
-          <RippleButton size="small" variant="ghost" onClick={() => { setCreated(null); setViewing(null); setCustomerId(null); setNotes(""); setItems([]); }}>&larr; Back</RippleButton>
-        </div>
-        <div className="panel" style={{ maxWidth: 600 }}>
-          <p><strong>Customer:</strong> {escapeHtml(customers.find((c) => c.id === q.customerId)?.name || "—")}</p>
-          <p><strong>Status:</strong> <span className="plan-status" style={{ background: q.status === "draft" ? "#fef3c7" : q.status === "sent" ? "#dbeafe" : q.status === "accepted" ? "#d1fae5" : "#fee2e2", color: q.status === "draft" ? "#92400e" : q.status === "sent" ? "#1e40af" : q.status === "accepted" ? "#065f46" : "#991b1b" }}>{q.status}</span></p>
-          <p><strong>Total:</strong> {formatPrice(q.total)}</p>
-          {q.notes && <p><strong>Notes:</strong> {escapeHtml(q.notes)}</p>}
-          {q.createdAt && <p><strong>Created:</strong> {formatDate(q.createdAt)}</p>}
-          <div className="table-wrap" style={{ marginTop: "1rem" }}>
-            <table className="data-table">
-              <thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead>
-              <tbody>
-                {(q.items || []).map((i: any) => (
-                  <tr key={i.id}><td>{escapeHtml(i.productName)}</td><td style={{textAlign:"center"}}>{i.quantity}</td><td style={{textAlign:"right",whiteSpace:"nowrap"}}>{formatPrice(i.unitPrice)}</td><td style={{textAlign:"right",whiteSpace:"nowrap"}}>{formatPrice(i.lineTotal)}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <RippleButton size="small" style={{marginTop:"1rem"}} onClick={() => downloadPdf(`/api/admin/quotes/${q.id}/pdf`, `quote-${q.quoteNumber || q.id}.pdf`).catch((e: any) => alert("Failed to download quote: " + (e?.message || "Unknown error")))}>Generate PDF</RippleButton>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <h1 style={{ margin: 0 }}>Quotations</h1>
-        <RippleButton size="small" onClick={() => setCreated({})}>+ New Quote</RippleButton>
-      </div>
-
-      {quotes.length > 0 && (
-        <div className="table-wrap" style={{ marginBottom: "1.5rem" }}>
-          <table className="data-table">
-            <thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th><th></th></tr></thead>
-            <tbody>
-              {quotes.map((q: any) => (
-                <tr key={q.id}>
-                  <td>{q.quoteNumber}</td>
-                  <td>{escapeHtml(customers.find((c) => c.id === q.customerId)?.name || "—")}</td>
-                  <td>{formatPrice(q.total)}</td>
-                  <td><span className="plan-status" style={{ background: q.status === "draft" ? "#fef3c7" : q.status === "sent" ? "#dbeafe" : q.status === "accepted" ? "#d1fae5" : "#fee2e2", color: q.status === "draft" ? "#92400e" : q.status === "sent" ? "#1e40af" : q.status === "accepted" ? "#065f46" : "#991b1b" }}>{q.status}</span></td>
-                  <td style={{ whiteSpace: "nowrap" }}>{formatDate(q.createdAt)}</td>
-                  <td><RippleButton size="small" onClick={() => setViewing(q)}>View</RippleButton></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {created && Object.keys(created).length === 0 && (
-        <div className="panel" style={{ maxWidth: 700 }}>
-          <h3 style={{ marginTop: 0 }}>Create New Quote</h3>
-          <div className="field">
-            <label>Customer</label>
-            <select value={customerId || ""} onChange={(e) => setCustomerId(Number(e.target.value))}>
-              <option value="">Select a customer...</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{escapeHtml(c.name)} ({c.email})</option>)}
-            </select>
-          </div>
-          <div className="field">
-            <label>Notes (optional)</label>
-            <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </div>
-          <h4 style={{ marginBottom: "0.5rem" }}>Items</h4>
-          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..." style={{ flex: 1 }} />
-            {search && filteredProducts.length > 0 && (
-              <div style={{ position: "relative" }}>
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, zIndex: 10, maxHeight: 200, overflowY: "auto", minWidth: 250 }}>
-                  {filteredProducts.slice(0, 10).map((p) => (
-                    <div key={p.id} onClick={() => addItem(p)} style={{ padding: "0.4rem 0.6rem", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
-                      {escapeHtml(p.name || p.id)} — {formatPrice(Number(p.price) || 0)}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          {items.length > 0 && (
-            <div className="table-wrap" style={{ marginBottom: "0.75rem" }}>
-              <table className="data-table">
-                <thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Total</th><th></th></tr></thead>
-                <tbody>
-                  {items.map((item, idx) => (
-                    <tr key={idx}>
-                      <td>{escapeHtml(item.productName)}</td>
-                      <td><input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", e.target.value)} style={{ width: 60 }} /></td>
-                      <td><input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(idx, "unitPrice", e.target.value)} style={{ width: 100 }} /></td>
-                      <td>{formatPrice(item.quantity * item.unitPrice)}</td>
-                      <td><RippleButton size="small" variant="danger" onClick={() => removeItem(idx)}>✕</RippleButton></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <RippleButton onClick={createQuote} loading={creating} disabled={!customerId || items.length === 0}>Create Quote</RippleButton>
-            <RippleButton variant="secondary" onClick={() => { setCreated(null); setCustomerId(null); setNotes(""); setItems([]); }}>Cancel</RippleButton>
-          </div>
-        </div>
-      )}
-    </>
-  );
+  return <QuotesPage />;
 }
 
 // ===================== REPORTS =====================
 function AdminReports() {
-  return <AdminSalesReport />;
+  const [tab, setTab] = useState<"sales" | "employee-sales" | "tech-performance" | "purchases" | "stock">("sales");
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+        <RippleButton size="small" variant={tab === "sales" ? "primary" : "ghost"} onClick={() => setTab("sales")}>Sales Report</RippleButton>
+        <RippleButton size="small" variant={tab === "employee-sales" ? "primary" : "ghost"} onClick={() => setTab("employee-sales")}>Employee Sales</RippleButton>
+        <RippleButton size="small" variant={tab === "tech-performance" ? "primary" : "ghost"} onClick={() => setTab("tech-performance")}>Technician Performance</RippleButton>
+        <RippleButton size="small" variant={tab === "purchases" ? "primary" : "ghost"} onClick={() => setTab("purchases")}>Purchases</RippleButton>
+        <RippleButton size="small" variant={tab === "stock" ? "primary" : "ghost"} onClick={() => setTab("stock")}>Stock Summary</RippleButton>
+      </div>
+      {tab === "sales" && <AdminSalesReport />}
+      {tab === "employee-sales" && <AdminEmployeeSales />}
+      {tab === "tech-performance" && <AdminTechPerformance />}
+      {tab === "purchases" && <AdminPurchasesReport />}
+      {tab === "stock" && <AdminStockSummary />}
+    </>
+  );
 }
 
 function csvCell(val: any): string {
@@ -3511,123 +3222,206 @@ function AdminSalesReport() {
   );
 }
 
-// ===================== STOCK ON HAND =====================
-function AdminStockOnHand() {
-  const { toast } = useToast();
-  const { data: sData, loading, error } = useFetch(() => api<{ items: any[] }>("/api/reports/stock-summary"), []);
-  const [snapshotDate, setSnapshotDate] = useState(new Date().toISOString().slice(0, 10));
-  const [snapshot, setSnapshot] = useState<any>(null);
-  const [dates, setDates] = useState<any[]>([]);
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+// ===================== EMPLOYEE SALES REPORT =====================
+function AdminEmployeeSales() {
+  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    api<{ dates: any[] }>("/api/stock-on-hand/history").then(d => setDates(d.dates || [])).catch(() => {});
-  }, []);
-
-  async function viewSnapshot() {
-    if (!snapshotDate) return;
-    setLoadingSnapshot(true);
-    try {
-      const data = await api<any>(`/api/stock-on-hand/${snapshotDate}`);
-      setSnapshot(data);
-    } catch (err: any) {
-      setSnapshot(null);
-      alert("No snapshot for this date.");
-    } finally { setLoadingSnapshot(false); }
+  function fetchReport() {
+    setLoading(true); setError("");
+    api<any>(`/api/reports/employee-sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .then(setData).catch((e: any) => setError(e.message)).finally(() => setLoading(false));
   }
 
-  async function takeSnapshot() {
-    try {
-      const today = new Date().toISOString().slice(0, 10);
-      await api("/api/stock-on-hand/snapshot", { method: "POST", body: JSON.stringify({ date: today }) });
-      setSnapshotDate(today);
-      const data = await api<any>(`/api/stock-on-hand/${today}`);
-      setSnapshot(data);
-      api<{ dates: any[] }>("/api/stock-on-hand/history").then(d => setDates(d.dates || [])).catch(() => {});
-    } catch (err: any) { alert(err.message); }
-  }
-
-  if (loading) return <Spinner />;
-  if (error) return <ErrorMsg msg={error} />;
-  const items = sData?.items || [];
-  const lowStock = items.filter((i) => i.quantityInStock <= i.lowStockThreshold);
+  useEffect(() => { fetchReport(); }, []);
 
   return (
     <>
-      <h1>Stock on Hand</h1>
-
-      {lowStock.length > 0 && (
-        <div className="panel" style={{ marginBottom: "1rem", background: "#fef3c7", borderColor: "#f59e0b", color: "#92400e" }}>
-          <strong>{lowStock.length}</strong> item(s) at or below low stock threshold.
-          <RippleButton size="small" onClick={async () => {
-            try { const r = await api<any>("/api/admin/auto-reorder", { method: "POST" }); toast("success", `Auto-reorder created ${r.created} items (${r.skipped} already on order)`); } catch (e: any) { toast("error", e.message); }
-          }} style={{ marginLeft: "0.75rem" }}>Auto Reorder</RippleButton>
+      <h1>Employee Sales</h1>
+      <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
+        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
+        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <RippleButton onClick={fetchReport} loading={loading}>Generate</RippleButton>
+      </div>
+      {error && <ErrorMsg msg={error} />}
+      {data && (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead><tr><th>Staff</th><th>Orders</th><th>Revenue</th></tr></thead>
+            <tbody>
+              {(data.rows || []).map((r: any) => (
+                <tr key={r.staff_name || r.staffName}>
+                  <td>{escapeHtml(r.staff_name || r.staffName || "—")}</td>
+                  <td>{r.orders}</td>
+                  <td>{formatPrice(r.revenue)}</td>
+                </tr>
+              ))}
+              {(!data.rows || data.rows.length === 0) && <tr><td colSpan={3} style={{ textAlign: "center", padding: "1.5rem", color: "var(--text-secondary)" }}>No data for this period</td></tr>}
+            </tbody>
+          </table>
         </div>
       )}
+    </>
+  );
+}
 
-      <div className="panel" style={{ marginBottom: "1rem" }}>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div className="field" style={{ margin: 0 }}>
-            <label>View Stock on Hand for Date</label>
-            <input type="date" value={snapshotDate} onChange={(e) => setSnapshotDate(e.target.value)} />
-          </div>
-          <RippleButton size="small" onClick={viewSnapshot} loading={loadingSnapshot}>View</RippleButton>
-          <RippleButton size="small" onClick={takeSnapshot}>Snapshot Today</RippleButton>
-        </div>
-        {dates.length > 0 && (
-          <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-            {dates.map((d: any) => (
-              <RippleButton key={d.date} size="small" variant="ghost" onClick={() => { setSnapshotDate(d.date); viewSnapshot(); }}>
-                {d.date}
-              </RippleButton>
-            ))}
-          </div>
-        )}
+// ===================== TECH PERFORMANCE REPORT =====================
+function AdminTechPerformance() {
+  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  function fetchReport() {
+    setLoading(true); setError("");
+    api<any>(`/api/reports/tech-performance?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .then(setData).catch((e: any) => setError(e.message)).finally(() => setLoading(false));
+  }
+
+  useEffect(() => { fetchReport(); }, []);
+
+  return (
+    <>
+      <h1>Technician Performance</h1>
+      <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
+        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
+        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <RippleButton onClick={fetchReport} loading={loading}>Generate</RippleButton>
       </div>
+      {error && <ErrorMsg msg={error} />}
+      {data && (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead><tr><th>Technician</th><th>Repairs Completed</th><th>Avg Days</th><th>Revenue</th></tr></thead>
+            <tbody>
+              {(data.rows || []).map((r: any) => (
+                <tr key={r.technician_name || r.technicianName}>
+                  <td>{escapeHtml(r.technician_name || r.technicianName || "—")}</td>
+                  <td>{r.completed}</td>
+                  <td>{r.avg_days != null ? Number(r.avg_days).toFixed(1) : "—"}</td>
+                  <td>{formatPrice(r.revenue)}</td>
+                </tr>
+              ))}
+              {(!data.rows || data.rows.length === 0) && <tr><td colSpan={4} style={{ textAlign: "center", padding: "1.5rem", color: "var(--text-secondary)" }}>No data for this period</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
 
-      {snapshot && (
-        <div className="panel" style={{ marginBottom: "1rem" }}>
-          <h3 style={{ marginTop: 0 }}>Snapshot: {snapshot.date}</h3>
+// ===================== PURCHASES REPORT =====================
+function AdminPurchasesReport() {
+  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  function fetchReport() {
+    setLoading(true); setError("");
+    api<any>(`/api/reports/purchases?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .then(setData).catch((e: any) => setError(e.message)).finally(() => setLoading(false));
+  }
+
+  useEffect(() => { fetchReport(); }, []);
+
+  return (
+    <>
+      <h1>Purchases Report</h1>
+      <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
+        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
+        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <RippleButton onClick={fetchReport} loading={loading}>Generate</RippleButton>
+      </div>
+      {error && <ErrorMsg msg={error} />}
+      {data && (
+        <>
+          {data.summary && (
+            <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+              <div className="stat-card"><div className="stat-card__value">{data.summary.total_orders || 0}</div><div className="stat-card__label">Total Orders</div></div>
+              <div className="stat-card"><div className="stat-card__value">{formatPrice(data.summary.total_cost || 0)}</div><div className="stat-card__label">Total Cost</div></div>
+              <div className="stat-card"><div className="stat-card__value">{data.summary.received || 0}</div><div className="stat-card__label">Received</div></div>
+              <div className="stat-card"><div className="stat-card__value">{data.summary.pending || 0}</div><div className="stat-card__label">Pending</div></div>
+            </div>
+          )}
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th>Product</th><th style={{ textAlign: "right" }}>Quantity</th></tr></thead>
+              <thead><tr><th>#</th><th>Supplier</th><th>Items</th><th>Cost</th><th>Status</th><th>Date</th></tr></thead>
               <tbody>
-                {snapshot.items.map((i: any) => (
-                  <tr key={i.productId}>
-                    <td>{escapeHtml(i.productName)}</td>
-                    <td style={{ textAlign: "right" }}>{i.quantity}</td>
+                {(data.orders || []).map((o: any) => (
+                  <tr key={o.id}>
+                    <td>{o.id}</td>
+                    <td>{escapeHtml(o.supplier_name || o.supplierName || "—")}</td>
+                    <td>{o.item_count || 0}</td>
+                    <td>{formatPrice(o.total_cost || 0)}</td>
+                    <td><span className="plan-status">{o.status}</span></td>
+                    <td style={{ whiteSpace: "nowrap" }}>{new Date(o.order_date || o.orderDate).toLocaleDateString("en-GB")}</td>
                   </tr>
                 ))}
-                {snapshot.items.length === 0 && <tr><td colSpan={2}><EmptyState icon="stock" title="No snapshot data" description="Take a snapshot to record stock levels for this date." /></td></tr>}
+                {(!data.orders || data.orders.length === 0) && <tr><td colSpan={6} style={{ textAlign: "center", padding: "1.5rem", color: "var(--text-secondary)" }}>No purchases for this period</td></tr>}
               </tbody>
             </table>
           </div>
-        </div>
+        </>
       )}
+    </>
+  );
+}
 
-      <h3>Current Stock Levels</h3>
+// ===================== STOCK SUMMARY (ADMIN) =====================
+function AdminStockSummary() {
+  const { data, loading, error } = useFetch(() => api<{ items: any[] }>("/api/reports/stock-summary"), []);
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+
+  const items = data?.items || [];
+  const totalProducts = items.length;
+  const totalStock = items.reduce((s: number, i: any) => s + (i.quantityInStock ?? i.quantity_in_stock ?? 0), 0);
+  const totalValue = items.reduce((s: number, i: any) => s + (i.quantityInStock ?? i.quantity_in_stock ?? 0) * (i.price || 0), 0);
+  const outOfStock = items.filter((i: any) => (i.quantityInStock ?? i.quantity_in_stock ?? 0) === 0).length;
+
+  return (
+    <>
+      <h1>Stock Summary</h1>
+      <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+        <div className="stat-card"><div className="stat-card__value">{totalProducts}</div><div className="stat-card__label">Products</div></div>
+        <div className="stat-card"><div className="stat-card__value">{totalStock}</div><div className="stat-card__label">Total Units</div></div>
+        <div className="stat-card"><div className="stat-card__value">{formatPrice(totalValue)}</div><div className="stat-card__label">Stock Value</div></div>
+        <div className="stat-card"><div className="stat-card__value" style={{ color: outOfStock > 0 ? "var(--danger)" : "inherit" }}>{outOfStock}</div><div className="stat-card__label">Out of Stock</div></div>
+      </div>
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>Product</th><th>Category</th><th>In Stock</th><th>Reserved</th><th>Sold</th><th>Threshold</th><th>Status</th></tr></thead>
+          <thead><tr><th>Product</th><th>Category</th><th>Qty</th><th>Price</th><th>Value</th></tr></thead>
           <tbody>
-            {items.map((i: any) => (
-              <tr key={i.productId} style={i.quantityInStock <= i.lowStockThreshold ? { background: "var(--bg)" } : {}}>
-                <td>{escapeHtml(i.name)}</td>
-                <td>{i.category || "—"}</td>
-                <td><strong>{i.quantityInStock}</strong></td>
-                <td>{i.quantityReserved}</td>
-                <td>{i.quantitySold}</td>
-                <td>{i.lowStockThreshold}</td>
-                <td>{i.quantityInStock <= i.lowStockThreshold ? <span style={{ color: "#dc2626", fontWeight: 600 }}>Low</span> : <span style={{ color: "#16a34a" }}>OK</span>}</td>
-              </tr>
-            ))}
-            {items.length === 0 && <tr><td colSpan={7}><EmptyState icon="stock" title="No stock data" description="Stock levels will appear here once products are added." /></td></tr>}
+            {items.map((i: any) => {
+              const qty = i.quantityInStock ?? i.quantity_in_stock ?? 0;
+              return (
+                <tr key={i.id}>
+                  <td>{escapeHtml(i.name)}</td>
+                  <td>{i.category || "—"}</td>
+                  <td>{qty}</td>
+                  <td>{formatPrice(i.price)}</td>
+                  <td>{formatPrice(qty * (i.price || 0))}</td>
+                </tr>
+              );
+            })}
+            {items.length === 0 && <tr><td colSpan={5}><EmptyState icon="stock" title="No stock data" description="No products with stock information." /></td></tr>}
           </tbody>
         </table>
       </div>
     </>
   );
 }
+
+// ===================== STOCK ON HAND =====================
+const AdminStockOnHand = () => <StockOnHandPage showAutoReorder={true} />;
 
 // ===================== STOCK TRANSFERS =====================
 function AdminStockTransfers() {
@@ -3724,63 +3518,238 @@ function AdminStockTransfers() {
 }
 
 // ===================== STOCK TAKE =====================
-function AdminStockTake() {
-  const { data: sessions, loading, error, refetch } = useFetch(() => api<{ sessions: any[] }>("/api/stock-take"), []);
+const AdminStockTake = StockTakeListPage;
+
+// ===================== PURCHASE ORDERS =====================
+function AdminPurchases() {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [viewing, setViewing] = useState<any>(null);
+  const [creating, setCreating] = useState(false);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [form, setForm] = useState({ supplierName: "", notes: "" });
+  const [formItems, setFormItems] = useState<{ productId: string; productName: string; quantity: number; unitCost: number }[]>([]);
+  const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
-  async function startSession() {
+  async function loadOrders() {
+    setLoading(true);
     try {
-      const data = await api<any>("/api/stock-take/start", { method: "POST" });
-      if (data?.session) {
-        window.location.href = `/stock-take/${data.session.id}`;
-      }
+      const d = await api<{ orders: any[] }>("/api/purchases");
+      setOrders(d.orders || []);
+    } catch (err: any) { setError(err.message); }
+    setLoading(false);
+  }
+
+  async function loadFormDeps() {
+    try {
+      const [sRes, pRes] = await Promise.all([
+        api<{ suppliers: any[] }>("/api/admin/suppliers").catch(() => ({ suppliers: [] })),
+        api<{ products: any[] }>("/api/products").catch(() => ({ products: [] })),
+      ]);
+      setSuppliers(sRes.suppliers || []);
+      setProducts(pRes.products || []);
+    } catch {}
+  }
+
+  async function loadOrder(id: number) {
+    try {
+      const d = await api<{ order: any }>(`/api/purchases/${id}`);
+      setViewing(d.order);
     } catch (err: any) { setMsg(err.message); }
   }
 
-  async function handleDelete(session: any, e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!confirm("Delete this session? Only possible if no items have been counted.")) return;
+  function addFormItem(p: any) {
+    if (formItems.find((i) => i.productId === p.id)) return;
+    setFormItems([...formItems, { productId: p.id, productName: p.name, quantity: 1, unitCost: Number(p.price) || 0 }]);
+    setSearch("");
+  }
+
+  function removeFormItem(idx: number) { setFormItems(formItems.filter((_, i) => i !== idx)); }
+
+  function updateFormItem(idx: number, field: string, value: any) {
+    const copy = [...formItems];
+    (copy[idx] as any)[field] = field === "quantity" ? Math.max(1, Number(value)) : Number(value);
+    setFormItems(copy);
+  }
+
+  async function createOrder() {
+    if (!form.supplierName || formItems.length === 0) return;
+    setSaving(true);
     try {
-      await api(`/api/stock-take/${session.id}`, { method: "DELETE" });
-      refetch();
+      await api("/api/purchases", { method: "POST", body: JSON.stringify({
+        supplierName: form.supplierName, notes: form.notes,
+        items: formItems.map((i) => ({ productId: i.productId, quantityOrdered: i.quantity, unitCost: i.unitCost })),
+      })});
+      setCreating(false); setForm({ supplierName: "", notes: "" }); setFormItems([]);
+      loadOrders();
+    } catch (err: any) { setMsg(err.message); }
+    setSaving(false);
+  }
+
+  async function updateStatus(id: number, status: string) {
+    try {
+      await api(`/api/purchases/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+      loadOrder(id); loadOrders();
     } catch (err: any) { setMsg(err.message); }
   }
 
-  if (loading) return <Spinner />;
-  if (error) return <ErrorMsg msg={error} />;
-  const sessionList = sessions?.sessions || [];
+  async function receiveItem(itemId: number, maxQty: number) {
+    const qty = window.prompt(`How many units received? (max: ${maxQty})`, String(maxQty));
+    if (qty === null) return;
+    try {
+      await api(`/api/purchases/items/${itemId}/receive`, { method: "POST", body: JSON.stringify({ quantityReceived: Number(qty) }) });
+      if (viewing) loadOrder(viewing.id);
+    } catch (err: any) { setMsg(err.message); }
+  }
+
+  useEffect(() => { loadOrders(); }, []);
+
+  const filteredSearch = search ? products.filter((p) => (p.name || "").toLowerCase().includes(search.toLowerCase())).slice(0, 10) : [];
+
+  function formatDate(d: string) { try { return new Date(d).toLocaleDateString("en-GB"); } catch { return d; } }
+
+  if (loading) return <><h1>Purchase Orders</h1><Spinner /></>;
+
+  if (viewing) {
+    const totalCost = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityReceived || 0), 0);
+    return (
+      <>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <h1 style={{ margin: 0 }}>PO #{viewing.id} — {escapeHtml(viewing.supplierName)}</h1>
+          <RippleButton size="small" variant="ghost" onClick={() => setViewing(null)}>&larr; Back</RippleButton>
+        </div>
+        {msg && <div className="panel" style={{ marginBottom: "1rem", background: "#fee2e2", color: "#991b1b" }}>{msg}</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+          <div className="panel">
+            <p><strong>Status:</strong> <span className="plan-status" style={{ background: viewing.status === "received" ? "#d1fae5" : viewing.status === "cancelled" ? "#fee2e2" : "#fef3c7", color: viewing.status === "received" ? "#065f46" : viewing.status === "cancelled" ? "#991b1b" : "#92400e" }}>{viewing.status}</span></p>
+            <p><strong>Date:</strong> {formatDate(viewing.orderDate || viewing.order_date)}</p>
+            <p><strong>Created:</strong> {formatDate(viewing.createdAt || viewing.created_at)}</p>
+            {viewing.notes && <p><strong>Notes:</strong> {escapeHtml(viewing.notes)}</p>}
+          </div>
+          <div className="panel">
+            <div className="stat-grid">
+              <div className="stat-card"><div className="stat-card__value">{(viewing.items || []).length}</div><div className="stat-card__label">Items</div></div>
+              <div className="stat-card"><div className="stat-card__value">{formatPrice(totalCost)}</div><div className="stat-card__label">Received Cost</div></div>
+            </div>
+            {viewing.status === "pending" && (
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+                <RippleButton size="small" onClick={() => updateStatus(viewing.id, "ordered")}>Mark Ordered</RippleButton>
+                <RippleButton size="small" variant="danger" onClick={() => updateStatus(viewing.id, "cancelled")}>Cancel</RippleButton>
+              </div>
+            )}
+            {viewing.status === "ordered" && (
+              <RippleButton size="small" style={{ marginTop: "0.75rem" }} onClick={() => updateStatus(viewing.id, "received")}>Mark All Received</RippleButton>
+            )}
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead><tr><th>Product</th><th style={{ textAlign: "right" }}>Ordered</th><th style={{ textAlign: "right" }}>Received</th><th style={{ textAlign: "right" }}>Unit Cost</th><th style={{ textAlign: "right" }}>Line Total</th><th></th></tr></thead>
+            <tbody>
+              {(viewing.items || []).map((i: any) => (
+                <tr key={i.id}>
+                  <td>{escapeHtml(i.productName)}</td>
+                  <td style={{ textAlign: "right" }}>{i.quantityOrdered}</td>
+                  <td style={{ textAlign: "right" }}>{i.quantityReceived}</td>
+                  <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost)}</td>
+                  <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost * i.quantityReceived)}</td>
+                  <td>
+                    {viewing.status === "ordered" && i.quantityReceived < i.quantityOrdered && (
+                      <RippleButton size="small" variant="ghost" onClick={() => receiveItem(i.id, i.quantityOrdered - i.quantityReceived)}>Receive</RippleButton>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {(!viewing.items || viewing.items.length === 0) && <tr><td colSpan={6} style={{ textAlign: "center", padding: "1.5rem", color: "var(--text-secondary)" }}>No items</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  }
+
+  if (creating) {
+    return (
+      <>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <h1 style={{ margin: 0 }}>Create Purchase Order</h1>
+          <RippleButton size="small" variant="ghost" onClick={() => { setCreating(false); setForm({ supplierName: "", notes: "" }); setFormItems([]); }}>&larr; Cancel</RippleButton>
+        </div>
+        {msg && <div className="panel" style={{ marginBottom: "1rem", background: "#fee2e2", color: "#991b1b" }}>{msg}</div>}
+        <div className="panel" style={{ maxWidth: 700 }}>
+          <div className="field">
+            <label>Supplier</label>
+            <select value={form.supplierName} onChange={(e) => setForm({ ...form, supplierName: e.target.value })}>
+              <option value="">Select supplier...</option>
+              {suppliers.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.name}>{escapeHtml(s.name)}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>Notes</label>
+            <textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </div>
+          <h4 style={{ marginBottom: "0.5rem" }}>Items</h4>
+          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", position: "relative" }}>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..." style={{ flex: 1 }} />
+            {search && filteredSearch.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, zIndex: 20, maxHeight: 200, overflowY: "auto" }}>
+                {filteredSearch.map((p) => (
+                  <div key={p.id} onClick={() => addFormItem(p)} style={{ padding: "0.4rem 0.6rem", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
+                    {escapeHtml(p.name)} — {formatPrice(Number(p.price) || 0)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {formItems.length > 0 && (
+            <div className="table-wrap" style={{ marginBottom: "0.75rem" }}>
+              <table className="data-table">
+                <thead><tr><th>Product</th><th>Qty</th><th>Unit Cost</th><th></th></tr></thead>
+                <tbody>
+                  {formItems.map((item, idx) => (
+                    <tr key={idx}>
+                      <td>{escapeHtml(item.productName)}</td>
+                      <td><input type="number" min="1" value={item.quantity} onChange={(e) => updateFormItem(idx, "quantity", e.target.value)} style={{ width: 60 }} /></td>
+                      <td><input type="number" min="0" step="0.01" value={item.unitCost} onChange={(e) => updateFormItem(idx, "unitCost", e.target.value)} style={{ width: 100 }} /></td>
+                      <td><RippleButton size="small" variant="danger" onClick={() => removeFormItem(idx)}>✕</RippleButton></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <RippleButton onClick={createOrder} loading={saving} disabled={!form.supplierName || formItems.length === 0}>Create Purchase Order</RippleButton>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <h1 style={{ margin: 0 }}>Stock Take</h1>
-        <RippleButton size="small" onClick={startSession}>+ New Session</RippleButton>
+        <h1 style={{ margin: 0 }}>Purchase Orders</h1>
+        <RippleButton size="small" onClick={() => { setCreating(true); loadFormDeps(); }}>+ New PO</RippleButton>
       </div>
-      {msg && <div className="panel" style={{ marginBottom: "1rem", background: "#fee2e2", color: "#991b1b" }}>{msg}</div>}
+      {error && <ErrorMsg msg={error} />}
       <div className="table-wrap">
         <table className="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Completed</th>
-              <th></th>
-            </tr>
-          </thead>
+          <thead><tr><th>#</th><th>Supplier</th><th>Items</th><th>Status</th><th>Date</th><th></th></tr></thead>
           <tbody>
-            {sessionList.length === 0 && <tr><td colSpan={5}><EmptyState icon="stock" title="No stock take sessions" description="Start a new session to count inventory." /></td></tr>}
-            {sessionList.map((s: any) => (
-              <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => window.location.href = `/stock-take/${s.id}`}>
-                <td>{s.id}</td>
-                <td><span className="plan-status" style={{ background: s.status === "completed" ? "#d1fae5" : "#fef3c7", color: s.status === "completed" ? "#065f46" : "#92400e" }}>{s.status}</span></td>
-                <td>{new Date(s.createdAt || s.created_at).toLocaleDateString("en-GB")}</td>
-                <td>{s.completedAt || s.completed_at ? new Date(s.completedAt || s.completed_at).toLocaleDateString("en-GB") : "—"}</td>
-                <td>
-                  <RippleButton size="small" variant="danger" onClick={(e) => handleDelete(s, e)}>Delete</RippleButton>
-                </td>
+            {orders.map((o: any) => (
+              <tr key={o.id} style={{ cursor: "pointer" }} onClick={() => loadOrder(o.id)}>
+                <td>{o.id}</td>
+                <td>{escapeHtml(o.supplierName)}</td>
+                <td>{(o.items || []).length}</td>
+                <td><span className="plan-status" style={{ background: o.status === "received" ? "#d1fae5" : o.status === "cancelled" ? "#fee2e2" : o.status === "ordered" ? "#dbeafe" : "#fef3c7", color: o.status === "received" ? "#065f46" : o.status === "cancelled" ? "#991b1b" : o.status === "ordered" ? "#1e40af" : "#92400e" }}>{o.status}</span></td>
+                <td style={{ whiteSpace: "nowrap" }}>{formatDate(o.orderDate || o.order_date)}</td>
+                <td><RippleButton size="small" onClick={(e) => { e.stopPropagation(); loadOrder(o.id); }}>View</RippleButton></td>
               </tr>
             ))}
+            {orders.length === 0 && <tr><td colSpan={6}><EmptyState icon="stock" title="No purchase orders" description="Create a purchase order to start tracking supplier purchases." /></td></tr>}
           </tbody>
         </table>
       </div>
@@ -3789,83 +3758,7 @@ function AdminStockTake() {
 }
 
 // ===================== PRODUCT POSITIONING =====================
-function AdminProductPositioning() {
-  const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products"), []);
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [dropIdx, setDropIdx] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [products, setProducts] = useState<Product[]>([]);
-
-  useEffect(() => {
-    if (pData?.products) setProducts(pData.products);
-  }, [pData]);
-
-  function onDragStart(idx: number) { setDragIdx(idx); }
-  function onDragOver(e: React.DragEvent, idx: number) { e.preventDefault(); setDropIdx(idx); }
-  function onDragEnd() { setDragIdx(null); setDropIdx(null); }
-  function onDrop(idx: number) {
-    if (dragIdx === null || dragIdx === idx) { setDragIdx(null); setDropIdx(null); return; }
-    const next = [...products];
-    const [moved] = next.splice(dragIdx, 1);
-    next.splice(idx, 0, moved);
-    setProducts(next);
-    setDragIdx(null);
-    setDropIdx(null);
-  }
-
-  async function saveOrder() {
-    setSaving(true); setMsg("");
-    try {
-      await api("/api/admin/products/reorder", { method: "PUT", body: JSON.stringify({ orderedIds: products.map((p) => p.id) }) });
-      setMsg("Order saved!");
-    } catch (e: any) { setMsg("Failed: " + e.message); }
-    finally { setSaving(false); }
-  }
-
-  if (loading) return <Spinner />;
-  if (error) return <ErrorMsg msg={error} />;
-
-  return (
-    <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <div>
-          <h1 style={{ margin: 0 }}>Product Positioning</h1>
-          <p style={{ margin: "4px 0 0", color: "var(--text-secondary)", fontSize: "0.85rem" }}>Drag products to set their display order on the storefront. This controls the order products appear in category pages.</p>
-        </div>
-        <RippleButton onClick={saveOrder} loading={saving}>Save Order</RippleButton>
-      </div>
-      {msg && <div className="panel" style={{ marginBottom: "1rem", padding: "0.75rem 1rem", borderRadius: 8, background: msg.startsWith("Failed") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Failed") ? "#991b1b" : "#065f46", fontSize: "0.85rem" }}>{msg}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0.75rem" }}>
-        {products.map((p, idx) => (
-          <div
-            key={p.id}
-            draggable
-            onDragStart={() => onDragStart(idx)}
-            onDragOver={(e) => onDragOver(e, idx)}
-            onDragEnd={onDragEnd}
-            onDrop={() => onDrop(idx)}
-            style={{
-              display: "flex", alignItems: "center", gap: "0.75rem",
-              padding: "0.75rem", borderRadius: 8,
-              background: "var(--surface)", border: "1px solid var(--border)",
-              cursor: "grab", opacity: dragIdx === idx ? 0.4 : 1,
-              outline: dropIdx === idx ? "2px solid var(--accent)" : "none",
-              outlineOffset: 2, transition: "opacity 0.15s",
-            }}
-          >
-            <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", minWidth: 20 }}>{idx + 1}</span>
-            {p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} /> : <div style={{ width: 48, height: 48, borderRadius: 6, background: "var(--border)", flexShrink: 0 }} />}
-            <div style={{ overflow: "hidden" }}>
-              <div style={{ fontWeight: 600, fontSize: "0.85rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
-              <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{p.category}{p.salePrice ? " • Sale" : ""}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
+const AdminProductPositioning = ProductPositioningPage;
 
 // ===================== EMAIL SETTINGS =====================
 function AdminEmailSettings() {

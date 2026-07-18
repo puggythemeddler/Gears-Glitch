@@ -103,7 +103,7 @@ export default function AdminProducts() {
     finally { setBulkSaving(false); }
   }
 
-  const empty: Product = { id: "", name: "", price: 0, currency: "KES", imageUrl: "", category: "", subcategory: "", inStock: true, isNonStock: false, hasWarranty: false, warrantyDuration: 0, taxable: true, specs: [], minTier: 0 };
+  const empty: Product = { id: "", name: "", price: 0, salePrice: 0, currency: "KES", imageUrl: "", category: "", subcategory: "", inStock: true, isNonStock: false, hasWarranty: false, warrantyDuration: 0, taxable: true, specs: [], minTier: 0 };
 
   useEffect(() => {
     fetch("/api/categories").then(r => r.json()).then((d) => setCategories(d.categories || [])).catch(() => setCategories([]));
@@ -199,6 +199,8 @@ export default function AdminProducts() {
       subcategory: fd.get("subcategory") || "",
       specs: buildSpecsArray(),
     };
+    const sp = fd.get("salePrice");
+    if (sp !== null && sp !== "") body.salePrice = Number(sp);
     try {
       if (creating) {
         const created = await api<any>("/api/products", { method: "POST", body: JSON.stringify(body) });
@@ -243,6 +245,7 @@ export default function AdminProducts() {
             )}
             <div className="field"><label>Name<input name="name" defaultValue={editing?.name} required /></label></div>
             <div className="field"><label>Price (KES)<input name="price" type="number" defaultValue={editing?.price} required /></label></div>
+            <div className="field"><label>Sale Price (KES) — leave empty for no sale<input name="salePrice" type="number" step="any" min="0" defaultValue={editing?.salePrice || ""} placeholder="Optional" /></label></div>
             <div className="field">
               <label>Category
                 <select

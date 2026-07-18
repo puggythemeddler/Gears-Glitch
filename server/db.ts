@@ -1852,10 +1852,10 @@ async function listAllAuditLogs(limit?: number): Promise<any[]> {
 async function validateCoupon(code: string, subtotal: number): Promise<{ valid: boolean; discount: number; couponId?: number }> {
   const coupon = await queryOne("SELECT * FROM coupons WHERE code = $1 AND is_active = 1", [code]) as any;
   if (!coupon) return { valid: false, discount: 0 };
-  if (coupon.valid_until && new Date(coupon.valid_until) < new Date()) return { valid: false, discount: 0 };
-  if (coupon.min_order && subtotal < coupon.min_order) return { valid: false, discount: 0 };
-  if (coupon.max_uses && coupon.usage_count >= coupon.max_uses) return { valid: false, discount: 0 };
-  const discount = coupon.discount_type === "percentage" ? subtotal * (coupon.discount_value / 100) : Math.min(coupon.discount_value, subtotal);
+  if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) return { valid: false, discount: 0 };
+  if (coupon.min_order_amount && subtotal < coupon.min_order_amount) return { valid: false, discount: 0 };
+  if (coupon.max_uses && coupon.used_count >= coupon.max_uses) return { valid: false, discount: 0 };
+  const discount = coupon.type === "percentage" ? subtotal * (coupon.value / 100) : Math.min(coupon.value, subtotal);
   return { valid: true, discount, couponId: coupon.id };
 }
 
@@ -1867,20 +1867,20 @@ async function getCoupon(id: number): Promise<any | undefined> {
   return await queryOne("SELECT * FROM coupons WHERE id = $1", [id]) as any;
 }
 
-async function createCoupon(data: { code: string; discountType: string; discountValue: number; minOrder?: number; maxUses?: number; validUntil?: string }): Promise<any> {
-  const result = await query("INSERT INTO coupons (code, discount_type, discount_value, min_order, max_uses, valid_until) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *", [data.code, data.discountType, data.discountValue, data.minOrder || 0, data.maxUses || null, data.validUntil || null]);
+async function createCoupon(data: { code: string; type?: string; value?: number; min_order_amount?: number; max_uses?: number; expires_at?: string }): Promise<any> {
+  const result = await query("INSERT INTO coupons (code, type, value, min_order_amount, max_uses, expires_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *", [data.code, data.type || "percentage", data.value || 0, data.min_order_amount || 0, data.max_uses || 0, data.expires_at || null]);
   return result.rows[0];
 }
 
-async function updateCoupon(id: number, updates: Partial<{ code: string; discountType: string; discountValue: number; minOrder: number; maxUses: number; validUntil: string; isActive: boolean }>): Promise<any> {
+async function updateCoupon(id: number, updates: Partial<{ code: string; type: string; value: number; min_order_amount: number; max_uses: number; expires_at: string; is_active: boolean }>): Promise<any> {
   const fields: string[] = []; const params: any[] = []; let idx = 1;
   if (updates.code !== undefined) { fields.push(`code = $${idx}`); params.push(updates.code); idx++; }
-  if (updates.discountType !== undefined) { fields.push(`discount_type = $${idx}`); params.push(updates.discountType); idx++; }
-  if (updates.discountValue !== undefined) { fields.push(`discount_value = $${idx}`); params.push(updates.discountValue); idx++; }
-  if (updates.minOrder !== undefined) { fields.push(`min_order = $${idx}`); params.push(updates.minOrder); idx++; }
-  if (updates.maxUses !== undefined) { fields.push(`max_uses = $${idx}`); params.push(updates.maxUses); idx++; }
-  if (updates.validUntil !== undefined) { fields.push(`valid_until = $${idx}`); params.push(updates.validUntil); idx++; }
-  if (updates.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.isActive ? 1 : 0); idx++; }
+  if (updates.type !== undefined) { fields.push(`type = $${idx}`); params.push(updates.type); idx++; }
+  if (updates.value !== undefined) { fields.push(`value = $${idx}`); params.push(updates.value); idx++; }
+  if (updates.min_order_amount !== undefined) { fields.push(`min_order_amount = $${idx}`); params.push(updates.min_order_amount); idx++; }
+  if (updates.max_uses !== undefined) { fields.push(`max_uses = $${idx}`); params.push(updates.max_uses); idx++; }
+  if (updates.expires_at !== undefined) { fields.push(`expires_at = $${idx}`); params.push(updates.expires_at); idx++; }
+  if (updates.is_active !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.is_active ? 1 : 0); idx++; }
   if (fields.length === 0) return await getCoupon(id);
   params.push(id);
   await query(`UPDATE coupons SET ${fields.join(", ")} WHERE id = $${idx}`, params);
@@ -1893,7 +1893,7 @@ async function deleteCoupon(id: number): Promise<boolean> {
 }
 
 async function recordCouponUsage(couponId: number, orderId: number): Promise<void> {
-  await query("UPDATE coupons SET usage_count = usage_count + 1 WHERE id = $1", [couponId]);
+  await query("UPDATE coupons SET used_count = used_count + 1 WHERE id = $1", [couponId]);
 }
 
 async function createOrder(data: { customerId: number; customerName: string; customerEmail: string; shippingName: string; shippingAddress: string; shippingCity: string; shippingCounty: string; shippingPostcode: string; shippingPhone: string; shippingFee: number; notes?: string; items: { productId: string; name: string; price: number; quantity: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean }[]; couponId?: number; discountAmount?: number; staffId?: number; branchId?: number; processedBy?: string; idempotencyKey?: string }): Promise<Order> {
@@ -2249,16 +2249,20 @@ async function createStockTakeSession(notes?: string, createdBy?: number): Promi
 }
 
 async function getStockTakeSession(id: number): Promise<StockTakeSession | undefined> {
-  return await queryOne("SELECT * FROM stock_take_sessions WHERE id = $1", [id]) as StockTakeSession | undefined;
+  return await queryOne(`SELECT id, status, notes, created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt" FROM stock_take_sessions WHERE id = $1`, [id]) as StockTakeSession | undefined;
 }
 
 async function listStockTakeSessions(): Promise<StockTakeSession[]> {
-  return await queryAll("SELECT * FROM stock_take_sessions ORDER BY created_at DESC") as StockTakeSession[];
+  return await queryAll(`SELECT id, status, notes, created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt" FROM stock_take_sessions ORDER BY created_at DESC`) as StockTakeSession[];
 }
 
 async function getStockTakeItems(sessionId: number): Promise<StockTakeItem[]> {
   return await queryAll(
-    "SELECT sti.*, p.name AS product_name FROM stock_take_items sti LEFT JOIN products p ON p.id = sti.product_id WHERE sti.session_id = $1 ORDER BY p.name", [sessionId]
+    `SELECT sti.id, sti.session_id AS "sessionId", sti.product_id AS "productId", 
+     COALESCE(p.name, sti.product_name) AS "productName", 
+     sti.system_quantity AS "systemQuantity", sti.counted_quantity AS "countedQuantity", 
+     sti.variance, sti.notes, sti.created_at AS "createdAt"
+     FROM stock_take_items sti LEFT JOIN products p ON p.id = sti.product_id WHERE sti.session_id = $1 ORDER BY p.name`, [sessionId]
   ) as StockTakeItem[];
 }
 
@@ -2425,8 +2429,9 @@ async function applyStockTakeAdjustments(sessionId: number): Promise<number> {
   const items = await queryAll("SELECT * FROM stock_take_items WHERE session_id = $1 AND counted_quantity IS NOT NULL", [sessionId]) as any[];
   let adjusted = 0;
   for (const item of items) {
-    const current = await getStockLevel(item.product_id);
-    const diff = item.counted_quantity - (current?.quantityInStock || 0);
+    const current = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1", [item.product_id]) as any;
+    const currentQty = current ? Number(current.quantity_in_stock) : 0;
+    const diff = item.counted_quantity - currentQty;
     if (diff === 0) continue;
     await updateStockLevel(item.product_id, Math.max(0, item.counted_quantity));
     await recordStockMovement(item.product_id, "stock_take_adjust", diff, "stock_take", String(sessionId), `Stock take #${sessionId} adjustment`);
@@ -2437,7 +2442,7 @@ async function applyStockTakeAdjustments(sessionId: number): Promise<number> {
 
 async function getStockTakeVarianceReport(sessionId: number): Promise<{ totalItems: number; counted: number; withVariance: number; totalVariance: number; items: StockTakeItem[] }> {
   const items = await getStockTakeItems(sessionId);
-  const counted = items.filter((i: any) => i.counted_quantity !== null);
+  const counted = items.filter((i: any) => i.countedQuantity !== null);
   const withVariance = counted.filter((i: any) => i.variance !== 0);
   const totalVariance = counted.reduce((s: number, i: any) => s + Math.abs(i.variance), 0);
   return { totalItems: items.length, counted: counted.length, withVariance: withVariance.length, totalVariance, items };

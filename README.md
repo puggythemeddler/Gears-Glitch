@@ -1,9 +1,15 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, and feature-gated subscription plans. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom), subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management, and auto-email notifications. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ## Recent highlights
 
+- **Component unification** — 6 near-identical admin/owner component pairs extracted to shared files (`ProvidersPage`, `CreditNotesPage`, `AboutUsPage`, `ProductPositioningPage`, `StockTakeListPage`, `StockOnHandPage`). Admin and owner panels now import the same components, eliminating ~1,600 lines of duplicated code. Feature gating in the owner panel is preserved at the routing level.
+- **POS invoice save & print** — After completing a POS sale, the post-charge UI now offers Save Invoice (downloads PDF) and Print Invoice (opens print dialog) buttons for both thermal receipt and A4 invoice formats.
+- **Purchase orders** — Full purchase order management with supplier selection, product line items, status workflow (pending → ordered → received), per-item receiving, and admin sidebar integration under the Stock group.
+- **Admin reports expanded** — Reports tab now includes 5 sub-tabs: Sales Report, Employee Sales, Technician Performance, Purchases Report, and Stock Summary.
+- **Unified product pages** — Admin and owner product pages now use the same `AdminProducts` component with full sale price, subcategory, warranty, taxable, CSV import/export, and bulk edit support.
+- **Unified quotations** — Admin quotations panel now uses the full-featured `QuotesPage` component with status management, approve/cancel workflows, PDF downloads, and discounts.
 - **Marketing page** — Full marketing landing page with problems, solutions, industries, features (22 real modules), testimonials, stats, FAQ, and CTA. All content verified against actual implemented features.
 - **Annual pricing** — Subscription plans now support both monthly and annual pricing. Plans table has `price_annual` column. Admin plans UI shows both Monthly and Annual price fields. Owner subscription page displays both prices with percentage savings for annual billing.
 - **Multi-currency feature gating** — `CurrencySelector` checks `useFeature("Multi-currency support")` and returns null when the plan doesn't include it. Multi-currency support added to Growth, Pro, and Enterprise plan features.
@@ -128,10 +134,11 @@ Full store management with 21 sections:
 - **Providers** — View providers, assign plans, custom pricing, status
 - **Invoices** — Generate invoices per provider, mark paid, PDF download for order invoices
 - **Credit Notes** — Create eTIMS-compliant credit notes from invoices in admin and owner views, with printable audit details and submission tracking, PDF download
-- **Reports** — Sales Report with combined/per-branch filtering, export to Excel (CSV) or printable PDF
+- **Reports** — 5 sub-tabs: Sales Report with combined/per-branch filtering and export to Excel/PDF, Employee Sales, Technician Performance, Purchases Report, and Stock Summary
 - **Stock on Hand** — Current stock levels, snapshot history, low-stock alerts
 - **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow
 - **Stock Take** — Create sessions, count inventory, view variance, auto-apply adjustments
+- **Purchases** — Create and manage purchase orders with supplier selection, product line items, status workflow (pending → ordered → received), per-item receiving, and cost tracking
 - **Messages** — Admin messaging panel: conversation list with unread badges, chat view with read receipts, inline reply, compose new messages (pick customer + provider). Auto-polls every 30 seconds.
 - **Spec Templates** — Define per-category spec fields for products
 - **Suppliers** — Manage vendor/supplier directory with contact details, active status
@@ -145,7 +152,7 @@ Full store management with 21 sections:
 
 ### Owner Panel (`/owner`)
 
-Business oversight with 13 sections:
+Business oversight with 13 sections. Shares many components with the admin panel (Products, Providers, Credit Notes, About Us, Product Positioning, Stock Take, Stock on Hand). Feature gating at the routing level controls which sections are visible based on the subscription plan.
 
 - **Dashboard** — Stats with animated counters (open repairs, due today, total orders, revenue, products in stock, low stock items), all cards clickable to navigate
 - **Products** — View products catalog
@@ -263,10 +270,16 @@ All data-fetching pages now render shimmer skeleton placeholders instead of bare
 
 ### File Splitting (admin.tsx)
 
-`admin.tsx` (1874 lines) has been partially split:
+`admin.tsx` and `owner.tsx` share extracted components under `components/admin/`:
 - **`components/admin/shared.tsx`** — extracted `useFetch`, `Spinner`, `ErrorMsg`, `formatPrice`, `escapeHtml` utilities
-- **`components/admin/AdminProducts.tsx`** — extracted Products section (212 lines)
-- More sections will follow progressively
+- **`components/admin/AdminProducts.tsx`** — Products CRUD (used by both admin and owner)
+- **`components/admin/ProvidersPage.tsx`** — Provider management (used by both admin and owner)
+- **`components/admin/CreditNotesPage.tsx`** — Credit notes list with PDF download (used by both admin and owner)
+- **`components/admin/AboutUsPage.tsx`** — About Us content editor (used by both admin and owner)
+- **`components/admin/ProductPositioningPage.tsx`** — Drag-and-drop product reorder (used by both admin and owner)
+- **`components/admin/StockTakeListPage.tsx`** — Stock take session list (used by both admin and owner)
+- **`components/admin/StockOnHandPage.tsx`** — Stock on hand with snapshots and low-stock alerts (used by both admin and owner, with optional auto-reorder for admin)
+- Feature gating in the owner panel is preserved at the routing level (nav items conditionally rendered based on `useFeature()` checks)
 
 ---
 
@@ -285,9 +298,15 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │   │   ├── StatCard.tsx         # Animated counter card
 │   │   ├── Skeleton.tsx         # Re-export from legacy
 │   │   └── EmptyState.tsx       # Re-export from legacy
-│   ├── admin/                 # Admin panel extracted components
+│   ├── admin/                 # Admin/Owner shared extracted components
 │   │   ├── shared.tsx            # useFetch, Spinner, ErrorMsg, formatPrice, escapeHtml
-│   │   └── AdminProducts.tsx     # Products CRUD section
+│   │   ├── AdminProducts.tsx     # Products CRUD section
+│   │   ├── ProvidersPage.tsx     # Provider management
+│   │   ├── CreditNotesPage.tsx   # Credit notes list
+│   │   ├── AboutUsPage.tsx       # About Us editor
+│   │   ├── ProductPositioningPage.tsx  # Drag-and-drop reorder
+│   │   ├── StockTakeListPage.tsx # Stock take sessions
+│   │   └── StockOnHandPage.tsx   # Stock on hand with snapshots
 │   ├── owner/                 # Owner panel extracted components
 │   ├── Layout.tsx            # Responsive header with mobile menu
 │   ├── ProductCard.tsx       # Product card — strikethrough sale price display
@@ -329,8 +348,8 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │   ├── my-repairs.tsx        # Ticket tracking — skeleton loading
 │   ├── orders.tsx            # Order history
 │   ├── account.tsx           # Account details
-│   ├── admin.tsx             # Admin panel (16 sections)
-│   ├── owner.tsx             # Owner panel (1630 lines, 12 sections)
+│   ├── admin.tsx             # Admin panel (21 sections)
+│   ├── owner.tsx             # Owner panel (13 sections, shares components with admin)
 │   ├── backoffice.tsx        # Back office (repairs, stock, reports)
 │   └── stock-take/
 │       └── [id].tsx          # Dedicated stock take session page

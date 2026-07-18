@@ -73,9 +73,9 @@ const WHY_CHOOSE = [
 ];
 
 const STATS = [
-  { icon: "🏪", value: 150, suffix: "+", label: "Products Tracked" },
-  { icon: "📦", value: 4, suffix: "", label: "Subscription Tiers" },
-  { icon: "🔧", value: 8, suffix: "", label: "Core Modules" },
+  { icon: "📦", value: 90, suffix: "+", label: "Products Tracked" },
+  { icon: "💳", value: 5, suffix: "", label: "Payment Methods" },
+  { icon: "📊", value: 5, suffix: "", label: "Report Types" },
   { icon: "🎯", value: 99, suffix: "%", label: "Inventory Accuracy" },
   { icon: "⭐", value: 98, suffix: "%", label: "Uptime SLA" },
   { icon: "⏱", value: 40, suffix: "%", label: "Average Time Saved" },
@@ -163,7 +163,7 @@ function DashboardPreview() {
                 <div className="mk-dashboard-stat-label">In Stock</div>
               </div>
               <div className="mk-dashboard-stat">
-                <div className="mk-dashboard-stat-num">150+</div>
+                <div className="mk-dashboard-stat-num">90+</div>
                 <div className="mk-dashboard-stat-label">Products</div>
               </div>
             </div>
@@ -326,9 +326,9 @@ export default function MarketingPage() {
   const [statsVisible, setStatsVisible] = useState(false);
   const statsRef = useRef<HTMLDivElement>(null);
 
-  const countBusinesses = useCountUp(150, 2000, statsVisible);
-  const countProducts = useCountUp(4, 2500, statsVisible);
-  const countRepairs = useCountUp(8, 2000, statsVisible);
+  const countBusinesses = useCountUp(90, 2000, statsVisible);
+  const countProducts = useCountUp(5, 2500, statsVisible);
+  const countRepairs = useCountUp(5, 2000, statsVisible);
   const countAccuracy = useCountUp(99, 1500, statsVisible);
   const countSatisfaction = useCountUp(98, 1500, statsVisible);
   const countTimeSaved = useCountUp(40, 1800, statsVisible);
@@ -393,7 +393,7 @@ export default function MarketingPage() {
         </h1>
 
         <p className="mk-hero-sub">
-          Inventory, point of sale, repair management, customer relationships, and
+          Inventory, point of sale, purchase orders, repair management, customer relationships, and
           KRA-compliant invoicing — all seamlessly integrated. No more disconnected
           systems. No more manual data entry. Just one powerful platform.
         </p>

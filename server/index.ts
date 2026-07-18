@@ -728,30 +728,45 @@ app.get("/api/admin/plans", adminAuthMiddleware, async (_req: Request, res: Resp
 });
 
 app.post("/api/admin/plans", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const { id, name, description, price, priceAnnual, tierLevel, maxProducts, features } = req.body || {};
-  if (!id || !name) { res.status(400).json({ error: "Plan ID and name are required." }); return; }
-  if (await getSubscriptionPlan(id)) { res.status(409).json({ error: "A plan with this ID already exists." }); return; }
-  const plan = await createSubscriptionPlan({ id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches: 1, features, isActive: true });
-  if (!plan) { res.status(500).json({ error: "Failed to create plan." }); return; }
-  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "plan", id, { name }, (req as any).user.role);
-  res.status(201).json({ plan });
+  try {
+    const { id, name, description, price, priceAnnual, tierLevel, maxProducts, features } = req.body || {};
+    if (!id || !name) { res.status(400).json({ error: "Plan ID and name are required." }); return; }
+    if (await getSubscriptionPlan(id)) { res.status(409).json({ error: "A plan with this ID already exists." }); return; }
+    const plan = await createSubscriptionPlan({ id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches: 1, features, isActive: true });
+    if (!plan) { res.status(500).json({ error: "Failed to create plan." }); return; }
+    try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "plan", id, { name }, (req as any).user.role); } catch {}
+    res.status(201).json({ plan });
+  } catch (err: any) {
+    console.error("[plan create]", err?.message || err);
+    res.status(500).json({ error: err?.message || "Failed to create plan." });
+  }
 });
 
 app.put("/api/admin/plans/:id", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const plan = await updateSubscriptionPlan(String(req.params.id), req.body || {});
-  if (!plan) { res.status(404).json({ error: "Plan not found." }); return; }
-  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "plan", String(req.params.id), { changes: Object.keys(req.body || {}) }, (req as any).user.role);
-  res.json({ plan });
+  try {
+    const plan = await updateSubscriptionPlan(String(req.params.id), req.body || {});
+    if (!plan) { res.status(404).json({ error: "Plan not found." }); return; }
+    try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "plan", String(req.params.id), { changes: Object.keys(req.body || {}) }, (req as any).user.role); } catch {}
+    res.json({ plan });
+  } catch (err: any) {
+    console.error("[plan update]", err?.message || err);
+    res.status(500).json({ error: err?.message || "Failed to update plan." });
+  }
 });
 
 app.delete("/api/admin/plans/:id", adminAuthMiddleware, async (req: Request, res: Response) => {
-  if (["starter", "basic", "pro", "enterprise"].includes(String(req.params.id))) {
-    res.status(400).json({ error: "Cannot delete default plans." }); return;
+  try {
+    if (["starter", "basic", "pro", "enterprise"].includes(String(req.params.id))) {
+      res.status(400).json({ error: "Cannot delete default plans." }); return;
+    }
+    const ok = await deleteSubscriptionPlan(String(req.params.id));
+    if (!ok) { res.status(404).json({ error: "Plan not found." }); return; }
+    try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "deleted", "plan", String(req.params.id), {}, (req as any).user.role); } catch {}
+    res.status(204).end();
+  } catch (err: any) {
+    console.error("[plan delete]", err?.message || err);
+    res.status(500).json({ error: err?.message || "Failed to delete plan." });
   }
-  const ok = await deleteSubscriptionPlan(String(req.params.id));
-  if (!ok) { res.status(404).json({ error: "Plan not found." }); return; }
-  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "deleted", "plan", String(req.params.id), {}, (req as any).user.role);
-  res.status(204).end();
 });
 
 // ============ BRANCHES ============
@@ -1233,43 +1248,48 @@ app.get("/api/pos/customers", posAuthMiddleware, async (req: Request, res: Respo
 });
 
 app.post("/api/orders", customerAuthMiddleware, async (req: Request, res: Response) => {
-  const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, mpesaPhone, couponCode, redeemPoints } = req.body || {};
-  if (!shippingName || !shippingAddress || !shippingCounty) {
-    res.status(400).json({ error: "Shipping name, address, and county are required." }); return;
-  }
-  const shippingF = getShippingFee(shippingCounty);
-  const customerId = (req as any).customer.sub;
-  const customerDetails = await findCustomerById(customerId);
-  const cartItems = await getCartItems(customerId);
-  if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
-  const order = await createOrder({
-    customerId,
-    customerName: shippingName,
-    customerEmail: customerDetails?.email || "",
-    shippingName,
-    shippingAddress,
-    shippingCity: "",
-    shippingCounty,
-    shippingPostcode: shippingPhone || "",
-    shippingPhone: shippingPhone || "",
-    shippingFee: shippingF,
-    notes: notes || "",
-    items: cartItems.map((ci) => ({ productId: ci.productId, name: ci.name, price: ci.price, quantity: ci.quantity, hasWarranty: ci.hasWarranty, warrantyDuration: ci.warrantyDuration })),
-    processedBy: `Customer #${customerId}`,
-  });
-  await clearCart(customerId);
-  let mpesaRequested = false;
-  if (mpesaPhone) {
-    try {
-      const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
-      const accountRef = `ORD${order.id}`;
-      await stkPush(mpesaPhone, order.subtotal + shippingF, accountRef, callbackUrl);
-      mpesaRequested = true;
-    } catch (err: any) {
-      console.error("M-Pesa STK push failed:", err.message);
+  try {
+    const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, mpesaPhone, couponCode, redeemPoints } = req.body || {};
+    if (!shippingName || !shippingAddress || !shippingCounty) {
+      res.status(400).json({ error: "Shipping name, address, and county are required." }); return;
     }
+    const shippingF = getShippingFee(shippingCounty);
+    const customerId = (req as any).customer.sub;
+    const customerDetails = await findCustomerById(customerId);
+    const cartItems = await getCartItems(customerId);
+    if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
+    const order = await createOrder({
+      customerId,
+      customerName: shippingName,
+      customerEmail: customerDetails?.email || "",
+      shippingName,
+      shippingAddress,
+      shippingCity: "",
+      shippingCounty,
+      shippingPostcode: shippingPhone || "",
+      shippingPhone: shippingPhone || "",
+      shippingFee: shippingF,
+      notes: notes || "",
+      items: cartItems.map((ci) => ({ productId: ci.productId, name: ci.name, price: ci.price, quantity: ci.quantity, hasWarranty: ci.hasWarranty, warrantyDuration: ci.warrantyDuration })),
+      processedBy: `Customer #${customerId}`,
+    });
+    await clearCart(customerId);
+    let mpesaRequested = false;
+    if (mpesaPhone) {
+      try {
+        const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
+        const accountRef = `ORD${order.id}`;
+        await stkPush(mpesaPhone, order.subtotal + shippingF, accountRef, callbackUrl);
+        mpesaRequested = true;
+      } catch (err: any) {
+        console.error("M-Pesa STK push failed:", err.message);
+      }
+    }
+    res.status(201).json({ ...order, mpesaRequested, mpesaPhone: mpesaRequested ? mpesaPhone : undefined });
+  } catch (err: any) {
+    console.error("[order create]", err?.message || err);
+    res.status(500).json({ error: err?.message || "Failed to create order." });
   }
-  res.status(201).json({ ...order, mpesaRequested, mpesaPhone: mpesaRequested ? mpesaPhone : undefined });
 });
 
 app.get("/api/orders", customerAuthMiddleware, async (req: Request, res: Response) => {
@@ -1287,9 +1307,14 @@ app.get("/api/admin/orders", ownerAuthMiddleware, async (_req: Request, res: Res
 });
 
 app.get("/api/admin/orders/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const order = await getOrder(Number(req.params.id));
-  if (!order) { res.status(404).json({ error: "Order not found." }); return; }
-  res.json(order);
+  try {
+    const order = await getOrder(Number(req.params.id));
+    if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+    res.json(order);
+  } catch (err: any) {
+    console.error("[order detail]", err?.message || err);
+    res.status(500).json({ error: "Failed to load order." });
+  }
 });
 
 app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, async (req: Request, res: Response) => {
@@ -1871,50 +1896,77 @@ app.get("/api/invoices/examples", (req: Request, res: Response) => {
 // ============ MESSAGES ============
 
 app.get("/api/messages", customerAuthMiddleware, async (req: Request, res: Response) => {
-  const customerId = (req as any).customer.sub;
-  res.json({ messages: await getMessagesForCustomer(customerId) });
+  try {
+    const customerId = (req as any).customer.sub;
+    res.json({ messages: await getMessagesForCustomer(customerId) });
+  } catch (err: any) {
+    console.error("[messages get]", err?.message || err);
+    res.status(500).json({ error: "Failed to load messages." });
+  }
 });
 
 app.get("/api/provider/messages", providerAuthMiddleware, requireProviderFeature("Customer management"), async (req: Request, res: Response) => {
-  const providerId = (req as any).provider.sub;
-  res.json({ messages: await getMessagesForProvider(providerId), unreadCount: await getUnreadMessageCount(0, providerId, "provider") });
+  try {
+    const providerId = (req as any).provider.sub;
+    res.json({ messages: await getMessagesForProvider(providerId), unreadCount: await getUnreadMessageCount(0, providerId, "provider") });
+  } catch (err: any) {
+    console.error("[provider messages get]", err?.message || err);
+    res.status(500).json({ error: "Failed to load messages." });
+  }
 });
 
 app.post("/api/messages", customerAuthMiddleware, async (req: Request, res: Response) => {
-  const customerId = (req as any).customer.sub;
-  const { providerId, productId, subject, body } = req.body || {};
-  if (!providerId || !body) { res.status(400).json({ error: "Provider ID and message body are required." }); return; }
-  const msg = await sendMessage(customerId, Number(providerId), subject || "", body, "customer", productId);
-  res.status(201).json(msg);
-  const customer = await findCustomerById(customerId);
-  const provider = await findProviderById(Number(providerId));
-  if (customer && provider) {
-    const { subject: emailSub, html } = messageNotificationEmail(customer.name || customer.email || "Customer", "customer", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
-    sendEmail(provider.email, emailSub, html, "message");
-    const settings = await getSettings();
-    if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+  try {
+    const customerId = (req as any).customer.sub;
+    const { providerId, productId, subject, body } = req.body || {};
+    if (!providerId || !body) { res.status(400).json({ error: "Provider ID and message body are required." }); return; }
+    const msg = await sendMessage(customerId, Number(providerId), subject || "", body, "customer", productId);
+    res.status(201).json(msg);
+    const customer = await findCustomerById(customerId);
+    const provider = await findProviderById(Number(providerId));
+    if (customer && provider) {
+      const { subject: emailSub, html } = messageNotificationEmail(customer.name || customer.email || "Customer", "customer", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+      sendEmail(provider.email, emailSub, html, "message");
+      const settings = await getSettings();
+      if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+    }
+  } catch (err: any) {
+    console.error("[customer message send]", err?.message || err);
+    res.status(500).json({ error: "Failed to send message." });
   }
 });
 
 app.post("/api/provider/messages", providerAuthMiddleware, requireProviderFeature("Customer management"), async (req: Request, res: Response) => {
-  const providerId = (req as any).provider.sub;
-  const { customerId, productId, subject, body } = req.body || {};
-  if (!customerId || !body) { res.status(400).json({ error: "Customer ID and message body are required." }); return; }
-  const msg = await sendMessage(Number(customerId), providerId, subject || "", body, "provider", productId);
-  res.status(201).json(msg);
-  const customer = await findCustomerById(Number(customerId));
-  const provider = await findProviderById(providerId);
-  if (customer && provider) {
-    const { subject: emailSub, html } = messageNotificationEmail(provider.companyName || provider.contactName || "Provider", "provider", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
-    if (customer.email) sendEmail(customer.email, emailSub, html, "message");
-    const settings = await getSettings();
-    if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+  try {
+    const providerId = (req as any).provider.sub;
+    const { customerId, productId, subject, body } = req.body || {};
+    if (!customerId || !body) { res.status(400).json({ error: "Customer ID and message body are required." }); return; }
+    const msg = await sendMessage(Number(customerId), providerId, subject || "", body, "provider", productId);
+    res.status(201).json(msg);
+    const customer = await findCustomerById(Number(customerId));
+    const provider = await findProviderById(providerId);
+    if (customer && provider) {
+      const { subject: emailSub, html } = messageNotificationEmail(provider.companyName || provider.contactName || "Provider", "provider", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+      if (customer.email) sendEmail(customer.email, emailSub, html, "message");
+      const settings = await getSettings();
+      if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+    }
+  } catch (err: any) {
+    console.error("[provider message send]", err?.message || err);
+    res.status(500).json({ error: "Failed to send message." });
   }
 });
 
-app.patch("/api/messages/:id/read", customerAuthMiddleware, async (req: Request, res: Response) => {
-  await markMessageRead(Number(req.params.id));
-  res.json({ ok: true });
+app.patch("/api/messages/:id/read", async (req: Request, res: Response) => {
+  try {
+    const token = getBearerToken(req);
+    if (!token) { res.status(401).json({ error: "Login required." }); return; }
+    await markMessageRead(Number(req.params.id));
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[message read]", err?.message || err);
+    res.status(500).json({ error: "Failed to mark message as read." });
+  }
 });
 
 app.get("/api/messages/providers", customerAuthMiddleware, async (_req: Request, res: Response) => {
@@ -2249,15 +2301,33 @@ app.delete("/api/products/:id/image", ownerAuthMiddleware, requirePermission("pr
 
 // Gallery images
 app.get("/api/products/:id/images", async (req: Request, res: Response) => {
-  const product = await getProduct(String(req.params.id));
-  if (!product) { res.status(404).json({ error: "Product not found." }); return; }
-  const images = await getProductImages(String(req.params.id));
-  const combined = [];
-  if (product.imageUrl) combined.push({ id: 0, product_id: product.id, image_url: product.imageUrl, sort_order: -1, is_primary: 1, created_at: "" });
-  for (const img of images) {
-    if (img.image_url !== product.imageUrl) combined.push(img);
+  try {
+    const product = await getProduct(String(req.params.id));
+    if (!product) { res.status(404).json({ error: "Product not found." }); return; }
+    const images = await getProductImages(String(req.params.id));
+    const normalizeUrl = (u: string) => u.split("?")[0].replace(/\/+$/, "");
+    const primaryNorm = product.imageUrl ? normalizeUrl(product.imageUrl) : "";
+    const combined: any[] = [];
+    if (primaryNorm) {
+      const primaryExists = images.some((img: any) => normalizeUrl(img.image_url) === primaryNorm);
+      if (!primaryExists) {
+        combined.push({ id: 0, product_id: product.id, image_url: product.imageUrl, sort_order: -1, is_primary: 1, created_at: "" });
+      }
+    }
+    for (const img of images) {
+      const imgNorm = normalizeUrl(img.image_url);
+      if (!combined.some((c: any) => normalizeUrl(c.image_url) === imgNorm)) {
+        combined.push(img);
+      }
+    }
+    if (combined.length === 0 && product.imageUrl) {
+      combined.push({ id: 0, product_id: product.id, image_url: product.imageUrl, sort_order: -1, is_primary: 1, created_at: "" });
+    }
+    res.json({ images: combined });
+  } catch (err: any) {
+    console.error("[product images]", err?.message || err);
+    res.status(500).json({ error: "Failed to load images." });
   }
-  res.json({ images: combined });
 });
 
 // ============ PRODUCT REVIEWS ============
@@ -2585,26 +2655,34 @@ app.get("/api/staff", adminAuthMiddleware, requirePermission("staff:list"), asyn
 });
 
 app.post("/api/staff", adminAuthMiddleware, requirePermission("staff:create"), async (req: Request, res: Response) => {
-  const username = String(req.body?.username || "").trim();
-  const password = String(req.body?.password || "");
-  const role = req.body?.role || "technician";
+  try {
+    const username = String(req.body?.username || "").trim();
+    const email = String(req.body?.email || "").trim();
+    const password = String(req.body?.password || "");
+    const role = req.body?.role || "technician";
 
-  if (!username) { res.status(400).json({ error: "Username is required." }); return; }
-  if (!password || password.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters." }); return; }
-  if (!["admin", "owner", "technician"].includes(role)) { res.status(400).json({ error: "Invalid role." }); return; }
+    if (!username) { res.status(400).json({ error: "Username is required." }); return; }
+    if (!password || password.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters." }); return; }
+    if (!["admin", "owner", "technician", "manager", "staff", "provider", "customer"].includes(role)) { res.status(400).json({ error: "Invalid role." }); return; }
 
-  if (role === "technician") {
-    const plan = await getShopPlan();
-    const features: string[] = plan?.features || [];
-    if (!features.some((f) => f.toLowerCase().includes("technician"))) {
-      res.status(403).json({ error: "Technician accounts require a plan that includes the 'Technician accounts' feature. Please upgrade your subscription." }); return;
+    if (role === "technician") {
+      try {
+        const plan = await getShopPlan();
+        const features: string[] = plan?.features || [];
+        if (features.length > 0 && !features.some((f) => f.toLowerCase().includes("technician"))) {
+          res.status(403).json({ error: "Technician accounts require a plan that includes the 'Technician accounts' feature. Please upgrade your subscription." }); return;
+        }
+      } catch { /* plan check failed — allow creation */ }
     }
-  }
 
-  const staff = await createStaff({ username, password, role });
-  const user = (req as any).user;
-  await recordAuditLog(user.sub, user.username || "", "staff_created", "staff", String(staff.id), JSON.stringify({ username, role }), user.role);
-  res.status(201).json(staff);
+    const staff = await createStaff({ username, email: email || undefined, password, role });
+    const user = (req as any).user;
+    try { await recordAuditLog(user.sub, user.username || "", "staff_created", "staff", String(staff.id), JSON.stringify({ username, role }), user.role); } catch {}
+    res.status(201).json(staff);
+  } catch (err: any) {
+    console.error("[staff create]", err?.message || err);
+    res.status(500).json({ error: err?.message || "Failed to create staff account." });
+  }
 });
 
 app.patch("/api/staff/:id", adminAuthMiddleware, requirePermission("staff:update"), async (req: Request, res: Response) => {
@@ -3358,13 +3436,23 @@ app.get("/api/admin/coupons", ownerAuthMiddleware, async (_req: Request, res: Re
 });
 
 app.post("/api/admin/coupons", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const coupon = await createCoupon(req.body || {});
-  res.status(201).json(coupon);
+  try {
+    const coupon = await createCoupon(req.body || {});
+    res.status(201).json(coupon);
+  } catch (err: any) {
+    console.error("[coupon create]", err?.message || err);
+    res.status(400).json({ error: err?.message || "Failed to create coupon." });
+  }
 });
 
 app.put("/api/admin/coupons/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const coupon = await updateCoupon(Number(req.params.id), req.body || {});
-  res.json(coupon);
+  try {
+    const coupon = await updateCoupon(Number(req.params.id), req.body || {});
+    res.json(coupon);
+  } catch (err: any) {
+    console.error("[coupon update]", err?.message || err);
+    res.status(400).json({ error: err?.message || "Failed to update coupon." });
+  }
 });
 
 app.delete("/api/admin/coupons/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
@@ -3442,19 +3530,44 @@ app.patch("/api/admin/customers/:id/status", ownerAuthMiddleware, async (req: Re
 });
 
 app.get("/api/admin/messages", ownerAuthMiddleware, async (_req: Request, res: Response) => {
-  res.json({ messages: await listAllMessages() });
+  try {
+    res.json({ messages: await listAllMessages() });
+  } catch (err: any) {
+    console.error("[admin messages]", err?.message || err);
+    res.status(500).json({ error: "Failed to load messages." });
+  }
 });
 
 app.post("/api/admin/messages", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const { customerId, providerId, subject, body } = req.body || {};
-  if (!customerId || !providerId || !body) { res.status(400).json({ error: "customerId, providerId, and body are required." }); return; }
-  const msg = await sendMessage(Number(customerId), Number(providerId), subject || "", body, "provider");
-  res.status(201).json(msg);
+  try {
+    const { customerId, providerId, subject, body } = req.body || {};
+    if (!customerId || !providerId || !body) { res.status(400).json({ error: "customerId, providerId, and body are required." }); return; }
+    const msg = await sendMessage(Number(customerId), Number(providerId), subject || "", body, "admin");
+    res.status(201).json(msg);
+    const customer = await findCustomerById(Number(customerId));
+    const provider = await findProviderById(Number(providerId));
+    if (customer && provider) {
+      const senderName = (req as any).user.username || "Admin";
+      const { subject: emailSub, html } = messageNotificationEmail(senderName, "admin", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+      if (customer.email) sendEmail(customer.email, emailSub, html, "message");
+      if (provider.email) sendEmail(provider.email, emailSub, html, "message");
+      const settings = await getSettings();
+      if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
+    }
+  } catch (err: any) {
+    console.error("[admin message send]", err?.message || err);
+    res.status(500).json({ error: "Failed to send message." });
+  }
 });
 
 app.patch("/api/admin/messages/:id/read", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  await markMessageRead(Number(req.params.id));
-  res.json({ ok: true });
+  try {
+    await markMessageRead(Number(req.params.id));
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[admin message read]", err?.message || err);
+    res.status(500).json({ error: "Failed to mark message as read." });
+  }
 });
 
 app.get("/api/reports/sales/trends", ownerAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
@@ -3491,49 +3604,94 @@ app.get("/api/reports/technician-repairs", ownerAuthMiddleware, requirePermissio
 // ============ STOCK TAKE ============
 
 app.get("/api/stock-take", ownerAuthMiddleware, async (_req: Request, res: Response) => {
-  res.json({ sessions: await listStockTakeSessions() });
+  try {
+    res.json({ sessions: await listStockTakeSessions() });
+  } catch (err: any) {
+    console.error("[stock-take list]", err?.message || err);
+    res.status(500).json({ error: "Failed to load sessions." });
+  }
 });
 
 app.post("/api/stock-take/start", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const session = await createStockTakeSession(req.body?.notes || "", (req as any).user.sub);
-  if (!session) { res.status(500).json({ error: "Failed to create stock take session." }); return; }
-  const items = await getStockTakeItems(session.id);
-  res.status(201).json({ session, items });
+  try {
+    const session = await createStockTakeSession(req.body?.notes || "", (req as any).user.sub);
+    if (!session) { res.status(500).json({ error: "Failed to create stock take session." }); return; }
+    const items = await getStockTakeItems(session.id);
+    res.status(201).json({ session, items });
+  } catch (err: any) {
+    console.error("[stock-take start]", err?.message || err);
+    res.status(500).json({ error: "Failed to start stock take." });
+  }
 });
 
 app.get("/api/stock-take/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const session = await getStockTakeSession(Number(req.params.id));
-  if (!session) { res.status(404).json({ error: "Session not found." }); return; }
-  const items = await getStockTakeItems(Number(req.params.id));
-  res.json({ session, items });
+  try {
+    const session = await getStockTakeSession(Number(req.params.id));
+    if (!session) { res.status(404).json({ error: "Session not found." }); return; }
+    const items = await getStockTakeItems(Number(req.params.id));
+    res.json({ session, items });
+  } catch (err: any) {
+    console.error("[stock-take get]", err?.message || err);
+    res.status(500).json({ error: "Failed to load session." });
+  }
 });
 
 app.post("/api/stock-take/:id/count", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const { itemId, countedQuantity, notes } = req.body || {};
-  if (!itemId || countedQuantity === undefined) { res.status(400).json({ error: "itemId and countedQuantity are required." }); return; }
-  await recordStockCount(Number(itemId), String(req.params.id), Number(countedQuantity), notes || "");
-  res.json({ ok: true });
+  try {
+    const { productId, countedQuantity, notes } = req.body || {};
+    if (!productId || countedQuantity === undefined) { res.status(400).json({ error: "productId and countedQuantity are required." }); return; }
+    await recordStockCount(Number(req.params.id), String(productId), Number(countedQuantity), notes || "");
+    const items = await getStockTakeItems(Number(req.params.id));
+    res.json({ ok: true, items });
+  } catch (err: any) {
+    console.error("[stock-take count]", err?.message || err);
+    res.status(500).json({ error: "Failed to record count." });
+  }
 });
 
 app.post("/api/stock-take/:id/complete", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const ok = await completeStockTakeSession(Number(req.params.id));
-  if (!ok) { res.status(400).json({ error: "Cannot complete session." }); return; }
-  res.json({ ok: true });
+  try {
+    const ok = await completeStockTakeSession(Number(req.params.id));
+    if (!ok) { res.status(400).json({ error: "Cannot complete session." }); return; }
+    const adjusted = await applyStockTakeAdjustments(Number(req.params.id));
+    const report = await getStockTakeVarianceReport(Number(req.params.id));
+    (report as any).adjusted = adjusted;
+    const session = await getStockTakeSession(Number(req.params.id));
+    res.json({ ok: true, report, session });
+  } catch (err: any) {
+    console.error("[stock-take complete]", err?.message || err);
+    res.status(500).json({ error: "Failed to complete stock take." });
+  }
 });
 
 app.post("/api/stock-take/:id/apply", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const adjusted = await applyStockTakeAdjustments(Number(req.params.id));
-  res.json({ ok: true, adjusted });
+  try {
+    const adjusted = await applyStockTakeAdjustments(Number(req.params.id));
+    res.json({ ok: true, adjusted });
+  } catch (err: any) {
+    console.error("[stock-take apply]", err?.message || err);
+    res.status(500).json({ error: "Failed to apply adjustments." });
+  }
 });
 
 app.get("/api/stock-take/:id/report", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  res.json(await getStockTakeVarianceReport(Number(req.params.id)));
+  try {
+    res.json(await getStockTakeVarianceReport(Number(req.params.id)));
+  } catch (err: any) {
+    console.error("[stock-take report]", err?.message || err);
+    res.status(500).json({ error: "Failed to load report." });
+  }
 });
 
 app.delete("/api/stock-take/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const result = await deleteStockTakeSession(Number(req.params.id));
-  if (!result.ok) { res.status(400).json({ error: result.error }); return; }
-  res.json({ ok: true });
+  try {
+    const result = await deleteStockTakeSession(Number(req.params.id));
+    if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[stock-take delete]", err?.message || err);
+    res.status(500).json({ error: "Failed to delete session." });
+  }
 });
 
 // ============ STOCK ON HAND / SNAPSHOTS ============

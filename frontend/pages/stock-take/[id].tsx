@@ -17,10 +17,13 @@ export default function StockTakeSessionPage() {
   const [authed, setAuthed] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
-  const [counts, setCounts] = useState<Record<number, number>>({});
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [report, setReport] = useState<any>(null);
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [productSearch, setProductSearch] = useState("");
+  const [showProductPicker, setShowProductPicker] = useState(false);
 
   useEffect(() => {
     if (getStaffToken()) setAuthed(true);
@@ -34,19 +37,39 @@ export default function StockTakeSessionPage() {
     try {
       const data = await api<any>(`/api/stock-take/${id}`);
       setSession(data.session);
-      setItems(data.items);
-      const c: Record<number, number> = {};
-      data.items.forEach((item: any) => { if (item.countedQuantity !== null) c[item.id] = item.countedQuantity; });
+      setItems(data.items || []);
+      const c: Record<string, number> = {};
+      (data.items || []).forEach((item: any) => { if (item.countedQuantity !== null) c[item.productId] = item.countedQuantity; });
       setCounts(c);
     } catch (err: any) { setMsg("Error: " + err.message); }
   }
 
-  async function saveCount(itemId: number) {
-    const qty = counts[itemId];
+  async function loadProducts() {
+    try {
+      const d = await api<{ products: any[] }>("/api/products");
+      setAllProducts(d.products || []);
+    } catch {}
+  }
+
+  async function addProduct(productId: string) {
+    if (items.some((i) => i.productId === productId)) { setProductSearch(""); setShowProductPicker(false); return; }
+    setSaving(true);
+    try {
+      await api(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId, countedQuantity: 0 }) });
+      await fetchSession();
+      setProductSearch("");
+      setShowProductPicker(false);
+    } catch (err: any) { setMsg("Error: " + err.message); }
+    finally { setSaving(false); }
+  }
+
+  async function saveCount(productId: string) {
+    const qty = counts[productId];
     if (qty === undefined || qty < 0) return;
     setSaving(true);
     try {
-      await api(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ itemId, countedQuantity: qty }) });
+      const data = await api<any>(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId, countedQuantity: qty }) });
+      if (data.items) setItems(data.items);
     } catch (err: any) { setMsg("Error: " + err.message); }
     finally { setSaving(false); }
   }
@@ -55,8 +78,9 @@ export default function StockTakeSessionPage() {
     setSaving(true);
     try {
       const data = await api<any>(`/api/stock-take/${id}/complete`, { method: "POST" });
-      setMsg("Stock take completed!");
+      setMsg("Stock take completed and stock levels adjusted!");
       if (data.report) setReport(data.report);
+      if (data.session) setSession(data.session);
       await fetchSession();
     } catch (err: any) { setMsg("Error: " + err.message); }
     finally { setSaving(false); }
@@ -69,6 +93,11 @@ export default function StockTakeSessionPage() {
       router.push("/admin?view=stock-take");
     } catch (err: any) { setMsg("Error: " + err.message); }
   }
+
+  const existingProductIds = new Set(items.map((i) => i.productId));
+  const filteredProducts = productSearch ? allProducts.filter((p) =>
+    !existingProductIds.has(p.id) && (p.name || "").toLowerCase().includes(productSearch.toLowerCase())
+  ) : [];
 
   if (!authed) {
     return (
@@ -110,14 +139,39 @@ export default function StockTakeSessionPage() {
             <div className="stat-card__label">Total Items</div>
           </div>
           <div className="stat-card">
-            <div className="stat-card__value">{items.filter((i) => i.countedQuantity !== null).length}</div>
+            <div className="stat-card__value">{items.filter((i: any) => i.countedQuantity !== null && i.countedQuantity > 0).length}</div>
             <div className="stat-card__label">Counted</div>
           </div>
           <div className="stat-card">
-            <div className="stat-card__value">{items.filter((i) => i.countedQuantity !== null && i.variance !== 0).length}</div>
+            <div className="stat-card__value">{items.filter((i: any) => i.countedQuantity !== null && i.variance !== 0).length}</div>
             <div className="stat-card__label">With Variance</div>
           </div>
         </div>
+
+        {session.status === "in_progress" && (
+          <div className="panel" style={{ marginBottom: "1rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+              <div className="field" style={{ margin: 0, flex: 1, position: "relative" }}>
+                <label>Add Product to Count</label>
+                <input
+                  value={productSearch}
+                  onChange={(e) => { setProductSearch(e.target.value); setShowProductPicker(true); }}
+                  onFocus={() => { setShowProductPicker(true); loadProducts(); }}
+                  placeholder="Search products..."
+                />
+                {showProductPicker && filteredProducts.length > 0 && (
+                  <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, zIndex: 20, maxHeight: 250, overflowY: "auto" }}>
+                    {filteredProducts.slice(0, 20).map((p) => (
+                      <div key={p.id} onClick={() => addProduct(p.id)} style={{ padding: "0.5rem 0.75rem", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
+                        {escapeHtml(p.name)} — {formatPrice(p.price)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="table-wrap">
           <table className="data-table">
@@ -131,24 +185,29 @@ export default function StockTakeSessionPage() {
             </thead>
             <tbody>
               {items.map((item: any) => (
-                <tr key={item.id}>
+                <tr key={item.productId}>
                   <td>{escapeHtml(item.productName)}</td>
                   <td style={{ textAlign: "right" }}>{item.systemQuantity}</td>
                   <td style={{ textAlign: "right" }}>
                     <input
                       type="number"
                       style={{ width: 80, textAlign: "right" }}
-                      value={counts[item.id] ?? ""}
-                      onChange={(e) => setCounts({ ...counts, [item.id]: Number(e.target.value) })}
-                      onBlur={() => saveCount(item.id)}
+                      value={counts[item.productId] ?? ""}
+                      onChange={(e) => setCounts({ ...counts, [item.productId]: Number(e.target.value) })}
+                      onBlur={() => saveCount(item.productId)}
                       disabled={session.status === "completed"}
                     />
                   </td>
-                  <td style={{ textAlign: "right", color: item.variance > 0 ? "#16a34a" : item.variance < 0 ? "#dc2626" : "inherit" }}>
-                    {item.countedQuantity !== null ? (item.variance > 0 ? "+" : "") + item.variance : "—"}
+                  <td style={{ textAlign: "right", color: item.countedQuantity !== null ? (item.variance > 0 ? "#16a34a" : item.variance < 0 ? "#dc2626" : "inherit") : "inherit" }}>
+                    {item.countedQuantity !== null && item.countedQuantity > 0 ? (item.variance > 0 ? "+" : "") + item.variance : "\u2014"}
                   </td>
                 </tr>
               ))}
+              {items.length === 0 && (
+                <tr><td colSpan={4} style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>
+                  No products added yet. Use the search above to add products to count.
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -174,11 +233,11 @@ export default function StockTakeSessionPage() {
                 <div className="stat-card__label">Total Absolute Variance</div>
               </div>
               <div className="stat-card">
-                <div className="stat-card__value">{report.adjusted}</div>
+                <div className="stat-card__value">{report.adjusted || 0}</div>
                 <div className="stat-card__label">Items Adjusted</div>
               </div>
             </div>
-            {report.items.filter((i: any) => i.variance !== 0).length > 0 && (
+            {report.items && report.items.filter((i: any) => i.variance !== 0).length > 0 && (
               <div className="table-wrap">
                 <table className="data-table">
                   <thead>
@@ -191,7 +250,7 @@ export default function StockTakeSessionPage() {
                   </thead>
                   <tbody>
                     {report.items.filter((i: any) => i.variance !== 0).map((i: any) => (
-                      <tr key={i.id}>
+                      <tr key={i.productId}>
                         <td>{escapeHtml(i.productName)}</td>
                         <td style={{ textAlign: "right" }}>{i.systemQuantity}</td>
                         <td style={{ textAlign: "right" }}>{i.countedQuantity}</td>

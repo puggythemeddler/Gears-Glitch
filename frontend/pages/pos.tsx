@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { api, getRole, getTokenForRole } from "@/lib/api";
+import { api, getRole, getTokenForRole, downloadPdf } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import PinLock from "@/components/PinLock";
 import { useApp } from "@/lib/app-context";
@@ -41,6 +41,7 @@ export default function POSPage() {
   const [cart, setCart] = useState<POSItem[]>([]);
   const [status, setStatus] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [lastOrderId, setLastOrderId] = useState<number | null>(null);
   const [lastChange, setLastChange] = useState(0);
@@ -288,12 +289,32 @@ export default function POSPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               <div style={{ fontSize: "0.9rem", textAlign: "center" }}>Order #{lastOrderId}</div>
               {lastChange > 0 && <div style={{ fontSize: "1rem", textAlign: "center", color: "#16a34a", fontWeight: 700 }}>Change: {formatPrice(lastChange)}</div>}
-              <a href={`/api/pos/receipt/${lastOrderId}?format=thermal&token=${encodeURIComponent(getTokenForRole() || "")}`} target="_blank" className="btn btn-primary btn-block" style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}>
-                Print Thermal Receipt
-              </a>
-              <a href={`/api/pos/receipt/${lastOrderId}?format=a4&token=${encodeURIComponent(getTokenForRole() || "")}`} target="_blank" className="btn btn-ghost btn-block" style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}>
-                Print A4 Invoice
-              </a>
+              <button
+                className="btn btn-primary btn-block"
+                style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}
+                disabled={downloadingPdf}
+                onClick={async () => {
+                  setDownloadingPdf(true);
+                  try {
+                    await downloadPdf(`/api/pos/receipt/${lastOrderId}`, `invoice-${lastOrderId}.pdf`);
+                  } catch (err: any) {
+                    setStatus(err.message || "Download failed.");
+                  } finally {
+                    setDownloadingPdf(false);
+                  }
+                }}
+              >
+                {downloadingPdf ? "Saving..." : "Save Invoice"}
+              </button>
+              <button
+                className="btn btn-ghost btn-block"
+                style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}
+                onClick={() => {
+                  window.open(`/api/pos/receipt/${lastOrderId}?format=a4&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
+                }}
+              >
+                Print Invoice
+              </button>
               <button className="btn btn-ghost btn-block" onClick={() => { setLastOrderId(null); setStatus(""); setLastChange(0); }} style={{ fontSize: "0.9rem", padding: "0.4rem" }}>
                 New Sale
               </button>
