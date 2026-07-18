@@ -171,6 +171,12 @@ function deleteProductImages(productId: string): void {
   } catch {}
 }
 
+async function deleteProductCloudinaryImages(imageUrls: string[]): Promise<void> {
+  for (const url of imageUrls) {
+    await deleteCloudinaryImage(url);
+  }
+}
+
 function getUploadedUrl(req: any): string {
   const file = req.file;
   if (!file) return "";
@@ -178,4 +184,17 @@ function getUploadedUrl(req: any): string {
   return `/uploads/${file.filename}`;
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary };
+async function deleteCloudinaryImage(imageUrl: string): Promise<void> {
+  if (!_cloudinaryConfigured || !imageUrl) return;
+  try {
+    const match = imageUrl.match(/\/upload\/(?:v\d+\/)?(.+?)\.\w+$/);
+    if (!match) return;
+    const publicId = match[1];
+    await cloudinary.uploader.destroy(publicId);
+    console.log("[Upload] Deleted Cloudinary image:", publicId);
+  } catch (e: any) {
+    console.warn("[Upload] Cloudinary delete failed:", e.message || e);
+  }
+}
+
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage };

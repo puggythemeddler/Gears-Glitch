@@ -160,6 +160,25 @@ export default function AdminProducts() {
     try { await api(`/api/products/${encodeURIComponent(productId)}/images/${imageId}`, { method: "DELETE" }); await loadGallery(productId); } catch { alert("Delete failed"); }
   }
 
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dropIdx, setDropIdx] = useState<number | null>(null);
+
+  function onDragStart(idx: number) { setDragIdx(idx); }
+  function onDragOver(e: React.DragEvent, idx: number) { e.preventDefault(); setDropIdx(idx); }
+  function onDragEnd() { setDragIdx(null); setDropIdx(null); }
+  async function onDrop(idx: number) {
+    if (dragIdx === null || dragIdx === idx || !editing) { setDragIdx(null); setDropIdx(null); return; }
+    const next = [...gallery];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(idx, 0, moved);
+    setGallery(next);
+    setDragIdx(null);
+    setDropIdx(null);
+    try {
+      await api(`/api/products/${encodeURIComponent(editing.id)}/images/reorder`, { method: "PUT", body: JSON.stringify({ orderedIds: next.map((i: any) => i.id) }) });
+    } catch (err: any) { alert("Reorder failed: " + err.message); await loadGallery(editing.id); }
+  }
+
   function buildSpecsArray(): any[] {
     if (specFields.length > 0) {
       return specFields.map(f => ({ f: f.fieldKey, l: f.fieldLabel, v: specValues[f.fieldKey] || "" })).filter(s => s.v);
@@ -286,10 +305,25 @@ export default function AdminProducts() {
           </form>
           {!creating && gallery.length > 0 && (
             <div style={{ marginTop: "1rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
-              <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Gallery ({gallery.length})</p>
+              <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Gallery ({gallery.length}) — drag to reorder</p>
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                {gallery.map((img: any) => (
-                  <div key={img.id} style={{ position: "relative", textAlign: "center" }}>
+                {gallery.map((img: any, idx: number) => (
+                  <div
+                    key={img.id}
+                    draggable
+                    onDragStart={() => onDragStart(idx)}
+                    onDragOver={(e) => onDragOver(e, idx)}
+                    onDragEnd={onDragEnd}
+                    onDrop={() => onDrop(idx)}
+                    style={{
+                      position: "relative", textAlign: "center", cursor: "grab",
+                      opacity: dragIdx === idx ? 0.4 : 1,
+                      outline: dropIdx === idx ? "2px solid var(--accent)" : "none",
+                      outlineOffset: 2,
+                      borderRadius: 8,
+                      transition: "opacity 0.15s",
+                    }}
+                  >
                     <img src={img.image_url} alt="" style={{ width: 80, height: 80, borderRadius: 6, objectFit: "cover", border: img.is_primary ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
                     <div style={{ marginTop: 2 }}>
                       {!img.is_primary && <RippleButton size="small" variant="ghost" onClick={() => setPrimary(editing!.id, img.id)}>Set primary</RippleButton>}

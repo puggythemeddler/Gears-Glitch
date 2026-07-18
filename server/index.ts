@@ -266,7 +266,7 @@ import {
   respondToRepairQuote,
 } from "./repairs";
 import * as notifier from "./notify";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
@@ -2185,7 +2185,9 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
 app.delete("/api/products/:id/image", ownerAuthMiddleware, requirePermission("product:update"), async (req: Request, res: Response) => {
   const product = await getProduct(String(req.params.id));
   if (!product) { res.status(404).json({ error: "Product not found." }); return; }
+  const imageUrl = product.imageUrl;
   await setProductImageUrl(String(req.params.id), "");
+  if (imageUrl) deleteCloudinaryImage(imageUrl);
   res.json({ ok: true });
 });
 
@@ -2243,8 +2245,11 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
 });
 
 app.delete("/api/products/:id/images/:imageId", ownerAuthMiddleware, requirePermission("product:update"), async (req: Request, res: Response) => {
+  const images = await getProductImages(String(req.params.id));
+  const img = images.find(i => i.id === Number(req.params.imageId));
   const ok = await deleteProductImage(Number(req.params.imageId));
   if (!ok) { res.status(404).json({ error: "Image not found." }); return; }
+  if (img?.image_url) deleteCloudinaryImage(img.image_url);
   res.json({ ok: true });
 });
 
@@ -2282,8 +2287,14 @@ app.patch("/api/products/:id/subcategory", adminAuthMiddleware, async (req: Requ
 });
 
 app.delete("/api/products/:id", ownerAuthMiddleware, requirePermission("product:delete"), async (req: Request, res: Response) => {
-  const removed = await deleteProduct(String(req.params.id));
+  const productId = String(req.params.id);
+  const product = await getProduct(productId);
+  if (!product) { res.status(404).json({ error: "Product not found." }); return; }
+  const allImages = await getProductImages(productId);
+  const urls = [product.imageUrl, ...allImages.map(i => i.image_url)].filter(Boolean);
+  const removed = await deleteProduct(productId);
   if (!removed) { res.status(404).json({ error: "Product not found." }); return; }
+  for (const url of urls) deleteCloudinaryImage(url);
   res.status(204).end();
 });
 
