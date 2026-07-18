@@ -1117,7 +1117,7 @@ const COMMON_FEATURES = [
   "Shop subscription", "SMS notifications",
   "Spec templates", "Stock take / inventory count",
   "Stock transfers", "Supplier management",
-  "Theme customization",
+  "Technician accounts", "Theme customization",
 ];
 
 function AdminPlans() {
@@ -2144,6 +2144,9 @@ function AdminSettings() {
   const [faviconFile, setFaviconFile] = useState<File | null>(null);
   const [faviconUploading, setFaviconUploading] = useState(false);
   const [faviconMsg, setFaviconMsg] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoMsg, setLogoMsg] = useState("");
   const [etimsMode, setEtimsMode] = useState("off");
   useEffect(() => { if (settings?.etimsMode) setEtimsMode(settings.etimsMode); }, [settings?.etimsMode]);
 
@@ -2171,6 +2174,33 @@ function AdminSettings() {
       setFaviconMsg("Error: " + err.message);
     } finally {
       setFaviconUploading(false);
+    }
+  }
+
+  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setLogoMsg("");
+    setLogoFile(e.target.files?.[0] || null);
+  }
+
+  async function handleLogoUpload(e: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>) {
+    if (e) e.preventDefault?.();
+    if (!logoFile) {
+      setLogoMsg("Select a logo file first.");
+      return;
+    }
+    setLogoUploading(true);
+    setLogoMsg("");
+    const formData = new FormData();
+    formData.append("logo", logoFile);
+    try {
+      await api("/api/settings/logo", { method: "POST", body: formData }, "staff");
+      setLogoMsg("Logo updated successfully.");
+      setLogoFile(null);
+      refreshSettings();
+    } catch (err: any) {
+      setLogoMsg("Error: " + err.message);
+    } finally {
+      setLogoUploading(false);
     }
   }
 
@@ -2209,6 +2239,7 @@ function AdminSettings() {
           cloudinaryApiKey: fd.get("cloudinaryApiKey"),
           cloudinaryApiSecret: fd.get("cloudinaryApiSecret"),
           cloudinaryFolder: fd.get("cloudinaryFolder"),
+          logoPosition: fd.get("logoPosition"),
         }),
       });
       setMsg("Settings saved.");
@@ -2258,6 +2289,43 @@ function AdminSettings() {
               Upload favicon
             </RippleButton>
             {faviconMsg && <p style={{ margin: 0, color: faviconMsg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{faviconMsg}</p>}
+          </div>
+        </div>
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <h3 style={{ marginTop: 0 }}>Store logo (invoices &amp; quotes)</h3>
+          <div className="field" style={{ gap: "0.75rem", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+              {settings?.storeLogo ? (
+                <img src={settings.storeLogo} alt="Current logo" style={{ width: 80, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid #ddd" }} />
+              ) : (
+                <div style={{ width: 80, height: 48, borderRadius: 8, background: "#f1f5f9", border: "1px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 12, color: "#334155" }}>no logo</span>
+                </div>
+              )}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600 }}>Current logo</p>
+                <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>
+                  Upload a PNG, JPEG, or WEBP file. This will appear on invoices, receipts, and quotes.
+                </p>
+              </div>
+            </div>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={handleLogoChange}
+            />
+            <RippleButton type="button" onClick={handleLogoUpload} loading={logoUploading} disabled={!logoFile}>
+              Upload logo
+            </RippleButton>
+            {logoMsg && <p style={{ margin: 0, color: logoMsg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{logoMsg}</p>}
+          </div>
+          <div className="field" style={{ marginTop: "0.75rem" }}>
+            <label>Logo position on documents</label>
+            <select name="logoPosition" defaultValue={settings?.logoPosition || "top-left"}>
+              <option value="top-left">Top left</option>
+              <option value="top-middle">Top center</option>
+              <option value="top-right">Top right</option>
+            </select>
           </div>
         </div>
         <div className="panel" style={{ marginBottom: "1rem" }}>

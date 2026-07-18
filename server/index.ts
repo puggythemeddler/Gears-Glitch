@@ -161,9 +161,15 @@ import {
   createQuoteFromWishlist,
   createQuote,
   getQuote,
+  updateQuote,
+  deleteQuote,
   listQuotesForCustomer,
   listAllQuotes,
   updateQuoteStatus,
+  convertQuoteToOrder,
+  generateInvoiceNumber,
+  recordAuditLog,
+  listAllAuditLogs,
   listBranches,
   createBranch,
   updateBranch,
@@ -1002,10 +1008,15 @@ app.post("/api/pos/checkout", posAuthMiddleware, async (req: Request, res: Respo
       } catch {}
     }
     await updateOrderStatus(orderId, "delivered");
+    // Generate invoice number for the order
+    const invNum = await generateInvoiceNumber();
+    await query("UPDATE orders SET invoice_number = $1 WHERE id = $2", [invNum, orderId]);
     const updated = await getOrder(orderId);
     if (!updated) { res.status(500).json({ error: "Order created but could not be retrieved." }); return; }
     const change = pmt === "cash" && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
-    res.status(201).json({ order: updated, change });
+    // Audit log
+    await recordAuditLog(staff.sub, staffName, "pos_sale", "order", String(orderId), JSON.stringify({ invoiceNumber: invNum, total: subtotal, paymentMethod: pmt, items: resolvedItems.length }), staff.role || "staff");
+    res.status(201).json({ order: { ...updated, invoiceNumber: invNum }, change });
   } catch (err: any) {
     console.error("[POS Checkout Error]", err);
     if (!res.headersSent) res.status(500).json({ error: err?.message || "Checkout failed. Please try again." });
@@ -1091,7 +1102,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div><h1>${title}</h1><p class="meta">${subtitle}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -1112,7 +1123,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
     </div>
   </div>
   <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th><th style="text-align:right">VAT</th><th style="text-align:center">TT</th><th>Warranty</th></tr></thead><tbody>
-    ${a4ItemsHtml}
+    ${itemsHtml}
   </tbody></table>
   <div style="text-align:right;">
     <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -1149,6 +1160,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
   .footer-note { text-align: center; font-size: 0.7rem; color: #9ca3af; margin-top: 0.75rem; border-top: 1px solid #e5e7eb; padding-top: 0.5rem; }
   @media print { body { margin: 0; } .print-btn { display: none; } }
 </style></head><body>
+${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}
 <h1>${escapeHtml(store)}</h1>
 <div class="center">${escapeHtml(storeEmail)}</div>
 <hr>
@@ -1338,7 +1350,7 @@ app.get("/api/admin/orders/:id/invoice", async (req: Request, res: Response) => 
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div><h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -1454,7 +1466,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, async (req: Request, 
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div><h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -1500,6 +1512,15 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, async (req: Request, 
 
 function escapeHtml(v: string) {
   return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function renderStoreLogo(logoUrl: string, position: string, storeName: string): string {
+  if (!logoUrl) return "";
+  const pos = position || "top-left";
+  if (pos === "top-left") return `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;margin-bottom:0.5rem;" />`;
+  if (pos === "top-middle") return `<div style="text-align:center;margin-bottom:0.5rem;"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;" /></div>`;
+  if (pos === "top-right") return `<div style="text-align:right;margin-bottom:0.5rem;"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;" /></div>`;
+  return "";
 }
 
 // ============ PRODUCT ANALYTICS ============
@@ -1645,7 +1666,7 @@ app.get("/api/admin/credit-notes/:id/view", async (req: Request, res: Response) 
 </style></head><body>
 <div class="cn">
   <div class="header">
-    <div><h1>CREDIT NOTE</h1><p class="meta">Credit Note #${cn.id} | Original Order #${cn.orderId}${etimsNumber ? " | eTIMS Invoice: " + escapeHtml(etimsNumber) : ""}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>CREDIT NOTE</h1><p class="meta">Credit Note #${cn.id} | Original Order #${cn.orderId}${etimsNumber ? " | eTIMS Invoice: " + escapeHtml(etimsNumber) : ""}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
@@ -2431,7 +2452,17 @@ app.post("/api/staff", adminAuthMiddleware, requirePermission("staff:create"), a
   if (!password || password.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters." }); return; }
   if (!["admin", "owner", "technician"].includes(role)) { res.status(400).json({ error: "Invalid role." }); return; }
 
+  if (role === "technician") {
+    const plan = await getShopPlan();
+    const features: string[] = plan?.features || [];
+    if (!features.some((f) => f.toLowerCase().includes("technician"))) {
+      res.status(403).json({ error: "Technician accounts require a plan that includes the 'Technician accounts' feature. Please upgrade your subscription." }); return;
+    }
+  }
+
   const staff = await createStaff({ username, password, role });
+  const user = (req as any).user;
+  await recordAuditLog(user.sub, user.username || "", "staff_created", "staff", String(staff.id), JSON.stringify({ username, role }), user.role);
   res.status(201).json(staff);
 });
 
@@ -2930,9 +2961,135 @@ app.post("/api/quotes/from-wishlist", customerAuthMiddleware, async (req: Reques
 
 app.patch("/api/quotes/:id/status", customerAuthMiddleware, async (req: Request, res: Response) => {
   const { status } = req.body || {};
-  if (!["draft", "sent", "accepted", "declined"].includes(status)) { res.status(400).json({ error: "Invalid status." }); return; }
+  if (!["pending", "waiting_for_approval", "cancelled", "approved"].includes(status)) { res.status(400).json({ error: "Invalid status." }); return; }
   await updateQuoteStatus(Number(req.params.id), status);
   res.json({ ok: true });
+});
+
+// ============ ADMIN QUOTES ============
+app.get("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const quotes = await listAllQuotes();
+  const stats = { pending: 0, waiting_for_approval: 0, cancelled: 0, approved: 0, total: quotes.length };
+  for (const q of quotes) {
+    if (stats[q.status as keyof typeof stats] !== undefined) stats[q.status as keyof typeof stats]++;
+  }
+  res.json({ quotes, stats });
+});
+
+app.get("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const quote = await getQuote(Number(req.params.id));
+  if (!quote) { res.status(404).json({ error: "Quote not found." }); return; }
+  res.json({ quote });
+});
+
+app.post("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const { customerName, customerPhone, customerId: cid, notes, items, discountType, discountValue } = req.body || {};
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    res.status(400).json({ error: "items array is required." }); return;
+  }
+  let customerId = Number(cid) || 0;
+  if (!customerId && customerName) {
+    let walkIn = await queryOne("SELECT id FROM customers WHERE email = 'walkin@pos'") as any;
+    if (!walkIn) {
+      const r = await queryOne("INSERT INTO customers (name, email, password_hash, phone) VALUES ($1, $2, $3, $4) RETURNING id", [customerName, "walkin@pos", "", customerPhone || ""]) as any;
+      walkIn = { id: r!.id };
+    }
+    customerId = walkIn.id;
+  }
+  if (!customerId) { res.status(400).json({ error: "customerId or customerName is required." }); return; }
+  const quote = await createQuote({ customerId, customerName: customerName || "", customerPhone: customerPhone || "", items, notes: notes || "", discountType: discountType || "", discountValue: discountValue || 0 });
+  await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_created", "quote", String(quote.id), JSON.stringify({ quoteNumber: quote.quoteNumber, total: quote.total }), (req as any).user.role);
+  res.status(201).json(quote);
+});
+
+app.put("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = await getQuote(id);
+  if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
+  const updated = await updateQuote(id, req.body || {});
+  res.json({ quote: updated });
+});
+
+app.delete("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = await getQuote(id);
+  if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
+  await deleteQuote(id);
+  await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_deleted", "quote", String(id), JSON.stringify({ quoteNumber: existing.quoteNumber }), (req as any).user.role);
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/quotes/:id/approve", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = await getQuote(id);
+  if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
+  const result = await convertQuoteToOrder(id, (req as any).user.username || "Staff");
+  if (!result) { res.status(500).json({ error: "Failed to convert quote." }); return; }
+  await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_approved", "quote", String(id), JSON.stringify({ quoteNumber: existing.quoteNumber, orderInvoice: result.invoiceNumber, total: existing.total }), (req as any).user.role);
+  res.json({ order: result.order, invoiceNumber: result.invoiceNumber });
+});
+
+app.post("/api/admin/quotes/:id/cancel", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = await getQuote(id);
+  if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
+  await updateQuoteStatus(id, "cancelled");
+  await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_cancelled", "quote", String(id), JSON.stringify({ quoteNumber: existing.quoteNumber }), (req as any).user.role);
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const quote = await getQuote(Number(req.params.id));
+  if (!quote) { res.status(404).json({ error: "Quote not found." }); return; }
+  const settings = await getSettings();
+  const store = settings.storeName || "Gear&Glitch";
+  const storeEmail = settings.email || "info@gearandglitch.com";
+  const currency = settings.currency || "KES";
+  const linesHtml = quote.items.map((i: any) => {
+    const hasDiscount = i.discountType && i.discountValue > 0;
+    const discountLabel = hasDiscount ? (i.discountType === "percentage" ? `${i.discountValue}% off` : `${currency} ${i.discountValue.toLocaleString()} off`) : "";
+    return `<tr><td>${escapeHtml(i.productName)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${Number(i.unitPrice).toLocaleString("en",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:center">${discountLabel || "—"}</td><td style="text-align:right;white-space:nowrap">${currency} ${Number(i.lineTotal).toLocaleString("en",{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
+  }).join("");
+  const hasQuoteDiscount = quote.discountType && quote.discountValue > 0;
+  const quoteDiscountLabel = hasQuoteDiscount ? (quote.discountType === "percentage" ? `${quote.discountValue}% off` : `${currency} ${quote.discountValue.toLocaleString()} off`) : "";
+  const total = quote.total;
+  const statusColors: Record<string, string> = { pending: "#f59e0b", waiting_for_approval: "#3b82f6", cancelled: "#ef4444", approved: "#10b981" };
+  const statusColor = statusColors[quote.status] || "#6b7280";
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Quote #${quote.quoteNumber}</title>
+<style>
+  @page { size: A4; margin: 15mm; }
+  body { font-family: system-ui, sans-serif; max-width: 750px; margin: 0 auto; padding: 1rem; color: #1f2937; font-size: 13px; }
+  .quote { border: 1px solid #e5e7eb; border-radius: 16px; padding: 2rem; }
+  .header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem; border-bottom: 2px solid #1f2937; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+  .header h1 { margin: 0; font-size: 1.5rem; }
+  .status-badge { display:inline-block;padding:4px 12px;border-radius:999px;font-size:0.75rem;font-weight:600;color:#fff;background:${statusColor}; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+  th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; }
+  .total-row { font-weight: 700; font-size: 1.1rem; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
+  .info-grid .label { color: #6b7280; font-size: 0.75rem; text-transform: uppercase; }
+  .footer { margin-top: 2rem; font-size: 0.8rem; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
+  .print-btn { display: block; margin: 1.5rem auto 0; padding: 0.6rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  @media print { body { margin: 0; } .quote { border: none; } .print-btn { display: none; } }
+</style></head><body>
+<div class="quote">
+  <div class="header">
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>PRICE QUOTATION</h1><p style="font-size:0.9rem;color:#6b7280">Quote #${escapeHtml(quote.quoteNumber)} <span class="status-badge">${quote.status.replace(/_/g," ").toUpperCase()}</span></p></div>
+    <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span style="font-size:0.85rem;color:#6b7280">${escapeHtml(storeEmail)}</span></div>
+  </div>
+  <div class="info-grid">
+    <div><div class="label">Bill to</div><div><strong>${escapeHtml(quote.customerName || "—")}</strong></div>${quote.customerPhone ? `<div>${escapeHtml(quote.customerPhone)}</div>` : ""}</div>
+    <div><div class="label">Quote details</div><div>Date: ${quote.createdAt ? new Date(quote.createdAt).toLocaleDateString("en-GB",{year:"numeric",month:"long",day:"numeric"}) : "—"}</div><div>Status: ${quote.status.replace(/_/g," ")}</div></div>
+  </div>
+  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:center">Discount</th><th style="text-align:right">Total</th></tr></thead><tbody>${linesHtml}</tbody></table>
+  ${hasQuoteDiscount ? `<div style="text-align:right;margin:0.5rem 0;"><span style="color:#6b7280;">Quote Discount (${quoteDiscountLabel}):</span> &minus;${currency} ${(quote.discountType==="percentage" ? quote.total * quote.discountValue / (100 - quote.discountValue) : quote.discountValue).toFixed(2)}</div>` : ""}
+  <div style="text-align:right;"><div class="total-row">Total: ${currency} ${total.toLocaleString("en",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
+  ${quote.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(quote.notes)}</p>` : ""}
+  <div class="footer">${escapeHtml(store)} &mdash; ${escapeHtml(storeEmail)}</div>
+  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+</div>
+</body></html>`);
 });
 
 // ============ SHOP SUBSCRIPTION ============
@@ -3092,91 +3249,6 @@ app.post("/api/admin/messages", ownerAuthMiddleware, async (req: Request, res: R
 app.patch("/api/admin/messages/:id/read", ownerAuthMiddleware, async (req: Request, res: Response) => {
   await markMessageRead(Number(req.params.id));
   res.json({ ok: true });
-});
-
-app.get("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:view"), async (_req: Request, res: Response) => {
-  res.json({ quotes: await listAllQuotes() });
-});
-
-app.post("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
-  const { customerId, notes, items } = req.body || {};
-  if (!customerId || !items || !Array.isArray(items) || items.length === 0) {
-    res.status(400).json({ error: "customerId and items array are required." }); return;
-  }
-  const customer = await getCustomerDetails(Number(customerId));
-  if (!customer) { res.status(404).json({ error: "Customer not found." }); return; }
-  const quote = await createQuote({ customerId: Number(customerId), items, notes: notes || "" });
-  res.status(201).json(quote);
-});
-
-app.put("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-  const existing = await getQuote(id);
-  if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
-  res.json({ message: "Quote updated." });
-});
-
-app.get("/api/admin/quotes/:id/generate", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
-  const quote = await getQuote(Number(req.params.id));
-  if (!quote) { res.status(404).json({ error: "Quote not found." }); return; }
-  const customer = await getCustomerDetails(quote.customerId);
-  const settings = await getSettings();
-  const store = settings.storeName || "Gear&Glitch";
-  const storeEmail = settings.email || "info@gearandglitch.com";
-  const currency = settings.currency || "KES";
-  const itemsHtml = (quote.items || []).map((i: any) =>
-    `<tr><td>${escapeHtml(i.productName)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${Number(i.unitPrice).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${Number(i.lineTotal).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`
-  ).join("");
-  const total = (quote.items || []).reduce((s: number, i: any) => s + Number(i.lineTotal), 0);
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Quote #${quote.quoteNumber} — ${store}</title>
-<style>
-  body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
-  .quote { border: 1px solid #e5e7eb; border-radius: 16px; padding: 2rem; }
-  .header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem; border-bottom: 2px solid #1f2937; padding-bottom: 1rem; margin-bottom: 1.5rem; }
-  .header h1 { margin: 0; font-size: 1.5rem; }
-  .header .meta { font-size: 0.9rem; color: #6b7280; }
-  table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
-  .total-row { font-weight: 700; font-size: 1.1rem; }
-  .footer { margin-top: 2rem; font-size: 0.85rem; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
-  .print-btn { display: block; margin: 1.5rem auto 0; padding: 0.6rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
-  .print-btn:hover { background: #374151; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
-  .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
-  @media print { body { margin: 0; } .quote { border: none; } .print-btn { display: none; } }
-</style></head><body>
-<div class="quote">
-  <div class="header">
-    <div><h1>PRICE QUOTATION</h1><p class="meta">Quote #${escapeHtml(quote.quoteNumber)}</p></div>
-    <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
-  </div>
-  <div class="info-grid">
-    <div>
-      <div class="label">Bill to</div>
-      <div><strong>${escapeHtml(customer?.name || "—")}</strong></div>
-      ${customer?.email ? `<div>${escapeHtml(customer.email)}</div>` : ""}
-      ${customer?.phone ? `<div>${escapeHtml(customer.phone)}</div>` : ""}
-    </div>
-    <div>
-      <div class="label">Quote details</div>
-      <div>Date: ${quote.createdAt ? new Date(quote.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }) : "—"}</div>
-      <div>Status: ${quote.status || "draft"}</div>
-      
-    </div>
-  </div>
-  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead><tbody>
-    ${itemsHtml}
-  </tbody></table>
-  <div style="text-align:right;">
-    <div class="total-row">Total: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-  </div>
-  ${quote.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(quote.notes)}</p>` : ""}
-  <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
-  <button class="print-btn" onclick="window.print()">Print</button>
-  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
-</div>
-</body></html>`);
 });
 
 app.get("/api/reports/sales/trends", ownerAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {

@@ -238,6 +238,7 @@ interface Settings {
   cloudinaryApiKey: string;
   cloudinaryApiSecret: string;
   cloudinaryFolder: string;
+  logoPosition: string;
 }
 
 interface CategoryRow {
@@ -336,10 +337,14 @@ interface WishlistItem {
 interface Quote {
   id: number;
   customerId: number;
+  customerName: string;
+  customerPhone: string;
   quoteNumber: string;
   status: string;
   notes: string;
   total: number;
+  discountType: string;
+  discountValue: number;
   createdAt: string;
   updatedAt: string;
   items: QuoteItem[];
@@ -353,6 +358,8 @@ interface QuoteItem {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  discountType: string;
+  discountValue: number;
 }
 
 interface CreditNote {
@@ -648,6 +655,14 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_signature_data TEXT`); } catch {}
   try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_submitted_at TEXT`); } catch {}
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_on_hand INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_name TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_phone TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS discount_type TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS discount_value DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS discount_type TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS discount_value DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_number TEXT`); } catch {}
+  try { await query(`INSERT INTO settings (key, value) SELECT 'logo_position', 'top-left' WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'logo_position')`); } catch {}
   try {
     await query(`CREATE TABLE IF NOT EXISTS product_views (
       id SERIAL PRIMARY KEY,
@@ -971,6 +986,7 @@ async function getSettings(): Promise<Settings> {
     cloudinaryApiKey: s.cloudinaryApiKey || process.env.CLOUDINARY_API_KEY || "",
     cloudinaryApiSecret: s.cloudinaryApiSecret || process.env.CLOUDINARY_API_SECRET || "",
     cloudinaryFolder: s.cloudinaryFolder || process.env.CLOUDINARY_FOLDER || "gear-glitch",
+    logoPosition: s.logoPosition || "top-left",
   };
 }
 
@@ -985,7 +1001,7 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 }
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
-  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder"];
+  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition"];
   if (updates.paymentMethods) await setPaymentMethods(updates.paymentMethods);
   await transaction(async (client) => {
     for (const key of allowed) {
@@ -1566,13 +1582,30 @@ async function createQuoteFromWishlist(customerId: number, wishlistIds: number[]
   return (await getQuote(quoteId))!;
 }
 
-async function createQuote(data: { customerId: number; items: { productId: string; productName: string; quantity: number; unitPrice: number }[]; notes?: string }): Promise<Quote> {
+async function createQuote(data: { customerId: number; customerName?: string; customerPhone?: string; items: { productId: string; productName: string; quantity: number; unitPrice: number; discountType?: string; discountValue?: number }[]; notes?: string; discountType?: string; discountValue?: number }): Promise<Quote> {
   const quoteNumber = await generateQuoteNumber();
-  const total = data.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
-  const result = await query("INSERT INTO quotes (customer_id, quote_number, status, notes, total) VALUES ($1, $2, 'draft', $3, $4) RETURNING id", [data.customerId, quoteNumber, data.notes || "", total]);
+  let total = 0;
+  const itemsWithTotals = data.items.map((i) => {
+    let lineTotal = i.quantity * i.unitPrice;
+    if (i.discountType === "percentage" && i.discountValue) lineTotal -= lineTotal * (i.discountValue / 100);
+    else if (i.discountType === "amount" && i.discountValue) lineTotal -= i.discountValue;
+    if (lineTotal < 0) lineTotal = 0;
+    total += lineTotal;
+    return { ...i, lineTotal };
+  });
+  if (data.discountType === "percentage" && data.discountValue) total -= total * (data.discountValue / 100);
+  else if (data.discountType === "amount" && data.discountValue) total -= data.discountValue;
+  if (total < 0) total = 0;
+  const result = await query(
+    "INSERT INTO quotes (customer_id, customer_name, customer_phone, quote_number, status, notes, total, discount_type, discount_value) VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8) RETURNING id",
+    [data.customerId, data.customerName || "", data.customerPhone || "", quoteNumber, data.notes || "", total, data.discountType || "", data.discountValue || 0]
+  );
   const quoteId = result.rows[0].id;
-  for (const item of data.items) {
-    await query("INSERT INTO quote_items (quote_id, product_id, product_name, quantity, unit_price, line_total) VALUES ($1, $2, $3, $4, $5, $6)", [quoteId, item.productId, item.productName, item.quantity, item.unitPrice, item.quantity * item.unitPrice]);
+  for (const item of itemsWithTotals) {
+    await query(
+      "INSERT INTO quote_items (quote_id, product_id, product_name, quantity, unit_price, line_total, discount_type, discount_value) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+      [quoteId, item.productId, item.productName, item.quantity, item.unitPrice, item.lineTotal, item.discountType || "", item.discountValue || 0]
+    );
   }
   return (await getQuote(quoteId))!;
 }
@@ -1581,7 +1614,62 @@ async function getQuote(id: number): Promise<Quote | undefined> {
   const row = await queryOne("SELECT * FROM quotes WHERE id = $1", [id]) as any;
   if (!row) return undefined;
   const items = await queryAll("SELECT * FROM quote_items WHERE quote_id = $1", [id]) as any[];
-  return { id: row.id, customerId: row.customer_id, quoteNumber: row.quote_number, status: row.status, notes: row.notes, total: row.total, createdAt: row.created_at, updatedAt: row.updated_at, items: items.map((i) => ({ id: i.id, quoteId: i.quote_id, productId: i.product_id, productName: i.product_name, quantity: i.quantity, unitPrice: i.unit_price, lineTotal: i.line_total })) };
+  return {
+    id: row.id, customerId: row.customer_id, customerName: row.customer_name || "", customerPhone: row.customer_phone || "",
+    quoteNumber: row.quote_number, status: row.status, notes: row.notes, total: row.total,
+    discountType: row.discount_type || "", discountValue: row.discount_value || 0,
+    createdAt: row.created_at, updatedAt: row.updated_at,
+    items: items.map((i) => ({
+      id: i.id, quoteId: i.quote_id, productId: i.product_id, productName: i.product_name,
+      quantity: i.quantity, unitPrice: i.unit_price, lineTotal: i.line_total,
+      discountType: i.discount_type || "", discountValue: i.discount_value || 0,
+    })),
+  };
+}
+
+async function updateQuote(id: number, data: { customerName?: string; customerPhone?: string; notes?: string; items?: { productId: string; productName: string; quantity: number; unitPrice: number; discountType?: string; discountValue?: number }[]; discountType?: string; discountValue?: number }): Promise<Quote | undefined> {
+  const existing = await getQuote(id);
+  if (!existing) return undefined;
+  if (data.customerName !== undefined || data.customerPhone !== undefined || data.notes !== undefined || data.discountType !== undefined || data.discountValue !== undefined) {
+    const fields: string[] = []; const params: any[] = []; let idx = 1;
+    if (data.customerName !== undefined) { fields.push(`customer_name = $${idx}`); params.push(data.customerName); idx++; }
+    if (data.customerPhone !== undefined) { fields.push(`customer_phone = $${idx}`); params.push(data.customerPhone); idx++; }
+    if (data.notes !== undefined) { fields.push(`notes = $${idx}`); params.push(data.notes); idx++; }
+    if (data.discountType !== undefined) { fields.push(`discount_type = $${idx}`); params.push(data.discountType); idx++; }
+    if (data.discountValue !== undefined) { fields.push(`discount_value = $${idx}`); params.push(data.discountValue); idx++; }
+    if (fields.length > 0) {
+      fields.push(`updated_at = NOW()::text`);
+      params.push(id);
+      await query(`UPDATE quotes SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+    }
+  }
+  if (data.items) {
+    await query("DELETE FROM quote_items WHERE quote_id = $1", [id]);
+    let total = 0;
+    for (const item of data.items) {
+      let lineTotal = item.quantity * item.unitPrice;
+      if (item.discountType === "percentage" && item.discountValue) lineTotal -= lineTotal * (item.discountValue / 100);
+      else if (item.discountType === "amount" && item.discountValue) lineTotal -= item.discountValue;
+      if (lineTotal < 0) lineTotal = 0;
+      total += lineTotal;
+      await query(
+        "INSERT INTO quote_items (quote_id, product_id, product_name, quantity, unit_price, line_total, discount_type, discount_value) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [id, item.productId, item.productName, item.quantity, item.unitPrice, lineTotal, item.discountType || "", item.discountValue || 0]
+      );
+    }
+    const dt = data.discountType || existing.discountType;
+    const dv = data.discountValue ?? existing.discountValue;
+    if (dt === "percentage" && dv) total -= total * (dv / 100);
+    else if (dt === "amount" && dv) total -= dv;
+    if (total < 0) total = 0;
+    await query("UPDATE quotes SET total = $1, discount_type = $2, discount_value = $3, updated_at = NOW()::text WHERE id = $4", [total, dt, dv, id]);
+  }
+  return await getQuote(id);
+}
+
+async function deleteQuote(id: number): Promise<boolean> {
+  const result = await query("DELETE FROM quotes WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
 async function listQuotesForCustomer(customerId: number): Promise<Quote[]> {
@@ -1601,6 +1689,43 @@ async function listAllQuotes(): Promise<Quote[]> {
   const quotes: Quote[] = [];
   for (const row of rows) { const q = await getQuote(row.id); if (q) quotes.push(q); }
   return quotes;
+}
+
+async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<{ order: Order; invoiceNumber: string } | undefined> {
+  const quote = await getQuote(quoteId);
+  if (!quote) return undefined;
+  const invoiceNumber = await generateInvoiceNumber();
+  const subtotal = quote.total;
+  const customer = await findCustomerById(quote.customerId);
+  const customerName = quote.customerName || customer?.name || "Quote Customer";
+  const customerEmail = customer?.email || "";
+  const result = await query(
+    `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, invoice_number) VALUES ($1, $2, $3, 'delivered', $4, 'Quote Conversion', '0', 0, $5, $6, $7, $8) RETURNING id`,
+    [quote.customerId, customerName, customerEmail, customerName, `Converted from quote ${quote.quoteNumber}`, subtotal, staffName, invoiceNumber]
+  );
+  const orderId = result.rows[0].id;
+  for (const item of quote.items) {
+    await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 1)", [orderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal]);
+  }
+  const order = (await getOrder(orderId))!;
+  await updateQuoteStatus(quoteId, "approved");
+  return { order, invoiceNumber };
+}
+
+async function generateInvoiceNumber(): Promise<string> {
+  const row = await queryOne("SELECT COUNT(*) AS count FROM orders") as any;
+  const num = Number(row?.count || 0) + 1;
+  return `INV-${String(num).padStart(5, "0")}`;
+}
+
+async function recordAuditLog(userId: number | null, userName: string, action: string, entityType: string, entityId: string | null, details: string, actorRole: string): Promise<void> {
+  try {
+    await query("INSERT INTO audit_log (user_id, user_name, action, entity_type, entity_id, details, actor_role) VALUES ($1, $2, $3, $4, $5, $6, $7)", [userId, userName, action, entityType, entityId, details, actorRole]);
+  } catch {}
+}
+
+async function listAllAuditLogs(limit?: number): Promise<any[]> {
+  return await queryAll("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1", [limit || 100]) as any[];
 }
 
 async function validateCoupon(code: string, subtotal: number): Promise<{ valid: boolean; discount: number; couponId?: number }> {
@@ -2386,7 +2511,8 @@ export {
   getProviderSubscription, assignPlanToProvider, getProviderAssignmentHistory,
   providerHasFeature,
   getWishlist, addToWishlist, removeFromWishlist, isInWishlist,
-  generateQuoteNumber, createQuoteFromWishlist, createQuote, getQuote, listQuotesForCustomer, updateQuoteStatus, listAllQuotes,
+  generateQuoteNumber, createQuoteFromWishlist, createQuote, getQuote, updateQuote, deleteQuote, listQuotesForCustomer, updateQuoteStatus, listAllQuotes, convertQuoteToOrder, generateInvoiceNumber,
+  recordAuditLog, listAllAuditLogs,
   validateCoupon, listCoupons, getCoupon, createCoupon, updateCoupon, deleteCoupon, recordCouponUsage,
   createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus,
   recordProductView, getPopularProducts, getTotalViews,

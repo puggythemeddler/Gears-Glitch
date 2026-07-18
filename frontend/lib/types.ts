@@ -169,6 +169,7 @@ export interface Settings {
   cloudinaryApiKey: string;
   cloudinaryApiSecret: string;
   cloudinaryFolder: string;
+  logoPosition?: string;
 }
 
 export interface SubscriptionPlan {
