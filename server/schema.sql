@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS orders (
   discount_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
   processed_by TEXT,
   invoice_number TEXT,
+  payment_method TEXT NOT NULL DEFAULT '',
   idempotency_key TEXT,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
@@ -126,6 +127,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   has_warranty INTEGER NOT NULL DEFAULT 0,
   warranty_duration INTEGER NOT NULL DEFAULT 0,
   taxable INTEGER NOT NULL DEFAULT 1,
+  cancelled INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );

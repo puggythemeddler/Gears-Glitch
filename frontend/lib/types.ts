@@ -45,6 +45,7 @@ export interface Order {
   customerName?: string;
   customerEmail?: string;
   status: string;
+  paymentMethod?: string;
   subtotal: number;
   shippingFee: number;
   total?: number;
@@ -72,6 +73,7 @@ export interface OrderItem {
   lineTotal: number;
   hasWarranty?: number;
   warrantyDuration?: number;
+  cancelled?: number;
 }
 
 export interface RepairTicket {

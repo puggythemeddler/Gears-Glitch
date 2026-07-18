@@ -71,6 +71,8 @@ import {
   getOrder,
   listOrders,
   updateOrderStatus,
+  updateOrderDetails,
+  cancelOrderItem,
   updateOrderItemWarranty,
   recordProductView,
   getPopularProducts,
@@ -1307,6 +1309,109 @@ app.get("/api/orders/:id", customerAuthMiddleware, async (req: Request, res: Res
   const order = await getOrder(Number(req.params.id));
   if (!order || order.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Order not found." }); return; }
   res.json(order);
+});
+
+app.post("/api/orders/create-pending", customerAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const customerId = (req as any).customer.sub;
+    const customerDetails = await findCustomerById(customerId);
+    const cartItems = await getCartItems(customerId);
+    if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
+    const order = await createOrder({
+      customerId,
+      customerName: customerDetails?.name || "",
+      customerEmail: customerDetails?.email || "",
+      shippingName: "",
+      shippingAddress: "",
+      shippingCity: "",
+      shippingCounty: "",
+      shippingPostcode: "",
+      shippingPhone: "",
+      shippingFee: 0,
+      notes: "",
+      items: cartItems.map((ci) => ({ productId: ci.productId, name: ci.name, price: ci.price, quantity: ci.quantity, hasWarranty: ci.hasWarranty, warrantyDuration: ci.warrantyDuration })),
+      processedBy: `Customer #${customerId}`,
+    });
+    await clearCart(customerId);
+    res.status(201).json(order);
+  } catch (err: any) {
+    console.error("[order create-pending]", err?.message || err);
+    res.status(500).json({ error: err?.message || "Failed to create order." });
+  }
+});
+
+app.patch("/api/orders/:id", customerAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const orderId = Number(req.params.id);
+    const customerId = (req as any).customer.sub;
+    const order = await getOrder(orderId);
+    if (!order || order.customerId !== customerId) { res.status(404).json({ error: "Order not found." }); return; }
+    if (order.status !== "pending") { res.status(400).json({ error: "Can only edit a pending order." }); return; }
+    const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, paymentMethod } = req.body || {};
+    const shippingF = shippingCounty ? getShippingFee(shippingCounty) : undefined;
+    await updateOrderDetails(orderId, {
+      ...(shippingName !== undefined && { shippingName }),
+      ...(shippingAddress !== undefined && { shippingAddress }),
+      ...(shippingCounty !== undefined && { shippingCounty }),
+      ...(shippingPhone !== undefined && { shippingPhone }),
+      ...(notes !== undefined && { notes }),
+      ...(paymentMethod !== undefined && { paymentMethod }),
+      ...(shippingF !== undefined && { shippingFee: shippingF }),
+    });
+    const updated = await getOrder(orderId);
+    res.json(updated);
+  } catch (err: any) {
+    console.error("[order update]", err?.message || err);
+    res.status(500).json({ error: err?.message || "Failed to update order." });
+  }
+});
+
+app.get("/api/provider/orders", providerAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const orders = await listOrders();
+    res.json({ orders });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load orders." });
+  }
+});
+
+app.get("/api/provider/orders/:id", providerAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const order = await getOrder(Number(req.params.id));
+    if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+    res.json(order);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load order." });
+  }
+});
+
+app.patch("/api/provider/orders/:id/items/:itemId/cancel", providerAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const ok = await cancelOrderItem(Number(req.params.itemId));
+    if (!ok) { res.status(404).json({ error: "Item not found." }); return; }
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to cancel item." });
+  }
+});
+
+app.patch("/api/provider/orders/:id/status", providerAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { status } = req.body || {};
+    if (!["confirmed", "shipped", "delivered", "cancelled"].includes(status)) {
+      res.status(400).json({ error: "Invalid status." }); return;
+    }
+    const ok = await updateOrderStatus(Number(req.params.id), status);
+    if (!ok) { res.status(404).json({ error: "Order not found." }); return; }
+    const updatedOrder = await getOrder(Number(req.params.id));
+    if (updatedOrder && updatedOrder.customerEmail) {
+      const { subject: emailSub, html } = orderStatusEmail(updatedOrder.customerName || "Customer", `#${updatedOrder.id}`, status, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${updatedOrder.id}`);
+      sendEmail(updatedOrder.customerEmail, emailSub, html, "order_status");
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to update order status." });
+  }
 });
 
 app.get("/api/admin/orders", ownerAuthMiddleware, async (_req: Request, res: Response) => {

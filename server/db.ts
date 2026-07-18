@@ -156,6 +156,7 @@ interface Order {
   customerName: string;
   customerEmail: string;
   status: string;
+  paymentMethod: string;
   shippingName: string;
   shippingAddress: string;
   shippingCity: string;
@@ -185,6 +186,7 @@ interface OrderItem {
   lineTotal: number;
   hasWarranty: number;
   warrantyDuration: number;
+  cancelled: number;
 }
 
 interface ProductView {
@@ -671,6 +673,8 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_number TEXT`); } catch {}
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT NOT NULL DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_email TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancelled INTEGER NOT NULL DEFAULT 0`); } catch {}
   try { await query(`INSERT INTO settings (key, value) SELECT 'logo_position', 'top-left' WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'logo_position')`); } catch {}
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DOUBLE PRECISION`); } catch {}
   try {
@@ -1929,8 +1933,8 @@ async function getOrder(id: number): Promise<Order | undefined> {
   if (!row) return undefined;
   const items = await queryAll("SELECT * FROM order_items WHERE order_id = $1", [id]) as any[];
   return {
-    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key,
-    items: items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration })),
+    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key,
+    items: items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, cancelled: i.cancelled })),
   };
 }
 
@@ -1950,6 +1954,31 @@ async function listOrders(customerId?: number): Promise<Order[]> {
 
 async function updateOrderStatus(id: number, status: string): Promise<boolean> {
   const result = await query("UPDATE orders SET status = $1, updated_at = NOW()::text WHERE id = $2", [status, id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+async function updateOrderDetails(id: number, data: { shippingName?: string; shippingAddress?: string; shippingCity?: string; shippingCounty?: string; shippingPostcode?: string; shippingPhone?: string; shippingFee?: number; notes?: string; paymentMethod?: string }): Promise<boolean> {
+  const fields: string[] = [];
+  const params: any[] = [];
+  let idx = 1;
+  if (data.shippingName !== undefined) { fields.push(`shipping_name = $${idx}`); params.push(data.shippingName); idx++; }
+  if (data.shippingAddress !== undefined) { fields.push(`shipping_address = $${idx}`); params.push(data.shippingAddress); idx++; }
+  if (data.shippingCity !== undefined) { fields.push(`shipping_city = $${idx}`); params.push(data.shippingCity); idx++; }
+  if (data.shippingCounty !== undefined) { fields.push(`shipping_county = $${idx}`); params.push(data.shippingCounty); idx++; }
+  if (data.shippingPostcode !== undefined) { fields.push(`shipping_postcode = $${idx}`); params.push(data.shippingPostcode); idx++; }
+  if (data.shippingPhone !== undefined) { fields.push(`shipping_phone = $${idx}`); params.push(data.shippingPhone); idx++; }
+  if (data.shippingFee !== undefined) { fields.push(`shipping_fee = $${idx}`); params.push(data.shippingFee); idx++; }
+  if (data.notes !== undefined) { fields.push(`notes = $${idx}`); params.push(data.notes); idx++; }
+  if (data.paymentMethod !== undefined) { fields.push(`payment_method = $${idx}`); params.push(data.paymentMethod); idx++; }
+  if (fields.length === 0) return false;
+  fields.push(`updated_at = NOW()::text`);
+  params.push(id);
+  const result = await query(`UPDATE orders SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+  return (result.rowCount ?? 0) > 0;
+}
+
+async function cancelOrderItem(orderItemId: number): Promise<boolean> {
+  const result = await query("UPDATE order_items SET cancelled = 1 WHERE id = $1", [orderItemId]);
   return (result.rowCount ?? 0) > 0;
 }
 
@@ -2795,7 +2824,7 @@ export {
   generateQuoteNumber, createQuoteFromWishlist, createQuote, getQuote, updateQuote, deleteQuote, listQuotesForCustomer, updateQuoteStatus, listAllQuotes, convertQuoteToOrder, generateInvoiceNumber,
   recordAuditLog, listAllAuditLogs,
   validateCoupon, listCoupons, getCoupon, createCoupon, updateCoupon, deleteCoupon, recordCouponUsage,
-  createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus,
+  createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, cancelOrderItem,
   recordProductView, getPopularProducts, getTotalViews,
   createInvoice, getInvoice, listInvoices, markInvoicePaid, generateProviderInvoice, getInvoiceRevenue,
   getEtimsMode, generateEtimsInvoiceNumber, createEtimsSalesTransaction,

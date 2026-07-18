@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, isCustomerLoggedIn } from "@/lib/api";
+import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import type { Order } from "@/lib/types";
 
 function formatPrice(amount: number) {
@@ -25,6 +25,13 @@ export default function OrdersPage() {
     return <><h1>Orders</h1><p className="product-error">Please <a href="/login?redirect=/orders">sign in</a> to view your orders.</p></>;
   }
 
+  async function downloadInvoice(orderId: number) {
+    try {
+      const r = await api<{ token: string }>("/api/orders/invoice-token/" + orderId, { method: "POST" });
+      await downloadPdf(`/api/orders/${orderId}/invoice?token=${encodeURIComponent(r.token)}`, `invoice-${orderId}.pdf`);
+    } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); }
+  }
+
   return (
     <>
       <nav className="breadcrumbs">
@@ -39,20 +46,29 @@ export default function OrdersPage() {
       ) : (
         orders.map((o) => {
           const total = o.total || o.subtotal + (o.shippingFee || 0);
+          const canInvoice = o.status === "shipped" || o.status === "delivered";
           return (
-            <div key={o.id}>
-              <a href={`/order?id=${o.id}`} className="order-item" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
-                  <div>
-                    <strong>Order #{o.id}</strong> <span className="plan-status">{o.status}</span>
-                  </div>
-                  <span className="muted">{new Date(o.createdAt).toLocaleDateString("en-GB")}</span>
+            <div key={o.id} className="order-item" style={{ marginBottom: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
+                <div>
+                  <a href={`/order?id=${o.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+                    <strong>Order #{o.id}</strong>
+                  </a>{" "}
+                  <span className="plan-status">{o.status}</span>
                 </div>
-                <p className="muted" style={{ fontSize: "0.9rem", margin: "0.5rem 0" }}>
-                  {formatPrice(total)} — {o.items?.length || 0} item(s)
-                </p>
-                {o.shippingName && <p style={{ fontSize: "0.85rem" }}>{escapeHtml(o.shippingName)}{o.shippingCounty ? ` — ${escapeHtml(o.shippingCounty)}` : ""}</p>}
-              </a>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span className="muted">{new Date(o.createdAt).toLocaleDateString("en-GB")}</span>
+                  {canInvoice && (
+                    <button className="btn btn-sm btn-ghost" onClick={(e) => { e.preventDefault(); downloadInvoice(o.id); }} style={{ fontSize: "0.8rem" }}>
+                      Invoice
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="muted" style={{ fontSize: "0.9rem", margin: "0.5rem 0" }}>
+                {formatPrice(total)} — {o.items?.length || 0} item(s)
+              </p>
+              {o.shippingName && <p style={{ fontSize: "0.85rem" }}>{escapeHtml(o.shippingName)}{o.shippingCounty ? ` — ${escapeHtml(o.shippingCounty)}` : ""}</p>}
             </div>
           );
         })

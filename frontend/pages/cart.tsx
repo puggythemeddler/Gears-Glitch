@@ -90,25 +90,11 @@ export default function CartPage() {
   }
 
   async function checkout() {
-    if (!shippingName || !shippingAddress || !selectedCounty) { setStatusMsg({ text: "Shipping name, address, and county are required.", error: true }); return; }
     setLoading(true);
     setStatusMsg(null);
     try {
-      await api("/api/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          shippingName,
-          shippingAddress,
-          shippingCounty: selectedCounty,
-          shippingPhone: shippingPhone || undefined,
-          shippingFee,
-          mpesaPhone: mpesaPhone || undefined,
-          couponCode: couponCode.trim() || undefined,
-          redeemPoints: redeemPoints || undefined,
-        }),
-      });
-      setStatusMsg({ text: mpesaPhone ? "Order placed! Check your phone for M-Pesa STK Push prompt." : "Order placed successfully!" });
-      setItems([]);
+      const order = await api<any>("/api/orders/create-pending", { method: "POST" });
+      window.location.href = `/order?id=${order.id}`;
     } catch (err: any) {
       setStatusMsg({ text: err.message, error: true });
     } finally { setLoading(false); }
