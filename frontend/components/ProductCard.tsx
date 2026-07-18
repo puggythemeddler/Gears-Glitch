@@ -13,11 +13,15 @@ export function ProductCard({ product }: ProductCardProps) {
   const initials = product.name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
   const [gallery, setGallery] = useState<ProductImage[]>([]);
   const [hoverIdx, setHoverIdx] = useState(0);
+  const [rating, setRating] = useState<{ average: number; count: number } | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     api<{ images: ProductImage[] }>(`/api/products/${encodeURIComponent(product.id)}/images`).then((d) => {
       if (d.images && d.images.length > 1) setGallery(d.images);
+    }).catch(() => {});
+    api<{ rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(product.id)}/reviews`).then((d) => {
+      if (d.rating && d.rating.count > 0) setRating(d.rating);
     }).catch(() => {});
   }, [product.id]);
 
@@ -61,6 +65,12 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
       )}
       <h3>{product.name}</h3>
+      {rating && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginBottom: "0.25rem" }}>
+          <span style={{ fontSize: "0.8rem", color: "#f59e0b" }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating.average) ? "★" : "☆").join("")}</span>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>({rating.count})</span>
+        </div>
+      )}
       <div className="price" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
         {product.salePrice ? (
           <>

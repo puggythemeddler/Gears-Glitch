@@ -203,8 +203,15 @@ import {
   deleteSupplier,
   createReview,
   getProductReviews,
+  getProductReviewCount,
   getProductRating,
+  getProductRatingDistribution,
   hasCustomerReviewed,
+  getReviewById,
+  updateReview,
+  deleteReview,
+  getAllReviews,
+  getAllReviewCount,
   listActiveSplashes,
   listAllSplashes,
   getSplash,
@@ -2333,21 +2340,104 @@ app.get("/api/products/:id/images", async (req: Request, res: Response) => {
 // ============ PRODUCT REVIEWS ============
 
 app.get("/api/products/:id/reviews", async (req: Request, res: Response) => {
-  res.json({ reviews: await getProductReviews(String(req.params.id)), rating: await getProductRating(String(req.params.id)) });
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
+    const perPage = 10;
+    const offset = (page - 1) * perPage;
+    const [reviews, total, rating, distribution] = await Promise.all([
+      getProductReviews(String(req.params.id), perPage, offset),
+      getProductReviewCount(String(req.params.id)),
+      getProductRating(String(req.params.id)),
+      getProductRatingDistribution(String(req.params.id)),
+    ]);
+    res.json({ reviews, rating, distribution, total, page, perPage, totalPages: Math.ceil(total / perPage) });
+  } catch (err: any) {
+    console.error("[reviews]", err?.message || err);
+    res.status(500).json({ error: "Failed to load reviews." });
+  }
 });
 
 app.get("/api/products/:id/reviews/check", customerAuthMiddleware, async (req: Request, res: Response) => {
-  res.json({ hasReviewed: await hasCustomerReviewed(String(req.params.id), (req as any).customer.sub) });
+  try {
+    const hasReviewed = await hasCustomerReviewed(String(req.params.id), (req as any).customer.sub);
+    const review = hasReviewed ? await queryOne("SELECT * FROM product_reviews WHERE product_id = $1 AND customer_id = $2", [String(req.params.id), (req as any).customer.sub]) : null;
+    res.json({ hasReviewed, review });
+  } catch (err: any) {
+    res.json({ hasReviewed: false, review: null });
+  }
 });
 
 app.post("/api/products/:id/reviews", customerAuthMiddleware, async (req: Request, res: Response) => {
   const productId = String(req.params.id);
   const customerId = (req as any).customer.sub;
-  if (await hasCustomerReviewed(productId, customerId)) { res.status(400).json({ error: "You have already reviewed this product." }); return; }
-  const { rating, title, comment } = req.body || {};
-  if (!rating || rating < 1 || rating > 5) { res.status(400).json({ error: "Rating must be between 1 and 5." }); return; }
-  const review = await createReview(productId, customerId, Number(rating), String(title || "").trim(), String(comment || "").trim());
-  res.status(201).json(review);
+  try {
+    if (await hasCustomerReviewed(productId, customerId)) { res.status(400).json({ error: "You have already reviewed this product." }); return; }
+    const { rating, title, comment } = req.body || {};
+    if (!rating || Number(rating) < 1 || Number(rating) > 5) { res.status(400).json({ error: "Rating must be between 1 and 5." }); return; }
+    const review = await createReview(productId, customerId, Number(rating), String(title || "").trim().slice(0, 200), String(comment || "").trim().slice(0, 2000));
+    res.status(201).json(review);
+  } catch (err: any) {
+    if (err?.code === "23505") { res.status(400).json({ error: "You have already reviewed this product." }); return; }
+    console.error("[review create]", err?.message || err);
+    res.status(500).json({ error: "Failed to submit review." });
+  }
+});
+
+app.put("/api/products/:id/reviews/:reviewId", customerAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const reviewId = Number(req.params.reviewId);
+    const customerId = (req as any).customer.sub;
+    const existing = await getReviewById(reviewId);
+    if (!existing) { res.status(404).json({ error: "Review not found." }); return; }
+    if (existing.customer_id !== customerId) { res.status(403).json({ error: "You can only edit your own reviews." }); return; }
+    const { rating, title, comment } = req.body || {};
+    if (!rating || Number(rating) < 1 || Number(rating) > 5) { res.status(400).json({ error: "Rating must be between 1 and 5." }); return; }
+    const updated = await updateReview(reviewId, customerId, Number(rating), String(title || "").trim().slice(0, 200), String(comment || "").trim().slice(0, 2000));
+    if (!updated) { res.status(404).json({ error: "Review not found." }); return; }
+    res.json({ ...updated, customer_name: existing.customer_name });
+  } catch (err: any) {
+    console.error("[review update]", err?.message || err);
+    res.status(500).json({ error: "Failed to update review." });
+  }
+});
+
+app.delete("/api/products/:id/reviews/:reviewId", customerAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const reviewId = Number(req.params.reviewId);
+    const customerId = (req as any).customer.sub;
+    const existing = await getReviewById(reviewId);
+    if (!existing) { res.status(404).json({ error: "Review not found." }); return; }
+    if (existing.customer_id !== customerId) { res.status(403).json({ error: "You can only delete your own reviews." }); return; }
+    await deleteReview(reviewId);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[review delete]", err?.message || err);
+    res.status(500).json({ error: "Failed to delete review." });
+  }
+});
+
+app.delete("/api/admin/products/:id/reviews/:reviewId", ownerAuthMiddleware, requirePermission("product:update"), async (req: Request, res: Response) => {
+  try {
+    const ok = await deleteReview(Number(req.params.reviewId));
+    if (!ok) { res.status(404).json({ error: "Review not found." }); return; }
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[admin review delete]", err?.message || err);
+    res.status(500).json({ error: "Failed to delete review." });
+  }
+});
+
+app.get("/api/admin/reviews", ownerAuthMiddleware, requirePermission("product:update"), async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
+    const perPage = 20;
+    const offset = (page - 1) * perPage;
+    const [reviews, total] = await Promise.all([getAllReviews(perPage, offset), getAllReviewCount()]);
+    res.json({ reviews, total, page, perPage, totalPages: Math.ceil(total / perPage) });
+  } catch (err: any) {
+    console.error("[admin reviews]", err?.message || err);
+    res.status(500).json({ error: "Failed to load reviews." });
+  }
 });
 
 app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("product:update"), async (req: Request, res: Response) => {

@@ -26,6 +26,9 @@ export default function ProductPage() {
   const [statusMsg, setStatusMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [reviews, setReviews] = useState<any[]>([]);
   const [reviewsRating, setReviewsRating] = useState({ average: 0, count: 0 });
+  const [reviewDistribution, setReviewDistribution] = useState<Record<number, number>>({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewTotalPages, setReviewTotalPages] = useState(1);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewComment, setReviewComment] = useState("");
@@ -33,6 +36,9 @@ export default function ProductPage() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const loggedIn = isCustomerLoggedIn();
   const [userReviewed, setUserReviewed] = useState(false);
+  const [userReview, setUserReview] = useState<any>(null);
+  const [editingReview, setEditingReview] = useState(false);
+  const [deletingReview, setDeletingReview] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [subcategories, setSubcategories] = useState<{ id: string; name: string }[]>([]);
   const [categoryLabel, setCategoryLabel] = useState("");
@@ -48,11 +54,11 @@ export default function ProductPage() {
       api<{ images: ProductImage[] }>(`/api/products/${encodeURIComponent(id as string)}/images`).then((d) => {
         if (d.images && d.images.length >= 1) setImages(d.images);
       }).catch(() => {});
-      api<{ reviews: any[]; rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(id as string)}/reviews`).then((d) => {
-        setReviews(d.reviews); setReviewsRating(d.rating);
+      api<{ reviews: any[]; rating: { average: number; count: number }; distribution: Record<number, number>; totalPages: number }>(`/api/products/${encodeURIComponent(id as string)}/reviews`).then((d) => {
+        setReviews(d.reviews); setReviewsRating(d.rating); setReviewDistribution(d.distribution); setReviewTotalPages(d.totalPages);
       });
       if (isCustomerLoggedIn()) {
-        api<{ hasReviewed: boolean }>(`/api/products/${encodeURIComponent(id as string)}/reviews/check`).then((d) => setUserReviewed(d.hasReviewed)).catch(() => {});
+        api<{ hasReviewed: boolean; review: any }>(`/api/products/${encodeURIComponent(id as string)}/reviews/check`).then((d) => { setUserReviewed(d.hasReviewed); if (d.review) setUserReview(d.review); }).catch(() => {});
       }
       if (p.category) {
         fetch("/api/categories").then((r) => r.json()).then((d) => {
@@ -113,6 +119,16 @@ export default function ProductPage() {
     }
   }
 
+  function renderStars(rating: number, size: string = "1rem") {
+    return <span style={{ fontSize: size, color: "#f59e0b", letterSpacing: 1 }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating) ? "★" : "☆").join("")}</span>;
+  }
+
+  async function fetchReviews(page: number = 1) {
+    if (!id) return;
+    const d = await api<{ reviews: any[]; rating: { average: number; count: number }; distribution: Record<number, number>; totalPages: number }>(`/api/products/${encodeURIComponent(id as string)}/reviews?page=${page}`);
+    setReviews(d.reviews); setReviewsRating(d.rating); setReviewDistribution(d.distribution); setReviewTotalPages(d.totalPages); setReviewPage(page);
+  }
+
   async function submitReview() {
     if (!requireCustomerLogin(`/product?id=${id}`)) return;
     if (!reviewRating) { setReviewMsg("Please select a rating."); return; }
@@ -121,10 +137,37 @@ export default function ProductPage() {
       await api(`/api/products/${encodeURIComponent(id as string)}/reviews`, { method: "POST", body: JSON.stringify({ rating: reviewRating, title: reviewTitle, comment: reviewComment }) });
       setReviewMsg("Review submitted!");
       setUserReviewed(true);
-      const d = await api<{ reviews: any[]; rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(id as string)}/reviews`);
-      setReviews(d.reviews); setReviewsRating(d.rating);
+      setReviewRating(0); setReviewTitle(""); setReviewComment("");
+      await fetchReviews(1);
     } catch (e: any) { setReviewMsg(e.message || "Failed to submit review."); }
     finally { setReviewSubmitting(false); }
+  }
+
+  async function updateReview() {
+    if (!userReview || !id) return;
+    if (!reviewRating) { setReviewMsg("Please select a rating."); return; }
+    setReviewSubmitting(true); setReviewMsg("");
+    try {
+      await api(`/api/products/${encodeURIComponent(id as string)}/reviews/${userReview.id}`, { method: "PUT", body: JSON.stringify({ rating: reviewRating, title: reviewTitle, comment: reviewComment }) });
+      setReviewMsg("Review updated!");
+      setEditingReview(false);
+      await fetchReviews(reviewPage);
+      setUserReview({ ...userReview, rating: reviewRating, title: reviewTitle, comment: reviewComment });
+    } catch (e: any) { setReviewMsg(e.message || "Failed to update review."); }
+    finally { setReviewSubmitting(false); }
+  }
+
+  async function deleteReview() {
+    if (!userReview || !id) return;
+    if (!confirm("Are you sure you want to delete your review?")) return;
+    setDeletingReview(true);
+    try {
+      await api(`/api/products/${encodeURIComponent(id as string)}/reviews/${userReview.id}`, { method: "DELETE" });
+      setUserReviewed(false); setUserReview(null); setEditingReview(false);
+      setReviewMsg("Review deleted.");
+      await fetchReviews(1);
+    } catch (e: any) { setReviewMsg(e.message || "Failed to delete review."); }
+    finally { setDeletingReview(false); }
   }
 
   if (!product) {
@@ -285,28 +328,107 @@ export default function ProductPage() {
       </article>
 
       <section style={{ marginTop: "2rem" }}>
-        <h2>Customer Reviews {reviewsRating.count > 0 && <><span style={{ fontSize: "0.9rem", fontWeight: 400, opacity: 0.6 }}>({reviewsRating.average.toFixed(1)} avg &mdash; {reviewsRating.count} review{reviewsRating.count !== 1 ? "s" : ""})</span></>}</h2>
-        {loggedIn && !userReviewed && (
-          <div className="panel" style={{ maxWidth: 500, marginBottom: "1rem" }}>
+        <h2 style={{ marginBottom: "1rem" }}>Customer Reviews</h2>
+
+        {reviewsRating.count > 0 && (
+          <div style={{ display: "flex", gap: "2rem", marginBottom: "1.5rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ textAlign: "center", minWidth: 120 }}>
+              <div style={{ fontSize: "2.5rem", fontWeight: 700, lineHeight: 1 }}>{reviewsRating.average.toFixed(1)}</div>
+              <div style={{ margin: "0.25rem 0" }}>{renderStars(reviewsRating.average, "1.2rem")}</div>
+              <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{reviewsRating.count} review{reviewsRating.count !== 1 ? "s" : ""}</div>
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              {[5, 4, 3, 2, 1].map((star) => {
+                const count = reviewDistribution[star] || 0;
+                const pct = reviewsRating.count > 0 ? (count / reviewsRating.count) * 100 : 0;
+                return (
+                  <div key={star} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: 4, cursor: "pointer" }} onClick={() => { const el = document.getElementById(`review-star-${star}`); if (el) el.scrollIntoView({ behavior: "smooth" }); }}>
+                    <span style={{ fontSize: "0.8rem", width: 12, textAlign: "right" }}>{star}</span>
+                    <span style={{ color: "#f59e0b", fontSize: "0.75rem" }}>★</span>
+                    <div style={{ flex: 1, height: 8, background: "var(--border)", borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: "#f59e0b", borderRadius: 4, transition: "width 0.3s" }} />
+                    </div>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", width: 24 }}>{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {loggedIn && !userReviewed && !editingReview && (
+          <div className="panel" style={{ maxWidth: 500, marginBottom: "1.5rem" }}>
             <h4 style={{ margin: "0 0 0.75rem" }}>Write a Review</h4>
-            {reviewMsg && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: reviewMsg.startsWith("Error") ? "#dc2626" : "#16a34a" }}>{reviewMsg}</p>}
-            <div className="field"><label>Rating<select value={reviewRating} onChange={(e) => setReviewRating(Number(e.target.value))} required><option value={0}>Select</option><option value={5}>5 &mdash; Excellent</option><option value={4}>4 &mdash; Good</option><option value={3}>3 &mdash; Average</option><option value={2}>2 &mdash; Poor</option><option value={1}>1 &mdash; Terrible</option></select></label></div>
-            <div className="field"><label>Title<input value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} placeholder="Summary of your review" /></label></div>
-            <div className="field"><label>Comment<textarea value={reviewComment} onChange={(e) => setReviewComment(e.target.value)} rows={3} placeholder="Tell others about your experience" /></label></div>
+            {reviewMsg && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: reviewMsg.startsWith("Error") || reviewMsg.startsWith("Failed") ? "#dc2626" : "#16a34a" }}>{reviewMsg}</p>}
+            <div style={{ marginBottom: "0.75rem" }}>
+              <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Rating</label>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <button key={s} type="button" onClick={() => setReviewRating(s)} style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: s <= reviewRating ? "#f59e0b" : "#d1d5db", padding: 0, lineHeight: 1, transition: "color 0.15s" }}>★</button>
+                ))}
+              </div>
+            </div>
+            <div className="field"><label>Title<input value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} placeholder="Summary of your review (optional)" maxLength={200} /></label></div>
+            <div className="field"><label>Comment<textarea value={reviewComment} onChange={(e) => setReviewComment(e.target.value)} rows={3} placeholder="Tell others about your experience (optional)" maxLength={2000} /></label></div>
             <button type="button" className="btn" onClick={submitReview} disabled={reviewSubmitting}>{reviewSubmitting ? "Submitting..." : "Submit Review"}</button>
           </div>
         )}
-        {reviews.length === 0 ? <p className="muted">No reviews yet.</p> : reviews.map((r: any) => (
+
+        {loggedIn && userReviewed && userReview && !editingReview && (
+          <div className="panel" style={{ maxWidth: 500, marginBottom: "1.5rem", background: "var(--surface)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+              <h4 style={{ margin: 0 }}>Your Review</h4>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button className="btn btn-sm btn-ghost" onClick={() => { setEditingReview(true); setReviewRating(userReview.rating); setReviewTitle(userReview.title || ""); setReviewComment(userReview.comment || ""); setReviewMsg(""); }}>Edit</button>
+                <button className="btn btn-sm btn-ghost" style={{ color: "#dc2626" }} onClick={deleteReview} disabled={deletingReview}>{deletingReview ? "Deleting..." : "Delete"}</button>
+              </div>
+            </div>
+            <div style={{ marginBottom: "0.25rem" }}>{renderStars(userReview.rating)}</div>
+            {userReview.title && <p style={{ fontWeight: 600, margin: "0.25rem 0" }}>{escapeHtml(userReview.title)}</p>}
+            {userReview.comment && <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)" }}>{escapeHtml(userReview.comment)}</p>}
+          </div>
+        )}
+
+        {editingReview && (
+          <div className="panel" style={{ maxWidth: 500, marginBottom: "1.5rem" }}>
+            <h4 style={{ margin: "0 0 0.75rem" }}>Edit Your Review</h4>
+            {reviewMsg && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: reviewMsg.startsWith("Error") || reviewMsg.startsWith("Failed") ? "#dc2626" : "#16a34a" }}>{reviewMsg}</p>}
+            <div style={{ marginBottom: "0.75rem" }}>
+              <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Rating</label>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <button key={s} type="button" onClick={() => setReviewRating(s)} style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: s <= reviewRating ? "#f59e0b" : "#d1d5db", padding: 0, lineHeight: 1, transition: "color 0.15s" }}>★</button>
+                ))}
+              </div>
+            </div>
+            <div className="field"><label>Title<input value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} placeholder="Summary (optional)" maxLength={200} /></label></div>
+            <div className="field"><label>Comment<textarea value={reviewComment} onChange={(e) => setReviewComment(e.target.value)} rows={3} placeholder="Your experience (optional)" maxLength={2000} /></label></div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button type="button" className="btn" onClick={updateReview} disabled={reviewSubmitting}>{reviewSubmitting ? "Saving..." : "Save Changes"}</button>
+              <button type="button" className="btn btn-ghost" onClick={() => { setEditingReview(false); setReviewMsg(""); }}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {reviews.length === 0 ? <p className="muted">No reviews yet. Be the first to review this product!</p> : reviews.map((r: any) => (
           <div key={r.id} style={{ padding: "0.75rem 0", borderBottom: "1px solid var(--border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
               <strong>{escapeHtml(r.customer_name || "Anonymous")}</strong>
-              <span style={{ fontSize: "0.85rem", color: "#f59e0b" }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</span>
+              {renderStars(r.rating)}
               <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{new Date(r.created_at).toLocaleDateString("en-GB")}</span>
             </div>
             {r.title && <p style={{ fontWeight: 600, margin: "0.25rem 0" }}>{escapeHtml(r.title)}</p>}
             {r.comment && <p style={{ fontSize: "0.9rem", margin: "0.25rem 0 0", color: "var(--text-secondary)" }}>{escapeHtml(r.comment)}</p>}
           </div>
         ))}
+
+        {reviewTotalPages > 1 && (
+          <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem", marginTop: "1rem" }}>
+            <button className="btn btn-sm btn-ghost" disabled={reviewPage <= 1} onClick={() => fetchReviews(reviewPage - 1)}>Previous</button>
+            <span style={{ fontSize: "0.85rem", padding: "0.3rem 0.75rem", color: "var(--text-secondary)" }}>Page {reviewPage} of {reviewTotalPages}</span>
+            <button className="btn btn-sm btn-ghost" disabled={reviewPage >= reviewTotalPages} onClick={() => fetchReviews(reviewPage + 1)}>Next</button>
+          </div>
+        )}
       </section>
     </>
   );

@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
@@ -157,13 +157,26 @@ export function HomePage({ products, categories, banners }: {
 
 function AmazonCard({ product }: { product: Product }) {
   const initials = product.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
+  const [rating, setRating] = useState<{ average: number; count: number } | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/products/${encodeURIComponent(product.id)}/reviews`).then((r) => r.json()).then((d) => {
+      if (d.rating && d.rating.count > 0) setRating(d.rating);
+    }).catch(() => {});
+  }, [product.id]);
+
   return (
     <Link href={`/product?id=${encodeURIComponent(product.id)}`} className="amz-card">
       <div className="amz-card-img">
         {product.imageUrl ? <img src={product.imageUrl} alt={product.imageAlt || product.name} loading="lazy" /> : initials}
       </div>
       <div className="amz-card-body">
-        <div className="amz-card-rating">★★★★★</div>
+        {rating ? (
+          <div className="amz-card-rating">
+            <span style={{ color: "#f59e0b", fontSize: "0.85rem" }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating.average) ? "★" : "☆").join("")}</span>
+            <span style={{ fontSize: "0.7rem", color: "#666", marginLeft: 4 }}>({rating.count})</span>
+          </div>
+        ) : null}
         <h3>{product.name}</h3>
         <div className="amz-card-price">{formatPrice(product.price)}</div>
       </div>

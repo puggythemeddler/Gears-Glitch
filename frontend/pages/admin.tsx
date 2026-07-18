@@ -26,7 +26,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages" | "product-positioning" | "email-settings";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[] = [
   {
@@ -73,6 +73,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "credit-notes", label: "Credit Notes" },
       { key: "reports", label: "Reports" },
       { key: "messages", label: "Messages" },
+      { key: "reviews", label: "Reviews" },
       { key: "email-settings", label: "Email" },
     ],
   },
@@ -366,6 +367,7 @@ export default function AdminPage() {
             {view === "storefront" && <AdminStorefront />}
             {view === "settings" && <AdminSettings />}
             {view === "messages" && <AdminMessages />}
+            {view === "reviews" && <AdminReviews />}
             {view === "product-positioning" && <AdminProductPositioning />}
             {view === "email-settings" && <AdminEmailSettings />}
           </div>
@@ -3761,6 +3763,70 @@ function AdminPurchases() {
 const AdminProductPositioning = ProductPositioningPage;
 
 // ===================== EMAIL SETTINGS =====================
+function AdminReviews() {
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  function loadReviews(p: number) {
+    setLoading(true);
+    api<{ reviews: any[]; total: number; totalPages: number }>(`/api/admin/reviews?page=${p}`).then((d) => {
+      setReviews(d.reviews); setTotal(d.total); setTotalPages(d.totalPages); setPage(p);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }
+
+  useEffect(() => { loadReviews(1); }, []);
+
+  async function deleteReview(id: number, productId: string) {
+    if (!confirm("Delete this review?")) return;
+    setDeletingId(id);
+    try {
+      await api(`/api/admin/products/${encodeURIComponent(productId)}/reviews/${id}`, { method: "DELETE" });
+      loadReviews(page);
+    } catch (e: any) { alert(e.message || "Failed to delete."); }
+    finally { setDeletingId(null); }
+  }
+
+  return (
+    <div>
+      <h2 style={{ margin: "0 0 0.5rem" }}>Product Reviews</h2>
+      <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0 0 1rem" }}>{total} total review{total !== 1 ? "s" : ""}</p>
+      {loading ? <p>Loading...</p> : reviews.length === 0 ? <p className="muted">No reviews yet.</p> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          {reviews.map((r: any) => (
+            <div key={r.id} className="panel" style={{ padding: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "0.85rem", color: "#f59e0b" }}>{Array.from({ length: 5 }).map((_, i) => i < r.rating ? "★" : "☆").join("")}</span>
+                    <strong style={{ fontSize: "0.85rem" }}>{escapeHtml(r.customer_name || "Anonymous")}</strong>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>on</span>
+                    <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{escapeHtml(r.product_name || r.product_id)}</span>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{new Date(r.created_at).toLocaleDateString("en-GB")}</span>
+                  </div>
+                  {r.title && <p style={{ fontWeight: 600, margin: "0.15rem 0", fontSize: "0.9rem" }}>{escapeHtml(r.title)}</p>}
+                  {r.comment && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0.15rem 0" }}>{escapeHtml(r.comment)}</p>}
+                </div>
+                <button className="btn btn-sm btn-ghost" style={{ color: "#dc2626", whiteSpace: "nowrap" }} onClick={() => deleteReview(r.id, r.product_id)} disabled={deletingId === r.id}>{deletingId === r.id ? "..." : "Delete"}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {totalPages > 1 && (
+        <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem", marginTop: "1rem" }}>
+          <button className="btn btn-sm btn-ghost" disabled={page <= 1} onClick={() => loadReviews(page - 1)}>Previous</button>
+          <span style={{ fontSize: "0.85rem", padding: "0.3rem 0.75rem", color: "var(--text-secondary)" }}>Page {page} of {totalPages}</span>
+          <button className="btn btn-sm btn-ghost" disabled={page >= totalPages} onClick={() => loadReviews(page + 1)}>Next</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminEmailSettings() {
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);

@@ -722,6 +722,11 @@ async function runMigrations(): Promise<void> {
     await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at)`);
   } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_annual DOUBLE PRECISION`); } catch {}
+  // Product review indexes and constraints
+  try { await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_reviews_unique ON product_reviews (product_id, customer_id)`); } catch {}
+  try { await query(`CREATE INDEX IF NOT EXISTS idx_product_reviews_product_id ON product_reviews (product_id)`); } catch {}
+  try { await query(`CREATE INDEX IF NOT EXISTS idx_product_reviews_customer_id ON product_reviews (customer_id)`); } catch {}
+  try { await query(`ALTER TABLE product_reviews ADD CONSTRAINT chk_review_rating CHECK (rating >= 1 AND rating <= 5)`); } catch {}
 
   // Update default plan pricing and features
   try {
@@ -2604,12 +2609,22 @@ async function deleteSupplier(id: number): Promise<boolean> {
 // ============ PRODUCT REVIEWS ============
 
 async function createReview(productId: string, customerId: number, rating: number, title: string, comment: string): Promise<any> {
-  await query("INSERT INTO product_reviews (product_id, customer_id, rating, title, comment) VALUES ($1, $2, $3, $4, $5)", [productId, customerId, rating, title, comment]);
-  return await queryOne("SELECT pr.*, c.name AS customer_name FROM product_reviews pr JOIN customers c ON c.id = pr.customer_id ORDER BY pr.id DESC LIMIT 1");
+  const result = await query("INSERT INTO product_reviews (product_id, customer_id, rating, title, comment) VALUES ($1, $2, $3, $4, $5) RETURNING *", [productId, customerId, rating, title, comment]);
+  const r = result.rows[0];
+  const customer = await queryOne("SELECT name FROM customers WHERE id = $1", [customerId]);
+  return { ...r, customer_name: customer?.name || "Customer" };
 }
 
-async function getProductReviews(productId: string): Promise<any[]> {
-  return await queryAll("SELECT pr.*, c.name AS customer_name FROM product_reviews pr JOIN customers c ON c.id = pr.customer_id WHERE pr.product_id = $1 ORDER BY pr.created_at DESC", [productId]);
+async function getProductReviews(productId: string, limit: number = 20, offset: number = 0): Promise<any[]> {
+  return await queryAll(
+    "SELECT pr.*, c.name AS customer_name FROM product_reviews pr JOIN customers c ON c.id = pr.customer_id WHERE pr.product_id = $1 ORDER BY pr.created_at DESC LIMIT $2 OFFSET $3",
+    [productId, limit, offset]
+  );
+}
+
+async function getProductReviewCount(productId: string): Promise<number> {
+  const row = await queryOne("SELECT COUNT(*) as cnt FROM product_reviews WHERE product_id = $1", [productId]) as any;
+  return Number(row?.cnt || 0);
 }
 
 async function getProductRating(productId: string): Promise<{ average: number; count: number }> {
@@ -2617,9 +2632,45 @@ async function getProductRating(productId: string): Promise<{ average: number; c
   return { average: Number(row?.avg || 0), count: Number(row?.cnt || 0) };
 }
 
+async function getProductRatingDistribution(productId: string): Promise<Record<number, number>> {
+  const rows = await queryAll("SELECT rating, COUNT(*) as cnt FROM product_reviews WHERE product_id = $1 GROUP BY rating", [productId]) as any[];
+  const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const r of rows) { dist[r.rating] = Number(r.cnt); }
+  return dist;
+}
+
 async function hasCustomerReviewed(productId: string, customerId: number): Promise<boolean> {
   const row = await queryOne("SELECT id FROM product_reviews WHERE product_id = $1 AND customer_id = $2", [productId, customerId]);
   return !!row;
+}
+
+async function getReviewById(reviewId: number): Promise<any> {
+  return await queryOne("SELECT pr.*, c.name AS customer_name FROM product_reviews pr JOIN customers c ON c.id = pr.customer_id WHERE pr.id = $1", [reviewId]);
+}
+
+async function updateReview(reviewId: number, customerId: number, rating: number, title: string, comment: string): Promise<any> {
+  const result = await query(
+    "UPDATE product_reviews SET rating = $1, title = $2, comment = $3 WHERE id = $4 AND customer_id = $5 RETURNING *",
+    [rating, title, comment, reviewId, customerId]
+  );
+  return result.rows[0] || null;
+}
+
+async function deleteReview(reviewId: number): Promise<boolean> {
+  const result = await query("DELETE FROM product_reviews WHERE id = $1", [reviewId]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+async function getAllReviews(limit: number = 20, offset: number = 0): Promise<any[]> {
+  return await queryAll(
+    "SELECT pr.*, c.name AS customer_name, p.name AS product_name FROM product_reviews pr JOIN customers c ON c.id = pr.customer_id JOIN products p ON p.id = pr.product_id ORDER BY pr.created_at DESC LIMIT $1 OFFSET $2",
+    [limit, offset]
+  );
+}
+
+async function getAllReviewCount(): Promise<number> {
+  const row = await queryOne("SELECT COUNT(*) as cnt FROM product_reviews") as any;
+  return Number(row?.cnt || 0);
 }
 
 interface Splash {
@@ -2760,7 +2811,7 @@ export {
   createSubscriptionRequest, listSubscriptionRequests, reviewSubscriptionRequest,
   getSpecTemplateFields, getAllSpecTemplateFields, createSpecTemplateField, updateSpecTemplateField, deleteSpecTemplateField,
   listSuppliers, getSupplier, createSupplier, updateSupplier, deleteSupplier,
-  createReview, getProductReviews, getProductRating, hasCustomerReviewed,
+  createReview, getProductReviews, getProductReviewCount, getProductRating, getProductRatingDistribution, hasCustomerReviewed, getReviewById, updateReview, deleteReview, getAllReviews, getAllReviewCount,
   getLoyaltyPoints, earnLoyaltyPoints, redeemLoyaltyPoints, getLoyaltyTransactions, listAllLoyaltyCustomers,
   listActiveSplashes, listAllSplashes, getSplash, createSplash, updateSplash, deleteSplash,
   updateProductSortOrder, logEmail, listEmailLogs,

@@ -562,11 +562,15 @@ CREATE TABLE IF NOT EXISTS product_reviews (
   id SERIAL PRIMARY KEY,
   product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   customer_id INTEGER NOT NULL REFERENCES customers(id),
-  rating INTEGER NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
   title TEXT NOT NULL DEFAULT '',
   comment TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_reviews_unique ON product_reviews (product_id, customer_id);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_product_id ON product_reviews (product_id);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_customer_id ON product_reviews (customer_id);
 
 CREATE TABLE IF NOT EXISTS loyalty_points (
   customer_id INTEGER PRIMARY KEY REFERENCES customers(id),
