@@ -65,7 +65,7 @@ const FEATURES = [
   { icon: "💬", name: "Messaging System", desc: "Built-in messaging between customers, providers, and staff with real-time notifications and WhatsApp delivery." },
   { icon: "📍", name: "Product Positioning", desc: "Drag-and-drop product ordering to control how items appear on your storefront." },
   { icon: "⭐", name: "Product Reviews & Ratings", desc: "Customers rate products 1–5 stars, leave reviews, and help others decide. One review per customer enforced. Admin moderation built in." },
-  { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with admin-controllable hero sections, product catalog, auto-rotating carousels, and springboard category menu." },
+  { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with admin-controllable hero sections, live stats from your data, auto-synced category chips, product catalog, auto-rotating carousels, and springboard category menu." },
   { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, and credit notes — downloadable instantly." },
 ];
 
