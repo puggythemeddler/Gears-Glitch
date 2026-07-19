@@ -295,6 +295,9 @@ const ROOT: string = path.join(__dirname, "..");
 // Start server after DB is ready
 const app = express();
 
+// Trust first proxy (required for rate-limiter on Render)
+app.set("trust proxy", 1);
+
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -782,7 +785,7 @@ app.get("/api/provider/sales", providerAuthMiddleware, async (req: Request, res:
     JOIN customers c ON c.id = o.customer_id
     JOIN order_items oi ON oi.order_id = o.id
     JOIN products p ON p.id = oi.product_id
-    WHERE o.created_at >= $1 AND o.created_at <= $2 AND o.status != 'cancelled'
+    WHERE o.created_at::timestamp >= $1 AND o.created_at::timestamp <= $2 AND o.status != 'cancelled'
     GROUP BY o.id, c.name ORDER BY o.created_at DESC
   `, [from, to]) as any[];
   const totalRevenue = orders.reduce((s: number, o: any) => s + (o.subtotal || 0) + (o.shipping_fee || 0), 0);
@@ -3501,8 +3504,8 @@ app.get("/api/reports/tech-performance", adminAuthMiddleware, async (req: Reques
   const to = req.query.to as string | undefined;
   const params: any[] = [];
   let dateFilter = "";
-  if (from) { dateFilter += ` AND rt.created_at >= $${params.length + 1}`; params.push(from); }
-  if (to) { dateFilter += ` AND rt.created_at <= $${params.length + 1}`; params.push(to + "T23:59:59"); }
+  if (from) { dateFilter += ` AND rt.created_at::timestamp >= $${params.length + 1}`; params.push(from); }
+  if (to) { dateFilter += ` AND rt.created_at::timestamp <= $${params.length + 1}`; params.push(to + "T23:59:59"); }
   const rows = await queryAll(
     `SELECT u.id AS "staffId", u.username AS "staffName",
       COUNT(CASE WHEN rt.status = 'completed' THEN 1 END) AS "ticketsCompleted",
@@ -4055,7 +4058,7 @@ app.get("/api/reports/sales/trends", ownerAuthMiddleware, requirePermission("rep
   const to = String(req.query.to || "").slice(0, 10);
   const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
   if (!from || !to) { res.status(400).json({ error: "from and to dates required." }); return; }
-  let sql = `SELECT DATE(created_at) as day, COUNT(*) as orders, SUM(subtotal + shipping_fee - COALESCE(discount_amount, 0)) as revenue FROM orders WHERE status != 'cancelled' AND created_at >= $1 AND created_at < ($2::date + interval '1 day')`;
+  let sql = `SELECT DATE(created_at) as day, COUNT(*) as orders, SUM(subtotal + shipping_fee - COALESCE(discount_amount, 0)) as revenue FROM orders WHERE status != 'cancelled' AND created_at::timestamp >= $1 AND created_at::timestamp < ($2::date + interval '1 day')`;
   const params: any[] = [from, to];
   if (branchId) { sql += ` AND branch_id = $${params.length + 1}`; params.push(branchId); }
   sql += " GROUP BY day ORDER BY day";
@@ -4078,8 +4081,8 @@ app.get("/api/reports/employee-sales", adminAuthMiddleware, requirePermission("r
   const to = req.query.to as string | undefined;
   const params: any[] = [];
   let dateFilter = "";
-  if (from) { dateFilter += ` AND o.created_at >= $${params.length + 1}`; params.push(from); }
-  if (to) { dateFilter += ` AND o.created_at <= $${params.length + 1}`; params.push(to + "T23:59:59"); }
+  if (from) { dateFilter += ` AND o.created_at::timestamp >= $${params.length + 1}`; params.push(from); }
+  if (to) { dateFilter += ` AND o.created_at::timestamp <= $${params.length + 1}`; params.push(to + "T23:59:59"); }
   const rows = await queryAll(
     `SELECT u.id AS "staffId", u.username AS "staffName",
       COUNT(o.id) AS "totalOrders",

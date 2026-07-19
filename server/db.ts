@@ -2286,8 +2286,8 @@ async function getSalesReport(): Promise<SalesReport> {
 
 async function getSalesReportWithRange(startDate?: string, endDate?: string): Promise<SalesReport> {
   let where = " o.status != 'cancelled'"; const params: any[] = []; let idx = 1;
-  if (startDate) { where += ` AND o.created_at >= $${idx}`; params.push(startDate); idx++; }
-  if (endDate) { where += ` AND o.created_at <= $${idx}`; params.push(endDate); idx++; }
+  if (startDate) { where += ` AND o.created_at::timestamp >= $${idx}`; params.push(startDate); idx++; }
+  if (endDate) { where += ` AND o.created_at::timestamp <= $${idx}`; params.push(endDate); idx++; }
   const orderStats = await queryOne(`SELECT COUNT(*) AS total_orders, COALESCE(SUM(subtotal + shipping_fee), 0) AS total_revenue FROM orders o WHERE ${where}`, params) as any;
   const invoiceStats = await queryOne("SELECT COUNT(*) AS paid_invoices, COALESCE(SUM(amount), 0) AS invoice_revenue FROM order_invoices WHERE status = 'paid'") as any;
   const topProducts = await queryAll(

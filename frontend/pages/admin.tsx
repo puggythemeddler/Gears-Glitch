@@ -26,7 +26,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[] = [
   {
@@ -73,6 +73,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "reports", label: "Reports" },
       { key: "messages", label: "Messages" },
       { key: "reviews", label: "Reviews" },
+      { key: "audit", label: "Audit Log" },
     ],
   },
   {
@@ -355,6 +356,7 @@ export default function AdminPage() {
             {view === "invoices" && <AdminInvoices />}
             {view === "credit-notes" && <AdminCreditNotes />}
             {view === "reports" && <AdminReports />}
+            {view === "audit" && <AdminAuditLog />}
             {view === "stock-on-hand" && <AdminStockOnHand />}
             {view === "stock-transfers" && <AdminStockTransfers />}
             {view === "stock-take" && <AdminStockTake />}
@@ -373,8 +375,53 @@ export default function AdminPage() {
             {view === "email-settings" && <AdminEmailSettings />}
             {view === "whatsapp-settings" && <AdminWhatsAppSettings />}
           </div>
-          </div>
       </div>
+    </div>
+  );
+}
+
+function AdminAuditLog() {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState("");
+  useEffect(() => { fetchLog(); }, []);
+
+  async function fetchLog() {
+    setLoading(true); setError("");
+    try { const d = await api<any>(`/api/audit-log${filter ? "?entityType=" + encodeURIComponent(filter) : ""}`); setEntries(d.entries || []); }
+    catch (e: any) { setError(e.message); } finally { setLoading(false); }
+  }
+
+  return (
+    <>
+      <h1>Audit Log</h1>
+      <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginBottom: "1rem" }}>
+        <div className="field" style={{ margin: 0 }}><label>Filter by entity type<input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="e.g. plan, shop_subscription" style={{ fontSize: "0.85rem" }} /></label></div>
+        <RippleButton size="small" onClick={fetchLog} loading={loading}>Filter</RippleButton>
+        <span style={{ fontSize: "0.85rem", opacity: 0.5 }}>{entries.length} entries</span>
+      </div>
+      {error && <ErrorMsg msg={error} />}
+      {loading ? <Spinner /> : (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
+            <tbody>
+              {entries.map((e: any) => (
+                <tr key={e.id}>
+                  <td style={{ whiteSpace: "nowrap", fontSize: "0.8rem" }}>{new Date(e.createdAt).toLocaleString()}</td>
+                  <td>{escapeHtml(e.userName || "?")}</td>
+                  <td><span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{e.action}</span></td>
+                  <td style={{ fontSize: "0.85rem" }}>{e.entityType}:{e.entityId}</td>
+                  <td style={{ fontSize: "0.8rem", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis" }}>{e.details ? JSON.stringify(e.details) : "-"}</td>
+                </tr>
+              ))}
+              {entries.length === 0 && <tr><td colSpan={5}><EmptyState icon="audit" title="No log entries" description="Audit trail entries will appear here as actions are performed." /></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 
