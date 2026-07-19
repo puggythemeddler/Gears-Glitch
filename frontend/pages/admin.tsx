@@ -3739,11 +3739,16 @@ function AdminPurchases() {
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [listMode, setListMode] = useState<"active" | "completed" | "deleted">("active");
+  const [receiveInputs, setReceiveInputs] = useState<{ [itemId: number]: number }>({});
+  const [receiving, setReceiving] = useState<number | null>(null);
 
-  async function loadOrders() {
+  async function loadOrders(mode?: string) {
     setLoading(true);
     try {
-      const d = await api<{ orders: any[] }>("/api/purchases");
+      const m = mode || listMode;
+      const url = m === "deleted" ? "/api/purchases/deleted" : m === "completed" ? "/api/purchases/completed" : "/api/purchases";
+      const d = await api<{ orders: any[] }>(url);
       setOrders(d.orders || []);
     } catch (err: any) { setError(err.message); }
     setLoading(false);
@@ -3764,6 +3769,7 @@ function AdminPurchases() {
     try {
       const d = await api<any>(`/api/purchases/${id}`);
       setViewing(d.order || d);
+      setReceiveInputs({});
     } catch (err: any) { setMsg(err.message); }
   }
 
@@ -3802,22 +3808,36 @@ function AdminPurchases() {
     } catch (err: any) { setMsg(err.message); }
   }
 
-  async function receiveItem(itemId: number, maxQty: number) {
-    const qty = window.prompt(`How many units received? (max: ${maxQty})`, String(maxQty));
-    if (qty === null) return;
+  async function receiveItem(itemId: number) {
+    const qty = receiveInputs[itemId];
+    if (qty === undefined || qty < 0) return;
+    setReceiving(itemId);
     try {
-      await api(`/api/purchases/items/${itemId}/receive`, { method: "POST", body: JSON.stringify({ quantityReceived: Number(qty) }) });
+      await api(`/api/purchases/items/${itemId}/receive`, { method: "POST", body: JSON.stringify({ quantityReceived: qty }) });
       if (viewing) loadOrder(viewing.id);
     } catch (err: any) { setMsg(err.message); }
+    setReceiving(null);
   }
 
   async function deleteOrder(id: number) {
-    if (!confirm("Delete this purchase order? This cannot be undone.")) return;
+    if (!confirm("Move this purchase order to trash? You can restore it later.")) return;
     try {
       await api(`/api/purchases/${id}`, { method: "DELETE" });
       if (viewing && viewing.id === id) setViewing(null);
       loadOrders();
     } catch (err: any) { setMsg(err.message); }
+  }
+
+  async function restoreOrder(id: number) {
+    try {
+      await api(`/api/purchases/${id}/restore`, { method: "POST" });
+      loadOrders();
+    } catch (err: any) { setMsg(err.message); }
+  }
+
+  function downloadPdf(id: number) {
+    const token = getStaffToken() || "";
+    window.open(`/api/purchases/${id}/pdf?allowQueryToken=1&token=${encodeURIComponent(token)}`, "_blank");
   }
 
   useEffect(() => { loadOrders(); }, []);
@@ -3829,17 +3849,21 @@ function AdminPurchases() {
   if (loading) return <><h1>Purchase Orders</h1><Spinner /></>;
 
   if (viewing) {
-    const totalCost = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityReceived || 0), 0);
+    const totalCost = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityOrdered || 0), 0);
+    const totalReceived = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityReceived || 0), 0);
     return (
       <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h1 style={{ margin: 0 }}>PO #{viewing.id} — {escapeHtml(viewing.supplierName)}</h1>
-          <RippleButton size="small" variant="ghost" onClick={() => setViewing(null)}>&larr; Back</RippleButton>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(viewing.id)}>Download PDF</RippleButton>
+            <RippleButton size="small" variant="ghost" onClick={() => setViewing(null)}>&larr; Back</RippleButton>
+          </div>
         </div>
-        {msg && <div className="panel" style={{ marginBottom: "1rem", background: "#fee2e2", color: "#991b1b" }}>{msg}</div>}
+        {msg && <ErrorMsg msg={msg} />}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
           <div className="panel">
-            <p><strong>Status:</strong> <span className="plan-status" style={{ background: viewing.status === "received" ? "#d1fae5" : viewing.status === "cancelled" ? "#fee2e2" : "#fef3c7", color: viewing.status === "received" ? "#065f46" : viewing.status === "cancelled" ? "#991b1b" : "#92400e" }}>{viewing.status}</span></p>
+            <p><strong>Status:</strong> <span className="plan-status" style={{ background: viewing.status === "received" ? "#d1fae5" : viewing.status === "cancelled" ? "#fee2e2" : viewing.status === "ordered" ? "#dbeafe" : "#fef3c7", color: viewing.status === "received" ? "#065f46" : viewing.status === "cancelled" ? "#991b1b" : viewing.status === "ordered" ? "#1e40af" : "#92400e" }}>{viewing.status}</span></p>
             <p><strong>Date:</strong> {formatDate(viewing.orderDate || viewing.order_date)}</p>
             <p><strong>Created:</strong> {formatDate(viewing.createdAt || viewing.created_at)}</p>
             {viewing.notes && <p><strong>Notes:</strong> {escapeHtml(viewing.notes)}</p>}
@@ -3847,43 +3871,63 @@ function AdminPurchases() {
           <div className="panel">
             <div className="stat-grid">
               <div className="stat-card"><div className="stat-card__value">{(viewing.items || []).length}</div><div className="stat-card__label">Items</div></div>
-              <div className="stat-card"><div className="stat-card__value">{formatPrice(totalCost)}</div><div className="stat-card__label">Received Cost</div></div>
+              <div className="stat-card"><div className="stat-card__value">{formatPrice(totalCost)}</div><div className="stat-card__label">Ordered Cost</div></div>
+              <div className="stat-card"><div className="stat-card__value">{formatPrice(totalReceived)}</div><div className="stat-card__label">Received Cost</div></div>
             </div>
             {viewing.status === "pending" && (
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
                 <RippleButton size="small" onClick={() => updateStatus(viewing.id, "ordered")}>Mark Ordered</RippleButton>
                 <RippleButton size="small" variant="danger" onClick={() => updateStatus(viewing.id, "cancelled")}>Cancel</RippleButton>
-                <RippleButton size="small" variant="danger" style={{ marginLeft: "auto" }} onClick={() => deleteOrder(viewing.id)}>Delete</RippleButton>
               </div>
             )}
             {viewing.status === "ordered" && (
               <RippleButton size="small" style={{ marginTop: "0.75rem" }} onClick={() => updateStatus(viewing.id, "received")}>Mark All Received</RippleButton>
             )}
-            {viewing.status === "cancelled" && (
-              <div style={{ marginTop: "0.75rem" }}>
-                <RippleButton size="small" variant="danger" onClick={() => deleteOrder(viewing.id)}>Delete</RippleButton>
-              </div>
-            )}
+            <div style={{ marginTop: "0.75rem" }}>
+              <RippleButton size="small" variant="ghost" onClick={() => deleteOrder(viewing.id)}>Delete</RippleButton>
+            </div>
           </div>
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Product</th><th style={{ textAlign: "right" }}>Ordered</th><th style={{ textAlign: "right" }}>Received</th><th style={{ textAlign: "right" }}>Unit Cost</th><th style={{ textAlign: "right" }}>Line Total</th><th></th></tr></thead>
+            <thead><tr><th>Product</th><th style={{ textAlign: "right" }}>Ordered</th><th style={{ textAlign: "right" }}>Received</th><th style={{ textAlign: "right" }}>Unit Cost</th><th style={{ textAlign: "right" }}>Line Total</th><th>Receive</th></tr></thead>
             <tbody>
-              {(viewing.items || []).map((i: any) => (
-                <tr key={i.id}>
-                  <td>{escapeHtml(i.productName)}</td>
-                  <td style={{ textAlign: "right" }}>{i.quantityOrdered}</td>
-                  <td style={{ textAlign: "right" }}>{i.quantityReceived}</td>
-                  <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost)}</td>
-                  <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost * i.quantityReceived)}</td>
-                  <td>
-                    {viewing.status === "ordered" && i.quantityReceived < i.quantityOrdered && (
-                      <RippleButton size="small" variant="ghost" onClick={() => receiveItem(i.id, i.quantityOrdered - i.quantityReceived)}>Receive</RippleButton>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {(viewing.items || []).map((i: any) => {
+                const maxReceive = i.quantityOrdered - i.quantityReceived;
+                const inputVal = receiveInputs[i.id] !== undefined ? receiveInputs[i.id] : maxReceive;
+                return (
+                  <tr key={i.id}>
+                    <td>{escapeHtml(i.productName)}</td>
+                    <td style={{ textAlign: "right" }}>{i.quantityOrdered}</td>
+                    <td style={{ textAlign: "right", fontWeight: 600 }}>{i.quantityReceived}</td>
+                    <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost)}</td>
+                    <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost * i.quantityReceived)}</td>
+                    <td>
+                      {viewing.status === "ordered" && maxReceive > 0 ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                          <input
+                            type="number"
+                            min={0}
+                            max={maxReceive}
+                            value={inputVal}
+                            onChange={(e) => setReceiveInputs({ ...receiveInputs, [i.id]: Math.min(maxReceive, Math.max(0, Number(e.target.value))) })}
+                            style={{ width: 60, fontSize: "0.85rem", padding: "0.2rem 0.4rem" }}
+                          />
+                          <RippleButton
+                            size="small"
+                            variant="ghost"
+                            loading={receiving === i.id}
+                            disabled={receiving !== null || inputVal <= 0}
+                            onClick={() => receiveItem(i.id)}
+                          >Save</RippleButton>
+                        </div>
+                      ) : (
+                        <span style={{ color: "var(--text-secondary)", fontSize: "0.8rem" }}>{maxReceive <= 0 ? "Complete" : "—"}</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {(!viewing.items || viewing.items.length === 0) && <tr><td colSpan={6} style={{ textAlign: "center", padding: "1.5rem", color: "var(--text-secondary)" }}>No items</td></tr>}
             </tbody>
           </table>
@@ -3899,7 +3943,7 @@ function AdminPurchases() {
           <h1 style={{ margin: 0 }}>Create Purchase Order</h1>
           <RippleButton size="small" variant="ghost" onClick={() => { setCreating(false); setForm({ supplierName: "", notes: "" }); setFormItems([]); }}>&larr; Cancel</RippleButton>
         </div>
-        {msg && <div className="panel" style={{ marginBottom: "1rem", background: "#fee2e2", color: "#991b1b" }}>{msg}</div>}
+        {msg && <ErrorMsg msg={msg} />}
         <div className="panel" style={{ maxWidth: 700 }}>
           <div className="field">
             <label>Supplier</label>
@@ -3948,11 +3992,21 @@ function AdminPurchases() {
     );
   }
 
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    padding: "0.4rem 0.9rem", borderRadius: 6, border: "1px solid var(--border)", background: active ? "var(--primary)" : "transparent",
+    color: active ? "#fff" : "var(--text)", cursor: "pointer", fontSize: "0.85rem", fontWeight: active ? 600 : 400,
+  });
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Purchase Orders</h1>
-        <RippleButton size="small" onClick={() => { setCreating(true); loadFormDeps(); }}>+ New PO</RippleButton>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <button type="button" style={tabStyle(listMode === "active")} onClick={() => { setListMode("active"); loadOrders("active"); }}>Active</button>
+          <button type="button" style={tabStyle(listMode === "completed")} onClick={() => { setListMode("completed"); loadOrders("completed"); }}>Completed</button>
+          <button type="button" style={tabStyle(listMode === "deleted")} onClick={() => { setListMode("deleted"); loadOrders("deleted"); }}>Deleted</button>
+          <RippleButton size="small" onClick={() => { setCreating(true); loadFormDeps(); }}>+ New PO</RippleButton>
+        </div>
       </div>
       {error && <ErrorMsg msg={error} />}
       {msg && <ErrorMsg msg={msg} />}
@@ -3967,10 +4021,17 @@ function AdminPurchases() {
                 <td>{(o.items || []).length}</td>
                 <td><span className="plan-status" style={{ background: o.status === "received" ? "#d1fae5" : o.status === "cancelled" ? "#fee2e2" : o.status === "ordered" ? "#dbeafe" : "#fef3c7", color: o.status === "received" ? "#065f46" : o.status === "cancelled" ? "#991b1b" : o.status === "ordered" ? "#1e40af" : "#92400e" }}>{o.status}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>{formatDate(o.orderDate || o.order_date)}</td>
-                <td style={{ whiteSpace: "nowrap" }}><RippleButton size="small" onClick={(e) => { e.stopPropagation(); loadOrder(o.id); }}>View</RippleButton>{(o.status === "pending" || o.status === "cancelled") && <RippleButton size="small" variant="danger" style={{ marginLeft: "0.25rem" }} onClick={(e) => { e.stopPropagation(); deleteOrder(o.id); }}>Delete</RippleButton>}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <RippleButton size="small" onClick={(e) => { e.stopPropagation(); loadOrder(o.id); }}>View</RippleButton>
+                  {listMode === "deleted" ? (
+                    <RippleButton size="small" variant="ghost" style={{ marginLeft: "0.25rem" }} onClick={(e) => { e.stopPropagation(); restoreOrder(o.id); }}>Restore</RippleButton>
+                  ) : (
+                    <RippleButton size="small" variant="danger" style={{ marginLeft: "0.25rem" }} onClick={(e) => { e.stopPropagation(); deleteOrder(o.id); }}>Delete</RippleButton>
+                  )}
+                </td>
               </tr>
             ))}
-            {orders.length === 0 && <tr><td colSpan={6}><EmptyState icon="stock" title="No purchase orders" description="Create a purchase order to start tracking supplier purchases." /></td></tr>}
+            {orders.length === 0 && <tr><td colSpan={6}><EmptyState icon="stock" title={listMode === "deleted" ? "No deleted purchase orders" : listMode === "completed" ? "No completed purchase orders" : "No purchase orders"} description={listMode === "deleted" ? "Deleted purchase orders will appear here." : listMode === "completed" ? "Completed (received) purchase orders will appear here." : "Create a purchase order to start tracking supplier purchases."} /></td></tr>}
           </tbody>
         </table>
       </div>

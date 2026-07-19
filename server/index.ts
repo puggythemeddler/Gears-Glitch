@@ -103,6 +103,10 @@ import {
   deleteRepairImage,
   createPurchaseOrder,
   listPurchaseOrders,
+  listDeletedPurchaseOrders,
+  listCompletedPurchaseOrders,
+  softDeletePurchaseOrder,
+  restorePurchaseOrder,
   getPurchaseOrder,
   updatePurchaseOrderStatus,
   addPurchaseOrderItem,
@@ -3488,13 +3492,98 @@ app.delete("/api/purchases/:id", adminAuthMiddleware, async (req: Request, res: 
     if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
     const po = await getPurchaseOrder(id);
     if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
-    if (po.status === "received" || po.status === "ordered") { res.status(400).json({ error: "Cannot delete a received or ordered purchase order." }); return; }
-    await query("DELETE FROM purchase_order_items WHERE purchase_order_id = $1", [id]);
-    await query("DELETE FROM purchase_orders WHERE id = $1", [id]);
+    await softDeletePurchaseOrder(id);
     res.json({ ok: true });
   } catch (err: any) {
     console.error("[purchase delete]", err?.message || err);
     res.status(500).json({ error: "Failed to delete purchase order." });
+  }
+});
+
+app.get("/api/purchases/deleted", adminAuthMiddleware, async (_req: Request, res: Response) => {
+  res.json({ orders: await listDeletedPurchaseOrders() });
+});
+
+app.get("/api/purchases/completed", adminAuthMiddleware, async (_req: Request, res: Response) => {
+  res.json({ orders: await listCompletedPurchaseOrders() });
+});
+
+app.post("/api/purchases/:id/restore", adminAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
+    const ok = await restorePurchaseOrder(id);
+    if (!ok) { res.status(404).json({ error: "Purchase order not found or not deleted." }); return; }
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[purchase restore]", err?.message || err);
+    res.status(500).json({ error: "Failed to restore purchase order." });
+  }
+});
+
+app.get("/api/purchases/:id/pdf", staffAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID." }); return; }
+    const po = await getPurchaseOrder(id);
+    if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
+    const settings = await getSettings();
+    const items = po.items || [];
+    const totalCost = items.reduce((s: number, i: any) => s + (i.quantityOrdered || 0) * (i.unitCost || 0), 0);
+    const totalReceived = items.reduce((s: number, i: any) => s + (i.quantityReceived || 0) * (i.unitCost || 0), 0);
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  body{font-family:Arial,sans-serif;color:#1a1a2e;margin:0;padding:20px}
+  h1{font-size:22px;margin:0 0 4px;color:#16213e}
+  .header{display:flex;justify-content:space-between;border-bottom:2px solid #16213e;padding-bottom:12px;margin-bottom:16px}
+  .info{font-size:13px;color:#555;line-height:1.8}
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}
+  th{background:#16213e;color:#fff;padding:8px 10px;text-align:left}
+  td{padding:7px 10px;border-bottom:1px solid #e5e7eb}
+  tr:nth-child(even){background:#f8fafc}
+  .totals{margin-top:16px;text-align:right;font-size:13px}
+  .totals div{margin-bottom:4px}.totals strong{font-size:15px}
+  .badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;text-transform:uppercase}
+  .badge-pending{background:#fef3c7;color:#92400e}.badge-ordered{background:#dbeafe;color:#1e40af}
+  .badge-received{background:#d1fae5;color:#065f46}.badge-cancelled{background:#fee2e2;color:#991b1b}
+  .footer{margin-top:30px;border-top:1px solid #e5e7eb;padding-top:10px;font-size:11px;color:#999;text-align:center}
+</style></head><body>
+  <div class="header">
+    <div>${settings.storeLogo ? `<img src="${settings.storeLogo}" style="height:40px;object-fit:contain" />` : ""}
+      <h1>Purchase Order #${po.id}</h1></div>
+    <div style="text-align:right"><span class="badge badge-${po.status}">${po.status}</span></div>
+  </div>
+  <div class="info">
+    <div><strong>Supplier:</strong> ${escapeHtml(po.supplierName)}</div>
+    ${po.supplierContact ? `<div><strong>Contact:</strong> ${escapeHtml(po.supplierContact)}</div>` : ""}
+    <div><strong>Order Date:</strong> ${po.orderDate || "—"}</div>
+    <div><strong>Created:</strong> ${po.createdAt || "—"}</div>
+    ${po.notes ? `<div><strong>Notes:</strong> ${escapeHtml(po.notes)}</div>` : ""}
+  </div>
+  <table>
+    <thead><tr><th>Product</th><th style="text-align:right">Ordered</th><th style="text-align:right">Received</th><th style="text-align:right">Unit Cost</th><th style="text-align:right">Line Total</th></tr></thead>
+    <tbody>${items.map((i: any) => `<tr>
+      <td>${escapeHtml(i.productName || i.productId)}</td>
+      <td style="text-align:right">${i.quantityOrdered}</td>
+      <td style="text-align:right">${i.quantityReceived}</td>
+      <td style="text-align:right">KES ${(i.unitCost || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}</td>
+      <td style="text-align:right">KES ${((i.quantityOrdered || 0) * (i.unitCost || 0)).toLocaleString("en-KE", { minimumFractionDigits: 2 })}</td>
+    </tr>`).join("")}</tbody>
+  </table>
+  <div class="totals">
+    <div>Total Ordered: <strong>KES ${totalCost.toLocaleString("en-KE", { minimumFractionDigits: 2 })}</strong></div>
+    <div>Total Received: <strong>KES ${totalReceived.toLocaleString("en-KE", { minimumFractionDigits: 2 })}</strong></div>
+    <div>Pending Value: <strong>KES ${(totalCost - totalReceived).toLocaleString("en-KE", { minimumFractionDigits: 2 })}</strong></div>
+  </div>
+  <div class="footer">Generated ${new Date().toLocaleString("en-KE")} &mdash; ${escapeHtml(settings.storeName || "Gear&Glitch")}</div>
+</body></html>`;
+    const pdf = await htmlToPdf(html, { format: "A4" });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="PO-${po.id}-${escapeHtml(po.supplierName)}.pdf"`);
+    res.send(pdf);
+  } catch (err: any) {
+    console.error("[purchase pdf]", err?.message || err);
+    res.status(500).json({ error: "Failed to generate PDF." });
   }
 });
 

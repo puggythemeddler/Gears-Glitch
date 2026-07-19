@@ -915,6 +915,11 @@ async function runMigrations(): Promise<void> {
     await query(`CREATE INDEX IF NOT EXISTS idx_wa_logs_phone ON whatsapp_logs(phone_number)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_wa_logs_status ON whatsapp_logs(status)`);
   } catch {}
+
+  // Soft-delete support for purchase_orders
+  try {
+    await query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS deleted_at TEXT`);
+  } catch {}
 }
 
 async function ensureDefaultSettings(): Promise<void> {
@@ -2226,10 +2231,34 @@ async function getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> 
 }
 
 async function listPurchaseOrders(): Promise<PurchaseOrder[]> {
-  const rows = await queryAll("SELECT id FROM purchase_orders ORDER BY created_at DESC") as { id: number }[];
+  const rows = await queryAll("SELECT id FROM purchase_orders WHERE deleted_at IS NULL ORDER BY created_at DESC") as { id: number }[];
   const orders: PurchaseOrder[] = [];
   for (const row of rows) { const o = await getPurchaseOrder(row.id); if (o) orders.push(o); }
   return orders;
+}
+
+async function listDeletedPurchaseOrders(): Promise<PurchaseOrder[]> {
+  const rows = await queryAll("SELECT id FROM purchase_orders WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC") as { id: number }[];
+  const orders: PurchaseOrder[] = [];
+  for (const row of rows) { const o = await getPurchaseOrder(row.id); if (o) orders.push(o); }
+  return orders;
+}
+
+async function listCompletedPurchaseOrders(): Promise<PurchaseOrder[]> {
+  const rows = await queryAll("SELECT id FROM purchase_orders WHERE status = 'received' AND deleted_at IS NULL ORDER BY updated_at DESC") as { id: number }[];
+  const orders: PurchaseOrder[] = [];
+  for (const row of rows) { const o = await getPurchaseOrder(row.id); if (o) orders.push(o); }
+  return orders;
+}
+
+async function softDeletePurchaseOrder(id: number): Promise<boolean> {
+  const result = await query("UPDATE purchase_orders SET deleted_at = NOW()::text, updated_at = NOW()::text WHERE id = $1 AND deleted_at IS NULL", [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+async function restorePurchaseOrder(id: number): Promise<boolean> {
+  const result = await query("UPDATE purchase_orders SET deleted_at = NULL, updated_at = NOW()::text WHERE id = $1 AND deleted_at IS NOT NULL", [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
 async function addPurchaseOrderItem(purchaseOrderId: number, data: { productId: string; quantityOrdered: number; unitCost: number }): Promise<PurchaseOrderItem> {
@@ -2943,7 +2972,7 @@ export {
   createOrderInvoice, listOrderInvoices, markOrderInvoicePaid,
   createCreditNote, submitCreditNoteToEtims, getCreditNote, listCreditNotes,
   getRepairImages, addRepairImage, deleteRepairImage,
-  createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, autoReorderLowStock,
+  createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, autoReorderLowStock,
   getTechPerformanceReport, getSalesReport, getPurchaseReport, getSalesReportWithRange,
   getStockSummary, getEmployeeSalesPerformance, getTechnicianRepairStats,
   createStockTakeSession, getStockTakeSession, listStockTakeSessions, getStockTakeItems, recordStockCount, completeStockTakeSession,
