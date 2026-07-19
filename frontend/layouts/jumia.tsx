@@ -135,6 +135,7 @@ export function HomePage({ products, categories, banners, hero }: {
 
   return (
     <div className="jum-layout">
+      {hero?.heroActive !== false && (
       <div className="jum-slider">
         <div className="jum-slide">
           <h2>{slides[slideIdx].title}</h2>
@@ -147,6 +148,7 @@ export function HomePage({ products, categories, banners, hero }: {
           ))}
         </div>
       </div>
+      )}
 
       <div className="jum-section">
         <div className="jum-section-header">

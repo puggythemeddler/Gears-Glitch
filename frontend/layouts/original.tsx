@@ -272,7 +272,7 @@ export function HomePage({ products, categories, hero }: {
 }) {
   return (
     <>
-      <HeroSection products={products} hero={hero} />
+      {hero?.heroActive !== false && <HeroSection products={products} hero={hero} />}
 
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "0 var(--space-5)" }}>
         {categories.length > 0 && (

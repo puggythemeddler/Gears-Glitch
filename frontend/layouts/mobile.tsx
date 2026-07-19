@@ -112,6 +112,7 @@ export function HomePage({ products, categories, banners, hero }: {
 
   return (
     <div className="mob-layout">
+      {hero?.heroActive !== false && (
       <div className="mob-hero">
         <div className="mob-hero-inner">
           {heroBadge && <span className="mob-hero-badge">{heroBadge}</span>}
@@ -120,6 +121,7 @@ export function HomePage({ products, categories, banners, hero }: {
           <Link href={heroCtaLink} className="btn" style={{ alignSelf: "flex-start", background: "#fff", color: "#1e1b4b", fontWeight: 600 }}>{heroCtaLabel}</Link>
         </div>
       </div>
+      )}
 
       <div className="mob-brands">
         <h2>Shop by Brand</h2>

@@ -113,6 +113,7 @@ export function HomePage({ products, categories, banners, hero }: {
 
   return (
     <div className="amz-layout">
+      {hero?.heroActive !== false && (
       <div className="amz-hero">
         <div className="amz-hero-main">
           <h2>{heroTitle}</h2>
@@ -131,6 +132,7 @@ export function HomePage({ products, categories, banners, hero }: {
           )}
         </div>
       </div>
+      )}
 
       {deals.length > 0 && (
         <div className="amz-section">

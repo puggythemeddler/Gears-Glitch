@@ -1000,6 +1000,7 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
   const [catList, setCatList] = useState<{ id: string; label: string }[]>([]);
   const [bannerInputs, setBannerInputs] = useState<{ title: string; subtitle: string }[]>([]);
   const [heroForm, setHeroForm] = useState({
+    heroActive: true,
     badgeActive: true,
     badgeText: "Summer Tech Sale — Up to 30% Off",
     badgeLink: "",
@@ -1119,8 +1120,16 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
           <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem", fontWeight: 600 }}>
+              <input type="checkbox" checked={heroForm.heroActive !== false} onChange={(e) => setHeroForm({ ...heroForm, heroActive: e.target.checked })} style={{ width: 18, height: 18 }} />
+              Show hero section on storefront
+            </label>
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "0.25rem 0 0 1.75rem" }}>Turn off to hide the entire hero banner from the website.</p>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem" }}>
-              <input type="checkbox" checked={heroForm.badgeActive} onChange={(e) => setHeroForm({ ...heroForm, badgeActive: e.target.checked })} style={{ width: 18, height: 18 }} />
+              <input type="checkbox" checked={heroForm.badgeActive} onChange={(e) => setHeroForm({ ...heroForm, badgeActive: e.target.checked })} style={{ width: 18, height: 18 }} disabled={heroForm.heroActive === false} />
               Show announcement badge
             </label>
           </div>

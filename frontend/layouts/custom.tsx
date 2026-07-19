@@ -50,6 +50,7 @@ export function HomePage({ products, categories, banners, hero }: { products: Pr
 
   return (
     <>
+      {hero?.heroActive !== false && (
       <section className="custom-hero">
         <div className="custom-content">
           <h1>{heroTitle}</h1>
@@ -58,6 +59,7 @@ export function HomePage({ products, categories, banners, hero }: { products: Pr
           {banners[0]?.imageUrl && <img src={banners[0].imageUrl} alt={banners[0]?.title || "Store hero image"} />}
         </div>
       </section>
+      )}
 
       {categories.length > 0 && (
         <section className="custom-content">
