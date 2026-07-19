@@ -1116,7 +1116,7 @@ function OwnerInvoices() {
                       <td>{escapeHtml(inv.providerName || "—")}</td>
                       <td>{formatPrice(inv.amount)}</td>
                       <td><span className="plan-status" style={{ background: inv.status === "paid" ? "#d1fae5" : "#fef3c7", color: inv.status === "paid" ? "#065f46" : "#92400e" }}>{inv.status}</span></td>
-                      <td>{inv.status !== "paid" && <RippleButton size="small" onClick={() => markPaid(inv.id)}>Mark paid</RippleButton>}</td>
+                      <td>{inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "#fff" }} onClick={() => markPaid(inv.id)}>Mark paid</RippleButton>}</td>
                     </tr>
                   ))}
                   {iData.length === 0 && <tr><td colSpan={5}><EmptyState icon="invoices" title="No invoices" description="Invoices will appear here once generated." /></td></tr>}
@@ -1143,8 +1143,8 @@ function OwnerInvoices() {
                       <td><span className="plan-status" style={{ background: inv.status === "paid" ? "#d1fae5" : "#fef3c7", color: inv.status === "paid" ? "#065f46" : "#92400e" }}>{inv.status}</span></td>
                       <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                       <td>
-                        {inv.status !== "paid" && <RippleButton size="small" onClick={() => markOiPaid(inv.id)}>Mark paid</RippleButton>}
-                        <RippleButton size="small" variant="ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); await downloadPdf(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${inv.orderId}.pdf`); } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); } }}>View</RippleButton>
+                        {inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "#fff" }} onClick={() => markOiPaid(inv.id)}>Mark paid</RippleButton>}
+                        <RippleButton size="small" variant="ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); const res = await fetch(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, { headers: { Authorization: `Bearer ${r.token}` } }); if (!res.ok) throw new Error(`HTTP ${res.status}`); const html = await res.text(); const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 30000); } catch (e: any) { alert("Failed to open invoice: " + (e?.message || "Unknown error")); } }}>View</RippleButton>
                         {creditedOrders[inv.orderId] ? (
                           <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
                         ) : (

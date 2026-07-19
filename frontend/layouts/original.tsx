@@ -53,7 +53,7 @@ function HeroParticle({ delay, left, size }: { delay: number; left: number; size
   );
 }
 
-function HeroSection({ products }: { products: Product[] }) {
+function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const [activeIdx, setActiveIdx] = useState(0);
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
@@ -66,25 +66,46 @@ function HeroSection({ products }: { products: Product[] }) {
     return () => clearInterval(timer);
   }, [featured.length]);
 
-  const catChips = [
-    { label: "Gaming PCs", href: "/pc" },
-    { label: "Graphics Cards", href: "/graphics-cards" },
-    { label: "Laptops", href: "/laptops" },
-    { label: "Servers", href: "/servers" },
-    { label: "Repairs", href: "/repairs" },
-  ];
+  const badgeText = hero?.badgeText || "Summer Tech Sale &mdash; Up to 30% Off";
+  const badgeActive = hero?.badgeActive !== false;
+  const badgeLink = hero?.badgeLink || "";
 
-  const stats = [
-    { value: "1000+", label: "Products" },
-    { value: "500+", label: "Happy Customers" },
-    { value: "24/7", label: "Support" },
-  ];
+  const headline = hero?.headline || "Power Your";
+  const headlineAccent = hero?.headlineAccent || "Next Build";
+  const subtitle = hero?.subtitle || "Discover premium gaming PCs, laptops, graphics cards, servers, and accessories at unbeatable prices. Kenya\u2019s trusted all-in-one tech platform.";
 
-  const highlights = [
-    "Genuine Products",
-    "Fast Delivery Across Kenya",
-    "Secure Payments",
-  ];
+  const shopNowLabel = hero?.shopNowLabel || "Shop Now";
+  const shopNowLink = hero?.shopNowLink || "/pc";
+  const browseLabel = hero?.browseLabel || "Browse Categories";
+  const browseLink = hero?.browseLink || "/#categories";
+
+  const catChips = hero?.catChips?.length > 0
+    ? hero.catChips
+    : [
+        { label: "Gaming PCs", href: "/pc" },
+        { label: "Graphics Cards", href: "/graphics-cards" },
+        { label: "Laptops", href: "/laptops" },
+        { label: "Servers", href: "/servers" },
+        { label: "Repairs", href: "/repairs" },
+      ];
+
+  const stats = hero?.stats?.length > 0
+    ? hero.stats
+    : [
+        { value: "1000+", label: "Products" },
+        { value: "500+", label: "Happy Customers" },
+        { value: "24/7", label: "Support" },
+      ];
+
+  const highlights = hero?.highlights?.length > 0
+    ? hero.highlights
+    : [
+        "Genuine Products",
+        "Fast Delivery Across Kenya",
+        "Secure Payments",
+      ];
+
+  const trustText = hero?.trustText || "Trusted by 5,000+ customers across Kenya";
 
   return (
     <section className="hero">
@@ -98,34 +119,41 @@ function HeroSection({ products }: { products: Product[] }) {
 
       <div className="hero-inner">
         <div className="hero-content">
-          <span className="hero-badge">
-            <span className="hero-badge-dot" />
-            Summer Tech Sale &mdash; Up to 30% Off
-          </span>
+          {badgeActive && (
+            badgeLink ? (
+              <a href={badgeLink} className="hero-badge" style={{ textDecoration: "none" }}>
+                <span className="hero-badge-dot" />
+                <span dangerouslySetInnerHTML={{ __html: badgeText }} />
+              </a>
+            ) : (
+              <span className="hero-badge">
+                <span className="hero-badge-dot" />
+                <span dangerouslySetInnerHTML={{ __html: badgeText }} />
+              </span>
+            )
+          )}
 
           <h1 className="hero-headline">
-            Power Your <span className="hero-headline-accent">Next Build</span>
+            {headline} <span className="hero-headline-accent">{headlineAccent}</span>
           </h1>
 
           <p className="hero-sub">
-            Discover premium gaming PCs, laptops, graphics cards, servers, and
-            accessories at unbeatable prices. Kenya&apos;s trusted all-in-one
-            tech platform.
+            {subtitle}
           </p>
 
           <div className="hero-actions">
-            <Link href="/pc" className="btn btn-primary btn-lg hero-btn-glass">
+            <Link href={shopNowLink} className="btn btn-primary btn-lg hero-btn-glass">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-              Shop Now
+              {shopNowLabel}
             </Link>
-            <Link href="/#categories" className="btn btn-secondary btn-lg hero-btn-glass">
+            <Link href={browseLink} className="btn btn-secondary btn-lg hero-btn-glass">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-              Browse Categories
+              {browseLabel}
             </Link>
           </div>
 
           <div className="hero-highlights">
-            {highlights.map((h) => (
+            {highlights.map((h: string) => (
               <span key={h} className="hero-highlight">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 {h}
@@ -134,7 +162,7 @@ function HeroSection({ products }: { products: Product[] }) {
           </div>
 
           <div className="hero-chips">
-            {catChips.map((c) => (
+            {catChips.map((c: { label: string; href: string }) => (
               <Link key={c.href} href={c.href} className="hero-chip">{c.label}</Link>
             ))}
           </div>
@@ -182,7 +210,7 @@ function HeroSection({ products }: { products: Product[] }) {
           </div>
 
           <div className="hero-stats">
-            {stats.map((s, i) => (
+            {stats.map((s: { value: string; label: string }, i: number) => (
               <div
                 key={s.label}
                 className="hero-stat hero-stat-glass"
@@ -202,7 +230,7 @@ function HeroSection({ products }: { products: Product[] }) {
             <svg key={i} width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" strokeWidth="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
           ))}
         </div>
-        <span className="hero-trust-text">Trusted by 5,000+ customers across Kenya</span>
+        <span className="hero-trust-text">{trustText}</span>
       </div>
 
       <div className="hero-wave">
@@ -217,18 +245,18 @@ function HeroSection({ products }: { products: Product[] }) {
 export function Header() { return null; }
 export function Footer() { return null; }
 
-export function HomePage({ products, categories }: {
-  products: Product[]; categories: { id: string; label: string }[]; banners: any[];
+export function HomePage({ products, categories, hero }: {
+  products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any;
 }) {
   return (
     <>
-      <HeroSection products={products} />
+      <HeroSection products={products} hero={hero} />
 
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "0 var(--space-5)" }}>
         {categories.length > 0 && (
-          <div id="categories" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", margin: "1.5rem 0" }}>
+          <div id="categories" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.5rem", margin: "1.5rem 0" }}>
             {categories.map((cat) => (
-              <a key={cat.id} href={`/${cat.id}`} className="btn btn-secondary btn-sm">{cat.label}</a>
+              <a key={cat.id} href={`/${cat.id}`} className="btn btn-secondary btn-sm" style={{ textAlign: "center", whiteSpace: "nowrap" }}>{cat.label}</a>
             ))}
           </div>
         )}

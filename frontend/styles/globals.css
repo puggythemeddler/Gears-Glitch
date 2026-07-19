@@ -63,7 +63,7 @@
   --duration-slow: 350ms;
 
   /* Layout */
-  --max-width: 1080px;
+  --max-width: 1280px;
   --header-height: 56px;
 }
 
@@ -280,6 +280,22 @@ code, pre {
   flex-shrink: 0;
   flex-wrap: nowrap;
   justify-content: flex-end;
+}
+
+@media (max-width: 1024px) {
+  .main-nav-desktop a { padding: var(--space-1) var(--space-1); font-size: var(--text-xs); }
+}
+
+@media (max-width: 768px) {
+  .main-nav-desktop { display: none; }
+  .mobile-menu-toggle { display: block; }
+  .header-inner { padding: 0 var(--space-3); gap: var(--space-2); }
+  .header-right { gap: var(--space-2); }
+  .currency-selector-wrap { display: none; }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .currency-selector-wrap .currency-select-label { display: none; }
 }
 
 .brand {
@@ -1655,7 +1671,8 @@ a.order-item:hover {
    ============================================================ */
 .hero {
   position: relative;
-  width: 100%;
+  width: 100vw;
+  margin-left: calc(-50vw + 50%);
   min-height: 560px;
   overflow: hidden;
   background: linear-gradient(135deg, #0b1120 0%, #111827 40%, #0f172a 100%);
@@ -1844,6 +1861,7 @@ a.order-item:hover {
   border: 1px solid rgba(255, 255, 255, 0.08);
   text-decoration: none;
   transition: all var(--duration-fast) ease;
+  white-space: nowrap;
 }
 
 .hero-chip:hover {
@@ -2141,10 +2159,6 @@ a.order-item:hover {
 
   .dash-layout { grid-template-columns: 1fr; }
 
-  .header-inner { padding: 0 var(--space-3); gap: var(--space-2); }
-
-  .header-right { width: 100%; justify-content: flex-end; gap: var(--space-2); }
-
   .header-search-form {
     flex-basis: 100%;
     max-width: none;
@@ -2163,10 +2177,6 @@ a.order-item:hover {
     border-bottom: 1px solid var(--border);
     margin-bottom: var(--space-4);
   }
-
-  .main-nav-desktop { display: none; }
-
-  .mobile-menu-toggle { display: block; }
 
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
 

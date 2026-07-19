@@ -3334,9 +3334,34 @@ app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, async (req
   res.json({ ok: true });
 });
 
+app.delete("/api/purchases/:id", adminAuthMiddleware, async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const po = await getPurchaseOrder(id);
+  if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
+  if (po.status === "received") { res.status(400).json({ error: "Cannot delete a received purchase order." }); return; }
+  await query("DELETE FROM purchase_order_items WHERE purchase_order_id = $1", [id]);
+  await query("DELETE FROM purchase_orders WHERE id = $1", [id]);
+  res.json({ ok: true });
+});
+
 // ============ REPORTS ============
-app.get("/api/reports/tech-performance", adminAuthMiddleware, async (_req: Request, res: Response) => {
-  res.json({ technicians: await getTechPerformanceReport() });
+app.get("/api/reports/tech-performance", adminAuthMiddleware, async (req: Request, res: Response) => {
+  const from = req.query.from as string | undefined;
+  const to = req.query.to as string | undefined;
+  const params: any[] = [];
+  let dateFilter = "";
+  if (from) { dateFilter += ` AND rt.created_at >= $${params.length + 1}`; params.push(from); }
+  if (to) { dateFilter += ` AND rt.created_at <= $${params.length + 1}`; params.push(to + "T23:59:59"); }
+  const rows = await queryAll(
+    `SELECT u.id AS "staffId", u.username AS "staffName",
+      COUNT(CASE WHEN rt.status = 'completed' THEN 1 END) AS "ticketsCompleted",
+      COUNT(rt.id) AS "ticketsAssigned",
+      COALESCE(SUM(CASE WHEN rt.status = 'completed' THEN rt.total_cost ELSE 0 END), 0) AS "totalEarned"
+     FROM users u LEFT JOIN repair_tickets rt ON rt.assigned_to = u.id${dateFilter}
+     WHERE u.role = 'technician' GROUP BY u.id, u.username ORDER BY "ticketsCompleted" DESC`,
+    params
+  );
+  res.json({ technicians: rows });
 });
 
 app.get("/api/reports/purchases", adminAuthMiddleware, async (_req: Request, res: Response) => {
@@ -3847,8 +3872,22 @@ app.get("/api/reports/stock-summary", ownerAuthMiddleware, requirePermission("re
   res.json({ items: await getStockSummary() });
 });
 
-app.get("/api/reports/employee-sales", ownerAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
-  res.json({ employees: await getEmployeeSalesPerformance() });
+app.get("/api/reports/employee-sales", adminAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
+  const from = req.query.from as string | undefined;
+  const to = req.query.to as string | undefined;
+  const params: any[] = [];
+  let dateFilter = "";
+  if (from) { dateFilter += ` AND o.created_at >= $${params.length + 1}`; params.push(from); }
+  if (to) { dateFilter += ` AND o.created_at <= $${params.length + 1}`; params.push(to + "T23:59:59"); }
+  const rows = await queryAll(
+    `SELECT u.id AS "staffId", u.username AS "staffName",
+      COUNT(o.id) AS "totalOrders",
+      COALESCE(SUM(o.subtotal + o.shipping_fee), 0) AS "totalRevenue"
+     FROM users u LEFT JOIN orders o ON o.staff_id = u.id AND o.status != 'cancelled'${dateFilter}
+     WHERE u.role != 'customer' GROUP BY u.id, u.username ORDER BY "totalRevenue" DESC`,
+    params
+  );
+  res.json({ employees: rows });
 });
 
 app.get("/api/reports/technician-repairs", ownerAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
