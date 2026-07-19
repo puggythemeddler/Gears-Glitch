@@ -49,7 +49,7 @@ const FEATURES = [
   { icon: "🛡", name: "Warranty Tracking", desc: "Automated warranty registration on products, duration tracking, and warranty status on invoices." },
   { icon: "👥", name: "Customer Management", desc: "Customer profiles with purchase history, repair records, order history, and communication log." },
   { icon: "🤝", name: "Supplier Management", desc: "Supplier directory with contact details, linked purchase orders, and stock replenishment tracking." },
-  { icon: "📋", name: "Purchase Orders", desc: "Create purchase orders per supplier, track items ordered vs received, per-item receiving, and delete/cancel pending POs." },
+  { icon: "📋", name: "Purchase Orders", desc: "Create purchase orders per supplier, track items ordered vs received with inline quantity inputs, branded PDF downloads, soft-delete with completed and deleted views, and one-click restore." },
   { icon: "🔄", name: "Stock Transfers", desc: "Seamless inter-branch transfers with tracking and automated inventory reconciliation." },
   { icon: "🏢", name: "Multi-Branch Management", desc: "Unified dashboard across all locations with per-branch settings and consolidated reporting." },
   { icon: "📊", name: "Reports & Analytics", desc: "Sales, employee performance, technician stats, purchase reports, and stock summary with date filtering." },
@@ -67,7 +67,7 @@ const FEATURES = [
   { icon: "⭐", name: "Product Reviews & Ratings", desc: "Customers rate products 1–5 stars, leave reviews, and help others decide. One review per customer enforced. Admin moderation built in." },
   { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with admin-controllable hero sections, live stats from your data, auto-synced category chips, product catalog, auto-rotating carousels, and springboard category menu." },
   { icon: "⚙", name: "Organized Settings", desc: "Dedicated Settings tab with grouped modules — General, Storefront, Email, WhatsApp, About Us, Spec Templates, and Subscription. Each module is its own page for focused configuration." },
-  { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, and credit notes — downloadable instantly." },
+  { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders — downloadable instantly with branded templates." },
 ];
 
 const WHY_CHOOSE = [
@@ -546,7 +546,7 @@ export default function MarketingPage() {
         id="features"
         label="Features"
         title="Everything You Need to Succeed"
-        subtitle="Twenty-three powerful modules that work together to run every part of your electronics business."
+        subtitle="Twenty-five powerful modules that work together to run every part of your electronics business."
       >
         <StaggerContainer className="mk-features-grid">
           {FEATURES.map((f, i) => (

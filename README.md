@@ -5,6 +5,10 @@ A complete multi-branch sales & management system with product catalog, customer
 ## Recent highlights
 
 - **Dedicated Settings tab** — Admin and owner panels restructured with a dedicated Settings group in the sidebar. Admin settings: General, Storefront, Product Positioning, Email, WhatsApp, About Us, Spec Templates, Subscription. Owner settings: Storefront, Product Positioning, About Us, Subscription, Audit Log. Settings group expanded by default.
+- **Purchase order improvements** — Inline received quantity inputs (replaced window.prompt popups), server-side PDF generation with branded A4 download, soft-delete with "View Completed" and "View Deleted" tabs, and one-click restore for deleted purchase orders. Any status can now be deleted. Completed tab shows all received orders; deleted tab shows trashed orders with restore button.
+- **Audit log in admin panel** — Audit log (previously owner-only) now accessible under Activity group in admin sidebar. Same filtering and detail view.
+- **Render crash fixes** — Added `trust proxy` setting for Render reverse proxy (fixes `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` rate-limiter crash). Fixed SQL crash where `text` columns compared against `timestamp` parameters in 4 date-filtered queries (sales/trends, employee-sales, tech-performance, purchase reports). All `created_at` comparisons now cast to `::timestamp`.
+- **Admin sidebar Activity group** — Admin sidebar now includes Audit Log under the Activity group alongside Reports, Messages, and Reviews.
 - **Comprehensive input validation** — Added typed validation (`isEmail`, `isStr`, `isNum`, `isPosInt`, `isNonNegNum`, `isArr`, `inSet`, `okLen`) to 40+ POST/PUT endpoints across the backend. Covers auth, account creation, orders, financial operations, settings, messages, providers, coupons, purchase orders, stock transfers, categories, roles, quotes, and more. Prevents injection, type confusion, and oversized payloads.
 - **Improved sidebar groupings** — Admin sidebar reorganized into 6 focused groups: Sales, Stock, Team (Users, Roles, Clients, Branches), Finance (Invoices, Credit Notes, Plans, Providers), Activity (Messages, Reviews, Reports), and Settings. Owner sidebar converted from flat list to grouped nav with Sales, Service, Finance, Stock, and Settings groups.
 - **Deployment hardening** — Render: added `NODE_OPTIONS --max-old-space-size=384` for free tier memory safety, SMTP env vars as placeholders, `DB_SSL_REJECT` for Neon. Vercel: pinned region, explicit output directory. Backend tsconfig: removed unnecessary `declaration`/`declarationMap` for faster builds. Frontend package.json: added `engines >=18`.
@@ -15,7 +19,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - **Responsive layout overhaul** — Wider content container (1080px → 1280px) for better screen utilization. Hero section breaks out to full viewport width. Header nav gracefully hides secondary elements (currency selector) on tablet screens, collapses to hamburger on mobile. Category buttons and hero chips use `flex-wrap` and `auto-fit` grids for even distribution without scroll overflow.
 - **Employee Sales & Technician Performance reports fixed** — Both report endpoints now accept `from`/`to` date query parameters and return properly structured JSON. Frontend components match backend response fields (`employees`/`technicians` arrays with `staffName`, `totalOrders`/`totalRevenue`/`ticketsCompleted`/`ticketsAssigned`/`totalEarned`). Both reports now show a totals row.
 - **Mark-as-paid buttons themed** — All "Mark paid" buttons across admin and owner invoice panels now use `var(--success)` background color for clear visual indication of the payment confirmation action.
-- **Purchase order delete** — Admin can now delete purchase orders that are in `pending` or `cancelled` status. Delete button appears in both the PO list table and the PO detail view. Received POs cannot be deleted.
+- **Purchase order delete** — Admin can now delete any purchase order via soft-delete (moved to trash). Deleted POs can be restored from the Deleted tab. Any status can be soft-deleted.
 - **WhatsApp Business API integration** — Bidirectional WhatsApp messaging via Meta's Cloud API. Outbound messages from admin/customer/provider messaging panel are sent via WhatsApp to the recipient. Inbound WhatsApp messages from customers appear in the admin messaging panel. Respects the 24-hour messaging window (free-form within 24h, template messages outside). Admin WhatsApp settings panel with connection test, webhook URL display, conversation tracking, and full message log. Phone number auto-mapping to existing customers/providers.
 - **prefers-reduced-motion** — Carousels and sliders respect OS-level reduced motion preference. Auto-rotation paused when `prefers-reduced-motion: reduce` is detected.
 - **Stock take updates stock on hand** — Completing or applying a stock take now correctly adjusts `stock_levels.quantity_in_stock` for each counted product. The frontend also saves all unsaved count inputs before calling the complete endpoint, preventing data loss when clicking "Complete & Apply" without blurring inputs.
@@ -38,7 +42,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - **Component unification** — 6 near-identical admin/owner component pairs extracted to shared files (`ProvidersPage`, `CreditNotesPage`, `AboutUsPage`, `ProductPositioningPage`, `StockTakeListPage`, `StockOnHandPage`). Admin and owner panels now import the same components, eliminating ~1,600 lines of duplicated code. Feature gating in the owner panel is preserved at the routing level.
 - **Premium hero section** — Original storefront layout now features a full-width two-column hero with dark gradient background, animated blue/purple glows, floating particles, glassmorphism buttons and stat cards, auto-rotating featured product carousel (5s interval with dot navigation), floating category chips, "Trusted by 5,000+ customers" trust bar with gold stars, and SVG wave transition into the product grid. Fully responsive (stacks vertically on mobile). Respects `prefers-reduced-motion`.
 - **POS invoice save & print** — After completing a POS sale, the post-charge UI now offers Save Invoice (downloads PDF) and Print Invoice (opens print dialog) buttons for both thermal receipt and A4 invoice formats.
-- **Purchase orders** — Full purchase order management with supplier selection, product line items, status workflow (pending → ordered → received), per-item receiving, and admin sidebar integration under the Stock group.
+- **Purchase orders** — Full purchase order management with supplier selection, product line items, status workflow (pending → ordered → received), inline per-item receiving, branded PDF generation, soft-delete with completed/deleted views, restore, and admin sidebar integration under the Stock group.
 - **Admin reports expanded** — Reports tab now includes 5 sub-tabs: Sales Report, Employee Sales, Technician Performance, Purchases Report, and Stock Summary.
 - **Unified product pages** — Admin and owner product pages now use the same `AdminProducts` component with full sale price, subcategory, warranty, taxable, CSV import/export, and bulk edit support.
 - **Unified quotations** — Admin quotations panel now uses the full-featured `QuotesPage` component with status management, approve/cancel workflows, PDF downloads, and discounts.
@@ -172,7 +176,7 @@ Full store management with 29 sections:
 - **Stock on Hand** — Current stock levels, snapshot history, low-stock alerts
 - **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow
 - **Stock Take** — Create sessions, count inventory, view variance, auto-apply adjustments
-- **Purchases** — Create and manage purchase orders with supplier selection, product line items, status workflow (pending → ordered → received), per-item receiving, and cost tracking
+- **Purchases** — Create and manage purchase orders with supplier selection, product line items, status workflow (pending → ordered → received), inline per-item receiving with quantity inputs, branded PDF generation/download, soft-delete with completed/deleted views, and one-click restore
 - **Messages** — Admin messaging panel: conversation list with unread badges, chat view with read receipts, inline reply, compose new messages (pick customer + provider). Auto-polls every 30 seconds.
 - **Reviews** — View all product reviews with customer name, product, rating, date, and comment. Delete reviews for moderation. Paginated list.
 - **Spec Templates** — Define per-category spec fields for products
@@ -552,6 +556,10 @@ Full CRUD for products, categories (including subcategories), staff, roles, plan
 | GET | `/api/admin/reviews` | All reviews with pagination (admin moderation) |
 | DELETE | `/api/admin/products/:id/reviews/:reviewId` | Delete a review (admin moderation) |
 | GET | `/api/admin/backup` | Download full database backup file |
+| GET | `/api/purchases/deleted` | List soft-deleted purchase orders |
+| GET | `/api/purchases/completed` | List completed (received) purchase orders |
+| POST | `/api/purchases/:id/restore` | Restore a soft-deleted purchase order |
+| GET | `/api/purchases/:id/pdf` | Download branded PDF of a purchase order (accepts query token) |
 
 ### Provider
 
