@@ -12,6 +12,8 @@ const PROBLEMS = [
   { icon: "🔗", title: "Disconnected Systems", desc: "POS doesn't talk to inventory. Repairs don't talk to accounting. Every department operates in its own silo." },
   { icon: "👁️", title: "Poor Stock Visibility", desc: "No real-time view of stock levels across branches, leading to overstocking, stockouts, and tied-up capital." },
   { icon: "📋", title: "Paper-Based Invoicing", desc: "Manual invoice and receipt creation is slow, error-prone, and doesn't meet KRA eTIMS compliance requirements." },
+  { icon: "📱", title: "No Mobile-Friendly System", desc: "Your platform only works on desktop, so staff can't check stock, make sales, or update tickets on the floor." },
+  { icon: "📞", title: "WhatsApp Chaos", desc: "Customer messages scattered across WhatsApp, email, and phone with no central record or automated delivery tracking." },
 ];
 
 const SOLUTIONS_BENEFITS = [
@@ -25,6 +27,8 @@ const SOLUTIONS_BENEFITS = [
   "Cloud accessible from any device, anywhere",
   "Customer reviews and ratings to build trust and drive sales",
   "Admin-controllable hero section with badge, headline, and CTAs",
+  "WhatsApp Business API for instant customer communication",
+  "Responsive design optimized for mobile, tablet, and desktop",
 ];
 
 const INDUSTRIES = [
@@ -45,10 +49,10 @@ const FEATURES = [
   { icon: "🛡", name: "Warranty Tracking", desc: "Automated warranty registration on products, duration tracking, and warranty status on invoices." },
   { icon: "👥", name: "Customer Management", desc: "Customer profiles with purchase history, repair records, order history, and communication log." },
   { icon: "🤝", name: "Supplier Management", desc: "Supplier directory with contact details, linked purchase orders, and stock replenishment tracking." },
-  { icon: "📋", name: "Purchase Orders", desc: "Create purchase orders per supplier, track items ordered vs received, and manage costs." },
+  { icon: "📋", name: "Purchase Orders", desc: "Create purchase orders per supplier, track items ordered vs received, per-item receiving, and delete/cancel pending POs." },
   { icon: "🔄", name: "Stock Transfers", desc: "Seamless inter-branch transfers with tracking and automated inventory reconciliation." },
   { icon: "🏢", name: "Multi-Branch Management", desc: "Unified dashboard across all locations with per-branch settings and consolidated reporting." },
-  { icon: "📊", name: "Reports & Analytics", desc: "Sales trends, employee sales breakdown, technician repair stats, and stock summary reports." },
+  { icon: "📊", name: "Reports & Analytics", desc: "Sales, employee performance, technician stats, purchase reports, and stock summary with date filtering." },
   { icon: "📄", name: "Quotation Engine", desc: "Generate professional quotes with line items, discounts, PDF export, and one-click conversion to orders." },
   { icon: "🧾", name: "KRA eTIMS Invoicing", desc: "Fully compliant invoices and credit notes with control codes, serial numbers, and receipt generation." },
   { icon: "🔐", name: "Role-Based Permissions", desc: "Granular access control for admin, owner, manager, staff, technician, provider, and customer roles." },
@@ -58,10 +62,10 @@ const FEATURES = [
   { icon: "💰", name: "M-Pesa Integration", desc: "Accept M-Pesa payments directly through the POS and online checkout with automatic reconciliation." },
   { icon: "📝", name: "Credit Notes", desc: "Issue KRA-compliant credit notes with eTIMS integration for returns and billing adjustments." },
   { icon: "🏷", name: "Coupons & Discounts", desc: "Create percentage or fixed-amount coupons, apply discounts at checkout, and track usage." },
-  { icon: "🔔", name: "Messaging System", desc: "Built-in messaging between customers, providers, and staff with real-time notifications." },
+  { icon: "💬", name: "Messaging System", desc: "Built-in messaging between customers, providers, and staff with real-time notifications and WhatsApp delivery." },
   { icon: "📍", name: "Product Positioning", desc: "Drag-and-drop product ordering to control how items appear on your storefront." },
   { icon: "⭐", name: "Product Reviews & Ratings", desc: "Customers rate products 1–5 stars, leave reviews, and help others decide. One review per customer enforced. Admin moderation built in." },
-  { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with admin-controllable hero sections, product catalog, auto-rotating carousels, and springboard category menu. Full-width responsive layout with adaptive header navigation." },
+  { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with admin-controllable hero sections, product catalog, auto-rotating carousels, and springboard category menu." },
   { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, and credit notes — downloadable instantly." },
 ];
 
@@ -77,9 +81,9 @@ const WHY_CHOOSE = [
 ];
 
 const STATS = [
-  { icon: "📦", value: 90, suffix: "+", label: "Products Tracked" },
+  { icon: "📦", value: 120, suffix: "+", label: "Products Tracked" },
   { icon: "💳", value: 5, suffix: "", label: "Payment Methods" },
-  { icon: "📊", value: 5, suffix: "", label: "Report Types" },
+  { icon: "📊", value: 5, suffix: "+", label: "Report Types" },
   { icon: "🎯", value: 99, suffix: "%", label: "Inventory Accuracy" },
   { icon: "⭐", value: 98, suffix: "%", label: "Uptime SLA" },
   { icon: "⏱", value: 40, suffix: "%", label: "Average Time Saved" },
