@@ -98,20 +98,26 @@ export function Footer({ settings }: { settings: any }) {
   );
 }
 
-export function HomePage({ products, categories, banners }: {
-  products: Product[]; categories: { id: string; label: string }[]; banners: any[];
+export function HomePage({ products, categories, banners, hero }: {
+  products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any;
 }) {
   const accessories = products.filter((p) => p.inStock && p.category?.toLowerCase().includes("access")).slice(0, 6);
   const brands = [...new Set(products.map((p) => p.name.split(/\s+/)[0]).filter(Boolean))].slice(0, 8);
+
+  const heroBadge = hero?.badgeActive !== false ? (hero?.badgeText || "New Arrivals") : null;
+  const heroTitle = hero?.headline ? `${hero.headline} ${hero.headlineAccent || ""}` : "Premium Devices";
+  const heroSub = hero?.subtitle || "Discover the latest smartphones, laptops, and tablets with cutting-edge technology.";
+  const heroCtaLabel = hero?.shopNowLabel || "Explore";
+  const heroCtaLink = hero?.shopNowLink || (categories[0] ? `/${categories[0].id}` : "/");
 
   return (
     <div className="mob-layout">
       <div className="mob-hero">
         <div className="mob-hero-inner">
-          <span className="mob-hero-badge">New Arrivals</span>
-          <h2>Premium Devices</h2>
-          <p>Discover the latest smartphones, laptops, and tablets with cutting-edge technology.</p>
-          <Link href={categories[0] ? `/${categories[0].id}` : "/"} className="btn" style={{ alignSelf: "flex-start", background: "#fff", color: "#1e1b4b", fontWeight: 600 }}>Explore</Link>
+          {heroBadge && <span className="mob-hero-badge">{heroBadge}</span>}
+          <h2>{heroTitle}</h2>
+          <p>{heroSub}</p>
+          <Link href={heroCtaLink} className="btn" style={{ alignSelf: "flex-start", background: "#fff", color: "#1e1b4b", fontWeight: 600 }}>{heroCtaLabel}</Link>
         </div>
       </div>
 

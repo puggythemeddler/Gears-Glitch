@@ -42,14 +42,19 @@ export function Footer({ settings }: { settings: any }) {
   return null;
 }
 
-export function HomePage({ products, categories, banners }: { products: Product[]; categories: { id: string; label: string }[]; banners: any[] }) {
+export function HomePage({ products, categories, banners, hero }: { products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any }) {
+  const heroTitle = hero?.headline ? `${hero.headline} ${hero.headlineAccent || ""}` : (banners[0]?.title || "Welcome to Your Custom Store");
+  const heroSub = hero?.subtitle || banners[0]?.subtitle || "A flexible storefront layout that adapts to your brand and features your top products.";
+  const heroCtaLabel = hero?.shopNowLabel || "Shop now";
+  const heroCtaLink = hero?.shopNowLink || "/cart";
+
   return (
     <>
       <section className="custom-hero">
         <div className="custom-content">
-          <h1>{banners[0]?.title || "Welcome to Your Custom Store"}</h1>
-          <p>{banners[0]?.subtitle || "A flexible storefront layout that adapts to your brand and features your top products."}</p>
-          <a href="/cart">Shop now</a>
+          <h1>{heroTitle}</h1>
+          <p>{heroSub}</p>
+          <a href={heroCtaLink}>{heroCtaLabel}</a>
           {banners[0]?.imageUrl && <img src={banners[0].imageUrl} alt={banners[0]?.title || "Store hero image"} />}
         </div>
       </section>

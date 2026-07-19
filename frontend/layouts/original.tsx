@@ -55,16 +55,25 @@ function HeroParticle({ delay, left, size }: { delay: number; left: number; size
 
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const [activeIdx, setActiveIdx] = useState(0);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
 
   useEffect(() => {
-    if (featured.length <= 1) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefersReducedMotion(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  useEffect(() => {
+    if (featured.length <= 1 || prefersReducedMotion) return;
     const timer = setInterval(() => {
       setActiveIdx((i) => (i + 1) % featured.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, [featured.length]);
+  }, [featured.length, prefersReducedMotion]);
 
   const badgeText = hero?.badgeText || "Summer Tech Sale &mdash; Up to 30% Off";
   const badgeActive = hero?.badgeActive !== false;

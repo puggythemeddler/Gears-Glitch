@@ -959,6 +959,32 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [bannerInputs, setBannerInputs] = useState<{ title: string; subtitle: string }[]>([]);
+  const [heroForm, setHeroForm] = useState({
+    badgeActive: true,
+    badgeText: "Summer Tech Sale — Up to 30% Off",
+    badgeLink: "",
+    headline: "Power Your",
+    headlineAccent: "Next Build",
+    subtitle: "Discover premium gaming PCs, laptops, graphics cards, servers, and accessories at unbeatable prices. Kenya\u2019s trusted all-in-one tech platform.",
+    shopNowLabel: "Shop Now",
+    shopNowLink: "/pc",
+    browseLabel: "Browse Categories",
+    browseLink: "/#categories",
+    catChips: [
+      { label: "Gaming PCs", href: "/pc" },
+      { label: "Graphics Cards", href: "/graphics-cards" },
+      { label: "Laptops", href: "/laptops" },
+      { label: "Servers", href: "/servers" },
+      { label: "Repairs", href: "/repairs" },
+    ],
+    stats: [
+      { value: "1000+", label: "Products" },
+      { value: "500+", label: "Happy Customers" },
+      { value: "24/7", label: "Support" },
+    ],
+    highlights: ["Genuine Products", "Fast Delivery Across Kenya", "Secure Payments"],
+    trustText: "Trusted by 5,000+ customers across Kenya",
+  });
 
   async function load() {
     setLoading(true);
@@ -966,6 +992,9 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
       const d = await api<any>("/api/admin/storefront-layout");
       setCfg(d);
       setBannerInputs((d.banners || []).map((b: any) => ({ title: b.title || "", subtitle: b.subtitle || "" })));
+      if (d.hero) {
+        setHeroForm((prev) => ({ ...prev, ...d.hero }));
+      }
     } catch {}
     finally { setLoading(false); }
   }
@@ -984,6 +1013,13 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
   async function saveBanners() {
     setSaving(true);
     try { await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ banners: bannerInputs.filter((b) => b.title.trim()) }) }); await load(); }
+    catch {}
+    finally { setSaving(false); }
+  }
+
+  async function saveHero() {
+    setSaving(true);
+    try { await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ hero: heroForm }) }); await load(); }
     catch {}
     finally { setSaving(false); }
   }
@@ -1033,6 +1069,109 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
         <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
           <RippleButton size="small" variant="ghost" onClick={() => setBannerInputs([...bannerInputs, { title: "", subtitle: "" }])}>+ Add Banner</RippleButton>
           <RippleButton size="small" onClick={saveBanners} loading={saving}>Save Banners</RippleButton>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginBottom: "1rem" }}>
+        <h3>Hero Section</h3>
+        <p className="muted" style={{ fontSize: "0.85rem" }}>Control the hero banner, headline, and calls-to-action on your homepage.</p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem" }}>
+              <input type="checkbox" checked={heroForm.badgeActive} onChange={(e) => setHeroForm({ ...heroForm, badgeActive: e.target.checked })} style={{ width: 18, height: 18 }} />
+              Show announcement badge
+            </label>
+          </div>
+
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>Badge Text</label>
+            <input value={heroForm.badgeText} onChange={(e) => setHeroForm({ ...heroForm, badgeText: e.target.value })} placeholder="Summer Tech Sale — Up to 30% Off" disabled={!heroForm.badgeActive} />
+          </div>
+
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>Badge Link (optional)</label>
+            <input value={heroForm.badgeLink} onChange={(e) => setHeroForm({ ...heroForm, badgeLink: e.target.value })} placeholder="/deals" disabled={!heroForm.badgeActive} />
+          </div>
+
+          <div className="field">
+            <label>Headline (before accent)</label>
+            <input value={heroForm.headline} onChange={(e) => setHeroForm({ ...heroForm, headline: e.target.value })} />
+          </div>
+
+          <div className="field">
+            <label>Headline Accent</label>
+            <input value={heroForm.headlineAccent} onChange={(e) => setHeroForm({ ...heroForm, headlineAccent: e.target.value })} />
+          </div>
+
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>Subtitle</label>
+            <textarea rows={3} value={heroForm.subtitle} onChange={(e) => setHeroForm({ ...heroForm, subtitle: e.target.value })} style={{ resize: "vertical" }} />
+          </div>
+
+          <div className="field">
+            <label>Shop Now Label</label>
+            <input value={heroForm.shopNowLabel} onChange={(e) => setHeroForm({ ...heroForm, shopNowLabel: e.target.value })} />
+          </div>
+
+          <div className="field">
+            <label>Shop Now Link</label>
+            <input value={heroForm.shopNowLink} onChange={(e) => setHeroForm({ ...heroForm, shopNowLink: e.target.value })} />
+          </div>
+
+          <div className="field">
+            <label>Browse Categories Label</label>
+            <input value={heroForm.browseLabel} onChange={(e) => setHeroForm({ ...heroForm, browseLabel: e.target.value })} />
+          </div>
+
+          <div className="field">
+            <label>Browse Categories Link</label>
+            <input value={heroForm.browseLink} onChange={(e) => setHeroForm({ ...heroForm, browseLink: e.target.value })} />
+          </div>
+
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label>Trust Text</label>
+            <input value={heroForm.trustText} onChange={(e) => setHeroForm({ ...heroForm, trustText: e.target.value })} />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Highlights</label>
+            {heroForm.highlights.map((h, i) => (
+              <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
+                <input value={h} onChange={(e) => { const copy = [...heroForm.highlights]; copy[i] = e.target.value; setHeroForm({ ...heroForm, highlights: copy }); }} style={{ flex: 1 }} />
+                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, highlights: heroForm.highlights.filter((_, j) => j !== i) })}>&times;</button>
+              </div>
+            ))}
+            <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, highlights: [...heroForm.highlights, ""] })}>+ Add Highlight</RippleButton>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Category Chips</label>
+            {heroForm.catChips.map((c, i) => (
+              <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
+                <input value={c.label} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], label: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} placeholder="Label" style={{ flex: 1 }} />
+                <input value={c.href} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], href: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} placeholder="/path" style={{ flex: 1 }} />
+                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, catChips: heroForm.catChips.filter((_, j) => j !== i) })}>&times;</button>
+              </div>
+            ))}
+            <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, catChips: [...heroForm.catChips, { label: "", href: "" }] })}>+ Add Chip</RippleButton>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Stats</label>
+            {heroForm.stats.map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
+                <input value={s.value} onChange={(e) => { const copy = [...heroForm.stats]; copy[i] = { ...copy[i], value: e.target.value }; setHeroForm({ ...heroForm, stats: copy }); }} placeholder="Value" style={{ width: 100 }} />
+                <input value={s.label} onChange={(e) => { const copy = [...heroForm.stats]; copy[i] = { ...copy[i], label: e.target.value }; setHeroForm({ ...heroForm, stats: copy }); }} placeholder="Label" style={{ flex: 1 }} />
+                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, stats: heroForm.stats.filter((_, j) => j !== i) })}>&times;</button>
+              </div>
+            ))}
+            <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, stats: [...heroForm.stats, { value: "", label: "" }] })}>+ Add Stat</RippleButton>
+          </div>
+        </div>
+
+        <div style={{ marginTop: "1rem" }}>
+          <RippleButton size="small" onClick={saveHero} loading={saving}>Save Hero Section</RippleButton>
         </div>
       </div>
     </>

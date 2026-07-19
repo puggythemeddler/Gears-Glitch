@@ -100,19 +100,24 @@ export function Footer({ settings }: { settings: any }) {
   );
 }
 
-export function HomePage({ products, categories, banners }: {
-  products: Product[]; categories: { id: string; label: string }[]; banners: any[];
+export function HomePage({ products, categories, banners, hero }: {
+  products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any;
 }) {
   const bestsellers = [...products].sort((a, b) => (b as any).viewCount || 0 - (a as any).viewCount || 0).slice(0, 4);
   const deals = products.filter((p) => p.inStock && (p as any).oldPrice).slice(0, 4);
+
+  const heroTitle = hero?.headline ? `${hero.headline} ${hero.headlineAccent || ""}` : "Premium Tech Deals";
+  const heroSub = hero?.subtitle || "Shop the latest computers, laptops, and accessories at unbeatable prices.";
+  const heroCtaLabel = hero?.shopNowLabel || "Shop Now";
+  const heroCtaLink = hero?.shopNowLink || (categories[0] ? `/${categories[0].id}` : "/products");
 
   return (
     <div className="amz-layout">
       <div className="amz-hero">
         <div className="amz-hero-main">
-          <h2>Premium Tech Deals</h2>
-          <p>Shop the latest computers, laptops, and accessories at unbeatable prices.</p>
-          <Link href={categories[0] ? `/${categories[0].id}` : "/products"} className="btn" style={{ alignSelf: "flex-start" }}>Shop Now</Link>
+          <h2>{heroTitle}</h2>
+          <p>{heroSub}</p>
+          <Link href={heroCtaLink} className="btn" style={{ alignSelf: "flex-start" }}>{heroCtaLabel}</Link>
         </div>
         <div className="amz-hero-side">
           {banners.slice(0, 2).map((b, i) => (

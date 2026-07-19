@@ -102,20 +102,34 @@ export function Footer({ settings }: { settings: any }) {
   );
 }
 
-export function HomePage({ products, categories, banners }: {
-  products: Product[]; categories: { id: string; label: string }[]; banners: any[];
+export function HomePage({ products, categories, banners, hero }: {
+  products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any;
 }) {
   const [slideIdx, setSlideIdx] = useState(0);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const heroTitle = hero?.headline ? `${hero.headline} ${hero.headlineAccent || ""}` : "";
+  const heroSub = hero?.subtitle || "";
+  const heroCtaLabel = hero?.shopNowLabel || "Shop Now";
+  const heroCtaLink = hero?.shopNowLink || (categories[0] ? `/${categories[0].id}` : "/");
   const slides = banners.length > 0 ? banners : [
-    { title: "Flash Sale Today", subtitle: "Up to 50% off on select laptops" },
+    { title: heroTitle || "Flash Sale Today", subtitle: heroSub || "Up to 50% off on select laptops" },
     { title: "New Arrivals", subtitle: "Latest tech just landed" },
     { title: "Free Delivery", subtitle: "On orders over KES 50,000" },
   ];
 
   useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  useEffect(() => {
+    if (reducedMotion) return;
     const id = setInterval(() => setSlideIdx((i) => (i + 1) % slides.length), 5000);
     return () => clearInterval(id);
-  }, [slides.length]);
+  }, [slides.length, reducedMotion]);
 
   const deals = products.filter((p) => p.inStock).slice(0, 8);
 
@@ -125,7 +139,7 @@ export function HomePage({ products, categories, banners }: {
         <div className="jum-slide">
           <h2>{slides[slideIdx].title}</h2>
           <p>{slides[slideIdx].subtitle}</p>
-          <Link href={categories[0] ? `/${categories[0].id}` : "/"} className="btn" style={{ alignSelf: "flex-start" }}>Shop Now</Link>
+          <Link href={heroCtaLink} className="btn" style={{ alignSelf: "flex-start" }}>{heroCtaLabel}</Link>
         </div>
         <div className="jum-dots">
           {slides.map((_, i) => (
