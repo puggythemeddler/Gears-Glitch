@@ -997,6 +997,7 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
   const [cfg, setCfg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [catList, setCatList] = useState<{ id: string; label: string }[]>([]);
   const [bannerInputs, setBannerInputs] = useState<{ title: string; subtitle: string }[]>([]);
   const [heroForm, setHeroForm] = useState({
     badgeActive: true,
@@ -1034,6 +1035,7 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
       if (d.hero) {
         setHeroForm((prev) => ({ ...prev, ...d.hero }));
       }
+      try { const cd = await api<any>("/api/categories"); setCatList(cd.categories || []); } catch {}
     } catch {}
     finally { setLoading(false); }
   }
@@ -1130,7 +1132,13 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>Badge Link (optional)</label>
-            <input value={heroForm.badgeLink} onChange={(e) => setHeroForm({ ...heroForm, badgeLink: e.target.value })} placeholder="/deals" disabled={!heroForm.badgeActive} />
+            <select value={heroForm.badgeLink} onChange={(e) => setHeroForm({ ...heroForm, badgeLink: e.target.value })} disabled={!heroForm.badgeActive}>
+              <option value="">— no link —</option>
+              <option value="/#categories">Homepage (#categories)</option>
+              <option value="/deals">Deals</option>
+              {catList.map((c) => <option key={c.id} value={"/" + c.id}>{c.label}</option>)}
+            </select>
+            <input value={heroForm.badgeLink} onChange={(e) => setHeroForm({ ...heroForm, badgeLink: e.target.value })} placeholder="or type custom path" style={{ marginTop: "0.25rem" }} disabled={!heroForm.badgeActive} />
           </div>
 
           <div className="field">
@@ -1155,7 +1163,11 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
 
           <div className="field">
             <label>Shop Now Link</label>
-            <input value={heroForm.shopNowLink} onChange={(e) => setHeroForm({ ...heroForm, shopNowLink: e.target.value })} />
+            <select value={heroForm.shopNowLink} onChange={(e) => setHeroForm({ ...heroForm, shopNowLink: e.target.value })}>
+              <option value="">— none —</option>
+              {catList.map((c) => <option key={c.id} value={"/" + c.id}>{c.label}</option>)}
+            </select>
+            <input value={heroForm.shopNowLink} onChange={(e) => setHeroForm({ ...heroForm, shopNowLink: e.target.value })} placeholder="or type custom path" style={{ marginTop: "0.25rem" }} />
           </div>
 
           <div className="field">
@@ -1165,7 +1177,12 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
 
           <div className="field">
             <label>Browse Categories Link</label>
-            <input value={heroForm.browseLink} onChange={(e) => setHeroForm({ ...heroForm, browseLink: e.target.value })} />
+            <select value={heroForm.browseLink} onChange={(e) => setHeroForm({ ...heroForm, browseLink: e.target.value })}>
+              <option value="/#categories">Homepage (#categories)</option>
+              <option value="/categories">All Categories Page</option>
+              {catList.map((c) => <option key={c.id} value={"/" + c.id}>{c.label}</option>)}
+            </select>
+            <input value={heroForm.browseLink} onChange={(e) => setHeroForm({ ...heroForm, browseLink: e.target.value })} placeholder="or type custom path" style={{ marginTop: "0.25rem" }} />
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>
@@ -1189,7 +1206,10 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
             {heroForm.catChips.map((c, i) => (
               <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
                 <input value={c.label} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], label: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} placeholder="Label" style={{ flex: 1 }} />
-                <input value={c.href} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], href: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} placeholder="/path" style={{ flex: 1 }} />
+                <select value={c.href} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], href: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} style={{ flex: 1 }}>
+                  <option value="">— pick category —</option>
+                  {catList.map((cat) => <option key={cat.id} value={"/" + cat.id}>{cat.label}</option>)}
+                </select>
                 <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, catChips: heroForm.catChips.filter((_, j) => j !== i) })}>&times;</button>
               </div>
             ))}
