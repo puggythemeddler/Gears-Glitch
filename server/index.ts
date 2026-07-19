@@ -496,7 +496,7 @@ app.get("/api/public-settings", async (_req: Request, res: Response) => {
 app.get("/api/storefront-stats", async (_req: Request, res: Response) => {
   try {
     const productCount = await queryOne("SELECT COUNT(*) AS count FROM products") as any;
-    const customerCount = await queryOne("SELECT COUNT(*) AS count FROM clients") as any;
+    const customerCount = await queryOne("SELECT COUNT(*) AS count FROM customers") as any;
     const orderCount = await queryOne("SELECT COUNT(*) AS count FROM orders WHERE status != 'cancelled'") as any;
     const categories = await queryAll("SELECT id, label FROM categories ORDER BY label") as any[];
     const reviewCount = await queryOne("SELECT COUNT(*) AS count FROM product_reviews") as any;
@@ -601,7 +601,7 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, async (req: Request
     if (typeof heroData.enabled !== "boolean") heroData.enabled = true;
     await setStoreSetting("hero_config", JSON.stringify(heroData));
   }
-  const currentLayout = await getStoreSetting("store_layout") || "amazon";
+  const currentLayout = await getStoreSetting("store_layout") || "original";
   let currentBanners: any[] = [];
   try { currentBanners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
   let currentFeatures: any[] = [];
@@ -3480,13 +3480,19 @@ app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, async (req
 });
 
 app.delete("/api/purchases/:id", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-  const po = await getPurchaseOrder(id);
-  if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
-  if (po.status === "received") { res.status(400).json({ error: "Cannot delete a received purchase order." }); return; }
-  await query("DELETE FROM purchase_order_items WHERE purchase_order_id = $1", [id]);
-  await query("DELETE FROM purchase_orders WHERE id = $1", [id]);
-  res.json({ ok: true });
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
+    const po = await getPurchaseOrder(id);
+    if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
+    if (po.status === "received" || po.status === "ordered") { res.status(400).json({ error: "Cannot delete a received or ordered purchase order." }); return; }
+    await query("DELETE FROM purchase_order_items WHERE purchase_order_id = $1", [id]);
+    await query("DELETE FROM purchase_orders WHERE id = $1", [id]);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[purchase delete]", err?.message || err);
+    res.status(500).json({ error: "Failed to delete purchase order." });
+  }
 });
 
 // ============ REPORTS ============

@@ -3908,6 +3908,7 @@ function AdminPurchases() {
         <RippleButton size="small" onClick={() => { setCreating(true); loadFormDeps(); }}>+ New PO</RippleButton>
       </div>
       {error && <ErrorMsg msg={error} />}
+      {msg && <ErrorMsg msg={msg} />}
       <div className="table-wrap">
         <table className="data-table">
           <thead><tr><th>#</th><th>Supplier</th><th>Items</th><th>Status</th><th>Date</th><th></th></tr></thead>
