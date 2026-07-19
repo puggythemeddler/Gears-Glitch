@@ -50,26 +50,26 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
     ],
   },
   {
-    label: "Administration",
+    label: "Team",
     items: [
       { key: "users", label: "Users" },
       { key: "roles", label: "Roles" },
-    ],
-  },
-  {
-    label: "Clients",
-    items: [
       { key: "clients", label: "Clients" },
       { key: "branches", label: "Branches" },
     ],
   },
   {
-    label: "Operations",
+    label: "Finance",
     items: [
-      { key: "plans", label: "Plans" },
-      { key: "providers", label: "Providers" },
       { key: "invoices", label: "Invoices" },
       { key: "credit-notes", label: "Credit Notes" },
+      { key: "plans", label: "Plans" },
+      { key: "providers", label: "Providers" },
+    ],
+  },
+  {
+    label: "Activity",
+    items: [
       { key: "reports", label: "Reports" },
       { key: "messages", label: "Messages" },
       { key: "reviews", label: "Reviews" },
@@ -109,7 +109,7 @@ export default function AdminPage() {
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const gisLoadedRef = useRef(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Administration", "Settings"]);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Team", "Settings"]);
   const messagingEnabled = useFeature("Messaging");
   const creditNotesEnabled = useFeature("Credit notes");
   const quotationsEnabled = useFeature("Quotations");

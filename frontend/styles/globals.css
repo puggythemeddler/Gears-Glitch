@@ -2168,11 +2168,10 @@ a.order-item:hover {
 
   .dash-nav {
     position: static;
-    flex-direction: row;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: var(--space-1);
-    max-height: none;
-    overflow-y: visible;
+    max-height: 50vh;
+    overflow-y: auto;
     padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--border);
     margin-bottom: var(--space-4);

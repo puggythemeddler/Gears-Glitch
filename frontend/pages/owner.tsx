@@ -29,15 +29,26 @@ type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers"
 
 const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string }[] }[] = [
   {
-    label: "Operations",
+    label: "Sales",
     items: [
       { key: "orders", label: "Orders" },
       { key: "products", label: "Products" },
-      { key: "providers", label: "Providers" },
       { key: "customers", label: "Customers" },
       { key: "quotes", label: "Quotes" },
+    ],
+  },
+  {
+    label: "Service",
+    items: [
+      { key: "providers", label: "Providers" },
+      { key: "tech-repairs", label: "Tech Repairs" },
       { key: "messages", label: "Messages" },
       { key: "reports", label: "Reports" },
+    ],
+  },
+  {
+    label: "Finance",
+    items: [
       { key: "invoices", label: "Invoices" },
       { key: "credit-notes", label: "Credit Notes" },
     ],
@@ -47,7 +58,6 @@ const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string }[] }[
     items: [
       { key: "stock-control", label: "Stock Control" },
       { key: "stock-take", label: "Stock Take" },
-      { key: "tech-repairs", label: "Tech Repairs" },
       { key: "branches", label: "Branches" },
     ],
   },
@@ -87,7 +97,7 @@ export default function OwnerPage() {
     }
   }, []);
 
-  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Operations", "Settings"]);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Settings"]);
 
   const isStorefrontAllowed = staffRole === "admin";
 
