@@ -158,7 +158,7 @@ async function registerCustomer({ name, email, password }: { name: string; email
     return { ok: false, error: "An account with this email already exists." };
   }
 
-  const customer = await createCustomer(trimmedName, trimmedEmail, password) as CustomerUser;
+  const customer = await createCustomer({ name: trimmedName, email: trimmedEmail, password }) as CustomerUser;
   const token = signToken({
     sub: customer.id,
     email: customer.email,
@@ -247,7 +247,7 @@ async function googleLogin(googleToken: string): Promise<AuthResult> {
     if (!customer) {
       const { createCustomer } = require("./db");
       const randomPass = crypto.randomBytes(16).toString("hex");
-      customer = await createCustomer(name, email, randomPass);
+      customer = await createCustomer({ name, email, password: randomPass });
       if (!customer) {
         return { ok: false, error: "Failed to create account." };
       }

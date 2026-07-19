@@ -119,14 +119,18 @@ export async function handleWhatsAppWebhook(body: any): Promise<void> {
 
         if (customer) {
           const existingConvo = await getWhatsAppConversationByPhone(from);
-          const providerId = existingConvo?.entity_type === "provider" ? existingConvo.entity_id : 1;
           await upsertWhatsAppConversation(from, "customer", customer.id, customer.name || contactName, "inbound");
-          await sendMessage(customer.id, providerId, "WhatsApp Message", content, "customer");
+          if (existingConvo) {
+            const providerId = existingConvo.entity_type === "provider" ? existingConvo.entity_id : 0;
+            if (providerId) await sendMessage(customer.id, providerId, "WhatsApp Message", content, "customer");
+          }
         } else if (provider) {
           const existingConvo = await getWhatsAppConversationByPhone(from);
-          const customerId = existingConvo?.entity_type === "customer" ? existingConvo.entity_id : 1;
           await upsertWhatsAppConversation(from, "provider", provider.id, provider.company_name || provider.contact_name || contactName, "inbound");
-          await sendMessage(customerId, provider.id, "WhatsApp Message", content, "provider");
+          if (existingConvo) {
+            const customerId = existingConvo.entity_type === "customer" ? existingConvo.entity_id : 0;
+            if (customerId) await sendMessage(customerId, provider.id, "WhatsApp Message", content, "provider");
+          }
         } else {
           await upsertWhatsAppConversation(from, "customer", 0, contactName, "inbound");
         }
@@ -145,9 +149,8 @@ export async function handleWhatsAppWebhook(body: any): Promise<void> {
   }
 }
 
-export function verifyWhatsAppWebhook(mode: string, token: string, challenge: string): { ok: boolean; response?: string } {
-  const s = getSettings as any;
-  return { ok: false };
+export async function verifyWhatsAppWebhook(mode: string, token: string, challenge: string): Promise<{ ok: boolean; response?: string }> {
+  return verifyWhatsAppChallenge(mode, token, challenge);
 }
 
 export async function verifyWhatsAppChallenge(mode: string, verifyToken: string, challenge: string): Promise<{ ok: boolean; response?: string }> {

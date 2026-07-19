@@ -22,9 +22,11 @@ let config: MpesaConfig = {
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
-const BASE_URL = config.env === "production"
-  ? "https://api.safaricom.co.ke"
-  : "https://sandbox.safaricom.co.ke";
+function getBaseUrl(): string {
+  return config.env === "production"
+    ? "https://api.safaricom.co.ke"
+    : "https://sandbox.safaricom.co.ke";
+}
 
 export function updateMpesaConfig(updates: Partial<MpesaConfig>): void {
   config = { ...config, ...updates };
@@ -44,7 +46,7 @@ async function getAccessToken(): Promise<string> {
     return cachedToken.token;
   }
   const auth = Buffer.from(`${config.consumerKey}:${config.consumerSecret}`).toString("base64");
-  const res = await fetch(`${BASE_URL}/oauth/v1/generate?grant_type=client_credentials`, {
+  const res = await fetch(`${getBaseUrl()}/oauth/v1/generate?grant_type=client_credentials`, {
     headers: { Authorization: `Basic ${auth}` },
   });
   if (!res.ok) throw new Error(`M-Pesa auth failed (${res.status})`);
@@ -116,7 +118,7 @@ export async function stkPush(phone: string, amount: number, accountRef: string,
     TransactionDesc: "Laptop Store Purchase",
   };
 
-  const res = await fetch(`${BASE_URL}/mpesa/stkpush/v1/processrequest`, {
+  const res = await fetch(`${getBaseUrl()}/mpesa/stkpush/v1/processrequest`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -142,7 +144,7 @@ export async function queryStatus(checkoutRequestId: string): Promise<any> {
     CheckoutRequestID: checkoutRequestId,
   };
 
-  const res = await fetch(`${BASE_URL}/mpesa/stkpushquery/v1/query`, {
+  const res = await fetch(`${getBaseUrl()}/mpesa/stkpushquery/v1/query`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),

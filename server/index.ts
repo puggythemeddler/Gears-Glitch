@@ -1504,7 +1504,10 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, async (req: Reque
 
 app.patch("/api/admin/order-items/:id/warranty", ownerAuthMiddleware, async (req: Request, res: Response) => {
   const { hasWarranty, warrantyDuration } = req.body || {};
-  await updateOrderItemWarranty(0, Number(req.params.id), Boolean(hasWarranty), Number(warrantyDuration) || 0);
+  const itemId = Number(req.params.id);
+  const row = await queryOne("SELECT order_id FROM order_items WHERE id = $1", [itemId]) as any;
+  if (!row) { res.status(404).json({ error: "Order item not found." }); return; }
+  await updateOrderItemWarranty(row.order_id, itemId, Boolean(hasWarranty), Number(warrantyDuration) || 0);
   res.json({ ok: true });
 });
 
@@ -4071,8 +4074,10 @@ app.get("/api/webhooks/whatsapp", async (req: Request, res: Response) => {
 
 app.post("/api/webhooks/whatsapp", async (req: Request, res: Response) => {
   try {
-    handleWhatsAppWebhook(req.body).catch(() => {});
-  } catch {}
+    await handleWhatsAppWebhook(req.body);
+  } catch (err: any) {
+    console.error("[WhatsApp Webhook]", err?.message || err);
+  }
   res.sendStatus(200);
 });
 

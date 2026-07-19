@@ -89,7 +89,7 @@ export function quoteEmail(customerName: string, quoteNumber: string, total: str
 <p style="margin:0;"><strong>Quote:</strong> ${esc(quoteNumber)}</p>
 <p style="margin:8px 0 0;"><strong>Total:</strong> ${esc(currency)} ${esc(total)}</p>
 ${notes ? `<p style="margin:8px 0 0;"><strong>Notes:</strong> ${esc(notes)}</p>` : ""}
-</p></div>
+</div></div>
 <p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Quote</a></p>
 `);
   return { subject: title, html };
