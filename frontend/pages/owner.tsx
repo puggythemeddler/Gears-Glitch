@@ -978,9 +978,9 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
       { label: "Repairs", href: "/repairs" },
     ],
     stats: [
-      { value: "1000+", label: "Products" },
-      { value: "500+", label: "Happy Customers" },
-      { value: "24/7", label: "Support" },
+      { value: "", label: "Products" },
+      { value: "", label: "Customers" },
+      { value: "", label: "Orders" },
     ],
     highlights: ["Genuine Products", "Fast Delivery Across Kenya", "Secure Payments"],
     trustText: "Trusted by 5,000+ customers across Kenya",
@@ -1154,7 +1154,12 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
                 <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, catChips: heroForm.catChips.filter((_, j) => j !== i) })}>&times;</button>
               </div>
             ))}
-            <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, catChips: [...heroForm.catChips, { label: "", href: "" }] })}>+ Add Chip</RippleButton>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, catChips: [...heroForm.catChips, { label: "", href: "" }] })}>+ Add Chip</RippleButton>
+              <RippleButton size="small" variant="ghost" onClick={async () => {
+                try { const d = await api<any>("/api/categories"); const cats = d.categories || []; setHeroForm({ ...heroForm, catChips: cats.map((c: any) => ({ label: c.label, href: "/" + c.id })) }); } catch { alert("Failed to load categories"); }
+              }}>Sync from Categories</RippleButton>
+            </div>
           </div>
 
           <div style={{ gridColumn: "1 / -1" }}>
@@ -1166,7 +1171,12 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
                 <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, stats: heroForm.stats.filter((_, j) => j !== i) })}>&times;</button>
               </div>
             ))}
-            <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, stats: [...heroForm.stats, { value: "", label: "" }] })}>+ Add Stat</RippleButton>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, stats: [...heroForm.stats, { value: "", label: "" }] })}>+ Add Stat</RippleButton>
+              <RippleButton size="small" variant="ghost" onClick={async () => {
+                try { const d = await api<any>("/api/storefront-stats"); setHeroForm({ ...heroForm, stats: [{ value: String(d.totalProducts) + "+", label: "Products" }, { value: String(d.totalCustomers) + "+", label: "Customers" }, { value: String(d.totalOrders) + "+", label: "Orders" }] }); } catch { alert("Failed to load stats"); }
+              }}>Populate from Live Data</RippleButton>
+            </div>
           </div>
         </div>
 

@@ -491,6 +491,27 @@ app.get("/api/public-settings", async (_req: Request, res: Response) => {
   });
 });
 
+// ============ STOREFRONT STATS (public) ============
+
+app.get("/api/storefront-stats", async (_req: Request, res: Response) => {
+  try {
+    const productCount = await queryOne("SELECT COUNT(*) AS count FROM products") as any;
+    const customerCount = await queryOne("SELECT COUNT(*) AS count FROM clients") as any;
+    const orderCount = await queryOne("SELECT COUNT(*) AS count FROM orders WHERE status != 'cancelled'") as any;
+    const categories = await queryAll("SELECT id, label FROM categories ORDER BY label") as any[];
+    const reviewCount = await queryOne("SELECT COUNT(*) AS count FROM product_reviews") as any;
+    res.json({
+      totalProducts: Number(productCount?.count) || 0,
+      totalCustomers: Number(customerCount?.count) || 0,
+      totalOrders: Number(orderCount?.count) || 0,
+      totalReviews: Number(reviewCount?.count) || 0,
+      categories: (categories || []).map((c: any) => ({ id: c.id, label: c.label })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to load storefront stats" });
+  }
+});
+
 // ============ EXCHANGE RATES ============
 
 let ratesCache: { rates: Record<string, number>; timestamp: number } | null = null;

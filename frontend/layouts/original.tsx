@@ -56,6 +56,7 @@ function HeroParticle({ delay, left, size }: { delay: number; left: number; size
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [liveStats, setLiveStats] = useState<any>(null);
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
 
@@ -65,6 +66,10 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/storefront-stats").then(r => r.json()).then(setLiveStats).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -90,21 +95,29 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
   const catChips = hero?.catChips?.length > 0
     ? hero.catChips
-    : [
-        { label: "Gaming PCs", href: "/pc" },
-        { label: "Graphics Cards", href: "/graphics-cards" },
-        { label: "Laptops", href: "/laptops" },
-        { label: "Servers", href: "/servers" },
-        { label: "Repairs", href: "/repairs" },
-      ];
+    : liveStats?.categories?.length > 0
+      ? liveStats.categories.slice(0, 6).map((c: any) => ({ label: c.label, href: "/" + c.id }))
+      : [
+          { label: "Gaming PCs", href: "/pc" },
+          { label: "Graphics Cards", href: "/graphics-cards" },
+          { label: "Laptops", href: "/laptops" },
+          { label: "Servers", href: "/servers" },
+          { label: "Repairs", href: "/repairs" },
+        ];
 
   const stats = hero?.stats?.length > 0
     ? hero.stats
-    : [
-        { value: "1000+", label: "Products" },
-        { value: "500+", label: "Happy Customers" },
-        { value: "24/7", label: "Support" },
-      ];
+    : liveStats
+      ? [
+          { value: String(liveStats.totalProducts) + "+", label: "Products" },
+          { value: String(liveStats.totalCustomers) + "+", label: "Customers" },
+          { value: String(liveStats.totalOrders) + "+", label: "Orders" },
+        ]
+      : [
+          { value: "1000+", label: "Products" },
+          { value: "500+", label: "Happy Customers" },
+          { value: "24/7", label: "Support" },
+        ];
 
   const highlights = hero?.highlights?.length > 0
     ? hero.highlights
