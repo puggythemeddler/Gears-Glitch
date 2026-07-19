@@ -591,6 +591,9 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, async (req: Request
     if (!valid.includes(layout)) { res.status(400).json({ error: "Invalid layout. Valid: " + valid.join(", ") }); return; }
     await setStoreSetting("store_layout", layout);
   }
+  if (banners !== undefined && !isArr(banners)) { res.status(400).json({ error: "banners must be an array." }); return; }
+  if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "features must be an array." }); return; }
+  if (hero !== undefined && (typeof hero !== "object" || hero === null)) { res.status(400).json({ error: "hero must be an object." }); return; }
   if (banners !== undefined) await setStoreSetting("store_banners", JSON.stringify(banners));
   if (features !== undefined) await setStoreSetting("store_features", JSON.stringify(features));
   if (hero !== undefined) {
@@ -618,6 +621,10 @@ app.get("/api/admin/about-us", adminAuthMiddleware, async (_req: Request, res: R
 
 app.put("/api/admin/about-us", adminAuthMiddleware, async (req: Request, res: Response) => {
   const { title, content, mission, vision } = req.body || {};
+  if (title !== undefined && !okLen(title, 0, 500)) { res.status(400).json({ error: "Title must be ≤500 characters." }); return; }
+  if (content !== undefined && !okLen(content, 0, 50000)) { res.status(400).json({ error: "Content must be ≤50000 characters." }); return; }
+  if (mission !== undefined && !okLen(mission, 0, 5000)) { res.status(400).json({ error: "Mission must be ≤5000 characters." }); return; }
+  if (vision !== undefined && !okLen(vision, 0, 5000)) { res.status(400).json({ error: "Vision must be ≤5000 characters." }); return; }
   const data = { title: title || "", content: content || "", mission: mission || "", vision: vision || "" };
   await setStoreSetting("about_us", JSON.stringify(data));
   res.json(data);
@@ -629,6 +636,9 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
     res.status(400).json({ error: "Store name is required." });
     return;
   }
+  if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
+  if (taxRate !== undefined && !isNonNegNum(Number(taxRate))) { res.status(400).json({ error: "Tax rate must be a non-negative number." }); return; }
+  if (currency !== undefined && !isStr(currency, 10)) { res.status(400).json({ error: "Currency must be a valid string." }); return; }
   const settings = await updateSettings({ storeName, phone, email, currency, taxRate, paymentMethods: req.body.paymentMethods, cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret, cloudinaryFolder }) as any;
   if (googleClientId !== undefined) {
     await setStoreSetting("google_client_id", String(googleClientId).trim());
@@ -700,7 +710,7 @@ app.get("/api/admin/email-logs", adminAuthMiddleware, async (req: Request, res: 
 
 app.post("/api/admin/email/test", adminAuthMiddleware, async (req: Request, res: Response) => {
   const { to } = req.body || {};
-  if (!to) { res.status(400).json({ error: "Email address required." }); return; }
+  if (!to || !isEmail(to)) { res.status(400).json({ error: "Valid email address required." }); return; }
   const settings = await getSettings();
   const ok = await sendEmail(to, "Test email from Gear&Glitch", `<!DOCTYPE html><html><body><p>This is a test email from <strong>${settings.storeName || "Gear&Glitch"}</strong>.</p><p>If you received this, email notifications are working correctly.</p></body></html>`, "test");
   res.json({ ok, message: ok ? "Test email sent." : "Email failed. Check SMTP configuration." });
@@ -724,7 +734,10 @@ app.post("/api/provider/register", async (req: Request, res: Response) => {
   if (!companyName || !contactName || !email || !password) {
     res.status(400).json({ error: "Company name, contact name, email, and password are required." }); return;
   }
-  if (password.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters." }); return; }
+  if (!isStr(companyName) || !isStr(contactName)) { res.status(400).json({ error: "Company name and contact name must be non-empty strings." }); return; }
+  if (!isEmail(email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
+  if (!okLen(password, 8, 128)) { res.status(400).json({ error: "Password must be 8-128 characters." }); return; }
+  if (phone !== undefined && phone !== "" && !isStr(phone, 50)) { res.status(400).json({ error: "Phone must be a non-empty string." }); return; }
   if (await findProviderByEmail(email.toLowerCase())) { res.status(409).json({ error: "A provider with this email already exists." }); return; }
   const provider = await createProvider({ companyName, contactName, email: email.toLowerCase(), password, phone: phone || "" });
   if (!provider) { res.status(500).json({ error: "Failed to create provider account." }); return; }
@@ -736,6 +749,7 @@ app.post("/api/provider/register", async (req: Request, res: Response) => {
 app.post("/api/provider/login", async (req: Request, res: Response) => {
   const { email, password } = req.body || {};
   if (!email || !password) { res.status(400).json({ error: "Email and password are required." }); return; }
+  if (!isEmail(email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
   const result = await loginProvider(email, password);
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
   res.json({ token: result.token, name: result.name, email: result.email });
@@ -750,6 +764,9 @@ app.get("/api/provider/me", providerAuthMiddleware, async (req: Request, res: Re
 app.put("/api/provider/me", providerAuthMiddleware, async (req: Request, res: Response) => {
   const providerId = (req as any).provider.sub;
   const { companyName, contactName, phone } = req.body || {};
+  if (companyName !== undefined && !isStr(companyName)) { res.status(400).json({ error: "Company name must be a non-empty string." }); return; }
+  if (contactName !== undefined && !isStr(contactName)) { res.status(400).json({ error: "Contact name must be a non-empty string." }); return; }
+  if (phone !== undefined && phone !== "" && !isStr(phone, 50)) { res.status(400).json({ error: "Phone must be a non-empty string." }); return; }
   await updateProvider(providerId, { companyName, contactName, phone });
   res.json({ ok: true, provider: await findProviderById(providerId) });
 });
@@ -796,6 +813,13 @@ app.post("/api/admin/plans", adminAuthMiddleware, async (req: Request, res: Resp
   try {
     const { id, name, description, price, priceAnnual, tierLevel, maxProducts, features } = req.body || {};
     if (!id || !name) { res.status(400).json({ error: "Plan ID and name are required." }); return; }
+    if (!isStr(id) || !isStr(name)) { res.status(400).json({ error: "Plan ID and name must be non-empty strings." }); return; }
+    if (description !== undefined && !isStr(description, 2000)) { res.status(400).json({ error: "Description must be a valid string." }); return; }
+    if (price !== undefined && !isNonNegNum(Number(price))) { res.status(400).json({ error: "Price must be a non-negative number." }); return; }
+    if (priceAnnual !== undefined && !isNonNegNum(Number(priceAnnual))) { res.status(400).json({ error: "Annual price must be a non-negative number." }); return; }
+    if (tierLevel !== undefined && !isInt(Number(tierLevel))) { res.status(400).json({ error: "Tier level must be an integer." }); return; }
+    if (maxProducts !== undefined && !isInt(Number(maxProducts))) { res.status(400).json({ error: "Max products must be an integer." }); return; }
+    if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "Features must be an array." }); return; }
     if (await getSubscriptionPlan(id)) { res.status(409).json({ error: "A plan with this ID already exists." }); return; }
     const plan = await createSubscriptionPlan({ id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches: 1, features, isActive: true });
     if (!plan) { res.status(500).json({ error: "Failed to create plan." }); return; }
@@ -809,7 +833,12 @@ app.post("/api/admin/plans", adminAuthMiddleware, async (req: Request, res: Resp
 
 app.put("/api/admin/plans/:id", adminAuthMiddleware, async (req: Request, res: Response) => {
   try {
-    const plan = await updateSubscriptionPlan(String(req.params.id), req.body || {});
+    const updates = req.body || {};
+    if (updates.name !== undefined && !isStr(updates.name)) { res.status(400).json({ error: "Name must be a non-empty string." }); return; }
+    if (updates.price !== undefined && !isNonNegNum(Number(updates.price))) { res.status(400).json({ error: "Price must be a non-negative number." }); return; }
+    if (updates.priceAnnual !== undefined && !isNonNegNum(Number(updates.priceAnnual))) { res.status(400).json({ error: "Annual price must be a non-negative number." }); return; }
+    if (updates.features !== undefined && !isArr(updates.features)) { res.status(400).json({ error: "Features must be an array." }); return; }
+    const plan = await updateSubscriptionPlan(String(req.params.id), updates);
     if (!plan) { res.status(404).json({ error: "Plan not found." }); return; }
     try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "plan", String(req.params.id), { changes: Object.keys(req.body || {}) }, (req as any).user.role); } catch {}
     res.json({ plan });
@@ -860,6 +889,10 @@ app.put("/api/admin/branches/:id", ownerAuthMiddleware, async (req: Request, res
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid branch ID." }); return; }
   const { name, address, phone, email, managerId, isActive } = req.body || {};
+  if (name !== undefined && !isStr(name)) { res.status(400).json({ error: "Branch name must be a non-empty string." }); return; }
+  if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
+  if (address !== undefined && !isStr(address, 500)) { res.status(400).json({ error: "Address must be a valid string." }); return; }
+  if (phone !== undefined && !isStr(phone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
   const branch = await updateBranch(id, { name, address, phone, email, managerId, isActive });
   if (!branch) { res.status(404).json({ error: "Branch not found." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "branch", String(id), { name }, (req as any).user.role);
@@ -902,6 +935,10 @@ app.put("/api/admin/clients/:id", adminAuthMiddleware, async (req: Request, res:
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid client ID." }); return; }
   const { name, email, phone, address, isActive, settings } = req.body || {};
+  if (name !== undefined && !isStr(name)) { res.status(400).json({ error: "Client name must be a non-empty string." }); return; }
+  if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
+  if (phone !== undefined && !isStr(phone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
+  if (address !== undefined && !isStr(address, 500)) { res.status(400).json({ error: "Address must be a valid string." }); return; }
   const client = await updateClient(id, { name, email, phone, address, isActive, settings });
   if (!client) { res.status(404).json({ error: "Client not found." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "client", String(id), { name }, (req as any).user.role);
@@ -948,6 +985,8 @@ app.put("/api/admin/clients/:id/branches/:branchId", adminAuthMiddleware, async 
   const branchId = parseInt(String(req.params.branchId), 10);
   if (isNaN(clientId) || isNaN(branchId)) { res.status(400).json({ error: "Invalid ID." }); return; }
   const { name, address, phone, email, managerId, isActive } = req.body || {};
+  if (name !== undefined && !isStr(name)) { res.status(400).json({ error: "Branch name must be a non-empty string." }); return; }
+  if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
   try {
     const branch = await updateClientBranch(clientId, branchId, { name, address, phone, email });
     if (!branch) { res.status(404).json({ error: "Branch not found." }); return; }
@@ -1318,6 +1357,11 @@ app.post("/api/orders", customerAuthMiddleware, async (req: Request, res: Respon
     if (!shippingName || !shippingAddress || !shippingCounty) {
       res.status(400).json({ error: "Shipping name, address, and county are required." }); return;
     }
+    if (!isStr(shippingName, 200)) { res.status(400).json({ error: "Shipping name must be a valid string." }); return; }
+    if (!isStr(shippingAddress, 500)) { res.status(400).json({ error: "Shipping address must be a valid string." }); return; }
+    if (!isStr(shippingCounty, 100)) { res.status(400).json({ error: "Shipping county must be a valid string." }); return; }
+    if (shippingPhone !== undefined && shippingPhone !== "" && !isStr(shippingPhone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
+    if (mpesaPhone !== undefined && mpesaPhone !== "" && !isStr(mpesaPhone, 20)) { res.status(400).json({ error: "M-Pesa phone must be a valid string." }); return; }
     const shippingF = getShippingFee(shippingCounty);
     const customerId = (req as any).customer.sub;
     const customerDetails = await findCustomerById(customerId);
@@ -1807,7 +1851,9 @@ function renderStoreLogo(logoUrl: string, position: string, storeName: string): 
 // ============ PRODUCT ANALYTICS ============
 
 app.post("/api/products/:id/view", async (req: Request, res: Response) => {
-  await recordProductView(String(req.params.id), req.body?.viewerType || "anonymous");
+  const viewerType = req.body?.viewerType || "anonymous";
+  if (viewerType && !inSet(viewerType, ["anonymous", "customer"])) { res.status(400).json({ error: "viewerType must be 'anonymous' or 'customer'." }); return; }
+  await recordProductView(String(req.params.id), viewerType);
   res.json({ ok: true });
 });
 
@@ -1829,6 +1875,8 @@ app.get("/api/admin/invoices", adminAuthMiddleware, async (_req: Request, res: R
 app.post("/api/admin/invoices/generate", adminAuthMiddleware, async (req: Request, res: Response) => {
   const { providerId, planId } = req.body || {};
   if (!providerId) { res.status(400).json({ error: "Provider ID is required." }); return; }
+  if (!isPosInt(Number(providerId))) { res.status(400).json({ error: "Provider ID must be a positive integer." }); return; }
+  if (planId !== undefined && !isStr(planId)) { res.status(400).json({ error: "Plan ID must be a valid string." }); return; }
   const invoice = await generateProviderInvoice(Number(providerId), planId || "starter");
   if (!invoice) { res.status(400).json({ error: "Could not generate invoice. Provider may have no active plan or plan is free." }); return; }
   res.status(201).json(invoice);
@@ -1867,6 +1915,9 @@ app.get("/api/admin/credit-notes/:id", ownerAuthMiddleware, async (req: Request,
 app.post("/api/admin/credit-notes", ownerAuthMiddleware, async (req: Request, res: Response) => {
   const { orderId, reason, reasonCode } = req.body || {};
   if (!orderId) { res.status(400).json({ error: "orderId is required." }); return; }
+  if (!isPosInt(Number(orderId))) { res.status(400).json({ error: "orderId must be a positive integer." }); return; }
+  if (reason !== undefined && !isStr(reason, 1000)) { res.status(400).json({ error: "Reason must be a valid string." }); return; }
+  if (reasonCode !== undefined && !isStr(reasonCode, 10)) { res.status(400).json({ error: "reasonCode must be a valid string." }); return; }
   const user = (req as any).user;
   const resolvedReasonCode = typeof reasonCode === "string" && reasonCode.trim() ? reasonCode : "13";
   const existingNotes = await listCreditNotes(Number(orderId));
@@ -2093,6 +2144,9 @@ app.post("/api/messages", customerAuthMiddleware, async (req: Request, res: Resp
     const customerId = (req as any).customer.sub;
     const { providerId, productId, subject, body } = req.body || {};
     if (!providerId || !body) { res.status(400).json({ error: "Provider ID and message body are required." }); return; }
+    if (!isPosInt(Number(providerId))) { res.status(400).json({ error: "Provider ID must be a positive integer." }); return; }
+    if (!isStr(body, 5000)) { res.status(400).json({ error: "Message body must be a valid string." }); return; }
+    if (subject !== undefined && !isStr(subject, 200)) { res.status(400).json({ error: "Subject must be a valid string." }); return; }
     const msg = await sendMessage(customerId, Number(providerId), subject || "", body, "customer", productId);
     res.status(201).json(msg);
     const customer = await findCustomerById(customerId);
@@ -2115,6 +2169,9 @@ app.post("/api/provider/messages", providerAuthMiddleware, requireProviderFeatur
     const providerId = (req as any).provider.sub;
     const { customerId, productId, subject, body } = req.body || {};
     if (!customerId || !body) { res.status(400).json({ error: "Customer ID and message body are required." }); return; }
+    if (!isPosInt(Number(customerId))) { res.status(400).json({ error: "Customer ID must be a positive integer." }); return; }
+    if (!isStr(body, 5000)) { res.status(400).json({ error: "Message body must be a valid string." }); return; }
+    if (subject !== undefined && !isStr(subject, 200)) { res.status(400).json({ error: "Subject must be a valid string." }); return; }
     const msg = await sendMessage(Number(customerId), providerId, subject || "", body, "provider", productId);
     res.status(201).json(msg);
     const customer = await findCustomerById(Number(customerId));
@@ -2183,6 +2240,10 @@ app.post("/api/categories", adminAuthMiddleware, async (req: Request, res: Respo
     res.status(400).json({ error: "Category id and label are required." });
     return;
   }
+  if (!isStr(id) || !isStr(label)) {
+    res.status(400).json({ error: "Category id and label must be non-empty strings." });
+    return;
+  }
   if (await getCategory(id)) {
     res.status(409).json({ error: "Category already exists." });
     return;
@@ -2198,6 +2259,8 @@ app.post("/api/categories", adminAuthMiddleware, async (req: Request, res: Respo
 
 app.put("/api/categories/:id", adminAuthMiddleware, async (req: Request, res: Response) => {
   const { label, group, showOnPos } = req.body || {};
+  if (label !== undefined && !isStr(label)) { res.status(400).json({ error: "Label must be a non-empty string." }); return; }
+  if (group !== undefined && !isStr(group)) { res.status(400).json({ error: "Group must be a non-empty string." }); return; }
   const category = await updateCategory(String(req.params.id), {
     label: String(label || "").trim(),
     group: String(group || "").trim(),
@@ -2229,6 +2292,14 @@ app.post("/api/subcategories", adminAuthMiddleware, async (req: Request, res: Re
     res.status(400).json({ error: "Subcategory id and name are required." });
     return;
   }
+  if (!isStr(id) || !isStr(name)) {
+    res.status(400).json({ error: "Subcategory id and name must be non-empty strings." });
+    return;
+  }
+  if (category_ids !== undefined && !isArr(category_ids)) {
+    res.status(400).json({ error: "category_ids must be an array." });
+    return;
+  }
   if (await getSubcategory(id)) {
     res.status(409).json({ error: "Subcategory already exists." });
     return;
@@ -2243,6 +2314,8 @@ app.post("/api/subcategories", adminAuthMiddleware, async (req: Request, res: Re
 
 app.put("/api/subcategories/:id", adminAuthMiddleware, async (req: Request, res: Response) => {
   const { name, category_ids } = req.body || {};
+  if (name !== undefined && !isStr(name)) { res.status(400).json({ error: "Name must be a non-empty string." }); return; }
+  if (category_ids !== undefined && !isArr(category_ids)) { res.status(400).json({ error: "category_ids must be an array." }); return; }
   const sub = await updateSubcategory(String(req.params.id), {
     name: name !== undefined ? String(name).trim() : undefined,
     category_ids: category_ids !== undefined ? category_ids : undefined,
@@ -2299,6 +2372,8 @@ app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create
   }
   const name = String(body.name || "").trim();
   if (!name) { res.status(400).json({ error: "Product name cannot be empty." }); return; }
+  if (body.price !== undefined && !isNonNegNum(Number(body.price))) { res.status(400).json({ error: "Price must be a non-negative number." }); return; }
+  if (body.imageAlt !== undefined && !isStr(body.imageAlt, 500)) { res.status(400).json({ error: "imageAlt must be a valid string." }); return; }
 
   const product = await createProduct({
     id: await generateProductId(name),
@@ -2359,6 +2434,8 @@ app.post("/api/admin/products/bulk-edit", ownerAuthMiddleware, async (req: Reque
   if (!Array.isArray(productIds) || productIds.length === 0 || !updates) {
     res.status(400).json({ error: "productIds array and updates object are required." }); return;
   }
+  if (!productIds.every((id: any) => typeof id === "string" && id.length > 0)) { res.status(400).json({ error: "Each product ID must be a non-empty string." }); return; }
+  if (updates.price !== undefined && !isNonNegNum(Number(updates.price))) { res.status(400).json({ error: "Price must be a non-negative number." }); return; }
   const updated: string[] = [];
   const notFound: string[] = [];
   for (const id of productIds) {
@@ -2695,6 +2772,7 @@ app.post("/api/auth/login", async (req: Request, res: Response) => {
   const login = String(req.body?.username || req.body?.email || "").trim();
   const password = String(req.body?.password || "");
   if (!login || !password) { res.status(400).json({ error: "Email/username and password are required." }); return; }
+  if (login.includes("@") && !isEmail(login)) { res.status(400).json({ error: "Invalid email format." }); return; }
   let result = await loginStaff(login, password);
   if (!result.ok) {
     const provResult = await loginProvider(login, password);
@@ -2710,6 +2788,10 @@ app.post("/api/auth/login", async (req: Request, res: Response) => {
 
 app.post("/api/customer/register", async (req: Request, res: Response) => {
   const body = req.body || {};
+  if (!body.name || !body.email || !body.password) { res.status(400).json({ error: "Name, email, and password are required." }); return; }
+  if (!isStr(body.name)) { res.status(400).json({ error: "Name must be a non-empty string." }); return; }
+  if (!isEmail(body.email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
+  if (!okLen(body.password, 8, 128)) { res.status(400).json({ error: "Password must be 8-128 characters." }); return; }
   const result = await registerCustomer({ name: body.name, email: body.email, password: body.password });
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.json({ token: result.token, name: result.name, email: result.email });
@@ -2717,6 +2799,8 @@ app.post("/api/customer/register", async (req: Request, res: Response) => {
 
 app.post("/api/customer/login", async (req: Request, res: Response) => {
   const body = req.body || {};
+  if (!body.email || !body.password) { res.status(400).json({ error: "Email and password are required." }); return; }
+  if (!isEmail(body.email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
   const result = await loginCustomer(body.email, body.password);
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
   res.json({ token: result.token, name: result.name, email: result.email });
@@ -2739,6 +2823,8 @@ app.get("/api/customer/me", customerAuthMiddleware, async (req: Request, res: Re
 app.put("/api/customer/me", customerAuthMiddleware, async (req: Request, res: Response) => {
   const customerId = (req as any).customer.sub;
   const { name, phone } = req.body || {};
+  if (name !== undefined && !isStr(name, 200)) { res.status(400).json({ error: "Name must be a valid string." }); return; }
+  if (phone !== undefined && !isStr(phone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
   await queryOne("UPDATE customers SET name = COALESCE($1, name), phone = COALESCE($2, phone) WHERE id = $3 RETURNING *", [name || null, phone || null, customerId]);
   res.json({ ok: true, customer: await findCustomerById(customerId) });
 });
@@ -2769,7 +2855,7 @@ app.get("/api/loyalty/transactions", customerAuthMiddleware, async (req: Request
 
 app.post("/api/loyalty/redeem", customerAuthMiddleware, async (req: Request, res: Response) => {
   const { points } = req.body || {};
-  if (!points || points < 1) { res.status(400).json({ error: "Points must be at least 1." }); return; }
+  if (!points || !isInt(points) || points < 1) { res.status(400).json({ error: "Points must be a positive integer (≥1)." }); return; }
   const discount = await redeemLoyaltyPoints((req as any).customer.sub, points, 0);
   if (!discount) { res.status(400).json({ error: "Not enough points or invalid request." }); return; }
   res.json({ discount, pointsRedeemed: points });
@@ -2781,7 +2867,7 @@ app.get("/api/admin/loyalty/customers", adminAuthMiddleware, async (_req: Reques
 
 app.post("/api/auth/magic-request", async (req: Request, res: Response) => {
   const email = String(req.body?.email || "").trim().toLowerCase();
-  if (!email) { res.status(400).json({ error: "Email is required." }); return; }
+  if (!email || !isEmail(email)) { res.status(400).json({ error: "Valid email address is required." }); return; }
   const customer = await findCustomerByEmail(email);
   if (!customer) { res.json({ ok: true }); return; }
   const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "magic" }, "1h");
@@ -2807,7 +2893,7 @@ app.post("/api/auth/magic-login", async (req: Request, res: Response) => {
 
 app.post("/api/auth/request-admin-password-reset", async (req: Request, res: Response) => {
   const email = String(req.body?.email || "").trim().toLowerCase();
-  if (!email) { res.status(400).json({ error: "Email is required." }); return; }
+  if (!email || !isEmail(email)) { res.status(400).json({ error: "Valid email address is required." }); return; }
   const staff = await findStaffByEmail(email);
   if (staff) {
     const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: "admin", purpose: "reset" }, "2h");
@@ -2861,7 +2947,7 @@ app.post("/api/auth/google-admin-login", async (req: Request, res: Response) => 
 
 app.post("/api/auth/request-password-reset", async (req: Request, res: Response) => {
   const email = String(req.body?.email || "").trim().toLowerCase();
-  if (!email) { res.status(400).json({ error: "Email is required." }); return; }
+  if (!email || !isEmail(email)) { res.status(400).json({ error: "Valid email address is required." }); return; }
   const customer = await findCustomerByEmail(email);
   if (!customer) { res.json({ ok: true }); return; }
   const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "reset" }, "2h");
@@ -2922,7 +3008,9 @@ app.post("/api/staff", adminAuthMiddleware, requirePermission("staff:create"), a
     const role = req.body?.role || "technician";
 
     if (!username) { res.status(400).json({ error: "Username is required." }); return; }
+    if (!isStr(username, 100)) { res.status(400).json({ error: "Username must be a non-empty string." }); return; }
     if (!password || password.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters." }); return; }
+    if (email && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
     if (!["admin", "owner", "technician", "manager", "staff", "provider", "customer"].includes(role)) { res.status(400).json({ error: "Invalid role." }); return; }
 
     if (role === "technician") {
@@ -3005,13 +3093,23 @@ app.post("/api/roles", adminAuthMiddleware, async (req: Request, res: Response) 
     res.status(400).json({ error: "Role ID and name are required." });
     return;
   }
+  if (!isStr(roleId) || !isStr(name)) {
+    res.status(400).json({ error: "Role ID and name must be non-empty strings." });
+    return;
+  }
+  if (description !== undefined && !isStr(description, 1000)) { res.status(400).json({ error: "Description must be a valid string." }); return; }
+  if (permissions !== undefined && !isArr(permissions)) { res.status(400).json({ error: "Permissions must be an array." }); return; }
   const role = await createRole(roleId, name, description, permissions);
   res.status(201).json({ role });
 });
 
 app.put("/api/roles/:roleId", adminAuthMiddleware, async (req: Request, res: Response) => {
   const roleId = String(req.params.roleId);
-  if (roleId === "admin" && req.body?.permissions && !req.body.permissions.includes("admin:access")) {
+  const updates = req.body || {};
+  if (updates.name !== undefined && !isStr(updates.name)) { res.status(400).json({ error: "Name must be a non-empty string." }); return; }
+  if (updates.description !== undefined && !isStr(updates.description, 1000)) { res.status(400).json({ error: "Description must be a valid string." }); return; }
+  if (updates.permissions !== undefined && !isArr(updates.permissions)) { res.status(400).json({ error: "Permissions must be an array." }); return; }
+  if (roleId === "admin" && updates.permissions && !updates.permissions.includes("admin:access")) {
     res.status(400).json({ error: "Cannot remove admin:access from the admin role." });
     return;
   }
@@ -3056,6 +3154,8 @@ app.get("/api/staff/:id/permissions", adminAuthMiddleware, async (req: Request, 
 
 app.put("/api/staff/:id/permissions", adminAuthMiddleware, async (req: Request, res: Response) => {
   const perms: string[] = req.body?.permissions || [];
+  if (!isArr(perms)) { res.status(400).json({ error: "permissions must be an array." }); return; }
+  if (perms.some((p) => !isStr(p))) { res.status(400).json({ error: "Each permission must be a non-empty string." }); return; }
   await setUserDirectPermissions(Number(req.params.id), perms);
   const effective = await getUserPermissions(Number(req.params.id));
   res.json({ ok: true, effective, direct: perms });
@@ -3081,8 +3181,14 @@ app.get("/api/stock/:productId", ownerAuthMiddleware, requirePermission("stock:l
 
 app.put("/api/stock/:productId", ownerAuthMiddleware, requirePermission("stock:update"), async (req: Request, res: Response) => {
   const updates: any = {};
-  if (req.body.quantityInStock !== undefined) updates.quantityInStock = Number(req.body.quantityInStock);
-  if (req.body.lowStockThreshold !== undefined) updates.lowStockThreshold = Number(req.body.lowStockThreshold);
+  if (req.body.quantityInStock !== undefined) {
+    if (!isNonNegNum(Number(req.body.quantityInStock))) { res.status(400).json({ error: "quantityInStock must be a non-negative number." }); return; }
+    updates.quantityInStock = Number(req.body.quantityInStock);
+  }
+  if (req.body.lowStockThreshold !== undefined) {
+    if (!isNonNegNum(Number(req.body.lowStockThreshold))) { res.status(400).json({ error: "lowStockThreshold must be a non-negative number." }); return; }
+    updates.lowStockThreshold = Number(req.body.lowStockThreshold);
+  }
   await updateStockLevel(String(req.params.productId), updates.quantityInStock ?? 0);
   const stock = await getStockLevel(String(req.params.productId));
   res.json(stock);
@@ -3104,6 +3210,10 @@ app.post("/api/stock-transfers", adminAuthMiddleware, requirePermission("stock:t
   if (!fromBranchId || !toBranchId || !productId || !quantity) {
     res.status(400).json({ error: "From branch, to branch, product ID, and quantity are required." }); return;
   }
+  if (!isPosInt(Number(fromBranchId))) { res.status(400).json({ error: "fromBranchId must be a positive integer." }); return; }
+  if (!isPosInt(Number(toBranchId))) { res.status(400).json({ error: "toBranchId must be a positive integer." }); return; }
+  if (!isStr(productId)) { res.status(400).json({ error: "Product ID must be a valid string." }); return; }
+  if (!isPosInt(Number(quantity))) { res.status(400).json({ error: "Quantity must be a positive integer." }); return; }
   if (fromBranchId === toBranchId) {
     res.status(400).json({ error: "Source and destination branches must be different." }); return;
   }
@@ -3135,8 +3245,11 @@ app.get("/api/cart", customerAuthMiddleware, async (req: Request, res: Response)
 app.post("/api/cart", customerAuthMiddleware, async (req: Request, res: Response) => {
   const { productId, quantity } = req.body || {};
   if (!productId) { res.status(400).json({ error: "Product ID is required." }); return; }
+  if (!isStr(productId)) { res.status(400).json({ error: "Product ID must be a valid string." }); return; }
+  const qty = Number(quantity) || 1;
+  if (!isPosInt(qty)) { res.status(400).json({ error: "Quantity must be a positive integer." }); return; }
   try {
-    await addToCart((req as any).customer.sub, productId, Number(quantity) || 1);
+    await addToCart((req as any).customer.sub, productId, qty);
     res.json({ ok: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Failed to add to cart." });
@@ -3324,7 +3437,11 @@ app.get("/api/purchases", adminAuthMiddleware, async (_req: Request, res: Respon
 });
 
 app.post("/api/purchases", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const po = await createPurchaseOrder({ ...req.body, createdBy: (req as any).user.sub });
+  const body = req.body || {};
+  if (body.supplierId !== undefined && !isPosInt(Number(body.supplierId))) { res.status(400).json({ error: "supplierId must be a positive integer." }); return; }
+  if (body.items !== undefined && !isArr(body.items)) { res.status(400).json({ error: "items must be an array." }); return; }
+  if (body.notes !== undefined && !isStr(body.notes, 1000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
+  const po = await createPurchaseOrder({ ...body, createdBy: (req as any).user.sub });
   res.status(201).json(po);
 });
 
@@ -3342,7 +3459,11 @@ app.patch("/api/purchases/:id/status", adminAuthMiddleware, async (req: Request,
 });
 
 app.post("/api/purchases/:id/items", adminAuthMiddleware, async (req: Request, res: Response) => {
-  const item = await addPurchaseOrderItem(Number(req.params.id), req.body);
+  const body = req.body || {};
+  if (body.name !== undefined && !isStr(body.name)) { res.status(400).json({ error: "Item name must be a valid string." }); return; }
+  if (body.quantity !== undefined && !isPosInt(Number(body.quantity))) { res.status(400).json({ error: "Quantity must be a positive integer." }); return; }
+  if (body.unitPrice !== undefined && !isNonNegNum(Number(body.unitPrice))) { res.status(400).json({ error: "Unit price must be a non-negative number." }); return; }
+  const item = await addPurchaseOrderItem(Number(req.params.id), body);
   res.status(201).json(item);
 });
 
@@ -3353,7 +3474,7 @@ app.post("/api/admin/auto-reorder", adminAuthMiddleware, async (_req: Request, r
 
 app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, async (req: Request, res: Response) => {
   const { quantityReceived } = req.body || {};
-  if (!quantityReceived || quantityReceived < 1) { res.status(400).json({ error: "quantityReceived is required." }); return; }
+  if (!quantityReceived || !isPosInt(Number(quantityReceived))) { res.status(400).json({ error: "quantityReceived must be a positive integer." }); return; }
   await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived));
   res.json({ ok: true });
 });
@@ -3396,6 +3517,9 @@ app.get("/api/reports/purchases", adminAuthMiddleware, async (_req: Request, res
 app.post("/api/admin/providers", ownerAuthMiddleware, async (req: Request, res: Response) => {
   const { companyName, contactName, email, password, phone, pin } = req.body || {};
   if (!companyName || !contactName || !email || !password) { res.status(400).json({ error: "companyName, contactName, email, password are required." }); return; }
+  if (!isStr(companyName) || !isStr(contactName)) { res.status(400).json({ error: "Company name and contact name must be non-empty strings." }); return; }
+  if (!isEmail(email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
+  if (!okLen(password, 8, 128)) { res.status(400).json({ error: "Password must be 8-128 characters." }); return; }
   if (pin && (pin.length < 6 || !/^\d+$/.test(pin))) { res.status(400).json({ error: "PIN must be at least 6 digits." }); return; }
   const existing = await findProviderByEmail(email);
   if (existing) { res.status(400).json({ error: "Provider with this email already exists." }); return; }
@@ -3411,6 +3535,9 @@ app.put("/api/admin/providers/:id", ownerAuthMiddleware, async (req: Request, re
   const existing = await findProviderById(id);
   if (!existing) { res.status(404).json({ error: "Provider not found." }); return; }
   const { companyName, contactName, email, phone, pin, password } = req.body || {};
+  if (companyName !== undefined && !isStr(companyName)) { res.status(400).json({ error: "Company name must be a non-empty string." }); return; }
+  if (contactName !== undefined && !isStr(contactName)) { res.status(400).json({ error: "Contact name must be a non-empty string." }); return; }
+  if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
   if (email && email !== existing.email) {
     const dup = await findProviderByEmail(email);
     if (dup) { res.status(400).json({ error: "Email already in use." }); return; }
@@ -3446,6 +3573,7 @@ app.get("/api/wishlist", customerAuthMiddleware, async (req: Request, res: Respo
 app.post("/api/wishlist", customerAuthMiddleware, async (req: Request, res: Response) => {
   const { productId, notes } = req.body || {};
   if (!productId) { res.status(400).json({ error: "productId is required." }); return; }
+  if (!isStr(productId)) { res.status(400).json({ error: "productId must be a valid string." }); return; }
   await addToWishlist((req as any).customer.sub, productId, notes);
   res.status(201).json({ ok: true });
 });
@@ -3512,6 +3640,9 @@ app.post("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:vi
       if (walkIn) customerId = walkIn.id;
     }
     if (!customerId) { res.status(400).json({ error: "customerId or customerName is required." }); return; }
+    if (customerName !== undefined && !isStr(customerName, 200)) { res.status(400).json({ error: "customerName must be a valid string." }); return; }
+    if (discountValue !== undefined && !isNonNegNum(Number(discountValue))) { res.status(400).json({ error: "discountValue must be a non-negative number." }); return; }
+    if (notes !== undefined && !isStr(notes, 2000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
     const quote = await createQuote({ customerId, customerName: customerName || "", customerPhone: customerPhone || "", items, notes: notes || "", discountType: discountType || "", discountValue: discountValue || 0 });
     await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_created", "quote", String(quote.id), JSON.stringify({ quoteNumber: quote.quoteNumber, total: quote.total }), (req as any).user.role);
     res.status(201).json(quote);
@@ -3532,7 +3663,11 @@ app.put("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports
     const id = Number(req.params.id);
     const existing = await getQuote(id);
     if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
-    const updated = await updateQuote(id, req.body || {});
+    const body = req.body || {};
+    if (body.discountValue !== undefined && !isNonNegNum(Number(body.discountValue))) { res.status(400).json({ error: "discountValue must be a non-negative number." }); return; }
+    if (body.notes !== undefined && !isStr(body.notes, 2000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
+    if (body.items !== undefined && !isArr(body.items)) { res.status(400).json({ error: "items must be an array." }); return; }
+    const updated = await updateQuote(id, body);
     res.json({ quote: updated });
   } catch (err: any) {
     console.error("[quotes] update error:", err?.message || err);
@@ -3655,12 +3790,21 @@ app.get("/api/admin/splashes", staffAuthMiddleware, requirePermission("reports:v
 app.post("/api/admin/splashes", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
   const { title, text, bgColor, textColor, isMarquee, isActive, startDate, endDate } = req.body || {};
   if (!text) { res.status(400).json({ error: "text is required." }); return; }
+  if (!isStr(text, 5000)) { res.status(400).json({ error: "Text must be a valid string." }); return; }
+  if (title !== undefined && !isStr(title, 200)) { res.status(400).json({ error: "Title must be a valid string." }); return; }
+  if (bgColor !== undefined && !isStr(bgColor, 50)) { res.status(400).json({ error: "bgColor must be a valid string." }); return; }
+  if (textColor !== undefined && !isStr(textColor, 50)) { res.status(400).json({ error: "textColor must be a valid string." }); return; }
   const splash = await createSplash({ title, text, bgColor, textColor, isMarquee, isActive, startDate, endDate });
   res.status(201).json(splash);
 });
 
 app.put("/api/admin/splashes/:id", staffAuthMiddleware, requirePermission("reports:view"), async (req: Request, res: Response) => {
-  const splash = await updateSplash(Number(req.params.id), req.body || {});
+  const body = req.body || {};
+  if (body.text !== undefined && !isStr(body.text, 5000)) { res.status(400).json({ error: "Text must be a valid string." }); return; }
+  if (body.title !== undefined && !isStr(body.title, 200)) { res.status(400).json({ error: "Title must be a valid string." }); return; }
+  if (body.bgColor !== undefined && !isStr(body.bgColor, 50)) { res.status(400).json({ error: "bgColor must be a valid string." }); return; }
+  if (body.textColor !== undefined && !isStr(body.textColor, 50)) { res.status(400).json({ error: "textColor must be a valid string." }); return; }
+  const splash = await updateSplash(Number(req.params.id), body);
   if (!splash) { res.status(404).json({ error: "Splash not found." }); return; }
   res.json(splash);
 });
@@ -3681,6 +3825,7 @@ app.get("/api/shop/subscription", staffAuthMiddleware, async (_req: Request, res
 app.put("/api/shop/subscription", adminAuthMiddleware, async (req: Request, res: Response) => {
   const { planId } = req.body || {};
   if (!planId) { res.status(400).json({ error: "planId is required." }); return; }
+  if (!isStr(planId)) { res.status(400).json({ error: "planId must be a valid string." }); return; }
   const current = await getShopPlan();
   const ok = await setShopPlan(planId);
   if (!ok) { res.status(400).json({ error: "Invalid plan." }); return; }
@@ -3691,6 +3836,7 @@ app.put("/api/shop/subscription", adminAuthMiddleware, async (req: Request, res:
 app.post("/api/shop/subscription/request", staffAuthMiddleware, async (req: Request, res: Response) => {
   const { planId, notes } = req.body || {};
   if (!planId) { res.status(400).json({ error: "planId is required." }); return; }
+  if (!isStr(planId)) { res.status(400).json({ error: "planId must be a valid string." }); return; }
   const ok = await createSubscriptionRequest(planId, (req as any).user.sub, notes || "");
   if (!ok) { res.status(400).json({ error: "Invalid plan." }); return; }
   res.status(201).json({ ok: true });
@@ -3732,7 +3878,11 @@ app.get("/api/admin/coupons", ownerAuthMiddleware, async (_req: Request, res: Re
 
 app.post("/api/admin/coupons", ownerAuthMiddleware, async (req: Request, res: Response) => {
   try {
-    const coupon = await createCoupon(req.body || {});
+    const body = req.body || {};
+    if (body.code !== undefined && !isStr(body.code)) { res.status(400).json({ error: "Coupon code must be a valid string." }); return; }
+    if (body.discountType !== undefined && !inSet(body.discountType, ["percentage", "fixed"])) { res.status(400).json({ error: "discountType must be 'percentage' or 'fixed'." }); return; }
+    if (body.discountValue !== undefined && !isNonNegNum(Number(body.discountValue))) { res.status(400).json({ error: "discountValue must be a non-negative number." }); return; }
+    const coupon = await createCoupon(body);
     res.status(201).json(coupon);
   } catch (err: any) {
     console.error("[coupon create]", err?.message || err);
@@ -3742,7 +3892,11 @@ app.post("/api/admin/coupons", ownerAuthMiddleware, async (req: Request, res: Re
 
 app.put("/api/admin/coupons/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
   try {
-    const coupon = await updateCoupon(Number(req.params.id), req.body || {});
+    const body = req.body || {};
+    if (body.code !== undefined && !isStr(body.code)) { res.status(400).json({ error: "Coupon code must be a valid string." }); return; }
+    if (body.discountType !== undefined && !inSet(body.discountType, ["percentage", "fixed"])) { res.status(400).json({ error: "discountType must be 'percentage' or 'fixed'." }); return; }
+    if (body.discountValue !== undefined && !isNonNegNum(Number(body.discountValue))) { res.status(400).json({ error: "discountValue must be a non-negative number." }); return; }
+    const coupon = await updateCoupon(Number(req.params.id), body);
     res.json(coupon);
   } catch (err: any) {
     console.error("[coupon update]", err?.message || err);
@@ -3761,6 +3915,8 @@ app.delete("/api/admin/coupons/:id", ownerAuthMiddleware, async (req: Request, r
 app.post("/api/coupons/validate", customerAuthMiddleware, async (req: Request, res: Response) => {
   const { code, subtotal } = req.body || {};
   if (!code) { res.status(400).json({ error: "Coupon code is required." }); return; }
+  if (!isStr(code)) { res.status(400).json({ error: "Coupon code must be a valid string." }); return; }
+  if (subtotal !== undefined && !isNonNegNum(Number(subtotal))) { res.status(400).json({ error: "Subtotal must be a non-negative number." }); return; }
   const result = await validateCoupon(String(code).trim(), Number(subtotal) || 0);
   if (!result.valid) { res.status(400).json({ error: "Invalid coupon." }); return; }
   res.json({ discount: result.discount });
@@ -3773,7 +3929,11 @@ app.get("/api/admin/suppliers", ownerAuthMiddleware, async (_req: Request, res: 
 });
 
 app.post("/api/admin/suppliers", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  res.status(201).json(await createSupplier(req.body || {}));
+  const body = req.body || {};
+  if (body.name !== undefined && !isStr(body.name)) { res.status(400).json({ error: "Supplier name must be a valid string." }); return; }
+  if (body.email !== undefined && body.email !== "" && !isEmail(body.email)) { res.status(400).json({ error: "Invalid email format." }); return; }
+  if (body.phone !== undefined && body.phone !== "" && !isStr(body.phone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
+  res.status(201).json(await createSupplier(body));
 });
 
 app.get("/api/admin/suppliers/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
@@ -3783,7 +3943,11 @@ app.get("/api/admin/suppliers/:id", ownerAuthMiddleware, async (req: Request, re
 });
 
 app.put("/api/admin/suppliers/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const supplier = await updateSupplier(Number(req.params.id), req.body || {});
+  const body = req.body || {};
+  if (body.name !== undefined && !isStr(body.name)) { res.status(400).json({ error: "Supplier name must be a valid string." }); return; }
+  if (body.email !== undefined && body.email !== "" && !isEmail(body.email)) { res.status(400).json({ error: "Invalid email format." }); return; }
+  if (body.phone !== undefined && body.phone !== "" && !isStr(body.phone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
+  const supplier = await updateSupplier(Number(req.params.id), body);
   res.json(supplier);
 });
 
@@ -3803,6 +3967,9 @@ app.get("/api/admin/customers", ownerAuthMiddleware, async (_req: Request, res: 
 app.post("/api/admin/customers", ownerAuthMiddleware, async (req: Request, res: Response) => {
   const { name, email, password, phone } = req.body || {};
   if (!name || !email || !password) { res.status(400).json({ error: "Name, email, and password required." }); return; }
+  if (!isStr(name)) { res.status(400).json({ error: "Name must be a non-empty string." }); return; }
+  if (!isEmail(email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
+  if (!okLen(password, 8, 128)) { res.status(400).json({ error: "Password must be 8-128 characters." }); return; }
   try {
     const existing = await findCustomerByEmail(email);
     if (existing) { res.status(409).json({ error: "Email already registered." }); return; }
@@ -3843,6 +4010,10 @@ app.post("/api/admin/messages", ownerAuthMiddleware, async (req: Request, res: R
   try {
     const { customerId, providerId, subject, body } = req.body || {};
     if (!customerId || !providerId || !body) { res.status(400).json({ error: "customerId, providerId, and body are required." }); return; }
+    if (!isPosInt(Number(customerId))) { res.status(400).json({ error: "customerId must be a positive integer." }); return; }
+    if (!isPosInt(Number(providerId))) { res.status(400).json({ error: "providerId must be a positive integer." }); return; }
+    if (!isStr(body, 5000)) { res.status(400).json({ error: "Message body must be a valid string." }); return; }
+    if (subject !== undefined && !isStr(subject, 200)) { res.status(400).json({ error: "Subject must be a valid string." }); return; }
     const msg = await sendMessage(Number(customerId), Number(providerId), subject || "", body, "admin");
     res.status(201).json(msg);
     const customer = await findCustomerById(Number(customerId));
@@ -3957,6 +4128,9 @@ app.post("/api/stock-take/:id/count", ownerAuthMiddleware, async (req: Request, 
   try {
     const { productId, countedQuantity, notes } = req.body || {};
     if (!productId || countedQuantity === undefined) { res.status(400).json({ error: "productId and countedQuantity are required." }); return; }
+    if (!isStr(productId)) { res.status(400).json({ error: "productId must be a valid string." }); return; }
+    if (!isNonNegNum(Number(countedQuantity))) { res.status(400).json({ error: "countedQuantity must be a non-negative number." }); return; }
+    if (notes !== undefined && !isStr(notes, 1000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
     await recordStockCount(Number(req.params.id), String(productId), Number(countedQuantity), notes || "");
     const items = await getStockTakeItems(Number(req.params.id));
     res.json({ ok: true, items });
@@ -4029,6 +4203,7 @@ app.get("/api/stock-on-hand/:date", adminAuthMiddleware, requirePermission("stoc
 
 app.post("/api/stock-on-hand/snapshot", adminAuthMiddleware, requirePermission("stock:on_hand"), async (req: Request, res: Response) => {
   const date = req.body?.date || new Date().toISOString().slice(0, 10);
+  if (req.body?.date && !/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.date))) { res.status(400).json({ error: "Date must be in YYYY-MM-DD format." }); return; }
   await createStockSnapshot(date);
   res.json({ ok: true, date });
 });
@@ -4042,13 +4217,21 @@ app.get("/api/spec-templates", ownerAuthMiddleware, async (req: Request, res: Re
 });
 
 app.post("/api/spec-templates", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const field = await createSpecTemplateField(req.body);
+  const body = req.body || {};
+  if (body.category !== undefined && !isStr(body.category)) { res.status(400).json({ error: "category must be a valid string." }); return; }
+  if (body.label !== undefined && !isStr(body.label)) { res.status(400).json({ error: "label must be a valid string." }); return; }
+  if (body.type !== undefined && !isStr(body.type)) { res.status(400).json({ error: "type must be a valid string." }); return; }
+  const field = await createSpecTemplateField(body);
   if (!field) { res.status(400).json({ error: "Failed to create spec field." }); return; }
   res.status(201).json(field);
 });
 
 app.put("/api/spec-templates/:id", ownerAuthMiddleware, async (req: Request, res: Response) => {
-  const ok = await updateSpecTemplateField(Number(req.params.id), req.body);
+  const body = req.body || {};
+  if (body.category !== undefined && !isStr(body.category)) { res.status(400).json({ error: "category must be a valid string." }); return; }
+  if (body.label !== undefined && !isStr(body.label)) { res.status(400).json({ error: "label must be a valid string." }); return; }
+  if (body.type !== undefined && !isStr(body.type)) { res.status(400).json({ error: "type must be a valid string." }); return; }
+  const ok = await updateSpecTemplateField(Number(req.params.id), body);
   if (!ok) { res.status(404).json({ error: "Spec field not found." }); return; }
   res.json({ ok: true });
 });
