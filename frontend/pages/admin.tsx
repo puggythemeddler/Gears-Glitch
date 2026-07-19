@@ -33,7 +33,6 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
     label: "Sales",
     items: [
       { key: "products", label: "Products" },
-      { key: "product-positioning", label: "Product Positioning" },
       { key: "categories", label: "Categories" },
       { key: "orders", label: "Orders" },
       { key: "coupons", label: "Coupons" },
@@ -74,18 +73,19 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "reports", label: "Reports" },
       { key: "messages", label: "Messages" },
       { key: "reviews", label: "Reviews" },
-      { key: "email-settings", label: "Email" },
-      { key: "whatsapp-settings", label: "WhatsApp" },
     ],
   },
   {
-    label: "System",
+    label: "Settings",
     items: [
-      { key: "spec-templates", label: "Spec Templates" },
-      { key: "shop-subscription", label: "Shop Subscription" },
-      { key: "about-us", label: "About Us" },
+      { key: "settings", label: "General" },
       { key: "storefront", label: "Storefront" },
-      { key: "settings", label: "Settings" },
+      { key: "product-positioning", label: "Product Positioning" },
+      { key: "email-settings", label: "Email" },
+      { key: "whatsapp-settings", label: "WhatsApp" },
+      { key: "about-us", label: "About Us" },
+      { key: "spec-templates", label: "Spec Templates" },
+      { key: "shop-subscription", label: "Subscription" },
     ],
   },
 ];
@@ -109,7 +109,7 @@ export default function AdminPage() {
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const gisLoadedRef = useRef(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Administration"]);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Administration", "Settings"]);
   const messagingEnabled = useFeature("Messaging");
   const creditNotesEnabled = useFeature("Credit notes");
   const quotationsEnabled = useFeature("Quotations");

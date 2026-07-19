@@ -27,26 +27,40 @@ function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "
 
 type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "credit-notes" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "about-us" | "quotes" | "product-positioning";
 
-const NAV_ITEMS: { key: OwnerView; label: string }[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "orders", label: "Orders" },
-  { key: "products", label: "Products" },
-  { key: "product-positioning", label: "Positioning" },
-  { key: "providers", label: "Providers" },
-  { key: "customers", label: "Customers" },
-  { key: "quotes", label: "Quotes" },
-  { key: "messages", label: "Messages" },
-  { key: "reports", label: "Reports" },
-  { key: "invoices", label: "Invoices" },
-  { key: "credit-notes", label: "Credit Notes" },
-  { key: "stock-control", label: "Stock Control" },
-  { key: "stock-take", label: "Stock Take" },
-  { key: "tech-repairs", label: "Tech Repairs" },
-  { key: "branches", label: "Branches" },
-  { key: "shop-subscription", label: "Shop Subscription" },
-  { key: "about-us", label: "About Us" },
-  { key: "storefront", label: "Storefront" },
-  { key: "audit", label: "Audit Log" },
+const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string }[] }[] = [
+  {
+    label: "Operations",
+    items: [
+      { key: "orders", label: "Orders" },
+      { key: "products", label: "Products" },
+      { key: "providers", label: "Providers" },
+      { key: "customers", label: "Customers" },
+      { key: "quotes", label: "Quotes" },
+      { key: "messages", label: "Messages" },
+      { key: "reports", label: "Reports" },
+      { key: "invoices", label: "Invoices" },
+      { key: "credit-notes", label: "Credit Notes" },
+    ],
+  },
+  {
+    label: "Stock",
+    items: [
+      { key: "stock-control", label: "Stock Control" },
+      { key: "stock-take", label: "Stock Take" },
+      { key: "tech-repairs", label: "Tech Repairs" },
+      { key: "branches", label: "Branches" },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { key: "storefront", label: "Storefront" },
+      { key: "product-positioning", label: "Product Positioning" },
+      { key: "about-us", label: "About Us" },
+      { key: "shop-subscription", label: "Subscription" },
+      { key: "audit", label: "Audit Log" },
+    ],
+  },
 ];
 
 export default function OwnerPage() {
@@ -73,16 +87,23 @@ export default function OwnerPage() {
     }
   }, []);
 
-  const visibleNav = staffRole === "admin" ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.key !== "storefront");
-  const filteredNav = visibleNav.filter((item) =>
-    (item.key !== "messages" || messagingEnabled) &&
-    (item.key !== "branches" || branchManagementEnabled) &&
-    (item.key !== "credit-notes" || creditNotesEnabled) &&
-    (item.key !== "quotes" || quotationsEnabled) &&
-    (item.key !== "tech-repairs" || techRepairsEnabled) &&
-    (item.key !== "product-positioning" || productPositioningEnabled) &&
-    (item.key !== "stock-control" || stockTransfersEnabled)
-  );
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Operations", "Settings"]);
+
+  const isStorefrontAllowed = staffRole === "admin";
+
+  const filteredGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      (item.key !== "messages" || messagingEnabled) &&
+      (item.key !== "branches" || branchManagementEnabled) &&
+      (item.key !== "credit-notes" || creditNotesEnabled) &&
+      (item.key !== "quotes" || quotationsEnabled) &&
+      (item.key !== "tech-repairs" || techRepairsEnabled) &&
+      (item.key !== "product-positioning" || productPositioningEnabled) &&
+      (item.key !== "stock-control" || stockTransfersEnabled) &&
+      (item.key !== "storefront" || isStorefrontAllowed)
+    ),
+  })).filter((group) => group.items.length > 0);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -114,8 +135,16 @@ export default function OwnerPage() {
   return (
     <div className="dash-layout">
       <nav className="dash-nav">
-        {filteredNav.map((item) => (
-          <RippleButton key={item.key} variant="ghost" className={view === item.key ? "active" : ""} onClick={() => setView(item.key)}>{item.label}</RippleButton>
+        <RippleButton variant="ghost" className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}>Dashboard</RippleButton>
+        {filteredGroups.map((group) => (
+          <div key={group.label}>
+            <RippleButton variant="ghost" className="nav-group-header" onClick={() => setExpandedGroups((prev) => prev.includes(group.label) ? prev.filter((g) => g !== group.label) : [...prev, group.label])} style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", opacity: 0.6, marginTop: "0.5rem" }}>
+              {expandedGroups.includes(group.label) ? "▾" : "▸"} {group.label}
+            </RippleButton>
+            {expandedGroups.includes(group.label) && group.items.map((item) => (
+              <RippleButton key={item.key} variant="ghost" className={view === item.key ? "active" : ""} onClick={() => setView(item.key)} style={{ paddingLeft: "1.5rem" }}>{item.label}</RippleButton>
+            ))}
+          </div>
         ))}
         <RippleButton variant="ghost" style={{ color: "var(--primary)" }} onClick={() => { localStorage.removeItem("computerStoreToken"); window.location.href = "/"; }}>
           Sign out
