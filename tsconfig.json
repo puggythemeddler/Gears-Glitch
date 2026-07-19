@@ -11,10 +11,8 @@
     "noImplicitAny": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "declaration": true,
-    "declarationMap": true,
     "sourceMap": true
   },
   "include": ["server/**/*.ts"],
-  "exclude": ["node_modules", "dist", "data", "admin", "backoffice", "user manual", "Town project"]
+  "exclude": ["node_modules", "dist", "data", "admin", "backoffice", "user manual", "Town project", "frontend"]
 }
