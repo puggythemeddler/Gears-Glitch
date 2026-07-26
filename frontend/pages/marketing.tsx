@@ -66,7 +66,7 @@ const FEATURES = [
   { icon: "📍", name: "Product Positioning", desc: "Drag-and-drop product ordering to control how items appear on your storefront." },
   { icon: "⭐", name: "Product Reviews & Ratings", desc: "Customers rate products 1–5 stars, leave reviews, and help others decide. One review per customer enforced. Admin moderation built in." },
   { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with admin-controllable hero sections (with on/off toggle), live stats from your data, auto-synced category chips, product catalog, auto-rotating carousels, and springboard category menu." },
-  { icon: "⚙", name: "Organized Settings", desc: "Dedicated Settings tab with grouped modules — General, Storefront, Email, WhatsApp, About Us, Spec Templates, and Subscription. Each module is its own page for focused configuration." },
+  { icon: "⚙", name: "Organized Settings", desc: "Dedicated Settings tab with 5 focused pages — Store Info, Payments (M-Pesa, methods, exchange rates), Compliance (eTIMS/KRA, Google Sign-In), Content (banners, image storage), and System (backup). Each page handles its own configuration." },
   { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders. Every document has separate Print and Save PDF buttons for instant downloads with branded templates." },
 ];
 
