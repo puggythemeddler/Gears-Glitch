@@ -4,8 +4,14 @@ This workspace contains the Gear&Glitch storefront, backend services, and suppor
 
 ## Recent updates
 
+### Crash-proof async routes
+All 281 async route handlers wrapped with `asyncHandler` middleware to prevent server crashes from unhandled promise rejections. `escapeHtml()` made null-safe. Shared route utilities extracted to `server/routes/shared.ts`.
+
+### Separate Print and Save PDF buttons
+All invoice, receipt, credit note, and quote pages now have separate Print and Save PDF buttons. Print triggers browser print dialog, Save PDF generates a server-side PDF download.
+
 ### Marketing page
-Full marketing landing page with problems, solutions, industries, features (22 real modules), testimonials, stats, FAQ, and CTA. All content verified against actual implemented features. Dashboard preview uses KES currency.
+Full marketing landing page with problems, solutions, industries, features (25 real modules), testimonials, stats, FAQ, and CTA. All content verified against actual implemented features. Dashboard preview uses KES currency.
 
 ### Annual pricing for subscription plans
 Subscription plans now support both monthly and annual pricing. `subscription_plans` table has `price_annual` column. Admin plans UI shows both Monthly and Annual price fields. Owner subscription page redesigned with both prices, savings percentage, and plan comparison cards.

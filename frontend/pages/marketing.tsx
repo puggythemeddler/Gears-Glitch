@@ -67,7 +67,7 @@ const FEATURES = [
   { icon: "⭐", name: "Product Reviews & Ratings", desc: "Customers rate products 1–5 stars, leave reviews, and help others decide. One review per customer enforced. Admin moderation built in." },
   { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with admin-controllable hero sections (with on/off toggle), live stats from your data, auto-synced category chips, product catalog, auto-rotating carousels, and springboard category menu." },
   { icon: "⚙", name: "Organized Settings", desc: "Dedicated Settings tab with grouped modules — General, Storefront, Email, WhatsApp, About Us, Spec Templates, and Subscription. Each module is its own page for focused configuration." },
-  { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders — downloadable instantly with branded templates." },
+  { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders. Every document has separate Print and Save PDF buttons for instant downloads with branded templates." },
 ];
 
 const WHY_CHOOSE = [
@@ -103,7 +103,7 @@ const FAQS = [
   { q: "Is the platform cloud-based?", a: "Yes. Gear&Glitch is fully cloud-based and accessible from any device with a web browser — desktop, tablet, or mobile. No software installation required." },
   { q: "How long does setup take?", a: "Most businesses are up and running within 1-2 days. Import your existing products and customers, configure your branches, and you're ready to go." },
   { q: "Can I import my existing data?", a: "Yes. You can import products, customers, and suppliers through the admin panel. We also support bulk CSV uploads for large catalogs." },
-  { q: "How does the repair management work?", a: "Create repair tickets, assign technicians, generate cost quotes, track status through every stage, and notify customers via email when repairs are ready for collection." },
+  { q: "How does the repair management work?", a: "Create repair tickets, assign technicians, generate cost quotes, track status through every stage, and notify customers via email and WhatsApp when repairs are ready for collection. Customers can track their repairs in real time." },
   { q: "Is KRA eTIMS compliance built in?", a: "Yes. Every invoice and credit note includes proper eTIMS control codes, serial numbers, and receipt generation. You're always audit-ready." },
   { q: "Can I try before I buy?", a: "Yes. We offer a free Starter plan with core features. Upgrade to Growth, Pro, or Enterprise plans when you need advanced capabilities." },
   { q: "How does multi-branch management work?", a: "Create multiple branches, assign staff per branch, transfer stock between locations, and view consolidated reports across all branches from a single dashboard." },
