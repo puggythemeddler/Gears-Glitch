@@ -724,6 +724,15 @@ app.post("/api/admin/email/test", adminAuthMiddleware, asyncHandler(async (req: 
   res.json({ ok, message: ok ? "Test email sent." : "Email failed. Check SMTP configuration." });
 }));
 
+app.post("/api/contact", asyncHandler(async (req: Request, res: Response) => {
+  const { name, email: emailAddr, subject, message } = req.body || {};
+  if (!name || !emailAddr || !subject || !message) { res.status(400).json({ error: "Name, email, subject, and message are required." }); return; }
+  if (!isEmail(emailAddr)) { res.status(400).json({ error: "Valid email address required." }); return; }
+  const settings = await getSettings();
+  const ok = await sendEmail(settings.email || emailAddr, `Contact: ${escapeHtml(subject)}`, `<!DOCTYPE html><html><body><p><strong>From:</strong> ${escapeHtml(name)} (${escapeHtml(emailAddr)})</p><p><strong>Subject:</strong> ${escapeHtml(subject)}</p><hr/><p>${escapeHtml(message).replace(/\n/g, "<br/>")}</p></body></html>`, "contact");
+  res.json({ ok, message: ok ? "Message sent. We'll get back to you soon!" : "Failed to send message. Please try again later." });
+}));
+
 app.post("/api/settings/favicon", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
     await runMulter(uploadFavicon, req, res);

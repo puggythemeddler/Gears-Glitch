@@ -123,6 +123,9 @@ export default function CartPage() {
         </ol>
       </nav>
       <h1>Shopping cart</h1>
+      <div style={{ marginBottom: "1rem" }}>
+        <a href="/" className="btn btn-ghost btn-sm">&larr; Continue shopping</a>
+      </div>
 
       {pageLoading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>

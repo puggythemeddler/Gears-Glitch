@@ -42,6 +42,7 @@ export default function ProductPage() {
   const [loadError, setLoadError] = useState("");
   const [subcategories, setSubcategories] = useState<{ id: string; name: string }[]>([]);
   const [categoryLabel, setCategoryLabel] = useState("");
+  const [quantity, setQuantity] = useState(1);
   const userInteractedRef = useRef(false);
 
   useEffect(() => {
@@ -97,8 +98,8 @@ export default function ProductPage() {
   async function addToCart() {
     if (!requireCustomerLogin(`/product?id=${id}`)) return;
     try {
-      await api("/api/cart", { method: "POST", body: JSON.stringify({ productId: id, quantity: 1 }) });
-      setStatusMsg({ text: "Added to cart!" });
+      await api("/api/cart", { method: "POST", body: JSON.stringify({ productId: id, quantity }) });
+      setStatusMsg({ text: `Added ${quantity} item${quantity > 1 ? "s" : ""} to cart!` });
     } catch (err: any) {
       setStatusMsg({ text: err.message, error: true });
     }
@@ -302,6 +303,11 @@ export default function ProductPage() {
             </div>
           )}
           <div className="product-detail__actions">
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginRight: "0.5rem" }}>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setQuantity((q) => Math.max(1, q - 1))} disabled={quantity <= 1}>−</button>
+              <span style={{ minWidth: 32, textAlign: "center", fontWeight: 600 }}>{quantity}</span>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setQuantity((q) => q + 1)}>+</button>
+            </div>
             <button type="button" className="btn" onClick={addToCart} disabled={!product.inStock}>
               Add to cart
             </button>

@@ -228,7 +228,41 @@ export default function Layout({ children, activeNav }: LayoutProps) {
       ) : (
         <footer className="site-footer">
           <div className="footer-inner">
-            <p>&copy; {new Date().getFullYear()} {settings?.storeName || "Gear&Glitch"}. All rights reserved.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "1.5rem", maxWidth: "var(--max-width)", margin: "0 auto", padding: "0 var(--space-5)" }}>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: "0.5rem", fontSize: "var(--text-base)" }}>{settings?.storeName || "Gear&Glitch"}</div>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>Kenya&apos;s trusted tech platform for gaming PCs, laptops, and accessories.</p>
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>Shop</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <a href="/pc" style={{ fontSize: "0.85rem" }}>PCs</a>
+                  <a href="/laptops" style={{ fontSize: "0.85rem" }}>Laptops</a>
+                  <a href="/graphics-cards" style={{ fontSize: "0.85rem" }}>Graphics Cards</a>
+                  <a href="/servers" style={{ fontSize: "0.85rem" }}>Servers</a>
+                  <a href="/printers" style={{ fontSize: "0.85rem" }}>Printers</a>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>Account</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <a href="/cart" style={{ fontSize: "0.85rem" }}>Cart</a>
+                  <a href="/wishlist" style={{ fontSize: "0.85rem" }}>Wishlist</a>
+                  <a href="/dashboard" style={{ fontSize: "0.85rem" }}>Dashboard</a>
+                  <a href="/repairs" style={{ fontSize: "0.85rem" }}>Repairs</a>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>Company</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <a href="/about" style={{ fontSize: "0.85rem" }}>About Us</a>
+                  <a href="/contact" style={{ fontSize: "0.85rem" }}>Contact</a>
+                </div>
+              </div>
+            </div>
+            <div style={{ borderTop: "1px solid var(--border)", marginTop: "1.5rem", paddingTop: "1rem", textAlign: "center", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+              &copy; {new Date().getFullYear()} {settings?.storeName || "Gear&Glitch"}. All rights reserved.
+            </div>
           </div>
         </footer>
       )}

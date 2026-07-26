@@ -118,8 +118,14 @@ export default function WishlistPage() {
                 <div className="muted" style={{ fontSize: "0.8rem" }}>Added {new Date(item.createdAt).toLocaleDateString("en-GB")}</div>
               </div>
               <div className="wishlist-item__actions">
-                <a href={`/product?id=${encodeURIComponent(item.productId)}`} className="btn btn-sm">View</a>
-                <button className="btn btn-sm btn-ghost" onClick={() => removeFromWishlist(item.productId)}>Remove</button>
+                <button className="btn btn-sm" onClick={async () => {
+                  try {
+                    await api("/api/cart", { method: "POST", body: JSON.stringify({ productId: item.productId, quantity: 1 }) });
+                    alert("Added to cart!");
+                  } catch (err: any) { alert(err.message); }
+                }}>Add to cart</button>
+                <a href={`/product?id=${encodeURIComponent(item.productId)}`} className="btn btn-sm btn-ghost">View</a>
+                <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger, #dc2626)" }} onClick={() => removeFromWishlist(item.productId)}>Remove</button>
               </div>
             </div>
           ))

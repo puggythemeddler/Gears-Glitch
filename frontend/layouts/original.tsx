@@ -300,7 +300,17 @@ export function HomePage({ products, categories, hero }: {
                     </div>
                   )}
                   <h3>{p.name}</h3>
-                  <div className="price">{formatPrice(p.price)}</div>
+                  <div className="price" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                    {p.salePrice ? (
+                      <>
+                        <span style={{ textDecoration: "line-through", color: "var(--muted, #999)", fontSize: "0.8em" }}>{formatPrice(p.price)}</span>
+                        <span style={{ color: "#dc2626", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span>
+                        <span style={{ display: "inline-block", background: "#dc2626", color: "#fff", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
+                      </>
+                    ) : (
+                      formatPrice(p.price)
+                    )}
+                  </div>
                   <div className={`stock-badge ${p.inStock ? "in-stock" : "out-of-stock"}`}>
                     {p.inStock ? "In stock" : "Enquire for availability"}
                   </div>

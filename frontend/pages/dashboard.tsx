@@ -179,7 +179,7 @@ export default function DashboardPage() {
             <h2>My orders</h2>
             {orders.length === 0 ? <p className="muted">No orders yet.</p> : (
               orders.map((o) => (
-                <div key={o.id} className="order-item">
+                <a key={o.id} href={`/order?id=${o.id}`} className="order-item" style={{ display: "block", textDecoration: "none", color: "inherit", cursor: "pointer" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
                     <div>
                       <strong>Order #{o.id}</strong> <span className="plan-status">{o.status}</span>
@@ -187,7 +187,7 @@ export default function DashboardPage() {
                     <span className="muted">{new Date(o.createdAt).toLocaleDateString("en-GB")}</span>
                   </div>
                   <p className="muted" style={{ fontSize: "0.9rem" }}>{formatPrice(o.total || o.subtotal + (o.shippingFee || 0))} — {o.items?.length || 0} item(s)</p>
-                </div>
+                </a>
               ))
             )}
           </div>
