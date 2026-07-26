@@ -26,7 +26,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[] = [
   {
@@ -79,7 +79,11 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
   {
     label: "Settings",
     items: [
-      { key: "settings", label: "General" },
+      { key: "settings-store-info", label: "Store Info" },
+      { key: "settings-payments", label: "Payments" },
+      { key: "settings-compliance", label: "Compliance" },
+      { key: "settings-content", label: "Content" },
+      { key: "settings-system", label: "System" },
       { key: "storefront", label: "Storefront" },
       { key: "product-positioning", label: "Product Positioning" },
       { key: "email-settings", label: "Email" },
@@ -368,7 +372,11 @@ export default function AdminPage() {
             {view === "shop-subscription" && <AdminShopSubscription />}
             {view === "about-us" && <AdminAboutUs />}
             {view === "storefront" && <AdminStorefront />}
-            {view === "settings" && <AdminSettings />}
+            {view === "settings-store-info" && <AdminStoreInfo />}
+            {view === "settings-payments" && <AdminPayments />}
+            {view === "settings-compliance" && <AdminCompliance />}
+            {view === "settings-content" && <AdminContent />}
+            {view === "settings-system" && <AdminSystem />}
             {view === "messages" && <AdminMessages />}
             {view === "reviews" && <AdminReviews />}
             {view === "product-positioning" && <AdminProductPositioning />}
@@ -2572,7 +2580,7 @@ function AdminSplashes() {
   );
 }
 
-function AdminSettings() {
+function AdminStoreInfo() {
   const { refreshSettings } = useApp();
   const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
   const [saving, setSaving] = useState(false);
@@ -2583,8 +2591,6 @@ function AdminSettings() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoMsg, setLogoMsg] = useState("");
-  const [etimsMode, setEtimsMode] = useState("off");
-  useEffect(() => { if (settings?.etimsMode) setEtimsMode(settings.etimsMode); }, [settings?.etimsMode]);
 
   function handleFaviconChange(e: React.ChangeEvent<HTMLInputElement>) {
     setFaviconMsg("");
@@ -2593,12 +2599,8 @@ function AdminSettings() {
 
   async function handleFaviconUpload(e: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>) {
     if (e) e.preventDefault?.();
-    if (!faviconFile) {
-      setFaviconMsg("Select a favicon file first.");
-      return;
-    }
-    setFaviconUploading(true);
-    setFaviconMsg("");
+    if (!faviconFile) { setFaviconMsg("Select a favicon file first."); return; }
+    setFaviconUploading(true); setFaviconMsg("");
     const formData = new FormData();
     formData.append("favicon", faviconFile);
     try {
@@ -2606,11 +2608,8 @@ function AdminSettings() {
       setFaviconMsg("Favicon updated successfully.");
       setFaviconFile(null);
       refreshSettings();
-    } catch (err: any) {
-      setFaviconMsg("Error: " + err.message);
-    } finally {
-      setFaviconUploading(false);
-    }
+    } catch (err: any) { setFaviconMsg("Error: " + err.message); }
+    finally { setFaviconUploading(false); }
   }
 
   function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -2620,30 +2619,22 @@ function AdminSettings() {
 
   async function handleLogoUpload(e: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>) {
     if (e) e.preventDefault?.();
-    if (!logoFile) {
-      setLogoMsg("Select a logo file first.");
-      return;
-    }
-    setLogoUploading(true);
-    setLogoMsg("");
+    if (!logoFile) { setLogoMsg("Select a logo file first."); return; }
+    setLogoUploading(true); setLogoMsg("");
     const formData = new FormData();
-    formData.append("logo", logoFile);
+    formData.append("image", logoFile);
     try {
       await api("/api/settings/logo", { method: "POST", body: formData }, "staff");
       setLogoMsg("Logo updated successfully.");
       setLogoFile(null);
       refreshSettings();
-    } catch (err: any) {
-      setLogoMsg("Error: " + err.message);
-    } finally {
-      setLogoUploading(false);
-    }
+    } catch (err: any) { setLogoMsg("Error: " + err.message); }
+    finally { setLogoUploading(false); }
   }
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setSaving(true);
-    setMsg("");
+    setSaving(true); setMsg("");
     const fd = new FormData(e.currentTarget);
     try {
       await api("/api/settings", {
@@ -2654,27 +2645,6 @@ function AdminSettings() {
           email: fd.get("email"),
           currency: fd.get("currency"),
           taxRate: Number(fd.get("taxRate")),
-          mpesaConsumerKey: fd.get("mpesaConsumerKey"),
-          mpesaConsumerSecret: fd.get("mpesaConsumerSecret"),
-          mpesaPasskey: fd.get("mpesaPasskey"),
-          mpesaShortcode: fd.get("mpesaShortcode"),
-          mpesaTillNumber: fd.get("mpesaTillNumber"),
-          mpesaEnv: fd.get("mpesaEnv"),
-          googleClientId: fd.get("googleClientId"),
-          kraPin: fd.get("kraPin"),
-          etimsSerialPrefix: fd.get("etimsSerialPrefix"),
-          etimsMode: fd.get("etimsMode"),
-          etimsBranchId: fd.get("etimsBranchId"),
-          etimsDeviceSerial: fd.get("etimsDeviceSerial"),
-          etimsVscuUrl: fd.get("etimsVscuUrl"),
-          etimsOscuApiUrl: fd.get("etimsOscuApiUrl"),
-          etimsOscuConsumerKey: fd.get("etimsOscuConsumerKey"),
-          etimsOscuConsumerSecret: fd.get("etimsOscuConsumerSecret"),
-          backupImagesToDb: fd.get("backupImagesToDb") === "on",
-          cloudinaryCloudName: fd.get("cloudinaryCloudName"),
-          cloudinaryApiKey: fd.get("cloudinaryApiKey"),
-          cloudinaryApiSecret: fd.get("cloudinaryApiSecret"),
-          cloudinaryFolder: fd.get("cloudinaryFolder"),
           logoPosition: fd.get("logoPosition"),
           springboardMenu: fd.get("springboardMenu") === "on",
         }),
@@ -2689,10 +2659,10 @@ function AdminSettings() {
 
   return (
     <>
-      <h1>Settings</h1>
+      <h1>Store Info</h1>
       <form onSubmit={handleSave} style={{ maxWidth: 500 }}>
         <div className="panel" style={{ marginBottom: "1rem" }}>
-          <h3 style={{ marginTop: 0 }}>Store info</h3>
+          <h3 style={{ marginTop: 0 }}>Store details</h3>
           <div className="field"><label>Store name<input name="storeName" defaultValue={settings?.storeName || ""} /></label></div>
           <div className="field"><label>Phone<input name="phone" defaultValue={settings?.phone || ""} /></label></div>
           <div className="field"><label>Email<input name="email" defaultValue={settings?.email || ""} /></label></div>
@@ -2712,19 +2682,11 @@ function AdminSettings() {
               )}
               <div style={{ minWidth: 0, flex: 1 }}>
                 <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600 }}>Current favicon</p>
-                <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>
-                  Upload a PNG, ICO, SVG, JPEG, or WEBP file to replace the favicon.
-                </p>
+                <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>Upload a PNG, ICO, SVG, JPEG, or WEBP file to replace the favicon.</p>
               </div>
             </div>
-            <input
-              type="file"
-              accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.ico,.svg"
-              onChange={handleFaviconChange}
-            />
-            <RippleButton type="button" onClick={handleFaviconUpload} loading={faviconUploading} disabled={!faviconFile}>
-              Upload favicon
-            </RippleButton>
+            <input type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.ico,.svg" onChange={handleFaviconChange} />
+            <RippleButton type="button" onClick={handleFaviconUpload} loading={faviconUploading} disabled={!faviconFile}>Upload favicon</RippleButton>
             {faviconMsg && <p style={{ margin: 0, color: faviconMsg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{faviconMsg}</p>}
           </div>
         </div>
@@ -2741,19 +2703,11 @@ function AdminSettings() {
               )}
               <div style={{ minWidth: 0, flex: 1 }}>
                 <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600 }}>Current logo</p>
-                <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>
-                  Upload a PNG, JPEG, or WEBP file. This will appear on invoices, receipts, and quotes.
-                </p>
+                <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>Upload a PNG, JPEG, or WEBP file. This will appear on invoices, receipts, and quotes.</p>
               </div>
             </div>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={handleLogoChange}
-            />
-            <RippleButton type="button" onClick={handleLogoUpload} loading={logoUploading} disabled={!logoFile}>
-              Upload logo
-            </RippleButton>
+            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleLogoChange} />
+            <RippleButton type="button" onClick={handleLogoUpload} loading={logoUploading} disabled={!logoFile}>Upload logo</RippleButton>
             {logoMsg && <p style={{ margin: 0, color: logoMsg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{logoMsg}</p>}
           </div>
           <div className="field" style={{ marginTop: "0.75rem" }}>
@@ -2772,6 +2726,46 @@ function AdminSettings() {
             <p className="muted" style={{ fontSize: "0.8rem", margin: "0.25rem 0 0" }}>Replaces the horizontal category links with a collapsible dropdown menu for a cleaner header.</p>
           </div>
         </div>
+        {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", marginBottom: "0.75rem" }}>{msg}</p>}
+        <RippleButton type="submit" loading={saving}>Save settings</RippleButton>
+      </form>
+    </>
+  );
+}
+
+function AdminPayments() {
+  const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function handleSave(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true); setMsg("");
+    const fd = new FormData(e.currentTarget);
+    try {
+      await api("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          mpesaConsumerKey: fd.get("mpesaConsumerKey"),
+          mpesaConsumerSecret: fd.get("mpesaConsumerSecret"),
+          mpesaPasskey: fd.get("mpesaPasskey"),
+          mpesaShortcode: fd.get("mpesaShortcode"),
+          mpesaTillNumber: fd.get("mpesaTillNumber"),
+          mpesaEnv: fd.get("mpesaEnv"),
+        }),
+      });
+      setMsg("M-Pesa settings saved.");
+    } catch (err: any) { setMsg("Error: " + err.message); }
+    finally { setSaving(false); }
+  }
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+
+  return (
+    <>
+      <h1>Payments</h1>
+      <form onSubmit={handleSave} style={{ maxWidth: 500 }}>
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <h3 style={{ marginTop: 0 }}>M-Pesa Configuration</h3>
           <div className="field"><label>Consumer Key<input name="mpesaConsumerKey" defaultValue={settings?.mpesaConsumerKey || ""} /></label></div>
@@ -2781,6 +2775,64 @@ function AdminSettings() {
           <div className="field"><label>Till Number<input name="mpesaTillNumber" defaultValue={settings?.mpesaTillNumber || ""} /></label></div>
           <div className="field"><label>Environment<select name="mpesaEnv" defaultValue={settings?.mpesaEnv || "sandbox"}><option value="sandbox">Sandbox</option><option value="production">Production</option></select></label></div>
         </div>
+        {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", marginBottom: "0.75rem" }}>{msg}</p>}
+        <RippleButton type="submit" loading={saving}>Save M-Pesa settings</RippleButton>
+      </form>
+
+      <div className="panel payment-methods-panel" style={{ marginBottom: "1rem", marginTop: "1.5rem" }}>
+        <h3 style={{ marginTop: 0 }}>Payment Methods</h3>
+        <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+          Configure payment methods shown on the POS page. Each method needs a unique ID, display name, KRA tax code, and whether it requires a tendered amount.
+        </p>
+        <AdminPaymentMethods initial={settings?.paymentMethods || []} />
+      </div>
+
+      <h3 style={{ marginTop: "1.5rem" }}>Exchange Rates</h3>
+      <p className="muted" style={{ fontSize: "0.85rem" }}>Rates auto-fetch from open.er-api.com. Set custom rates below to override. Leave empty to use auto rates.</p>
+      <AdminExchangeRates />
+    </>
+  );
+}
+
+function AdminCompliance() {
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
+  const [etimsMode, setEtimsMode] = useState("off");
+  useEffect(() => { if (settings?.etimsMode) setEtimsMode(settings.etimsMode); }, [settings?.etimsMode]);
+
+  async function handleSave(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true); setMsg("");
+    const fd = new FormData(e.currentTarget);
+    try {
+      await api("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          googleClientId: fd.get("googleClientId"),
+          kraPin: fd.get("kraPin"),
+          etimsSerialPrefix: fd.get("etimsSerialPrefix"),
+          etimsMode: fd.get("etimsMode"),
+          etimsBranchId: fd.get("etimsBranchId"),
+          etimsDeviceSerial: fd.get("etimsDeviceSerial"),
+          etimsVscuUrl: fd.get("etimsVscuUrl"),
+          etimsOscuApiUrl: fd.get("etimsOscuApiUrl"),
+          etimsOscuConsumerKey: fd.get("etimsOscuConsumerKey"),
+          etimsOscuConsumerSecret: fd.get("etimsOscuConsumerSecret"),
+        }),
+      });
+      setMsg("Compliance settings saved.");
+    } catch (err: any) { setMsg("Error: " + err.message); }
+    finally { setSaving(false); }
+  }
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+
+  return (
+    <>
+      <h1>Compliance</h1>
+      <form onSubmit={handleSave} style={{ maxWidth: 500 }}>
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <h3 style={{ marginTop: 0 }}>Google Sign-In</h3>
           <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
@@ -2808,52 +2860,94 @@ function AdminSettings() {
             <div className="field"><label>Consumer Secret<input name="etimsOscuConsumerSecret" defaultValue={settings?.etimsOscuConsumerSecret || ""} placeholder="OSCU consumer secret" /></label></div>
           </>}
         </div>
-        <div className="panel" style={{ marginBottom: "1rem" }}>
-          <h3 style={{ marginTop: 0 }}>Image Storage</h3>
-          <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
-            Configure Cloudinary for cloud image storage. Leave blank to use local disk (not recommended in production — local files are lost on Render deploys). If set here, these override the environment variables.
-          </p>
-          <div style={{ display: "grid", gap: "0.5rem", marginBottom: "0.75rem" }}>
-            <div className="field"><label>Cloud Name<input name="cloudinaryCloudName" defaultValue={settings?.cloudinaryCloudName || ""} placeholder="e.g. dxxxxxxx" /></label></div>
-            <div className="field"><label>API Key<input name="cloudinaryApiKey" defaultValue={settings?.cloudinaryApiKey || ""} placeholder="Cloudinary API key" /></label></div>
-            <div className="field"><label>API Secret<input name="cloudinaryApiSecret" type="password" defaultValue={settings?.cloudinaryApiSecret || ""} placeholder="Cloudinary API secret" /></label></div>
-            <div className="field"><label>Folder<input name="cloudinaryFolder" defaultValue={settings?.cloudinaryFolder || "gear-glitch"} placeholder="gear-glitch" /></label></div>
-          </div>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-            <input type="checkbox" name="backupImagesToDb" defaultChecked={settings?.backupImagesToDb || false} style={{ width: 18, height: 18 }} />
-            <span>Enable database backup for uploaded images</span>
-          </label>
-        </div>
         {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", marginBottom: "0.75rem" }}>{msg}</p>}
-        <RippleButton type="submit" loading={saving}>Save settings</RippleButton>
+        <RippleButton type="submit" loading={saving}>Save compliance settings</RippleButton>
       </form>
+    </>
+  );
+}
 
-      <div className="panel payment-methods-panel" style={{ marginBottom: "1rem" }}>
-        <h3 style={{ marginTop: 0 }}>Payment Methods</h3>
+function AdminContent() {
+  const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+
+  return (
+    <>
+      <h1>Content</h1>
+      <div className="panel" style={{ marginBottom: "1rem" }}>
+        <h3 style={{ marginTop: 0 }}>Image Storage</h3>
         <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
-          Configure payment methods shown on the POS page. Each method needs a unique ID, display name, KRA tax code, and whether it requires a tendered amount.
+          Configure Cloudinary for cloud image storage. Leave blank to use local disk (not recommended in production — local files are lost on Render deploys). If set here, these override the environment variables.
         </p>
-        <AdminPaymentMethods initial={settings?.paymentMethods || []} />
+        <AdminImageStorage initial={settings} />
       </div>
-
-      <h3 style={{ marginTop: "1.5rem" }}>Exchange Rates</h3>
-      <p className="muted" style={{ fontSize: "0.85rem" }}>Rates auto-fetch from open.er-api.com. Set custom rates below to override. Leave empty to use auto rates.</p>
-      <AdminExchangeRates />
-
       <AdminSplashes />
+    </>
+  );
+}
 
-      <h3 style={{ marginTop: "1.5rem" }}>Database Backup</h3>
-      <p className="muted" style={{ fontSize: "0.85rem" }}>Download a full backup of the store database.</p>
-      <RippleButton onClick={async () => {
-        try {
-          const res = await fetch("/api/admin/backup", { headers: { Authorization: "Bearer " + (getStaffToken() || "") } });
-          if (!res.ok) throw new Error("Backup failed");
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a"); a.href = url; a.download = `store-backup-${new Date().toISOString().slice(0, 10)}.db`; a.click();
-          URL.revokeObjectURL(url);
-        } catch (e: any) { alert(e.message); }
-      }}>Download Backup</RippleButton>
+function AdminImageStorage({ initial }: { initial: any }) {
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function handleSave(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true); setMsg("");
+    const fd = new FormData(e.currentTarget);
+    try {
+      await api("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          backupImagesToDb: fd.get("backupImagesToDb") === "on",
+          cloudinaryCloudName: fd.get("cloudinaryCloudName"),
+          cloudinaryApiKey: fd.get("cloudinaryApiKey"),
+          cloudinaryApiSecret: fd.get("cloudinaryApiSecret"),
+          cloudinaryFolder: fd.get("cloudinaryFolder"),
+        }),
+      });
+      setMsg("Image storage settings saved.");
+    } catch (err: any) { setMsg("Error: " + err.message); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <form onSubmit={handleSave} style={{ maxWidth: 500 }}>
+      <div style={{ display: "grid", gap: "0.5rem", marginBottom: "0.75rem" }}>
+        <div className="field"><label>Cloud Name<input name="cloudinaryCloudName" defaultValue={initial?.cloudinaryCloudName || ""} placeholder="e.g. dxxxxxxx" /></label></div>
+        <div className="field"><label>API Key<input name="cloudinaryApiKey" defaultValue={initial?.cloudinaryApiKey || ""} placeholder="Cloudinary API key" /></label></div>
+        <div className="field"><label>API Secret<input name="cloudinaryApiSecret" type="password" defaultValue={initial?.cloudinaryApiSecret || ""} placeholder="Cloudinary API secret" /></label></div>
+        <div className="field"><label>Folder<input name="cloudinaryFolder" defaultValue={initial?.cloudinaryFolder || "gear-glitch"} placeholder="gear-glitch" /></label></div>
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+        <input type="checkbox" name="backupImagesToDb" defaultChecked={initial?.backupImagesToDb || false} style={{ width: 18, height: 18 }} />
+        <span>Enable database backup for uploaded images</span>
+      </label>
+      {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", margin: "0.75rem 0" }}>{msg}</p>}
+      <RippleButton type="submit" loading={saving} style={{ marginTop: "0.75rem" }}>Save image storage</RippleButton>
+    </form>
+  );
+}
+
+function AdminSystem() {
+  return (
+    <>
+      <h1>System</h1>
+      <div className="panel" style={{ maxWidth: 500 }}>
+        <h3 style={{ marginTop: 0 }}>Database Backup</h3>
+        <p className="muted" style={{ fontSize: "0.85rem" }}>Download a full backup of the store database.</p>
+        <RippleButton onClick={async () => {
+          try {
+            const res = await fetch("/api/admin/backup", { headers: { Authorization: "Bearer " + (getStaffToken() || "") } });
+            if (!res.ok) throw new Error("Backup failed");
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a"); a.href = url; a.download = `store-backup-${new Date().toISOString().slice(0, 10)}.db`; a.click();
+            URL.revokeObjectURL(url);
+          } catch (e: any) { alert(e.message); }
+        }}>Download Backup</RippleButton>
+      </div>
     </>
   );
 }

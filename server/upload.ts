@@ -126,6 +126,12 @@ const uploadFavicon = multer({
   fileFilter: imageFileFilter,
 }).single("favicon");
 
+const uploadLogo = multer({
+  storage: new DynamicStorage("logo", (_req, file) => `store-logo-${Date.now()}${safeExt(file, ".jpg")}`),
+  ...MULTER_OPTS,
+  fileFilter: imageFileFilter,
+}).single("image");
+
 const uploadGalleryImage = multer({
   storage: new DynamicStorage("gallery", (req, file) => {
     const productId = req.params?.id || "unknown";
@@ -197,4 +203,4 @@ async function deleteCloudinaryImage(imageUrl: string): Promise<void> {
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage };

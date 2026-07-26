@@ -287,7 +287,7 @@ import {
 import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection } from "./whatsapp";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
@@ -692,16 +692,18 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
   res.json({ ...settings, paymentMethods: await getPaymentMethods(), mpesa: mpesaCfg, springboardMenu: (await getStoreSetting("springboard_menu")) === "true" });
 }));
 
-app.post("/api/settings/logo", adminAuthMiddleware, (req: Request, res: Response) => {
-  uploadProductImage(req, res, async (err: any) => {
-    if (err) { res.status(400).json({ error: "Upload failed." }); return; }
-    if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
-    const logoUrl = getUploadedUrl(req);
-    await updateSettings({ storeLogo: logoUrl });
-    backupImageToDb("logo", logoUrl);
-    res.json({ logoUrl });
+app.post("/api/settings/logo", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  uploadLogo(req, res, async (err: any) => {
+    try {
+      if (err) { console.error("[Logo upload]", err.message || err); res.status(400).json({ error: "Upload failed: " + (err.message || "Unknown error") }); return; }
+      if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
+      const logoUrl = getUploadedUrl(req);
+      await updateSettings({ storeLogo: logoUrl });
+      backupImageToDb("logo", logoUrl);
+      res.json({ logoUrl });
+    } catch (e: any) { console.error("[Logo upload] processing error:", e.message || e); res.status(500).json({ error: "Upload failed: " + (e.message || "Internal error") }); }
   });
-});
+}));
 
 app.get("/api/admin/email-logs", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const limit = Number(req.query.limit) || 50;
@@ -717,16 +719,18 @@ app.post("/api/admin/email/test", adminAuthMiddleware, asyncHandler(async (req: 
   res.json({ ok, message: ok ? "Test email sent." : "Email failed. Check SMTP configuration." });
 }));
 
-app.post("/api/settings/favicon", adminAuthMiddleware, (req: Request, res: Response) => {
+app.post("/api/settings/favicon", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   uploadFavicon(req, res, async (err: any) => {
-    if (err) { res.status(400).json({ error: "Upload failed." }); return; }
-    if (!req.file) { res.status(400).json({ error: "No file provided." }); return; }
-    const faviconUrl = getUploadedUrl(req);
-    await updateSettings({ storeFavicon: faviconUrl });
-    backupImageToDb("favicon", faviconUrl);
-    res.json({ faviconUrl });
+    try {
+      if (err) { console.error("[Favicon upload]", err.message || err); res.status(400).json({ error: "Upload failed: " + (err.message || "Unknown error") }); return; }
+      if (!req.file) { res.status(400).json({ error: "No file provided." }); return; }
+      const faviconUrl = getUploadedUrl(req);
+      await updateSettings({ storeFavicon: faviconUrl });
+      backupImageToDb("favicon", faviconUrl);
+      res.json({ faviconUrl });
+    } catch (e: any) { console.error("[Favicon upload] processing error:", e.message || e); res.status(500).json({ error: "Upload failed: " + (e.message || "Internal error") }); }
   });
-});
+}));
 
 // ============ PROVIDER / SUBSCRIPTION PLANS ============
 
@@ -3468,18 +3472,20 @@ app.get("/api/repairs/:id/images", staffAuthMiddleware, asyncHandler(async (req:
   res.json({ images: await getRepairImages(String(req.params.id)) });
 }));
 
-app.post("/api/repairs/:id/images", staffAuthMiddleware, (req: Request, res: Response) => {
+app.post("/api/repairs/:id/images", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   uploadRepairImage(req, res, async (err: any) => {
-    if (err) { res.status(400).json({ error: err.message }); return; }
-    if (!req.file) { res.status(400).json({ error: "No image uploaded." }); return; }
-    const imageType = String(req.body.imageType || "before").toLowerCase();
-    if (!["before", "after"].includes(imageType)) { res.status(400).json({ error: "imageType must be 'before' or 'after'." }); return; }
-    const imageUrl = getUploadedUrl(req);
-    const image = await addRepairImage(String(req.params.id), imageUrl, imageType as "before" | "after", (req as any).user.sub);
-    backupImageToDb(`repair:${req.params.id}:${imageType}:${image.id}`, imageUrl);
-    res.status(201).json(image);
+    try {
+      if (err) { console.error("[Repair image upload]", err.message || err); res.status(400).json({ error: "Upload failed: " + (err.message || "Unknown error") }); return; }
+      if (!req.file) { res.status(400).json({ error: "No image uploaded." }); return; }
+      const imageType = String(req.body.imageType || "before").toLowerCase();
+      if (!["before", "after"].includes(imageType)) { res.status(400).json({ error: "imageType must be 'before' or 'after'." }); return; }
+      const imageUrl = getUploadedUrl(req);
+      const image = await addRepairImage(String(req.params.id), imageUrl, imageType as "before" | "after", (req as any).user.sub);
+      backupImageToDb(`repair:${req.params.id}:${imageType}:${image.id}`, imageUrl);
+      res.status(201).json(image);
+    } catch (e: any) { console.error("[Repair image upload] processing error:", e.message || e); res.status(500).json({ error: "Upload failed: " + (e.message || "Internal error") }); }
   });
-});
+}));
 
 app.delete("/api/repairs/:id/images/:imageId", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const removed = await deleteRepairImage(Number(req.params.imageId));
