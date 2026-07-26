@@ -14,7 +14,6 @@ interface LayoutProps {
 }
 
 const NAV_LINKS = [
-  { id: "home", label: "Home", href: "/" },
   { id: "pc", label: "PCs", href: "/pc" },
   { id: "laptops", label: "Laptops", href: "/laptops" },
   { id: "graphics-cards", label: "Graphics Cards", href: "/graphics-cards" },

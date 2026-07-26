@@ -57,7 +57,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
     <div className="amz-top">
       <div className="amz-top-inner">
         <Link href="/" style={{ fontWeight: 700, fontSize: "1.3rem", color: "var(--text)", textDecoration: "none", whiteSpace: "nowrap" }}>
-          {settings?.storeLogo ? <img src={settings.storeLogo} alt="Store" style={{ height: 36 }} /> : settings?.storeName || "Store"}
+          {settings?.storeLogo ? <img src={settings.storeLogo} alt="Store" style={{ height: 44 }} /> : settings?.storeName || "Store"}
         </Link>
         <div className="amz-search">
           <input type="text" placeholder="Search products..." />

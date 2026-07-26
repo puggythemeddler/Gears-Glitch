@@ -66,7 +66,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
     <div className="mob-header">
       <div className="mob-header-inner">
         <Link href="/" className="mob-brand">
-          {settings?.storeLogo ? <img src={settings.storeLogo} alt="Store" style={{ height: 28 }} /> : settings?.storeName || "Store"}
+          {settings?.storeLogo ? <img src={settings.storeLogo} alt="Store" style={{ height: 44 }} /> : settings?.storeName || "Store"}
         </Link>
         <nav className="mob-nav">
           <a href="/">Home</a>
