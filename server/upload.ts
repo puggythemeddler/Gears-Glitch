@@ -103,6 +103,15 @@ function imageFileFilterLenient(_req: any, file: Express.Multer.File, cb: multer
   cb(null, true);
 }
 
+function runMulter(uploadFn: (req: any, res: any, cb: (err?: any) => void) => void, req: any, res: any): Promise<void> {
+  return new Promise((resolve, reject) => {
+    uploadFn(req, res, (err: any) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
 const MULTER_OPTS = { limits: { fileSize: 5 * 1024 * 1024 } };
 
 function safeExt(file: Express.Multer.File, fallback: string) {
@@ -203,4 +212,4 @@ async function deleteCloudinaryImage(imageUrl: string): Promise<void> {
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage };
