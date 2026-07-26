@@ -292,6 +292,7 @@ import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
 import { htmlToPdf, closeBrowser } from "./pdf";
+import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared } from "./routes/shared";
 
 const PORT: number = Number(process.env.PORT) || 8020;
 const ROOT: string = path.join(__dirname, "..");
@@ -307,7 +308,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://accounts.google.com"],
+      scriptSrc: ["'self'", "https://accounts.google.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
@@ -353,16 +354,16 @@ app.use("/api/auth/request-password-reset", authLimiter);
 app.use("/api/auth/request-admin-password-reset", authLimiter);
 
 // ============ INPUT VALIDATION HELPERS ============
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-function isEmail(v: unknown): boolean { return typeof v === "string" && v.length <= 320 && EMAIL_RE.test(v); }
-function isStr(v: unknown, max = 500): v is string { return typeof v === "string" && v.length > 0 && v.length <= max; }
-function isNum(v: unknown): v is number { return typeof v === "number" && isFinite(v); }
-function isInt(v: unknown): v is number { return isNum(v) && Number.isInteger(v); }
-function isPosInt(v: unknown): v is number { return isInt(v) && v > 0; }
-function isNonNegNum(v: unknown): v is number { return isNum(v) && v >= 0; }
-function isArr(v: unknown): v is unknown[] { return Array.isArray(v); }
-function inSet<T extends string>(v: unknown, set: readonly T[]): v is T { return typeof v === "string" && (set as readonly string[]).includes(v); }
-function okLen(v: unknown, min: number, max: number): boolean { return typeof v === "string" && v.length >= min && v.length <= max; }
+// Re-exported from ./routes/shared for backward compatibility
+const _isEmail = isEmail;
+const _isStr = isStr;
+const _isNum = isNum;
+const _isInt = isInt;
+const _isPosInt = isPosInt;
+const _isNonNegNum = isNonNegNum;
+const _isArr = isArr;
+const _inSet = inSet;
+const _okLen = okLen;
 
 app.use(express.json({ limit: "1mb" }));
 app.use("/uploads", express.static(path.join(ROOT, "data", "uploads"), {
@@ -423,14 +424,7 @@ app.get("/api/images/:refId", async (req: Request, res: Response) => {
 });
 
 // Permission guard helper
-function requirePermission(perm: string) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const uid = (req as any).user?.sub;
-    if (!uid) { res.status(401).json({ error: "Not authenticated" }); return; }
-    if (!await hasPermission(uid, perm)) { res.status(403).json({ error: `Missing permission: ${perm}` }); return; }
-    next();
-  };
-}
+const requirePermission = requirePermissionShared;
 
 // Shipping
 app.get("/api/shipping/counties", (_req: Request, res: Response) => {
@@ -1843,16 +1837,11 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, async (req: Request, 
 });
 
 function escapeHtml(v: string) {
-  return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  return escapeHtmlUtil(v);
 }
 
 function renderStoreLogo(logoUrl: string, position: string, storeName: string): string {
-  if (!logoUrl) return "";
-  const pos = position || "top-left";
-  if (pos === "top-left") return `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;margin-bottom:0.5rem;" />`;
-  if (pos === "top-middle") return `<div style="text-align:center;margin-bottom:0.5rem;"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;" /></div>`;
-  if (pos === "top-right") return `<div style="text-align:right;margin-bottom:0.5rem;"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;" /></div>`;
-  return "";
+  return renderStoreLogoUtil(logoUrl, position, storeName);
 }
 
 // ============ PRODUCT ANALYTICS ============
@@ -2992,7 +2981,7 @@ app.post("/api/auth/change-password", staffAuthMiddleware, async (req: Request, 
   if (!currentPassword || !newPassword) { res.status(400).json({ error: "Current and new passwords are required." }); return; }
   if (newPassword.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters." }); return; }
 
-  const user = findStaffById((req as any).user.sub);
+  const user = await findStaffById((req as any).user.sub);
   if (!user) { res.status(404).json({ error: "User not found." }); return; }
 
   const userWithHash = await queryOne("SELECT password_hash FROM users WHERE id = $1", [(req as any).user.sub]) as any;

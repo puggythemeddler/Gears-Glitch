@@ -40,7 +40,7 @@ interface AuthResult {
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
-  if (!secret || secret === "change-this-to-a-long-random-string" || secret === "your-secret-key-change-this-in-production" || secret === "dev-only-secret-change-for-production") {
+  if (!secret || secret === "change-this-to-a-long-random-string" || secret === "your-secret-key-change-this-in-production" || secret === "dev-only-secret-change-for-production" || secret === "gl-jwt-2024-secure-random-key-xK9mPq") {
     throw new Error("Set a strong JWT_SECRET in .env before running the server.");
   }
   return secret;
@@ -57,10 +57,6 @@ function verifyToken(token: string): JwtPayload {
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization || "";
   if (header.startsWith("Bearer ")) return header.slice(7);
-  if (req.query?.allowQueryToken === "1") {
-    const queryToken = req.query?.token;
-    if (typeof queryToken === "string" && queryToken.trim()) return queryToken.trim();
-  }
   return null;
 }
 
@@ -279,8 +275,7 @@ function ownerAuthMiddleware(req: Request, res: Response, next: NextFunction): v
 }
 
 function posAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
-  let token = getBearerToken(req);
-  if (!token && req.query.allowQueryToken === "1" && req.query.token) token = String(req.query.token);
+  const token = getBearerToken(req);
   if (!token) { res.status(401).json({ error: "Login required." }); return; }
   try {
     const user = verifyToken(token);

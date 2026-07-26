@@ -14,7 +14,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
-        value: gl-jwt-2024-secure-random-key-xK9mPq
+        sync: false
       - key: PORT
         value: 8020
       - key: BASE_URL
