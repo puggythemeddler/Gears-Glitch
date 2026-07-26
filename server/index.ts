@@ -292,7 +292,7 @@ import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
 import { htmlToPdf, closeBrowser } from "./pdf";
-import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared } from "./routes/shared";
+import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons } from "./routes/shared";
 
 const PORT: number = Number(process.env.PORT) || 8020;
 const ROOT: string = path.join(__dirname, "..");
@@ -1180,7 +1180,8 @@ app.post("/api/pos/checkout", posAuthMiddleware, async (req: Request, res: Respo
   }
 });
 
-app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res: Response) => {
+app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
   const order = await getOrder(Number(req.params.orderId));
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
   const format = (req.query.format as string) || "thermal";
@@ -1220,6 +1221,67 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
   const qrData = JSON.stringify({ inv: etimsNumber, dc: controlCode, pin: kraPin, amt: total, dt: order.createdAt, ri: vscuReceiptNo });
   const qrUrl = hasEtims ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}` : "";
   const qrSmall = format === "thermal" && qrUrl ? qrUrl.replace("size=120x120", "size=100x100") : qrUrl;
+
+  if (format === "pdf") {
+    // PDF generation — reuse A4 layout then convert
+    const a4ItemsHtml = order.items.map((i: any) => {
+      const isTx = i.taxable !== false;
+      const vat = isTx ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0;
+      const tt = isTx ? taxType : "E";
+      let warranty = "\u2014";
+      if (i.hasWarranty) {
+        const expiry = new Date(order.createdAt);
+        expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
+        warranty = `Yes (exp: ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})`;
+      }
+      return `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
+    }).join("");
+    const title = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
+    const subtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
+<style>${INVOICE_CSS}</style></head><body>
+<div class="invoice">
+  <div class="header">
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${title}</h1><p class="meta">${subtitle}</p></div>
+    <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
+  </div>
+  ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
+  <div class="info-grid">
+    <div>
+      <div class="label">Bill to</div>
+      <div><strong>${escapeHtml(order.shippingName || order.customerName)}</strong></div>
+      <div>${escapeHtml(order.shippingAddress || "")}</div>
+      <div>${escapeHtml(order.shippingCity || "")}${order.shippingCounty ? ", " + escapeHtml(order.shippingCounty) : ""}</div>
+      ${order.shippingPhone ? `<div>${escapeHtml(order.shippingPhone)}</div>` : ""}
+    </div>
+    <div>
+      <div class="label">Order details</div>
+      <div>Date: ${receiptDate || new Date(order.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}</div>
+      <div>Status: ${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</div>
+      <div>Tax Type: ${taxType === "A" ? "VAT A (16%)" : "Not Subject (E)"}</div>
+      ${hasEtims ? `<div>Mode: ${modeLabel}</div>` : ""}
+    </div>
+  </div>
+  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th><th style="text-align:right">VAT</th><th style="text-align:center">TT</th><th>Warranty</th></tr></thead><tbody>
+    ${a4ItemsHtml}
+  </tbody></table>
+  <div style="text-align:right;">
+    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+  </div>
+  ${internalData ? `<div class="vscu-data"><strong>Internal Data:</strong> ${escapeHtml(internalData)}<br><strong>Signature Data:</strong> ${escapeHtml(signatureData)}</div>` : ""}
+  ${order.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(order.notes)}</p>` : ""}
+  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:1rem;">Provided by ${escapeHtml(store)}</div>
+</div>
+</body></html>`;
+    const pdf = await htmlToPdf(html);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="receipt-${order.id}.pdf"`);
+    res.send(pdf);
+    return;
+  }
 
   if (format === "a4") {
     const a4ItemsHtml = order.items.map((i: any) => {
@@ -1294,29 +1356,25 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, async (req: Request, res
     <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
-  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+  <div class="btn-group">
+    <button class="print-btn" onclick="window.print()">Print</button>
+    <button class="pdf-btn" onclick="window.location.href='/api/pos/receipt/${order.id}?format=pdf'">Save PDF</button>
+  </div>
   <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>` : `
   <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
-  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>`}
+  <div class="btn-group">
+    <button class="print-btn" onclick="window.print()">Print</button>
+    <button class="pdf-btn" onclick="window.location.href='/api/pos/receipt/${order.id}?format=pdf'">Save PDF</button>
+  </div>`}
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`);
     return;
   }
 
+  // Thermal format
   res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>POS Receipt #${order.id} — ${escapeHtml(store)}</title>
-<style>
-  body { font-family: monospace; max-width: 380px; margin: 0 auto; padding: 0.75rem; font-size: 0.9rem; color: #1f2937; line-height: 1.6; }
-  h1 { font-size: 1.15rem; text-align: center; margin: 0.75rem 0; }
-  table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; }
-  th, td { padding: 0.35rem 0; text-align: left; }
-  .total { font-weight: 700; font-size: 1.1rem; border-top: 1px dashed #000; padding-top: 0.6rem; }
-  .center { text-align: center; }
-  hr { border: none; border-top: 1px dashed #000; margin: 0.75rem 0; }
-  .print-btn { display: block; margin: 1rem auto; padding: 0.5rem 1.5rem; background: #1f2937; color: #fff; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
-  .footer-note { text-align: center; font-size: 0.7rem; color: #9ca3af; margin-top: 0.75rem; border-top: 1px solid #e5e7eb; padding-top: 0.5rem; }
-  @media print { body { margin: 0; } .print-btn { display: none; } }
-</style></head><body>
+<style>${THERMAL_CSS}</style></head><body>
 ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}
 <h1>${escapeHtml(store)}</h1>
 <div class="center">${escapeHtml(storeEmail)}</div>
@@ -1339,10 +1397,17 @@ ${hasEtims ? `<div>Mode: ${modeLabel}</div>` : ""}
 <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 <hr>
 ${hasEtims ? `<div class="center">${qrUrl ? `<img src="${qrSmall}" alt="eTIMS QR" style="width:80px;height:80px;" /><br>` : ""}Verify at https://itax.kra.go.ke</div>` : ""}
-<button class="print-btn" onclick="window.print()">${hasEtims ? "Print Receipt" : "Print / Save PDF"}</button>
+<div class="btn-group">
+  <button class="print-btn" onclick="window.print()">${hasEtims ? "Print Receipt" : "Print"}</button>
+  <button class="pdf-btn" onclick="window.location.href='/api/pos/receipt/${order.id}?format=pdf'">Save PDF</button>
+</div>
 <div class="footer-note">Provided by ${escapeHtml(store)}</div>
 </body></html>`);
-});
+  } catch (err: any) {
+    console.error("[POS Receipt Error]", err?.message || err);
+    if (!res.headersSent) res.status(500).json({ error: "Failed to generate receipt." });
+  }
+}));
 
 app.get("/api/pos/customers", posAuthMiddleware, async (req: Request, res: Response) => {
   const q = (req.query.q as string || "").trim();
@@ -1676,10 +1741,16 @@ app.get("/api/admin/orders/:id/invoice", async (req: Request, res: Response) => 
     <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
-  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+  <div class="btn-group">
+    <button class="print-btn" onclick="window.print()">Print</button>
+    <button class="pdf-btn" onclick="window.location.href=window.location.pathname+'?format=pdf'">Save PDF</button>
+  </div>
   <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>` : `
   <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
-  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>`}
+  <div class="btn-group">
+    <button class="print-btn" onclick="window.print()">Print</button>
+    <button class="pdf-btn" onclick="window.location.href=window.location.pathname+'?format=pdf'">Save PDF</button>
+  </div>`}
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`;
@@ -1810,10 +1881,16 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, async (req: Request, 
     <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
-  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+  <div class="btn-group">
+    <button class="print-btn" onclick="window.print()">Print</button>
+    <button class="pdf-btn" onclick="window.location.href=window.location.pathname+'?format=pdf'">Save PDF</button>
+  </div>
   <div class="footer">eTIMS-compliant invoice (${modeLabel}) — Verify at https://itax.kra.go.ke</div>` : `
   <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — ${escapeHtml(storeEmail)}</div>
-  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>`}
+  <div class="btn-group">
+    <button class="print-btn" onclick="window.print()">Print</button>
+    <button class="pdf-btn" onclick="window.location.href=window.location.pathname+'?format=pdf'">Save PDF</button>
+  </div>`}
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`;
@@ -2035,7 +2112,10 @@ app.get("/api/admin/credit-notes/:id/view", staffAuthMiddleware, async (req: Req
   <div style="text-align:right;">
     <div class="total-row">Total Credit: ${currency} ${cn.totalAmount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
   </div>
-  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+  <div class="btn-group">
+    <button class="print-btn" onclick="window.print()">Print</button>
+    <button class="pdf-btn" onclick="window.location.href=window.location.pathname+'?format=pdf'">Save PDF</button>
+  </div>
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`;
@@ -3844,7 +3924,10 @@ app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("rep
   <div style="text-align:right;"><div class="total-row">Total: ${currency} ${total.toLocaleString("en",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
   ${quote.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(quote.notes)}</p>` : ""}
   <div class="footer">${escapeHtml(store)} &mdash; ${escapeHtml(storeEmail)}</div>
-  <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+  <div class="btn-group">
+    <button class="print-btn" onclick="window.print()">Print</button>
+    <button class="pdf-btn" onclick="window.location.href=window.location.pathname+'?format=pdf'">Save PDF</button>
+  </div>
 </div>
 </body></html>`;
   if (req.query.format === "pdf") {
