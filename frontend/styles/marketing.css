@@ -212,8 +212,8 @@
 .mk-section {
   position: relative;
   z-index: 1;
-  padding: 100px 24px;
-  max-width: 1200px;
+  padding: 100px 48px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
@@ -683,13 +683,13 @@
   gap: 24px;
   margin-top: 40px;
   width: 100%;
-  max-width: 900px;
+  max-width: 1200px;
   justify-content: center;
 }
 
 .mk-solution-branch {
   flex: 1;
-  max-width: 260px;
+  max-width: 340px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1273,7 +1273,7 @@
 }
 
 .mk-footer-inner {
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
@@ -1315,6 +1315,11 @@
 /* ============================================================
    RESPONSIVE
    ============================================================ */
+@media (max-width: 1024px) {
+  .mk-section { padding: 80px 32px; }
+  .mk-cta { padding: 96px 32px; }
+}
+
 @media (max-width: 768px) {
   .mk-section { padding: 64px 16px; }
   .mk-section-header { margin-bottom: 40px; }

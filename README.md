@@ -180,7 +180,7 @@ Full store management with 29 sections:
 - **Orders** — View all customer orders with shipping details, status updates, branch assignment, coupon discount display
 - **Users & Permissions** — Staff management, fine-grained role-based permissions (editable for all roles)
 - **Roles** — Define custom roles with granular permission toggles (messaging, invoicing, credit notes, quotes, etc.)
-- **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes (45+ available features)
+- **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes (55+ available features). Plan editor features organized into 11 collapsible groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency) with select-all toggles per group and feature count badges.
 - **Providers** — View providers, assign plans, custom pricing, status
 - **Invoices** — Generate invoices per provider, mark paid, PDF download for order invoices
 - **Credit Notes** — Create eTIMS-compliant credit notes from invoices in admin and owner views, with printable audit details and submission tracking, PDF download

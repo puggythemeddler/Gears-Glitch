@@ -547,7 +547,7 @@ export default function MarketingPage() {
         id="features"
         label="Features"
         title="Everything You Need to Succeed"
-        subtitle="Twenty-five powerful modules that work together to run every part of your electronics business."
+        subtitle="Twenty-six powerful modules that work together to run every part of your electronics business."
       >
         <StaggerContainer className="mk-features-grid">
           {FEATURES.map((f, i) => (
