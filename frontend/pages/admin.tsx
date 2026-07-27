@@ -1400,7 +1400,7 @@ function AdminPlans() {
                   const allOn = grp.features.every((f) => form.features.includes(f));
                   const someOn = grp.features.some((f) => form.features.includes(f)) && !allOn;
                   return (
-                    <details key={grp.group} open style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                    <details key={grp.group} open style={{ border: "1px solid var(--border)", borderRadius: 8 }}>
                       <summary style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", cursor: "pointer", background: someOn ? "var(--primary-subtle)" : allOn ? "var(--primary-subtle)" : "var(--bg)", fontWeight: 600, fontSize: "0.9rem", listStyle: "none", userSelect: "none" }} onClick={(e) => { e.preventDefault(); const el = (e.currentTarget as HTMLElement).parentElement as HTMLDetailsElement; el.open = !el.open; }}>
                         <span style={{ fontSize: "0.7rem", opacity: 0.5, transition: "transform 0.2s", transform: someOn || allOn ? "rotate(90deg)" : "none" }}>&#9654;</span>
                         <span>{grp.icon}</span>
