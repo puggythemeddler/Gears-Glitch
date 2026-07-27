@@ -248,7 +248,7 @@ export default function DashboardPage() {
         {/* MESSAGES */}
         {activeSection === "messages" && (
           <div className="dash-section active">
-            {!messagingEnabled ? <p className="muted">Messaging is not included in your current plan.</p> : <><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            {!featureFlags["Messaging"] ? <p className="muted">Messaging is not included in your current plan.</p> : <><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h2>Messages</h2>
               <button className="btn btn-sm btn-secondary" onClick={() => setMsgComposeOpen(!msgComposeOpen)}>
                 {msgComposeOpen ? "Cancel" : "New message"}

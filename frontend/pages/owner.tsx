@@ -176,25 +176,25 @@ export default function OwnerPage() {
               {settings?.storeLogo && <img src={settings.storeLogo} alt="" style={{ height: 28, width: 28, objectFit: "contain", borderRadius: 4 }} />}
               <strong style={{ fontSize: "1rem" }}>{settings?.storeName || "Store"}</strong>
             </div>
-            {messagingEnabled && <NotificationBell onClick={() => setView("messages")} />}
+            {featureFlags["Messaging"] && <NotificationBell onClick={() => setView("messages")} />}
             <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
           </div>
           <div className="dash-section active" key={view}>
             {view === "dashboard" && <OwnerDashboard onNavigate={setView} />}
             {view === "orders" && <OwnerOrders />}
             {view === "products" && <OwnerProducts />}
-            {view === "product-positioning" && (productPositioningEnabled ? <OwnerProductPositioning /> : <p className="muted">Product positioning is not included in your current plan.</p>)}
+            {view === "product-positioning" && <OwnerProductPositioning />}
             {view === "providers" && <OwnerProviders />}
             {view === "customers" && <OwnerCustomers />}
-            {view === "quotes" && (quotationsEnabled ? <OwnerQuotes /> : <p className="muted">Quotations are not included in your current plan.</p>)}
-            {view === "messages" && (messagingEnabled ? <OwnerMessages /> : <p className="muted">Messaging is not included in your current plan.</p>)}
+            {view === "quotes" && <OwnerQuotes />}
+            {view === "messages" && <OwnerMessages />}
             {view === "reports" && <OwnerReports />}
             {view === "invoices" && <OwnerInvoices />}
-            {view === "credit-notes" && (creditNotesEnabled ? <OwnerCreditNotes /> : <p className="muted">Credit notes are not included in your current plan.</p>)}
-            {view === "stock-control" && (stockTransfersEnabled ? <OwnerStockControl /> : <p className="muted">Stock control is not included in your current plan.</p>)}
+            {view === "credit-notes" && <OwnerCreditNotes />}
+            {view === "stock-control" && <OwnerStockControl />}
             {view === "stock-take" && <OwnerStockTake />}
-            {view === "tech-repairs" && (techRepairsEnabled ? <OwnerTechRepairs /> : <p className="muted">Repair ticketing is not included in your current plan.</p>)}
-            {view === "branches" && (branchManagementEnabled ? <OwnerBranches /> : <p className="muted">Branch management is not included in your current plan.</p>)}
+            {view === "tech-repairs" && <OwnerTechRepairs />}
+            {view === "branches" && <OwnerBranches />}
             {view === "shop-subscription" && <OwnerShopSubscription />}
             {view === "about-us" && <OwnerAboutUs />}
             {view === "storefront" && <OwnerStorefront staffRole={staffRole} />}

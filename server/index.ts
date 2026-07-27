@@ -3680,7 +3680,7 @@ app.get("/api/purchases/:id/pdf", staffAuthMiddleware, asyncHandler(async (req: 
   .footer{margin-top:30px;border-top:1px solid #e5e7eb;padding-top:10px;font-size:11px;color:#999;text-align:center}
 </style></head><body>
   <div class="header">
-    <div>${settings.storeLogo ? `<img src="${settings.storeLogo}" style="height:40px;object-fit:contain" />` : ""}
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", settings.storeName || "Gear&Glitch")}
       <h1>Purchase Order #${po.id}</h1></div>
     <div style="text-align:right"><span class="badge badge-${po.status}">${po.status}</span></div>
   </div>

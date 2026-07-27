@@ -64,7 +64,7 @@
 
   /* Layout */
   --max-width: 1280px;
-  --header-height: 64px;
+  --header-height: 80px;
 }
 
 /* ----- Color Schemes ----- */
@@ -339,7 +339,7 @@ code, pre {
 }
 
 .site-logo {
-  max-height: 44px;
+  max-height: 64px;
   width: auto;
   display: block;
 }
@@ -2153,7 +2153,7 @@ a.order-item:hover {
 }
 
 @media (max-width: 768px) {
-  :root { --header-height: 60px; }
+  :root { --header-height: 72px; }
 
   .product-detail { grid-template-columns: 1fr; }
 

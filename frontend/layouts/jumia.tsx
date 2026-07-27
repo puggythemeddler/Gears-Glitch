@@ -55,7 +55,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
       <div className="jum-header">
         <div className="jum-header-inner">
           <Link href="/" className="jum-brand">
-            {settings?.storeLogo ? <img src={settings.storeLogo} alt="Store" style={{ height: 44 }} /> : settings?.storeName || "Store"}
+            {settings?.storeLogo ? <img src={settings.storeLogo} alt="Store" style={{ height: 64 }} /> : settings?.storeName || "Store"}
           </Link>
           <div className="jum-search">
             <input type="text" placeholder="Search products..." />
