@@ -1187,29 +1187,93 @@ function AdminRoles() {
 }
 
 // ===================== PLANS =====================
-const COMMON_FEATURES = [
-  "Analytics dashboard", "API access", "Audit log",
-  "Barcode scanning", "Branch management", "Bulk import/export",
-  "Bulk product edit", "Client/tenant management",
-  "Custom branding", "Customer management",
-  "Dedicated account manager", "Discount/coupon management",
-  "Email notifications", "eTIMS/KRA compliance",
-  "Google Sign-In", "Inventory forecasting",
-  "Invoice/quote PDF downloads", "Low stock alerts", "Loyalty program",
-  "Messaging", "M-Pesa integration",
-  "Multi-branch support", "Multi-currency support",
-  "Multiple staff accounts", "Order management",
-  "Payment method configuration", "POS integration",
-  "Price history tracking", "Priority support",
-  "Product listing", "Product positioning", "Product reviews & ratings",
-  "Purchase order management", "Quotations",
-  "Repair ticketing", "Returns management",
-  "Shop subscription", "SMS notifications",
-  "Spec templates", "Stock take / inventory count",
-  "Stock transfers", "Supplier management",
-  "Technician accounts", "Theme customization",
-  "Credit notes", "Admin messaging",
-  "Hero customization", "Customer reviews",
+const FEATURE_GROUPS = [
+  {
+    group: "Core Commerce",
+    icon: "💳",
+    features: [
+      "Product listing", "Order management", "POS integration",
+      "Payment method configuration", "M-Pesa integration",
+      "Discount/coupon management", "Returns management", "Customer management",
+    ],
+  },
+  {
+    group: "Inventory & Stock",
+    icon: "📦",
+    features: [
+      "Low stock alerts", "Stock take / inventory count", "Stock transfers",
+      "Supplier management", "Purchase order management", "Barcode scanning",
+      "Bulk import/export", "Bulk product edit", "Inventory forecasting",
+    ],
+  },
+  {
+    group: "Invoicing & Finance",
+    icon: "🧾",
+    features: [
+      "eTIMS/KRA compliance", "Invoice/quote PDF downloads", "Credit notes",
+      "Quotations", "Price history tracking",
+    ],
+  },
+  {
+    group: "Repairs & Service",
+    icon: "🔧",
+    features: [
+      "Repair ticketing", "Technician accounts",
+    ],
+  },
+  {
+    group: "Customer Engagement",
+    icon: "💬",
+    features: [
+      "Messaging", "Admin messaging", "Email notifications",
+      "SMS notifications", "Product reviews & ratings",
+      "Customer reviews", "Loyalty program",
+    ],
+  },
+  {
+    group: "WhatsApp & Communication",
+    icon: "📱",
+    features: [
+      "WhatsApp integration",
+    ],
+  },
+  {
+    group: "Multi-Location",
+    icon: "🏢",
+    features: [
+      "Branch management", "Multi-branch support", "Client/tenant management",
+    ],
+  },
+  {
+    group: "Marketing & Storefront",
+    icon: "🌐",
+    features: [
+      "Product positioning", "Hero customization", "Theme customization",
+      "Custom branding", "Shop subscription",
+    ],
+  },
+  {
+    group: "Analytics & Security",
+    icon: "📊",
+    features: [
+      "Analytics dashboard", "Audit log",
+    ],
+  },
+  {
+    group: "Support & Account",
+    icon: "🛡",
+    features: [
+      "Google Sign-In", "Multiple staff accounts", "Spec templates",
+      "Priority support", "Dedicated account manager",
+    ],
+  },
+  {
+    group: "Payments & Currency",
+    icon: "💱",
+    features: [
+      "Multi-currency support", "API access",
+    ],
+  },
 ];
 
 function AdminPlans() {
@@ -1307,13 +1371,33 @@ function AdminPlans() {
             </div>
             <div className="field">
               <label>Features</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginBottom: "0.5rem" }}>
-                {COMMON_FEATURES.map((f) => (
-                  <label key={f} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.85rem", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 6, background: form.features.includes(f) ? "var(--primary)" : "var(--bg)", color: form.features.includes(f) ? "#fff" : "var(--text)" }}>
-                    <input type="checkbox" checked={form.features.includes(f)} onChange={() => toggleFeature(f)} style={{ display: "none" }} />
-                    {f}
-                  </label>
-                ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.5rem", maxHeight: "60vh", overflowY: "auto", paddingRight: "0.25rem" }}>
+                {FEATURE_GROUPS.map((grp) => {
+                  const allOn = grp.features.every((f) => form.features.includes(f));
+                  const someOn = grp.features.some((f) => form.features.includes(f)) && !allOn;
+                  return (
+                    <details key={grp.group} open style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                      <summary style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", cursor: "pointer", background: someOn ? "var(--primary-subtle)" : allOn ? "var(--primary-subtle)" : "var(--bg)", fontWeight: 600, fontSize: "0.9rem", listStyle: "none", userSelect: "none" }} onClick={(e) => { e.preventDefault(); const el = (e.currentTarget as HTMLElement).parentElement as HTMLDetailsElement; el.open = !el.open; }}>
+                        <span style={{ fontSize: "0.7rem", opacity: 0.5, transition: "transform 0.2s", transform: someOn || allOn ? "rotate(90deg)" : "none" }}>&#9654;</span>
+                        <span>{grp.icon}</span>
+                        <span style={{ flex: 1 }}>{grp.group}</span>
+                        <span style={{ fontSize: "0.75rem", fontWeight: 400, opacity: 0.6 }}>{grp.features.filter((f) => form.features.includes(f)).length}/{grp.features.length}</span>
+                        <label style={{ fontSize: "0.75rem", fontWeight: 400, padding: "0.1rem 0.4rem", borderRadius: 4, background: allOn ? "var(--primary)" : "var(--border)", color: allOn ? "#fff" : "var(--text)", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); }}>
+                          <input type="checkbox" checked={allOn} onChange={() => { const newFeatures = allOn ? form.features.filter((f) => !grp.features.includes(f)) : [...new Set([...form.features, ...grp.features])]; setForm({ ...form, features: newFeatures }); }} style={{ display: "none" }} />
+                          {allOn ? "All" : "Select all"}
+                        </label>
+                      </summary>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", padding: "0.5rem 0.75rem 0.75rem" }}>
+                        {grp.features.map((f) => (
+                          <label key={f} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.82rem", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 6, background: form.features.includes(f) ? "var(--primary)" : "var(--bg)", color: form.features.includes(f) ? "#fff" : "var(--text)", border: "1px solid " + (form.features.includes(f) ? "var(--primary)" : "var(--border)") }}>
+                            <input type="checkbox" checked={form.features.includes(f)} onChange={() => toggleFeature(f)} style={{ display: "none" }} />
+                            {f}
+                          </label>
+                        ))}
+                      </div>
+                    </details>
+                  );
+                })}
               </div>
               <div style={{ display: "flex", gap: "0.35rem" }}>
                 <input value={customInput} onChange={(e) => setCustomInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }} placeholder="Custom feature..." style={{ flex: 1 }} />
