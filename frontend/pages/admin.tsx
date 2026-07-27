@@ -38,6 +38,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "orders", label: "Orders" },
       { key: "coupons", label: "Coupons", feature: "Discount/coupon management" },
       { key: "quotations", label: "Quotations", feature: "Quotations" },
+      { key: "category-positioning", label: "Category Order" },
     ],
   },
   {
@@ -92,7 +93,6 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "about-us", label: "About Us" },
       { key: "spec-templates", label: "Spec Templates" },
       { key: "shop-subscription", label: "Subscription" },
-      { key: "category-positioning", label: "Category Order" },
     ],
   },
 ];
