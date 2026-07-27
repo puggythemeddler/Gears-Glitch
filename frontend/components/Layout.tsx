@@ -35,6 +35,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const { configLoading, layout } = useLayout();
   const messagingEnabled = useFeature("Messaging");
   const springboardMenu = settings?.springboardMenu ?? false;
+  const [navLinks, setNavLinks] = useState(NAV_LINKS);
+  const [footerConfig, setFooterConfig] = useState<any>(null);
 
   useEffect(() => { setIsStaff(!!getStaffToken()); }, []);
 
@@ -59,6 +61,20 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [springboardOpen]);
+
+  useEffect(() => {
+    fetch("/api/settings/nav-order").then(r => r.json()).then(d => {
+      if (d.navOrder && Array.isArray(d.navOrder) && d.navOrder.length > 0) {
+        setNavLinks(d.navOrder);
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/settings/footer-config").then(r => r.json()).then(d => {
+      if (d.footerConfig) setFooterConfig(d.footerConfig);
+    }).catch(() => {});
+  }, []);
 
   const hideHeader = ["backoffice", "owner", "admin", "marketing", "stock-take", "suppliers"].includes(activeNav ?? "");
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
@@ -93,7 +109,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             </button>
             {springboardOpen && (
               <div className="springboard-dropdown">
-                {NAV_LINKS.map((link) => (
+                {navLinks.map((link: any) => (
                   <Link
                     key={link.id}
                     href={link.href}
@@ -111,7 +127,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           </div>
         ) : (
           <nav className="main-nav-desktop" aria-label="Main">
-            {NAV_LINKS.map((link) => (
+            {navLinks.map((link: any) => (
               <Link
                 key={link.id}
                 href={link.href}
@@ -169,7 +185,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
         </div>
       </div>
       <nav className={`main-nav-mobile${mobileOpen ? " open" : ""}`} aria-label="Mobile navigation">
-        {NAV_LINKS.map((link) => (
+        {navLinks.map((link: any) => (
           <Link
             key={link.id}
             href={link.href}
@@ -233,32 +249,16 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                 <div style={{ fontWeight: 700, marginBottom: "0.5rem", fontSize: "var(--text-base)" }}>{settings?.storeName || "Gear&Glitch"}</div>
                 <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>Kenya&apos;s trusted tech platform for gaming PCs, laptops, and accessories.</p>
               </div>
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>Shop</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <a href="/pc" style={{ fontSize: "0.85rem" }}>PCs</a>
-                  <a href="/laptops" style={{ fontSize: "0.85rem" }}>Laptops</a>
-                  <a href="/graphics-cards" style={{ fontSize: "0.85rem" }}>Graphics Cards</a>
-                  <a href="/servers" style={{ fontSize: "0.85rem" }}>Servers</a>
-                  <a href="/printers" style={{ fontSize: "0.85rem" }}>Printers</a>
+              {(footerConfig?.columns || []).map((col: any, idx: number) => (
+                <div key={idx}>
+                  <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>{col.title}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    {(col.links || []).map((link: any, li: number) => (
+                      <a key={li} href={link.href} style={{ fontSize: "0.85rem" }}>{link.label}</a>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>Account</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <a href="/cart" style={{ fontSize: "0.85rem" }}>Cart</a>
-                  <a href="/wishlist" style={{ fontSize: "0.85rem" }}>Wishlist</a>
-                  <a href="/dashboard" style={{ fontSize: "0.85rem" }}>Dashboard</a>
-                  <a href="/repairs" style={{ fontSize: "0.85rem" }}>Repairs</a>
-                </div>
-              </div>
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>Company</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <a href="/about" style={{ fontSize: "0.85rem" }}>About Us</a>
-                  <a href="/contact" style={{ fontSize: "0.85rem" }}>Contact</a>
-                </div>
-              </div>
+              ))}
             </div>
             <div style={{ borderTop: "1px solid var(--border)", marginTop: "1.5rem", paddingTop: "1rem", textAlign: "center", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
               &copy; {new Date().getFullYear()} {settings?.storeName || "Gear&Glitch"}. All rights reserved.

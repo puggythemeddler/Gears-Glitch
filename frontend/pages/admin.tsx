@@ -19,6 +19,7 @@ import AboutUsPage from "@/components/admin/AboutUsPage";
 import ProductPositioningPage from "@/components/admin/ProductPositioningPage";
 import StockTakeListPage from "@/components/admin/StockTakeListPage";
 import StockOnHandPage from "@/components/admin/StockOnHandPage";
+import CategoryPositioningPage from "@/components/admin/CategoryPositioningPage";
 
 declare global {
   interface Window {
@@ -26,7 +27,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[] = [
   {
@@ -91,6 +92,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "about-us", label: "About Us" },
       { key: "spec-templates", label: "Spec Templates" },
       { key: "shop-subscription", label: "Subscription" },
+      { key: "category-positioning", label: "Category Order" },
     ],
   },
 ];
@@ -382,6 +384,7 @@ export default function AdminPage() {
             {view === "product-positioning" && <AdminProductPositioning />}
             {view === "email-settings" && <AdminEmailSettings />}
             {view === "whatsapp-settings" && <AdminWhatsAppSettings />}
+            {view === "category-positioning" && <CategoryPositioningPage />}
           </div>
       </div>
     </div>
@@ -2449,7 +2452,7 @@ function AdminSplashes() {
   const [splashes, setSplashes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ title: "", text: "", bgColor: "#f59e0b", textColor: "#ffffff", isMarquee: true, isActive: true, startDate: "", endDate: "" });
+  const [form, setForm] = useState({ title: "", text: "", bgColor: "#f59e0b", textColor: "#ffffff", isMarquee: true, isActive: true, startDate: "", endDate: "", imageUrl: "", linkUrl: "", sortOrder: 0 });
 
   useEffect(() => { loadSplashes(); }, []);
 
@@ -2463,7 +2466,7 @@ function AdminSplashes() {
   }
 
   function resetForm() {
-    setForm({ title: "", text: "", bgColor: "#f59e0b", textColor: "#ffffff", isMarquee: true, isActive: true, startDate: "", endDate: "" });
+    setForm({ title: "", text: "", bgColor: "#f59e0b", textColor: "#ffffff", isMarquee: true, isActive: true, startDate: "", endDate: "", imageUrl: "", linkUrl: "", sortOrder: 0 });
     setEditing(null);
   }
 
@@ -2540,6 +2543,18 @@ function AdminSplashes() {
             <div className="field"><label>Start date<input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></label></div>
             <div className="field"><label>End date<input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></label></div>
           </div>
+          <div className="field">
+            <label>Image URL (optional)</label>
+            <input type="url" value={form.imageUrl || ""} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://example.com/image.jpg" className="input" />
+          </div>
+          <div className="field">
+            <label>Link URL (optional)</label>
+            <input type="url" value={form.linkUrl || ""} onChange={(e) => setForm({ ...form, linkUrl: e.target.value })} placeholder="/laptops or https://..." className="input" />
+          </div>
+          <div className="field">
+            <label>Sort order</label>
+            <input type="number" value={form.sortOrder ?? 0} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} className="input" style={{ width: 80 }} />
+          </div>
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
             <RippleButton type="submit" size="small">{editing ? "Update" : "Add banner"}</RippleButton>
             {editing && <RippleButton size="small" variant="secondary" type="button" onClick={resetForm}>Cancel</RippleButton>}
@@ -2550,7 +2565,7 @@ function AdminSplashes() {
       {loading ? <Spinner /> : (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Preview</th><th>Text</th><th>Type</th><th>Dates</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Preview</th><th>Text</th><th>Image</th><th>Type</th><th>Sort</th><th>Dates</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {splashes.map((s) => (
                 <tr key={s.id}>
@@ -2560,18 +2575,20 @@ function AdminSplashes() {
                     </div>
                   </td>
                   <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{escapeHtml(s.title || s.text)}</td>
+                  <td>{s.imageUrl ? <img src={s.imageUrl} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4 }} /> : <span className="muted">—</span>}</td>
                   <td>{s.isMarquee ? "Marquee" : "Static"}</td>
+                  <td style={{ fontSize: "0.8rem" }}>{s.sortOrder ?? 0}</td>
                   <td style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>{s.startDate || "—"} to {s.endDate || "—"}</td>
                   <td><span className={`plan-status`} style={{ background: s.isActive ? "#d1fae5" : "#fee2e2", color: s.isActive ? "#065f46" : "#991b1b" }}>{s.isActive ? "Active" : "Inactive"}</span></td>
                   <td>
                     <div style={{ display: "flex", gap: "0.3rem" }}>
-                      <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(s); setForm({ title: s.title, text: s.text, bgColor: s.bgColor, textColor: s.textColor, isMarquee: s.isMarquee, isActive: s.isActive, startDate: s.startDate || "", endDate: s.endDate || "" }); }}>Edit</button>
+                      <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(s); setForm({ title: s.title, text: s.text, bgColor: s.bgColor, textColor: s.textColor, isMarquee: s.isMarquee, isActive: s.isActive, startDate: s.startDate || "", endDate: s.endDate || "", imageUrl: s.imageUrl || "", linkUrl: s.linkUrl || "", sortOrder: s.sortOrder ?? 0 }); }}>Edit</button>
                       <button className="btn btn-sm btn-ghost" style={{ color: "#dc2626" }} onClick={() => handleDelete(s.id)}>Delete</button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {splashes.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: "1.5rem", color: "var(--muted)" }}>No banners configured. Kenyan holidays will auto-display.</td></tr>}
+              {splashes.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", padding: "1.5rem", color: "var(--muted)" }}>No banners configured. Kenyan holidays will auto-display.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2930,11 +2947,167 @@ function AdminImageStorage({ initial }: { initial: any }) {
   );
 }
 
+function AdminNavOrder() {
+  const [items, setItems] = useState<{ id: string; label: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    fetch("/api/settings/nav-order").then(r => r.json()).then(d => {
+      if (d.navOrder) {
+        setItems(d.navOrder);
+      } else {
+        setItems([
+          { id: "pc", label: "PCs" },
+          { id: "laptops", label: "Laptops" },
+          { id: "graphics-cards", label: "Graphics Cards" },
+          { id: "servers", label: "Servers" },
+          { id: "printers", label: "Printers" },
+          { id: "repairs", label: "Repairs" },
+          { id: "cart", label: "Cart" },
+          { id: "wishlist", label: "Wishlist" },
+          { id: "about", label: "About Us" },
+          { id: "contact", label: "Contact" },
+        ]);
+      }
+    }).catch(() => {});
+  }, []);
+
+  function handleDragStart(idx: number, e: React.DragEvent) {
+    e.dataTransfer.setData("text/plain", String(idx));
+    (e.target as HTMLElement).style.opacity = "0.5";
+  }
+  function handleDragEnd(e: React.DragEvent) { (e.target as HTMLElement).style.opacity = "1"; }
+  function handleDragOver(e: React.DragEvent) { e.preventDefault(); }
+  function handleDrop(targetIdx: number, e: React.DragEvent) {
+    e.preventDefault();
+    const sourceIdx = Number(e.dataTransfer.getData("text/plain"));
+    if (sourceIdx === targetIdx) return;
+    const updated = [...items];
+    const [moved] = updated.splice(sourceIdx, 1);
+    updated.splice(targetIdx, 0, moved);
+    setItems(updated);
+  }
+
+  async function save() {
+    setSaving(true); setMsg("");
+    try {
+      await api("/api/settings/nav-order", { method: "PUT", body: JSON.stringify({ navOrder: items }) });
+      setMsg("Nav order saved. Refresh to see changes.");
+    } catch (err: any) { setMsg("Error: " + err.message); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div>
+      <h3>Navigation Menu Order</h3>
+      <p className="muted" style={{ marginBottom: "0.75rem" }}>Drag and drop to reorder header navigation links.</p>
+      {msg && <p style={{ marginBottom: "0.5rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success, #16a34a)" }}>{msg}</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", maxWidth: 400 }}>
+        {items.map((item, idx) => (
+          <div
+            key={item.id}
+            draggable
+            onDragStart={(e) => handleDragStart(idx, e)}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(idx, e)}
+            style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, cursor: "grab" }}
+          >
+            <span style={{ cursor: "grab", color: "var(--muted, #999)" }}>&#9776;</span>
+            <span style={{ fontWeight: 500 }}>{item.label}</span>
+            <span style={{ fontSize: "0.75rem", color: "var(--muted, #999)" }}>({item.id})</span>
+          </div>
+        ))}
+      </div>
+      <button className="btn" onClick={save} disabled={saving} style={{ marginTop: "0.75rem" }}>{saving ? "Saving..." : "Save order"}</button>
+    </div>
+  );
+}
+
+function AdminFooterConfig() {
+  const [config, setConfig] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    fetch("/api/settings/footer-config").then(r => r.json()).then(d => {
+      setConfig(d.footerConfig || {
+        columns: [
+          { title: "Shop", links: [{ label: "PCs", href: "/pc" }, { label: "Laptops", href: "/laptops" }, { label: "Graphics Cards", href: "/graphics-cards" }, { label: "Servers", href: "/servers" }, { label: "Printers", href: "/printers" }] },
+          { title: "Account", links: [{ label: "Cart", href: "/cart" }, { label: "Wishlist", href: "/wishlist" }, { label: "Dashboard", href: "/dashboard" }, { label: "Repairs", href: "/repairs" }] },
+          { title: "Company", links: [{ label: "About Us", href: "/about" }, { label: "Contact", href: "/contact" }] },
+        ]
+      });
+    }).catch(() => {});
+  }, []);
+
+  function updateLink(colIdx: number, linkIdx: number, field: string, value: string) {
+    const updated = { ...config, columns: config.columns.map((col: any, ci: number) => ci === colIdx ? { ...col, links: col.links.map((l: any, li: number) => li === linkIdx ? { ...l, [field]: value } : l) } : col) };
+    setConfig(updated);
+  }
+
+  function addLink(colIdx: number) {
+    const updated = { ...config, columns: config.columns.map((col: any, ci: number) => ci === colIdx ? { ...col, links: [...col.links, { label: "New Link", href: "/" }] } : col) };
+    setConfig(updated);
+  }
+
+  function removeLink(colIdx: number, linkIdx: number) {
+    const updated = { ...config, columns: config.columns.map((col: any, ci: number) => ci === colIdx ? { ...col, links: col.links.filter((_: any, li: number) => li !== linkIdx) } : col) };
+    setConfig(updated);
+  }
+
+  function updateColumnTitle(colIdx: number, title: string) {
+    const updated = { ...config, columns: config.columns.map((col: any, ci: number) => ci === colIdx ? { ...col, title } : col) };
+    setConfig(updated);
+  }
+
+  async function save() {
+    setSaving(true); setMsg("");
+    try {
+      await api("/api/settings/footer-config", { method: "PUT", body: JSON.stringify({ footerConfig: config }) });
+      setMsg("Footer config saved. Refresh to see changes.");
+    } catch (err: any) { setMsg("Error: " + err.message); }
+    finally { setSaving(false); }
+  }
+
+  if (!config) return <p>Loading...</p>;
+
+  return (
+    <div>
+      <h3>Footer Configuration</h3>
+      <p className="muted" style={{ marginBottom: "0.75rem" }}>Customize footer columns and links.</p>
+      {msg && <p style={{ marginBottom: "0.5rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success, #16a34a)" }}>{msg}</p>}
+      {config.columns.map((col: any, colIdx: number) => (
+        <div key={colIdx} className="panel" style={{ marginBottom: "0.75rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+            <input value={col.title} onChange={(e) => updateColumnTitle(colIdx, e.target.value)} className="input" style={{ fontWeight: 600, width: 150 }} />
+            <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }} onClick={() => {
+              setConfig({ ...config, columns: config.columns.filter((_: any, ci: number) => ci !== colIdx) });
+            }}>Remove column</button>
+          </div>
+          {col.links.map((link: any, linkIdx: number) => (
+            <div key={linkIdx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.35rem", alignItems: "center" }}>
+              <input value={link.label} onChange={(e) => updateLink(colIdx, linkIdx, "label", e.target.value)} className="input" style={{ width: 120, fontSize: "0.85rem" }} placeholder="Label" />
+              <input value={link.href} onChange={(e) => updateLink(colIdx, linkIdx, "href", e.target.value)} className="input" style={{ flex: 1, fontSize: "0.85rem" }} placeholder="/page" />
+              <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }} onClick={() => removeLink(colIdx, linkIdx)}>&times;</button>
+            </div>
+          ))}
+          <button className="btn btn-sm btn-ghost" onClick={() => addLink(colIdx)} style={{ marginTop: "0.25rem" }}>+ Add link</button>
+        </div>
+      ))}
+      <button className="btn btn-sm btn-ghost" onClick={() => setConfig({ ...config, columns: [...config.columns, { title: "New Section", links: [] }] })} style={{ marginBottom: "1rem" }}>+ Add column</button>
+      <br />
+      <button className="btn" onClick={save} disabled={saving}>{saving ? "Saving..." : "Save footer"}</button>
+    </div>
+  );
+}
+
 function AdminSystem() {
   return (
     <>
       <h1>System</h1>
-      <div className="panel" style={{ maxWidth: 500 }}>
+      <div className="panel" style={{ maxWidth: 500, marginBottom: "1.5rem" }}>
         <h3 style={{ marginTop: 0 }}>Database Backup</h3>
         <p className="muted" style={{ fontSize: "0.85rem" }}>Download a full backup of the store database.</p>
         <RippleButton onClick={async () => {
@@ -2947,6 +3120,12 @@ function AdminSystem() {
             URL.revokeObjectURL(url);
           } catch (e: any) { alert(e.message); }
         }}>Download Backup</RippleButton>
+      </div>
+      <div className="panel" style={{ marginBottom: "1.5rem" }}>
+        <AdminNavOrder />
+      </div>
+      <div className="panel" style={{ marginBottom: "1.5rem" }}>
+        <AdminFooterConfig />
       </div>
     </>
   );

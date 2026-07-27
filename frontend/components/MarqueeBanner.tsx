@@ -10,6 +10,9 @@ interface Splash {
   isActive: boolean;
   startDate: string | null;
   endDate: string | null;
+  image_url?: string;
+  link_url?: string;
+  sort_order?: number;
 }
 
 interface KenyanHoliday {
@@ -196,10 +199,10 @@ function getCurrentHoliday(): KenyanHoliday | null {
 }
 
 function SplashBar({ splash, style }: { splash: Splash; style?: React.CSSProperties }) {
-  return (
+  const content = (
     <div
       style={{
-        background: splash.bgColor,
+        background: splash.image_url ? "none" : splash.bgColor,
         color: splash.textColor,
         padding: "0.5rem 1rem",
         fontSize: "0.8rem",
@@ -208,11 +211,18 @@ function SplashBar({ splash, style }: { splash: Splash; style?: React.CSSPropert
         whiteSpace: "nowrap",
         overflow: "hidden",
         letterSpacing: "0.02em",
+        backgroundImage: splash.image_url ? `linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${splash.image_url})` : undefined,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "0.5rem",
         ...style,
       }}
     >
       {splash.isMarquee ? (
-        <div style={{ display: "inline-block", animation: "marquee 25s linear infinite" }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", animation: "marquee 25s linear infinite" }}>
           <span>{splash.title} &mdash; {splash.text}</span>
           <span style={{ margin: "0 1.5rem", opacity: 0.6 }}>&#9733;</span>
           <span>{splash.title} &mdash; {splash.text}</span>
@@ -226,6 +236,11 @@ function SplashBar({ splash, style }: { splash: Splash; style?: React.CSSPropert
       )}
     </div>
   );
+
+  if (splash.link_url) {
+    return <a href={splash.link_url} style={{ textDecoration: "none", color: "inherit", display: "block" }}>{content}</a>;
+  }
+  return content;
 }
 
 export default function MarqueeBanner() {
@@ -263,6 +278,7 @@ export default function MarqueeBanner() {
   for (const s of splashes) {
     allBanners.push({ key: `splash-${s.id}`, splash: s });
   }
+  allBanners.sort((a, b) => (a.splash.sort_order ?? 0) - (b.splash.sort_order ?? 0));
 
   if (allBanners.length === 0) return null;
 

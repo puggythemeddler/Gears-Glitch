@@ -234,13 +234,14 @@ import {
   storeImage,
   getImage,
   updateProductSortOrder,
+  updateCategorySortOrder,
   logEmail,
   listEmailLogs,
   getWhatsAppConversations,
   listWhatsAppLogs,
   getWhatsAppStats,
 } from "./db";
-import { query, queryOne, queryAll } from "./db-helpers";
+import { query, queryOne, queryAll, transaction } from "./db-helpers";
 import {
   adminAuthMiddleware,
   ownerAuthMiddleware,
@@ -742,6 +743,29 @@ app.post("/api/settings/favicon", adminAuthMiddleware, asyncHandler(async (req: 
     backupImageToDb("favicon", faviconUrl);
     res.json({ faviconUrl });
   } catch (e: any) { console.error("[Favicon upload]", e.message || e); res.status(400).json({ error: "Upload failed: " + (e.message || "Unknown error") }); }
+}));
+
+app.get("/api/settings/nav-order", asyncHandler(async (_req: Request, res: Response) => {
+  const val = await getStoreSetting("nav_order");
+  res.json({ navOrder: val ? JSON.parse(val) : null });
+}));
+
+app.put("/api/settings/nav-order", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const { navOrder } = req.body || {};
+  if (!Array.isArray(navOrder)) { res.status(400).json({ error: "navOrder array required." }); return; }
+  await setStoreSetting("nav_order", JSON.stringify(navOrder));
+  res.json({ ok: true });
+}));
+
+app.get("/api/settings/footer-config", asyncHandler(async (_req: Request, res: Response) => {
+  const val = await getStoreSetting("footer_config");
+  res.json({ footerConfig: val ? JSON.parse(val) : null });
+}));
+
+app.put("/api/settings/footer-config", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const { footerConfig } = req.body || {};
+  await setStoreSetting("footer_config", JSON.stringify(footerConfig));
+  res.json({ ok: true });
 }));
 
 // ============ PROVIDER / SUBSCRIPTION PLANS ============
@@ -2835,6 +2859,17 @@ app.put("/api/admin/products/reorder", ownerAuthMiddleware, requirePermission("p
   res.json({ ok: true });
 }));
 
+app.put("/api/admin/categories/reorder", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const { orderedIds } = req.body || {};
+  if (!Array.isArray(orderedIds)) { res.status(400).json({ error: "orderedIds array required." }); return; }
+  await transaction(async (client) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await client.query("UPDATE categories SET sort_order = $1 WHERE id = $2", [i, orderedIds[i]]);
+    }
+  });
+  res.json({ ok: true });
+}));
+
 app.patch("/api/products/:id/subcategory", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const subcategory = String(req.body?.subcategory || "").trim();
   const product = await updateProduct(String(req.params.id), { subcategory });
@@ -3968,13 +4003,13 @@ app.get("/api/admin/splashes", staffAuthMiddleware, requirePermission("reports:v
 }));
 
 app.post("/api/admin/splashes", staffAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
-  const { title, text, bgColor, textColor, isMarquee, isActive, startDate, endDate } = req.body || {};
+  const { title, text, bgColor, textColor, isMarquee, isActive, startDate, endDate, image_url, link_url, sort_order } = req.body || {};
   if (!text) { res.status(400).json({ error: "text is required." }); return; }
   if (!isStr(text, 5000)) { res.status(400).json({ error: "Text must be a valid string." }); return; }
   if (title !== undefined && !isStr(title, 200)) { res.status(400).json({ error: "Title must be a valid string." }); return; }
   if (bgColor !== undefined && !isStr(bgColor, 50)) { res.status(400).json({ error: "bgColor must be a valid string." }); return; }
   if (textColor !== undefined && !isStr(textColor, 50)) { res.status(400).json({ error: "textColor must be a valid string." }); return; }
-  const splash = await createSplash({ title, text, bgColor, textColor, isMarquee, isActive, startDate, endDate });
+  const splash = await createSplash({ title, text, bgColor, textColor, isMarquee, isActive, startDate, endDate, image_url, link_url, sort_order });
   res.status(201).json(splash);
 }));
 

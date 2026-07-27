@@ -267,6 +267,7 @@ interface Category {
   label: string;
   group: string;
   showOnPos: boolean;
+  sortOrder: number;
 }
 
 interface PaymentMethod {
@@ -739,6 +740,10 @@ async function runMigrations(): Promise<void> {
   try { await query(`CREATE INDEX IF NOT EXISTS idx_product_reviews_product_id ON product_reviews (product_id)`); } catch {}
   try { await query(`CREATE INDEX IF NOT EXISTS idx_product_reviews_customer_id ON product_reviews (customer_id)`); } catch {}
   try { await query(`ALTER TABLE product_reviews ADD CONSTRAINT chk_review_rating CHECK (rating >= 1 AND rating <= 5)`); } catch {}
+  try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS link_url TEXT DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
 
   // Update default plan pricing and features
   try {
@@ -1028,13 +1033,13 @@ async function assignInitialRoles(): Promise<void> {
 }
 
 async function listCategories(): Promise<Category[]> {
-  const rows = await queryAll("SELECT id, label, group_name, show_on_pos FROM categories ORDER BY group_name, label");
-  return rows.map((row: any) => ({ id: row.id, label: row.label, group: row.group_name, showOnPos: row.show_on_pos === 1 }));
+  const rows = await queryAll("SELECT id, label, group_name, show_on_pos, sort_order FROM categories ORDER BY sort_order ASC, group_name, label");
+  return rows.map((row: any) => ({ id: row.id, label: row.label, group: row.group_name, showOnPos: row.show_on_pos === 1, sortOrder: row.sort_order ?? 0 }));
 }
 
 async function listPosCategories(): Promise<Category[]> {
-  const rows = await queryAll("SELECT id, label, group_name, show_on_pos FROM categories WHERE show_on_pos = 1 ORDER BY group_name, label");
-  return rows.map((row: any) => ({ id: row.id, label: row.label, group: row.group_name, showOnPos: true }));
+  const rows = await queryAll("SELECT id, label, group_name, show_on_pos, sort_order FROM categories WHERE show_on_pos = 1 ORDER BY sort_order ASC, group_name, label");
+  return rows.map((row: any) => ({ id: row.id, label: row.label, group: row.group_name, showOnPos: true, sortOrder: row.sort_order ?? 0 }));
 }
 
 async function getCategory(id: string): Promise<CategoryRow | undefined> {
@@ -2809,6 +2814,9 @@ interface Splash {
   isActive: boolean;
   startDate: string | null;
   endDate: string | null;
+  image_url: string;
+  link_url: string;
+  sort_order: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -2824,6 +2832,9 @@ function mapSplash(row: any): Splash {
     isActive: Boolean(row.is_active),
     startDate: row.start_date || null,
     endDate: row.end_date || null,
+    image_url: row.image_url || "",
+    link_url: row.link_url || "",
+    sort_order: row.sort_order ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -2832,14 +2843,14 @@ function mapSplash(row: any): Splash {
 async function listActiveSplashes(): Promise<Splash[]> {
   const now = new Date().toISOString();
   const rows = await queryAll(
-    "SELECT * FROM splashes WHERE is_active = 1 AND (start_date IS NULL OR start_date <= $1) AND (end_date IS NULL OR end_date >= $1) ORDER BY created_at DESC",
+    "SELECT * FROM splashes WHERE is_active = 1 AND (start_date IS NULL OR start_date <= $1) AND (end_date IS NULL OR end_date >= $1) ORDER BY sort_order ASC, created_at DESC",
     [now]
   );
   return rows.map(mapSplash);
 }
 
 async function listAllSplashes(): Promise<Splash[]> {
-  const rows = await queryAll("SELECT * FROM splashes ORDER BY created_at DESC");
+  const rows = await queryAll("SELECT * FROM splashes ORDER BY sort_order ASC, created_at DESC");
   return rows.map(mapSplash);
 }
 
@@ -2848,15 +2859,15 @@ async function getSplash(id: number): Promise<Splash | undefined> {
   return row ? mapSplash(row) : undefined;
 }
 
-async function createSplash(data: { title?: string; text: string; bgColor?: string; textColor?: string; isMarquee?: boolean; isActive?: boolean; startDate?: string; endDate?: string }): Promise<Splash> {
+async function createSplash(data: { title?: string; text: string; bgColor?: string; textColor?: string; isMarquee?: boolean; isActive?: boolean; startDate?: string; endDate?: string; image_url?: string; link_url?: string; sort_order?: number }): Promise<Splash> {
   const result = await query(
-    "INSERT INTO splashes (title, text, bg_color, text_color, is_marquee, is_active, start_date, end_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
-    [data.title || "", data.text, data.bgColor || "#f59e0b", data.textColor || "#ffffff", data.isMarquee !== false ? 1 : 0, data.isActive !== false ? 1 : 0, data.startDate || null, data.endDate || null]
+    "INSERT INTO splashes (title, text, bg_color, text_color, is_marquee, is_active, start_date, end_date, image_url, link_url, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
+    [data.title || "", data.text, data.bgColor || "#f59e0b", data.textColor || "#ffffff", data.isMarquee !== false ? 1 : 0, data.isActive !== false ? 1 : 0, data.startDate || null, data.endDate || null, data.image_url || "", data.link_url || "", data.sort_order ?? 0]
   );
   return (await getSplash(result.rows[0].id))!;
 }
 
-async function updateSplash(id: number, data: { title?: string; text?: string; bgColor?: string; textColor?: string; isMarquee?: boolean; isActive?: boolean; startDate?: string; endDate?: string }): Promise<Splash | undefined> {
+async function updateSplash(id: number, data: { title?: string; text?: string; bgColor?: string; textColor?: string; isMarquee?: boolean; isActive?: boolean; startDate?: string; endDate?: string; image_url?: string; link_url?: string; sort_order?: number }): Promise<Splash | undefined> {
   const fields: string[] = []; const params: any[] = []; let idx = 1;
   if (data.title !== undefined) { fields.push(`title = $${idx}`); params.push(data.title); idx++; }
   if (data.text !== undefined) { fields.push(`text = $${idx}`); params.push(data.text); idx++; }
@@ -2866,6 +2877,9 @@ async function updateSplash(id: number, data: { title?: string; text?: string; b
   if (data.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(data.isActive ? 1 : 0); idx++; }
   if (data.startDate !== undefined) { fields.push(`start_date = $${idx}`); params.push(data.startDate || null); idx++; }
   if (data.endDate !== undefined) { fields.push(`end_date = $${idx}`); params.push(data.endDate || null); idx++; }
+  if (data.image_url !== undefined) { fields.push(`image_url = $${idx}`); params.push(data.image_url); idx++; }
+  if (data.link_url !== undefined) { fields.push(`link_url = $${idx}`); params.push(data.link_url); idx++; }
+  if (data.sort_order !== undefined) { fields.push(`sort_order = $${idx}`); params.push(data.sort_order); idx++; }
   fields.push(`updated_at = NOW()`);
   if (fields.length === 1) return await getSplash(id);
   params.push(id);
@@ -2882,6 +2896,14 @@ async function updateProductSortOrder(productIds: string[]): Promise<void> {
   await transaction(async (client) => {
     for (let i = 0; i < productIds.length; i++) {
       await client.query("UPDATE products SET sort_order = $1 WHERE id = $2", [i, productIds[i]]);
+    }
+  });
+}
+
+async function updateCategorySortOrder(categoryIds: string[]): Promise<void> {
+  await transaction(async (client) => {
+    for (let i = 0; i < categoryIds.length; i++) {
+      await client.query("UPDATE categories SET sort_order = $1 WHERE id = $2", [i, categoryIds[i]]);
     }
   });
 }
@@ -2986,7 +3008,7 @@ export {
   createReview, getProductReviews, getProductReviewCount, getProductRating, getProductRatingDistribution, hasCustomerReviewed, getReviewById, updateReview, deleteReview, getAllReviews, getAllReviewCount,
   getLoyaltyPoints, earnLoyaltyPoints, redeemLoyaltyPoints, getLoyaltyTransactions, listAllLoyaltyCustomers,
   listActiveSplashes, listAllSplashes, getSplash, createSplash, updateSplash, deleteSplash,
-  updateProductSortOrder, logEmail, listEmailLogs,
+  updateProductSortOrder, updateCategorySortOrder, logEmail, listEmailLogs,
   upsertWhatsAppConversation, getWhatsAppConversationByPhone, getWhatsAppConversations, logWhatsAppMessage, listWhatsAppLogs, getWhatsAppStats, findCustomerByPhone, findProviderByPhone,
   getDb,
   storeImage, getImage, deleteImageByRef,
