@@ -633,6 +633,112 @@ app.put("/api/clients/:id/upgrade-requests/:reqId", requireApiKey, async (req, r
   }
 });
 
+// ─── CLIENT INVOICES (proxy to client backends) ──────────────
+app.get("/api/clients/:id/invoices", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.json({ invoices: [], stats: null }); return; }
+
+    const invoicesData = await fetch(`${client.render_service_url}/api/admin/invoices`).then(r => r.ok ? r.json() : { invoices: [], stats: null }).catch(() => ({ invoices: [], stats: null })) as any;
+
+    res.json({ invoices: invoicesData.invoices || [], stats: invoicesData.stats || null });
+  } catch (err: any) {
+    console.error("[api] Get client invoices error:", err.message);
+    res.status(500).json({ error: "Failed to get invoices" });
+  }
+});
+
+app.post("/api/clients/:id/invoices/generate", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const r = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body || {}),
+    });
+    const data = await r.json();
+    if (!r.ok) { res.status(r.status).json(data); return; }
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to generate invoice" });
+  }
+});
+
+app.post("/api/clients/:id/invoices/:invId/pay", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/pay`, { method: "POST" });
+    const data = await r.json();
+    if (!r.ok) { res.status(r.status).json(data); return; }
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to mark invoice paid" });
+  }
+});
+
+app.get("/api/clients/:id/invoices/:invId/view", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const format = req.query.format as string;
+    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/view${format === "pdf" ? "?format=pdf" : ""}`);
+    if (!r.ok) { res.status(r.status).json({ error: `Client returned ${r.status}` }); return; }
+
+    if (format === "pdf") {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="invoice-${req.params.invId}.pdf"`);
+      const buffer = await r.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    } else {
+      const html = await r.text();
+      res.setHeader("Content-Type", "text/html");
+      res.send(html);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get invoice" });
+  }
+});
+
+app.post("/api/clients/:id/invoices/:invId/email", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/email`, { method: "POST" });
+    const data = await r.json();
+    if (!r.ok) { res.status(r.status).json(data); return; }
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to email invoice" });
+  }
+});
+
+// Get subscription status from a client
+app.get("/api/clients/:id/subscription", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.json({ plan: null, activatedAt: null }); return; }
+
+    const r = await fetch(`${client.render_service_url}/api/shop/subscription`);
+    if (!r.ok) { res.json({ plan: null, activatedAt: null }); return; }
+    const data = await r.json();
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get subscription" });
+  }
+});
+
 // ─── AUTO HEALTH CHECK (every 5 min) ─────────────────────
 setInterval(async () => {
   try {

@@ -62,6 +62,8 @@
     .badge-sleeping { background: rgba(245,158,11,0.15); color: var(--warning); }
     .badge-down { background: rgba(239,68,68,0.15); color: var(--danger); }
     .badge-unknown { background: rgba(148,163,184,0.15); color: var(--text-muted); }
+    .badge-overdue { background: rgba(239,68,68,0.15); color: var(--danger); }
+    .badge-warning { background: rgba(245,158,11,0.15); color: var(--warning); }
 
     .actions-cell { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .empty { text-align: center; padding: 4rem 1rem; color: var(--text-muted); }
@@ -175,6 +177,23 @@
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Backups are pg_dump archives of each client's Neon database. Old backups auto-delete after 7 days.</p>
       <div id="backup-list"></div>
     </div>
+
+    <div id="tab-client-detail" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div>
+          <button class="btn btn-ghost btn-sm" onclick="closeClientDetails()" style="margin-right:0.5rem">&larr; Back</button>
+          <span id="detail-client-name" style="font-size:1.2rem;font-weight:700"></span>
+        </div>
+        <div id="detail-actions" style="display:flex;gap:0.5rem"></div>
+      </div>
+      <div class="stats" id="detail-stats"></div>
+      <div id="detail-subscription" style="margin-bottom:1.5rem"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h2>Invoices</h2>
+        <button class="btn btn-primary btn-sm" onclick="generateClientInvoice()">+ Generate Invoice</button>
+      </div>
+      <div id="detail-invoices"></div>
+    </div>
   </div>
 
   <!-- Add Client Modal -->
@@ -287,21 +306,6 @@
     function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
     function toast(msg, type = "success") { const el = document.createElement("div"); el.className = `toast ${type}`; el.textContent = msg; document.body.appendChild(el); setTimeout(() => el.remove(), 4000); }
 
-    function switchTab(tab, el) {
-      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      el.classList.add("active");
-      document.getElementById("tab-clients").style.display = tab === "clients" ? "" : "none";
-      document.getElementById("tab-plans").style.display = tab === "plans" ? "" : "none";
-      document.getElementById("tab-changelog").style.display = tab === "changelog" ? "" : "none";
-      document.getElementById("tab-deploys").style.display = tab === "deploys" ? "" : "none";
-      document.getElementById("tab-backups").style.display = tab === "backups" ? "" : "none";
-      if (tab === "plans") loadPlans();
-      if (tab === "changelog") loadChangelog();
-      if (tab === "deploys") loadDeploys();
-      if (tab === "backups") loadBackups();
-      if (tab === "clients") loadUpgradeRequests();
-    }
-
     // ─── CLIENTS ──────────────────────────────────────────
     async function loadClients() {
       try {
@@ -326,21 +330,42 @@
         document.getElementById("client-list").innerHTML = '<div class="empty"><div class="icon">&#128230;</div><p>No clients yet</p><button class="btn btn-primary" onclick="showModal()">+ Add Your First Client</button></div>';
         return;
       }
-      let html = '<table><thead><tr><th>Name</th><th>Domain</th><th>Plan</th><th>Status</th><th>Health</th><th>Uptime</th><th>Orders</th><th>Revenue</th><th>Actions</th></tr></thead><tbody>';
+      let html = '<table><thead><tr><th>Name</th><th>Domain</th><th>Plan</th><th>Subscription</th><th>Status</th><th>Health</th><th>Uptime</th><th>Orders</th><th>Revenue</th><th>Actions</th></tr></thead><tbody>';
       for (const c of clients) {
         const uptime = c.uptime_pct != null ? Number(c.uptime_pct).toFixed(1) : "—";
         const revenue = c.usage_revenue ? Number(c.usage_revenue).toLocaleString() : "—";
         const orders = c.usage_orders || "—";
+        const expires = c.subscription_expires ? new Date(c.subscription_expires) : null;
+        const now = new Date();
+        let subBadge = '<span class="badge badge-unknown">No plan</span>';
+        if (expires) {
+          const daysLeft = Math.ceil((expires.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysLeft < 0) {
+            subBadge = `<span class="badge badge-overdue">Expired ${Math.abs(daysLeft)}d ago</span>`;
+          } else if (daysLeft <= 7) {
+            subBadge = `<span class="badge badge-warning">${daysLeft}d left</span>`;
+          } else if (daysLeft <= 30) {
+            subBadge = `<span class="badge badge-active">${daysLeft}d left</span>`;
+          } else {
+            subBadge = `<span class="badge badge-active">Active</span>`;
+          }
+        } else if (c.status === "active") {
+          subBadge = '<span class="badge badge-active">Active</span>';
+        } else if (c.status === "suspended") {
+          subBadge = '<span class="badge badge-suspended">Suspended</span>';
+        }
         html += `<tr>
           <td><strong>${esc(c.name)}</strong><br><span style="color:var(--text-muted);font-size:0.75rem">${esc(c.admin_email)}</span></td>
           <td>${esc(c.domain)}</td>
           <td><span style="text-transform:capitalize">${esc(c.plan)}</span></td>
+          <td>${subBadge}</td>
           <td><span class="badge badge-${c.status}">${c.status}</span></td>
           <td><span class="badge badge-${c.health_status}">${c.health_status}</span></td>
           <td><span style="font-weight:600;color:${c.uptime_pct >= 99 ? 'var(--success)' : c.uptime_pct >= 95 ? 'var(--warning)' : 'var(--danger)'}">${uptime}%</span></td>
           <td>${orders}</td>
           <td>KES ${revenue}</td>
           <td><div class="actions-cell">
+            <button class="btn btn-primary btn-sm" onclick="viewClientDetails(${c.id})">Details</button>
             ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" class="btn btn-ghost btn-sm">Backend</a>' : ''}
             ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
             <button class="btn btn-ghost btn-sm" onclick="editClient(${c.id})">Edit</button>
@@ -682,6 +707,163 @@
         toast(`Backups: ${ok} succeeded, ${fail} failed`);
         loadBackups();
       } catch (e) { toast("Backup failed: " + e.message, "error"); }
+    }
+
+    // ─── CLIENT DETAILS + INVOICES ────────────────────────
+    let currentDetailClientId = null;
+
+    function switchTab(tab, el) {
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      el.classList.add("active");
+      document.getElementById("tab-clients").style.display = tab === "clients" ? "" : "none";
+      document.getElementById("tab-plans").style.display = tab === "plans" ? "" : "none";
+      document.getElementById("tab-changelog").style.display = tab === "changelog" ? "" : "none";
+      document.getElementById("tab-deploys").style.display = tab === "deploys" ? "" : "none";
+      document.getElementById("tab-backups").style.display = tab === "backups" ? "" : "none";
+      document.getElementById("tab-client-detail").style.display = tab === "client-detail" ? "" : "none";
+      if (tab === "plans") loadPlans();
+      if (tab === "changelog") loadChangelog();
+      if (tab === "deploys") loadDeploys();
+      if (tab === "backups") loadBackups();
+      if (tab === "clients") loadUpgradeRequests();
+    }
+
+    async function viewClientDetails(id) {
+      currentDetailClientId = id;
+      const c = allClients.find(x => x.id === id);
+      if (!c) return;
+
+      // Hide all tabs, show detail
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.getElementById("tab-clients").style.display = "none";
+      document.getElementById("tab-plans").style.display = "none";
+      document.getElementById("tab-changelog").style.display = "none";
+      document.getElementById("tab-deploys").style.display = "none";
+      document.getElementById("tab-backups").style.display = "none";
+      document.getElementById("tab-client-detail").style.display = "";
+
+      document.getElementById("detail-client-name").textContent = c.name;
+      document.getElementById("detail-actions").innerHTML = `
+        ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" class="btn btn-ghost btn-sm">Backend</a>' : ''}
+        ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
+        <button class="btn btn-ghost btn-sm" onclick="editClient(${c.id}); closeClientDetails()">Edit</button>
+      `;
+
+      // Stats
+      const uptime = c.uptime_pct != null ? Number(c.uptime_pct).toFixed(1) : "—";
+      const revenue = c.usage_revenue ? "KES " + Number(c.usage_revenue).toLocaleString() : "KES 0";
+      const orders = c.usage_orders || 0;
+      document.getElementById("detail-stats").innerHTML = `
+        <div class="stat-card"><div class="value">${esc(c.plan)}</div><div class="label">Plan</div></div>
+        <div class="stat-card"><div class="value" style="color:${c.uptime_pct >= 99 ? 'var(--success)' : c.uptime_pct >= 95 ? 'var(--warning)' : 'var(--danger)'}">${uptime}%</div><div class="label">Uptime</div></div>
+        <div class="stat-card"><div class="value">${orders}</div><div class="label">Orders</div></div>
+        <div class="stat-card"><div class="value" style="color:var(--primary)">${revenue}</div><div class="label">Revenue</div></div>
+      `;
+
+      // Subscription info
+      let subHtml = '<div class="detail-panel"><h3>Subscription</h3>';
+      const expires = c.subscription_expires ? new Date(c.subscription_expires) : null;
+      if (expires) {
+        const daysLeft = Math.ceil((expires.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        const color = daysLeft < 0 ? 'var(--danger)' : daysLeft <= 7 ? 'var(--warning)' : 'var(--success)';
+        const label = daysLeft < 0 ? `Expired ${Math.abs(daysLeft)} days ago` : `${daysLeft} days remaining`;
+        subHtml += `<div style="display:flex;gap:2rem;align-items:center"><div><span style="font-size:0.8rem;color:var(--text-muted)">Expires:</span> <strong>${expires.toLocaleDateString()}</strong></div><div><span style="font-size:0.8rem;color:var(--text-muted)">Status:</span> <strong style="color:${color}">${label}</strong></div></div>`;
+      } else {
+        subHtml += '<div style="color:var(--text-muted)">No expiry date set. Edit client to set one.</div>';
+      }
+      subHtml += '</div>';
+      document.getElementById("detail-subscription").innerHTML = subHtml;
+
+      // Load invoices
+      await loadClientInvoices(id);
+    }
+
+    function closeClientDetails() {
+      currentDetailClientId = null;
+      document.getElementById("tab-client-detail").style.display = "none";
+      document.getElementById("tab-clients").style.display = "";
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelector('.tab').classList.add("active");
+    }
+
+    async function loadClientInvoices(clientId) {
+      const el = document.getElementById("detail-invoices");
+      el.innerHTML = '<div style="padding:1rem;color:var(--text-muted)">Loading invoices...</div>';
+      try {
+        const data = await api("/api/clients/" + clientId + "/invoices");
+        const invoices = data.invoices || [];
+        const stats = data.stats;
+        if (!invoices.length) {
+          el.innerHTML = '<div class="empty"><p>No subscription invoices yet. Generate one for this client.</p></div>';
+          return;
+        }
+        let html = '';
+        if (stats) {
+          html += `<div style="display:flex;gap:1rem;margin-bottom:1rem;font-size:0.85rem"><span>Total: <strong>${stats.total}</strong></span><span style="color:var(--success)">Paid: <strong>${stats.paid}</strong></span><span style="color:var(--warning)">Pending: <strong>${stats.pending}</strong></span><span style="color:var(--danger)">Overdue: <strong>${stats.overdue}</strong></span></div>`;
+        }
+        html += '<table><thead><tr><th>Invoice #</th><th>Plan</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+        for (const inv of invoices) {
+          const statusClass = inv.status === 'paid' ? 'badge-active' : inv.status === 'overdue' ? 'badge-overdue' : inv.status === 'pending' ? 'badge-warning' : 'badge-unknown';
+          html += `<tr>
+            <td style="font-family:monospace;font-size:0.82rem">${esc(inv.invoiceNumber || 'INV-' + inv.id)}</td>
+            <td>${esc(inv.planName || inv.planId)}</td>
+            <td>${inv.currency} ${Number(inv.amount).toLocaleString()}</td>
+            <td>${inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}</td>
+            <td><span class="badge ${statusClass}">${inv.status}</span></td>
+            <td><div class="actions-cell">
+              ${inv.status !== 'paid' ? '<button class="btn btn-success btn-sm" onclick="payClientInvoice(' + clientId + ',' + inv.id + ')">Pay</button>' : ''}
+              <button class="btn btn-ghost btn-sm" onclick="viewClientInvoice(' + clientId + ',' + inv.id + ')">View</button>
+              <button class="btn btn-ghost btn-sm" onclick="downloadClientInvoicePdf(' + clientId + ',' + inv.id + ')">PDF</button>
+              <button class="btn btn-primary btn-sm" onclick="emailClientInvoice(' + clientId + ',' + inv.id + ')">Email</button>
+            </div></td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+        el.innerHTML = html;
+      } catch {
+        el.innerHTML = '<div class="empty"><p>Failed to load invoices.</p></div>';
+      }
+    }
+
+    async function generateClientInvoice() {
+      if (!currentDetailClientId) return;
+      toast("Generating invoice...");
+      try {
+        const data = await api("/api/clients/" + currentDetailClientId + "/invoices/generate", { method: "POST" });
+        if (data.error) { toast(data.error, "error"); return; }
+        toast("Invoice generated!"); loadClientInvoices(currentDetailClientId);
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    async function payClientInvoice(clientId, invId) {
+      try {
+        await api("/api/clients/" + clientId + "/invoices/" + invId + "/pay", { method: "POST" });
+        toast("Invoice marked as paid."); loadClientInvoices(clientId);
+      } catch (e) { toast("Failed", "error"); }
+    }
+
+    function viewClientInvoice(clientId, invId) {
+      window.open("/api/clients/" + clientId + "/invoices/" + invId + "/view", "_blank");
+    }
+
+    async function downloadClientInvoicePdf(clientId, invId) {
+      try {
+        const key = localStorage.getItem("cp-api-key") || "";
+        const res = await fetch("/api/clients/" + clientId + "/invoices/" + invId + "/view?format=pdf", { headers: { "x-api-key": key } });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "invoice-" + invId + ".pdf"; a.click();
+        URL.revokeObjectURL(url);
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    async function emailClientInvoice(clientId, invId) {
+      try {
+        const data = await api("/api/clients/" + clientId + "/invoices/" + invId + "/email", { method: "POST" });
+        toast(data.sent ? "Invoice emailed!" : "Failed to send. Check client SMTP.");
+      } catch (e) { toast("Failed: " + e.message, "error"); }
     }
   </script>
 </body>
