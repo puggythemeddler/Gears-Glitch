@@ -1,7 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
 import { api, getStaffToken } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import NotificationBell from "@/components/NotificationBell";
 import { useFeature } from "@/lib/features";
 
 function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
@@ -82,9 +81,8 @@ export default function BackofficePage() {
             {settings?.storeLogo && <img src={settings.storeLogo} alt="" style={{ height: 28, width: 28, objectFit: "contain", borderRadius: 4 }} />}
             <strong style={{ fontSize: "1rem" }}>{settings?.storeName || "Store"}</strong>
           </div>
-            {featureFlags["Messaging"] && <NotificationBell onClick={() => { window.location.href = "/owner"; }} />}
             <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
-        </div>
+          </div>
         {view === "dashboard" && <BackofficeDashboard />}
         {view === "repairs" && <BackofficeRepairs />}
         {view === "calendar" && <BackofficeCalendar />}

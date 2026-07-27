@@ -369,7 +369,7 @@ export default function AdminPage() {
               {settings?.storeLogo && <img src={settings.storeLogo} alt="" style={{ height: 28, width: 28, objectFit: "contain", borderRadius: 4 }} />}
               <strong style={{ fontSize: "1rem" }}>{settings?.storeName || "Store"}</strong>
             </div>
-            {featureFlags["Messaging"] && <NotificationBell onClick={() => { window.location.href = "/owner"; }} />}
+            {featureFlags["Messaging"] && <NotificationBell onClick={() => setView("messages")} />}
             <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
           </div>
           <div className="dash-section active" key={view}>
