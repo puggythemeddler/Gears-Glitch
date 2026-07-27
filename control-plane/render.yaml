@@ -4,7 +4,7 @@ services:
     runtime: node
     region: oregon
     plan: free
-    buildCommand: cd control-plane && npm ci && npx tsc
+    buildCommand: cd control-plane && npm ci && npx tsc && cp -r public dist/public
     startCommand: cd control-plane && node dist/server/index.js
     envVars:
       - key: NODE_ENV

@@ -23,7 +23,7 @@ const API_KEY = process.env.CONTROL_PLANE_API_KEY || "";
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "..", "public")));
+app.use(express.static(path.join(__dirname, "..", "..", "public")));
 
 // ─── API KEY AUTH ────────────────────────────────────────
 function requireApiKey(
@@ -211,7 +211,7 @@ app.post("/api/health-check", requireApiKey, async (_req, res) => {
 
 // ─── SPA FALLBACK ────────────────────────────────────────
 app.get("*", (_req, res) => {
-  res.sendFile(path.join(__dirname, "..", "public", "index.html"));
+  res.sendFile(path.join(__dirname, "..", "..", "public", "index.html"));
 });
 
 // ─── START ───────────────────────────────────────────────
