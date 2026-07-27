@@ -95,7 +95,6 @@ export default function AdminLayouts({ inline }: { inline?: boolean }) {
           Manage storefront layouts. Static layouts are built-in code modules. Dynamic layouts are defined by JSON config and rendered by the generic engine.
         </p>
       </>}
-      {inline && <h3 style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>Manage Layouts</h3>}
 
       {msg && <div style={{ padding: "0.6rem 1rem", borderRadius: 6, background: "var(--primary-subtle)", color: "var(--primary)", marginBottom: "1rem", fontSize: "0.85rem" }}>{msg}<button onClick={() => setMsg("")} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--primary)", fontWeight: 700 }}>×</button></div>}
 
@@ -105,8 +104,7 @@ export default function AdminLayouts({ inline }: { inline?: boolean }) {
         </button>
       </div>
 
-      {showCreate && (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1rem", marginBottom: "1.5rem", background: "var(--surface)" }}>
+      {showCreate && (        <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1rem", marginBottom: "1.5rem", background: "var(--surface)" }}>
           <h3 style={{ marginTop: 0, fontSize: "1rem" }}>Create Dynamic Layout</h3>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
             <div className="field"><label style={{ fontSize: "0.8rem", fontWeight: 600 }}>Layout Key (unique)</label><input value={form.layoutKey} onChange={(e) => setForm({ ...form, layoutKey: e.target.value })} placeholder="e.g. my-custom" style={{ width: "100%", padding: "0.4rem 0.6rem", borderRadius: 4, border: "1px solid var(--border)" }} /></div>
@@ -124,7 +122,7 @@ export default function AdminLayouts({ inline }: { inline?: boolean }) {
         </div>
       )}
 
-      {loading ? <p>Loading...</p> : (
+      {!inline && (loading ? <p>Loading...</p> : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {layouts.map((row) => (
             <div key={row.id} style={{ border: "1px solid " + (row.is_active ? "var(--primary)" : "var(--border)"), borderRadius: 8, padding: "1rem", background: row.is_active ? "var(--primary-subtle)" : "var(--surface)" }}>
