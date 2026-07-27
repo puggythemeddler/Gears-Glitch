@@ -1,7 +1,10 @@
 import { getSettings, upsertWhatsAppConversation, getWhatsAppConversationByPhone, logWhatsAppMessage, findCustomerByPhone, findProviderByPhone, sendMessage } from "./db";
 
 function normalizePhone(phone: string): string {
-  return phone.replace(/\D/g, "");
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("0") && digits.length >= 10) return "254" + digits.slice(1);
+  if (digits.startsWith("254")) return digits;
+  return digits;
 }
 
 function isWithin24Hours(lastIncomingAt: string | null): boolean {
@@ -91,6 +94,19 @@ export async function sendWhatsAppMessage(to: string, text: string, entityType: 
     ]);
     await logWhatsAppMessage(normalizedTo, "outbound", "template", text, result.ok ? "sent" : "failed", result.waMessageId, result.error);
     await upsertWhatsAppConversation(normalizedTo, entityType, entityId, entityName, "outbound");
+  }
+}
+
+export async function verifyWhatsAppSignature(body: string | Buffer, signature: string | undefined): Promise<boolean> {
+  const s = await getSettings();
+  const appSecret = s.whatsappAppSecret;
+  if (!appSecret || !signature) return false;
+  try {
+    const crypto = await import("crypto");
+    const expected = "sha256=" + crypto.createHmac("sha256", appSecret).update(body).digest("hex");
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  } catch {
+    return false;
   }
 }
 

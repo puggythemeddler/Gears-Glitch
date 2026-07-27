@@ -1,5 +1,5 @@
-import fs from "fs";
-import path from "path";
+import { getSettings } from "./db";
+import { sendEmail, resetTransporter } from "./email";
 
 interface Ticket {
   id: string;
@@ -16,152 +16,76 @@ interface Customer {
   name: string;
 }
 
-interface MailMessage {
-  from: string;
-  to: string;
-  subject: string;
-  text: string;
-}
-
-let transporter: any = null;
-try {
-  const nodemailer = require("nodemailer");
-  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === "1" || false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
-} catch (_err) {
-  // nodemailer not installed — fallback to logging
-}
-
-function writeLog(entry: string): void {
-  try {
-    const dir = path.join(__dirname, "..", "data");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, "emails.log");
-    fs.appendFileSync(file, `${new Date().toISOString()} ${entry}\n\n`);
-  } catch (e) {
-    console.error("Failed to write email log", e);
-  }
-}
-
-async function sendMail(message: MailMessage): Promise<boolean> {
-  if (transporter) {
-    try {
-      await transporter.sendMail(message);
-      return true;
-    } catch (err) {
-      console.error("Email send failed", err);
-      writeLog(JSON.stringify(message, null, 2));
-      return false;
-    }
-  }
-  writeLog(JSON.stringify(message, null, 2));
-  return false;
-}
-
-function formatRepairEmail(ticket: Ticket): MailMessage {
-  return {
-    from: process.env.FROM_EMAIL || "no-reply@example.com",
-    to: ticket.customerEmail,
-    subject: `Repair ticket ${ticket.id} received`,
-    text: `Hello ${ticket.customerName},\n\nYour repair ticket ${ticket.id} has been created.\n\nDevice: ${ticket.deviceType} ${ticket.deviceModel || ""}\nProblem: ${ticket.issueDescription}\nStatus: ${ticket.statusLabel}\n\nWe will update you with any progress.\n\nThanks,\nSupport Team`,
-  };
-}
-
-function formatUpdateEmail(ticket: Ticket, update: { message: string }): MailMessage {
-  return {
-    from: process.env.FROM_EMAIL || "no-reply@example.com",
-    to: ticket.customerEmail,
-    subject: `Update for repair ${ticket.id}: ${ticket.statusLabel}`,
-    text: `Hello ${ticket.customerName},\n\nThere's an update on your repair ${ticket.id}:\n\n${update.message}\n\nStatus: ${ticket.statusLabel}\n\nRegards,\nSupport Team`,
-  };
-}
-
-function formatPasswordResetEmail(customer: Customer, link: string): MailMessage {
-  return {
-    from: process.env.FROM_EMAIL || "no-reply@example.com",
-    to: customer.email,
-    subject: `Reset your password for ${process.env.SITE_NAME || "Gear&Glitch"}`,
-    text: `Hello ${customer.name},\n\nYou requested a password reset. Click the link below to set a new password:\n\n${link}\n\nIf you did not request this, you can ignore this email.\n\nThanks,\nSupport Team`,
-  };
-}
-
-function formatMagicLinkEmail(customer: Customer, link: string): MailMessage {
-  return {
-    from: process.env.FROM_EMAIL || "no-reply@example.com",
-    to: customer.email,
-    subject: `Sign in to ${process.env.SITE_NAME || "Gear&Glitch"}`,
-    text: `Hello ${customer.name},\n\nClick the link below to sign in:\n\n${link}\n\nThis link will expire shortly.\n\nThanks,\nSupport Team`,
-  };
-}
-
-const sendNewRepairEmail = async (ticket: Ticket): Promise<boolean> => {
-  return sendMail(formatRepairEmail(ticket));
-};
-
-const sendRepairUpdateEmail = async (ticket: Ticket, update: { message: string }): Promise<boolean> => {
-  return sendMail(formatUpdateEmail(ticket, update));
-};
-
-const sendPasswordResetEmail = async (customer: Customer, link: string): Promise<boolean> => {
-  return sendMail(formatPasswordResetEmail(customer, link));
-};
-
-const sendMagicLinkEmail = async (customer: Customer, link: string): Promise<boolean> => {
-  return sendMail(formatMagicLinkEmail(customer, link));
-};
-
 interface ProviderInfo {
   email: string;
   companyName: string;
   contactName: string;
 }
 
-function formatProviderWelcomeEmail(provider: ProviderInfo): MailMessage {
-  return {
-    from: process.env.FROM_EMAIL || "no-reply@example.com",
-    to: provider.email,
-    subject: `Welcome to ${process.env.SITE_NAME || "Gear&Glitch"}`,
-    text: `Hello ${provider.contactName},\n\nWelcome to ${process.env.SITE_NAME || "Gear&Glitch"}! Your provider account for ${provider.companyName} has been created.\n\nYou can log in at: ${process.env.BASE_URL || "http://localhost:8020"}/provider/\n\nRegards,\nSupport Team`,
-  };
+function esc(s: string): string {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function formatProviderPlanChangedEmail(provider: ProviderInfo, planName: string): MailMessage {
-  return {
-    from: process.env.FROM_EMAIL || "no-reply@example.com",
-    to: provider.email,
-    subject: `Subscription updated for ${process.env.SITE_NAME || "Gear&Glitch"}`,
-    text: `Hello ${provider.contactName},\n\nYour subscription for ${provider.companyName} has been updated to the ${planName} plan.\n\nView your subscription: ${process.env.BASE_URL || "http://localhost:8020"}/provider/\n\nRegards,\nSupport Team`,
-  };
+function formatRepairHtml(ticket: Ticket): string {
+  return `<h2>Repair Ticket ${esc(ticket.id)}</h2><p>Hello ${esc(ticket.customerName)},</p><p>Your repair ticket <strong>${esc(ticket.id)}</strong> has been created.</p><table style="border-collapse:collapse"><tr><td style="padding:4px 8px;border:1px solid #ddd"><b>Device</b></td><td style="padding:4px 8px;border:1px solid #ddd">${esc(ticket.deviceType)} ${esc(ticket.deviceModel || "")}</td></tr><tr><td style="padding:4px 8px;border:1px solid #ddd"><b>Problem</b></td><td style="padding:4px 8px;border:1px solid #ddd">${esc(ticket.issueDescription)}</td></tr><tr><td style="padding:4px 8px;border:1px solid #ddd"><b>Status</b></td><td style="padding:4px 8px;border:1px solid #ddd">${esc(ticket.statusLabel)}</td></tr></table><p>We will update you with any progress.</p><p>Thanks,<br/>Support Team</p>`;
 }
 
-function formatInvoiceEmail(provider: ProviderInfo, amount: number, periodEnd: string): MailMessage {
-  return {
-    from: process.env.FROM_EMAIL || "no-reply@example.com",
-    to: provider.email,
-    subject: `Invoice from ${process.env.SITE_NAME || "Gear&Glitch"}`,
-    text: `Hello ${provider.contactName},\n\nAn invoice for ${provider.companyName} has been generated for £${amount.toFixed(2)}.\n\nDue: ${periodEnd}\n\nView your invoices: ${process.env.BASE_URL || "http://localhost:8020"}/provider/\n\nRegards,\nSupport Team`,
-  };
+function formatUpdateHtml(ticket: Ticket, update: { message: string }): string {
+  return `<h2>Update for Repair ${esc(ticket.id)}</h2><p>Hello ${esc(ticket.customerName)},</p><p>There's an update on your repair <strong>${esc(ticket.id)}</strong>:</p><blockquote style="border-left:3px solid #4caf50;padding:8px 16px;margin:16px 0;background:#f9f9f9">${esc(update.message)}</blockquote><p>Status: <strong>${esc(ticket.statusLabel)}</strong></p><p>Regards,<br/>Support Team</p>`;
 }
+
+function formatPasswordResetHtml(customer: Customer, link: string): string {
+  return `<h2>Password Reset</h2><p>Hello ${esc(customer.name)},</p><p>You requested a password reset. Click the button below to set a new password:</p><p style="text-align:center;margin:24px 0"><a href="${esc(link)}" style="background:#4caf50;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block">Reset Password</a></p><p style="color:#999;font-size:12px">If you did not request this, you can ignore this email.</p><p>Thanks,<br/>Support Team</p>`;
+}
+
+function formatMagicLinkHtml(customer: Customer, link: string): string {
+  return `<h2>Sign In</h2><p>Hello ${esc(customer.name)},</p><p>Click the button below to sign in:</p><p style="text-align:center;margin:24px 0"><a href="${esc(link)}" style="background:#4caf50;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block">Sign In</a></p><p style="color:#999;font-size:12px">This link will expire shortly.</p><p>Thanks,<br/>Support Team</p>`;
+}
+
+function formatProviderWelcomeHtml(provider: ProviderInfo): string {
+  return `<h2>Welcome!</h2><p>Hello ${esc(provider.contactName)},</p><p>Welcome to <strong>${esc(process.env.SITE_NAME || "Gear&Glitch")}</strong>! Your provider account for <strong>${esc(provider.companyName)}</strong> has been created.</p><p>You can log in at: <a href="${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/">${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/</a></p><p>Regards,<br/>Support Team</p>`;
+}
+
+function formatProviderPlanChangedHtml(provider: ProviderInfo, planName: string): string {
+  return `<h2>Subscription Updated</h2><p>Hello ${esc(provider.contactName)},</p><p>Your subscription for <strong>${esc(provider.companyName)}</strong> has been updated to the <strong>${esc(planName)}</strong> plan.</p><p>View your subscription: <a href="${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/">${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/</a></p><p>Regards,<br/>Support Team</p>`;
+}
+
+function formatInvoiceHtml(provider: ProviderInfo, amount: number, periodEnd: string): string {
+  return `<h2>Invoice</h2><p>Hello ${esc(provider.contactName)},</p><p>An invoice for <strong>${esc(provider.companyName)}</strong> has been generated for <strong>KES ${amount.toFixed(2)}</strong>.</p><p>Due: ${esc(periodEnd)}</p><p>View your invoices: <a href="${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/">${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/</a></p><p>Regards,<br/>Support Team</p>`;
+}
+
+const sendNewRepairEmail = async (ticket: Ticket): Promise<boolean> => {
+  const s = await getSettings();
+  const storeName = s.storeName || "Gear&Glitch";
+  return sendEmail(ticket.customerEmail, `Repair ticket ${ticket.id} received`, formatRepairHtml(ticket), "repair");
+};
+
+const sendRepairUpdateEmail = async (ticket: Ticket, update: { message: string }): Promise<boolean> => {
+  return sendEmail(ticket.customerEmail, `Update for repair ${ticket.id}: ${ticket.statusLabel}`, formatUpdateHtml(ticket, update), "repair_update");
+};
+
+const sendPasswordResetEmail = async (customer: Customer, link: string): Promise<boolean> => {
+  const s = await getSettings();
+  const storeName = s.storeName || "Gear&Glitch";
+  return sendEmail(customer.email, `Reset your password for ${storeName}`, formatPasswordResetHtml(customer, link), "password_reset");
+};
+
+const sendMagicLinkEmail = async (customer: Customer, link: string): Promise<boolean> => {
+  const s = await getSettings();
+  const storeName = s.storeName || "Gear&Glitch";
+  return sendEmail(customer.email, `Sign in to ${storeName}`, formatMagicLinkHtml(customer, link), "magic_link");
+};
 
 const sendProviderWelcomeEmail = async (provider: ProviderInfo): Promise<boolean> => {
-  return sendMail(formatProviderWelcomeEmail(provider));
+  return sendEmail(provider.email, `Welcome to ${process.env.SITE_NAME || "Gear&Glitch"}`, formatProviderWelcomeHtml(provider), "provider_welcome");
 };
 
 const sendProviderPlanChangedEmail = async (provider: ProviderInfo, planName: string): Promise<boolean> => {
-  return sendMail(formatProviderPlanChangedEmail(provider, planName));
+  return sendEmail(provider.email, `Subscription updated for ${process.env.SITE_NAME || "Gear&Glitch"}`, formatProviderPlanChangedHtml(provider, planName), "provider_plan_changed");
 };
 
 const sendInvoiceEmail = async (provider: ProviderInfo, amount: number, periodEnd: string): Promise<boolean> => {
-  return sendMail(formatInvoiceEmail(provider, amount, periodEnd));
+  return sendEmail(provider.email, `Invoice from ${process.env.SITE_NAME || "Gear&Glitch"}`, formatInvoiceHtml(provider, amount, periodEnd), "invoice");
 };
 
-export { sendNewRepairEmail, sendRepairUpdateEmail, sendPasswordResetEmail, sendMagicLinkEmail, sendProviderWelcomeEmail, sendProviderPlanChangedEmail, sendInvoiceEmail };
+export { sendNewRepairEmail, sendRepairUpdateEmail, sendPasswordResetEmail, sendMagicLinkEmail, sendProviderWelcomeEmail, sendProviderPlanChangedEmail, sendInvoiceEmail, resetTransporter };

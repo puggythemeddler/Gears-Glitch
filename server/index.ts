@@ -294,7 +294,7 @@ import {
 } from "./repairs";
 import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail } from "./email";
-import { handleWhatsAppWebhook, verifyWhatsAppChallenge, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection } from "./whatsapp";
+import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection } from "./whatsapp";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
@@ -373,7 +373,7 @@ const _isArr = isArr;
 const _inSet = inSet;
 const _okLen = okLen;
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "1mb", verify: (req: any, _res, buf) => { if (req.url === "/api/webhooks/whatsapp") req.rawBody = buf; } }));
 app.use("/uploads", express.static(path.join(ROOT, "data", "uploads"), {
   maxAge: 0,
   etag: false,
@@ -697,6 +697,23 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
     resetTransporter();
   }
   const mpesaCfg = getMpesaConfig();
+  const { whatsappEnabled, whatsappPhoneNumberId, whatsappAccessToken, whatsappAppSecret, whatsappVerifyToken, whatsappBusinessAccountId } = req.body || {};
+  const whatsappUpdates: any = {};
+  if (whatsappEnabled !== undefined) whatsappUpdates.whatsappEnabled = String(whatsappEnabled);
+  if (whatsappPhoneNumberId !== undefined) whatsappUpdates.whatsappPhoneNumberId = String(whatsappPhoneNumberId).trim();
+  if (whatsappAccessToken !== undefined) whatsappUpdates.whatsappAccessToken = String(whatsappAccessToken).trim();
+  if (whatsappAppSecret !== undefined) whatsappUpdates.whatsappAppSecret = String(whatsappAppSecret).trim();
+  if (whatsappVerifyToken !== undefined) whatsappUpdates.whatsappVerifyToken = String(whatsappVerifyToken).trim();
+  if (whatsappBusinessAccountId !== undefined) whatsappUpdates.whatsappBusinessAccountId = String(whatsappBusinessAccountId).trim();
+  if (Object.keys(whatsappUpdates).length) {
+    const updatedSettings = await updateSettings(whatsappUpdates);
+    settings.whatsappEnabled = updatedSettings.whatsappEnabled;
+    settings.whatsappPhoneNumberId = updatedSettings.whatsappPhoneNumberId;
+    settings.whatsappAccessToken = updatedSettings.whatsappAccessToken;
+    settings.whatsappAppSecret = updatedSettings.whatsappAppSecret;
+    settings.whatsappVerifyToken = updatedSettings.whatsappVerifyToken;
+    settings.whatsappBusinessAccountId = updatedSettings.whatsappBusinessAccountId;
+  }
   res.json({ ...settings, paymentMethods: await getPaymentMethods(), mpesa: mpesaCfg, springboardMenu: (await getStoreSetting("springboard_menu")) === "true" });
 }));
 
@@ -2272,7 +2289,7 @@ app.post("/api/messages", customerAuthMiddleware, asyncHandler(async (req: Reque
       sendEmail(provider.email, emailSub, html, "message");
       const settings = await getSettings();
       if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
-      if (provider.phone) sendWhatsAppMessage(provider.phone, `[${subject || "New Message"}] ${body.substring(0, 500)}`, "provider", provider.id, provider.companyName || provider.contactName || "");
+      if (provider.phone) await sendWhatsAppMessage(provider.phone, `[${subject || "New Message"}] ${body.substring(0, 500)}`, "provider", provider.id, provider.companyName || provider.contactName || "").catch((e: any) => console.error("[WhatsApp send]", e?.message || e));
     }
   } catch (err: any) {
     console.error("[customer message send]", err?.message || err);
@@ -2297,7 +2314,7 @@ app.post("/api/provider/messages", providerAuthMiddleware, requireProviderFeatur
       if (customer.email) sendEmail(customer.email, emailSub, html, "message");
       const settings = await getSettings();
       if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
-      if (customer.phone) sendWhatsAppMessage(customer.phone, `[${subject || "New Message"}] ${body.substring(0, 500)}`, "customer", customer.id, customer.name || "");
+      if (customer.phone) await sendWhatsAppMessage(customer.phone, `[${subject || "New Message"}] ${body.substring(0, 500)}`, "customer", customer.id, customer.name || "").catch((e: any) => console.error("[WhatsApp send]", e?.message || e));
     }
   } catch (err: any) {
     console.error("[provider message send]", err?.message || err);
@@ -4240,8 +4257,8 @@ app.post("/api/admin/messages", ownerAuthMiddleware, asyncHandler(async (req: Re
       if (provider.email) sendEmail(provider.email, emailSub, html, "message");
       const settings = await getSettings();
       if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
-      if (customer.phone) sendWhatsAppMessage(customer.phone, `[${subject || "Message from Admin"}] ${body.substring(0, 500)}`, "customer", customer.id, customer.name || "");
-      if (provider.phone) sendWhatsAppMessage(provider.phone, `[${subject || "Message from Admin"}] ${body.substring(0, 500)}`, "provider", provider.id, provider.companyName || provider.contactName || "");
+      if (customer.phone) await sendWhatsAppMessage(customer.phone, `[${subject || "Message from Admin"}] ${body.substring(0, 500)}`, "customer", customer.id, customer.name || "").catch((e: any) => console.error("[WhatsApp send]", e?.message || e));
+      if (provider.phone) await sendWhatsAppMessage(provider.phone, `[${subject || "Message from Admin"}] ${body.substring(0, 500)}`, "provider", provider.id, provider.companyName || provider.contactName || "").catch((e: any) => console.error("[WhatsApp send]", e?.message || e));
     }
   } catch (err: any) {
     console.error("[admin message send]", err?.message || err);
@@ -4471,6 +4488,12 @@ app.get("/api/webhooks/whatsapp", asyncHandler(async (req: Request, res: Respons
 }));
 
 app.post("/api/webhooks/whatsapp", asyncHandler(async (req: Request, res: Response) => {
+  const rawBody = (req as any).rawBody || JSON.stringify(req.body);
+  const signature = req.headers["x-hub-signature-256"] as string | undefined;
+  if (signature && !(await verifyWhatsAppSignature(rawBody, signature))) {
+    res.sendStatus(403);
+    return;
+  }
   try {
     await handleWhatsAppWebhook(req.body);
   } catch (err: any) {
