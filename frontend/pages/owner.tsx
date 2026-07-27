@@ -18,7 +18,6 @@ import AboutUsPage from "@/components/admin/AboutUsPage";
 import ProductPositioningPage from "@/components/admin/ProductPositioningPage";
 import StockTakeListPage from "@/components/admin/StockTakeListPage";
 import StockOnHandPage from "@/components/admin/StockOnHandPage";
-import AdminLayouts from "@/components/admin/AdminLayouts";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
@@ -1114,8 +1113,6 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
           </div>
         ))}
       </div>
-
-      <AdminLayouts inline />
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
         <h3>Promotional Banners</h3>

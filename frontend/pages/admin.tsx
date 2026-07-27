@@ -20,7 +20,6 @@ import ProductPositioningPage from "@/components/admin/ProductPositioningPage";
 import StockTakeListPage from "@/components/admin/StockTakeListPage";
 import StockOnHandPage from "@/components/admin/StockOnHandPage";
 import CategoryPositioningPage from "@/components/admin/CategoryPositioningPage";
-import AdminLayouts from "@/components/admin/AdminLayouts";
 
 declare global {
   interface Window {
@@ -2264,8 +2263,6 @@ function AdminStorefront() {
           </div>
         ))}
       </div>
-
-      <AdminLayouts inline />
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
         <h3>Promotional Banners</h3>
