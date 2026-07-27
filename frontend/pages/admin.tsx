@@ -29,41 +29,41 @@ declare global {
 
 export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
 
-const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[] = [
+const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
   {
     label: "Sales",
     items: [
       { key: "products", label: "Products" },
       { key: "categories", label: "Categories" },
       { key: "orders", label: "Orders" },
-      { key: "coupons", label: "Coupons" },
-      { key: "quotations", label: "Quotations" },
+      { key: "coupons", label: "Coupons", feature: "Discount/coupon management" },
+      { key: "quotations", label: "Quotations", feature: "Quotations" },
     ],
   },
   {
     label: "Stock",
     items: [
-      { key: "stock-on-hand", label: "Stock on Hand" },
-      { key: "stock-transfers", label: "Stock Transfers" },
-      { key: "stock-take", label: "Stock Take" },
-      { key: "purchases", label: "Purchase Orders" },
-      { key: "suppliers", label: "Suppliers" },
+      { key: "stock-on-hand", label: "Stock on Hand", feature: "Low stock alerts" },
+      { key: "stock-transfers", label: "Stock Transfers", feature: "Stock transfers" },
+      { key: "stock-take", label: "Stock Take", feature: "Stock take / inventory count" },
+      { key: "purchases", label: "Purchase Orders", feature: "Purchase order management" },
+      { key: "suppliers", label: "Suppliers", feature: "Supplier management" },
     ],
   },
   {
     label: "Team",
     items: [
-      { key: "users", label: "Users" },
+      { key: "users", label: "Users", feature: "Multiple staff accounts" },
       { key: "roles", label: "Roles" },
-      { key: "clients", label: "Clients" },
-      { key: "branches", label: "Branches" },
+      { key: "clients", label: "Clients", feature: "Client/tenant management" },
+      { key: "branches", label: "Branches", feature: "Branch management" },
     ],
   },
   {
     label: "Finance",
     items: [
-      { key: "invoices", label: "Invoices" },
-      { key: "credit-notes", label: "Credit Notes" },
+      { key: "invoices", label: "Invoices", feature: "Invoice/quote PDF downloads" },
+      { key: "credit-notes", label: "Credit Notes", feature: "Credit notes" },
       { key: "plans", label: "Plans" },
       { key: "providers", label: "Providers" },
     ],
@@ -71,10 +71,10 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
   {
     label: "Activity",
     items: [
-      { key: "reports", label: "Reports" },
-      { key: "messages", label: "Messages" },
-      { key: "reviews", label: "Reviews" },
-      { key: "audit", label: "Audit Log" },
+      { key: "reports", label: "Reports", feature: "Analytics dashboard" },
+      { key: "messages", label: "Messages", feature: "Messaging" },
+      { key: "reviews", label: "Reviews", feature: "Product reviews & ratings" },
+      { key: "audit", label: "Audit Log", feature: "Audit log" },
     ],
   },
   {
@@ -86,9 +86,9 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string }[] }[
       { key: "settings-content", label: "Content" },
       { key: "settings-system", label: "System" },
       { key: "storefront", label: "Storefront" },
-      { key: "product-positioning", label: "Product Positioning" },
-      { key: "email-settings", label: "Email" },
-      { key: "whatsapp-settings", label: "WhatsApp" },
+      { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
+      { key: "email-settings", label: "Email", feature: "Email notifications" },
+      { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
       { key: "about-us", label: "About Us" },
       { key: "spec-templates", label: "Spec Templates" },
       { key: "shop-subscription", label: "Subscription" },
@@ -117,15 +117,39 @@ export default function AdminPage() {
   const gisLoadedRef = useRef(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Team", "Settings"]);
-  const messagingEnabled = useFeature("Messaging");
-  const creditNotesEnabled = useFeature("Credit notes");
-  const quotationsEnabled = useFeature("Quotations");
-  const techRepairsEnabled = useFeature("Repair ticketing");
-  const productPositioningEnabled = useFeature("Product positioning");
-  const emailNotificationsEnabled = useFeature("Email notifications");
-  const stockTransfersEnabled = useFeature("Stock transfers");
-  const supplierManagementEnabled = useFeature("Supplier management");
-  const branchManagementEnabled = useFeature("Branch management");
+  const featureFlags: Record<string, boolean> = {
+    "Messaging": useFeature("Messaging"),
+    "Credit notes": useFeature("Credit notes"),
+    "Quotations": useFeature("Quotations"),
+    "Repair ticketing": useFeature("Repair ticketing"),
+    "Product positioning": useFeature("Product positioning"),
+    "Email notifications": useFeature("Email notifications"),
+    "Stock transfers": useFeature("Stock transfers"),
+    "Supplier management": useFeature("Supplier management"),
+    "Branch management": useFeature("Branch management"),
+    "Multi-currency support": useFeature("Multi-currency support"),
+    "WhatsApp integration": useFeature("WhatsApp integration"),
+    "Product reviews & ratings": useFeature("Product reviews & ratings"),
+    "Customer reviews": useFeature("Customer reviews"),
+    "Discount/coupon management": useFeature("Discount/coupon management"),
+    "Low stock alerts": useFeature("Low stock alerts"),
+    "Stock take / inventory count": useFeature("Stock take / inventory count"),
+    "Purchase order management": useFeature("Purchase order management"),
+    "Invoice/quote PDF downloads": useFeature("Invoice/quote PDF downloads"),
+    "Analytics dashboard": useFeature("Analytics dashboard"),
+    "Audit log": useFeature("Audit log"),
+    "Multiple staff accounts": useFeature("Multiple staff accounts"),
+    "Client/tenant management": useFeature("Client/tenant management"),
+    "eTIMS/KRA compliance": useFeature("eTIMS/KRA compliance"),
+    "POS integration": useFeature("POS integration"),
+  };
+  const hasFeature = (f?: string) => !f || featureFlags[f] === true;
+  const visibleNavGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => hasFeature(i.feature)) })).filter((g) => g.items.length > 0);
+  const allVisibleKeys = visibleNavGroups.flatMap((g) => g.items.map((i) => i.key));
+
+  useEffect(() => {
+    if (view !== "dashboard" && !allVisibleKeys.includes(view)) setView("dashboard");
+  }, [view, allVisibleKeys]);
 
   useEffect(() => {
     api<{ googleClientId: string }>("/api/public-settings").then((d) => setGoogleClientId(d.googleClientId || "")).catch(() => {});
@@ -302,7 +326,7 @@ export default function AdminPage() {
             Home
           </span>
         </RippleButton>
-        {NAV_GROUPS.map((group) => {
+        {visibleNavGroups.map((group) => {
           const isOpen = expandedGroups.includes(group.label);
           const isChildActive = group.items.some((item) => view === item.key);
           return (
@@ -345,7 +369,7 @@ export default function AdminPage() {
               {settings?.storeLogo && <img src={settings.storeLogo} alt="" style={{ height: 28, width: 28, objectFit: "contain", borderRadius: 4 }} />}
               <strong style={{ fontSize: "1rem" }}>{settings?.storeName || "Store"}</strong>
             </div>
-            {messagingEnabled && <NotificationBell onClick={() => { window.location.href = "/owner"; }} />}
+            {featureFlags["Messaging"] && <NotificationBell onClick={() => { window.location.href = "/owner"; }} />}
             <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
           </div>
           <div className="dash-section active" key={view}>

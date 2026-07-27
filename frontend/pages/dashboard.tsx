@@ -35,7 +35,15 @@ export default function DashboardPage() {
 
   const isCustomer = role === "customer";
   const isProvider = role === "provider";
-  const messagingEnabled = useFeature("Messaging");
+  const featureFlags: Record<string, boolean> = {
+    "Messaging": useFeature("Messaging"),
+    "Repair ticketing": useFeature("Repair ticketing"),
+    "Order management": useFeature("Order management"),
+    "Invoice/quote PDF downloads": useFeature("Invoice/quote PDF downloads"),
+    "Product reviews & ratings": useFeature("Product reviews & ratings"),
+    "Quotations": useFeature("Quotations"),
+  };
+  const hasFeature = (f?: string) => !f || featureFlags[f] === true;
 
   useEffect(() => {
     const r = getRole();
@@ -120,18 +128,18 @@ export default function DashboardPage() {
     window.location.href = "/";
   }
 
-  const sections: { key: Section; label: string; show: boolean }[] = [
+  const sections: { key: Section; label: string; show: boolean; feature?: string }[] = [
     { key: "overview", label: "Overview", show: true },
-    { key: "orders", label: "Orders", show: isCustomer },
-    { key: "repairs", label: "Repairs", show: isCustomer },
+    { key: "orders", label: "Orders", show: isCustomer, feature: "Order management" },
+    { key: "repairs", label: "Repairs", show: isCustomer, feature: "Repair ticketing" },
     { key: "wishlist", label: "Wishlist", show: isCustomer },
-    { key: "messages", label: "Messages", show: true },
-    { key: "sales", label: "Sales Report", show: isProvider },
-    { key: "invoices", label: "Invoices", show: isProvider },
+    { key: "messages", label: "Messages", show: true, feature: "Messaging" },
+    { key: "sales", label: "Sales Report", show: isProvider, feature: "Order management" },
+    { key: "invoices", label: "Invoices", show: isProvider, feature: "Invoice/quote PDF downloads" },
     { key: "profile", label: "Profile", show: true },
   ];
 
-  const visibleSections = sections.filter((s) => s.show && (s.key !== "messages" || messagingEnabled));
+  const visibleSections = sections.filter((s) => s.show && hasFeature(s.feature));
 
   return (
     <div className="dash-layout">

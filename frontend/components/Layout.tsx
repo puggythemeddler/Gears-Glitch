@@ -34,6 +34,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [springboardOpen, setSpringboardOpen] = useState(false);
   const { configLoading, layout } = useLayout();
   const messagingEnabled = useFeature("Messaging");
+  const repairsEnabled = useFeature("Repair ticketing");
+  const multiCurrencyEnabled = useFeature("Multi-currency support");
   const springboardMenu = settings?.springboardMenu ?? false;
   const [navLinks, setNavLinks] = useState(NAV_LINKS);
   const [footerConfig, setFooterConfig] = useState<any>(null);
@@ -45,6 +47,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
       if (d?.categories) setCategories(d.categories);
     }).catch(() => {});
   }, []);
+
+  const filteredNavLinks = navLinks.filter((l) => l.id !== "repairs" || repairsEnabled);
 
   useEffect(() => {
     const handler = () => { setMobileOpen(false); setSpringboardOpen(false); };
@@ -109,7 +113,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             </button>
             {springboardOpen && (
               <div className="springboard-dropdown">
-                {navLinks.map((link: any) => (
+                {filteredNavLinks.map((link: any) => (
                   <Link
                     key={link.id}
                     href={link.href}
@@ -127,7 +131,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           </div>
         ) : (
           <nav className="main-nav-desktop" aria-label="Main">
-            {navLinks.map((link: any) => (
+            {filteredNavLinks.map((link: any) => (
               <Link
                 key={link.id}
                 href={link.href}
@@ -185,7 +189,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
         </div>
       </div>
       <nav className={`main-nav-mobile${mobileOpen ? " open" : ""}`} aria-label="Mobile navigation">
-        {navLinks.map((link: any) => (
+        {filteredNavLinks.map((link: any) => (
           <Link
             key={link.id}
             href={link.href}

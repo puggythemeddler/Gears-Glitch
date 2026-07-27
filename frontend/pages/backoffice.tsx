@@ -12,6 +12,13 @@ function formatPrice(amount: number) {
 
 type BackofficeView = "dashboard" | "repairs" | "calendar" | "stock";
 
+const NAV_ITEMS: { key: BackofficeView; label: string; feature?: string }[] = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "repairs", label: "Repair tickets", feature: "Repair ticketing" },
+  { key: "calendar", label: "Calendar" },
+  { key: "stock", label: "Stock Control", feature: "Stock take / inventory count" },
+];
+
 export default function BackofficePage() {
   const { isDark, toggleDark, settings } = useApp();
   const [authed, setAuthed] = useState(false);
@@ -19,7 +26,17 @@ export default function BackofficePage() {
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-  const messagingEnabled = useFeature("Messaging");
+  const featureFlags: Record<string, boolean> = {
+    "Messaging": useFeature("Messaging"),
+    "Repair ticketing": useFeature("Repair ticketing"),
+    "Stock take / inventory count": useFeature("Stock take / inventory count"),
+  };
+  const hasFeature = (f?: string) => !f || featureFlags[f] === true;
+  const visibleNav = NAV_ITEMS.filter((i) => hasFeature(i.feature));
+
+  useEffect(() => {
+    if (view !== "dashboard" && !visibleNav.some((i) => i.key === view)) setView("dashboard");
+  }, [view, visibleNav]);
 
   useEffect(() => {
     if (getStaffToken()) setAuthed(true);
@@ -53,10 +70,9 @@ export default function BackofficePage() {
   return (
     <div className="dash-layout">
       <nav className="dash-nav">
-        <button className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}>Dashboard</button>
-        <button className={view === "repairs" ? "active" : ""} onClick={() => setView("repairs")}>Repair tickets</button>
-        <button className={view === "calendar" ? "active" : ""} onClick={() => setView("calendar")}>Calendar</button>
-        <button className={view === "stock" ? "active" : ""} onClick={() => setView("stock")}>Stock Control</button>
+        {visibleNav.map((item) => (
+          <button key={item.key} className={view === item.key ? "active" : ""} onClick={() => setView(item.key)}>{item.label}</button>
+        ))}
         <a href="/" className="nav-logout-btn" style={{ textAlign: "left" }} target="_blank" rel="noreferrer">View shop &nearr;</a>
         <button onClick={() => { localStorage.removeItem("computerStoreToken"); window.location.href = "/"; }} style={{ color: "var(--primary)" }}>Sign out</button>
       </nav>
@@ -66,7 +82,7 @@ export default function BackofficePage() {
             {settings?.storeLogo && <img src={settings.storeLogo} alt="" style={{ height: 28, width: 28, objectFit: "contain", borderRadius: 4 }} />}
             <strong style={{ fontSize: "1rem" }}>{settings?.storeName || "Store"}</strong>
           </div>
-            {messagingEnabled && <NotificationBell onClick={() => { window.location.href = "/owner"; }} />}
+            {featureFlags["Messaging"] && <NotificationBell onClick={() => { window.location.href = "/owner"; }} />}
             <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
         </div>
         {view === "dashboard" && <BackofficeDashboard />}

@@ -27,48 +27,48 @@ function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "
 
 type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "credit-notes" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "about-us" | "quotes" | "product-positioning";
 
-const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string }[] }[] = [
+const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string; feature?: string }[] }[] = [
   {
     label: "Sales",
     items: [
       { key: "orders", label: "Orders" },
       { key: "products", label: "Products" },
       { key: "customers", label: "Customers" },
-      { key: "quotes", label: "Quotes" },
+      { key: "quotes", label: "Quotes", feature: "Quotations" },
     ],
   },
   {
     label: "Service",
     items: [
       { key: "providers", label: "Providers" },
-      { key: "tech-repairs", label: "Tech Repairs" },
-      { key: "messages", label: "Messages" },
-      { key: "reports", label: "Reports" },
+      { key: "tech-repairs", label: "Tech Repairs", feature: "Repair ticketing" },
+      { key: "messages", label: "Messages", feature: "Messaging" },
+      { key: "reports", label: "Reports", feature: "Analytics dashboard" },
     ],
   },
   {
     label: "Finance",
     items: [
-      { key: "invoices", label: "Invoices" },
-      { key: "credit-notes", label: "Credit Notes" },
+      { key: "invoices", label: "Invoices", feature: "Invoice/quote PDF downloads" },
+      { key: "credit-notes", label: "Credit Notes", feature: "Credit notes" },
     ],
   },
   {
     label: "Stock",
     items: [
-      { key: "stock-control", label: "Stock Control" },
-      { key: "stock-take", label: "Stock Take" },
-      { key: "branches", label: "Branches" },
+      { key: "stock-control", label: "Stock Control", feature: "Stock transfers" },
+      { key: "stock-take", label: "Stock Take", feature: "Stock take / inventory count" },
+      { key: "branches", label: "Branches", feature: "Branch management" },
     ],
   },
   {
     label: "Settings",
     items: [
       { key: "storefront", label: "Storefront" },
-      { key: "product-positioning", label: "Product Positioning" },
+      { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
       { key: "about-us", label: "About Us" },
       { key: "shop-subscription", label: "Subscription" },
-      { key: "audit", label: "Audit Log" },
+      { key: "audit", label: "Audit Log", feature: "Audit log" },
     ],
   },
 ];
@@ -81,14 +81,24 @@ export default function OwnerPage() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [staffRole, setStaffRole] = useState<string | null>(null);
-  const messagingEnabled = useFeature("Messaging");
-  const branchManagementEnabled = useFeature("Branch management");
-  const creditNotesEnabled = useFeature("Credit notes");
-  const quotationsEnabled = useFeature("Quotations");
-  const techRepairsEnabled = useFeature("Repair ticketing");
-  const productPositioningEnabled = useFeature("Product positioning");
-  const emailNotificationsEnabled = useFeature("Email notifications");
-  const stockTransfersEnabled = useFeature("Stock transfers");
+  const featureFlags: Record<string, boolean> = {
+    "Messaging": useFeature("Messaging"),
+    "Branch management": useFeature("Branch management"),
+    "Credit notes": useFeature("Credit notes"),
+    "Quotations": useFeature("Quotations"),
+    "Repair ticketing": useFeature("Repair ticketing"),
+    "Product positioning": useFeature("Product positioning"),
+    "Email notifications": useFeature("Email notifications"),
+    "Stock transfers": useFeature("Stock transfers"),
+    "Invoice/quote PDF downloads": useFeature("Invoice/quote PDF downloads"),
+    "Analytics dashboard": useFeature("Analytics dashboard"),
+    "Audit log": useFeature("Audit log"),
+    "Stock take / inventory count": useFeature("Stock take / inventory count"),
+    "WhatsApp integration": useFeature("WhatsApp integration"),
+    "Multi-currency support": useFeature("Multi-currency support"),
+    "Product reviews & ratings": useFeature("Product reviews & ratings"),
+  };
+  const hasFeature = (f?: string) => !f || featureFlags[f] === true;
 
   useEffect(() => {
     if (getStaffToken()) {
@@ -101,19 +111,19 @@ export default function OwnerPage() {
 
   const isStorefrontAllowed = staffRole === "admin";
 
+  const featureFlagsReady = Object.keys(featureFlags).length > 0;
   const filteredGroups = NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) =>
-      (item.key !== "messages" || messagingEnabled) &&
-      (item.key !== "branches" || branchManagementEnabled) &&
-      (item.key !== "credit-notes" || creditNotesEnabled) &&
-      (item.key !== "quotes" || quotationsEnabled) &&
-      (item.key !== "tech-repairs" || techRepairsEnabled) &&
-      (item.key !== "product-positioning" || productPositioningEnabled) &&
-      (item.key !== "stock-control" || stockTransfersEnabled) &&
-      (item.key !== "storefront" || isStorefrontAllowed)
-    ),
+    items: group.items.filter((item) => {
+      if (item.key === "storefront") return isStorefrontAllowed;
+      return hasFeature(item.feature);
+    }),
   })).filter((group) => group.items.length > 0);
+  const allVisibleKeys = filteredGroups.flatMap((g) => g.items.map((i) => i.key));
+
+  useEffect(() => {
+    if (view !== "dashboard" && !allVisibleKeys.includes(view)) setView("dashboard");
+  }, [view, allVisibleKeys]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
