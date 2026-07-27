@@ -3,6 +3,7 @@ name: Deploy to All Clients
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy-all:
@@ -12,36 +13,60 @@ jobs:
         run: |
           echo "Triggering deploy for all active clients..."
           
-          DEPLOY_RESULTS=""
-          FAILED=0
+          # Check that secrets are configured
+          if [ -z "${{ secrets.CONTROL_PLANE_URL }}" ] || [ -z "${{ secrets.CONTROL_PLANE_API_KEY }}" ] || [ -z "${{ secrets.RENDER_API_KEY }}" ]; then
+            echo "⚠️  Skipping — GitHub Actions secrets not configured."
+            echo "Set these in your repo: Settings → Secrets and variables → Actions"
+            echo "  CONTROL_PLANE_URL    (e.g. https://gear-glitch-control-plane.onrender.com)"
+            echo "  CONTROL_PLANE_API_KEY (your control plane API key)"
+            echo "  RENDER_API_KEY       (your Render API key)"
+            exit 0
+          fi
+          
           SUCCEEDED=0
+          FAILED=0
+          SKIPPED=0
           
           # Read client list from control plane
-          CLIENTS=$(curl -s -H "x-api-key: ${{ secrets.CONTROL_PLANE_API_KEY }}" \
-            "${{ secrets.CONTROL_PLANE_URL }}/api/clients")
+          CLIENTS=$(curl -sf -H "x-api-key: ${{ secrets.CONTROL_PLANE_API_KEY }}" \
+            "${{ secrets.CONTROL_PLANE_URL }}/api/clients" 2>&1)
           
-          # Extract active client service IDs
-          SERVICE_IDS=$(echo "$CLIENTS" | jq -r '.clients[] | select(.status == "active") | .render_service_id // empty')
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to reach control plane at ${{ secrets.CONTROL_PLANE_URL }}"
+            exit 0
+          fi
           
-          for SID in $SERVICE_IDS; do
-            echo "Deploying Render service: $SID"
+          # Check if clients exist
+          COUNT=$(echo "$CLIENTS" | jq -r '.clients | length' 2>/dev/null || echo "0")
+          
+          if [ "$COUNT" = "0" ] || [ "$COUNT" = "null" ]; then
+            echo "No active clients to deploy to."
+            exit 0
+          fi
+          
+          echo "Found $COUNT total clients. Deploying active ones..."
+          
+          # Extract active client names and service IDs
+          echo "$CLIENTS" | jq -r '.clients[] | select(.status == "active") | select(.render_service_id != "") | "\(.name)|\(.render_service_id)"' 2>/dev/null | while IFS='|' read -r NAME SID; do
+            echo "Deploying: $NAME ($SID)"
             
-            DEPLOY_RES=$(curl -s -w "\n%{http_code}" -X POST \
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
               -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
               -H "Content-Type: application/json" \
               "https://api.render.com/v1/services/${SID}/deploys" \
-              -d '{"clear_cache": false}')
-            
-            HTTP_CODE=$(echo "$DEPLOY_RES" | tail -1)
+              -d '{"clear_cache": false}' 2>&1)
             
             if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
-              echo "  ✓ Deploy triggered"
-              SUCCEEDED=$((SUCCEEDED + 1))
+              echo "  ✓ Deploy triggered for $NAME"
+              echo "$NAME" >> /tmp/succeeded.txt
             else
-              echo "  ✗ Failed (HTTP $HTTP_CODE)"
-              FAILED=$((FAILED + 1))
+              echo "  ✗ Failed for $NAME (HTTP $HTTP_CODE)"
+              echo "$NAME" >> /tmp/failed.txt
             fi
           done
+          
+          SUCCEEDED=$(wc -l < /tmp/succeeded.txt 2>/dev/null || echo "0")
+          FAILED=$(wc -l < /tmp/failed.txt 2>/dev/null || echo "0")
           
           echo ""
           echo "═══════════════════════════════"
