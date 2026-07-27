@@ -1,6 +1,6 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 storefront layout themes (Original, Amazon, Jumia, Mobile, Custom) with admin-controllable hero sections, subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management (with delete), auto-email notifications, WhatsApp Business API integration (bidirectional messaging with 24h window tracking), product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation, two-step checkout with delivery details and payment method selection, provider order management (view, cancel items, update status), customer invoice download from order history, and responsive design optimized for mobile, tablet, and desktop. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control, stock take, inter-branch stock transfers, audit logging, role-based dashboards (Admin, Owner, Technician), 5 built-in storefront layout themes (Original, Amazon, Jumia, Mobile, Custom) with a runtime layout registry for admin-created dynamic JSON layouts, admin-controllable hero sections, subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management (with delete), auto-email notifications, WhatsApp Business API integration (bidirectional messaging with 24h window tracking), product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation, two-step checkout with delivery details and payment method selection, provider order management (view, cancel items, update status), customer invoice download from order history, and responsive design optimized for mobile, tablet, and desktop. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ## Recent highlights
 
@@ -200,7 +200,7 @@ Full store management with 29 sections:
 - **Storefront** — Choose layout theme (Original, Amazon, Jumia, Mobile), manage promotional banners
 - **Splashes** — Create/edit/delete promotional banners with quick presets (Black Friday, Happy Hour, Christmas, New Year Sale, Back to School), custom background/text colors, marquee vs static toggle, active date ranges, and on/off toggle. Kenyan holidays auto-displayed with themed colors.
 - **Shop Subscription** — View current plan, activate new plan, approve/reject owner requests
-- **Settings** — Store info, M-Pesa config, store logo upload with position selector (top-left/top-middle/top-right), currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings), image storage (Cloudinary primary + optional database backup toggle), exchange rates
+- **Settings** — Store info, M-Pesa config, store logo upload with position selector (top-left/top-middle/top-right), currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings), image storage (Cloudinary primary + optional database backup toggle), exchange rates, and **Layouts** page for managing storefront layouts (activate, create dynamic JSON layouts, reorder)
 
 ### Owner Panel (`/owner`)
 
@@ -342,6 +342,8 @@ All data-fetching pages now render shimmer skeleton placeholders instead of bare
 - **`components/admin/ProductPositioningPage.tsx`** — Drag-and-drop product reorder (used by both admin and owner)
 - **`components/admin/StockTakeListPage.tsx`** — Stock take session list (used by both admin and owner)
 - **`components/admin/StockOnHandPage.tsx`** — Stock on hand with snapshots and low-stock alerts (used by both admin and owner, with optional auto-reorder for admin)
+- **`components/admin/AdminLayouts.tsx`** — Storefront layout management: list, create dynamic JSON layouts, edit, activate, delete, reorder (used by both admin and owner)
+- **`components/admin/CategoryPositioningPage.tsx`** — Drag-and-drop category reorder
 - Feature gating in the owner panel is preserved at the routing level (nav items conditionally rendered based on `useFeature()` checks)
 
 ---
@@ -387,13 +389,15 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │   ├── app-context.tsx       # React context — auth, theme, cart, settings
 │   ├── types.ts              # TypeScript interfaces
 │   └── features.ts           # useFeature() hook for subscription feature gating
-├── layouts/               # Storefront layout themes
-│   ├── index.tsx              # Layout registry, provider, engine
+├── layouts/               # Storefront layout themes + runtime engine
+│   ├── index.tsx              # Layout registry, provider, engine (fetches from backend, falls back to static)
 │   ├── shared.ts              # formatPrice, escapeHtml utilities
+│   ├── dynamic-engine.tsx     # Generic JSON layout renderer for runtime-created layouts
 │   ├── original.tsx           # Original theme (clean, default site nav)
 │   ├── amazon.tsx             # Amazon-style theme
 │   ├── jumia.tsx              # Jumia-style theme
-│   └── mobile.tsx             # Mobile-optimised theme
+│   ├── mobile.tsx             # Mobile-optimised theme
+│   └── custom.tsx             # Custom theme
 ├── pages/
 │   ├── _app.tsx              # App wrapper with ErrorBoundary, page transitions
 │   ├── _document.tsx         # Custom Document (data-theme attribute)
@@ -466,6 +470,7 @@ data/
 | GET | `/api/categories/:id/subcategories` | Subcategories for a category |
 | GET | `/api/subcategories` | All subcategories |
 | GET | `/api/plans` | Active subscription plans |
+| GET | `/api/layouts` | All storefront layouts (public, sorted by sort_order) |
 | GET | `/api/shipping/counties` | All 47 Kenyan counties with fees |
 | GET | `/api/repairs/statuses` | Repair status labels |
 | GET | `/api/shop/features` | Active subscription features for feature-gating UI |
@@ -553,6 +558,13 @@ Full CRUD for products, categories (including subcategories), staff, roles, plan
 | POST | `/api/admin/products/bulk-edit` | Bulk update product price, category, inStock for selected product IDs |
 | GET | `/api/admin/products/:id/price-history` | Price change history for a product (last 50 changes) |
 | GET | `/api/admin/splashes` | List all promotional banners |
+| GET | `/api/admin/layouts` | List all storefront layouts (admin) |
+| GET | `/api/admin/layouts/:id` | Get single layout details |
+| POST | `/api/admin/layouts` | Create a new dynamic layout |
+| PUT | `/api/admin/layouts/:id` | Update a layout (label, description, config) |
+| DELETE | `/api/admin/layouts/:id` | Delete a dynamic layout (static layouts protected) |
+| PUT | `/api/admin/layouts/:id/activate` | Activate a layout (sets it as storefront layout) |
+| PUT | `/api/admin/layouts-reorder` | Reorder layouts |
 | POST | `/api/admin/splashes` | Create a promotional banner |
 | PUT | `/api/admin/splashes/:id` | Update a promotional banner |
 | DELETE | `/api/admin/splashes/:id` | Delete a promotional banner |
@@ -655,7 +667,7 @@ Provider registration, login, subscription details, invoices, products at tier, 
 
 ## Storefront Layouts
 
-Five layout themes controlled by admin via the Storefront panel:
+Five built-in layout themes controlled by admin via the Storefront panel, plus a runtime Layouts page for creating custom dynamic layouts from JSON config:
 
 | Layout | Key | Description |
 |--------|-----|-------------|
@@ -668,6 +680,27 @@ Five layout themes controlled by admin via the Storefront panel:
 Each layout provides its own `Header`, `Footer`, `HomePage`, and `LayoutStyles` components. The admin can switch layouts and manage promotional banners from both the Admin and Owner panels.
 
 ## Adding a New Storefront Layout
+
+There are two ways to add new layouts:
+
+### Option 1: Runtime Dynamic Layout (Admin UI — no code required)
+
+1. Go to **Admin → Settings → Layouts** (or **Owner → Settings → Layouts**)
+2. Click **"+ New Dynamic Layout"**
+3. Fill in the layout key, label, description, and JSON config
+4. The JSON config supports these section types:
+   - `product-grid` — configurable columns, filter (all/featured/sale/newest), limit
+   - `category-grid` — cards or icons style, configurable columns
+   - `banner` — image URL + link, or text banner with colors
+   - `stats` — icon + value + label stat cards
+   - `text` — title + content text block
+   - `spacer` — configurable height spacer
+5. Hero styles: `carousel` (auto-rotating featured products), `split` (two-column with image), `minimal` (centered text), `none`
+6. Product card styles: `default`, `compact`, `detailed`
+7. Click **Create Layout**, then **Activate** it
+8. The layout is rendered by the generic JSON layout engine (`frontend/layouts/dynamic-engine.tsx`)
+
+### Option 2: Static Code Module (Developer — requires rebuild)
 
 To add a new storefront layout theme, create a new module under `frontend/layouts/` and register it in `frontend/layouts/index.tsx`.
 
@@ -682,7 +715,7 @@ To add a new storefront layout theme, create a new module under `frontend/layout
    - `HomePage(props)` – the homepage content renderer
 3. Register the layout in `frontend/layouts/index.tsx`:
    - import the layout module
-   - add it to the `LAYOUTS` record
+   - add it to the `STATIC_LAYOUTS` record
 4. The layout becomes available in the admin storefront selector once the app reloads and the `layout` setting matches the new `LAYOUT_KEY`.
 
 ### Example module shape
@@ -711,7 +744,7 @@ export function HomePage({ products, categories, banners }) {
 
 ### Current limitation
 
-This project does not yet support runtime upload/import of layout files through the admin UI. Layouts are integrated by adding a new source file and registering it in `frontend/layouts/index.tsx`.
+Runtime dynamic layouts created via the admin UI use a JSON config schema. For layouts requiring custom React components (animations, complex interactions, server-side data fetching), create a static code module under `frontend/layouts/` and register it in `frontend/layouts/index.tsx`.
 
 ---
 
