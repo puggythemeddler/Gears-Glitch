@@ -238,8 +238,8 @@ code, pre {
 .header-left {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  flex: 1 1 auto;
+  gap: var(--space-3);
+  flex: 1 1 0;
   min-width: 0;
   flex-wrap: nowrap;
 }

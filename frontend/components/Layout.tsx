@@ -91,61 +91,63 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const defaultHeader = (
     <header className="site-header">
       <div className="header-inner">
-        <Link className="brand" href="/" onClick={closeMobile}>
-          {settings?.storeLogo ? (
-            <img src={settings.storeLogo} alt={settings.storeName || "Store"} className="site-logo" />
-          ) : (
-            settings?.storeName || "Gear&Glitch"
-          )}
-        </Link>
-        {springboardMenu ? (
-          <div className="springboard-wrap">
-            <button
-              type="button"
-              className="springboard-btn"
-              onClick={() => setSpringboardOpen((o) => !o)}
-              aria-expanded={springboardOpen}
-              aria-label="Browse categories"
-            >
-              <span className="springboard-icon">☰</span>
-              <span className="springboard-label">Categories</span>
-              <span className={`springboard-arrow${springboardOpen ? " open" : ""}`}>▾</span>
-            </button>
-            {springboardOpen && (
-              <div className="springboard-dropdown">
-                {filteredNavLinks.map((link: any) => (
-                  <Link
-                    key={link.id}
-                    href={link.href}
-                    className={`springboard-item${activeNav === link.id ? " active" : ""}`}
-                    onClick={closeMobile}
-                  >
-                    {link.label}
-                    {link.id === "cart" && cartCount > 0 && (
-                      <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
-                    )}
-                  </Link>
-                ))}
-              </div>
+        <div className="header-left">
+          <Link className="brand" href="/" onClick={closeMobile}>
+            {settings?.storeLogo ? (
+              <img src={settings.storeLogo} alt={settings.storeName || "Store"} className="site-logo" />
+            ) : (
+              settings?.storeName || "Gear&Glitch"
             )}
-          </div>
-        ) : (
-          <nav className="main-nav-desktop" aria-label="Main">
-            {filteredNavLinks.map((link: any) => (
-              <Link
-                key={link.id}
-                href={link.href}
-                className={activeNav === link.id ? "active" : ""}
-                aria-current={activeNav === link.id ? "page" : undefined}
+          </Link>
+          {springboardMenu ? (
+            <div className="springboard-wrap">
+              <button
+                type="button"
+                className="springboard-btn"
+                onClick={() => setSpringboardOpen((o) => !o)}
+                aria-expanded={springboardOpen}
+                aria-label="Browse categories"
               >
-                {link.label}
-                {link.id === "cart" && cartCount > 0 && (
-                  <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
-                )}
-              </Link>
-            ))}
-          </nav>
-        )}
+                <span className="springboard-icon">☰</span>
+                <span className="springboard-label">Categories</span>
+                <span className={`springboard-arrow${springboardOpen ? " open" : ""}`}>▾</span>
+              </button>
+              {springboardOpen && (
+                <div className="springboard-dropdown">
+                  {filteredNavLinks.map((link: any) => (
+                    <Link
+                      key={link.id}
+                      href={link.href}
+                      className={`springboard-item${activeNav === link.id ? " active" : ""}`}
+                      onClick={closeMobile}
+                    >
+                      {link.label}
+                      {link.id === "cart" && cartCount > 0 && (
+                        <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <nav className="main-nav-desktop" aria-label="Main">
+              {filteredNavLinks.map((link: any) => (
+                <Link
+                  key={link.id}
+                  href={link.href}
+                  className={activeNav === link.id ? "active" : ""}
+                  aria-current={activeNav === link.id ? "page" : undefined}
+                >
+                  {link.label}
+                  {link.id === "cart" && cartCount > 0 && (
+                    <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
+                  )}
+                </Link>
+              ))}
+            </nav>
+          )}
+        </div>
         <div className="header-right">
           {(getCustomerToken() || getProviderToken() || isStaff) && messagingEnabled && (
             <NotificationBell onClick={() => {
