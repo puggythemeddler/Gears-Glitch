@@ -735,6 +735,7 @@ async function runMigrations(): Promise<void> {
     await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at)`);
   } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_annual DOUBLE PRECISION`); } catch {}
+  try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`); } catch {}
   // Product review indexes and constraints
   try { await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_reviews_unique ON product_reviews (product_id, customer_id)`); } catch {}
   try { await query(`CREATE INDEX IF NOT EXISTS idx_product_reviews_product_id ON product_reviews (product_id)`); } catch {}
@@ -1568,6 +1569,7 @@ async function updateSubscriptionPlan(id: string, updates: Partial<SubscriptionP
   if (updates.maxProducts !== undefined) { fields.push(`max_products = $${idx}`); params.push(updates.maxProducts); idx++; }
   if (updates.maxBranches !== undefined) { fields.push(`max_branches = $${idx}`); params.push(updates.maxBranches); idx++; }
   if (updates.features !== undefined) { fields.push(`features = $${idx}`); params.push(JSON.stringify(updates.features)); idx++; }
+  if (updates.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.isActive); idx++; }
   if (fields.length === 0) return existing;
   params.push(id);
   await query(`UPDATE subscription_plans SET ${fields.join(", ")} WHERE id = $${idx}`, params);

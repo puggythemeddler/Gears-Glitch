@@ -951,7 +951,8 @@ app.get("/api/provider/subscription", providerAuthMiddleware, asyncHandler(async
 }));
 
 app.get("/api/plans", asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ plans: await listSubscriptionPlans() });
+  const all = await listSubscriptionPlans();
+  res.json({ plans: all.filter((p) => p.isActive) });
 }));
 
 app.get("/api/admin/plans", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {

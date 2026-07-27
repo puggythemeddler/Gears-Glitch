@@ -184,6 +184,7 @@ export interface SubscriptionPlan {
   maxProducts: number;
   maxBranches: number;
   features: string;
+  isActive?: boolean;
 }
 
 export interface Provider {

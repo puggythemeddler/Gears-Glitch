@@ -65,7 +65,6 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     items: [
       { key: "invoices", label: "Invoices", feature: "Invoice/quote PDF downloads" },
       { key: "credit-notes", label: "Credit Notes", feature: "Credit notes" },
-      { key: "plans", label: "Plans" },
       { key: "providers", label: "Providers" },
     ],
   },
@@ -91,6 +90,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "email-settings", label: "Email", feature: "Email notifications" },
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
       { key: "about-us", label: "About Us" },
+      { key: "plans", label: "Subscription Plans" },
       { key: "spec-templates", label: "Spec Templates" },
       { key: "shop-subscription", label: "Subscription" },
     ],
@@ -1373,6 +1373,10 @@ function AdminPlans() {
     try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); } catch { alert("Delete failed"); }
   }
 
+  async function toggleActive(id: string, current: boolean) {
+    try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ isActive: !current }) }); refetch(); } catch { alert("Failed to update"); }
+  }
+
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
   const plans = pData?.plans || [];
@@ -1457,14 +1461,18 @@ function AdminPlans() {
         {plans.map((p) => {
           const features = parseFeatures(p.features);
           return (
-            <div key={p.id} className="panel" style={{ position: "relative", display: "flex", flexDirection: "column" }}>
+            <div key={p.id} className="panel" style={{ position: "relative", display: "flex", flexDirection: "column", opacity: p.isActive === false ? 0.6 : 1 }}>
               <div style={{ position: "absolute", top: "0.5rem", right: "0.5rem", display: "flex", gap: "0.25rem" }}>
+                <RippleButton size="small" onClick={() => toggleActive(p.id, p.isActive !== false)}>{p.isActive === false ? "Activate" : "Deactivate"}</RippleButton>
                 <RippleButton size="small" onClick={() => openEdit(p)}>Edit</RippleButton>
                 {!["starter", "basic", "pro", "enterprise"].includes(p.id) && (
                   <RippleButton size="small" variant="danger" onClick={() => deletePlan(p.id)}>Delete</RippleButton>
                 )}
               </div>
-              <h3 style={{ marginTop: 0 }}>{escapeHtml(p.name)}</h3>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                <h3 style={{ marginTop: 0 }}>{escapeHtml(p.name)}</h3>
+                <span style={{ fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 4, background: p.isActive === false ? "var(--border)" : "var(--success)", color: p.isActive === false ? "var(--text-secondary)" : "#fff", fontWeight: 600 }}>{p.isActive === false ? "Inactive" : "Active"}</span>
+              </div>
               <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--primary)", margin: "0 0 0.25rem" }}>{formatPrice(p.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>
               {p.priceAnnual != null && p.priceAnnual > 0 && <p style={{ fontSize: "0.9rem", color: "var(--primary)", margin: "0 0 0.25rem" }}>{formatPrice(p.priceAnnual)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/yr</span></p>}
               <p className="muted" style={{ margin: "0 0 0.5rem" }}>Up to {p.maxProducts} products</p>
