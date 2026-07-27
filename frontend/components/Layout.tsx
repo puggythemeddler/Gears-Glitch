@@ -93,11 +93,10 @@ export default function Layout({ children, activeNav }: LayoutProps) {
       <div className="header-inner">
         <div className="header-left">
           <Link className="brand" href="/" onClick={closeMobile}>
-            {settings?.storeLogo ? (
+            {settings?.storeLogo && (
               <img src={settings.storeLogo} alt={settings.storeName || "Store"} className="site-logo" />
-            ) : (
-              settings?.storeName || "Gear&Glitch"
             )}
+            <span>{settings?.storeName || "Gear&Glitch"}</span>
           </Link>
           {springboardMenu ? (
             <div className="springboard-wrap">
