@@ -20,6 +20,7 @@ import ProductPositioningPage from "@/components/admin/ProductPositioningPage";
 import StockTakeListPage from "@/components/admin/StockTakeListPage";
 import StockOnHandPage from "@/components/admin/StockOnHandPage";
 import CategoryPositioningPage from "@/components/admin/CategoryPositioningPage";
+import AdminLayouts from "@/components/admin/AdminLayouts";
 
 declare global {
   interface Window {
@@ -27,7 +28,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layouts" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
   {
@@ -86,6 +87,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "settings-content", label: "Content" },
       { key: "settings-system", label: "System" },
       { key: "storefront", label: "Storefront" },
+      { key: "layouts", label: "Layouts" },
       { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
       { key: "email-settings", label: "Email", feature: "Email notifications" },
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
@@ -398,6 +400,7 @@ export default function AdminPage() {
             {view === "shop-subscription" && <AdminShopSubscription />}
             {view === "about-us" && <AdminAboutUs />}
             {view === "storefront" && <AdminStorefront />}
+            {view === "layouts" && <AdminLayouts />}
             {view === "settings-store-info" && <AdminStoreInfo />}
             {view === "settings-payments" && <AdminPayments />}
             {view === "settings-compliance" && <AdminCompliance />}

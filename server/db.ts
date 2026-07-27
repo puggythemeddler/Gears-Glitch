@@ -925,6 +925,42 @@ async function runMigrations(): Promise<void> {
   try {
     await query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS deleted_at TEXT`);
   } catch {}
+
+  // Storefront layouts table
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS storefront_layouts (
+      id SERIAL PRIMARY KEY,
+      layout_key TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      layout_type TEXT NOT NULL DEFAULT 'static',
+      config JSONB NOT NULL DEFAULT '{}',
+      is_active INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (NOW()::text),
+      updated_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+  } catch {}
+
+  // Seed default static layouts if none exist
+  try {
+    const count = await queryOne("SELECT COUNT(*) AS count FROM storefront_layouts") as { count: number } | undefined;
+    if (count && Number(count.count) === 0) {
+      const defaults = [
+        { key: "original", label: "Original", desc: "Clean default layout with premium hero section, animated glows, floating particles, product carousel, glassmorphism buttons, and wave transition.", sort: 1 },
+        { key: "amazon", label: "Amazon Style", desc: "Large search bar, horizontal categories, product recommendations, featured deals.", sort: 2 },
+        { key: "jumia", label: "Jumia Style", desc: "Promotional sliders, flash sales, daily deals, category icons.", sort: 3 },
+        { key: "mobile", label: "Mobile", desc: "Premium minimalist, hero banners, brand chips, compare specs.", sort: 4 },
+        { key: "custom", label: "Custom", desc: "Flexible layout for custom hero sections, featured categories, and responsive card panels.", sort: 5 },
+      ];
+      for (const d of defaults) {
+        await query(
+          "INSERT INTO storefront_layouts (layout_key, label, description, layout_type, config, is_active, sort_order) VALUES ($1, $2, $3, 'static', '{}', 0, $4)",
+          [d.key, d.label, d.desc, d.sort]
+        );
+      }
+    }
+  } catch {}
 }
 
 async function ensureDefaultSettings(): Promise<void> {

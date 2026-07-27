@@ -6,6 +6,7 @@ import * as amazon from "./amazon";
 import * as jumia from "./jumia";
 import * as mobile from "./mobile";
 import * as custom from "./custom";
+import { DynamicHomePage, DynamicLayoutStyles } from "./dynamic-engine";
 
 export interface LayoutModule {
   LAYOUT_KEY: string;
@@ -17,14 +18,25 @@ export interface LayoutModule {
   HomePage: (props: { products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any }) => React.JSX.Element;
 }
 
-const LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia, mobile, custom };
+const STATIC_LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia, mobile, custom };
 
 export function getLayout(layoutKey: string): LayoutModule {
-  return LAYOUTS[layoutKey] || LAYOUTS.original;
+  return STATIC_LAYOUTS[layoutKey] || STATIC_LAYOUTS.original;
 }
 
 export function getLayoutList(): { key: string; label: string; desc: string }[] {
-  return Object.values(LAYOUTS).map((m) => ({ key: m.LAYOUT_KEY, label: m.LAYOUT_LABEL, desc: m.LAYOUT_DESC }));
+  return Object.values(STATIC_LAYOUTS).map((m) => ({ key: m.LAYOUT_KEY, label: m.LAYOUT_LABEL, desc: m.LAYOUT_DESC }));
+}
+
+interface LayoutMeta {
+  id: number;
+  layout_key: string;
+  label: string;
+  description: string;
+  layout_type: "static" | "dynamic";
+  config: any;
+  is_active: number;
+  sort_order: number;
 }
 
 interface StorefrontConfig {
@@ -32,6 +44,7 @@ interface StorefrontConfig {
   banners: any[];
   features: any[];
   hero: any;
+  layoutConfig?: { type: string; label: string; description: string; config: any } | null;
 }
 
 interface LayoutContextType extends StorefrontConfig {
@@ -39,6 +52,8 @@ interface LayoutContextType extends StorefrontConfig {
   refreshConfig: () => void;
   setLayout: (layout: string) => Promise<void>;
   setBanners: (banners: any[]) => Promise<void>;
+  allLayouts: LayoutMeta[];
+  refreshLayouts: () => void;
 }
 
 const LayoutContext = createContext<LayoutContextType | null>(null);
@@ -52,6 +67,7 @@ export function useLayout(): LayoutContextType {
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
   const [config, setConfig] = useState<StorefrontConfig>({ layout: "original", banners: [], features: [], hero: { enabled: true } });
   const [configLoading, setConfigLoading] = useState(true);
+  const [allLayouts, setAllLayouts] = useState<LayoutMeta[]>([]);
 
   function refreshConfig() {
     setConfigLoading(true);
@@ -61,11 +77,18 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setConfigLoading(false));
   }
 
-  useEffect(() => { refreshConfig(); }, []);
+  function refreshLayouts() {
+    api<LayoutMeta[]>("/api/layouts")
+      .then((d) => { if (d) setAllLayouts(d); })
+      .catch(() => {});
+  }
+
+  useEffect(() => { refreshConfig(); refreshLayouts(); }, []);
 
   async function setLayout(layout: string) {
     await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ layout }) });
     refreshConfig();
+    refreshLayouts();
   }
 
   async function setBanners(banners: any[]) {
@@ -74,7 +97,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <LayoutContext.Provider value={{ ...config, configLoading, refreshConfig, setLayout, setBanners }}>
+    <LayoutContext.Provider value={{ ...config, configLoading, refreshConfig, setLayout, setBanners, allLayouts, refreshLayouts }}>
       {children}
     </LayoutContext.Provider>
   );
@@ -89,17 +112,23 @@ export function LayoutEngine({
   banners: any[];
   settings: any;
 }) {
-  const { layout, hero } = useLayout();
-  const mod = getLayout(layout);
+  const { layout, hero, layoutConfig } = useLayout();
 
   if (page === "home") {
+    if (layoutConfig?.type === "dynamic" && layoutConfig.config) {
+      return <DynamicHomePage products={products} categories={categories} banners={banners} config={layoutConfig.config} />;
+    }
+    const mod = getLayout(layout);
     return <mod.HomePage products={products} categories={categories} banners={banners} hero={hero} />;
   }
   return null;
 }
 
 export function LayoutStyles() {
-  const { layout } = useLayout();
+  const { layout, layoutConfig } = useLayout();
+  if (layoutConfig?.type === "dynamic") {
+    return <DynamicLayoutStyles colors={layoutConfig.config?.colors} />;
+  }
   const mod = getLayout(layout);
   return <mod.LayoutStyles />;
 }

@@ -579,7 +579,19 @@ app.get("/api/storefront-config", asyncHandler(async (_req: Request, res: Respon
   try { features = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
   let hero: any = { enabled: true };
   try { hero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch {}
-  res.json({ layout, banners, features, hero });
+  let layoutConfig: any = null;
+  try {
+    const layoutRow = await queryOne("SELECT config, layout_type, label, description FROM storefront_layouts WHERE layout_key = $1", [layout]);
+    if (layoutRow) {
+      layoutConfig = {
+        type: layoutRow.layout_type,
+        label: layoutRow.label,
+        description: layoutRow.description,
+        config: typeof layoutRow.config === "string" ? JSON.parse(layoutRow.config) : layoutRow.config,
+      };
+    }
+  } catch {}
+  res.json({ layout, banners, features, hero, layoutConfig });
 }));
 
 app.get("/api/admin/storefront-layout", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
@@ -596,9 +608,11 @@ app.get("/api/admin/storefront-layout", adminAuthMiddleware, asyncHandler(async 
 app.put("/api/admin/storefront-layout", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { layout, banners, features, hero } = req.body || {};
   if (layout) {
-    const valid = ["original", "amazon", "jumia", "mobile"];
-    if (!valid.includes(layout)) { res.status(400).json({ error: "Invalid layout. Valid: " + valid.join(", ") }); return; }
+    const validLayout = await queryOne("SELECT id FROM storefront_layouts WHERE layout_key = $1", [layout]);
+    if (!validLayout) { res.status(400).json({ error: "Invalid layout key." }); return; }
     await setStoreSetting("store_layout", layout);
+    await query("UPDATE storefront_layouts SET is_active = 0");
+    await query("UPDATE storefront_layouts SET is_active = 1 WHERE layout_key = $1", [layout]);
   }
   if (banners !== undefined && !isArr(banners)) { res.status(400).json({ error: "banners must be an array." }); return; }
   if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "features must be an array." }); return; }
@@ -618,6 +632,83 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, asyncHandler(async 
   let currentHero: any = { enabled: true };
   try { currentHero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch {}
   res.json({ layout: currentLayout, banners: currentBanners, features: currentFeatures, hero: currentHero });
+}));
+
+// ============ STOREFRONT LAYOUTS REGISTRY ============
+
+app.get("/api/layouts", asyncHandler(async (_req: Request, res: Response) => {
+  const rows = await queryAll("SELECT id, layout_key, label, description, layout_type, config, is_active, sort_order FROM storefront_layouts ORDER BY sort_order ASC, id ASC");
+  res.json(rows.map((r: any) => ({ ...r, config: typeof r.config === "string" ? JSON.parse(r.config) : r.config })));
+}));
+
+app.get("/api/admin/layouts", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+  const rows = await queryAll("SELECT * FROM storefront_layouts ORDER BY sort_order ASC, id ASC");
+  res.json(rows.map((r: any) => ({ ...r, config: typeof r.config === "string" ? JSON.parse(r.config) : r.config })));
+}));
+
+app.get("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (req: Request, res: Response) => {
+  const row = await queryOne("SELECT * FROM storefront_layouts WHERE id = $1", [Number(req.params.id)]);
+  if (!row) { res.status(404).json({ error: "Layout not found." }); return; }
+  res.json({ ...row, config: typeof row.config === "string" ? JSON.parse(row.config) : row.config });
+}));
+
+app.post("/api/admin/layouts", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const { layoutKey, label, description, layoutType, config } = req.body || {};
+  if (!layoutKey || !isStr(layoutKey, 50)) { res.status(400).json({ error: "layoutKey is required (≤50 chars)." }); return; }
+  if (!label || !isStr(label, 100)) { res.status(400).json({ error: "label is required (≤100 chars)." }); return; }
+  const exists = await queryOne("SELECT id FROM storefront_layouts WHERE layout_key = $1", [String(layoutKey).trim()]);
+  if (exists) { res.status(400).json({ error: "A layout with this key already exists." }); return; }
+  const maxOrder = await queryOne("SELECT COALESCE(MAX(sort_order),0) AS mx FROM storefront_layouts") as any;
+  const row = await queryOne(
+    `INSERT INTO storefront_layouts (layout_key, label, description, layout_type, config, sort_order) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [String(layoutKey).trim(), String(label).trim(), String(description || "").trim(), layoutType === "dynamic" ? "dynamic" : "static", JSON.stringify(config || {}), (maxOrder?.mx || 0) + 1]
+  );
+  res.status(201).json({ ...row, config: typeof row.config === "string" ? JSON.parse(row.config) : row.config });
+}));
+
+app.put("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = await queryOne("SELECT * FROM storefront_layouts WHERE id = $1", [id]);
+  if (!existing) { res.status(404).json({ error: "Layout not found." }); return; }
+  const { label, description, config } = req.body || {};
+  const updates: string[] = [];
+  const params: any[] = [];
+  let idx = 1;
+  if (label !== undefined) { updates.push(`label = $${idx}`); params.push(String(label).trim()); idx++; }
+  if (description !== undefined) { updates.push(`description = $${idx}`); params.push(String(description).trim()); idx++; }
+  if (config !== undefined) { updates.push(`config = $${idx}`); params.push(JSON.stringify(config)); idx++; }
+  updates.push(`updated_at = NOW()::text`);
+  params.push(id);
+  const row = await queryOne(`UPDATE storefront_layouts SET ${updates.join(", ")} WHERE id = $${idx} RETURNING *`, params);
+  res.json({ ...row, config: typeof row.config === "string" ? JSON.parse(row.config) : row.config });
+}));
+
+app.delete("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = await queryOne("SELECT * FROM storefront_layouts WHERE id = $1", [id]);
+  if (!existing) { res.status(404).json({ error: "Layout not found." }); return; }
+  if ((existing as any).layout_type === "static") { res.status(400).json({ error: "Cannot delete built-in static layouts." }); return; }
+  await query("DELETE FROM storefront_layouts WHERE id = $1", [id]);
+  res.json({ ok: true });
+}));
+
+app.put("/api/admin/layouts/:id/activate", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = await queryOne("SELECT * FROM storefront_layouts WHERE id = $1", [id]);
+  if (!existing) { res.status(404).json({ error: "Layout not found." }); return; }
+  await query("UPDATE storefront_layouts SET is_active = 0");
+  await query("UPDATE storefront_layouts SET is_active = 1 WHERE id = $1", [id]);
+  await setStoreSetting("store_layout", (existing as any).layout_key);
+  res.json({ ok: true });
+}));
+
+app.put("/api/admin/layouts-reorder", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const { orderedIds } = req.body || {};
+  if (!isArr(orderedIds) || orderedIds.length === 0) { res.status(400).json({ error: "orderedIds array required." }); return; }
+  for (let i = 0; i < orderedIds.length; i++) {
+    await query("UPDATE storefront_layouts SET sort_order = $1 WHERE id = $2", [i, Number(orderedIds[i])]);
+  }
+  res.json({ ok: true });
 }));
 
 // ============ ABOUT US ============

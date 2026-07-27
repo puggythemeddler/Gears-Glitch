@@ -18,6 +18,7 @@ import AboutUsPage from "@/components/admin/AboutUsPage";
 import ProductPositioningPage from "@/components/admin/ProductPositioningPage";
 import StockTakeListPage from "@/components/admin/StockTakeListPage";
 import StockOnHandPage from "@/components/admin/StockOnHandPage";
+import AdminLayouts from "@/components/admin/AdminLayouts";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
@@ -25,7 +26,7 @@ function formatPrice(amount: number) {
 
 function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 
-type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "credit-notes" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "about-us" | "quotes" | "product-positioning";
+type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "credit-notes" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "layouts" | "about-us" | "quotes" | "product-positioning";
 
 const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string; feature?: string }[] }[] = [
   {
@@ -65,6 +66,7 @@ const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string; featu
     label: "Settings",
     items: [
       { key: "storefront", label: "Storefront" },
+      { key: "layouts", label: "Layouts" },
       { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
       { key: "about-us", label: "About Us" },
       { key: "shop-subscription", label: "Subscription" },
@@ -198,6 +200,7 @@ export default function OwnerPage() {
             {view === "shop-subscription" && <OwnerShopSubscription />}
             {view === "about-us" && <OwnerAboutUs />}
             {view === "storefront" && <OwnerStorefront staffRole={staffRole} />}
+            {view === "layouts" && <AdminLayouts />}
             {view === "audit" && <OwnerAuditLog />}
           </div>
       </div>
