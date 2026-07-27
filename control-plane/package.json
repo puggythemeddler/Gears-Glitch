@@ -13,12 +13,14 @@
     "pg": "^8.13.1",
     "helmet": "^7.1.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "nodemailer": "^6.9.16"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/pg": "^8.11.11",
     "@types/cors": "^2.8.17",
+    "@types/nodemailer": "^6.4.17",
     "@types/node": "^22.10.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

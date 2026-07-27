@@ -7,6 +7,12 @@ const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || "";
 const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || "";
 const DOMAIN_BASE = process.env.DOMAIN_BASE || "gearglitch.com";
 const FRONTEND_GIT_REPO = process.env.FRONTEND_GIT_REPO || "puggythemeddler/Gears-Glitch";
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
+const FROM_EMAIL = process.env.FROM_EMAIL || "noreply@gearglitch.com";
+const FROM_NAME = process.env.FROM_NAME || "Gear&Glitch";
 
 function randomPassword(len = 20) {
   return crypto.randomBytes(len).toString("base64url").slice(0, len);
@@ -262,6 +268,9 @@ export async function provisionClient(
   console.log(`[provision] Domain:   https://${clientDomain}`);
   console.log(`[provision] Admin:    ${adminEmail} / ${adminPassword}\n`);
 
+  // 5. Send welcome email
+  await sendWelcomeEmail(adminEmail, clientName, vercel.projectUrl, render.serviceUrl, adminPassword, plan);
+
   return {
     clientName,
     domain: clientDomain,
@@ -320,5 +329,127 @@ export async function checkClientHealth(
     return res.ok ? "healthy" : "down";
   } catch {
     return "sleeping";
+  }
+}
+
+// ─── WELCOME EMAIL ───────────────────────────────────────
+async function sendWelcomeEmail(
+  toEmail: string,
+  clientName: string,
+  frontendUrl: string,
+  backendUrl: string,
+  adminPassword: string,
+  plan: string
+) {
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    console.log("[email] SMTP not configured — skipping welcome email.");
+    console.log(`[email] Credentials for "${clientName}": ${toEmail} / ${adminPassword}`);
+    return;
+  }
+
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
+
+    const html = `
+      <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem;">
+        <h1 style="color: #3b82f6; margin-bottom: 0.5rem;">Welcome to Gear&Glitch!</h1>
+        <p style="color: #666; font-size: 1.1rem;">Your store <strong>${clientName}</strong> is ready.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 1.5rem 0;">
+
+        <h3 style="margin-top: 1rem;">Your Login Details</h3>
+        <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+          <tr><td style="padding: 0.5rem; color: #666;">Email:</td><td style="padding: 0.5rem; font-weight: 600;">${toEmail}</td></tr>
+          <tr><td style="padding: 0.5rem; color: #666;">Password:</td><td style="padding: 0.5rem; font-weight: 600; font-family: monospace;">${adminPassword}</td></tr>
+          <tr><td style="padding: 0.5rem; color: #666;">Plan:</td><td style="padding: 0.5rem; font-weight: 600; text-transform: capitalize;">${plan}</td></tr>
+        </table>
+
+        <div style="background: #f8fafc; border-radius: 8px; padding: 1.25rem; margin: 1.5rem 0;">
+          <h3 style="margin-top: 0;">Your Links</h3>
+          <p><a href="${frontendUrl}" style="color: #3b82f6;">Storefront (Frontend)</a> — ${frontendUrl}</p>
+          <p><a href="${backendUrl}" style="color: #3b82f6;">Admin Panel (Backend)</a> — ${backendUrl}</p>
+        </div>
+
+        <p style="color: #999; font-size: 0.85rem; margin-top: 2rem;">
+          Please change your password after your first login for security.<br>
+          If you need any help, contact support@gearglitch.com
+        </p>
+      </div>
+    `;
+
+    await transporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to: toEmail,
+      subject: `Welcome to Gear&Glitch — Your Store "${clientName}" is Ready!`,
+      html,
+    });
+
+    console.log(`[email] Welcome email sent to ${toEmail} for "${clientName}"`);
+  } catch (err: any) {
+    console.error(`[email] Failed to send welcome email: ${err.message}`);
+  }
+}
+
+// ─── CHANGELOG NOTIFICATION ──────────────────────────────
+export async function notifyAllClientsChangelog(version: string, title: string, body: string) {
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    console.log("[email] SMTP not configured — skipping changelog notification.");
+    return;
+  }
+
+  try {
+    const { queryAll } = await import("./db");
+    const clients = await queryAll("SELECT name, admin_email FROM clients WHERE status = 'active' AND admin_email != ''");
+
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
+
+    const html = `
+      <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem;">
+        <h1 style="color: #3b82f6;">System Update — ${version}</h1>
+        <h2 style="color: #333;">${title}</h2>
+        <div style="color: #555; line-height: 1.6; margin: 1rem 0;">${body.replace(/\n/g, "<br>")}</div>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 1.5rem 0;">
+        <p style="color: #999; font-size: 0.85rem;">This update has been automatically applied to your store.</p>
+      </div>
+    `;
+
+    for (const c of clients as { name: string; admin_email: string }[]) {
+      try {
+        await transporter.sendMail({
+          from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+          to: c.admin_email,
+          subject: `Gear&Glitch Update ${version} — ${title}`,
+          html,
+        });
+      } catch {}
+    }
+
+    console.log(`[email] Changelog "${title}" sent to ${clients.length} clients.`);
+  } catch (err: any) {
+    console.error(`[email] Changelog notification failed: ${err.message}`);
+  }
+}
+
+// ─── CLIENT USAGE STATS (via client health endpoint) ─────
+export async function fetchClientUsage(backendUrl: string): Promise<{ orders?: number; revenue?: number; customers?: number } | null> {
+  if (!backendUrl) return null;
+  try {
+    const res = await fetch(`${backendUrl}/api/health`, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    return { orders: data.orders, revenue: data.revenue, customers: data.customers };
+  } catch {
+    return null;
   }
 }

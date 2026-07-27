@@ -13,6 +13,7 @@ import {
   deleteNeonProject,
   deleteRenderService,
   deleteVercelProject,
+  notifyAllClientsChangelog,
   type ProvisionResult,
 } from "./provision";
 
@@ -221,10 +222,26 @@ app.post("/api/health-check", requireApiKey, async (_req, res) => {
     const results: { name: string; status: string }[] = [];
     for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
       const status = await checkClientHealth(c.render_service_url);
+
+      // Track uptime
       await query(
-        "UPDATE clients SET health_status = $1, last_health_check = NOW() WHERE id = $2",
+        "UPDATE clients SET health_status = $1, last_health_check = NOW(), total_checks = total_checks + 1, failed_checks = failed_checks + CASE WHEN $1 != 'healthy' THEN 1 ELSE 0 END WHERE id = $2",
         [status, c.id]
       );
+      await query(
+        "INSERT INTO health_log (client_id, status) VALUES ($1, $2)",
+        [c.id, status]
+      );
+      // Recalculate uptime
+      const stats: any = await queryOne(
+        "SELECT total_checks, failed_checks FROM clients WHERE id = $1",
+        [c.id]
+      );
+      if (stats && stats.total_checks > 0) {
+        const uptimePct = ((stats.total_checks - stats.failed_checks) / stats.total_checks) * 100;
+        await query("UPDATE clients SET uptime_pct = $1 WHERE id = $2", [uptimePct, c.id]);
+      }
+
       results.push({ name: c.name, status });
     }
 
@@ -232,6 +249,141 @@ app.post("/api/health-check", requireApiKey, async (_req, res) => {
   } catch (err: any) {
     console.error("[api] Health check error:", err.message);
     res.status(500).json({ error: "Failed to check health" });
+  }
+});
+
+// ─── SUSPEND / RESUME CLIENT ─────────────────────────────
+app.put("/api/clients/:id/suspend", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+
+    await query("UPDATE clients SET status = 'suspended' WHERE id = $1", [Number(req.params.id)]);
+
+    // Try to pause Render service
+    if (client.render_service_id) {
+      try {
+        await fetch(`https://api.render.com/v1/services/${client.render_service_id}/suspend`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
+        });
+      } catch {}
+    }
+
+    res.json({ message: `Client "${client.name}" suspended.` });
+  } catch (err: any) {
+    console.error("[api] Suspend error:", err.message);
+    res.status(500).json({ error: "Failed to suspend client" });
+  }
+});
+
+app.put("/api/clients/:id/resume", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+
+    await query("UPDATE clients SET status = 'active' WHERE id = $1", [Number(req.params.id)]);
+
+    // Resume Render service
+    if (client.render_service_id) {
+      try {
+        await fetch(`https://api.render.com/v1/services/${client.render_service_id}/resume`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
+        });
+      } catch {}
+    }
+
+    res.json({ message: `Client "${client.name}" resumed.` });
+  } catch (err: any) {
+    console.error("[api] Resume error:", err.message);
+    res.status(500).json({ error: "Failed to resume client" });
+  }
+});
+
+// ─── UPDATE CLIENT ───────────────────────────────────────
+app.put("/api/clients/:id", requireApiKey, async (req, res) => {
+  try {
+    const { plan, subscription_expires, notes, feature_flags } = req.body || {};
+    const id = Number(req.params.id);
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [id]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+
+    const fields: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+
+    if (plan !== undefined) { fields.push(`plan = $${idx}`); params.push(plan); idx++; }
+    if (subscription_expires !== undefined) { fields.push(`subscription_expires = $${idx}`); params.push(subscription_expires); idx++; }
+    if (notes !== undefined) { fields.push(`notes = $${idx}`); params.push(notes); idx++; }
+    if (feature_flags !== undefined) { fields.push(`feature_flags = $${idx}`); params.push(JSON.stringify(feature_flags)); idx++; }
+
+    if (fields.length === 0) { res.json({ message: "No changes" }); return; }
+
+    params.push(id);
+    await query(`UPDATE clients SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+
+    res.json({ message: "Client updated." });
+  } catch (err: any) {
+    console.error("[api] Update client error:", err.message);
+    res.status(500).json({ error: "Failed to update client" });
+  }
+});
+
+// ─── HEALTH HISTORY ──────────────────────────────────────
+app.get("/api/clients/:id/health-history", requireApiKey, async (req, res) => {
+  try {
+    const rows = await queryAll(
+      "SELECT status, checked_at FROM health_log WHERE client_id = $1 ORDER BY checked_at DESC LIMIT 100",
+      [Number(req.params.id)]
+    );
+    res.json({ history: rows });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get health history" });
+  }
+});
+
+// ─── CHANGELOG ───────────────────────────────────────────
+app.post("/api/changelog", requireApiKey, async (req, res) => {
+  try {
+    const { version, title, body } = req.body || {};
+    if (!version || !title) { res.status(400).json({ error: "version and title required" }); return; }
+
+    await query(
+      "INSERT INTO changelog (version, title, body) VALUES ($1, $2, $3)",
+      [version, title, body || ""]
+    );
+
+    // Notify all clients via email
+    await notifyAllClientsChangelog(version, title, body || "");
+
+    res.status(201).json({ message: "Changelog published and clients notified." });
+  } catch (err: any) {
+    console.error("[api] Changelog error:", err.message);
+    res.status(500).json({ error: "Failed to publish changelog" });
+  }
+});
+
+app.get("/api/changelog", requireApiKey, async (_req, res) => {
+  try {
+    const entries = await queryAll("SELECT * FROM changelog ORDER BY created_at DESC LIMIT 50");
+    res.json({ entries });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get changelog" });
+  }
+});
+
+// ─── DEPLOY LOG ──────────────────────────────────────────
+app.get("/api/deploys", requireApiKey, async (_req, res) => {
+  try {
+    const entries = await queryAll(
+      `SELECT d.*, c.name as client_name FROM deploy_log d
+       JOIN clients c ON c.id = d.client_id
+       ORDER BY d.triggered_at DESC LIMIT 100`
+    );
+    res.json({ entries });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get deploy log" });
   }
 });
 

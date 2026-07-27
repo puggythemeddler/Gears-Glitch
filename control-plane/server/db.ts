@@ -41,6 +41,12 @@ export interface Client {
   created_at: string;
   last_health_check: string | null;
   health_status: string;
+  uptime_pct: number;
+  total_checks: number;
+  failed_checks: number;
+  subscription_expires: string | null;
+  feature_flags: Record<string, boolean>;
+  notes: string;
 }
 
 export async function initControlPlaneDb() {
@@ -61,9 +67,52 @@ export async function initControlPlaneDb() {
       vercel_project_url TEXT DEFAULT '',
       created_at TIMESTAMP DEFAULT NOW(),
       last_health_check TIMESTAMP,
-      health_status TEXT DEFAULT 'unknown'
+      health_status TEXT DEFAULT 'unknown',
+      uptime_pct DOUBLE PRECISION DEFAULT 100,
+      total_checks INTEGER DEFAULT 0,
+      failed_checks INTEGER DEFAULT 0,
+      subscription_expires TIMESTAMP,
+      feature_flags TEXT DEFAULT '{}',
+      notes TEXT DEFAULT ''
     )
   `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS health_log (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+      status TEXT NOT NULL,
+      checked_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS changelog (
+      id SERIAL PRIMARY KEY,
+      version TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS deploy_log (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+      status TEXT NOT NULL,
+      triggered_at TIMESTAMP DEFAULT NOW(),
+      completed_at TIMESTAMP
+    )
+  `);
+
+  // Add columns for existing databases
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS uptime_pct DOUBLE PRECISION DEFAULT 100`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_checks INTEGER DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS failed_checks INTEGER DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS subscription_expires TIMESTAMP`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS feature_flags TEXT DEFAULT '{}'`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`); } catch {}
 
   console.log("[control-plane] Database initialized.");
 }
