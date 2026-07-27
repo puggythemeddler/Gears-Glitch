@@ -281,7 +281,7 @@ export function HomePage({ products, categories, hero }: {
     <>
       {hero?.heroActive !== false && <HeroSection products={products} hero={hero} />}
 
-      <div style={{ width: "100%", padding: "0 var(--space-5)" }}>
+      <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "0 var(--space-5)" }}>
         {categories.length > 0 && (
           <div id="categories" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.5rem", margin: "1.5rem 0" }}>
             {categories.map((cat) => (

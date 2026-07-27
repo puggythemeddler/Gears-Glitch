@@ -502,6 +502,41 @@ app.post("/api/clients/:id/pull-plans", requireApiKey, async (req, res) => {
   }
 });
 
+// Import plans from the Gear&Glitch Store (first active client)
+app.post("/api/plans/import-defaults", requireApiKey, async (_req, res) => {
+  try {
+    const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active' AND render_service_url != ''");
+    if (!clients.length) { res.status(400).json({ error: "No active clients found" }); return; }
+
+    let imported = 0;
+    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
+      try {
+        const result = await fetch(`${c.render_service_url}/api/plans`, { signal: AbortSignal.timeout(15000) });
+        if (!result.ok) continue;
+        const data: any = await result.json();
+        const plans = data.plans || [];
+        if (!plans.length) continue;
+
+        for (const p of plans) {
+          await query(
+            `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10`,
+            [p.id, p.name, p.description || "", p.price || 0, p.priceAnnual || p.price_annual || null, p.tierLevel || p.tier_level || 1, p.maxProducts || p.max_products || 50, p.maxBranches || p.max_branches || 1, JSON.stringify(p.features || []), p.isActive !== undefined ? p.isActive : (p.is_active !== undefined ? p.is_active : true)]
+          );
+          imported++;
+        }
+        console.log(`[api] Imported ${plans.length} plans from "${c.name}".`);
+        break;
+      } catch {}
+    }
+    res.json({ message: `Imported ${imported} plans.`, imported });
+  } catch (err: any) {
+    console.error("[api] Import defaults error:", err.message);
+    res.status(500).json({ error: "Failed to import plans" });
+  }
+});
+
 app.post("/api/plans", requireApiKey, async (req, res) => {
   try {
     const { id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features } = req.body || {};
@@ -829,6 +864,42 @@ function scheduleAutoBackup() {
   }, delay);
 }
 
+// ─── STARTUP PLAN IMPORT ─────────────────────────────────
+async function autoImportPlans() {
+  try {
+    const existing = await queryOne("SELECT COUNT(*) AS count FROM custom_plans") as any;
+    if (existing && Number(existing.count) > 0) {
+      console.log("[startup-plans] Plans already exist, skipping auto-import.");
+      return;
+    }
+    const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active' AND render_service_url != ''");
+    if (!clients.length) { console.log("[startup-plans] No active clients found."); return; }
+
+    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
+      try {
+        const result = await fetch(`${c.render_service_url}/api/plans`, { signal: AbortSignal.timeout(15000) });
+        if (!result.ok) continue;
+        const data: any = await result.json();
+        const plans = data.plans || [];
+        if (!plans.length) continue;
+
+        for (const p of plans) {
+          await query(
+            `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10`,
+            [p.id, p.name, p.description || "", p.price || 0, p.priceAnnual || p.price_annual || null, p.tierLevel || p.tier_level || 1, p.maxProducts || p.max_products || 50, p.maxBranches || p.max_branches || 1, JSON.stringify(p.features || []), p.isActive !== undefined ? p.isActive : (p.is_active !== undefined ? p.is_active : true)]
+          );
+        }
+        console.log(`[startup-plans] Imported ${plans.length} plans from "${c.name}".`);
+        break;
+      } catch {}
+    }
+  } catch (err: any) {
+    console.error("[startup-plans] Error:", err.message);
+  }
+}
+
 // ─── STARTUP HEALTH CHECK ──────────────────────────────────
 async function runStartupHealthCheck() {
   try {
@@ -868,6 +939,7 @@ async function start() {
   await initControlPlaneDb();
   app.listen(PORT, () => {
     console.log(`[control-plane] Running on http://localhost:${PORT}`);
+    setTimeout(autoImportPlans, 3000);
     setTimeout(runStartupHealthCheck, 5000);
     scheduleAutoBackup();
   });

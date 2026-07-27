@@ -11,23 +11,23 @@ export const LAYOUT_DESC = "Large promotional sliders, flash sales, daily deals,
 export function LayoutStyles() {
   return <style>{`
     .jum-header { background: var(--surface); border-bottom: 1px solid var(--border); }
-    .jum-header-inner { width: 100%; padding: 0.75rem 1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .jum-header-inner { max-width: 1440px; margin: 0 auto; padding: 0.75rem 1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
     .jum-brand { font-weight: 700; font-size: 1.3rem; color: var(--text); text-decoration: none; }
     .jum-search { flex: 1; min-width: 180px; display: flex; border: 2px solid var(--primary); border-radius: 8px; overflow: hidden; }
     .jum-search input { flex: 1; border: none; padding: 0.5rem 0.8rem; font-size: 0.95rem; background: var(--bg); color: var(--text); outline: none; }
     .jum-search button { background: var(--primary); color: #fff; border: none; padding: 0.5rem 1rem; cursor: pointer; font-weight: 600; }
-    .jum-cat-icons { width: 100%; margin: 1rem 0; padding: 0 1rem; display: flex; gap: 0.75rem; overflow-x: auto; flex-wrap: nowrap; }
+    .jum-cat-icons { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; display: flex; gap: 0.75rem; overflow-x: auto; flex-wrap: nowrap; }
     .jum-cat-icon { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; text-decoration: none; color: var(--text); font-size: 0.8rem; min-width: 80px; padding: 0.5rem; border-radius: 10px; transition: background 0.15s; }
     .jum-cat-icon:hover { background: var(--primary); color: #fff; }
     .jum-cat-icon .icon { font-size: 1.6rem; }
-    .jum-slider { width: 100%; margin: 1rem 0; padding: 0 1rem; border-radius: 12px; overflow: hidden; position: relative; }
+    .jum-slider { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; border-radius: 12px; overflow: hidden; position: relative; }
     .jum-slide { background: linear-gradient(135deg, var(--primary), #7c3aed); color: #fff; padding: 3rem 2rem; min-height: 280px; display: flex; flex-direction: column; justify-content: center; border-radius: 12px; }
     .jum-slide h2 { font-size: 2rem; margin: 0 0 0.5rem; }
     .jum-slide p { font-size: 1.1rem; margin: 0 0 1rem; opacity: 0.9; }
     .jum-dots { display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
     .jum-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); cursor: pointer; border: none; padding: 0; }
     .jum-dot.active { background: var(--primary); }
-    .jum-section { width: 100%; margin: 2rem 0; padding: 0 1rem; }
+    .jum-section { max-width: 1440px; margin: 2rem auto; padding: 0 1rem; }
     .jum-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
     .jum-section-header h2 { margin: 0; font-size: 1.3rem; }
     .jum-timer { font-size: 0.85rem; color: var(--primary); font-weight: 600; }

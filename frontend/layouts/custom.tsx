@@ -15,7 +15,7 @@ export function LayoutStyles() {
       .custom-hero p { font-size: 1.05rem; max-width: 720px; margin: 0 auto 1.5rem; line-height: 1.6; }
       .custom-hero a { display: inline-block; margin-top: 1rem; background: white; color: #1d4ed8; padding: 0.95rem 1.5rem; border-radius: 999px; font-weight: 700; text-decoration: none; }
       .custom-hero img { max-width: 100%; height: auto; border-radius: 1rem; margin-top: 1.5rem; }
-      .custom-content { display: grid; gap: 2rem; width: 100%; padding: 2rem 1rem; }
+      .custom-content { display: grid; gap: 2rem; max-width: 1440px; margin: 0 auto; padding: 2rem 1rem; }
       .custom-category-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
       .custom-category-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; text-align: center; }
       .custom-category-card a { color: var(--text); text-decoration: none; font-weight: 700; }

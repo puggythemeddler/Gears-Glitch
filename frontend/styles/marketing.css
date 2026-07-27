@@ -213,7 +213,8 @@
   position: relative;
   z-index: 1;
   padding: 100px 48px;
-  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
 }
 
 .mk-section-header {
@@ -1272,7 +1273,8 @@
 }
 
 .mk-footer-inner {
-  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
 }
 
 .mk-footer-brand {
