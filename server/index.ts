@@ -385,8 +385,20 @@ app.use("/uploads", express.static(path.join(ROOT, "data", "uploads"), {
   }
 }));
 
-app.get("/api/health", (_req: Request, res: Response) => {
-  res.json({ ok: true });
+app.get("/api/health", async (_req: Request, res: Response) => {
+  try {
+    const orders = await queryOne("SELECT COUNT(*) AS count FROM orders") as any;
+    const customers = await queryOne("SELECT COUNT(*) AS count FROM users WHERE role = 'customer'") as any;
+    const revenue = await queryOne("SELECT COALESCE(SUM(subtotal + shipping_fee), 0) AS total FROM orders WHERE status IN ('shipped', 'delivered', 'completed')") as any;
+    res.json({
+      ok: true,
+      orders: Number(orders?.count || 0),
+      customers: Number(customers?.count || 0),
+      revenue: Number(revenue?.total || 0),
+    });
+  } catch {
+    res.json({ ok: true });
+  }
 });
 
 // DB image backup helper — stores image as base64 in stored_images table

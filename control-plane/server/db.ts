@@ -113,6 +113,9 @@ export async function initControlPlaneDb() {
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS subscription_expires TIMESTAMP`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS feature_flags TEXT DEFAULT '{}'`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_orders INTEGER DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_customers INTEGER DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_revenue DOUBLE PRECISION DEFAULT 0`); } catch {}
 
   console.log("[control-plane] Database initialized.");
 }

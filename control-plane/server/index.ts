@@ -13,6 +13,7 @@ import {
   deleteNeonProject,
   deleteRenderService,
   deleteVercelProject,
+  fetchClientUsage,
   notifyAllClientsChangelog,
   type ProvisionResult,
 } from "./provision";
@@ -219,7 +220,7 @@ app.post("/api/health-check", requireApiKey, async (_req, res) => {
       "SELECT id, name, render_service_url FROM clients WHERE status = 'active'"
     );
 
-    const results: { name: string; status: string }[] = [];
+    const results: { name: string; status: string; orders?: number; customers?: number; revenue?: number }[] = [];
     for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
       const status = await checkClientHealth(c.render_service_url);
 
@@ -230,7 +231,7 @@ app.post("/api/health-check", requireApiKey, async (_req, res) => {
       );
       await query(
         "INSERT INTO health_log (client_id, status) VALUES ($1, $2)",
-        [c.id, status]
+        [c.id, c.id]
       );
       // Recalculate uptime
       const stats: any = await queryOne(
@@ -242,7 +243,16 @@ app.post("/api/health-check", requireApiKey, async (_req, res) => {
         await query("UPDATE clients SET uptime_pct = $1 WHERE id = $2", [uptimePct, c.id]);
       }
 
-      results.push({ name: c.name, status });
+      // Fetch usage stats from client backend
+      const usage = await fetchClientUsage(c.render_service_url);
+      if (usage) {
+        await query(
+          "UPDATE clients SET usage_orders = $1, usage_customers = $2, usage_revenue = $3 WHERE id = $4",
+          [usage.orders || 0, usage.customers || 0, usage.revenue || 0, c.id]
+        );
+      }
+
+      results.push({ name: c.name, status, orders: usage?.orders, customers: usage?.customers, revenue: usage?.revenue });
     }
 
     res.json({ results });
@@ -386,6 +396,101 @@ app.get("/api/deploys", requireApiKey, async (_req, res) => {
     res.status(500).json({ error: "Failed to get deploy log" });
   }
 });
+
+// ─── BACKUPS ─────────────────────────────────────────────
+import { exec } from "child_process";
+import { promisify } from "util";
+import fs from "fs";
+
+const execAsync = promisify(exec);
+const BACKUP_DIR = path.join(__dirname, "..", "..", "backups");
+
+app.post("/api/backups/run", requireApiKey, async (_req, res) => {
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+    const clients = await queryAll("SELECT id, name, neon_db_url FROM clients WHERE status = 'active' AND neon_db_url != ''");
+    const results: { name: string; success: boolean; size?: string; error?: string }[] = [];
+
+    for (const c of clients as { id: number; name: string; neon_db_url: string }[]) {
+      const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
+      const filename = `${slug}_${new Date().toISOString().split("T")[0]}.sql.gz`;
+      const filepath = path.join(BACKUP_DIR, filename);
+
+      try {
+        await execAsync(`pg_dump "${c.neon_db_url}" | gzip > "${filepath}"`, { timeout: 120000 });
+        const stats = fs.statSync(filepath);
+        const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
+
+        await query(
+          "INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)",
+          [c.id, "backup"]
+        );
+
+        results.push({ name: c.name, success: true, size: `${sizeMB} MB` });
+      } catch (e: any) {
+        results.push({ name: c.name, success: false, error: e.message });
+      }
+    }
+
+    // Cleanup backups older than 7 days
+    try {
+      const files = fs.readdirSync(BACKUP_DIR);
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      for (const f of files) {
+        const fp = path.join(BACKUP_DIR, f);
+        if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
+      }
+    } catch {}
+
+    res.json({ results });
+  } catch (err: any) {
+    console.error("[api] Backup error:", err.message);
+    res.status(500).json({ error: "Failed to run backups" });
+  }
+});
+
+app.get("/api/backups", requireApiKey, async (_req, res) => {
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) { res.json({ files: [] }); return; }
+    const files = fs.readdirSync(BACKUP_DIR).map(f => ({
+      name: f,
+      size: (fs.statSync(path.join(BACKUP_DIR, f)).size / 1024 / 1024).toFixed(2) + " MB",
+      date: fs.statSync(BACKUP_DIR + "/" + f).mtime.toISOString(),
+    })).sort((a, b) => b.date.localeCompare(a.date));
+    res.json({ files });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to list backups" });
+  }
+});
+
+// ─── AUTO HEALTH CHECK (every 5 min) ─────────────────────
+setInterval(async () => {
+  try {
+    const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active'");
+    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
+      const status = await checkClientHealth(c.render_service_url);
+      await query(
+        "UPDATE clients SET health_status = $1, last_health_check = NOW(), total_checks = total_checks + 1, failed_checks = failed_checks + CASE WHEN $1 != 'healthy' THEN 1 ELSE 0 END WHERE id = $2",
+        [status, c.id]
+      );
+      await query("INSERT INTO health_log (client_id, status) VALUES ($1, $2)", [c.id, status]);
+      const stats: any = await queryOne("SELECT total_checks, failed_checks FROM clients WHERE id = $1", [c.id]);
+      if (stats && stats.total_checks > 0) {
+        const uptimePct = ((stats.total_checks - stats.failed_checks) / stats.total_checks) * 100;
+        await query("UPDATE clients SET uptime_pct = $1 WHERE id = $2", [uptimePct, c.id]);
+      }
+      // Fetch usage
+      const usage = await fetchClientUsage(c.render_service_url);
+      if (usage) {
+        await query("UPDATE clients SET usage_orders = $1, usage_customers = $2, usage_revenue = $3 WHERE id = $4", [usage.orders || 0, usage.customers || 0, usage.revenue || 0, c.id]);
+      }
+    }
+    console.log(`[auto-health] Checked ${clients.length} clients.`);
+  } catch (err: any) {
+    console.error("[auto-health] Error:", err.message);
+  }
+}, 5 * 60 * 1000);
 
 // ─── SPA FALLBACK ────────────────────────────────────────
 app.get("*", (_req, res) => {

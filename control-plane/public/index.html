@@ -127,14 +127,15 @@
       <button class="tab active" onclick="switchTab('clients', this)">Clients</button>
       <button class="tab" onclick="switchTab('changelog', this)">Changelog</button>
       <button class="tab" onclick="switchTab('deploys', this)">Deploy Log</button>
+      <button class="tab" onclick="switchTab('backups', this)">Backups</button>
     </div>
 
     <div id="tab-clients">
       <div class="stats" id="stats">
         <div class="stat-card"><div class="value" id="stat-total">0</div><div class="label">Total Clients</div></div>
         <div class="stat-card"><div class="value" id="stat-active" style="color: var(--success)">0</div><div class="label">Active</div></div>
-        <div class="stat-card"><div class="value" id="stat-suspended" style="color: var(--warning)">0</div><div class="label">Suspended</div></div>
-        <div class="stat-card"><div class="value" id="stat-down" style="color: var(--danger)">0</div><div class="label">Down</div></div>
+        <div class="stat-card"><div class="value" id="stat-revenue" style="color: var(--primary)">KES 0</div><div class="label">Total Revenue</div></div>
+        <div class="stat-card"><div class="value" id="stat-orders">0</div><div class="label">Total Orders</div></div>
       </div>
       <div id="client-list"></div>
     </div>
@@ -150,6 +151,15 @@
     <div id="tab-deploys" style="display:none">
       <h2 style="margin-bottom:1rem">Deploy Log</h2>
       <div id="deploy-log"></div>
+    </div>
+
+    <div id="tab-backups" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h2>Database Backups</h2>
+        <button class="btn btn-primary btn-sm" onclick="runBackups()">Run Backup Now</button>
+      </div>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Backups are pg_dump archives of each client's Neon database. Old backups auto-delete after 7 days.</p>
+      <div id="backup-list"></div>
     </div>
   </div>
 
@@ -246,8 +256,10 @@
       document.getElementById("tab-clients").style.display = tab === "clients" ? "" : "none";
       document.getElementById("tab-changelog").style.display = tab === "changelog" ? "" : "none";
       document.getElementById("tab-deploys").style.display = tab === "deploys" ? "" : "none";
+      document.getElementById("tab-backups").style.display = tab === "backups" ? "" : "none";
       if (tab === "changelog") loadChangelog();
       if (tab === "deploys") loadDeploys();
+      if (tab === "backups") loadBackups();
     }
 
     // ─── CLIENTS ──────────────────────────────────────────
@@ -263,8 +275,10 @@
     function renderStats(clients) {
       document.getElementById("stat-total").textContent = clients.length;
       document.getElementById("stat-active").textContent = clients.filter(c => c.status === "active").length;
-      document.getElementById("stat-suspended").textContent = clients.filter(c => c.status === "suspended").length;
-      document.getElementById("stat-down").textContent = clients.filter(c => c.health_status === "down").length;
+      const totalRevenue = clients.reduce((sum, c) => sum + (Number(c.usage_revenue) || 0), 0);
+      const totalOrders = clients.reduce((sum, c) => sum + (Number(c.usage_orders) || 0), 0);
+      document.getElementById("stat-revenue").textContent = "KES " + totalRevenue.toLocaleString();
+      document.getElementById("stat-orders").textContent = totalOrders.toLocaleString();
     }
 
     function renderTable(clients) {
@@ -272,9 +286,11 @@
         document.getElementById("client-list").innerHTML = '<div class="empty"><div class="icon">&#128230;</div><p>No clients yet</p><button class="btn btn-primary" onclick="showModal()">+ Add Your First Client</button></div>';
         return;
       }
-      let html = '<table><thead><tr><th>Name</th><th>Domain</th><th>Plan</th><th>Status</th><th>Health</th><th>Uptime</th><th>Actions</th></tr></thead><tbody>';
+      let html = '<table><thead><tr><th>Name</th><th>Domain</th><th>Plan</th><th>Status</th><th>Health</th><th>Uptime</th><th>Orders</th><th>Revenue</th><th>Actions</th></tr></thead><tbody>';
       for (const c of clients) {
         const uptime = c.uptime_pct != null ? Number(c.uptime_pct).toFixed(1) : "—";
+        const revenue = c.usage_revenue ? Number(c.usage_revenue).toLocaleString() : "—";
+        const orders = c.usage_orders || "—";
         html += `<tr>
           <td><strong>${esc(c.name)}</strong><br><span style="color:var(--text-muted);font-size:0.75rem">${esc(c.admin_email)}</span></td>
           <td>${esc(c.domain)}</td>
@@ -282,6 +298,8 @@
           <td><span class="badge badge-${c.status}">${c.status}</span></td>
           <td><span class="badge badge-${c.health_status}">${c.health_status}</span></td>
           <td><span style="font-weight:600;color:${c.uptime_pct >= 99 ? 'var(--success)' : c.uptime_pct >= 95 ? 'var(--warning)' : 'var(--danger)'}">${uptime}%</span></td>
+          <td>${orders}</td>
+          <td>KES ${revenue}</td>
           <td><div class="actions-cell">
             ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" class="btn btn-ghost btn-sm">Backend</a>' : ''}
             ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
@@ -433,6 +451,34 @@
 
     loadClients();
     setInterval(loadClients, 60000);
+
+    // ─── BACKUPS ────────────────────────────────────────
+    async function loadBackups() {
+      try {
+        const data = await api("/api/backups");
+        const files = data.files || [];
+        if (!files.length) { document.getElementById("backup-list").innerHTML = '<div class="empty"><p>No backups yet. Click "Run Backup Now" to create one.</p></div>'; return; }
+        let html = '<table><thead><tr><th>File</th><th>Size</th><th>Date</th></tr></thead><tbody>';
+        for (const f of files) {
+          html += `<tr><td style="font-family:monospace;font-size:0.82rem">${esc(f.name)}</td><td>${f.size}</td><td>${new Date(f.date).toLocaleString()}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        document.getElementById("backup-list").innerHTML = html;
+      } catch { document.getElementById("backup-list").innerHTML = '<div class="empty"><p>Failed to load backups.</p></div>'; }
+    }
+
+    async function runBackups() {
+      if (!confirm("Run backup for all active client databases?")) return;
+      toast("Running backups...");
+      try {
+        const data = await api("/api/backups/run", { method: "POST" });
+        const r = data.results || [];
+        const ok = r.filter(x => x.success).length;
+        const fail = r.filter(x => !x.success).length;
+        toast(`Backups: ${ok} succeeded, ${fail} failed`);
+        loadBackups();
+      } catch (e) { toast("Backup failed: " + e.message, "error"); }
+    }
   </script>
 </body>
 </html>
