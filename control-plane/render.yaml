@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: gear-glitch-control-plane
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: cd control-plane && npm ci && npx tsc
+    startCommand: cd control-plane && node dist/server/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: CONTROL_PLANE_DATABASE_URL
+        sync: false
+      - key: CONTROL_PLANE_API_KEY
+        sync: false
+      - key: NEON_API_KEY
+        sync: false
+      - key: RENDER_API_KEY
+        sync: false
+      - key: VERCEL_TOKEN
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: CLOUDFLARE_ZONE_ID
+        sync: false
+      - key: DOMAIN_BASE
+        value: gearglitch.com
+      - key: FRONTEND_GIT_REPO
+        value: puggythemeddler/Gears-Glitch
+    healthCheckPath: /api/health
+    autoDeploy: true

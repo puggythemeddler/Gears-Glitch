@@ -1,0 +1,49 @@
+name: Deploy to All Clients
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-all:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to all clients
+        run: |
+          echo "Triggering deploy for all active clients..."
+          
+          DEPLOY_RESULTS=""
+          FAILED=0
+          SUCCEEDED=0
+          
+          # Read client list from control plane
+          CLIENTS=$(curl -s -H "x-api-key: ${{ secrets.CONTROL_PLANE_API_KEY }}" \
+            "${{ secrets.CONTROL_PLANE_URL }}/api/clients")
+          
+          # Extract active client service IDs
+          SERVICE_IDS=$(echo "$CLIENTS" | jq -r '.clients[] | select(.status == "active") | .render_service_id // empty')
+          
+          for SID in $SERVICE_IDS; do
+            echo "Deploying Render service: $SID"
+            
+            DEPLOY_RES=$(curl -s -w "\n%{http_code}" -X POST \
+              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+              -H "Content-Type: application/json" \
+              "https://api.render.com/v1/services/${SID}/deploys" \
+              -d '{"clear_cache": false}')
+            
+            HTTP_CODE=$(echo "$DEPLOY_RES" | tail -1)
+            
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+              echo "  ✓ Deploy triggered"
+              SUCCEEDED=$((SUCCEEDED + 1))
+            else
+              echo "  ✗ Failed (HTTP $HTTP_CODE)"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          
+          echo ""
+          echo "═══════════════════════════════"
+          echo "Deploy complete: $SUCCEEDED succeeded, $FAILED failed"
+          echo "═══════════════════════════════"

@@ -24,3 +24,7 @@ Thumbs.db
 
 dist/
 frontend/tsconfig.tsbuildinfo
+
+# Control plane
+control-plane/node_modules/
+control-plane/dist/
