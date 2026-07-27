@@ -208,7 +208,14 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
                   )}
                   <div className="hero-product-info">
                     <span className="hero-product-name">{p.name}</span>
-                    <span className="hero-product-price">{formatPrice(p.price)}</span>
+                    <span className="hero-product-price">
+                      {p.salePrice ? (
+                        <>
+                          <span style={{ textDecoration: "line-through", opacity: 0.6, fontSize: "0.8em", marginRight: "0.35rem" }}>{formatPrice(p.price)}</span>
+                          {formatPrice(p.salePrice)}
+                        </>
+                      ) : formatPrice(p.price)}
+                    </span>
                   </div>
                 </div>
               ))
