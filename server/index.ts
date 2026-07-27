@@ -971,6 +971,11 @@ app.get("/api/plans", asyncHandler(async (_req: Request, res: Response) => {
   res.json({ plans: all.filter((p) => p.isActive) });
 }));
 
+app.get("/api/plans/all", asyncHandler(async (_req: Request, res: Response) => {
+  const all = await listSubscriptionPlans();
+  res.json({ plans: all });
+}));
+
 app.get("/api/admin/plans", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   res.json({ plans: await listSubscriptionPlans() });
 }));

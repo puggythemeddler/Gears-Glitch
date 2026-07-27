@@ -481,7 +481,7 @@ app.post("/api/clients/:id/pull-plans", requireApiKey, async (req, res) => {
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
 
-    const result = await fetch(`${client.render_service_url}/api/plans`, { signal: AbortSignal.timeout(15000) });
+    const result = await fetch(`${client.render_service_url}/api/plans/all`, { signal: AbortSignal.timeout(15000) });
     if (!result.ok) { res.status(502).json({ error: `Client returned ${result.status}` }); return; }
     const data: any = await result.json();
     const plans = data.plans || [];
@@ -511,7 +511,7 @@ app.post("/api/plans/import-defaults", requireApiKey, async (_req, res) => {
     let imported = 0;
     for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
       try {
-        const result = await fetch(`${c.render_service_url}/api/plans`, { signal: AbortSignal.timeout(15000) });
+        const result = await fetch(`${c.render_service_url}/api/plans/all`, { signal: AbortSignal.timeout(15000) });
         if (!result.ok) continue;
         const data: any = await result.json();
         const plans = data.plans || [];
@@ -877,7 +877,7 @@ async function autoImportPlans() {
 
     for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
       try {
-        const result = await fetch(`${c.render_service_url}/api/plans`, { signal: AbortSignal.timeout(15000) });
+        const result = await fetch(`${c.render_service_url}/api/plans/all`, { signal: AbortSignal.timeout(15000) });
         if (!result.ok) continue;
         const data: any = await result.json();
         const plans = data.plans || [];
