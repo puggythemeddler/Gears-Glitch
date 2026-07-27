@@ -25,7 +25,7 @@ const EXAMPLE_DYNAMIC_CONFIG = {
   colors: { heroBg: "linear-gradient(135deg, #0f172a, #1e293b)", heroText: "#ffffff", accent: "#2563eb" },
 };
 
-export default function AdminLayouts() {
+export default function AdminLayouts({ inline }: { inline?: boolean }) {
   const [layouts, setLayouts] = useState<LayoutRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -89,10 +89,13 @@ export default function AdminLayouts() {
 
   return (
     <div>
-      <h2 style={{ marginTop: 0 }}>Storefront Layouts</h2>
-      <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginBottom: "1rem" }}>
-        Manage storefront layouts. Static layouts are built-in code modules. Dynamic layouts are defined by JSON config and rendered by the generic engine.
-      </p>
+      {!inline && <>
+        <h2 style={{ marginTop: 0 }}>Storefront Layouts</h2>
+        <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginBottom: "1rem" }}>
+          Manage storefront layouts. Static layouts are built-in code modules. Dynamic layouts are defined by JSON config and rendered by the generic engine.
+        </p>
+      </>}
+      {inline && <h3 style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>Manage Layouts</h3>}
 
       {msg && <div style={{ padding: "0.6rem 1rem", borderRadius: 6, background: "var(--primary-subtle)", color: "var(--primary)", marginBottom: "1rem", fontSize: "0.85rem" }}>{msg}<button onClick={() => setMsg("")} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--primary)", fontWeight: 700 }}>×</button></div>}
 

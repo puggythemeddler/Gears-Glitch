@@ -2,7 +2,7 @@
 import { api, getStaffToken, downloadPdf } from "@/lib/api";
 import type { Product, Order, Provider, SubscriptionPlan, Customer, Branch } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
-import { getLayoutList } from "@/layouts";
+import { getLayoutList, useLayout } from "@/layouts";
 import { SkeletonStats, SkeletonTable } from "@/components/Skeleton";
 import EmptyState from "@/components/EmptyState";
 import AnimatedCounter from "@/components/AnimatedCounter";
@@ -26,7 +26,7 @@ function formatPrice(amount: number) {
 
 function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 
-type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "credit-notes" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "layouts" | "about-us" | "quotes" | "product-positioning";
+type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "credit-notes" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "about-us" | "quotes" | "product-positioning";
 
 const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string; feature?: string }[] }[] = [
   {
@@ -66,7 +66,6 @@ const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string; featu
     label: "Settings",
     items: [
       { key: "storefront", label: "Storefront" },
-      { key: "layouts", label: "Layouts" },
       { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
       { key: "about-us", label: "About Us" },
       { key: "shop-subscription", label: "Subscription" },
@@ -200,7 +199,6 @@ export default function OwnerPage() {
             {view === "shop-subscription" && <OwnerShopSubscription />}
             {view === "about-us" && <OwnerAboutUs />}
             {view === "storefront" && <OwnerStorefront staffRole={staffRole} />}
-            {view === "layouts" && <AdminLayouts />}
             {view === "audit" && <OwnerAuditLog />}
           </div>
       </div>
@@ -1056,7 +1054,10 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
 
   useEffect(() => { load(); }, []);
 
-  const layouts = getLayoutList();
+  const { allLayouts } = useLayout();
+  const layouts = allLayouts.length > 0
+    ? allLayouts.map((l) => ({ key: l.layout_key, label: l.label, desc: l.description, type: l.layout_type, id: l.id, isActive: l.is_active }))
+    : getLayoutList().map((l) => ({ ...l, type: "static" as const, id: 0, isActive: 0 }));
 
   async function switchLayout(key: string) {
     setSaving(true);
@@ -1102,14 +1103,19 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
         {layouts.map((l) => (
           <div key={l.key} className="panel" style={{ border: cfg?.layout === l.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer" }} onClick={() => switchLayout(l.key)}>
             <div style={{ height: 120, borderRadius: 8, background: "var(--bg)", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.5rem" }}>
-              {l.key === "original" ? "🏠" : l.key === "amazon" ? "📦" : l.key === "jumia" ? "🛒" : "📱"}
+              {l.key === "original" ? "🏠" : l.key === "amazon" ? "📦" : l.key === "jumia" ? "🛒" : l.type === "dynamic" ? "🎨" : "📱"}
             </div>
-            <h3 style={{ margin: "0 0 0.25rem" }}>{l.label}</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <h3 style={{ margin: "0 0 0.25rem" }}>{l.label}</h3>
+              <span style={{ fontSize: "0.65rem", padding: "0.1rem 0.4rem", borderRadius: 4, background: l.type === "static" ? "var(--info-light)" : "var(--warning-light)", color: l.type === "static" ? "var(--info)" : "var(--warning)" }}>{l.type}</span>
+            </div>
             <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-secondary)" }}>{l.desc}</p>
             {cfg?.layout === l.key && <span className="badge badge-green" style={{ marginTop: "0.5rem" }}>Active</span>}
           </div>
         ))}
       </div>
+
+      <AdminLayouts inline />
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
         <h3>Promotional Banners</h3>

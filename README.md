@@ -71,7 +71,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - **Kenyan holiday calendar** — Auto-displayed marquee banners for 12 Kenyan public holidays with unique Kenya flag-themed gradient colors and catchy taglines.
 - **Store logo on all documents** — Logo automatically appears on POS receipts (thermal + A4), customer invoices, admin order invoices, credit notes, quote PDFs, and purchase order PDFs. Configurable position via admin Settings. Logo displayed at 64px height across all storefront layouts with an 80px header for prominent branding.
 - **Product positioning editor** — Drag-and-drop product reorder for storefront. Feature-gated via "Product positioning" in plan features. Admin and owner panels.
-- **Runtime layout registry** — Storefront layouts are stored in a `storefront_layouts` database table and managed via admin/owner UI under a new "Layouts" settings page. The 5 built-in static layouts (Original, Amazon, Jumia, Mobile, Custom) are registered as code modules. Admins can create new dynamic layouts using JSON config definitions with section types: product-grid, category-grid, banner, stats, text, and spacer. Dynamic layouts are rendered by a generic JSON layout engine (`dynamic-engine.tsx`). Layouts can be activated, reordered, edited, and deleted from the admin UI. The active layout key is synced with the existing `store_layout` setting. Store logo now displays next to the brand name text in the site header.
+- **Runtime layout registry** — Storefront layouts are stored in a `storefront_layouts` database table and managed directly from the **Storefront** settings page. The 5 built-in static layouts (Original, Amazon, Jumia, Mobile, Custom) are registered as code modules. Admins can create new dynamic layouts using JSON config definitions with section types: product-grid, category-grid, banner, stats, text, and spacer. Dynamic layouts are rendered by a generic JSON layout engine (`dynamic-engine.tsx`). Layouts can be activated, reordered, edited, and deleted from the admin UI. The active layout key is synced with the existing `store_layout` setting. Store logo now displays next to the brand name text in the site header.
 - **Auto-email system** — Full email notification framework. Configurable sender, HTML templates for messages/quotes/credit notes/order status. Owner CC on customer-provider messages. Email logs tracked. All notification types (repairs, password resets, magic links, provider emails) share a single unified transporter backed by database settings.
 - **Cloudinary cleanup on delete** — Automatic removal of Cloudinary images when gallery images, primary images, or entire products are deleted.
 - **Drag-and-drop gallery reorder** — Admin and owner product edit pages support drag-and-drop reordering of gallery images with visual feedback.
@@ -200,7 +200,7 @@ Full store management with 29 sections:
 - **Storefront** — Choose layout theme (Original, Amazon, Jumia, Mobile), manage promotional banners
 - **Splashes** — Create/edit/delete promotional banners with quick presets (Black Friday, Happy Hour, Christmas, New Year Sale, Back to School), custom background/text colors, marquee vs static toggle, active date ranges, and on/off toggle. Kenyan holidays auto-displayed with themed colors.
 - **Shop Subscription** — View current plan, activate new plan, approve/reject owner requests
-- **Settings** — Store info, M-Pesa config, store logo upload with position selector (top-left/top-middle/top-right), currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings), image storage (Cloudinary primary + optional database backup toggle), exchange rates, and **Layouts** page for managing storefront layouts (activate, create dynamic JSON layouts, reorder)
+- **Settings** — Store info, M-Pesa config, store logo upload with position selector (top-left/top-middle/top-right), currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings), image storage (Cloudinary primary + optional database backup toggle), exchange rates, and **Storefront** page for layout management (activate, create dynamic JSON layouts, reorder)
 
 ### Owner Panel (`/owner`)
 
@@ -667,7 +667,7 @@ Provider registration, login, subscription details, invoices, products at tier, 
 
 ## Storefront Layouts
 
-Five built-in layout themes controlled by admin via the Storefront panel, plus a runtime Layouts page for creating custom dynamic layouts from JSON config:
+Five built-in layout themes controlled by admin via the Storefront panel, which also includes a dynamic layout manager for creating custom layouts from JSON config:
 
 | Layout | Key | Description |
 |--------|-----|-------------|
@@ -685,7 +685,7 @@ There are two ways to add new layouts:
 
 ### Option 1: Runtime Dynamic Layout (Admin UI — no code required)
 
-1. Go to **Admin → Settings → Layouts** (or **Owner → Settings → Layouts**)
+1. Go to **Admin → Settings → Storefront** (or **Owner → Settings → Storefront**)
 2. Click **"+ New Dynamic Layout"**
 3. Fill in the layout key, label, description, and JSON config
 4. The JSON config supports these section types:

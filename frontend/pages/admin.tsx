@@ -5,7 +5,7 @@ import RippleButton from "@/components/RippleButton";
 import { SkeletonStats, SkeletonTable } from "@/components/Skeleton";
 import EmptyState from "@/components/EmptyState";
 import AnimatedCounter from "@/components/AnimatedCounter";
-import { getLayoutList } from "@/layouts";
+import { getLayoutList, useLayout } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import NotificationBell from "@/components/NotificationBell";
 import { useFeature } from "@/lib/features";
@@ -28,7 +28,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layouts" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
   {
@@ -87,7 +87,6 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "settings-content", label: "Content" },
       { key: "settings-system", label: "System" },
       { key: "storefront", label: "Storefront" },
-      { key: "layouts", label: "Layouts" },
       { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
       { key: "email-settings", label: "Email", feature: "Email notifications" },
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
@@ -400,7 +399,6 @@ export default function AdminPage() {
             {view === "shop-subscription" && <AdminShopSubscription />}
             {view === "about-us" && <AdminAboutUs />}
             {view === "storefront" && <AdminStorefront />}
-            {view === "layouts" && <AdminLayouts />}
             {view === "settings-store-info" && <AdminStoreInfo />}
             {view === "settings-payments" && <AdminPayments />}
             {view === "settings-compliance" && <AdminCompliance />}
@@ -2218,7 +2216,10 @@ function AdminStorefront() {
 
   useEffect(() => { load(); }, []);
 
-  const layouts = getLayoutList();
+  const { allLayouts } = useLayout();
+  const layouts = allLayouts.length > 0
+    ? allLayouts.map((l) => ({ key: l.layout_key, label: l.label, desc: l.description, type: l.layout_type, id: l.id, isActive: l.is_active }))
+    : getLayoutList().map((l) => ({ ...l, type: "static" as const, id: 0, isActive: 0 }));
 
   async function switchLayout(key: string) {
     setSaving(true);
@@ -2252,14 +2253,19 @@ function AdminStorefront() {
         {layouts.map((l) => (
           <div key={l.key} className="panel" style={{ border: cfg?.layout === l.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer" }} onClick={() => switchLayout(l.key)}>
             <div style={{ height: 120, borderRadius: 8, background: "var(--bg)", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.5rem" }}>
-              {l.key === "original" ? "🏠" : l.key === "amazon" ? "📦" : l.key === "jumia" ? "🛒" : "📱"}
+              {l.key === "original" ? "🏠" : l.key === "amazon" ? "📦" : l.key === "jumia" ? "🛒" : l.type === "dynamic" ? "🎨" : "📱"}
             </div>
-            <h3 style={{ margin: "0 0 0.25rem" }}>{l.label}</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <h3 style={{ margin: "0 0 0.25rem" }}>{l.label}</h3>
+              <span style={{ fontSize: "0.65rem", padding: "0.1rem 0.4rem", borderRadius: 4, background: l.type === "static" ? "var(--info-light)" : "var(--warning-light)", color: l.type === "static" ? "var(--info)" : "var(--warning)" }}>{l.type}</span>
+            </div>
             <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-secondary)" }}>{l.desc}</p>
             {cfg?.layout === l.key && <span className="badge badge-green" style={{ marginTop: "0.5rem" }}>Active</span>}
           </div>
         ))}
       </div>
+
+      <AdminLayouts inline />
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
         <h3>Promotional Banners</h3>
