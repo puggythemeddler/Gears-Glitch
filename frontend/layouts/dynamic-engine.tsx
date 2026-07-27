@@ -170,7 +170,7 @@ export function DynamicHomePage({ products, categories, banners, config }: { pro
           if (section.limit) filtered = filtered.slice(0, section.limit);
           const cols = section.columns || 4;
           return (
-            <div key={i} style={{ padding: "2rem", maxWidth: 1440, margin: "0 auto" }}>
+            <div key={i} style={{ padding: "2rem", width: "100%" }}>
               {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem" }}>{section.title}</h2>}
               <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${cols > 3 ? 240 : 280}px, 1fr))`, gap: "1rem" }}>
                 {filtered.map((p) => <ProductCard key={p.id} product={p} cardConfig={cardConfig} />)}
@@ -182,7 +182,7 @@ export function DynamicHomePage({ products, categories, banners, config }: { pro
         if (section.type === "category-grid") {
           const cols = section.columns || 4;
           return (
-            <div key={i} style={{ padding: "2rem", maxWidth: 1440, margin: "0 auto" }}>
+            <div key={i} style={{ padding: "2rem", width: "100%" }}>
               {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem" }}>{section.title}</h2>}
               <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${section.style === "icons" ? 120 : 220}px, 1fr))`, gap: "1rem" }}>
                 {categories.map((cat) => (
@@ -197,7 +197,7 @@ export function DynamicHomePage({ products, categories, banners, config }: { pro
 
         if (section.type === "banner") {
           return (
-            <div key={i} style={{ margin: "1.5rem auto", maxWidth: 1440, padding: "0 2rem" }}>
+            <div key={i} style={{ margin: "1.5rem 0", width: "100%", padding: "0 2rem" }}>
               <a href={section.link || "/"} style={{ display: "block", background: section.bgColor || "var(--primary-subtle)", borderRadius: 12, overflow: "hidden", textDecoration: "none" }}>
                 {section.imageUrl ? (
                   <img src={section.imageUrl} alt={section.text || ""} style={{ width: "100%", height: 200, objectFit: "cover" }} />
@@ -213,7 +213,7 @@ export function DynamicHomePage({ products, categories, banners, config }: { pro
 
         if (section.type === "stats") {
           return (
-            <div key={i} style={{ padding: "2rem", maxWidth: 1440, margin: "0 auto" }}>
+            <div key={i} style={{ padding: "2rem", width: "100%" }}>
               <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(160px, 1fr))`, gap: "1rem" }}>
                 {(section.items || []).map((item, j) => (
                   <div key={j} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10 }}>

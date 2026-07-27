@@ -12,14 +12,14 @@ export const LAYOUT_DESC = "Large search bar, horizontal categories, product rec
 export function LayoutStyles() {
   return <style>{`
     .amz-top { background: var(--surface); border-bottom: 1px solid var(--border); }
-    .amz-top-inner { max-width: 1440px; margin: 0 auto; padding: 0.75rem 1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .amz-top-inner { width: 100%; padding: 0.75rem 1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
     .amz-search { flex: 1; min-width: 200px; display: flex; border: 2px solid var(--primary); border-radius: 8px; overflow: hidden; }
     .amz-search input { flex: 1; border: none; padding: 0.6rem 1rem; font-size: 1rem; background: var(--bg); color: var(--text); outline: none; }
     .amz-search button { background: var(--primary); color: #fff; border: none; padding: 0.6rem 1.2rem; cursor: pointer; font-weight: 600; }
-    .amz-nav { max-width: 1440px; margin: 0 auto; padding: 0.5rem 1rem; display: flex; gap: 0.25rem; flex-wrap: wrap; }
+    .amz-nav { width: 100%; margin: 0; padding: 0.5rem 1rem; display: flex; gap: 0.25rem; flex-wrap: wrap; }
     .amz-nav a { padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; color: var(--text); text-decoration: none; }
     .amz-nav a:hover { background: var(--primary); color: #fff; }
-    .amz-hero { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
+    .amz-hero { width: 100%; margin: 1rem 0; padding: 0 1rem; display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
     .amz-hero-main { border-radius: 12px; overflow: hidden; position: relative; background: linear-gradient(135deg, var(--primary), #7c3aed); color: #fff; padding: 3rem; min-height: 300px; display: flex; flex-direction: column; justify-content: center; }
     .amz-hero-main h2 { font-size: 2rem; margin: 0 0 0.5rem; }
     .amz-hero-main p { font-size: 1.1rem; margin: 0 0 1.5rem; opacity: 0.9; }
@@ -27,7 +27,7 @@ export function LayoutStyles() {
     .amz-hero-side-item { border-radius: 12px; padding: 1.5rem; flex: 1; background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; }
     .amz-hero-side-item h3 { margin: 0 0 0.25rem; font-size: 1.1rem; }
     .amz-hero-side-item p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); }
-    .amz-section { max-width: 1440px; margin: 2rem auto; padding: 0 1rem; }
+    .amz-section { width: 100%; margin: 2rem 0; padding: 0 1rem; }
     .amz-section h2 { font-size: 1.4rem; margin: 0 0 1rem; display: flex; align-items: center; gap: 0.5rem; }
     .amz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
     .amz-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
@@ -39,7 +39,7 @@ export function LayoutStyles() {
     .amz-card-price { font-weight: 700; color: var(--primary); font-size: 1.1rem; margin-top: auto; }
     .amz-card-rating { font-size: 0.8rem; color: #f59e0b; margin-bottom: 0.3rem; }
     .amz-card-badge { display: inline-block; background: #dc2626; color: #fff; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; margin-bottom: 0.4rem; align-self: flex-start; }
-    .amz-banner-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; max-width: 1440px; margin: 1.5rem auto; padding: 0 1rem; }
+    .amz-banner-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; width: 100%; margin: 1.5rem 0; padding: 0 1rem; }
     .amz-banner-item { border-radius: 10px; padding: 1.5rem; background: var(--surface); border: 1px solid var(--border); text-align: center; }
     .amz-banner-item h3 { margin: 0 0 0.25rem; font-size: 1rem; }
     .amz-banner-item p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); }

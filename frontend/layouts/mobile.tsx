@@ -11,22 +11,22 @@ export const LAYOUT_DESC = "Premium minimalist, hero banners, featured phones, c
 export function LayoutStyles() {
   return <style>{`
     .mob-header { background: var(--surface); border-bottom: 1px solid var(--border); }
-    .mob-header-inner { max-width: 1440px; margin: 0 auto; padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    .mob-header-inner { width: 100%; padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
     .mob-brand { font-weight: 700; font-size: 1.2rem; color: var(--text); text-decoration: none; letter-spacing: -0.5px; }
     .mob-nav { display: flex; gap: 1.5rem; }
     .mob-nav a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; font-weight: 500; transition: color 0.15s; }
     .mob-nav a:hover { color: var(--primary); }
-    .mob-hero { max-width: 1440px; margin: 1.5rem auto; padding: 0 1rem; border-radius: 16px; overflow: hidden; position: relative; }
+    .mob-hero { width: 100%; margin: 1.5rem 0; padding: 0 1rem; border-radius: 16px; overflow: hidden; position: relative; }
     .mob-hero-inner { background: linear-gradient(135deg, #1e1b4b, #312e81); color: #fff; padding: 4rem 3rem; min-height: 380px; display: flex; flex-direction: column; justify-content: center; }
     .mob-hero-inner h2 { font-size: 2.5rem; margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -1px; }
     .mob-hero-inner p { font-size: 1.1rem; margin: 0 0 1.5rem; opacity: 0.85; }
     .mob-hero-badge { display: inline-block; background: rgba(255,255,255,0.15); padding: 0.3rem 1rem; border-radius: 999px; font-size: 0.8rem; margin-bottom: 1rem; align-self: flex-start; backdrop-filter: blur(4px); }
-    .mob-brands { max-width: 1440px; margin: 2rem auto; padding: 0 1rem; }
+    .mob-brands { width: 100%; margin: 2rem 0; padding: 0 1rem; }
     .mob-brands h2 { font-size: 1.1rem; margin: 0 0 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; }
     .mob-brand-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .mob-brand-chip { padding: 0.5rem 1.2rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: all 0.15s; }
     .mob-brand-chip:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
-    .mob-section { max-width: 1440px; margin: 2.5rem auto; padding: 0 1rem; }
+    .mob-section { width: 100%; margin: 2.5rem 0; padding: 0 1rem; }
     .mob-section h2 { font-size: 1.5rem; margin: 0 0 0.25rem; }
     .mob-section .sub { color: var(--text-secondary); font-size: 0.9rem; margin: 0 0 1rem; }
     .mob-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.5rem; }
@@ -40,12 +40,12 @@ export function LayoutStyles() {
     .mob-card-price { font-weight: 700; font-size: 1.15rem; color: var(--primary); }
     .mob-card-warranty { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.3rem; }
     .mob-card-compare { font-size: 0.8rem; color: var(--primary); margin-top: 0.5rem; display: inline-flex; align-items: center; gap: 0.3rem; }
-    .mob-features { max-width: 1440px; margin: 2rem auto; padding: 0 1rem; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    .mob-features { width: 100%; margin: 2rem 0; padding: 0 1rem; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
     .mob-feature { text-align: center; padding: 1.5rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
     .mob-feature .icon { font-size: 2rem; margin-bottom: 0.5rem; }
     .mob-feature h4 { margin: 0 0 0.25rem; font-size: 0.95rem; }
     .mob-feature p { margin: 0; font-size: 0.8rem; color: var(--text-secondary); }
-    .mob-accessories { max-width: 1440px; margin: 2.5rem auto; padding: 0 1rem; }
+    .mob-accessories { width: 100%; margin: 2.5rem 0; padding: 0 1rem; }
     .mob-accessories h2 { font-size: 1.3rem; margin: 0 0 1rem; }
     .mob-accessories-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
     .mob-acc-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; text-decoration: none; color: inherit; }

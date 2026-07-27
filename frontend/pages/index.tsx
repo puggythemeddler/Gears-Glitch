@@ -35,7 +35,7 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "var(--space-5)" }}>
+      <div style={{ width: "100%", padding: "var(--space-5)" }}>
         <div className="skeleton" style={{ height: 200, borderRadius: "var(--radius-xl)", marginBottom: "var(--space-6)" }} />
         <div className="product-grid">
           {Array.from({ length: 8 }).map((_, i) => (
