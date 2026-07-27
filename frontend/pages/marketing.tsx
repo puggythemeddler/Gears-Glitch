@@ -68,6 +68,7 @@ const FEATURES = [
   { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with admin-controllable hero sections (with on/off toggle), live stats from your data, auto-synced category chips, product catalog, auto-rotating carousels, and springboard category menu." },
   { icon: "⚙", name: "Organized Settings", desc: "Dedicated Settings tab with 5 focused pages — Store Info, Payments (M-Pesa, methods, exchange rates), Compliance (eTIMS/KRA, Google Sign-In), Content (banners, image storage), and System (backup). Each page handles its own configuration." },
   { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders. Every document has separate Print and Save PDF buttons for instant downloads with branded templates." },
+  { icon: "🔒", name: "Feature-Gated Plans", desc: "Subscription plans with grouped feature toggles (11 categories). Disable a feature and it disappears from every panel — admin, owner, backoffice, dashboard, and storefront. Pay only for what you use." },
 ];
 
 const WHY_CHOOSE = [
