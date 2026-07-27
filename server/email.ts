@@ -123,3 +123,37 @@ export function orderStatusEmail(customerName: string, orderNumber: string, stat
 `);
   return { subject: title, html };
 }
+
+export function subscriptionInvoiceEmail(customerName: string, invoiceNumber: string, planName: string, amount: string, currency: string, dueDate: string, dashboardUrl: string): { subject: string; html: string } {
+  const title = `Invoice ${esc(invoiceNumber)} — ${esc(planName)} Plan`;
+  const html = wrapTemplate(title, `
+<p>Hi ${esc(customerName)},</p>
+<p>Your subscription invoice for <strong>${esc(planName)}</strong> is ready.</p>
+<div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Invoice:</strong> ${esc(invoiceNumber)}</p>
+<p style="margin:8px 0 0;"><strong>Plan:</strong> ${esc(planName)}</p>
+<p style="margin:8px 0 0;"><strong>Amount:</strong> ${esc(currency)} ${esc(amount)}</p>
+${dueDate ? `<p style="margin:8px 0 0;"><strong>Due Date:</strong> ${esc(dueDate)}</p>` : ""}
+</div>
+<p>Please ensure payment is made by the due date to avoid service interruption.</p>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Invoice</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function subscriptionOverdueEmail(customerName: string, invoiceNumber: string, planName: string, amount: string, currency: string, overdueDays: number, dashboardUrl: string): { subject: string; html: string } {
+  const title = `OVERDUE: Invoice ${esc(invoiceNumber)} — Payment Required`;
+  const html = wrapTemplate(title, `
+<p>Hi ${esc(customerName)},</p>
+<p style="color:#dc2626;font-weight:600;">Your subscription invoice is ${overdueDays} day${overdueDays > 1 ? "s" : ""} overdue.</p>
+<div style="background:#fef2f2;border:1px solid #fecaca;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Invoice:</strong> ${esc(invoiceNumber)}</p>
+<p style="margin:8px 0 0;"><strong>Plan:</strong> ${esc(planName)}</p>
+<p style="margin:8px 0 0;"><strong>Amount:</strong> ${esc(currency)} ${esc(amount)}</p>
+<p style="margin:8px 0 0;"><strong>Overdue by:</strong> ${overdueDays} day${overdueDays > 1 ? "s" : ""}</p>
+</div>
+<p style="color:#dc2626;">If payment is not received within 7 days of the due date, your service may be suspended.</p>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#dc2626;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Pay Now</a></p>
+`);
+  return { subject: title, html };
+}

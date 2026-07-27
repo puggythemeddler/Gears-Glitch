@@ -208,6 +208,9 @@ interface Invoice {
   periodEnd: string;
   paidAt: string | null;
   createdAt: string;
+  invoiceNumber?: string;
+  dueDate?: string;
+  notes?: string;
 }
 
 interface OrderInvoice {
@@ -942,6 +945,13 @@ async function runMigrations(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (NOW()::text)
     )`);
   } catch {}
+
+  // Invoice enhancements: numbering, due dates, overdue tracking
+  try { await query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_number TEXT DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS due_date TEXT DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`); } catch {}
+  try { await query(`CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`); } catch {}
+  try { await query(`CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date)`); } catch {}
 
   // Seed default static layouts if none exist
   try {
@@ -2092,13 +2102,13 @@ async function getTotalViews(): Promise<number> {
   return Number(row?.count || 0);
 }
 
-async function createInvoice(data: { providerId: number; planId: string; amount: number; currency: string; periodStart: string; periodEnd: string }): Promise<Invoice> {
+async function createInvoice(data: { providerId: number; planId: string; amount: number; currency: string; periodStart: string; periodEnd: string; dueDate?: string; invoiceNumber?: string }): Promise<Invoice> {
   const result = await query(
-    "INSERT INTO invoices (provider_id, plan_id, amount, currency, period_start, period_end) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-    [data.providerId, data.planId, data.amount, data.currency, data.periodStart, data.periodEnd]
+    "INSERT INTO invoices (provider_id, plan_id, amount, currency, period_start, period_end, due_date, invoice_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+    [data.providerId, data.planId, data.amount, data.currency, data.periodStart, data.periodEnd, data.dueDate || "", data.invoiceNumber || ""]
   );
   const row = result.rows[0];
-  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: "", amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at };
+  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: "", amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
 }
 
 async function getInvoice(id: number): Promise<Invoice | undefined> {
@@ -2106,7 +2116,7 @@ async function getInvoice(id: number): Promise<Invoice | undefined> {
     `SELECT i.*, sp.name AS plan_name FROM invoices i LEFT JOIN subscription_plans sp ON sp.id = i.plan_id WHERE i.id = $1`, [id]
   ) as any;
   if (!row) return undefined;
-  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: row.plan_name || "", amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at };
+  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: row.plan_name || "", amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
 }
 
 async function listInvoices(providerId?: number): Promise<Invoice[]> {
@@ -2131,7 +2141,24 @@ async function generateProviderInvoice(providerId: number, planId: string): Prom
   const now = new Date();
   const periodStart = now.toISOString().slice(0, 10);
   const periodEnd = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
-  return await createInvoice({ providerId, planId: plan.id, amount: plan.price, currency: "KES", periodStart, periodEnd });
+  const dueDate = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+  const invoiceNumber = await generateSubInvoiceNumber();
+  const result = await query(
+    "INSERT INTO invoices (provider_id, plan_id, amount, currency, period_start, period_end, due_date, invoice_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+    [providerId, plan.id, plan.price, "KES", periodStart, periodEnd, dueDate, invoiceNumber]
+  );
+  const row = result.rows[0];
+  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: plan.name, amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
+}
+
+async function generateSubInvoiceNumber(): Promise<string> {
+  const last = await queryOne("SELECT invoice_number FROM invoices WHERE invoice_number LIKE 'SUB-INV-%' ORDER BY id DESC LIMIT 1") as any;
+  let seq = 1;
+  if (last && last.invoice_number) {
+    const match = last.invoice_number.match(/SUB-INV-(\d+)/);
+    if (match) seq = Number(match[1]) + 1;
+  }
+  return `SUB-INV-${String(seq).padStart(5, "0")}`;
 }
 
 async function getInvoiceRevenue(): Promise<{ total: number; paid: number; pending: number }> {
@@ -2143,6 +2170,78 @@ async function getInvoiceRevenue(): Promise<{ total: number; paid: number; pendi
     else if (row.status === "pending") pending += row.amount;
   }
   return { total, paid, pending };
+}
+
+async function searchInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; search?: string; limit?: number; offset?: number }): Promise<{ invoices: Invoice[]; total: number }> {
+  let where = "1=1";
+  const params: any[] = [];
+  let idx = 1;
+  if (filters.status) { where += ` AND i.status = $${idx}`; params.push(filters.status); idx++; }
+  if (filters.dateFrom) { where += ` AND i.created_at >= $${idx}`; params.push(filters.dateFrom); idx++; }
+  if (filters.dateTo) { where += ` AND i.created_at <= $${idx}`; params.push(filters.dateTo + " 23:59:59"); idx++; }
+  if (filters.search) { where += ` AND (i.invoice_number ILIKE $${idx} OR sp.name ILIKE $${idx} OR CAST(i.id AS TEXT) ILIKE $${idx})`; params.push(`%${filters.search}%`); idx++; }
+  const countRow = await queryOne(`SELECT COUNT(*) AS count FROM invoices i LEFT JOIN subscription_plans sp ON sp.id = i.plan_id WHERE ${where}`, params) as any;
+  const total = countRow ? Number(countRow.count) : 0;
+  const limit = filters.limit || 50;
+  const offset = filters.offset || 0;
+  const rows = await queryAll(`SELECT i.id FROM invoices i LEFT JOIN subscription_plans sp ON sp.id = i.plan_id WHERE ${where} ORDER BY i.created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`, [...params, limit, offset]) as { id: number }[];
+  const invoices: Invoice[] = [];
+  for (const row of rows) { const inv = await getInvoice(row.id); if (inv) invoices.push(inv); }
+  return { invoices, total };
+}
+
+async function markOverdueInvoices(): Promise<number> {
+  const result = await query("UPDATE invoices SET status = 'overdue' WHERE status = 'pending' AND due_date != '' AND due_date < CURRENT_DATE::text");
+  return result.rowCount ?? 0;
+}
+
+async function getOverdueInvoices(): Promise<Invoice[]> {
+  const rows = await queryAll("SELECT id FROM invoices WHERE status = 'overdue' ORDER BY due_date ASC") as { id: number }[];
+  const invoices: Invoice[] = [];
+  for (const row of rows) { const inv = await getInvoice(row.id); if (inv) invoices.push(inv); }
+  return invoices;
+}
+
+async function getExpiringSubscriptions(daysAhead: number = 7): Promise<any[]> {
+  return await queryAll(`
+    SELECT s.value AS plan_id, sp.name AS plan_name, sp.price,
+           sa.value AS activated_at
+    FROM settings s
+    JOIN subscription_plans sp ON sp.id = s.value
+    LEFT JOIN settings sa ON sa.key = 'subscription_activated_at'
+    WHERE s.key = 'shop_plan_id'
+  `);
+}
+
+async function getInvoiceStats(): Promise<{ total: number; paid: number; pending: number; overdue: number; totalRevenue: number; paidRevenue: number; pendingRevenue: number }> {
+  const row = await queryOne(`
+    SELECT
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE status = 'paid') AS paid,
+      COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+      COUNT(*) FILTER (WHERE status = 'overdue') AS overdue,
+      COALESCE(SUM(amount), 0) AS total_revenue,
+      COALESCE(SUM(amount) FILTER (WHERE status = 'paid'), 0) AS paid_revenue,
+      COALESCE(SUM(amount) FILTER (WHERE status IN ('pending', 'overdue')), 0) AS pending_revenue
+    FROM invoices
+  `) as any;
+  return {
+    total: Number(row?.total || 0), paid: Number(row?.paid || 0), pending: Number(row?.pending || 0), overdue: Number(row?.overdue || 0),
+    totalRevenue: Number(row?.total_revenue || 0), paidRevenue: Number(row?.paid_revenue || 0), pendingRevenue: Number(row?.pending_revenue || 0),
+  };
+}
+
+async function exportInvoicesCsv(filters: { status?: string; dateFrom?: string; dateTo?: string }): Promise<string> {
+  let where = "1=1";
+  const params: any[] = [];
+  let idx = 1;
+  if (filters.status) { where += ` AND i.status = $${idx}`; params.push(filters.status); idx++; }
+  if (filters.dateFrom) { where += ` AND i.created_at >= $${idx}`; params.push(filters.dateFrom); idx++; }
+  if (filters.dateTo) { where += ` AND i.created_at <= $${idx}`; params.push(filters.dateTo + " 23:59:59"); idx++; }
+  const rows = await queryAll(`SELECT i.*, sp.name AS plan_name FROM invoices i LEFT JOIN subscription_plans sp ON sp.id = i.plan_id WHERE ${where} ORDER BY i.created_at DESC`, params) as any[];
+  const header = "Invoice Number,Provider ID,Plan,Amount,Currency,Status,Period Start,Period End,Due Date,Paid At,Created At";
+  const lines = rows.map(r => `"${r.invoice_number || 'INV-' + r.id}",${r.provider_id},"${(r.plan_name || r.plan_id).replace(/"/g, '""')}",${r.amount},${r.currency},${r.status},${r.period_start},${r.period_end},${r.due_date || ''},${r.paid_at || ''},${r.created_at}`);
+  return header + "\n" + lines.join("\n");
 }
 
 async function getEtimsMode(): Promise<string> {
@@ -3028,7 +3127,7 @@ export {
   validateCoupon, listCoupons, getCoupon, createCoupon, updateCoupon, deleteCoupon, recordCouponUsage,
   createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, cancelOrderItem,
   recordProductView, getPopularProducts, getTotalViews,
-  createInvoice, getInvoice, listInvoices, markInvoicePaid, generateProviderInvoice, getInvoiceRevenue,
+  createInvoice, getInvoice, listInvoices, markInvoicePaid, generateProviderInvoice, getInvoiceRevenue, searchInvoices, markOverdueInvoices, getOverdueInvoices, getInvoiceStats, exportInvoicesCsv,
   getEtimsMode, generateEtimsInvoiceNumber, createEtimsSalesTransaction,
   createOrderInvoice, listOrderInvoices, markOrderInvoicePaid,
   createCreditNote, submitCreditNoteToEtims, getCreditNote, listCreditNotes,

@@ -251,6 +251,96 @@ export function generateInvoiceHtml(data: InvoiceData): string {
 </body></html>`;
 }
 
+// ============ SUBSCRIPTION INVOICE HTML ============
+export const SUBSCRIPTION_INVOICE_CSS = `
+  body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
+  .invoice { border: 1px solid #e5e7eb; border-radius: 16px; padding: 2rem; }
+  .header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem; border-bottom: 2px solid #3b82f6; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+  .header h1 { margin: 0; font-size: 1.5rem; color: #3b82f6; }
+  .header .meta { font-size: 0.9rem; color: #6b7280; }
+  table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
+  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
+  .total-row { font-weight: 700; font-size: 1.1rem; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
+  .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
+  .footer { margin-top: 2rem; font-size: 0.85rem; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
+  .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.5rem auto 0; flex-wrap: wrap; }
+  .print-btn { display: inline-block; padding: 0.6rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  .pdf-btn { display: inline-block; padding: 0.6rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
+  .badge-pending { background: #fef3c7; color: #92400e; }
+  .badge-paid { background: #d1fae5; color: #065f46; }
+  .badge-overdue { background: #fee2e2; color: #991b1b; }
+  @media print { body { margin: 0; } .invoice { border: none; } .btn-group { display: none; } }
+`;
+
+export interface SubscriptionInvoiceData {
+  invoice: {
+    id: number;
+    invoiceNumber: string;
+    providerName: string;
+    providerEmail: string;
+    planName: string;
+    amount: number;
+    currency: string;
+    status: string;
+    periodStart: string;
+    periodEnd: string;
+    dueDate: string;
+    notes: string;
+    createdAt: string;
+  };
+  store: {
+    name: string;
+    email: string;
+    logo: string;
+    logoPosition: string;
+  };
+}
+
+export function generateSubscriptionInvoiceHtml(data: SubscriptionInvoiceData): string {
+  const { invoice, store } = data;
+  const statusClass = invoice.status === "paid" ? "badge-paid" : invoice.status === "overdue" ? "badge-overdue" : "badge-pending";
+  const itemsHtml = `<tr><td>${escapeHtml(invoice.planName)} Subscription</td><td style="text-align:center">1</td><td style="text-align:right;white-space:nowrap">${invoice.currency} ${invoice.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${invoice.currency} ${invoice.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${escapeHtml(invoice.invoiceNumber)} — ${escapeHtml(store.name)}</title>
+<style>${SUBSCRIPTION_INVOICE_CSS}</style></head><body>
+<div class="invoice">
+  <div class="header">
+    <div>${renderStoreLogo(store.logo, store.logoPosition, store.name)}<h1>SUBSCRIPTION INVOICE</h1><p class="meta">${escapeHtml(invoice.invoiceNumber)}</p></div>
+    <div style="text-align:right;"><strong>${escapeHtml(store.name)}</strong><br><span class="meta">${escapeHtml(store.email)}</span><br><span class="badge ${statusClass}">${invoice.status.toUpperCase()}</span></div>
+  </div>
+  <div class="info-grid">
+    <div>
+      <div class="label">Bill to</div>
+      <div><strong>${escapeHtml(invoice.providerName)}</strong></div>
+      <div>${escapeHtml(invoice.providerEmail)}</div>
+    </div>
+    <div>
+      <div class="label">Invoice details</div>
+      <div>Date: ${new Date(invoice.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}</div>
+      <div>Due: ${invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }) : "—"}</div>
+      <div>Period: ${invoice.periodStart} to ${invoice.periodEnd}</div>
+    </div>
+  </div>
+  <table><thead><tr><th>Description</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead><tbody>
+    ${itemsHtml}
+  </tbody></table>
+  <div style="text-align:right;">
+    <div class="total-row">Total: ${invoice.currency} ${invoice.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+  </div>
+  ${invoice.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(invoice.notes)}</p>` : ""}
+  <div style="text-align:center;margin-top:1.5rem;font-size:0.85rem;color:#6b7280;">${escapeHtml(store.name)} — ${escapeHtml(store.email)}</div>
+  <div class="btn-group">
+    <button class="print-btn" onclick="window.print()">Print</button>
+    <button class="pdf-btn" onclick="window.location.href=window.location.pathname+'?format=pdf'">Save PDF</button>
+  </div>
+  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Subscription invoice — ${escapeHtml(store.name)}</div>
+</div>
+</body></html>`;
+}
+
 // ============ PERMISSION HELPER ============
 export function requirePermission(permission: string) {
   return async (req: Request, res: Response, next: NextFunction) => {

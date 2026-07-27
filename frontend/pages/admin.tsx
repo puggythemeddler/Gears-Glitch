@@ -1848,7 +1848,19 @@ function AdminBranches() {
 // ===================== INVOICES =====================
 function AdminInvoices() {
   const [tab, setTab] = useState<"provider" | "orders">("provider");
-  const { data: iData, loading, error, refetch } = useFetch(() => api<{ invoices: any[] }>("/api/admin/invoices"), []);
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterSearch, setFilterSearch] = useState("");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const { data: iData, loading, error, refetch } = useFetch(() => {
+    const params = new URLSearchParams();
+    if (filterStatus) params.set("status", filterStatus);
+    if (filterSearch) params.set("search", filterSearch);
+    if (filterDateFrom) params.set("dateFrom", filterDateFrom);
+    if (filterDateTo) params.set("dateTo", filterDateTo);
+    const qs = params.toString();
+    return api<{ invoices: any[]; stats?: any; revenue?: any }>(`/api/admin/invoices${qs ? "?" + qs : ""}`);
+  }, [filterStatus, filterSearch, filterDateFrom, filterDateTo]);
   const { data: oiData, loading: oiLoading, error: oiError, refetch: refetchOi } = useFetch(() => api<{ invoices: any[] }>("/api/admin/order-invoices"), []);
   const [oiStatusMsg, setOiStatusMsg] = useState("");
   const [creditedOrders, setCreditedOrders] = useState<Record<number, boolean>>({});
@@ -1872,6 +1884,46 @@ function AdminInvoices() {
     try { await api("/api/admin/invoices/generate", { method: "POST" }); refetch(); } catch { alert("Generation failed"); }
   }
 
+  async function viewInvoice(id: number) {
+    try {
+      const res = await fetch(`/api/admin/invoices/${id}/view`, { headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const html = await res.text();
+      const blob = new Blob([html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (e: any) { alert("Failed: " + (e?.message || "Unknown")); }
+  }
+
+  async function downloadInvoicePdf(id: number) {
+    try {
+      const res = await fetch(`/api/admin/invoices/${id}/view?format=pdf`, { headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `invoice-${id}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) { alert("Failed: " + (e?.message || "Unknown")); }
+  }
+
+  async function emailInvoice(id: number) {
+    try {
+      const data = await api<{ sent: boolean }>(`/api/admin/invoices/${id}/email`, { method: "POST" });
+      alert(data.sent ? "Invoice emailed successfully." : "Failed to send email. Check SMTP settings.");
+    } catch (e: any) { alert("Failed: " + (e?.message || "Unknown")); }
+  }
+
+  function exportCsv() {
+    const params = new URLSearchParams();
+    if (filterStatus) params.set("status", filterStatus);
+    if (filterDateFrom) params.set("dateFrom", filterDateFrom);
+    if (filterDateTo) params.set("dateTo", filterDateTo);
+    const qs = params.toString();
+    window.open(`/api/admin/invoices/export${qs ? "?" + qs : ""}`, "_blank");
+  }
+
   async function createCreditNote(orderId: number) {
     const reason = window.prompt("Reason for credit note (optional):");
     if (reason === null) return;
@@ -1887,40 +1939,69 @@ function AdminInvoices() {
     }
   }
 
+  const stats = iData?.stats;
+  const invoices = iData?.invoices || [];
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Invoices</h1>
       </div>
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-        <RippleButton size="small" variant={tab === "provider" ? "primary" : "ghost"} onClick={() => setTab("provider")}>Provider</RippleButton>
+        <RippleButton size="small" variant={tab === "provider" ? "primary" : "ghost"} onClick={() => setTab("provider")}>Subscription</RippleButton>
         <RippleButton size="small" variant={tab === "orders" ? "primary" : "ghost"} onClick={() => setTab("orders")}>Orders</RippleButton>
       </div>
 
       {tab === "provider" && (
         <>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.75rem" }}>
-            <RippleButton size="small" onClick={generateInvoice}>Generate</RippleButton>
+          {stats && (
+            <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+              <div className="stat-card"><div className="stat-card__value">{stats.total}</div><div className="stat-card__label">Total Invoices</div></div>
+              <div className="stat-card"><div className="stat-card__value" style={{ color: "var(--success)" }}>{stats.paid}</div><div className="stat-card__label">Paid</div></div>
+              <div className="stat-card"><div className="stat-card__value" style={{ color: "#f59e0b" }}>{stats.pending}</div><div className="stat-card__label">Pending</div></div>
+              <div className="stat-card"><div className="stat-card__value" style={{ color: "#dc2626" }}>{stats.overdue}</div><div className="stat-card__label">Overdue</div></div>
+            </div>
+          )}
+
+          <div className="panel" style={{ marginBottom: "1rem", padding: "0.75rem 1rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+              <input type="text" placeholder="Search invoice #..." value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} style={{ padding: "0.4rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: "0.85rem", minWidth: 160 }} />
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "0.4rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: "0.85rem" }}>
+                <option value="">All Status</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option>
+              </select>
+              <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} style={{ padding: "0.4rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: "0.85rem" }} />
+              <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>to</span>
+              <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} style={{ padding: "0.4rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: "0.85rem" }} />
+              <RippleButton size="small" variant="ghost" onClick={exportCsv}>Export CSV</RippleButton>
+              <RippleButton size="small" onClick={generateInvoice}>+ Generate</RippleButton>
+            </div>
           </div>
+
           {(() => {
             if (loading) return <Spinner />;
             if (error) return <ErrorMsg msg={error} />;
-            const invoices = iData?.invoices || [];
             return (
               <div className="table-wrap">
                 <table className="data-table">
-                  <thead><tr><th>#</th><th>Provider</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+                  <thead><tr><th>Invoice #</th><th>Provider</th><th>Plan</th><th>Amount</th><th>Due Date</th><th>Status</th><th></th></tr></thead>
                   <tbody>
-                    {invoices.map((inv) => (
+                    {invoices.map((inv: any) => (
                       <tr key={inv.id}>
-                        <td>{inv.id}</td>
-                        <td>{escapeHtml(inv.providerName || "—")}</td>
+                        <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{escapeHtml(inv.invoiceNumber || `INV-${inv.id}`)}</td>
+                        <td>{escapeHtml(inv.providerName || "Provider #" + inv.providerId)}</td>
+                        <td>{escapeHtml(inv.planName || inv.planId)}</td>
                         <td>{formatPrice(inv.amount)}</td>
-                        <td><span className={`plan-status`} style={{ background: inv.status === "paid" ? "#d1fae5" : "#fef3c7", color: inv.status === "paid" ? "#065f46" : "#92400e" }}>{inv.status}</span></td>
-                        <td>{inv.status !== "paid" && <button className="btn btn-sm" style={{ background: "var(--success)", color: "#fff" }} onClick={() => markPaid(inv.id)}>Mark paid</button>}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString("en-GB") : "—"}</td>
+                        <td><span className="plan-status" style={{ background: inv.status === "paid" ? "#d1fae5" : inv.status === "overdue" ? "#fee2e2" : "#fef3c7", color: inv.status === "paid" ? "#065f46" : inv.status === "overdue" ? "#991b1b" : "#92400e" }}>{inv.status}</span></td>
+                        <td style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+                          {inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "#fff" }} onClick={() => markPaid(inv.id)}>Pay</RippleButton>}
+                          <button className="btn btn-sm" style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => viewInvoice(inv.id)}>View</button>
+                          <button className="btn btn-sm" style={{ background: "#dc2626", color: "#fff", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => downloadInvoicePdf(inv.id)}>PDF</button>
+                          <button className="btn btn-sm" style={{ background: "var(--primary)", color: "#fff", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => emailInvoice(inv.id)}>Email</button>
+                        </td>
                       </tr>
                     ))}
-                    {invoices.length === 0 && <tr><td colSpan={5}><EmptyState icon="invoices" title="No invoices" description="Invoices will appear here once generated." /></td></tr>}
+                    {invoices.length === 0 && <tr><td colSpan={7}><EmptyState icon="invoices" title="No invoices" description="Generate an invoice or adjust your filters." /></td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -1935,13 +2016,13 @@ function AdminInvoices() {
           {(() => {
             if (oiLoading) return <Spinner />;
             if (oiError) return <ErrorMsg msg={oiError} />;
-            const invoices = oiData?.invoices || [];
+            const oinvoices = oiData?.invoices || [];
             return (
               <div className="table-wrap">
                 <table className="data-table">
                   <thead><tr><th>#</th><th>Order</th><th>Customer</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead>
                   <tbody>
-                    {invoices.map((inv: any) => (
+                    {oinvoices.map((inv: any) => (
                       <tr key={inv.id}>
                         <td>{inv.id}</td>
                         <td>#{inv.orderId}</td>
@@ -1960,7 +2041,7 @@ function AdminInvoices() {
                         </td>
                       </tr>
                     ))}
-                    {invoices.length === 0 && <tr><td colSpan={7}><EmptyState icon="invoices" title="No order invoices" description="Order invoices appear automatically when an order is shipped or delivered." /></td></tr>}
+                    {oinvoices.length === 0 && <tr><td colSpan={7}><EmptyState icon="invoices" title="No order invoices" description="Order invoices appear automatically when an order is shipped or delivered." /></td></tr>}
                   </tbody>
                 </table>
               </div>

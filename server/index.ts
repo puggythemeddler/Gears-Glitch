@@ -89,6 +89,10 @@ import {
   markInvoicePaid,
   generateProviderInvoice,
   getInvoiceRevenue,
+  searchInvoices,
+  markOverdueInvoices,
+  getInvoiceStats,
+  exportInvoicesCsv,
   listOrderInvoices,
   markOrderInvoicePaid,
   createCreditNote,
@@ -293,14 +297,14 @@ import {
   respondToRepairQuote,
 } from "./repairs";
 import * as notifier from "./notify";
-import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail } from "./email";
+import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection } from "./whatsapp";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
 import { htmlToPdf, closeBrowser } from "./pdf";
-import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons } from "./routes/shared";
+import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml } from "./routes/shared";
 
 const PORT: number = Number(process.env.PORT) || 8020;
 const ROOT: string = path.join(__dirname, "..");
@@ -2129,8 +2133,85 @@ app.get("/api/provider/invoices", providerAuthMiddleware, asyncHandler(async (re
   res.json({ invoices: await listInvoices((req as any).provider.sub) });
 }));
 
-app.get("/api/admin/invoices", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ invoices: await listInvoices(), revenue: await getInvoiceRevenue() });
+app.get("/api/admin/invoices", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { status, dateFrom, dateTo, search, page } = req.query as any;
+  if (status || dateFrom || dateTo || search) {
+    const limit = 50;
+    const offset = ((Number(page) || 1) - 1) * limit;
+    const result = await searchInvoices({ status, dateFrom, dateTo, search, limit, offset });
+    res.json({ invoices: result.invoices, total: result.total, stats: await getInvoiceStats() });
+  } else {
+    res.json({ invoices: await listInvoices(), revenue: await getInvoiceRevenue(), stats: await getInvoiceStats() });
+  }
+}));
+
+app.get("/api/admin/invoices/export", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { status, dateFrom, dateTo } = req.query as any;
+  const csv = await exportInvoicesCsv({ status, dateFrom, dateTo });
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="invoices-${new Date().toISOString().split("T")[0]}.csv"`);
+  res.send(csv);
+}));
+
+app.get("/api/admin/invoices/:id/view", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const invoice = await getInvoice(Number(req.params.id));
+  if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
+  const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
+  const settings = await getSettings();
+  const format = req.query.format as string;
+  const html = generateSubscriptionInvoiceHtml({
+    invoice: {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber || `INV-${invoice.id}`,
+      providerName: provider?.company_name || provider?.name || "Unknown",
+      providerEmail: provider?.email || "",
+      planName: invoice.planName,
+      amount: invoice.amount,
+      currency: invoice.currency,
+      status: invoice.status,
+      periodStart: invoice.periodStart,
+      periodEnd: invoice.periodEnd,
+      dueDate: invoice.dueDate || "",
+      notes: invoice.notes || "",
+      createdAt: invoice.createdAt,
+    },
+    store: { name: settings.storeName, email: settings.emailSender || settings.email || "", logo: settings.storeLogo || "", logoPosition: "top-left" },
+  });
+  if (format === "pdf") {
+    const { htmlToPdf } = await import("./pdf");
+    const pdf = await htmlToPdf(html);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${invoice.invoiceNumber || 'invoice-' + invoice.id}.pdf"`);
+    res.send(pdf);
+  } else {
+    res.send(html);
+  }
+}));
+
+app.post("/api/admin/invoices/:id/email", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const invoice = await getInvoice(Number(req.params.id));
+  if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
+  const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
+  if (!provider?.email) { res.status(400).json({ error: "Provider has no email." }); return; }
+  const settings = await getSettings();
+  const dashboardUrl = `${req.protocol}://${req.get("host")}/api/admin/invoices/${invoice.id}/view`;
+  const { subject, html } = subscriptionInvoiceEmail(
+    provider.company_name || provider.name || "Client",
+    invoice.invoiceNumber || `INV-${invoice.id}`,
+    invoice.planName,
+    String(invoice.amount),
+    invoice.currency,
+    invoice.dueDate || "",
+    dashboardUrl
+  );
+  const { sendEmail } = await import("./email");
+  const sent = await sendEmail(provider.email, subject, html, "invoice");
+  res.json({ sent });
+}));
+
+app.post("/api/admin/invoices/mark-overdue", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  const count = await markOverdueInvoices();
+  res.json({ marked: count });
 }));
 
 app.post("/api/admin/invoices/generate", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -4672,8 +4753,23 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   await initDb();
   const startupSettings = await getSettings();
   reconfigureCloudinary(startupSettings.cloudinaryCloudName, startupSettings.cloudinaryApiKey, startupSettings.cloudinaryApiSecret, startupSettings.cloudinaryFolder);
+
+  // Run once on startup: mark overdue invoices
+  try {
+    const overdueCount = await markOverdueInvoices();
+    if (overdueCount > 0) console.log(`[auto-billing] Marked ${overdueCount} overdue invoices on startup.`);
+  } catch {}
+
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+
+    // Auto-billing: check for overdue invoices every 6 hours
+    setInterval(async () => {
+      try {
+        const count = await markOverdueInvoices();
+        if (count > 0) console.log(`[auto-billing] Marked ${count} invoices as overdue.`);
+      } catch (err: any) { console.error("[auto-billing] Error:", err.message); }
+    }, 6 * 60 * 60 * 1000);
   });
   process.on("SIGTERM", async () => { await closeBrowser(); process.exit(0); });
   process.on("SIGINT", async () => { await closeBrowser(); process.exit(0); });
