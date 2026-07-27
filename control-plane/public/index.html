@@ -149,13 +149,15 @@
 
     <div id="tab-plans" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-        <h2>Custom Plans</h2>
+        <h2>Subscription Plans</h2>
         <div style="display:flex;gap:0.5rem">
-          <button class="btn btn-ghost btn-sm" onclick="syncAllPlans()">Sync Plans to All Clients</button>
+          <select id="pull-plans-client" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull from client...</option></select>
+          <button class="btn btn-ghost btn-sm" onclick="pullPlansFromClient()">Pull Plans</button>
+          <button class="btn btn-ghost btn-sm" onclick="syncAllPlans()">Sync All to Clients</button>
           <button class="btn btn-primary btn-sm" onclick="showPlanModal()">+ Create Plan</button>
         </div>
       </div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage subscription plans here. Changes are pushed to all clients when you sync.</p>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage subscription plans with feature toggles. Toggle features on/off per plan, then sync to push changes to all clients.</p>
       <div id="plans-list"></div>
     </div>
 
@@ -164,11 +166,16 @@
         <h2>Changelog</h2>
         <button class="btn btn-primary btn-sm" onclick="showChangelogModal()">+ New Update</button>
       </div>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Publish version updates. All active clients are notified by email automatically.</p>
       <div id="changelog-list"></div>
     </div>
 
     <div id="tab-deploys" style="display:none">
-      <h2 style="margin-bottom:1rem">Deploy Log</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h2>Deploy Log</h2>
+        <button class="btn btn-ghost btn-sm" onclick="deployAll()">Deploy All Clients</button>
+      </div>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Deployment history. Deploys are triggered manually or via GitHub Actions on push to main.</p>
       <div id="deploy-log"></div>
     </div>
 
@@ -177,7 +184,7 @@
         <h2>Database Backups</h2>
         <button class="btn btn-primary btn-sm" onclick="runBackups()">Run Backup Now</button>
       </div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Backups are pg_dump archives of each client's Neon database. Old backups auto-delete after 7 days.</p>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Backups run automatically daily at 3 AM. Uses <code>pg_dump</code> for each client's Neon database. Old backups auto-delete after 7 days. Requires <code>pg_dump</code> CLI on the server (available in Render paid plans).</p>
       <div id="backup-list"></div>
     </div>
 
@@ -272,19 +279,22 @@
 
   <!-- Plan Modal -->
   <div class="modal-overlay" id="plan-modal-overlay">
-    <div class="modal">
+    <div class="modal" style="width:640px;max-height:90vh">
       <h2 id="plan-modal-title">Create Plan</h2>
-      <div class="field"><label>Plan ID</label><input type="text" id="plan-id" placeholder="e.g. custom-basic"></div>
-      <div class="field"><label>Name</label><input type="text" id="plan-name" placeholder="e.g. Custom Basic"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div class="field"><label>Plan ID</label><input type="text" id="plan-id" placeholder="e.g. custom-basic"></div>
+        <div class="field"><label>Name</label><input type="text" id="plan-name" placeholder="e.g. Custom Basic"></div>
+        <div class="field"><label>Monthly Price (KES)</label><input type="number" id="plan-price" value="0" min="0"></div>
+        <div class="field"><label>Annual Price (KES)</label><input type="number" id="plan-price-annual" value="0" min="0"></div>
+        <div class="field"><label>Tier Level</label><input type="number" id="plan-tier" value="1" min="1"></div>
+        <div class="field"><label>Max Products</label><input type="number" id="plan-max-products" value="50" min="0"></div>
+        <div class="field"><label>Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
+        <div class="field" style="display:flex;align-items:end"><label style="margin:0"><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label></div>
+      </div>
       <div class="field"><label>Description</label><input type="text" id="plan-desc" placeholder="e.g. For small shops"></div>
-      <div class="field"><label>Monthly Price (KES)</label><input type="number" id="plan-price" value="0" min="0"></div>
-      <div class="field"><label>Annual Price (KES)</label><input type="number" id="plan-price-annual" value="0" min="0"></div>
-      <div class="field"><label>Tier Level</label><input type="number" id="plan-tier" value="1" min="1"></div>
-      <div class="field"><label>Max Products</label><input type="number" id="plan-max-products" value="50" min="0"></div>
-      <div class="field"><label>Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
-      <div class="field"><label>Features (one per line)</label><textarea id="plan-features" rows="6" placeholder="Up to 50 products&#10;1 branch&#10;Basic support"></textarea></div>
       <div class="field">
-        <label><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label>
+        <label>Features</label>
+        <div id="feature-groups-container" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hidePlanModal()">Cancel</button>
@@ -296,6 +306,60 @@
   <script>
     let allClients = [];
     let editingClientId = null;
+    let editingPlanFeatures = [];
+
+    const FEATURE_GROUPS = [
+      { group: "Core Commerce", icon: "💳", features: ["Product listing","Order management","POS integration","Payment method configuration","M-Pesa integration","Discount/coupon management","Returns management","Customer management"] },
+      { group: "Inventory & Stock", icon: "📦", features: ["Low stock alerts","Stock take / inventory count","Stock transfers","Supplier management","Purchase order management","Barcode scanning","Bulk import/export","Bulk product edit","Inventory forecasting"] },
+      { group: "Invoicing & Finance", icon: "🧾", features: ["eTIMS/KRA compliance","Invoice/quote PDF downloads","Credit notes","Quotations","Price history tracking"] },
+      { group: "Repairs & Service", icon: "🔧", features: ["Repair ticketing","Technician accounts"] },
+      { group: "Customer Engagement", icon: "💬", features: ["Messaging","Admin messaging","Email notifications","SMS notifications","Product reviews & ratings","Customer reviews","Loyalty program"] },
+      { group: "WhatsApp & Communication", icon: "📱", features: ["WhatsApp integration"] },
+      { group: "Multi-Location", icon: "🏢", features: ["Branch management","Multi-branch support","Client/tenant management"] },
+      { group: "Marketing & Storefront", icon: "🌐", features: ["Product positioning","Hero customization","Theme customization","Custom branding","Shop subscription"] },
+      { group: "Analytics & Security", icon: "📊", features: ["Analytics dashboard","Audit log"] },
+      { group: "Support & Account", icon: "🛡", features: ["Google Sign-In","Multiple staff accounts","Spec templates","Priority support","Dedicated account manager"] },
+      { group: "Payments & Currency", icon: "💱", features: ["Multi-currency support","API access"] },
+    ];
+
+    function renderFeatureGroups(selectedFeatures) {
+      const container = document.getElementById("feature-groups-container");
+      let html = "";
+      for (const grp of FEATURE_GROUPS) {
+        const allOn = grp.features.every(f => selectedFeatures.includes(f));
+        const count = grp.features.filter(f => selectedFeatures.includes(f)).length;
+        html += `<details open style="margin-bottom:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
+          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'rgba(59,130,246,0.1)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="event.preventDefault();this.parentElement.open=!this.parentElement.open">
+            <span style="font-size:0.65rem;opacity:0.5;transition:transform 0.2s;transform:${allOn ? 'rotate(90deg)' : 'none'}">&#9654;</span>
+            <span>${grp.icon}</span>
+            <span style="flex:1">${grp.group}</span>
+            <span style="font-size:0.7rem;font-weight:400;opacity:0.6">${count}/${grp.features.length}</span>
+            <label style="font-size:0.7rem;font-weight:400;padding:0.1rem 0.4rem;border-radius:4px;background:${allOn ? 'var(--primary)' : 'var(--border)'};color:${allOn ? '#fff' : 'var(--text)'};cursor:pointer" onclick="event.stopPropagation()">
+              <input type="checkbox" ${allOn ? 'checked' : ''} onchange="toggleFeatureGroup('${grp.group}', this.checked)" style="display:none">
+              ${allOn ? 'All' : 'Select all'}
+            </label>
+          </summary>
+          <div style="display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.5rem 0.75rem 0.75rem">
+            ${grp.features.map(f => `<label style="display:inline-flex;align-items:center;gap:0.2rem;font-size:0.78rem;cursor:pointer;padding:0.2rem 0.5rem;border-radius:6px;background:${selectedFeatures.includes(f) ? 'var(--primary)' : 'var(--bg)'};color:${selectedFeatures.includes(f) ? '#fff' : 'var(--text)'};border:1px solid ${selectedFeatures.includes(f) ? 'var(--primary)' : 'var(--border)'}"><input type="checkbox" ${selectedFeatures.includes(f) ? 'checked' : ''} onchange="toggleFeature('${f}', this.checked)" style="display:none">${f}</label>`).join('')}
+          </div>
+        </details>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function toggleFeature(feature, on) {
+      if (on) { if (!editingPlanFeatures.includes(feature)) editingPlanFeatures.push(feature); }
+      else { editingPlanFeatures = editingPlanFeatures.filter(f => f !== feature); }
+      renderFeatureGroups(editingPlanFeatures);
+    }
+
+    function toggleFeatureGroup(groupName, on) {
+      const grp = FEATURE_GROUPS.find(g => g.group === groupName);
+      if (!grp) return;
+      if (on) { editingPlanFeatures = [...new Set([...editingPlanFeatures, ...grp.features])]; }
+      else { editingPlanFeatures = editingPlanFeatures.filter(f => !grp.features.includes(f)); }
+      renderFeatureGroups(editingPlanFeatures);
+    }
 
     function api(path, opts = {}) {
       const key = localStorage.getItem("cp-api-key") || prompt("Enter Control Plane API Key:");
@@ -316,6 +380,11 @@
         allClients = data.clients || [];
         renderStats(allClients);
         renderTable(allClients);
+        // Populate pull-plans dropdown
+        const dd = document.getElementById("pull-plans-client");
+        const cur = dd.value;
+        dd.innerHTML = '<option value="">Pull from client...</option>' + allClients.filter(c => c.status === "active" && c.render_service_url).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+        dd.value = cur;
       } catch { document.getElementById("client-list").innerHTML = '<div class="empty"><p>Failed to load clients.</p></div>'; }
     }
 
@@ -482,7 +551,7 @@
       try {
         const data = await api("/api/changelog");
         const entries = data.entries || [];
-        if (!entries.length) { document.getElementById("changelog-list").innerHTML = '<div class="empty"><p>No updates published yet.</p></div>'; return; }
+        if (!entries.length) { document.getElementById("changelog-list").innerHTML = '<div class="empty"><p>No updates published yet. Click "+ New Update" to publish your first changelog entry. All active clients will be notified by email.</p></div>'; return; }
         let html = "";
         for (const e of entries) {
           html += `<div class="detail-panel"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">${esc(e.title)}</h2><span style="font-size:0.8rem;color:var(--text-muted)">${new Date(e.created_at).toLocaleDateString()}</span></div><div style="font-size:0.85rem;color:var(--primary);margin:0.5rem 0">${esc(e.version)}</div><div style="font-size:0.9rem;color:var(--text-secondary);white-space:pre-wrap">${esc(e.body)}</div></div>`;
@@ -507,7 +576,7 @@
       try {
         const data = await api("/api/deploys");
         const entries = data.entries || [];
-        if (!entries.length) { document.getElementById("deploy-log").innerHTML = '<div class="empty"><p>No deploys yet.</p></div>'; return; }
+        if (!entries.length) { document.getElementById("deploy-log").innerHTML = '<div class="empty"><p>No deploys yet. Click "Deploy All Clients" or push to main to trigger auto-deploys via GitHub Actions.</p></div>'; return; }
         let html = '<table><thead><tr><th>Client</th><th>Status</th><th>Triggered</th><th>Completed</th></tr></thead><tbody>';
         for (const e of entries) {
           html += `<tr><td>${esc(e.client_name)}</td><td><span class="badge badge-${e.status === 'success' ? 'active' : e.status === 'failed' ? 'failed' : 'provisioning'}">${e.status}</span></td><td>${new Date(e.triggered_at).toLocaleString()}</td><td>${e.completed_at ? new Date(e.completed_at).toLocaleString() : '—'}</td></tr>`;
@@ -523,36 +592,48 @@
     // ─── PLANS ────────────────────────────────────────────
     let editingPlanId = null;
 
+    function parsePlanFeatures(raw) {
+      if (Array.isArray(raw)) return raw;
+      if (typeof raw === "string") { try { const p = JSON.parse(raw); if (Array.isArray(p)) return p; } catch { return raw.split(",").map(s => s.trim()).filter(Boolean); } }
+      return [];
+    }
+
     async function loadPlans() {
       try {
         const data = await api("/api/plans");
         const plans = data.plans || [];
-        if (!plans.length) { document.getElementById("plans-list").innerHTML = '<div class="empty"><p>No custom plans yet. Create one to get started.</p></div>'; return; }
-        let html = '<table><thead><tr><th>ID</th><th>Name</th><th>Price/mo</th><th>Price/yr</th><th>Tier</th><th>Products</th><th>Branches</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+        if (!plans.length) { document.getElementById("plans-list").innerHTML = '<div class="empty"><p>No plans yet. Create one or pull from an existing client.</p></div>'; return; }
+        let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem">';
         for (const p of plans) {
-          html += `<tr>
-            <td style="font-family:monospace;font-size:0.82rem">${esc(p.id)}</td>
-            <td><strong>${esc(p.name)}</strong><br><span style="color:var(--text-muted);font-size:0.75rem">${esc(p.description || '')}</span></td>
-            <td>KES ${Number(p.price).toLocaleString()}</td>
-            <td>${p.price_annual ? 'KES ' + Number(p.price_annual).toLocaleString() : '—'}</td>
-            <td>${p.tier_level}</td>
-            <td>${p.max_products || '∞'}</td>
-            <td>${p.max_branches || '∞'}</td>
-            <td><span class="badge badge-${p.is_active ? 'active' : 'suspended'}">${p.is_active ? 'Active' : 'Inactive'}</span></td>
-            <td><div class="actions-cell">
-              <button class="btn btn-ghost btn-sm" onclick="editPlan('${esc(p.id)}')">Edit</button>
-              <button class="btn btn-ghost btn-sm" onclick="togglePlanActive('${esc(p.id)}', ${!p.is_active})">${p.is_active ? 'Deactivate' : 'Activate'}</button>
-              <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}', '${esc(p.name)}')">Delete</button>
-            </div></td>
-          </tr>`;
+          const features = parsePlanFeatures(p.features);
+          const active = p.is_active;
+          html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;opacity:${active ? 1 : 0.55}">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.5rem">
+              <div>
+                <strong style="font-size:1rem">${esc(p.name)}</strong>
+                <span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:4px;background:${active ? 'var(--success)' : 'var(--border)'};color:${active ? '#fff' : 'var(--text-muted)'};margin-left:0.4rem;font-weight:600">${active ? 'Active' : 'Inactive'}</span>
+              </div>
+              <div style="display:flex;gap:0.25rem">
+                <button class="btn btn-ghost btn-sm" onclick="editPlan('${esc(p.id)}')">Edit</button>
+                <button class="btn btn-ghost btn-sm" onclick="togglePlanActive('${esc(p.id)}', ${!active})">${active ? 'Deactivate' : 'Activate'}</button>
+                <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}', '${esc(p.name)}')">Del</button>
+              </div>
+            </div>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">${esc(p.description || 'No description')}</div>
+            <div style="font-size:1.15rem;font-weight:700;color:var(--primary);margin-bottom:0.25rem">KES ${Number(p.price).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;opacity:0.6">/mo</span></div>
+            ${p.price_annual ? `<div style="font-size:0.85rem;color:var(--primary);margin-bottom:0.25rem">KES ${Number(p.price_annual).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;opacity:0.6">/yr</span></div>` : ''}
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">Tier ${p.tier_level} · ${p.max_products || '∞'} products · ${p.max_branches || '∞'} branches</div>
+            ${features.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.5rem">${features.slice(0, 12).map(f => `<span style="font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:4px;background:rgba(59,130,246,0.1);color:var(--primary)">${esc(f)}</span>`).join('')}${features.length > 12 ? `<span style="font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--border);color:var(--text-muted)">+${features.length - 12} more</span>` : ''}</div>` : ''}
+          </div>`;
         }
-        html += '</tbody></table>';
+        html += '</div>';
         document.getElementById("plans-list").innerHTML = html;
       } catch { document.getElementById("plans-list").innerHTML = '<div class="empty"><p>Failed to load plans.</p></div>'; }
     }
 
     function showPlanModal(plan) {
       editingPlanId = plan ? plan.id : null;
+      editingPlanFeatures = plan ? parsePlanFeatures(plan.features) : [];
       document.getElementById("plan-modal-title").textContent = plan ? "Edit Plan" : "Create Plan";
       document.getElementById("plan-id").value = plan ? plan.id : "";
       document.getElementById("plan-id").disabled = !!plan;
@@ -563,17 +644,12 @@
       document.getElementById("plan-tier").value = plan ? plan.tier_level : 1;
       document.getElementById("plan-max-products").value = plan ? (plan.max_products || 0) : 50;
       document.getElementById("plan-max-branches").value = plan ? (plan.max_branches || 1) : 1;
-      let features = "";
-      if (plan && plan.features) {
-        const f = typeof plan.features === "string" ? JSON.parse(plan.features) : plan.features;
-        features = Array.isArray(f) ? f.join("\n") : "";
-      }
-      document.getElementById("plan-features").value = features;
       document.getElementById("plan-active").checked = plan ? plan.is_active : true;
+      renderFeatureGroups(editingPlanFeatures);
       document.getElementById("plan-modal-overlay").classList.add("show");
     }
 
-    function hidePlanModal() { document.getElementById("plan-modal-overlay").classList.remove("show"); editingPlanId = null; }
+    function hidePlanModal() { document.getElementById("plan-modal-overlay").classList.remove("show"); editingPlanId = null; editingPlanFeatures = []; }
 
     async function savePlan() {
       const id = document.getElementById("plan-id").value.trim();
@@ -584,8 +660,7 @@
       const tier = Number(document.getElementById("plan-tier").value) || 1;
       const maxProducts = Number(document.getElementById("plan-max-products").value) || 0;
       const maxBranches = Number(document.getElementById("plan-max-branches").value) || 1;
-      const featuresText = document.getElementById("plan-features").value.trim();
-      const features = featuresText ? featuresText.split("\n").map(s => s.trim()).filter(Boolean) : [];
+      const features = editingPlanFeatures;
       const isActive = document.getElementById("plan-active").checked;
 
       if (!name) { toast("Name required", "error"); return; }
@@ -628,6 +703,16 @@
         const r = data.results || [];
         toast(`Synced: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`);
       } catch (e) { toast("Failed", "error"); }
+    }
+
+    async function pullPlansFromClient() {
+      const clientId = document.getElementById("pull-plans-client").value;
+      if (!clientId) { toast("Select a client first", "error"); return; }
+      toast("Pulling plans from client...");
+      try {
+        const data = await api("/api/clients/" + clientId + "/pull-plans", { method: "POST" });
+        toast(data.message || "Plans imported."); loadPlans();
+      } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
     // ─── UPGRADE REQUESTS ─────────────────────────────────
@@ -689,7 +774,7 @@
       try {
         const data = await api("/api/backups");
         const files = data.files || [];
-        if (!files.length) { document.getElementById("backup-list").innerHTML = '<div class="empty"><p>No backups yet. Click "Run Backup Now" to create one.</p></div>'; return; }
+        if (!files.length) { document.getElementById("backup-list").innerHTML = '<div class="empty"><p>No backups yet. Auto-backups run daily at 3 AM, or click "Run Backup Now" to create one immediately. Requires pg_dump CLI on the server.</p></div>'; return; }
         let html = '<table><thead><tr><th>File</th><th>Size</th><th>Date</th></tr></thead><tbody>';
         for (const f of files) {
           html += `<tr><td style="font-family:monospace;font-size:0.82rem">${esc(f.name)}</td><td>${f.size}</td><td>${new Date(f.date).toLocaleString()}</td></tr>`;

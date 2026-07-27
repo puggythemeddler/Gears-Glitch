@@ -53,7 +53,7 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/clients", requireApiKey, async (_req, res) => {
   try {
     const clients = await queryAll(
-      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status FROM clients ORDER BY created_at DESC"
+      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes FROM clients ORDER BY created_at DESC"
     );
     res.json({ clients });
   } catch (err: any) {
@@ -231,7 +231,7 @@ app.post("/api/health-check", requireApiKey, async (_req, res) => {
       );
       await query(
         "INSERT INTO health_log (client_id, status) VALUES ($1, $2)",
-        [c.id, c.id]
+        [c.id, status]
       );
       // Recalculate uptime
       const stats: any = await queryOne(
@@ -471,6 +471,34 @@ app.get("/api/plans", requireApiKey, async (_req, res) => {
     res.json({ plans });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to get plans" });
+  }
+});
+
+// Pull plans from a live client backend
+app.post("/api/clients/:id/pull-plans", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const result = await fetch(`${client.render_service_url}/api/plans`, { signal: AbortSignal.timeout(15000) });
+    if (!result.ok) { res.status(502).json({ error: `Client returned ${result.status}` }); return; }
+    const data: any = await result.json();
+    const plans = data.plans || [];
+    let imported = 0;
+    for (const p of plans) {
+      await query(
+        `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10`,
+        [p.id, p.name, p.description || "", p.price || 0, p.priceAnnual || p.price_annual || null, p.tierLevel || p.tier_level || 1, p.maxProducts || p.max_products || 50, p.maxBranches || p.max_branches || 1, JSON.stringify(p.features || []), p.isActive !== undefined ? p.isActive : (p.is_active !== undefined ? p.is_active : true)]
+      );
+      imported++;
+    }
+    res.json({ message: `Imported ${imported} plans from "${client.name}".`, imported });
+  } catch (err: any) {
+    console.error("[api] Pull plans error:", err.message);
+    res.status(500).json({ error: "Failed to pull plans from client" });
   }
 });
 
@@ -767,6 +795,69 @@ setInterval(async () => {
   }
 }, 5 * 60 * 1000);
 
+// ─── AUTO BACKUP (daily at 3 AM) ────────────────────────────
+function scheduleAutoBackup() {
+  const now = new Date();
+  const next3AM = new Date(now);
+  next3AM.setHours(3, 0, 0, 0);
+  if (next3AM <= now) next3AM.setDate(next3AM.getDate() + 1);
+  const delay = next3AM.getTime() - now.getTime();
+  setTimeout(async () => {
+    try {
+      if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+      const clients = await queryAll("SELECT id, name, neon_db_url FROM clients WHERE status = 'active' AND neon_db_url != ''");
+      for (const c of clients as { id: number; name: string; neon_db_url: string }[]) {
+        const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
+        const filepath = path.join(BACKUP_DIR, `${slug}_${new Date().toISOString().split("T")[0]}.sql.gz`);
+        try {
+          await execAsync(`pg_dump "${c.neon_db_url}" | gzip > "${filepath}"`, { timeout: 120000 });
+          await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup"]);
+        } catch {}
+      }
+      // Cleanup backups older than 7 days
+      try {
+        const files = fs.readdirSync(BACKUP_DIR);
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        for (const f of files) {
+          const fp = path.join(BACKUP_DIR, f);
+          if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
+        }
+      } catch {}
+      console.log(`[auto-backup] Backed up ${clients.length} clients.`);
+    } catch (err: any) { console.error("[auto-backup] Error:", err.message); }
+    scheduleAutoBackup();
+  }, delay);
+}
+
+// ─── STARTUP HEALTH CHECK ──────────────────────────────────
+async function runStartupHealthCheck() {
+  try {
+    const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active'");
+    if (!clients.length) return;
+    console.log(`[startup-health] Checking ${clients.length} clients...`);
+    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
+      try {
+        const status = await checkClientHealth(c.render_service_url);
+        await query(
+          "UPDATE clients SET health_status = $1, last_health_check = NOW(), total_checks = total_checks + 1, failed_checks = failed_checks + CASE WHEN $1 != 'healthy' THEN 1 ELSE 0 END WHERE id = $2",
+          [status, c.id]
+        );
+        await query("INSERT INTO health_log (client_id, status) VALUES ($1, $2)", [c.id, status]);
+        const stats: any = await queryOne("SELECT total_checks, failed_checks FROM clients WHERE id = $1", [c.id]);
+        if (stats && stats.total_checks > 0) {
+          const uptimePct = ((stats.total_checks - stats.failed_checks) / stats.total_checks) * 100;
+          await query("UPDATE clients SET uptime_pct = $1 WHERE id = $2", [uptimePct, c.id]);
+        }
+        const usage = await fetchClientUsage(c.render_service_url);
+        if (usage) {
+          await query("UPDATE clients SET usage_orders = $1, usage_customers = $2, usage_revenue = $3 WHERE id = $4", [usage.orders || 0, usage.customers || 0, usage.revenue || 0, c.id]);
+        }
+      } catch {}
+    }
+    console.log("[startup-health] Done.");
+  } catch {}
+}
+
 // ─── SPA FALLBACK ────────────────────────────────────────
 app.get("*", (_req, res) => {
   res.sendFile(path.join(__dirname, "..", "..", "public", "index.html"));
@@ -777,6 +868,8 @@ async function start() {
   await initControlPlaneDb();
   app.listen(PORT, () => {
     console.log(`[control-plane] Running on http://localhost:${PORT}`);
+    setTimeout(runStartupHealthCheck, 5000);
+    scheduleAutoBackup();
   });
 }
 

@@ -324,9 +324,12 @@ export async function checkClientHealth(
   if (!renderServiceUrl) return "down";
   try {
     const res = await fetch(`${renderServiceUrl}/api/health`, {
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(45000),
     });
-    return res.ok ? "healthy" : "down";
+    if (res.ok) return "healthy";
+    // Render free tier returns 503 while waking from sleep
+    if (res.status === 503 || res.status === 502) return "sleeping";
+    return "down";
   } catch {
     return "sleeping";
   }
