@@ -136,6 +136,32 @@ app.post("/api/clients", requireApiKey, async (req, res) => {
   }
 });
 
+// Add existing client (no provisioning — just records existing URLs)
+app.post("/api/clients/existing", requireApiKey, async (req, res) => {
+  try {
+    const { name, adminEmail, plan, domain, backendUrl, frontendUrl } = req.body || {};
+    if (!name || !adminEmail) {
+      res.status(400).json({ error: "name and adminEmail are required" });
+      return;
+    }
+
+    const result = await query(
+      `INSERT INTO clients (name, domain, admin_email, plan, status, render_service_url, vercel_project_url, health_status)
+       VALUES ($1, $2, $3, $4, 'active', $5, $6, 'unknown')
+       RETURNING id`,
+      [name, domain || "", adminEmail, plan || "growth", backendUrl || "", frontendUrl || ""]
+    );
+
+    res.status(201).json({
+      clientId: result.rows[0].id,
+      message: `Client "${name}" added successfully.`,
+    });
+  } catch (err: any) {
+    console.error("[api] Add existing client error:", err.message);
+    res.status(500).json({ error: "Failed to add client" });
+  }
+});
+
 // Delete client
 app.delete("/api/clients/:id", requireApiKey, async (req, res) => {
   try {

@@ -96,6 +96,7 @@
       <div class="header-actions">
         <button class="btn btn-ghost" onclick="healthCheckAll()">Health Check</button>
         <button class="btn btn-ghost" onclick="deployAll()">Deploy All</button>
+        <button class="btn btn-ghost" onclick="showExistingModal()">+ Add Existing</button>
         <button class="btn btn-primary" onclick="showModal()">+ Add Client</button>
       </div>
     </header>
@@ -145,6 +146,47 @@
     </div>
   </div>
 
+  <!-- Add Existing Client Modal -->
+  <div class="modal-overlay" id="existing-modal-overlay">
+    <div class="modal">
+      <h2>Add Existing Client</h2>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Register an existing deployment without provisioning new resources.</p>
+      <div class="field">
+        <label>Business Name</label>
+        <input type="text" id="inp-ex-name" placeholder="e.g. Gear&Glitch Store">
+      </div>
+      <div class="field">
+        <label>Admin Email</label>
+        <input type="email" id="inp-ex-email" placeholder="e.g. admin@gearglitch.com">
+      </div>
+      <div class="field">
+        <label>Backend URL</label>
+        <input type="text" id="inp-ex-backend" placeholder="e.g. https://gears-glitch.onrender.com">
+      </div>
+      <div class="field">
+        <label>Frontend URL</label>
+        <input type="text" id="inp-ex-frontend" placeholder="e.g. https://gears-glitch.vercel.app">
+      </div>
+      <div class="field">
+        <label>Domain (optional)</label>
+        <input type="text" id="inp-ex-domain" placeholder="e.g. gearglitch.com">
+      </div>
+      <div class="field">
+        <label>Plan</label>
+        <select id="inp-ex-plan">
+          <option value="starter">Starter</option>
+          <option value="growth" selected>Growth</option>
+          <option value="pro">Pro</option>
+          <option value="enterprise">Enterprise</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="hideExistingModal()">Cancel</button>
+        <button class="btn btn-primary" id="btn-add-existing" onclick="addExistingClient()">Add Client</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const API_KEY = localStorage.getItem("cp-api-key") || "";
 
@@ -185,6 +227,43 @@
 
     function hideModal() {
       document.getElementById("modal-overlay").classList.remove("show");
+    }
+
+    function showExistingModal() {
+      document.getElementById("existing-modal-overlay").classList.add("show");
+      document.getElementById("inp-ex-name").value = "";
+      document.getElementById("inp-ex-email").value = "";
+      document.getElementById("inp-ex-backend").value = "";
+      document.getElementById("inp-ex-frontend").value = "";
+      document.getElementById("inp-ex-domain").value = "";
+      document.getElementById("inp-ex-plan").value = "growth";
+    }
+
+    function hideExistingModal() {
+      document.getElementById("existing-modal-overlay").classList.remove("show");
+    }
+
+    async function addExistingClient() {
+      const name = document.getElementById("inp-ex-name").value.trim();
+      const email = document.getElementById("inp-ex-email").value.trim();
+      const backendUrl = document.getElementById("inp-ex-backend").value.trim();
+      const frontendUrl = document.getElementById("inp-ex-frontend").value.trim();
+      const domain = document.getElementById("inp-ex-domain").value.trim();
+      const plan = document.getElementById("inp-ex-plan").value;
+
+      if (!name || !email) { toast("Name and email are required", "error"); return; }
+
+      document.getElementById("btn-add-existing").disabled = true;
+      try {
+        const data = await api("/api/clients/existing", {
+          method: "POST",
+          body: JSON.stringify({ name, adminEmail: email, plan, domain, backendUrl, frontendUrl }),
+        });
+        if (data.error) { toast(data.error, "error"); document.getElementById("btn-add-existing").disabled = false; return; }
+        toast(data.message);
+        hideExistingModal();
+        loadClients();
+      } catch (e) { toast("Failed: " + e.message, "error"); document.getElementById("btn-add-existing").disabled = false; }
     }
 
     async function loadClients() {
