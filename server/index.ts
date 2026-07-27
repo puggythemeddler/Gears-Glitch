@@ -1025,6 +1025,33 @@ app.delete("/api/admin/plans/:id", adminAuthMiddleware, asyncHandler(async (req:
   }
 }));
 
+// ============ PLAN SYNC (from Control Plane) ============
+app.put("/api/plans/sync", asyncHandler(async (req: Request, res: Response) => {
+  const { plans } = req.body || {};
+  if (!Array.isArray(plans)) { res.status(400).json({ error: "plans array required" }); return; }
+
+  for (const p of plans) {
+    const existing = await getSubscriptionPlan(p.id);
+    if (existing) {
+      await updateSubscriptionPlan(p.id, {
+        name: p.name, description: p.description, price: p.price,
+        priceAnnual: p.priceAnnual, tierLevel: p.tierLevel,
+        maxProducts: p.maxProducts, maxBranches: p.maxBranches,
+        features: p.features, isActive: p.isActive,
+      });
+    } else {
+      await createSubscriptionPlan({
+        id: p.id, name: p.name, description: p.description, price: p.price,
+        priceAnnual: p.priceAnnual, tierLevel: p.tierLevel,
+        maxProducts: p.maxProducts, maxBranches: p.maxBranches,
+        features: p.features, isActive: p.isActive,
+      });
+    }
+  }
+
+  res.json({ ok: true, synced: plans.length });
+}));
+
 // ============ BRANCHES ============
 
 app.get("/api/admin/branches", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -4155,7 +4182,9 @@ app.delete("/api/admin/splashes/:id", staffAuthMiddleware, requirePermission("re
 
 app.get("/api/shop/subscription", staffAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   const plan = await getShopPlan();
-  res.json({ plan });
+  const activatedRow = await queryOne("SELECT value FROM settings WHERE key = 'subscription_activated_at'") as any;
+  const activatedAt = activatedRow?.value || null;
+  res.json({ plan, activatedAt });
 }));
 
 app.put("/api/shop/subscription", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {

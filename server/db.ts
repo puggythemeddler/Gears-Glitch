@@ -2673,6 +2673,7 @@ async function setShopPlan(planId: string): Promise<boolean> {
   const plan = await getSubscriptionPlan(planId);
   if (!plan) return false;
   await query("INSERT INTO settings (key, value) VALUES ('shop_plan_id', $1) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [planId]);
+  await query("INSERT INTO settings (key, value) VALUES ('subscription_activated_at', $1) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [new Date().toISOString()]);
   return true;
 }
 

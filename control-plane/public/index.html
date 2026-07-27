@@ -125,6 +125,7 @@
 
     <div class="tabs">
       <button class="tab active" onclick="switchTab('clients', this)">Clients</button>
+      <button class="tab" onclick="switchTab('plans', this)">Plans</button>
       <button class="tab" onclick="switchTab('changelog', this)">Changelog</button>
       <button class="tab" onclick="switchTab('deploys', this)">Deploy Log</button>
       <button class="tab" onclick="switchTab('backups', this)">Backups</button>
@@ -138,6 +139,19 @@
         <div class="stat-card"><div class="value" id="stat-orders">0</div><div class="label">Total Orders</div></div>
       </div>
       <div id="client-list"></div>
+      <div id="upgrade-requests" style="margin-top:2rem"></div>
+    </div>
+
+    <div id="tab-plans" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h2>Custom Plans</h2>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-ghost btn-sm" onclick="syncAllPlans()">Sync Plans to All Clients</button>
+          <button class="btn btn-primary btn-sm" onclick="showPlanModal()">+ Create Plan</button>
+        </div>
+      </div>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage subscription plans here. Changes are pushed to all clients when you sync.</p>
+      <div id="plans-list"></div>
     </div>
 
     <div id="tab-changelog" style="display:none">
@@ -234,6 +248,29 @@
     </div>
   </div>
 
+  <!-- Plan Modal -->
+  <div class="modal-overlay" id="plan-modal-overlay">
+    <div class="modal">
+      <h2 id="plan-modal-title">Create Plan</h2>
+      <div class="field"><label>Plan ID</label><input type="text" id="plan-id" placeholder="e.g. custom-basic"></div>
+      <div class="field"><label>Name</label><input type="text" id="plan-name" placeholder="e.g. Custom Basic"></div>
+      <div class="field"><label>Description</label><input type="text" id="plan-desc" placeholder="e.g. For small shops"></div>
+      <div class="field"><label>Monthly Price (KES)</label><input type="number" id="plan-price" value="0" min="0"></div>
+      <div class="field"><label>Annual Price (KES)</label><input type="number" id="plan-price-annual" value="0" min="0"></div>
+      <div class="field"><label>Tier Level</label><input type="number" id="plan-tier" value="1" min="1"></div>
+      <div class="field"><label>Max Products</label><input type="number" id="plan-max-products" value="50" min="0"></div>
+      <div class="field"><label>Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
+      <div class="field"><label>Features (one per line)</label><textarea id="plan-features" rows="6" placeholder="Up to 50 products&#10;1 branch&#10;Basic support"></textarea></div>
+      <div class="field">
+        <label><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="hidePlanModal()">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-plan" onclick="savePlan()">Save Plan</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let allClients = [];
     let editingClientId = null;
@@ -254,12 +291,15 @@
       document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
       el.classList.add("active");
       document.getElementById("tab-clients").style.display = tab === "clients" ? "" : "none";
+      document.getElementById("tab-plans").style.display = tab === "plans" ? "" : "none";
       document.getElementById("tab-changelog").style.display = tab === "changelog" ? "" : "none";
       document.getElementById("tab-deploys").style.display = tab === "deploys" ? "" : "none";
       document.getElementById("tab-backups").style.display = tab === "backups" ? "" : "none";
+      if (tab === "plans") loadPlans();
       if (tab === "changelog") loadChangelog();
       if (tab === "deploys") loadDeploys();
       if (tab === "backups") loadBackups();
+      if (tab === "clients") loadUpgradeRequests();
     }
 
     // ─── CLIENTS ──────────────────────────────────────────
@@ -451,6 +491,170 @@
 
     loadClients();
     setInterval(loadClients, 60000);
+
+    // ─── PLANS ────────────────────────────────────────────
+    let editingPlanId = null;
+
+    async function loadPlans() {
+      try {
+        const data = await api("/api/plans");
+        const plans = data.plans || [];
+        if (!plans.length) { document.getElementById("plans-list").innerHTML = '<div class="empty"><p>No custom plans yet. Create one to get started.</p></div>'; return; }
+        let html = '<table><thead><tr><th>ID</th><th>Name</th><th>Price/mo</th><th>Price/yr</th><th>Tier</th><th>Products</th><th>Branches</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+        for (const p of plans) {
+          html += `<tr>
+            <td style="font-family:monospace;font-size:0.82rem">${esc(p.id)}</td>
+            <td><strong>${esc(p.name)}</strong><br><span style="color:var(--text-muted);font-size:0.75rem">${esc(p.description || '')}</span></td>
+            <td>KES ${Number(p.price).toLocaleString()}</td>
+            <td>${p.price_annual ? 'KES ' + Number(p.price_annual).toLocaleString() : '—'}</td>
+            <td>${p.tier_level}</td>
+            <td>${p.max_products || '∞'}</td>
+            <td>${p.max_branches || '∞'}</td>
+            <td><span class="badge badge-${p.is_active ? 'active' : 'suspended'}">${p.is_active ? 'Active' : 'Inactive'}</span></td>
+            <td><div class="actions-cell">
+              <button class="btn btn-ghost btn-sm" onclick="editPlan('${esc(p.id)}')">Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="togglePlanActive('${esc(p.id)}', ${!p.is_active})">${p.is_active ? 'Deactivate' : 'Activate'}</button>
+              <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}', '${esc(p.name)}')">Delete</button>
+            </div></td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+        document.getElementById("plans-list").innerHTML = html;
+      } catch { document.getElementById("plans-list").innerHTML = '<div class="empty"><p>Failed to load plans.</p></div>'; }
+    }
+
+    function showPlanModal(plan) {
+      editingPlanId = plan ? plan.id : null;
+      document.getElementById("plan-modal-title").textContent = plan ? "Edit Plan" : "Create Plan";
+      document.getElementById("plan-id").value = plan ? plan.id : "";
+      document.getElementById("plan-id").disabled = !!plan;
+      document.getElementById("plan-name").value = plan ? plan.name : "";
+      document.getElementById("plan-desc").value = plan ? (plan.description || "") : "";
+      document.getElementById("plan-price").value = plan ? plan.price : 0;
+      document.getElementById("plan-price-annual").value = plan ? (plan.price_annual || 0) : 0;
+      document.getElementById("plan-tier").value = plan ? plan.tier_level : 1;
+      document.getElementById("plan-max-products").value = plan ? (plan.max_products || 0) : 50;
+      document.getElementById("plan-max-branches").value = plan ? (plan.max_branches || 1) : 1;
+      let features = "";
+      if (plan && plan.features) {
+        const f = typeof plan.features === "string" ? JSON.parse(plan.features) : plan.features;
+        features = Array.isArray(f) ? f.join("\n") : "";
+      }
+      document.getElementById("plan-features").value = features;
+      document.getElementById("plan-active").checked = plan ? plan.is_active : true;
+      document.getElementById("plan-modal-overlay").classList.add("show");
+    }
+
+    function hidePlanModal() { document.getElementById("plan-modal-overlay").classList.remove("show"); editingPlanId = null; }
+
+    async function savePlan() {
+      const id = document.getElementById("plan-id").value.trim();
+      const name = document.getElementById("plan-name").value.trim();
+      const desc = document.getElementById("plan-desc").value.trim();
+      const price = Number(document.getElementById("plan-price").value) || 0;
+      const priceAnnual = Number(document.getElementById("plan-price-annual").value) || 0;
+      const tier = Number(document.getElementById("plan-tier").value) || 1;
+      const maxProducts = Number(document.getElementById("plan-max-products").value) || 0;
+      const maxBranches = Number(document.getElementById("plan-max-branches").value) || 1;
+      const featuresText = document.getElementById("plan-features").value.trim();
+      const features = featuresText ? featuresText.split("\n").map(s => s.trim()).filter(Boolean) : [];
+      const isActive = document.getElementById("plan-active").checked;
+
+      if (!name) { toast("Name required", "error"); return; }
+
+      try {
+        if (editingPlanId) {
+          await api("/api/plans/" + editingPlanId, { method: "PUT", body: JSON.stringify({ name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive }) });
+        } else {
+          await api("/api/plans", { method: "POST", body: JSON.stringify({ id, name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive }) });
+        }
+        toast("Plan saved."); hidePlanModal(); loadPlans();
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    async function editPlan(id) {
+      try {
+        const data = await api("/api/plans");
+        const plan = (data.plans || []).find(p => p.id === id);
+        if (plan) showPlanModal(plan);
+      } catch (e) { toast("Failed to load plan", "error"); }
+    }
+
+    async function togglePlanActive(id, isActive) {
+      try {
+        await api("/api/plans/" + id, { method: "PUT", body: JSON.stringify({ isActive }) });
+        toast(isActive ? "Plan activated." : "Plan deactivated."); loadPlans();
+      } catch (e) { toast("Failed", "error"); }
+    }
+
+    async function deletePlan(id, name) {
+      if (!confirm('Delete plan "' + name + '"? This cannot be undone.')) return;
+      try { await api("/api/plans/" + id, { method: "DELETE" }); toast("Plan deleted."); loadPlans(); } catch (e) { toast("Failed", "error"); }
+    }
+
+    async function syncAllPlans() {
+      if (!confirm("Push all custom plans to every active client?")) return;
+      toast("Syncing plans...");
+      try {
+        const data = await api("/api/plans/sync-all", { method: "POST" });
+        const r = data.results || [];
+        toast(`Synced: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`);
+      } catch (e) { toast("Failed", "error"); }
+    }
+
+    // ─── UPGRADE REQUESTS ─────────────────────────────────
+    async function loadUpgradeRequests() {
+      try {
+        const data = await api("/api/clients");
+        const clients = data.clients || [];
+        let allRequests = [];
+        for (const c of clients) {
+          try {
+            const rData = await api("/api/clients/" + c.id + "/upgrade-requests");
+            const reqs = (rData.requests || []).map(r => ({ ...r, client_name: c.name, client_id: c.id }));
+            allRequests = allRequests.concat(reqs);
+          } catch {}
+        }
+        const pending = allRequests.filter(r => r.status === "pending");
+        const reviewed = allRequests.filter(r => r.status !== "pending");
+        if (!allRequests.length) { document.getElementById("upgrade-requests").innerHTML = ""; return; }
+
+        let html = '<h3 style="margin-bottom:0.75rem">Upgrade Requests</h3>';
+        if (pending.length) {
+          html += '<table><thead><tr><th>Client</th><th>Current Plan</th><th>Requested Plan</th><th>Notes</th><th>Date</th><th>Actions</th></tr></thead><tbody>';
+          for (const r of pending) {
+            html += `<tr>
+              <td><strong>${esc(r.client_name)}</strong></td>
+              <td>${esc(r.current_plan || '—')}</td>
+              <td>${esc(r.plan_name || r.requested_plan)}</td>
+              <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.notes || '—')}</td>
+              <td style="white-space:nowrap">${new Date(r.created_at).toLocaleDateString()}</td>
+              <td><div class="actions-cell">
+                <button class="btn btn-success btn-sm" onclick="handleUpgrade(${r.client_id}, ${r.id}, 'approved')">Approve</button>
+                <button class="btn btn-danger btn-sm" onclick="handleUpgrade(${r.client_id}, ${r.id}, 'rejected')">Reject</button>
+              </div></td>
+            </tr>`;
+          }
+          html += '</tbody></table>';
+        }
+        if (reviewed.length) {
+          html += '<details style="margin-top:1rem"><summary style="cursor:pointer;color:var(--text-muted);font-size:0.85rem">Reviewed requests (' + reviewed.length + ')</summary>';
+          html += '<table style="margin-top:0.5rem"><thead><tr><th>Client</th><th>Plan</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+          for (const r of reviewed) {
+            html += `<tr><td>${esc(r.client_name)}</td><td>${esc(r.plan_name || r.requested_plan)}</td><td><span class="badge badge-${r.status === 'approved' ? 'active' : 'failed'}">${r.status}</span></td><td>${new Date(r.created_at).toLocaleDateString()}</td></tr>`;
+          }
+          html += '</tbody></table></details>';
+        }
+        document.getElementById("upgrade-requests").innerHTML = html;
+      } catch {}
+    }
+
+    async function handleUpgrade(clientId, requestId, status) {
+      try {
+        await api("/api/clients/" + clientId + "/upgrade-requests/" + requestId, { method: "PUT", body: JSON.stringify({ status }) });
+        toast("Request " + status + "."); loadUpgradeRequests();
+      } catch (e) { toast("Failed", "error"); }
+    }
 
     // ─── BACKUPS ────────────────────────────────────────
     async function loadBackups() {

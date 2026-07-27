@@ -464,6 +464,175 @@ app.get("/api/backups", requireApiKey, async (_req, res) => {
   }
 });
 
+// ─── CUSTOM PLANS (Control Plane) ──────────────────────────
+app.get("/api/plans", requireApiKey, async (_req, res) => {
+  try {
+    const plans = await queryAll("SELECT * FROM custom_plans ORDER BY tier_level");
+    res.json({ plans });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get plans" });
+  }
+});
+
+app.post("/api/plans", requireApiKey, async (req, res) => {
+  try {
+    const { id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features } = req.body || {};
+    if (!name) { res.status(400).json({ error: "name required" }); return; }
+    const planId = id || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
+    await query(
+      `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9`,
+      [planId, name, description || "", price || 0, priceAnnual || null, tierLevel || 1, maxProducts ?? 50, maxBranches ?? 1, JSON.stringify(features || [])]
+    );
+    res.status(201).json({ id: planId, message: `Plan "${name}" saved.` });
+  } catch (err: any) {
+    console.error("[api] Create plan error:", err.message);
+    res.status(500).json({ error: "Failed to create plan" });
+  }
+});
+
+app.put("/api/plans/:id", requireApiKey, async (req, res) => {
+  try {
+    const { name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features, isActive } = req.body || {};
+    const fields: string[] = []; const params: any[] = []; let idx = 1;
+    if (name !== undefined) { fields.push(`name = $${idx}`); params.push(name); idx++; }
+    if (description !== undefined) { fields.push(`description = $${idx}`); params.push(description); idx++; }
+    if (price !== undefined) { fields.push(`price = $${idx}`); params.push(price); idx++; }
+    if (priceAnnual !== undefined) { fields.push(`price_annual = $${idx}`); params.push(priceAnnual); idx++; }
+    if (tierLevel !== undefined) { fields.push(`tier_level = $${idx}`); params.push(tierLevel); idx++; }
+    if (maxProducts !== undefined) { fields.push(`max_products = $${idx}`); params.push(maxProducts); idx++; }
+    if (maxBranches !== undefined) { fields.push(`max_branches = $${idx}`); params.push(maxBranches); idx++; }
+    if (features !== undefined) { fields.push(`features = $${idx}`); params.push(JSON.stringify(features)); idx++; }
+    if (isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(isActive); idx++; }
+    if (fields.length === 0) { res.json({ message: "No changes" }); return; }
+    params.push(req.params.id);
+    await query(`UPDATE custom_plans SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+    res.json({ message: "Plan updated." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to update plan" });
+  }
+});
+
+app.delete("/api/plans/:id", requireApiKey, async (req, res) => {
+  try {
+    await query("DELETE FROM custom_plans WHERE id = $1", [req.params.id]);
+    res.json({ message: "Plan deleted." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete plan" });
+  }
+});
+
+// Push plans to a specific client (sync control plane plans → client's DB)
+app.post("/api/clients/:id/sync-plans", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const plans = await queryAll("SELECT * FROM custom_plans ORDER BY tier_level");
+    const payload = plans.map((p: any) => ({
+      id: p.id, name: p.name, description: p.description,
+      price: p.price, priceAnnual: p.price_annual, tierLevel: p.tier_level,
+      maxProducts: p.max_products, maxBranches: p.max_branches,
+      features: typeof p.features === "string" ? JSON.parse(p.features) : p.features,
+      isActive: p.is_active,
+    }));
+
+    const result = await fetch(`${client.render_service_url}/api/plans/sync`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plans: payload }),
+    });
+
+    if (!result.ok) {
+      const text = await result.text();
+      res.status(502).json({ error: `Client returned ${result.status}: ${text}` });
+      return;
+    }
+    res.json({ message: `Synced ${plans.length} plans to "${client.name}".` });
+  } catch (err: any) {
+    console.error("[api] Sync plans error:", err.message);
+    res.status(500).json({ error: "Failed to sync plans" });
+  }
+});
+
+// Push plans to ALL active clients
+app.post("/api/plans/sync-all", requireApiKey, async (_req, res) => {
+  try {
+    const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active' AND render_service_url != ''");
+    const plans = await queryAll("SELECT * FROM custom_plans ORDER BY tier_level");
+    const payload = plans.map((p: any) => ({
+      id: p.id, name: p.name, description: p.description,
+      price: p.price, priceAnnual: p.price_annual, tierLevel: p.tier_level,
+      maxProducts: p.max_products, maxBranches: p.max_branches,
+      features: typeof p.features === "string" ? JSON.parse(p.features) : p.features,
+      isActive: p.is_active,
+    }));
+
+    const results: { name: string; success: boolean; error?: string }[] = [];
+    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
+      try {
+        const r = await fetch(`${c.render_service_url}/api/plans/sync`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plans: payload }),
+        });
+        results.push({ name: c.name, success: r.ok });
+      } catch (e: any) {
+        results.push({ name: c.name, success: false, error: e.message });
+      }
+    }
+    res.json({ results });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to sync all" });
+  }
+});
+
+// ─── UPGRADE REQUESTS ────────────────────────────────────
+// Fetch upgrade requests from a specific client
+app.get("/api/clients/:id/upgrade-requests", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.json({ requests: [] }); return; }
+
+    const r = await fetch(`${client.render_service_url}/api/shop/subscription/requests`);
+    if (!r.ok) { res.json({ requests: [] }); return; }
+    const data = await r.json() as any;
+    res.json({ requests: data.requests || [] });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get upgrade requests" });
+  }
+});
+
+// Approve/reject an upgrade request on a client
+app.put("/api/clients/:id/upgrade-requests/:reqId", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const { status } = req.body || {};
+    if (!["approved", "rejected"].includes(status)) { res.status(400).json({ error: "status must be approved or rejected" }); return; }
+
+    const r = await fetch(`${client.render_service_url}/api/shop/subscription/requests/${req.params.reqId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+
+    if (!r.ok) {
+      const text = await r.text();
+      res.status(502).json({ error: `Client returned ${r.status}: ${text}` });
+      return;
+    }
+    res.json({ message: `Request ${status}.` });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to update request" });
+  }
+});
+
 // ─── AUTO HEALTH CHECK (every 5 min) ─────────────────────
 setInterval(async () => {
   try {

@@ -831,7 +831,7 @@ const OwnerStockTake = StockTakeListPage;
 
 // ===================== SHOP SUBSCRIPTION =====================
 function OwnerShopSubscription() {
-  const { data: subData, loading, error, refetch } = useFetch(() => api<{ plan: SubscriptionPlan }>("/api/shop/subscription"), []);
+  const { data: subData, loading, error, refetch } = useFetch(() => api<{ plan: SubscriptionPlan; activatedAt: string | null }>("/api/shop/subscription"), []);
   const { data: plansData } = useFetch(() => api<{ plans: SubscriptionPlan[] }>("/api/plans"), []);
   const [selectedPlan, setSelectedPlan] = useState("");
   const [notes, setNotes] = useState("");
@@ -859,7 +859,9 @@ function OwnerShopSubscription() {
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
   const currentPlan = subData?.plan;
+  const activatedAt = subData?.activatedAt;
   const allPlans = plansData?.plans || [];
+  const daysRemaining = activatedAt ? Math.max(0, 30 - Math.floor((Date.now() - new Date(activatedAt).getTime()) / (1000 * 60 * 60 * 24))) : null;
 
   return (
     <>
@@ -873,6 +875,13 @@ function OwnerShopSubscription() {
             <div className="stat-card__label">Current Plan</div>
             <p style={{ fontSize: "1.1rem", fontWeight: 600, color: "var(--primary)", margin: "0.5rem 0 0" }}>{formatPrice(currentPlan.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>
             {currentPlan.priceAnnual != null && currentPlan.priceAnnual > 0 && <p style={{ fontSize: "0.9rem", color: "var(--primary)", margin: "0.25rem 0 0" }}>{formatPrice(currentPlan.priceAnnual)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/yr (save {Math.round((1 - currentPlan.priceAnnual / (currentPlan.price * 12)) * 100)}%)</span></p>}
+          </div>
+          <div className="stat-card">
+            <div className="stat-card__value" style={{ color: daysRemaining !== null && daysRemaining <= 7 ? "#dc2626" : undefined }}>
+              {daysRemaining !== null ? `${daysRemaining} days` : "—"}
+            </div>
+            <div className="stat-card__label">Until Renewal</div>
+            {daysRemaining !== null && daysRemaining <= 7 && <p style={{ fontSize: "0.8rem", color: "#dc2626", margin: "0.25rem 0 0" }}>Renew soon!</p>}
           </div>
         </div>
       )}

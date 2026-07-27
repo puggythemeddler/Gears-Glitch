@@ -117,5 +117,34 @@ export async function initControlPlaneDb() {
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_customers INTEGER DEFAULT 0`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_revenue DOUBLE PRECISION DEFAULT 0`); } catch {}
 
+  await query(`
+    CREATE TABLE IF NOT EXISTS custom_plans (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      price DOUBLE PRECISION DEFAULT 0,
+      price_annual DOUBLE PRECISION,
+      tier_level INTEGER DEFAULT 1,
+      max_products INTEGER DEFAULT 50,
+      max_branches INTEGER DEFAULT 1,
+      features TEXT DEFAULT '[]',
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS upgrade_requests (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+      current_plan TEXT DEFAULT '',
+      requested_plan TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT NOW(),
+      reviewed_at TIMESTAMP
+    )
+  `);
+
   console.log("[control-plane] Database initialized.");
 }
