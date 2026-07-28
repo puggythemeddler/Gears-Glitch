@@ -324,6 +324,7 @@ interface Branch {
   managerId: number | null;
   managerName: string;
   isActive: boolean;
+  planId: string | null;
   createdAt: string;
 }
 
@@ -566,6 +567,7 @@ function mapBranch(row: any): Branch {
     managerId: row.manager_id ?? null,
     managerName: row.manager_username ?? "",
     isActive: Boolean(row.is_active),
+    planId: row.plan_id ?? null,
     createdAt: row.created_at,
   };
 }
@@ -952,6 +954,33 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`); } catch {}
   try { await query(`CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`); } catch {}
   try { await query(`CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date)`); } catch {}
+
+  // ─── PER-BRANCH SUBSCRIPTIONS ──────────────────────────────
+  try { await query(`ALTER TABLE branches ADD COLUMN IF NOT EXISTS plan_id TEXT REFERENCES subscription_plans(id)`); } catch {}
+
+  // Per-branch subscriptions table
+  await query(`
+    CREATE TABLE IF NOT EXISTS branch_subscriptions (
+      branch_id INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
+      plan_id TEXT NOT NULL REFERENCES subscription_plans(id),
+      activated_at TIMESTAMP DEFAULT NOW(),
+      expires_at TIMESTAMP,
+      status TEXT DEFAULT 'active'
+    )
+  `);
+
+  // ─── PER-BRANCH STOCK LEVELS ──────────────────────────────
+  try { await query(`ALTER TABLE stock_levels ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id)`); } catch {}
+  try { await query(`ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id)`); } catch {}
+
+  // Fix stock_levels UNIQUE constraint to be per-branch
+  try {
+    const constr = await queryOne(`SELECT conname FROM pg_constraint WHERE conrelid = 'stock_levels'::regclass AND contype = 'u'`) as any;
+    if (constr && constr.conname) {
+      await query(`ALTER TABLE stock_levels DROP CONSTRAINT ${constr.conname}`);
+    }
+    await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_levels_product_branch ON stock_levels(product_id, COALESCE(branch_id, 0))`);
+  } catch {}
 
   // Seed default static layouts if none exist
   try {
@@ -1480,22 +1509,33 @@ async function clearCart(customerId: number): Promise<void> {
   await query("DELETE FROM cart_items WHERE customer_id = $1", [customerId]);
 }
 
-async function getStockLevel(productId: string): Promise<StockLevel | undefined> {
+async function getStockLevel(productId: string, branchId?: number): Promise<StockLevel | undefined> {
+  if (branchId !== undefined) {
+    return await queryOne("SELECT * FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [productId, branchId]) as StockLevel | undefined;
+  }
   return await queryOne("SELECT * FROM stock_levels WHERE product_id = $1", [productId]) as StockLevel | undefined;
 }
 
-async function updateStockLevel(productId: string, quantityInStock: number): Promise<void> {
-  await query(
-    `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, 0, 0, 5)
-     ON CONFLICT (product_id) DO UPDATE SET quantity_in_stock = EXCLUDED.quantity_in_stock, updated_at = NOW()::text`,
-    [productId, quantityInStock]
-  );
+async function updateStockLevel(productId: string, quantityInStock: number, branchId?: number): Promise<void> {
+  if (branchId !== undefined) {
+    await query(
+      `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, $3, 0, 0, 5)
+       ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = EXCLUDED.quantity_in_stock, updated_at = NOW()::text`,
+      [productId, branchId, quantityInStock]
+    );
+  } else {
+    await query(
+      `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, 0, 0, 5)
+       ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = EXCLUDED.quantity_in_stock, updated_at = NOW()::text`,
+      [productId, quantityInStock]
+    );
+  }
 }
 
-async function recordStockMovement(productId: string, movementType: string, quantity: number, referenceType?: string, referenceId?: string, notes?: string, createdBy?: number): Promise<void> {
+async function recordStockMovement(productId: string, movementType: string, quantity: number, referenceType?: string, referenceId?: string, notes?: string, createdBy?: number, branchId?: number): Promise<void> {
   await query(
-    "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-    [productId, movementType, quantity, referenceType || null, referenceId || null, notes || null, createdBy || null]
+    "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    [productId, movementType, quantity, referenceType || null, referenceId || null, notes || null, createdBy || null, branchId || null]
   );
 }
 
@@ -1528,6 +1568,20 @@ async function listStockTransfers(): Promise<StockTransfer[]> {
 }
 
 async function completeStockTransfer(id: number): Promise<boolean> {
+  const transfer = await getStockTransfer(id);
+  if (!transfer || transfer.status !== 'pending') return false;
+  
+  const sourceLevel = await getStockLevel(transfer.productId, transfer.fromBranchId);
+  const sourceQty = sourceLevel ? Number(sourceLevel.quantityInStock) : 0;
+  if (sourceQty < transfer.quantity) return false;
+  await updateStockLevel(transfer.productId, sourceQty - transfer.quantity, transfer.fromBranchId);
+  await recordStockMovement(transfer.productId, "transfer_out", -transfer.quantity, "stock_transfer", String(id), `Transfer #${id} out`, undefined, transfer.fromBranchId);
+  
+  const destLevel = await getStockLevel(transfer.productId, transfer.toBranchId);
+  const destQty = destLevel ? Number(destLevel.quantityInStock) : 0;
+  await updateStockLevel(transfer.productId, destQty + transfer.quantity, transfer.toBranchId);
+  await recordStockMovement(transfer.productId, "transfer_in", transfer.quantity, "stock_transfer", String(id), `Transfer #${id} in`, undefined, transfer.toBranchId);
+  
   const result = await query("UPDATE stock_transfers SET status = 'completed', completed_at = NOW()::text WHERE id = $1 AND status = 'pending'", [id]);
   return (result.rowCount ?? 0) > 0;
 }
@@ -1601,12 +1655,18 @@ async function getBranch(id: number): Promise<Branch | undefined> {
   return row ? mapBranch(row) : undefined;
 }
 
-async function createBranch(data: { name: string; address?: string; phone?: string; email?: string; managerId?: number; isActive?: boolean }): Promise<Branch> {
-  const result = await query("INSERT INTO branches (name, address, phone, email, manager_id, is_active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id", [data.name, data.address || "", data.phone || "", data.email || "", data.managerId || null, data.isActive !== false ? 1 : 0]);
-  return (await getBranch(result.rows[0].id))!;
+async function createBranch(data: { name: string; address?: string; phone?: string; email?: string; managerId?: number; isActive?: boolean; planId?: string }): Promise<Branch> {
+  const result = await query("INSERT INTO branches (name, address, phone, email, manager_id, is_active, plan_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id", [data.name, data.address || "", data.phone || "", data.email || "", data.managerId || null, data.isActive !== false ? 1 : 0, data.planId || null]);
+  const branchId = result.rows[0].id;
+  if (data.planId) {
+    try {
+      await query("INSERT INTO branch_subscriptions (branch_id, plan_id, activated_at, status) VALUES ($1, $2, NOW(), 'active') ON CONFLICT (branch_id) DO UPDATE SET plan_id = $2, status = 'active'", [branchId, data.planId]);
+    } catch {}
+  }
+  return (await getBranch(branchId))!;
 }
 
-async function updateBranch(id: number, updates: Partial<{ name: string; address: string; phone: string; email: string; managerId: number; isActive: boolean }>): Promise<Branch | null> {
+async function updateBranch(id: number, updates: Partial<{ name: string; address: string; phone: string; email: string; managerId: number; isActive: boolean; planId: string }>): Promise<Branch | null> {
   const existing = await getBranch(id);
   if (!existing) return null;
   const fields: string[] = []; const params: any[] = []; let idx = 1;
@@ -1616,6 +1676,12 @@ async function updateBranch(id: number, updates: Partial<{ name: string; address
   if (updates.email !== undefined) { fields.push(`email = $${idx}`); params.push(updates.email); idx++; }
   if (updates.managerId !== undefined) { fields.push(`manager_id = $${idx}`); params.push(updates.managerId); idx++; }
   if (updates.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.isActive ? 1 : 0); idx++; }
+  if (updates.planId !== undefined) {
+    fields.push(`plan_id = $${idx}`); params.push(updates.planId); idx++;
+    try {
+      await query("INSERT INTO branch_subscriptions (branch_id, plan_id, activated_at, status) VALUES ($1, $2, NOW(), 'active') ON CONFLICT (branch_id) DO UPDATE SET plan_id = $2, activated_at = NOW(), status = 'active'", [id, updates.planId]);
+    } catch {}
+  }
   if (fields.length === 0) return existing;
   params.push(id);
   await query(`UPDATE branches SET ${fields.join(", ")} WHERE id = $${idx}`, params);
@@ -1643,6 +1709,33 @@ async function canCreateBranch(): Promise<boolean> {
   if (max === null) return true;
   const current = await getBranchCount();
   return current < max;
+}
+
+async function getBranchSubscription(branchId: number): Promise<{ planId: string; plan: SubscriptionPlan | null; activatedAt: string | null; expiresAt: string | null; status: string } | null> {
+  const row = await queryOne("SELECT * FROM branch_subscriptions WHERE branch_id = $1", [branchId]) as any;
+  if (!row) return null;
+  const plan = row.plan_id ? await getSubscriptionPlan(row.plan_id) : null;
+  return {
+    planId: row.plan_id,
+    plan,
+    activatedAt: row.activated_at,
+    expiresAt: row.expires_at,
+    status: row.status,
+  };
+}
+
+async function setBranchPlan(branchId: number, planId: string): Promise<boolean> {
+  const plan = await getSubscriptionPlan(planId);
+  if (!plan) return false;
+  await query("UPDATE branches SET plan_id = $1 WHERE id = $2", [planId, branchId]);
+  await query("INSERT INTO branch_subscriptions (branch_id, plan_id, activated_at, status) VALUES ($1, $2, NOW(), 'active') ON CONFLICT (branch_id) DO UPDATE SET plan_id = $2, activated_at = NOW(), status = 'active'", [branchId, planId]);
+  return true;
+}
+
+async function getBranchFeatures(branchId: number): Promise<string[]> {
+  const sub = await getBranchSubscription(branchId);
+  if (!sub || !sub.plan) return [];
+  return sub.plan.features || [];
 }
 
 async function listClients(): Promise<Client[]> {
@@ -2494,6 +2587,20 @@ async function getStockSummary(): Promise<{ productId: string; name: string; cat
   );
 }
 
+async function getStockSummaryByBranch(branchId: number): Promise<any[]> {
+  return await queryAll(
+    `SELECT p.id AS "productId", p.name, p.category,
+      COALESCE(sl.quantity_in_stock, 0) AS "quantityInStock",
+      COALESCE(sl.quantity_reserved, 0) AS "quantityReserved",
+      COALESCE(sl.quantity_sold, 0) AS "quantitySold",
+      COALESCE(sl.low_stock_threshold, 5) AS "lowStockThreshold"
+    FROM products p
+    LEFT JOIN stock_levels sl ON sl.product_id = p.id AND sl.branch_id = $1
+    ORDER BY p.name`,
+    [branchId]
+  );
+}
+
 async function getEmployeeSalesPerformance(): Promise<any[]> {
   return await queryAll(
     `SELECT u.id AS "staffId", u.username AS "staffName", COUNT(o.id) AS "totalOrders", COALESCE(SUM(o.subtotal + o.shipping_fee), 0) AS "totalRevenue"
@@ -3116,6 +3223,7 @@ export {
   createStockTransfer, getStockTransfer, listStockTransfers, completeStockTransfer, rejectStockTransfer,
   listSubscriptionPlans, getSubscriptionPlan, createSubscriptionPlan, updateSubscriptionPlan, deleteSubscriptionPlan,
   listBranches, getBranch, createBranch, updateBranch, deleteBranch, getBranchCount, getMaxBranchesForShop, canCreateBranch,
+  getBranchSubscription, setBranchPlan, getBranchFeatures,
   listClients, getClient, createClient, updateClient, deleteClient,
   listClientBranches, getClientBranch, createClientBranch, updateClientBranch, deleteClientBranch,
   findProviderByEmail, findProviderById, listProviders, createProvider, verifyProviderPin, updateProviderStatus, updateProvider,
@@ -3134,7 +3242,7 @@ export {
   getRepairImages, addRepairImage, deleteRepairImage,
   createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, autoReorderLowStock,
   getTechPerformanceReport, getSalesReport, getPurchaseReport, getSalesReportWithRange,
-  getStockSummary, getEmployeeSalesPerformance, getTechnicianRepairStats,
+  getStockSummary, getStockSummaryByBranch, getEmployeeSalesPerformance, getTechnicianRepairStats,
   createStockTakeSession, getStockTakeSession, listStockTakeSessions, getStockTakeItems, recordStockCount, completeStockTakeSession,
   applyStockTakeAdjustments, getStockTakeVarianceReport, deleteStockTakeSession,
   createStockSnapshot, getStockSnapshot, listStockSnapshotDates, getCurrentStockLevels,

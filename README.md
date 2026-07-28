@@ -186,15 +186,15 @@ Full store management with 29 sections:
 - **Invoices** — Generate invoices per provider, mark paid, PDF download for order invoices
 - **Credit Notes** — Create eTIMS-compliant credit notes from invoices in admin and owner views, with printable audit details and submission tracking, PDF download
 - **Reports** — 5 sub-tabs: Sales Report with combined/per-branch filtering and export to Excel/PDF, Employee Sales, Technician Performance, Purchases Report, and Stock Summary
-- **Stock on Hand** — Current stock levels, snapshot history, low-stock alerts
-- **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow
+- **Stock on Hand** — Current stock levels per branch (filter by branch), snapshot history, low-stock alerts
+- **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow; completing a transfer actually moves stock between branches with dual movement records
 - **Stock Take** — Create sessions, count inventory, view variance, auto-apply adjustments
 - **Purchases** — Create and manage purchase orders with supplier selection, product line items, status workflow (pending → ordered → received), inline per-item receiving with quantity inputs, branded PDF generation/download, soft-delete with completed/deleted views, and one-click restore
 - **Messages** — Admin messaging panel: conversation list with unread badges, chat view with read receipts, inline reply, compose new messages (pick customer + provider). Auto-polls every 30 seconds.
 - **Reviews** — View all product reviews with customer name, product, rating, date, and comment. Delete reviews for moderation. Paginated list.
 - **Spec Templates** — Define per-category spec fields for products
 - **Suppliers** — Manage vendor/supplier directory with contact details, active status
-- **Branches** — Manage physical store locations (name, address, contact info)
+- **Branches** — Manage physical store locations with per-branch subscription plans (each branch can have its own plan independent of the shop-wide plan)
 - **Clients** — Multi-tenant client management with per-client branches
 - **About Us** — Edit title, content, mission, vision for the /about page
 - **Storefront** — Choose layout theme (Original, Amazon, Jumia, Mobile), manage promotional banners
@@ -528,6 +528,7 @@ data/
 | POST | `/api/stock-on-hand/snapshot` | Create stock snapshot (requires `stock:on_hand`) |
 | GET | `/api/stock-transfers` | List stock transfers (requires `stock:transfer`) |
 | POST | `/api/stock-transfers` | Create a stock transfer (requires `stock:transfer`) |
+| PUT | `/api/admin/stock/transfer/:id/complete` | Complete a pending transfer — actually moves stock between branches (requires `stock:transfer`) |
 | POST | `/api/stock-transfers/:id/complete` | Complete a pending transfer (requires `stock:transfer`) |
 | POST | `/api/stock-transfers/:id/reject` | Reject a pending transfer (requires `stock:transfer`) |
 | GET | `/api/rates` | Public exchange rates (auto-fetched from open.er-api.com, cached 1h) |
@@ -572,6 +573,11 @@ Full CRUD for products, categories (including subcategories), staff, roles, plan
 | PUT | `/api/settings/logo-position` | Update logo position (top-left/top-middle/top-right) |
 | GET | `/api/admin/coupons` | List all coupons |
 | POST | `/api/admin/coupons` | Create a coupon |
+| PUT | `/api/admin/branches/:id/plan` | Set a branch's subscription plan |
+| GET | `/api/admin/branches/:id/subscription` | Get branch subscription details |
+| GET | `/api/admin/branches/:id/features` | Get branch feature list |
+| GET | `/api/admin/stock/by-branch/:branchId` | Get stock summary for a specific branch |
+| GET | `/api/admin/stock/product/:productId/branches` | Get stock level for a product across all branches |
 | PUT | `/api/admin/coupons/:id` | Update a coupon |
 | DELETE | `/api/admin/coupons/:id` | Delete a coupon |
 | POST | `/api/coupons/validate` | Validate a coupon code at checkout (customer auth) |
@@ -621,12 +627,22 @@ Provider registration, login, subscription details, invoices, products at tier, 
 
 ### Branches
 - Create and manage physical store locations from the **Branches** page
-- Each branch has a name, address, phone, email, and active status
-- Branches are used for order assignment and stock transfer tracking
+- Each branch has a name, address, phone, email, active status, and **subscription plan**
+- Branches can have their own subscription plan independent of the shop-wide plan
+- When a new branch is created, it defaults to the shop's current plan
+- Branch plan controls which features are available at that branch (POS, invoicing, stock management, etc.)
+
+### Per-Branch Stock
+- Stock levels tracked independently per branch via the `stock_levels` table
+- Stock on Hand page has a branch filter dropdown to view stock at a specific branch
+- Stock Take sessions can be scoped to a specific branch
+- Completing a stock transfer deducts from the source branch and increments at the destination branch
+- Two movement records created per transfer (transfer_out at source, transfer_in at destination)
 
 ### Stock on Hand
 - Standalone page in the admin Stock nav
-- View current stock levels with low-stock alerts
+- View current stock levels with branch filter (All Branches or specific branch)
+- Low-stock alerts
 - Take daily snapshots to record inventory at a point in time
 - Browse historical snapshots by date
 
@@ -634,7 +650,9 @@ Provider registration, login, subscription details, invoices, products at tier, 
 - Move stock between branches with a pending/complete/reject workflow
 - Protected by the `stock:transfer` permission
 - Accessible from the **Stock Transfers** page in the admin Stock nav
-- Tracks source branch, destination branch, product, quantity, and notes
+- Shows source and destination stock levels when creating a transfer
+- Warns if source branch has insufficient stock
+- Completing a transfer actually moves stock (deducts source, increments destination)
 
 ## Stock Take Workflow
 

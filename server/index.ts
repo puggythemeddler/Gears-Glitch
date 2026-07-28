@@ -141,6 +141,7 @@ import {
   listAllMessages,
   getSalesReportWithRange,
   getStockSummary,
+  getStockSummaryByBranch,
   getEmployeeSalesPerformance,
   getTechnicianRepairStats,
   providerHasFeature,
@@ -192,6 +193,9 @@ import {
   updateBranch,
   deleteBranch,
   canCreateBranch,
+  getBranchSubscription,
+  setBranchPlan,
+  getBranchFeatures,
   createStockTransfer,
   getStockTransfer,
   listStockTransfers,
@@ -1069,7 +1073,7 @@ app.get("/api/admin/branches", ownerAuthMiddleware, asyncHandler(async (req: Req
 }));
 
 app.post("/api/admin/branches", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const { name, address, phone, email, managerId } = req.body || {};
+  const { name, address, phone, email, managerId, planId } = req.body || {};
   if (!name || !name.trim()) { res.status(400).json({ error: "Branch name is required." }); return; }
 
   const allowed = await canCreateBranch();
@@ -1077,7 +1081,7 @@ app.post("/api/admin/branches", ownerAuthMiddleware, asyncHandler(async (req: Re
     res.status(403).json({ error: "Branch limit reached. Upgrade your plan to add more branches." }); return;
   }
 
-  const branch = await createBranch({ name: name.trim(), address, phone, email, managerId: managerId || null });
+  const branch = await createBranch({ name: name.trim(), address, phone, email, managerId: managerId || null, planId: planId || undefined });
   if (!branch) { res.status(500).json({ error: "Failed to create branch." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "branch", String(branch.id), { name }, (req as any).user.role);
   res.status(201).json({ branch });
@@ -1086,12 +1090,12 @@ app.post("/api/admin/branches", ownerAuthMiddleware, asyncHandler(async (req: Re
 app.put("/api/admin/branches/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid branch ID." }); return; }
-  const { name, address, phone, email, managerId, isActive } = req.body || {};
+  const { name, address, phone, email, managerId, isActive, planId } = req.body || {};
   if (name !== undefined && !isStr(name)) { res.status(400).json({ error: "Branch name must be a non-empty string." }); return; }
   if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
   if (address !== undefined && !isStr(address, 500)) { res.status(400).json({ error: "Address must be a valid string." }); return; }
   if (phone !== undefined && !isStr(phone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
-  const branch = await updateBranch(id, { name, address, phone, email, managerId, isActive });
+  const branch = await updateBranch(id, { name, address, phone, email, managerId, isActive, planId });
   if (!branch) { res.status(404).json({ error: "Branch not found." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "branch", String(id), { name }, (req as any).user.role);
   res.json({ branch });
@@ -1104,6 +1108,61 @@ app.delete("/api/admin/branches/:id", ownerAuthMiddleware, asyncHandler(async (r
   if (!ok) { res.status(404).json({ error: "Branch not found." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "deleted", "branch", String(id), {}, (req as any).user.role);
   res.status(204).end();
+}));
+
+// ============ BRANCH SUBSCRIPTIONS ============
+
+app.get("/api/admin/branches/:id/subscription", ownerAuthMiddleware, asyncHandler(async (req, res) => {
+  const branchId = parseInt(String(req.params.id), 10);
+  const sub = await getBranchSubscription(branchId);
+  res.json(sub || { planId: null, plan: null, activatedAt: null, expiresAt: null, status: null });
+}));
+
+app.put("/api/admin/branches/:id/plan", ownerAuthMiddleware, asyncHandler(async (req, res) => {
+  const branchId = parseInt(String(req.params.id), 10);
+  const { planId } = req.body;
+  if (!planId) return res.status(400).json({ error: "planId required" });
+  const ok = await setBranchPlan(branchId, planId);
+  if (!ok) return res.status(400).json({ error: "Invalid plan" });
+  const sub = await getBranchSubscription(branchId);
+  res.json(sub);
+}));
+
+app.get("/api/admin/branches/:id/features", ownerAuthMiddleware, asyncHandler(async (req, res) => {
+  const branchId = parseInt(String(req.params.id), 10);
+  const features = await getBranchFeatures(branchId);
+  res.json({ features });
+}));
+
+// ============ PER-BRANCH STOCK ============
+
+app.get("/api/admin/stock/by-branch/:branchId", ownerAuthMiddleware, asyncHandler(async (req, res) => {
+  const branchId = parseInt(String(req.params.branchId), 10);
+  const summary = await getStockSummaryByBranch(branchId);
+  res.json(summary);
+}));
+
+app.get("/api/admin/stock/product/:productId/branches", ownerAuthMiddleware, asyncHandler(async (req, res) => {
+  const productId = String(req.params.productId);
+  const branches = await listBranches();
+  const levels: any[] = [];
+  for (const branch of branches) {
+    const level = await getStockLevel(productId, branch.id);
+    levels.push({
+      branchId: branch.id,
+      branchName: branch.name,
+      quantityInStock: level ? Number(level.quantityInStock) : 0,
+      lowStockThreshold: level ? Number(level.lowStockThreshold) : 5,
+    });
+  }
+  res.json(levels);
+}));
+
+app.put("/api/admin/stock/transfer/:id/complete", ownerAuthMiddleware, asyncHandler(async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const ok = await completeStockTransfer(id);
+  if (!ok) return res.status(400).json({ error: "Transfer cannot be completed (pending status required or insufficient stock)" });
+  res.json({ ok: true, message: "Transfer completed. Stock moved between branches." });
 }));
 
 // ============ CLIENTS (Multi-Tenant) ============
@@ -4553,8 +4612,12 @@ app.get("/api/stock-take", ownerAuthMiddleware, asyncHandler(async (_req: Reques
 
 app.post("/api/stock-take/start", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const session = await createStockTakeSession(req.body?.notes || "", (req as any).user.sub);
+    const { notes, branchId } = req.body || {};
+    const session = await createStockTakeSession(notes || "", (req as any).user.sub);
     if (!session) { res.status(500).json({ error: "Failed to create stock take session." }); return; }
+    if (branchId) {
+      try { await query("UPDATE stock_take_sessions SET branch_id = $1 WHERE id = $2", [branchId, session.id]); } catch {}
+    }
     const items = await getStockTakeItems(session.id);
     res.status(201).json({ session, items });
   } catch (err: any) {

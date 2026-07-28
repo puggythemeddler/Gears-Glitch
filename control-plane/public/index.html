@@ -204,6 +204,7 @@
         <button class="btn btn-primary btn-sm" onclick="generateClientInvoice()">+ Generate Invoice</button>
       </div>
       <div id="detail-invoices"></div>
+      <div id="detail-branches" style="margin-top:1.5rem"></div>
     </div>
   </div>
 
@@ -865,6 +866,9 @@
 
       // Load invoices
       await loadClientInvoices(id);
+
+      // Load branches
+      loadClientBranches(id);
     }
 
     function closeClientDetails() {
@@ -953,6 +957,45 @@
         const data = await api("/api/clients/" + clientId + "/invoices/" + invId + "/email", { method: "POST" });
         toast(data.sent ? "Invoice emailed!" : "Failed to send. Check client SMTP.");
       } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    // ─── CLIENT BRANCHES ─────────────────────────────────
+    async function loadClientBranches(clientId) {
+      const el = document.getElementById("detail-branches");
+      el.innerHTML = '<div style="padding:1rem;color:var(--text-muted)">Loading branches...</div>';
+      try {
+        const branches = await api("/api/clients/" + clientId + "/branches");
+        if (!Array.isArray(branches) || !branches.length) {
+          el.innerHTML = '';
+          return;
+        }
+        let html = `
+          <div class="detail-panel">
+            <h3 style="margin-bottom:0.75rem">Branches & Subscriptions</h3>
+            <table style="margin:0">
+              <thead>
+                <tr>
+                  <th>Branch</th>
+                  <th>Plan</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${branches.map(b => `
+                  <tr>
+                    <td><strong>${esc(b.name || 'Unknown')}</strong></td>
+                    <td><span class="badge badge-active">${esc(b.planId || b.plan_id || 'No plan')}</span></td>
+                    <td><span class="badge ${b.isActive !== false && b.is_active !== false ? 'badge-active' : 'badge-failed'}">${b.isActive !== false && b.is_active !== false ? 'Active' : 'Inactive'}</span></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+        el.innerHTML = html;
+      } catch (e) {
+        el.innerHTML = '';
+      }
     }
   </script>
 </body>

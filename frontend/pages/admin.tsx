@@ -1717,12 +1717,19 @@ function AdminClients() {
 
 // ===================== BRANCHES =====================
 function AdminBranches() {
+  const { toast } = useToast();
   const { data: bData, loading, error, refetch } = useFetch(() => api<{ branches: Branch[] }>("/api/admin/branches"), []);
   const { data: sData } = useFetch(() => api<{ staff: { id: number; username: string; role: string }[] }>("/api/staff"), []);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Branch | null>(null);
   const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", managerId: "" });
   const [saving, setSaving] = useState(false);
+  const [branchPlanEditId, setBranchPlanEditId] = useState<number | null>(null);
+  const [allPlans, setAllPlans] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch("/api/plans/all").then(r => r.json()).then(setAllPlans).catch(() => {});
+  }, []);
 
   const owners = sData?.staff?.filter((u) => u.role === "owner") || [];
 
@@ -1773,6 +1780,15 @@ function AdminBranches() {
     try { await api(`/api/admin/branches/${id}`, { method: "DELETE" }); refetch(); } catch (err: any) { alert(err.message); }
   }
 
+  async function changeBranchPlan(branchId: number, planId: string) {
+    try {
+      await api(`/api/admin/branches/${branchId}/plan`, { method: "PUT", body: JSON.stringify({ planId: planId || null }) });
+      setBranchPlanEditId(null);
+      refetch();
+      toast("success", "Plan updated successfully");
+    } catch (err: any) { toast("error", err.message); }
+  }
+
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
   const branches = bData?.branches || [];
@@ -1818,26 +1834,50 @@ function AdminBranches() {
       </div>
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Owner</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Owner</th><th>Plan</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
-            {branches.map((b) => (
-              <tr key={b.id}>
-                <td><strong>{escapeHtml(b.name)}</strong></td>
-                <td>{escapeHtml(b.address || "—")}</td>
-                <td>{escapeHtml(b.phone || "—")}</td>
-                <td>{escapeHtml(b.email || "—")}</td>
-                <td>{b.managerName ? escapeHtml(b.managerName) : <span className="muted">Unassigned</span>}</td>
-                <td><span className={`plan-status ${b.isActive ? "active" : ""}`} style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "#fff", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>{b.isActive ? "Active" : "Inactive"}</span></td>
-                <td>
-                  <div style={{ display: "flex", gap: "0.25rem" }}>
-                    <RippleButton size="small" onClick={() => openEdit(b)}>Edit</RippleButton>
-                    <RippleButton size="small" variant="ghost" onClick={() => toggleBranch(b)}>{b.isActive ? "Deactivate" : "Activate"}</RippleButton>
-                    <RippleButton size="small" variant="danger" onClick={() => deleteBranch(b.id)}>Delete</RippleButton>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {branches.length === 0 && <tr><td colSpan={7}><EmptyState icon="default" title="No branches yet" description="Create your first branch to start managing multi-location operations." actionLabel="+ Add Branch" onAction={openNew} /></td></tr>}
+            {branches.map((b) => {
+              const currentPlan = allPlans.find((p: any) => p.id === b.planId);
+              return (
+                <tr key={b.id}>
+                  <td><strong>{escapeHtml(b.name)}</strong></td>
+                  <td>{escapeHtml(b.address || "—")}</td>
+                  <td>{escapeHtml(b.phone || "—")}</td>
+                  <td>{escapeHtml(b.email || "—")}</td>
+                  <td>{b.managerName ? escapeHtml(b.managerName) : <span className="muted">Unassigned</span>}</td>
+                  <td>
+                    {branchPlanEditId === b.id ? (
+                      <select
+                        value={b.planId || ""}
+                        onChange={(e) => changeBranchPlan(b.id, e.target.value)}
+                        onBlur={() => setBranchPlanEditId(null)}
+                        autoFocus
+                        style={{ fontSize: "0.8rem", padding: "2px 4px" }}
+                      >
+                        <option value="">None</option>
+                        {allPlans.map((p: any) => <option key={p.id} value={p.id}>{escapeHtml(p.name)}</option>)}
+                      </select>
+                    ) : (
+                      <span
+                        onClick={() => setBranchPlanEditId(b.id)}
+                        style={{ cursor: "pointer", color: currentPlan ? "var(--primary)" : "var(--text-secondary)", fontSize: "0.85rem", textDecoration: "underline dotted" }}
+                      >
+                        {currentPlan ? escapeHtml(currentPlan.name) : "No plan"}
+                      </span>
+                    )}
+                  </td>
+                  <td><span className={`plan-status ${b.isActive ? "active" : ""}`} style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "#fff", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>{b.isActive ? "Active" : "Inactive"}</span></td>
+                  <td>
+                    <div style={{ display: "flex", gap: "0.25rem" }}>
+                      <RippleButton size="small" onClick={() => openEdit(b)}>Edit</RippleButton>
+                      <RippleButton size="small" variant="ghost" onClick={() => toggleBranch(b)}>{b.isActive ? "Deactivate" : "Activate"}</RippleButton>
+                      <RippleButton size="small" variant="danger" onClick={() => deleteBranch(b.id)}>Delete</RippleButton>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {branches.length === 0 && <tr><td colSpan={8}><EmptyState icon="default" title="No branches yet" description="Create your first branch to start managing multi-location operations." actionLabel="+ Add Branch" onAction={openNew} /></td></tr>}
           </tbody>
         </table>
       </div>
@@ -4152,10 +4192,32 @@ function AdminStockTransfers() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ fromBranchId: "", toBranchId: "", productId: "", quantity: "", notes: "" });
   const [creating, setCreating] = useState(false);
+  const [sourceStock, setSourceStock] = useState<number | null>(null);
+  const [destStock, setDestStock] = useState<number | null>(null);
+  const [loadingStockCheck, setLoadingStockCheck] = useState(false);
 
   const branchList = branches?.branches || [];
   const productList = products?.products || [];
   const transfers = tData?.transfers || [];
+
+  useEffect(() => {
+    if (!form.fromBranchId || !form.productId) { setSourceStock(null); return; }
+    setLoadingStockCheck(true);
+    fetch(`/api/admin/stock/by-branch/${form.fromBranchId}`).then(r => r.json()).then((data: any) => {
+      const items = data.items || data || [];
+      const found = Array.isArray(items) ? items.find((i: any) => String(i.productId ?? i.id) === String(form.productId)) : null;
+      setSourceStock(found ? (found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0);
+    }).catch(() => setSourceStock(null)).finally(() => setLoadingStockCheck(false));
+  }, [form.fromBranchId, form.productId]);
+
+  useEffect(() => {
+    if (!form.toBranchId || !form.productId) { setDestStock(null); return; }
+    fetch(`/api/admin/stock/by-branch/${form.toBranchId}`).then(r => r.json()).then((data: any) => {
+      const items = data.items || data || [];
+      const found = Array.isArray(items) ? items.find((i: any) => String(i.productId ?? i.id) === String(form.productId)) : null;
+      setDestStock(found ? (found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0);
+    }).catch(() => setDestStock(null));
+  }, [form.toBranchId, form.productId]);
 
   async function createTransfer(e: React.FormEvent) {
     e.preventDefault();
@@ -4174,7 +4236,7 @@ function AdminStockTransfers() {
   }
 
   async function completeTransfer(id: number) {
-    try { await api(`/api/stock-transfers/${id}/complete`, { method: "POST" }); refetch(); toast("success", "Transfer completed"); } catch (err: any) { toast("error", err.message); }
+    try { await api(`/api/admin/stock/transfer/${id}/complete`, { method: "PUT" }); refetch(); toast("success", "Transfer completed"); } catch (err: any) { toast("error", err.message); }
   }
 
   async function rejectTransfer(id: number) {
@@ -4199,6 +4261,25 @@ function AdminStockTransfers() {
             <div className="field"><label>To Branch<select value={form.toBranchId} onChange={(e) => setForm({ ...form, toBranchId: e.target.value })} required><option value="">Select destination branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{escapeHtml(b.name)}</option>)}</select></label></div>
             <div className="field"><label>Product<select value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })} required><option value="">Select product</option>{productList.map((p: any) => <option key={p.id} value={p.id}>{escapeHtml(p.name)}</option>)}</select></label></div>
             <div className="field"><label>Quantity<input type="number" min="1" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} required /></label></div>
+            {form.fromBranchId && form.productId && (
+              <div style={{ display: "flex", gap: "1rem", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
+                <div style={{ padding: "0.4rem 0.75rem", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)" }}>
+                  <span style={{ color: "var(--text-secondary)" }}>Source stock: </span>
+                  <strong>{loadingStockCheck ? "..." : sourceStock ?? "—"}</strong>
+                </div>
+                {form.toBranchId && (
+                  <div style={{ padding: "0.4rem 0.75rem", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)" }}>
+                    <span style={{ color: "var(--text-secondary)" }}>Destination stock: </span>
+                    <strong>{destStock ?? "—"}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+            {sourceStock !== null && form.quantity && Number(form.quantity) > sourceStock && (
+              <div style={{ padding: "0.5rem 0.75rem", borderRadius: 6, background: "#fef3c7", color: "#92400e", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
+                Warning: Source branch only has {sourceStock} unit(s) in stock. Transfer quantity ({form.quantity}) exceeds available stock.
+              </div>
+            )}
             <div className="field"><label>Notes<textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} /></label></div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <RippleButton type="submit" loading={creating}>Create Transfer</RippleButton>

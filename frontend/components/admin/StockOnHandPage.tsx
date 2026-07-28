@@ -12,6 +12,19 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   const [snapshot, setSnapshot] = useState<any>(null);
   const [dates, setDates] = useState<any[]>([]);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+  const [stockBranchFilter, setStockBranchFilter] = useState<number | null>(null);
+  const [branchStockSummary, setBranchStockSummary] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
+
+  useEffect(() => {
+    api<{ branches: any[] }>("/api/admin/branches").then(d => setBranches(d.branches || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (stockBranchFilter) {
+      fetch(`/api/admin/stock/by-branch/${stockBranchFilter}`).then(r => r.json()).then(setBranchStockSummary).catch(() => {});
+    }
+  }, [stockBranchFilter]);
 
   useEffect(() => {
     api<{ dates: any[] }>("/api/stock-on-hand/history").then(d => setDates(d.dates || [])).catch(() => {});
@@ -42,12 +55,24 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
 
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
-  const items = sData?.items || [];
-  const lowStock = items.filter((i) => i.quantityInStock <= i.lowStockThreshold);
+  const items = stockBranchFilter ? branchStockSummary : (sData?.items || []);
+  const lowStock = items.filter((i: any) => (i.quantityInStock ?? i.quantity_in_stock ?? 0) <= (i.lowStockThreshold ?? i.low_stock_threshold ?? 0));
 
   return (
     <>
       <h1>Stock on Hand</h1>
+
+      <div className="panel" style={{ marginBottom: "1rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Filter by Branch</label>
+            <select value={stockBranchFilter || ""} onChange={(e) => setStockBranchFilter(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">All Branches</option>
+              {branches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
 
       {lowStock.length > 0 && (
         <div className="panel" style={{ marginBottom: "1rem", background: "#fef3c7", borderColor: "#f59e0b", color: "#92400e" }}>
@@ -105,17 +130,23 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
         <table className="data-table">
           <thead><tr><th>Product</th><th>Category</th><th>In Stock</th><th>Reserved</th><th>Sold</th><th>Threshold</th><th>Status</th></tr></thead>
           <tbody>
-            {items.map((i: any) => (
-              <tr key={i.productId} style={i.quantityInStock <= i.lowStockThreshold ? { background: "var(--bg)" } : {}}>
-                <td>{escapeHtml(i.name)}</td>
-                <td>{i.category || "—"}</td>
-                <td><strong>{i.quantityInStock}</strong></td>
-                <td>{i.quantityReserved}</td>
-                <td>{i.quantitySold}</td>
-                <td>{i.lowStockThreshold}</td>
-                <td>{i.quantityInStock <= i.lowStockThreshold ? <span style={{ color: "#dc2626", fontWeight: 600 }}>Low</span> : <span style={{ color: "#16a34a" }}>OK</span>}</td>
-              </tr>
-            ))}
+            {items.map((i: any) => {
+              const qty = i.quantityInStock ?? i.quantity_in_stock ?? 0;
+              const threshold = i.lowStockThreshold ?? i.low_stock_threshold ?? 0;
+              const reserved = i.quantityReserved ?? i.quantity_reserved ?? 0;
+              const sold = i.quantitySold ?? i.quantity_sold ?? 0;
+              return (
+                <tr key={i.productId ?? i.id} style={qty <= threshold ? { background: "var(--bg)" } : {}}>
+                  <td>{escapeHtml(i.name)}</td>
+                  <td>{i.category || "—"}</td>
+                  <td><strong>{qty}</strong></td>
+                  <td>{reserved}</td>
+                  <td>{sold}</td>
+                  <td>{threshold}</td>
+                  <td>{qty <= threshold ? <span style={{ color: "#dc2626", fontWeight: 600 }}>Low</span> : <span style={{ color: "#16a34a" }}>OK</span>}</td>
+                </tr>
+              );
+            })}
             {items.length === 0 && <tr><td colSpan={7}><EmptyState icon="stock" title="No stock data" description="Stock levels will appear here once products are added." /></td></tr>}
           </tbody>
         </table>

@@ -802,6 +802,58 @@ app.get("/api/clients/:id/subscription", requireApiKey, async (req, res) => {
   }
 });
 
+// ─── CLIENT BRANCHES ─────────────────────────────────────
+// Get branches from a client
+app.get("/api/clients/:id/branches", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (client.status !== "active" && client.status !== "provisioning") { res.json([]); return; }
+    if (!client.render_service_url) { res.json([]); return; }
+    const resp = await fetch(`${client.render_service_url}/api/admin/branches`, { signal: AbortSignal.timeout(20000) });
+    if (!resp.ok) { res.json([]); return; }
+    const branches = await resp.json();
+    res.json(Array.isArray(branches) ? branches : []);
+  } catch (err: any) {
+    res.json([]);
+  }
+});
+
+// Get branch subscription from client
+app.get("/api/clients/:id/branches/:branchId/subscription", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+    const resp = await fetch(`${client.render_service_url}/api/admin/branches/${req.params.branchId}/subscription`, { signal: AbortSignal.timeout(20000) });
+    if (!resp.ok) { res.status(resp.status).json({ error: "Client API error" }); return; }
+    const sub = await resp.json();
+    res.json(sub);
+  } catch (err: any) {
+    res.status(502).json({ error: "Client unreachable" });
+  }
+});
+
+// Set branch plan on client
+app.put("/api/clients/:id/branches/:branchId/plan", requireApiKey, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+    const resp = await fetch(`${client.render_service_url}/api/admin/branches/${req.params.branchId}/plan`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!resp.ok) { res.status(resp.status).json({ error: "Client API error" }); return; }
+    const sub = await resp.json();
+    res.json(sub);
+  } catch (err: any) {
+    res.status(502).json({ error: "Client unreachable" });
+  }
+});
+
 // ─── AUTO HEALTH CHECK (every 5 min) ─────────────────────
 setInterval(async () => {
   try {

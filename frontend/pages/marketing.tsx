@@ -39,19 +39,19 @@ const INDUSTRIES = [
   { icon: "🏪", name: "Electronics Superstores", desc: "Multi-branch stock transfers, centralized purchasing, and unified reporting." },
   { icon: "🔧", name: "Repair Centres", desc: "Complete ticket management, technician assignment, and customer self-service portal." },
   { icon: "🖥", name: "IT Service Companies", desc: "Track assets, manage service contracts, and automate recurring maintenance tasks." },
-  { icon: "🏬", name: "Multi-Branch Retail Chains", desc: "Centralized control with decentralized operations, stock transfers, and regional reporting." },
+  { icon: "🏬", name: "Multi-Branch Retail Chains", desc: "Centralized control with per-branch subscription plans, per-branch stock tracking, stock transfers that actually move inventory, and regional reporting." },
 ];
 
 const FEATURES = [
-  { icon: "📦", name: "Inventory Management", desc: "Real-time stock tracking, low-stock alerts, stock-on-hand counts, and inter-branch stock transfers." },
+  { icon: "📦", name: "Inventory Management", desc: "Real-time stock tracking per branch, low-stock alerts, branch-filtered stock views, stock-on-hand counts, and inter-branch stock transfers." },
   { icon: "💳", name: "Point of Sale", desc: "Fast, intuitive POS with M-Pesa payment support, receipt generation, and customer display." },
   { icon: "🔧", name: "Repair Management", desc: "End-to-end repair lifecycle from drop-off to delivery with technician assignment, cost tracking, and quote generation." },
   { icon: "🛡", name: "Warranty Tracking", desc: "Automated warranty registration on products, duration tracking, and warranty status on invoices." },
   { icon: "👥", name: "Customer Management", desc: "Customer profiles with purchase history, repair records, order history, and communication log." },
   { icon: "🤝", name: "Supplier Management", desc: "Supplier directory with contact details, linked purchase orders, and stock replenishment tracking." },
   { icon: "📋", name: "Purchase Orders", desc: "Create purchase orders per supplier, track items ordered vs received with inline quantity inputs, branded PDF downloads, soft-delete with completed and deleted views, and one-click restore." },
-  { icon: "🔄", name: "Stock Transfers", desc: "Seamless inter-branch transfers with tracking and automated inventory reconciliation." },
-  { icon: "🏢", name: "Multi-Branch Management", desc: "Unified dashboard across all locations with per-branch settings and consolidated reporting." },
+  { icon: "🔄", name: "Stock Transfers", desc: "Seamless inter-branch transfers with actual stock movement — deducted from source, incremented at destination with dual movement records." },
+  { icon: "🏢", name: "Multi-Branch Management", desc: "Unified dashboard across all locations with per-branch subscription plans, per-branch stock tracking, stock transfers that actually move inventory, and consolidated reporting." },
   { icon: "📊", name: "Reports & Analytics", desc: "Sales, employee performance, technician stats, purchase reports, and stock summary with date filtering." },
   { icon: "📄", name: "Quotation Engine", desc: "Generate professional quotes with line items, discounts, PDF export, and one-click conversion to orders." },
   { icon: "🧾", name: "KRA eTIMS Invoicing", desc: "Fully compliant invoices and credit notes with control codes, serial numbers, and receipt generation." },
@@ -77,9 +77,10 @@ const WHY_CHOOSE = [
   { num: "03", title: "Faster Customer Service", desc: "Access complete customer history, stock availability, and pricing in seconds — not minutes." },
   { num: "04", title: "Reduced Inventory Losses", desc: "Real-time tracking, stock takes, and smart alerts minimize shrinkage and overstocking." },
   { num: "05", title: "KRA eTIMS Compliance", desc: "Built-in compliant invoicing with control codes, so you're always ready for audits." },
-  { num: "06", title: "Scalable Architecture", desc: "Start with one branch and scale to multiple locations without changing your system or losing data." },
+  { num: "06", title: "Scalable Architecture", desc: "Start with one branch and scale to multiple locations with independent subscription plans per branch — no system changes needed." },
   { num: "07", title: "Cloud Accessibility", desc: "Access your business from any device, anywhere — manage operations remotely with full confidence." },
   { num: "08", title: "Enterprise-Grade Security", desc: "Role-based access, encrypted data, audit trails, and compliance-ready infrastructure." },
+  { num: "09", title: "Per-Branch Flexibility", desc: "Each branch gets its own subscription plan and stock inventory. Different locations can operate independently with features and stock tailored to their needs." },
 ];
 
 const STATS = [

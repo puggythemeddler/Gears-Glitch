@@ -837,6 +837,10 @@ function OwnerShopSubscription() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [branches, setBranches] = useState<any[]>([]);
+  const [branchPlans, setBranchPlans] = useState<any[]>([]);
+  const [branchPlanEditId, setBranchPlanEditId] = useState<number | null>(null);
+  const [branchPlanLoading, setBranchPlanLoading] = useState<number | null>(null);
 
   async function requestPlan() {
     if (!selectedPlan) return;
@@ -855,6 +859,29 @@ function OwnerShopSubscription() {
     if (typeof raw === "string") { try { const p = JSON.parse(raw); if (Array.isArray(p)) return p; } catch {} return raw.split(",").map((s: string) => s.trim()).filter(Boolean); }
     return [];
   }
+
+  useEffect(() => {
+    fetch("/api/admin/branches").then(r => r.json()).then(d => setBranches(d.branches || [])).catch(() => {});
+    fetch("/api/plans/all").then(r => r.json()).then(d => setBranchPlans(d.plans || d || [])).catch(() => {});
+  }, []);
+
+  const changeBranchPlan = async (branchId: number, planId: string) => {
+    setBranchPlanLoading(branchId);
+    try {
+      const res = await fetch(`/api/admin/branches/${branchId}/plan`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setBranches(prev => prev.map(b => b.id === branchId ? { ...b, planId } : b));
+      setMsg("Branch plan updated.");
+    } catch {
+      setMsg("Error: Failed to update branch plan.");
+    } finally {
+      setBranchPlanLoading(null);
+    }
+  };
 
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
@@ -882,6 +909,64 @@ function OwnerShopSubscription() {
             </div>
             <div className="stat-card__label">Until Renewal</div>
             {daysRemaining !== null && daysRemaining <= 7 && <p style={{ fontSize: "0.8rem", color: "#dc2626", margin: "0.25rem 0 0" }}>Renew soon!</p>}
+          </div>
+        </div>
+      )}
+
+      {branches.length > 1 && (
+        <div className="space-y-3" style={{ marginBottom: "1.5rem" }}>
+          <h3 style={{ fontSize: "1.1rem", fontWeight: 600 }}>Branch Plans</h3>
+          <p className="muted" style={{ fontSize: "0.85rem" }}>Each branch can have its own subscription plan independent of the shop-wide plan.</p>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Branch</th>
+                  <th>Current Plan</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "right" }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {branches.map(b => {
+                  const plan = branchPlans.find((p: any) => p.id === b.planId);
+                  return (
+                    <tr key={b.id}>
+                      <td style={{ fontWeight: 500 }}>{escapeHtml(b.name)}</td>
+                      <td>
+                        <span className="plan-status" style={{ background: "#dbeafe", color: "#1e40af", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>
+                          {plan ? escapeHtml(plan.name) : b.planId || "No plan"}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "#fff", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>
+                          {b.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        {branchPlanEditId === b.id ? (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.5rem" }}>
+                            <select
+                              defaultValue={b.planId || ""}
+                              onChange={e => changeBranchPlan(b.id, e.target.value)}
+                              disabled={branchPlanLoading === b.id}
+                              style={{ padding: "0.25rem 0.5rem", borderRadius: 4, border: "1px solid var(--border)", fontSize: "0.85rem" }}
+                            >
+                              {branchPlans.filter((p: any) => p.isActive !== false).map((p: any) => (
+                                <option key={p.id} value={p.id}>{escapeHtml(p.name)}</option>
+                              ))}
+                            </select>
+                            <RippleButton size="small" variant="ghost" onClick={() => setBranchPlanEditId(null)}>Cancel</RippleButton>
+                          </div>
+                        ) : (
+                          <RippleButton size="small" variant="ghost" onClick={() => setBranchPlanEditId(b.id)} loading={branchPlanLoading === b.id}>Change Plan</RippleButton>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
