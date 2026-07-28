@@ -2313,12 +2313,12 @@ a.order-item:hover {
     gap: var(--space-8);
     min-height: auto;
   }
-  .hero-content { order: 1; text-align: center; align-items: center; }
+  .hero-content { order: 1; text-align: left; align-items: flex-start; }
   .hero-visual { order: 0; }
-  .hero-sub { margin: 0 auto; }
-  .hero-actions { justify-content: center; }
-  .hero-highlights { justify-content: center; }
-  .hero-chips { justify-content: center; }
+  .hero-sub { margin: 0; }
+  .hero-actions { justify-content: flex-start; }
+  .hero-highlights { justify-content: flex-start; }
+  .hero-chips { justify-content: flex-start; }
   .hero-image-wrap { max-width: 380px; }
   .hero-stats { max-width: 380px; margin: 0 auto; }
   .hero-trust { padding: var(--space-3) var(--space-4); }

@@ -10,14 +10,14 @@ export const LAYOUT_DESC = "A configurable custom storefront layout with hero, c
 export function LayoutStyles() {
   return (
     <style>{`
-      .custom-hero { background: linear-gradient(135deg, rgba(29, 78, 216, 0.95), rgba(59, 130, 246, 0.95)); color: white; padding: 4rem 1rem; text-align: center; }
-      .custom-hero h1 { font-size: clamp(2.25rem, 4vw, 3.75rem); margin: 0 0 1rem; }
-      .custom-hero p { font-size: 1.05rem; max-width: 720px; margin: 0 auto 1.5rem; line-height: 1.6; }
+      .custom-hero { background: linear-gradient(135deg, rgba(29, 78, 216, 0.95), rgba(59, 130, 246, 0.95)); color: white; padding: 4rem 1rem; text-align: left; }
+      .custom-hero h1 { font-size: clamp(2.25rem, 4vw, 3.75rem); margin: 0 0 1rem; text-align: left; }
+      .custom-hero p { font-size: 1.05rem; max-width: 720px; margin: 0 0 1.5rem; line-height: 1.6; text-align: left; }
       .custom-hero a { display: inline-block; margin-top: 1rem; background: white; color: #1d4ed8; padding: 0.95rem 1.5rem; border-radius: 999px; font-weight: 700; text-decoration: none; }
       .custom-hero img { max-width: 100%; height: auto; border-radius: 1rem; margin-top: 1.5rem; }
       .custom-content { display: grid; gap: 2rem; max-width: 1440px; margin: 0 auto; padding: 2rem 1rem; }
       .custom-category-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
-      .custom-category-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; text-align: center; }
+      .custom-category-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; text-align: left; }
       .custom-category-card a { color: var(--text); text-decoration: none; font-weight: 700; }
       .custom-products-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; }
       .custom-product-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
@@ -80,7 +80,7 @@ export function HomePage({ products, categories, banners, hero }: { products: Pr
           <p style={{ margin: 0, color: "var(--text-secondary)" }}>A curated selection of your best sellers.</p>
         </div>
         {products.length === 0 ? (
-          <p style={{ textAlign: "center", color: "var(--text-secondary)", marginTop: "1rem" }}>No products available yet.</p>
+          <p style={{ textAlign: "left", color: "var(--text-secondary)", marginTop: "1rem" }}>No products available yet.</p>
         ) : (
           <div className="custom-products-grid">
             {products.slice(0, 8).map((product) => (
