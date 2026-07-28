@@ -108,7 +108,7 @@ const FAQS = [
   { q: "How does the repair management work?", a: "Create repair tickets, assign technicians, generate cost quotes, track status through every stage, and notify customers via email and WhatsApp when repairs are ready for collection. Customers can track their repairs in real time." },
   { q: "Is KRA eTIMS compliance built in?", a: "Yes. Every invoice and credit note includes proper eTIMS control codes, serial numbers, and receipt generation. You're always audit-ready." },
   { q: "Can I try before I buy?", a: "Yes. We offer a free Starter plan with core features. Upgrade to Growth, Pro, or Enterprise plans when you need advanced capabilities." },
-  { q: "How does multi-branch management work?", a: "Create multiple branches, assign staff per branch, transfer stock between locations, and view consolidated reports across all branches from a single dashboard." },
+  { q: "How does multi-branch management work?", a: "Create multiple branches, each with its own subscription plan and stock inventory. Transfer stock between locations (deducted from source, incremented at destination), filter stock views by branch, and view consolidated reports across all branches from a single dashboard. Different branches can operate independently with features tailored to their plan." },
   { q: "What payment methods do you support?", a: "We support M-Pesa mobile money payments through the POS and online checkout. Cash and bank transfer payments are also tracked automatically." },
 ];
 
