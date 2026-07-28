@@ -238,6 +238,7 @@ code, pre {
 .header-left {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--space-3);
   flex: 1 1 0;
   min-width: 0;
@@ -247,12 +248,13 @@ code, pre {
 .main-nav-desktop {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--space-1);
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
   white-space: nowrap;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -2029,9 +2031,9 @@ a.order-item:hover {
 .hero-product-info {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-1);
-  text-align: left;
+  text-align: center;
 }
 
 .hero-product-name {
@@ -2092,7 +2094,7 @@ a.order-item:hover {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-1);
   padding: var(--space-3) var(--space-2);
   border-radius: var(--radius-lg);
@@ -2126,7 +2128,7 @@ a.order-item:hover {
   z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
 }
@@ -2313,14 +2315,14 @@ a.order-item:hover {
     gap: var(--space-8);
     min-height: auto;
   }
-  .hero-content { order: 1; text-align: left; align-items: flex-start; }
+  .hero-content { order: 1; text-align: center; align-items: center; }
   .hero-visual { order: 0; }
-  .hero-sub { margin: 0; }
-  .hero-actions { justify-content: flex-start; }
-  .hero-highlights { justify-content: flex-start; }
-  .hero-chips { justify-content: flex-start; }
+  .hero-sub { margin: 0 auto; }
+  .hero-actions { justify-content: center; }
+  .hero-highlights { justify-content: center; }
+  .hero-chips { justify-content: center; }
   .hero-image-wrap { max-width: 380px; }
-  .hero-stats { max-width: 380px; margin: 0; }
+  .hero-stats { max-width: 380px; margin: 0 auto; }
   .hero-trust { padding: var(--space-3) var(--space-4); }
   .hero-wave svg { height: 50px; }
   .hero-particle { display: none; }

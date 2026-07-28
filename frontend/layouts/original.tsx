@@ -283,9 +283,9 @@ export function HomePage({ products, categories, hero }: {
 
       <div style={{ maxWidth: "var(--max-width)", margin: "0 auto", padding: "0 var(--space-5)" }}>
         {categories.length > 0 && (
-          <div id="categories" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.5rem", margin: "1.5rem 0" }}>
+          <div id="categories" style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", margin: "1.5rem 0" }}>
             {categories.map((cat) => (
-              <a key={cat.id} href={`/${cat.id}`} className="btn btn-secondary btn-sm" style={{ textAlign: "center", whiteSpace: "nowrap" }}>{cat.label}</a>
+              <a key={cat.id} href={`/${cat.id}`} className="btn btn-secondary btn-sm" style={{ textAlign: "left", whiteSpace: "nowrap" }}>{cat.label}</a>
             ))}
           </div>
         )}

@@ -10,9 +10,9 @@ export const LAYOUT_DESC = "A configurable custom storefront layout with hero, c
 export function LayoutStyles() {
   return (
     <style>{`
-      .custom-hero { background: linear-gradient(135deg, rgba(29, 78, 216, 0.95), rgba(59, 130, 246, 0.95)); color: white; padding: 4rem 1rem; text-align: left; }
-      .custom-hero h1 { font-size: clamp(2.25rem, 4vw, 3.75rem); margin: 0 0 1rem; text-align: left; }
-      .custom-hero p { font-size: 1.05rem; max-width: 720px; margin: 0 0 1.5rem; line-height: 1.6; text-align: left; }
+      .custom-hero { background: linear-gradient(135deg, rgba(29, 78, 216, 0.95), rgba(59, 130, 246, 0.95)); color: white; padding: 4rem 1rem; text-align: center; }
+      .custom-hero h1 { font-size: clamp(2.25rem, 4vw, 3.75rem); margin: 0 0 1rem; text-align: center; }
+      .custom-hero p { font-size: 1.05rem; max-width: 720px; margin: 0 auto 1.5rem; line-height: 1.6; text-align: center; }
       .custom-hero a { display: inline-block; margin-top: 1rem; background: white; color: #1d4ed8; padding: 0.95rem 1.5rem; border-radius: 999px; font-weight: 700; text-decoration: none; }
       .custom-hero img { max-width: 100%; height: auto; border-radius: 1rem; margin-top: 1.5rem; }
       .custom-content { display: grid; gap: 2rem; max-width: 1440px; margin: 0 auto; padding: 2rem 1rem; }
