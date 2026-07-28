@@ -2,8 +2,7 @@
 import { api, getStaffToken } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { useFeature } from "@/lib/features";
-
-function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
+import { escapeHtml } from "@/lib/sanitize";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);

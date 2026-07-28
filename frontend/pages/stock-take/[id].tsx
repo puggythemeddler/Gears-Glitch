@@ -2,12 +2,11 @@ import React, { useEffect, useState } from "react";
 import { api, getStaffToken } from "@/lib/api";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import { escapeHtml } from "@/lib/sanitize";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
 }
-
-function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
 
 function Spinner() { return <p style={{ textAlign: "center", padding: "2rem", opacity: 0.5 }}>Loading...</p>; }
 

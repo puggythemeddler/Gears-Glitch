@@ -55,7 +55,7 @@ const FEATURES = [
   { icon: "📊", name: "Reports & Analytics", desc: "Sales, employee performance, technician stats, purchase reports, and stock summary with date filtering." },
   { icon: "📄", name: "Quotation Engine", desc: "Generate professional quotes with line items, discounts, PDF export, and one-click conversion to orders." },
   { icon: "🧾", name: "KRA eTIMS Invoicing", desc: "Fully compliant invoices and credit notes with control codes, serial numbers, and receipt generation." },
-  { icon: "🔐", name: "Role-Based Permissions", desc: "Granular access control for admin, owner, manager, staff, technician, provider, and customer roles." },
+  { icon: "🔐", name: "Role-Based Permissions", desc: "Granular access control for admin, owner, manager, staff, technician, provider, and customer roles. Optional TOTP two-factor authentication for admin accounts." },
   { icon: "🔔", name: "Email Notifications", desc: "Automated emails for order status updates, quote delivery, credit notes, password resets, and customer messaging. Single unified email engine with configurable SMTP." },
   { icon: "📱", name: "WhatsApp Integration", desc: "Bidirectional WhatsApp messaging via Meta Cloud API. Send/receive messages, 24h window tracking, HMAC webhook verification, Kenyan phone normalization, and full conversation logs." },
   { icon: "💱", name: "Multi-Currency Support", desc: "Display prices in multiple currencies with live exchange rate conversion for international customers." },
@@ -79,7 +79,7 @@ const WHY_CHOOSE = [
   { num: "05", title: "KRA eTIMS Compliance", desc: "Built-in compliant invoicing with control codes, so you're always ready for audits." },
   { num: "06", title: "Scalable Architecture", desc: "Start with one branch and scale to multiple locations with independent subscription plans per branch — no system changes needed." },
   { num: "07", title: "Cloud Accessibility", desc: "Access your business from any device, anywhere — manage operations remotely with full confidence." },
-  { num: "08", title: "Enterprise-Grade Security", desc: "Role-based access, encrypted data, audit trails, and compliance-ready infrastructure." },
+  { num: "08", title: "Enterprise-Grade Security", desc: "Role-based access, TOTP two-factor authentication, CSRF protection, encrypted data, audit trails, and compliance-ready infrastructure." },
   { num: "09", title: "Per-Branch Flexibility", desc: "Each branch gets its own subscription plan and stock inventory. Different locations can operate independently with features and stock tailored to their needs." },
 ];
 

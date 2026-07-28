@@ -7,7 +7,7 @@ import { useApp } from "@/lib/app-context";
 import { useRouter } from "next/router";
 
 const SITE = "Gear&Glitch";
-const BASE = "https://gearsandglitch.co.ke";
+const BASE = process.env.NEXT_PUBLIC_SITE_URL || "https://gearsandglitch.co.ke";
 
 export default function HomePage() {
   const router = useRouter();

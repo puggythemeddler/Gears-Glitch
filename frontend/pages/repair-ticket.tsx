@@ -1,8 +1,7 @@
 ﻿import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { api, isCustomerLoggedIn } from "@/lib/api";
-
-function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
+import { escapeHtml } from "@/lib/sanitize";
 
 function formatDate(d: string) {
   return new Date(d).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });

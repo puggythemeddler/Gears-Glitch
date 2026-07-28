@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { imageUrlForProduct, deleteProductImages } from "./upload";
 import { CATEGORIES } from "./categories";
 import { query, queryOne, queryAll, transaction, runSchema, getPool } from "./db-helpers";
@@ -1035,7 +1036,8 @@ async function ensureAdminUser(): Promise<void> {
   let password = process.env.ADMIN_PASSWORD || "";
   if (!password) {
     if (process.env.NODE_ENV === "production") { console.warn("ADMIN_PASSWORD not set"); return; }
-    password = "admin123";
+    password = crypto.randomBytes(12).toString("hex");
+    console.warn(`[auth] ADMIN_PASSWORD not set — generated temporary dev password: ${password}`);
   }
   const passwordHash = await bcrypt.hash(password, 10);
   await query("INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'admin')", [username, email, passwordHash]);
@@ -1047,7 +1049,8 @@ async function ensureTechnicianUser(): Promise<void> {
   let password = process.env.TECH_PASSWORD || "";
   if (!password) {
     if (process.env.NODE_ENV === "production") { console.warn("TECH_PASSWORD not set"); return; }
-    password = "tech123";
+    password = crypto.randomBytes(12).toString("hex");
+    console.warn(`[auth] TECH_PASSWORD not set — generated temporary dev password: ${password}`);
   }
   const existing = await queryOne("SELECT id, email FROM users WHERE username = $1", [techUser]) as any;
   if (existing) {

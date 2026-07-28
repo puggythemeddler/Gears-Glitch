@@ -152,7 +152,7 @@ export default function AdminPage() {
   }, [view, allVisibleKeys]);
 
   useEffect(() => {
-    api<{ googleClientId: string }>("/api/public-settings").then((d) => setGoogleClientId(d.googleClientId || "")).catch(() => {});
+    api<{ googleClientId: string }>("/api/public-settings").then((d) => setGoogleClientId(d.googleClientId || "")).catch((e) => console.warn("[admin] Failed to load public settings:", e?.message));
   }, []);
 
   useEffect(() => {
@@ -239,7 +239,7 @@ export default function AdminPage() {
     if (authed) {
       api<{ requests: any[] }>("/api/shop/subscription/requests").then((d) => {
         setPendingCount((d.requests || []).filter((r) => r.status === "pending").length);
-      }).catch(() => {});
+      }).catch((e) => console.warn("[admin] Failed to load subscription requests:", e?.message));
     }
   }, [authed, view]);
 
@@ -701,7 +701,7 @@ function AdminOrders() {
   useEffect(() => {
     if (!oData?.orders?.length) return;
     const ids = oData.orders.map((o) => o.id).join(",");
-    api<{ credited: Record<number, boolean> }>(`/api/admin/credit-notes/order-status?orderIds=${ids}`).then((d) => setCreditedOrders(d.credited || {})).catch(() => {});
+    api<{ credited: Record<number, boolean> }>(`/api/admin/credit-notes/order-status?orderIds=${ids}`).then((d) => setCreditedOrders(d.credited || {})).catch((e) => console.warn("[admin] Failed to load credit status:", e?.message));
   }, [oData]);
 
   async function printInvoice(orderId: number) {
@@ -1728,7 +1728,7 @@ function AdminBranches() {
   const [allPlans, setAllPlans] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch("/api/plans/all").then(r => r.json()).then(setAllPlans).catch(() => {});
+    fetch("/api/plans/all").then(r => r.json()).then(setAllPlans).catch((e) => console.warn("[admin] Failed to load all plans:", e?.message));
   }, []);
 
   const owners = sData?.staff?.filter((u) => u.role === "owner") || [];
@@ -1909,7 +1909,7 @@ function AdminInvoices() {
     if (tab !== "orders" || !oiData?.invoices?.length) return;
     const ids = [...new Set(oiData.invoices.map((inv: any) => inv.orderId))].join(",");
     if (!ids) return;
-    api<{ credited: Record<number, boolean> }>(`/api/admin/credit-notes/order-status?orderIds=${ids}`).then((d) => setCreditedOrders(d.credited || {})).catch(() => {});
+    api<{ credited: Record<number, boolean> }>(`/api/admin/credit-notes/order-status?orderIds=${ids}`).then((d) => setCreditedOrders(d.credited || {})).catch((e) => console.warn("[admin] Failed to load credit status:", e?.message));
   }, [oiData, tab]);
 
   async function markPaid(id: number) {
@@ -2902,7 +2902,7 @@ function AdminStoreInfo() {
   useEffect(() => {
     api<{ enabled: boolean }>("/api/auth/2fa/status", { method: "GET" }, "staff")
       .then((d) => setTotpEnabled(d.enabled))
-      .catch(() => {});
+      .catch((e) => console.warn("[admin] Failed to load 2FA status:", e?.message));
   }, []);
 
   async function handleTotpSetup() {
@@ -3310,7 +3310,7 @@ function AdminNavOrder() {
           { id: "contact", label: "Contact" },
         ]);
       }
-    }).catch(() => {});
+    }).catch((e) => console.warn("[admin] Failed to load nav order:", e?.message));
   }, []);
 
   function handleDragStart(idx: number, e: React.DragEvent) {
@@ -3379,7 +3379,7 @@ function AdminFooterConfig() {
           { title: "Company", links: [{ label: "About Us", href: "/about" }, { label: "Contact", href: "/contact" }] },
         ]
       });
-    }).catch(() => {});
+    }).catch((e) => console.warn("[admin] Failed to load footer config:", e?.message));
   }, []);
 
   function updateLink(colIdx: number, linkIdx: number, field: string, value: string) {
@@ -4748,7 +4748,7 @@ function AdminReviews() {
     setLoading(true);
     api<{ reviews: any[]; total: number; totalPages: number }>(`/api/admin/reviews?page=${p}`).then((d) => {
       setReviews(d.reviews); setTotal(d.total); setTotalPages(d.totalPages); setPage(p);
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch((e) => console.warn("[admin] Failed to load reviews:", e?.message)).finally(() => setLoading(false));
   }
 
   useEffect(() => { loadReviews(1); }, []);
@@ -4918,9 +4918,9 @@ function AdminWhatsAppSettings() {
 
   useEffect(() => {
     api<any>("/api/settings").then((s) => { setSettings(s); setLoading(false); }).catch(() => setLoading(false));
-    api<any>("/api/admin/whatsapp/config").then(setConfig).catch(() => {});
-    api<any>("/api/admin/whatsapp/stats").then(setStats).catch(() => {});
-    api<any>("/api/admin/whatsapp/logs?limit=30").then((d) => setLogs(d.logs || [])).catch(() => {});
+    api<any>("/api/admin/whatsapp/config").then(setConfig).catch((e) => console.warn("[admin] Failed to load WhatsApp config:", e?.message));
+    api<any>("/api/admin/whatsapp/stats").then(setStats).catch((e) => console.warn("[admin] Failed to load WhatsApp stats:", e?.message));
+    api<any>("/api/admin/whatsapp/logs?limit=30").then((d) => setLogs(d.logs || [])).catch((e) => console.warn("[admin] Failed to load WhatsApp logs:", e?.message));
   }, []);
 
   async function saveWhatsAppSettings() {
@@ -4940,7 +4940,7 @@ function AdminWhatsAppSettings() {
       });
       setSettings(updated);
       setMsg("WhatsApp settings saved.");
-      api<any>("/api/admin/whatsapp/config").then(setConfig).catch(() => {});
+      api<any>("/api/admin/whatsapp/config").then(setConfig).catch((e) => console.warn("[admin] Failed to reload WhatsApp config:", e?.message));
     } catch (e: any) { setMsg("Error: " + e.message); }
     finally { setSaving(false); }
   }

@@ -3,8 +3,7 @@ import { useRouter } from "next/router";
 import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import type { Order } from "@/lib/types";
-
-function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
+import { escapeHtml } from "@/lib/sanitize";
 
 export default function OrderDetailPage() {
   const router = useRouter();

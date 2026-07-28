@@ -3,12 +3,11 @@ import { api, getRole, getCustomerToken, getProviderToken, clearAllSessions } fr
 import type { Order, RepairTicket, WishlistItem, Message, Quote } from "@/lib/types";
 import { useToast } from "@/components/Toast";
 import { useFeature } from "@/lib/features";
+import { escapeHtml } from "@/lib/sanitize";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
 }
-
-function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
 
 type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "sales" | "invoices" | "profile";
 

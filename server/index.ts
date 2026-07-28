@@ -561,9 +561,9 @@ app.post("/api/mpesa/callback", (req: Request, res: Response) => {
       resultCode,
       resultDesc: resultDesc.slice(0, 200),
     };
-    fs.appendFileSync(path.join(__dirname, "..", "data", "mpesa-callback.log"),
+      fs.appendFileSync(path.join(__dirname, "..", "data", "mpesa-callback.log"),
       `${JSON.stringify(logEntry)}\n`, "utf-8");
-  } catch {}
+  } catch { console.warn("[server] Failed to log M-Pesa callback"); }
 
   res.json({ ResultCode: 0, ResultDesc: "Success" });
 });
@@ -594,9 +594,9 @@ app.get("/api/public-settings", asyncHandler(async (_req: Request, res: Response
   const mpesaCfg = getMpesaConfig();
   const layout = await getStoreSetting("store_layout") || "original";
   let banners: any[] = [];
-  try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
+  try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let aboutUs: any = {};
-  try { aboutUs = JSON.parse(await getStoreSetting("about_us") || "{}"); } catch {}
+  try { aboutUs = JSON.parse(await getStoreSetting("about_us") || "{}"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   res.json({
     storeName,
     phone,
@@ -648,7 +648,7 @@ app.get("/api/rates", asyncHandler(async (_req: Request, res: Response) => {
       const parsed = JSON.parse(manualRates);
       res.json({ base: "KES", rates: parsed, source: "manual" });
       return;
-    } catch {}
+    } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   }
   if (ratesCache && Date.now() - ratesCache.timestamp < RATES_CACHE_TTL) {
     res.json({ base: "KES", rates: ratesCache.rates, source: "auto" });
@@ -689,11 +689,11 @@ app.delete("/api/rates", adminAuthMiddleware, requirePermission("settings:update
 app.get("/api/storefront-config", asyncHandler(async (_req: Request, res: Response) => {
   const layout = await getStoreSetting("store_layout") || "original";
   let banners: any[] = [];
-  try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
+  try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let features: any[] = [];
-  try { features = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
+  try { features = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let hero: any = { enabled: true };
-  try { hero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch {}
+  try { hero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let layoutConfig: any = null;
   try {
     const layoutRow = await queryOne("SELECT config, layout_type, label, description FROM storefront_layouts WHERE layout_key = $1", [layout]);
@@ -705,18 +705,18 @@ app.get("/api/storefront-config", asyncHandler(async (_req: Request, res: Respon
         config: typeof layoutRow.config === "string" ? JSON.parse(layoutRow.config) : layoutRow.config,
       };
     }
-  } catch {}
+  } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   res.json({ layout, banners, features, hero, layoutConfig });
 }));
 
 app.get("/api/admin/storefront-layout", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   const layout = await getStoreSetting("store_layout") || "original";
   let banners: any[] = [];
-  try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
+  try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let features: any[] = [];
-  try { features = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
+  try { features = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let hero: any = { enabled: true };
-  try { hero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch {}
+  try { hero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   res.json({ layout, banners, features, hero });
 }));
 
@@ -741,11 +741,11 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, asyncHandler(async 
   }
   const currentLayout = await getStoreSetting("store_layout") || "original";
   let currentBanners: any[] = [];
-  try { currentBanners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch {}
+  try { currentBanners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let currentFeatures: any[] = [];
-  try { currentFeatures = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch {}
+  try { currentFeatures = JSON.parse(await getStoreSetting("store_features") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let currentHero: any = { enabled: true };
-  try { currentHero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch {}
+  try { currentHero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   res.json({ layout: currentLayout, banners: currentBanners, features: currentFeatures, hero: currentHero });
 }));
 
@@ -830,7 +830,7 @@ app.put("/api/admin/layouts-reorder", adminAuthMiddleware, requirePermission("se
 
 app.get("/api/admin/about-us", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   let aboutUs: any = {};
-  try { aboutUs = JSON.parse(await getStoreSetting("about_us") || "{}"); } catch {}
+  try { aboutUs = JSON.parse(await getStoreSetting("about_us") || "{}"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   res.json(aboutUs);
 }));
 
@@ -928,7 +928,7 @@ app.post("/api/settings/logo", adminAuthMiddleware, asyncHandler(async (req: Req
     await runMulter(uploadLogo, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch {}
+      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
@@ -967,7 +967,7 @@ app.post("/api/settings/favicon", adminAuthMiddleware, asyncHandler(async (req: 
     await runMulter(uploadFavicon, req, res);
     if (!req.file) { res.status(400).json({ error: "No file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch {}
+      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
@@ -1103,7 +1103,7 @@ app.post("/api/admin/plans", adminAuthMiddleware, asyncHandler(async (req: Reque
     if (await getSubscriptionPlan(id)) { res.status(409).json({ error: "A plan with this ID already exists." }); return; }
     const plan = await createSubscriptionPlan({ id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches: 1, features, isActive: true });
     if (!plan) { res.status(500).json({ error: "Failed to create plan." }); return; }
-    try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "plan", id, { name }, (req as any).user.role); } catch {}
+    try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "plan", id, { name }, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
     res.status(201).json({ plan });
   } catch (err: any) {
     console.error("[plan create]", err?.message || err);
@@ -1120,7 +1120,7 @@ app.put("/api/admin/plans/:id", adminAuthMiddleware, asyncHandler(async (req: Re
     if (updates.features !== undefined && !isArr(updates.features)) { res.status(400).json({ error: "Features must be an array." }); return; }
     const plan = await updateSubscriptionPlan(String(req.params.id), updates);
     if (!plan) { res.status(404).json({ error: "Plan not found." }); return; }
-    try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "plan", String(req.params.id), { changes: Object.keys(req.body || {}) }, (req as any).user.role); } catch {}
+    try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "plan", String(req.params.id), { changes: Object.keys(req.body || {}) }, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
     res.json({ plan });
   } catch (err: any) {
     console.error("[plan update]", err?.message || err);
@@ -1135,7 +1135,7 @@ app.delete("/api/admin/plans/:id", adminAuthMiddleware, asyncHandler(async (req:
     }
     const ok = await deleteSubscriptionPlan(String(req.params.id));
     if (!ok) { res.status(404).json({ error: "Plan not found." }); return; }
-    try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "deleted", "plan", String(req.params.id), {}, (req as any).user.role); } catch {}
+    try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "deleted", "plan", String(req.params.id), {}, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
     res.status(204).end();
   } catch (err: any) {
     console.error("[plan delete]", err?.message || err);
@@ -1460,7 +1460,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
         if (pmt === "multi-currency" && !branchFeatures.includes("Multi-currency support")) {
           res.status(403).json({ error: "Multi-currency payments not available for this branch's plan." }); return;
         }
-      } catch {}
+      } catch { console.warn("[server] Failed to check branch features"); }
     }
     const staff = (req as any).user;
     const staffName = staff.username || staff.email || `Staff #${staff.sub}`;
@@ -1539,7 +1539,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     for (const item of resolvedItems) {
       try {
         await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2`, [item.quantity, item.id]);
-      } catch {}
+      } catch { console.warn("[server] Failed to update stock on hand"); }
       try {
         const bid = branchId ? Number(branchId) : null;
         const existingLevel = bid
@@ -2165,7 +2165,7 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
       if (!branchFeatures.includes("Invoice/quote PDF downloads")) {
         res.status(403).json({ error: "PDF downloads not available for this branch's plan." }); return;
       }
-    } catch {}
+    } catch { console.warn("[server] Failed to check branch features"); }
   }
   if (req.query.format === "pdf") {
     try {
@@ -2314,7 +2314,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
       if (!branchFeatures.includes("Invoice/quote PDF downloads")) {
         res.status(403).json({ error: "PDF downloads not available for this branch's plan." }); return;
       }
-    } catch {}
+    } catch { console.warn("[server] Failed to check branch features"); }
   }
   if (req.query.format === "pdf") {
     try {
@@ -2504,7 +2504,7 @@ app.post("/api/admin/credit-notes", ownerAuthMiddleware, asyncHandler(async (req
       if (!branchFeatures.includes("Credit notes")) {
         res.status(403).json({ error: "Credit notes not available for this branch's plan." }); return;
       }
-    } catch {}
+    } catch { console.warn("[server] Failed to check branch features"); }
   }
   const orderItems = (order.items || []).map((i: any) => ({
     orderItemId: i.id, productId: i.productId, name: i.name, price: i.price, quantity: i.quantity
@@ -2940,7 +2940,7 @@ app.get("/api/products/:id", asyncHandler(async (req: Request, res: Response) =>
   try {
     const product = await getProduct(String(req.params.id));
     if (!product) { res.status(404).json({ error: "Product not found." }); return; }
-    try { await recordProductView(String(req.params.id), "anonymous"); } catch {}
+    try { await recordProductView(String(req.params.id), "anonymous"); } catch { console.warn("[analytics] Failed to record product view"); }
     res.json(product);
   } catch (err: any) {
     console.error("GET /api/products/:id error:", err?.message || err);
@@ -3109,7 +3109,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
     await runMulter(uploadProductImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch {}
+      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
@@ -3280,7 +3280,7 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
     await runMulter(uploadGalleryImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch {}
+      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
@@ -3672,7 +3672,7 @@ app.post("/api/staff", adminAuthMiddleware, requirePermission("staff:create"), a
 
     const staff = await createStaff({ username, email: email || undefined, password, role });
     const user = (req as any).user;
-    try { await recordAuditLog(user.sub, user.username || "", "staff_created", "staff", String(staff.id), JSON.stringify({ username, role }), user.role); } catch {}
+    try { await recordAuditLog(user.sub, user.username || "", "staff_created", "staff", String(staff.id), JSON.stringify({ username, role }), user.role); } catch { console.warn("[audit] Failed to write audit log"); }
     res.status(201).json(staff);
   } catch (err: any) {
     console.error("[staff create]", err?.message || err);
@@ -4044,7 +4044,7 @@ app.post("/api/repairs/:id/images", staffAuthMiddleware, asyncHandler(async (req
     await runMulter(uploadRepairImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image uploaded." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch {}
+      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
@@ -4380,7 +4380,7 @@ app.post("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:vi
         if (!branchFeatures.includes("Quotations")) {
           res.status(403).json({ error: "Quotations not available for this branch's plan." }); return;
         }
-      } catch {}
+      } catch { console.warn("[server] Failed to check branch features"); }
     }
     let customerId = Number(cid) || 0;
     if (!customerId && customerName) {
@@ -5070,7 +5070,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   try {
     const overdueCount = await markOverdueInvoices();
     if (overdueCount > 0) console.log(`[auto-billing] Marked ${overdueCount} overdue invoices on startup.`);
-  } catch {}
+  } catch { console.warn("[server] Failed to mark overdue invoices on startup"); }
 
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

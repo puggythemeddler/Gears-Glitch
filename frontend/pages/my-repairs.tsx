@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api, isCustomerLoggedIn } from "@/lib/api";
 import type { RepairTicket } from "@/lib/types";
-
-function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
+import { escapeHtml } from "@/lib/sanitize";
 
 export default function MyRepairsPage() {
   const [tickets, setTickets] = useState<RepairTicket[]>([]);

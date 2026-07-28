@@ -1,15 +1,10 @@
 ﻿import React, { useEffect, useState } from "react";
 import { api, isCustomerLoggedIn } from "@/lib/api";
 import type { WishlistItem, Quote } from "@/lib/types";
+import { escapeHtml } from "@/lib/sanitize";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
-}
-
-function escapeHtml(text: string) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 export default function WishlistPage() {

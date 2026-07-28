@@ -54,7 +54,7 @@ function requireAuth(
       const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET) as AuthUser;
       (req as any).user = decoded;
       return next();
-    } catch {}
+    } catch (e: any) { console.warn("[auth] JWT verification failed:", e?.message); }
   }
   // 2. Try x-api-key (legacy + per-user)
   const key = req.headers["x-api-key"] || req.query.key;
@@ -201,8 +201,7 @@ async function seedDefaultAdmin() {
     "INSERT INTO cp_users (username, password_hash, role, api_key) VALUES ($1, $2, $3, $4)",
     ["admin", hash, "admin", apiKey]
   );
-  console.log(`[auth] Default admin user created. Username: admin, Password: ${defaultPassword}`);
-  console.log(`[auth] Admin API key: ${apiKey}`);
+  console.log("[auth] Default admin user created. Username: admin, set CP_ADMIN_PASSWORD env var to configure.");
 }
 
 // ─── ROUTES ──────────────────────────────────────────────
@@ -539,7 +538,7 @@ app.put("/api/clients/:id/suspend", requireAuth, async (req, res) => {
           method: "POST",
           headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
         });
-      } catch {}
+      } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
     }
 
     res.json({ message: `Client "${client.name}" suspended.` });
@@ -563,7 +562,7 @@ app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
           method: "POST",
           headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
         });
-      } catch {}
+      } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
     }
 
     res.json({ message: `Client "${client.name}" resumed.` });
@@ -703,7 +702,7 @@ app.post("/api/backups/run", requireAuth, async (_req, res) => {
         const fp = path.join(BACKUP_DIR, f);
         if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
       }
-    } catch {}
+    } catch (e: any) { console.warn("[startup] Failed to clean old backups:", e?.message); }
 
     res.json({ results });
   } catch (err: any) {
@@ -790,7 +789,7 @@ app.post("/api/plans/import-defaults", requireAuth, async (_req, res) => {
         }
         console.log(`[api] Imported ${plans.length} plans from "${c.name}".`);
         break;
-      } catch {}
+      } catch (e: any) { console.warn("[plans] Operation failed:", e?.message); }
     }
     res.json({ message: `Imported ${imported} plans.`, imported });
   } catch (err: any) {
@@ -1161,7 +1160,7 @@ function scheduleAutoBackup() {
         try {
           await execAsync(`pg_dump "${c.neon_db_url}" | gzip > "${filepath}"`, { timeout: 120000 });
           await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup"]);
-        } catch {}
+        } catch (e: any) { console.warn("[startup] Auto backup pg_dump failed:", e?.message); }
       }
       // Cleanup backups older than 7 days
       try {
@@ -1171,7 +1170,7 @@ function scheduleAutoBackup() {
           const fp = path.join(BACKUP_DIR, f);
           if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
         }
-      } catch {}
+      } catch (e: any) { console.warn("[startup] Failed to clean old auto-backups:", e?.message); }
       console.log(`[auto-backup] Backed up ${clients.length} clients.`);
     } catch (err: any) { console.error("[auto-backup] Error:", err.message); }
     scheduleAutoBackup();
@@ -1207,7 +1206,7 @@ async function autoImportPlans() {
         }
         console.log(`[startup-plans] Imported ${plans.length} plans from "${c.name}".`);
         break;
-      } catch {}
+      } catch (e: any) { console.warn("[startup] Failed to import plans from client:", e?.message); }
     }
   } catch (err: any) {
     console.error("[startup-plans] Error:", err.message);
@@ -1235,7 +1234,7 @@ async function autoImportCloudinary() {
         await setCloudinaryConfig(data.cloudName, data.apiKey, data.apiSecret, data.folder || "gear-glitch");
         console.log(`[startup-cloudinary] Imported Cloudinary config from "${c.name}" (folder: ${data.folder}).`);
         return;
-      } catch {}
+      } catch (e: any) { console.warn("[startup] Failed to import Cloudinary config from client:", e?.message); }
     }
     console.log("[startup-cloudinary] No client had Cloudinary configured.");
   } catch (err: any) {
@@ -1266,10 +1265,10 @@ async function runStartupHealthCheck() {
         if (usage) {
           await query("UPDATE clients SET usage_orders = $1, usage_customers = $2, usage_revenue = $3 WHERE id = $4", [usage.orders || 0, usage.customers || 0, usage.revenue || 0, c.id]);
         }
-      } catch {}
+      } catch (e: any) { console.warn("[startup] Health check failed for client:", e?.message); }
     }
     console.log("[startup-health] Done.");
-  } catch {}
+  } catch (e: any) { console.warn("[startup] Health check routine failed:", e?.message); }
 }
 
 // ─── SPA FALLBACK ────────────────────────────────────────

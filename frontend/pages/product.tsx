@@ -3,12 +3,7 @@ import { useRouter } from "next/router";
 import { api, isCustomerLoggedIn, requireCustomerLogin } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import type { Product, ProductImage } from "@/lib/types";
-
-function escapeHtml(text: string) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
+import { escapeHtml } from "@/lib/sanitize";
 
 function productInitials(name: string) {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();

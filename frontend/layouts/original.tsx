@@ -80,7 +80,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     return () => clearInterval(timer);
   }, [featured.length, prefersReducedMotion]);
 
-  const badgeText = hero?.badgeText || "Summer Tech Sale &mdash; Up to 30% Off";
+  const badgeText = hero?.badgeText || "Summer Tech Sale \u2014 Up to 30% Off";
   const badgeActive = hero?.badgeActive !== false;
   const badgeLink = hero?.badgeLink || "";
 
@@ -145,12 +145,12 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
             badgeLink ? (
               <a href={badgeLink} className="hero-badge" style={{ textDecoration: "none" }}>
                 <span className="hero-badge-dot" />
-                <span dangerouslySetInnerHTML={{ __html: badgeText }} />
+                <span>{badgeText}</span>
               </a>
             ) : (
               <span className="hero-badge">
                 <span className="hero-badge-dot" />
-                <span dangerouslySetInnerHTML={{ __html: badgeText }} />
+                <span>{badgeText}</span>
               </span>
             )
           )}

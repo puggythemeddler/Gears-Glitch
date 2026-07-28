@@ -293,7 +293,7 @@ export async function provisionClient(
   console.log(`[provision] Backend:  ${render.serviceUrl}`);
   console.log(`[provision] Frontend: ${vercel.projectUrl}`);
   console.log(`[provision] Domain:   https://${clientDomain}`);
-  console.log(`[provision] Admin:    ${adminEmail} / ${adminPassword}\n`);
+  console.log(`[provision] Admin credentials sent via welcome email.\n`);
 
   // 5. Send welcome email
   await sendWelcomeEmail(adminEmail, clientName, vercel.projectUrl, render.serviceUrl, adminPassword, plan);
@@ -373,7 +373,6 @@ async function sendWelcomeEmail(
 ) {
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
     console.log("[email] SMTP not configured — skipping welcome email.");
-    console.log(`[email] Credentials for "${clientName}": ${toEmail} / ${adminPassword}`);
     return;
   }
 
@@ -462,7 +461,7 @@ export async function notifyAllClientsChangelog(version: string, title: string, 
           subject: `Gear&Glitch Update ${version} — ${title}`,
           html,
         });
-      } catch {}
+      } catch (e: any) { console.warn("[email] Changelog email send failed:", e?.message); }
     }
 
     console.log(`[email] Changelog "${title}" sent to ${clients.length} clients.`);

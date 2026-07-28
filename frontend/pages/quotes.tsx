@@ -2,11 +2,11 @@ import React, { useEffect, useState, useRef } from "react";
 import { api, getRole, getTokenForRole, downloadPdf } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { useApp } from "@/lib/app-context";
+import { escapeHtml } from "@/lib/sanitize";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
 }
-function escapeHtml(v: string) { const d = document.createElement("div"); d.textContent = v; return d.innerHTML; }
 
 interface QuoteItem {
   id: number;
