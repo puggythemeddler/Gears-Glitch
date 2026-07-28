@@ -8,7 +8,7 @@ import path from "path";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { initControlPlaneDb, queryAll, queryOne, query } from "./db";
+import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig } from "./db";
 import {
   provisionClient,
   deployAllClients,
@@ -380,11 +380,9 @@ app.post("/api/deploy-all", requireAuth, async (_req, res) => {
 // Push shared Cloudinary credentials to all active clients
 app.post("/api/sync-cloudinary", requireAuth, async (_req, res) => {
   try {
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
-    if (!cloudName || !apiKey || !apiSecret) {
-      res.status(400).json({ error: "Cloudinary env vars not set on control plane (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)" });
+    const cc = await getCloudinaryConfig();
+    if (!cc || !cc.cloud_name || !cc.api_key || !cc.api_secret) {
+      res.status(400).json({ error: "No Cloudinary config stored. Pull from a client first." });
       return;
     }
 
@@ -401,22 +399,20 @@ app.post("/api/sync-cloudinary", requireAuth, async (_req, res) => {
       const folder = `gear-glitch/${slug}`;
 
       try {
-        // Update env vars on the Render service
         const r = await fetch(`https://api.render.com/v1/services/${c.render_service_id}`, {
           method: "PATCH",
           headers: { Authorization: `Bearer ${RENDER_API_KEY}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             envVars: [
-              { key: "CLOUDINARY_CLOUD_NAME", value: cloudName },
-              { key: "CLOUDINARY_API_KEY", value: apiKey },
-              { key: "CLOUDINARY_API_SECRET", value: apiSecret },
+              { key: "CLOUDINARY_CLOUD_NAME", value: cc.cloud_name },
+              { key: "CLOUDINARY_API_KEY", value: cc.api_key },
+              { key: "CLOUDINARY_API_SECRET", value: cc.api_secret },
               { key: "CLOUDINARY_FOLDER", value: folder },
             ],
           }),
         });
 
         if (r.ok) {
-          // Trigger a deploy so env vars take effect
           await fetch(`https://api.render.com/v1/services/${c.render_service_id}/deploys`, {
             method: "POST",
             headers: { Authorization: `Bearer ${RENDER_API_KEY}`, "Content-Type": "application/json" },
@@ -438,6 +434,44 @@ app.post("/api/sync-cloudinary", requireAuth, async (_req, res) => {
   } catch (err: any) {
     console.error("[api] Sync Cloudinary error:", err.message);
     res.status(500).json({ error: "Failed to sync Cloudinary" });
+  }
+});
+
+// Pull Cloudinary config from a live client
+app.post("/api/pull-cloudinary/:id", requireAuth, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const r = await fetch(`${client.render_service_url}/api/cloudinary-config`, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) { res.status(502).json({ error: `Client returned ${r.status}` }); return; }
+    const data: any = await r.json();
+
+    if (!data.configured) {
+      res.status(400).json({ error: "Client has no Cloudinary configured" });
+      return;
+    }
+
+    await setCloudinaryConfig(data.cloudName, data.apiKey, data.apiSecret, data.folder || "gear-glitch");
+    res.json({ message: `Cloudinary config pulled from "${client.name}".`, folder: data.folder });
+  } catch (err: any) {
+    console.error("[api] Pull Cloudinary error:", err.message);
+    res.status(500).json({ error: "Failed to pull Cloudinary config" });
+  }
+});
+
+// Get stored Cloudinary config status
+app.get("/api/cloudinary", requireAuth, async (_req, res) => {
+  try {
+    const cc = await getCloudinaryConfig();
+    if (!cc || !cc.cloud_name) {
+      res.json({ configured: false });
+      return;
+    }
+    res.json({ configured: true, cloudName: cc.cloud_name, hasApiKey: !!cc.api_key, hasApiSecret: !!cc.api_secret, folder: cc.folder, updatedAt: cc.updated_at });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get Cloudinary config" });
   }
 });
 
@@ -1180,6 +1214,35 @@ async function autoImportPlans() {
   }
 }
 
+// ─── STARTUP CLOUDINARY IMPORT ────────────────────────────
+async function autoImportCloudinary() {
+  try {
+    const existing = await getCloudinaryConfig();
+    if (existing && existing.cloud_name) {
+      console.log("[startup-cloudinary] Cloudinary config already stored, skipping.");
+      return;
+    }
+    const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active' AND render_service_url != ''");
+    if (!clients.length) { console.log("[startup-cloudinary] No active clients found."); return; }
+
+    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
+      try {
+        const r = await fetch(`${c.render_service_url}/api/cloudinary-config`, { signal: AbortSignal.timeout(15000) });
+        if (!r.ok) continue;
+        const data: any = await r.json();
+        if (!data.configured) continue;
+
+        await setCloudinaryConfig(data.cloudName, data.apiKey, data.apiSecret, data.folder || "gear-glitch");
+        console.log(`[startup-cloudinary] Imported Cloudinary config from "${c.name}" (folder: ${data.folder}).`);
+        return;
+      } catch {}
+    }
+    console.log("[startup-cloudinary] No client had Cloudinary configured.");
+  } catch (err: any) {
+    console.error("[startup-cloudinary] Error:", err.message);
+  }
+}
+
 // ─── STARTUP HEALTH CHECK ──────────────────────────────────
 async function runStartupHealthCheck() {
   try {
@@ -1221,6 +1284,7 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`[control-plane] Running on http://localhost:${PORT}`);
     setTimeout(autoImportPlans, 3000);
+    setTimeout(autoImportCloudinary, 4000);
     setTimeout(runStartupHealthCheck, 5000);
     scheduleAutoBackup();
   });

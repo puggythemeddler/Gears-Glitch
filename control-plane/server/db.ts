@@ -49,6 +49,26 @@ export interface Client {
   notes: string;
 }
 
+export async function getCloudinaryConfig() {
+  const row = await queryOne("SELECT * FROM cloudinary_config ORDER BY id DESC LIMIT 1");
+  return row || null;
+}
+
+export async function setCloudinaryConfig(cloudName: string, apiKey: string, apiSecret: string, folder: string) {
+  const existing = await queryOne("SELECT id FROM cloudinary_config LIMIT 1");
+  if (existing) {
+    await query(
+      "UPDATE cloudinary_config SET cloud_name = $1, api_key = $2, api_secret = $3, folder = $4, updated_at = NOW() WHERE id = $5",
+      [cloudName, apiKey, apiSecret, folder, existing.id]
+    );
+  } else {
+    await query(
+      "INSERT INTO cloudinary_config (cloud_name, api_key, api_secret, folder) VALUES ($1, $2, $3, $4)",
+      [cloudName, apiKey, apiSecret, folder]
+    );
+  }
+}
+
 export async function initControlPlaneDb() {
   await query(`
     CREATE TABLE IF NOT EXISTS clients (
@@ -155,6 +175,17 @@ export async function initControlPlaneDb() {
       status TEXT DEFAULT 'pending',
       created_at TIMESTAMP DEFAULT NOW(),
       reviewed_at TIMESTAMP
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS cloudinary_config (
+      id SERIAL PRIMARY KEY,
+      cloud_name TEXT DEFAULT '',
+      api_key TEXT DEFAULT '',
+      api_secret TEXT DEFAULT '',
+      folder TEXT DEFAULT 'gear-glitch',
+      updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
 

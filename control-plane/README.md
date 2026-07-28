@@ -26,9 +26,9 @@ npm run dev             # http://localhost:4000
 | `VERCEL_TEAM_ID` | No | Vercel team ID if using a team account |
 | `DOMAIN_BASE` | No | Base domain (defaults to `gearglitch.com`) |
 | `FRONTEND_GIT_REPO` | No | GitHub repo for frontend (defaults to `puggythemeddler/Gears-Glitch`) |
-| `CLOUDINARY_CLOUD_NAME` | No | Shared Cloudinary cloud name (auto-configured for all new clients) |
-| `CLOUDINARY_API_KEY` | No | Shared Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | No | Shared Cloudinary API secret |
+| `CLOUDINARY_CLOUD_NAME` | No | Override: shared Cloudinary cloud name (if not pulling from client) |
+| `CLOUDINARY_API_KEY` | No | Override: shared Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | No | Override: shared Cloudinary API secret |
 | `SMTP_HOST` | No | SMTP host for sending emails |
 | `SMTP_PORT` | No | SMTP port (defaults to 587) |
 | `SMTP_USER` | No | SMTP username |
@@ -163,7 +163,9 @@ All endpoints require authentication via one of:
 |---|---|---|
 | POST | `/api/deploy-all` | Deploy latest code to all clients |
 | POST | `/api/health-check` | Check health of all clients |
-| POST | `/api/sync-cloudinary` | Push shared Cloudinary credentials to all clients |
+| POST | `/api/sync-cloudinary` | Push stored Cloudinary credentials to all clients |
+| POST | `/api/pull-cloudinary/:id` | Pull Cloudinary config from a live client |
+| GET | `/api/cloudinary` | Get stored Cloudinary config status |
 | POST | `/api/backups/run` | Run database backups |
 | GET | `/api/backups` | List backup files |
 | POST | `/api/changelog` | Publish changelog + notify clients |
@@ -204,6 +206,7 @@ The control plane uses its own PostgreSQL database (not shared with clients):
 | `custom_plans` | Plans created from the control plane |
 | `upgrade_requests` | Client upgrade requests (pending review) |
 | `cp_users` | Control plane user accounts (username, role, API key) |
+| `cloudinary_config` | Shared Cloudinary credentials (pulled from a client) |
 
 ## Architecture
 

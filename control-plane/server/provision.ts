@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { getCloudinaryConfig } from "./db";
 
 const NEON_API_KEY = process.env.NEON_API_KEY || "";
 const RENDER_API_KEY = process.env.RENDER_API_KEY || "";
@@ -13,9 +14,6 @@ const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
 const FROM_EMAIL = process.env.FROM_EMAIL || "noreply@gearglitch.com";
 const FROM_NAME = process.env.FROM_NAME || "Gear&Glitch";
-const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
-const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
-const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
 
 function randomPassword(len = 20) {
   return crypto.randomBytes(len).toString("base64url").slice(0, len);
@@ -84,7 +82,14 @@ export async function deleteNeonProject(projectId: string) {
 }
 
 // ─── RENDER ──────────────────────────────────────────────
-async function createRenderService(clientName: string, dbUrl: string, clientSlug: string) {
+interface CloudinaryCredentials {
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+  folder: string;
+}
+
+async function createRenderService(clientName: string, dbUrl: string, clientSlug: string, cloudinary?: CloudinaryCredentials | null) {
   console.log(`[provision] Creating Render service for "${clientName}"...`);
 
   const slug = slugify(clientName);
@@ -97,12 +102,12 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
     { key: "DB_SSL_REJECT", value: "false" },
   ];
 
-  // Add Cloudinary env vars if configured (shared account, per-client folder)
-  if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
+  // Add Cloudinary env vars if available (shared account, per-client folder)
+  if (cloudinary && cloudinary.cloudName && cloudinary.apiKey && cloudinary.apiSecret) {
     envVars.push(
-      { key: "CLOUDINARY_CLOUD_NAME", value: CLOUDINARY_CLOUD_NAME },
-      { key: "CLOUDINARY_API_KEY", value: CLOUDINARY_API_KEY },
-      { key: "CLOUDINARY_API_SECRET", value: CLOUDINARY_API_SECRET },
+      { key: "CLOUDINARY_CLOUD_NAME", value: cloudinary.cloudName },
+      { key: "CLOUDINARY_API_KEY", value: cloudinary.apiKey },
+      { key: "CLOUDINARY_API_SECRET", value: cloudinary.apiSecret },
       { key: "CLOUDINARY_FOLDER", value: `gear-glitch/${clientSlug}` }
     );
     console.log(`[provision] Cloudinary configured for folder: gear-glitch/${clientSlug}`);
@@ -268,8 +273,14 @@ export async function provisionClient(
   // 1. Create Neon database
   const neon = await createNeonDatabase(clientName);
 
-  // 2. Create Render service
-  const render = await createRenderService(clientName, neon.dbUrl, subdomain);
+  // 2. Pull Cloudinary config from DB
+  const cloudinaryConfig = await getCloudinaryConfig();
+  const cloudinary = cloudinaryConfig && cloudinaryConfig.cloud_name
+    ? { cloudName: cloudinaryConfig.cloud_name, apiKey: cloudinaryConfig.api_key, apiSecret: cloudinaryConfig.api_secret, folder: cloudinaryConfig.folder || "gear-glitch" }
+    : null;
+
+  // 3. Create Render service
+  const render = await createRenderService(clientName, neon.dbUrl, subdomain, cloudinary);
 
   // 3. Create Vercel project
   const vercel = await createVercelProject(clientName, render.serviceUrl);

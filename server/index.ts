@@ -480,6 +480,22 @@ app.get("/api/upload/status", ownerAuthMiddleware, asyncHandler(async (_req: Req
   res.json({ cloudinary: isCloudinaryConfigured(), cloudName: settings.cloudinaryCloudName || "(not set)", hasApiKey: !!settings.cloudinaryApiKey, hasApiSecret: !!settings.cloudinaryApiSecret });
 }));
 
+// Cloudinary config for control plane provisioning (server-to-server only)
+app.get("/api/cloudinary-config", asyncHandler(async (_req: Request, res: Response) => {
+  const settings = await getSettings();
+  if (!settings.cloudinaryCloudName || !settings.cloudinaryApiKey || !settings.cloudinaryApiSecret) {
+    res.json({ configured: false });
+    return;
+  }
+  res.json({
+    configured: true,
+    cloudName: settings.cloudinaryCloudName,
+    apiKey: settings.cloudinaryApiKey,
+    apiSecret: settings.cloudinaryApiSecret,
+    folder: settings.cloudinaryFolder || "gear-glitch",
+  });
+}));
+
 // Serve DB-backed-up images
 app.get("/api/images/:refId", asyncHandler(async (req: Request, res: Response) => {
   const img = await getImage(String(req.params.refId));

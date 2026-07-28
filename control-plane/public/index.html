@@ -136,6 +136,8 @@
       <div class="header-actions">
         <span id="user-display" style="font-size:0.82rem;color:var(--text-muted);align-self:center"></span>
         <button class="btn btn-ghost" onclick="healthCheckAll()">Health Check</button>
+        <select id="pull-cloudinary-client" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull Cloudinary from...</option></select>
+        <button class="btn btn-ghost" onclick="pullCloudinaryFromClient()">Pull Cloudinary</button>
         <button class="btn btn-ghost" onclick="syncCloudinary()">Sync Cloudinary</button>
         <button class="btn btn-ghost" onclick="deployAll()">Deploy All</button>
         <button class="btn btn-ghost" onclick="showExistingModal()">+ Add Existing</button>
@@ -494,6 +496,11 @@
         const cur = dd.value;
         dd.innerHTML = '<option value="">Pull from client...</option>' + allClients.filter(c => c.status === "active" && c.render_service_url).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
         dd.value = cur;
+        // Populate pull-cloudinary dropdown
+        const cdd = document.getElementById("pull-cloudinary-client");
+        const ccur = cdd.value;
+        cdd.innerHTML = '<option value="">Pull Cloudinary from...</option>' + allClients.filter(c => c.status === "active" && c.render_service_url).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+        cdd.value = ccur;
       } catch { document.getElementById("client-list").innerHTML = '<div class="empty"><p>Failed to load clients.</p></div>'; }
     }
 
@@ -656,13 +663,24 @@
     }
 
     async function syncCloudinary() {
-      if (!confirm("Push shared Cloudinary credentials to all active clients? Each client gets its own folder.")) return;
+      if (!confirm("Push Cloudinary credentials to all active clients? Each client gets its own folder.")) return;
       toast("Syncing Cloudinary...");
       try {
         const data = await api("/api/sync-cloudinary", { method: "POST" });
         if (data.error) { toast(data.error, "error"); return; }
         const r = data.results || [];
         toast(`Cloudinary synced: ${r.filter(x=>x.success).length} ok, ${r.filter(x=>!x.success).length} failed`);
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    async function pullCloudinaryFromClient() {
+      const clientId = document.getElementById("pull-cloudinary-client").value;
+      if (!clientId) { toast("Select a client first", "error"); return; }
+      toast("Pulling Cloudinary config...");
+      try {
+        const data = await api("/api/pull-cloudinary/" + clientId, { method: "POST" });
+        if (data.error) { toast(data.error, "error"); return; }
+        toast(data.message);
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
