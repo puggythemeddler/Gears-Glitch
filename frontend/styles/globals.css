@@ -219,8 +219,9 @@ code, pre {
 }
 
 .header-inner {
-  max-width: var(--max-width);
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
   padding: 0 var(--space-5);
   height: 100%;
   display: flex;
@@ -607,8 +608,9 @@ code, pre {
 
 /* ----- Main Content ----- */
 #main {
-  max-width: var(--max-width);
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
   padding: var(--space-8) var(--space-5);
   min-height: calc(100vh - var(--header-height) - 120px);
 }
@@ -621,8 +623,9 @@ code, pre {
 }
 
 .footer-inner {
-  max-width: var(--max-width);
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
   padding: var(--space-6) var(--space-5);
   text-align: center;
   font-size: var(--text-sm);
