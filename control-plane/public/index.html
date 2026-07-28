@@ -481,7 +481,6 @@
         if (currentUser.role === "admin") {
           document.getElementById("tab-btn-users").style.display = "";
         }
-      } catch (e) { document.getElementById("login-error").textContent = "Connection failed"; }
     }
 
     function doLogout() { clearAuth(); showLogin(); }
