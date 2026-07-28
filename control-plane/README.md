@@ -90,6 +90,16 @@ Click **Details** on any client to see:
 - Run `pg_dump` backups for all active client databases
 - Backups stored locally with 7-day auto-cleanup
 
+## Two-Factor Authentication (2FA)
+
+Administrators can protect their control-plane accounts with TOTP two-factor authentication (Time-based One-Time Password), in addition to the standard username + password.
+
+- **Two-step login:** Enter username + password → if 2FA is enabled, the screen switches to a 6-digit code input → verify with your authenticator app (Google Authenticator, Authy, 1Password, etc.) → sign in.
+- **Setup:** Click the **2FA Off** badge in the dashboard header → **Set Up 2FA** → scan the QR code with your authenticator app → enter the 6-digit code to enable. The badge turns green (**2FA On**).
+- **Disable:** Click the badge → enter your password to confirm.
+- **API access bypasses 2FA:** Programmatic calls using `x-api-key` (per-user API key or the legacy `CONTROL_PLANE_API_KEY`) skip the 2FA step so cron jobs, GitHub Actions, and other automation keep working.
+- **Database:** The `cp_users` table carries `totp_secret` (string) and `totp_enabled` (boolean) columns.
+
 ## Client Provisioning
 
 When you add a new client, the control plane automatically:
@@ -108,7 +118,7 @@ Register an already-deployed instance without provisioning new resources. Just p
 
 ## Control-Plane ↔ Client Authentication
 
-Every client backend carries a `CONTROL_PLANE_SECRET` env var (auto-generated during provisioning). The control plane stores this per-client secret (`clients.cp_secret`) and sends it as the `x-control-plane-key` header on every call to a client backend. This authenticates:
+Every client backend carries a `CONTROL_PLANE_SECRET` env var (auto-generated during provisioning). The control plane stores this per-client secret (`clients.cp_secret`) and sends it as the `x-control-plane-key` header on every call to a client backend. The header is compared with `crypto.timingSafeEqual` to mitigate timing attacks. This authenticates:
 
 - Plan sync (`PUT /api/plans/sync` on the client)
 - Cloudinary config pull (`GET /api/cloudinary-config`)
@@ -128,9 +138,13 @@ All endpoints require authentication via one of:
 ### Authentication
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/auth/login` | Login (returns JWT + user info) |
+| POST | `/api/auth/login` | Login (returns JWT + user info; if 2FA enabled, first call returns `{totpRequired:true}` — second call with `totpCode` verifies and issues JWT) |
 | POST | `/api/auth/register` | Create user (admin only) |
-| GET | `/api/auth/me` | Get current user |
+| GET | `/api/auth/me` | Get current user (includes `totpEnabled`) |
+| POST | `/api/auth/2fa/setup` | Generate TOTP secret + `otpauth://` QR URL (current user) |
+| POST | `/api/auth/2fa/enable` | Verify `totpCode` against pending secret and enable 2FA |
+| POST | `/api/auth/2fa/disable` | Disable 2FA (requires `password` confirmation) |
+| GET | `/api/auth/2fa/status` | Check whether 2FA is enabled for the current user |
 | GET | `/api/users` | List all users (admin only) |
 | PUT | `/api/users/:id` | Update user role/password (admin only) |
 | POST | `/api/users/:id/regenerate-key` | Regenerate user API key (admin only) |
@@ -212,13 +226,13 @@ The control plane uses its own PostgreSQL database (not shared with clients):
 
 | Table | Purpose |
 |---|---|
-| `clients` | All client instances with URLs, plans, health, usage |
+| `clients` | All client instances with URLs, plans, health, usage, per-client `cp_secret` |
 | `health_log` | Health check history per client |
 | `changelog` | Published updates |
 | `deploy_log` | Deployment history |
 | `custom_plans` | Plans created from the control plane |
 | `upgrade_requests` | Client upgrade requests (pending review) |
-| `cp_users` | Control plane user accounts (username, role, API key) |
+| `cp_users` | Control plane user accounts (username, role, API key, TOTP 2FA) |
 | `cloudinary_config` | Shared Cloudinary credentials (pulled from a client) |
 
 ## Architecture
