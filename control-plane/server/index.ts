@@ -8,6 +8,8 @@ import path from "path";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { generateSecret, verifySync } from "otplib";
+import { generateTOTP } from "@otplib/uri";
 import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig } from "./db";
 import {
   provisionClient,
@@ -98,21 +100,118 @@ function requireAdmin(
   next();
 }
 
+// ─── TOTP 2FA HELPERS ─────────────────────────────────────
+function makeTotpSecret(username: string): { secret: string; otpauthUrl: string } {
+  const secret = generateSecret();
+  const otpauthUrl = generateTOTP({ issuer: "Gear&Glitch Control Plane", label: username, secret });
+  return { secret, otpauthUrl };
+}
+
+function verifyTotp(secret: string, token: string): boolean {
+  try {
+    const result = verifySync({ token, secret });
+    return result?.valid === true;
+  } catch {
+    return false;
+  }
+}
+
 // ─── USER MANAGEMENT ─────────────────────────────────────
 app.post("/api/auth/login", async (req, res) => {
   try {
-    const { username, password } = req.body || {};
+    const { username, password, totpCode } = req.body || {};
     if (!username || !password) { res.status(400).json({ error: "Username and password required" }); return; }
     const user = await queryOne("SELECT * FROM cp_users WHERE username = $1", [username]);
     if (!user) { res.status(401).json({ error: "Invalid credentials" }); return; }
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) { res.status(401).json({ error: "Invalid credentials" }); return; }
+
+    // Step 2: 2FA verification
+    if (user.totp_enabled) {
+      // Allow API-key login to bypass 2FA (programmatic access)
+      const isApiKeyLogin = req.headers["x-api-key"] && (req.headers["x-api-key"] === API_KEY || req.headers["x-api-key"] === user.api_key);
+      if (!isApiKeyLogin) {
+        if (!totpCode) {
+          res.json({ totpRequired: true });
+          return;
+        }
+        if (!verifyTotp(user.totp_secret, String(totpCode))) {
+          res.status(401).json({ error: "Invalid 2FA code." });
+          return;
+        }
+      }
+    }
+
     await query("UPDATE cp_users SET last_login = NOW() WHERE id = $1", [user.id]);
     const token = signToken({ id: user.id, username: user.username, role: user.role });
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role, api_key: user.api_key } });
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, api_key: user.api_key, totpEnabled: !!user.totp_enabled } });
   } catch (err: any) {
     console.error("[auth] Login error:", err.message);
     res.status(500).json({ error: "Login failed" });
+  }
+});
+
+// ─── 2FA MANAGEMENT ──────────────────────────────────────
+// Step 1: Generate a new TOTP secret (returns secret + QR URL). User must verify with a code to enable.
+app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user as AuthUser;
+    const { secret, otpauthUrl } = makeTotpSecret(user.username);
+    // Store the pending secret temporarily — not enabled until verified
+    await query("UPDATE cp_users SET totp_secret = $1 WHERE id = $2", [secret, user.id]);
+    res.json({ secret, otpauthUrl, message: "Scan the QR code in your authenticator app, then verify with a 6-digit code to enable 2FA." });
+  } catch (err: any) {
+    console.error("[2fa] Setup error:", err.message);
+    res.status(500).json({ error: "Failed to set up 2FA" });
+  }
+});
+
+// Step 2: Verify the code and enable 2FA
+app.post("/api/auth/2fa/enable", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user as AuthUser;
+    const { totpCode } = req.body || {};
+    if (!totpCode) { res.status(400).json({ error: "2FA code required" }); return; }
+    const row = await queryOne("SELECT totp_secret FROM cp_users WHERE id = $1", [user.id]);
+    if (!row || !row.totp_secret) { res.status(400).json({ error: "Run setup first" }); return; }
+    if (!verifyTotp(row.totp_secret, String(totpCode))) {
+      res.status(401).json({ error: "Invalid 2FA code. Try again." });
+      return;
+    }
+    await query("UPDATE cp_users SET totp_enabled = true WHERE id = $1", [user.id]);
+    res.json({ message: "2FA enabled successfully." });
+  } catch (err: any) {
+    console.error("[2fa] Enable error:", err.message);
+    res.status(500).json({ error: "Failed to enable 2FA" });
+  }
+});
+
+// Disable 2FA (requires password confirmation)
+app.post("/api/auth/2fa/disable", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user as AuthUser;
+    const { password } = req.body || {};
+    if (!password) { res.status(400).json({ error: "Password required to disable 2FA" }); return; }
+    const row = await queryOne("SELECT password_hash FROM cp_users WHERE id = $1", [user.id]);
+    if (!row) { res.status(404).json({ error: "User not found" }); return; }
+    const valid = await bcrypt.compare(password, row.password_hash);
+    if (!valid) { res.status(401).json({ error: "Invalid password" }); return; }
+    await query("UPDATE cp_users SET totp_enabled = false, totp_secret = '' WHERE id = $1", [user.id]);
+    res.json({ message: "2FA disabled." });
+  } catch (err: any) {
+    console.error("[2fa] Disable error:", err.message);
+    res.status(500).json({ error: "Failed to disable 2FA" });
+  }
+});
+
+// Check 2FA status
+app.get("/api/auth/2fa/status", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user as AuthUser;
+    const row = await queryOne("SELECT totp_enabled FROM cp_users WHERE id = $1", [user.id]);
+    res.json({ enabled: !!(row && row.totp_enabled) });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get 2FA status" });
   }
 });
 
@@ -137,9 +236,9 @@ app.post("/api/auth/register", requireAuth, requireAdmin, async (req, res) => {
 
 app.get("/api/auth/me", requireAuth, async (req, res) => {
   const user = (req as any).user as AuthUser;
-  if (user.id === 0) { res.json({ user: { id: 0, username: "system", role: "admin" } }); return; }
-  const full = await queryOne("SELECT id, username, role, api_key, created_at, last_login FROM cp_users WHERE id = $1", [user.id]);
-  res.json({ user: full });
+  if (user.id === 0) { res.json({ user: { id: 0, username: "system", role: "admin", totpEnabled: false } }); return; }
+  const full = await queryOne("SELECT id, username, role, api_key, created_at, last_login, totp_enabled FROM cp_users WHERE id = $1", [user.id]);
+  res.json({ user: { ...full, totpEnabled: !!full?.totp_enabled } });
 });
 
 app.get("/api/users", requireAuth, requireAdmin, async (_req, res) => {

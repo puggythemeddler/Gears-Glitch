@@ -168,6 +168,10 @@ export async function initControlPlaneDb() {
     )
   `);
 
+  // TOTP 2FA columns for cp_users
+  try { await query(`ALTER TABLE cp_users ADD COLUMN IF NOT EXISTS totp_secret TEXT DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE cp_users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false`); } catch {}
+
   await query(`
     CREATE TABLE IF NOT EXISTS upgrade_requests (
       id SERIAL PRIMARY KEY,

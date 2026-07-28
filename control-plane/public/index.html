@@ -122,10 +122,22 @@
     <div style="width:360px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:2rem">
       <h1 style="text-align:center;margin-bottom:0.25rem"><span style="color:var(--primary)">Gear&Glitch</span></h1>
       <p style="text-align:center;color:var(--text-muted);font-size:0.85rem;margin-bottom:1.5rem">Control Plane</p>
-      <div class="field"><label>Username</label><input type="text" id="login-user" placeholder="admin" autofocus onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"></div>
-      <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+
+      <!-- Step 1: Credentials -->
+      <div id="login-step-1">
+        <div class="field"><label>Username</label><input type="text" id="login-user" placeholder="admin" autofocus onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"></div>
+        <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      </div>
+
+      <!-- Step 2: 2FA code (hidden until needed) -->
+      <div id="login-step-2" style="display:none">
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem">Enter the 6-digit code from your authenticator app.</p>
+        <div class="field"><label>2FA Code</label><input type="text" id="login-totp" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autofocus onkeydown="if(event.key==='Enter')doLoginVerify()"></div>
+      </div>
+
       <div id="login-error" style="color:var(--danger);font-size:0.82rem;margin-bottom:0.75rem"></div>
-      <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Sign In</button>
+      <button class="btn btn-primary" style="width:100%" id="login-btn" onclick="doLogin()">Sign In</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:0.5rem;display:none" id="login-back-btn" onclick="cancelTotp()">Back</button>
     </div>
   </div>
 
@@ -135,6 +147,7 @@
       <h1><span>Gear&Glitch</span> Control Plane</h1>
       <div class="header-actions">
         <span id="user-display" style="font-size:0.82rem;color:var(--text-muted);align-self:center"></span>
+        <span id="twofa-badge" style="font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:var(--radius);border:1px solid var(--border);align-self:center;cursor:pointer" onclick="openTwoFaModal()" title="Click to manage 2FA">2FA Off</span>
         <button class="btn btn-ghost" onclick="healthCheckAll()">Health Check</button>
         <select id="pull-cloudinary-client" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull Cloudinary from...</option></select>
         <button class="btn btn-ghost" onclick="pullCloudinaryFromClient()">Pull Cloudinary</button>
@@ -335,6 +348,17 @@
     </div>
   </div>
 
+  <!-- 2FA Modal -->
+  <div class="modal-overlay" id="twofa-modal-overlay">
+    <div class="modal" style="width:420px">
+      <h2>Two-Factor Authentication</h2>
+      <div id="twofa-content" style="margin-top:1rem"></div>
+      <div class="modal-actions" style="margin-top:1rem">
+        <button class="btn btn-ghost" onclick="hideTwoFaModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Plan Modal -->
   <div class="modal-overlay" id="plan-modal-overlay">
     <div class="modal" style="width:640px;max-height:90vh">
@@ -376,16 +400,76 @@
       document.getElementById("main-app").style.display = "none";
       document.getElementById("login-screen").style.display = "";
       document.getElementById("login-error").textContent = "";
+      // Reset to step 1
+      document.getElementById("login-step-1").style.display = "";
+      document.getElementById("login-step-2").style.display = "none";
+      document.getElementById("login-back-btn").style.display = "none";
+      document.getElementById("login-btn").textContent = "Sign In";
+      document.getElementById("login-btn").onclick = doLogin;
+      document.getElementById("login-totp").value = "";
+      document.getElementById("login-pass").value = "";
     }
+
+    function showTotpStep() {
+      document.getElementById("login-step-1").style.display = "none";
+      document.getElementById("login-step-2").style.display = "";
+      document.getElementById("login-back-btn").style.display = "";
+      document.getElementById("login-btn").textContent = "Verify & Sign In";
+      document.getElementById("login-btn").onclick = doLoginVerify;
+      document.getElementById("login-totp").focus();
+    }
+
+    function cancelTotp() {
+      document.getElementById("login-step-1").style.display = "";
+      document.getElementById("login-step-2").style.display = "none";
+      document.getElementById("login-back-btn").style.display = "none";
+      document.getElementById("login-btn").textContent = "Sign In";
+      document.getElementById("login-btn").onclick = doLogin;
+      document.getElementById("login-error").textContent = "";
+      document.getElementById("login-pass").focus();
+    }
+
+    // Stored credentials for the 2FA second step
+    let pendingLogin = null;
 
     async function doLogin() {
       const username = document.getElementById("login-user").value.trim();
       const password = document.getElementById("login-pass").value;
       if (!username || !password) { document.getElementById("login-error").textContent = "Enter username and password"; return; }
+      document.getElementById("login-error").textContent = "";
+      document.getElementById("login-btn").disabled = true;
       try {
         const res = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) });
         const data = await res.json();
+        document.getElementById("login-btn").disabled = false;
         if (!res.ok) { document.getElementById("login-error").textContent = data.error || "Login failed"; return; }
+        // 2FA required — switch to step 2
+        if (data.totpRequired) {
+          pendingLogin = { username, password };
+          showTotpStep();
+          return;
+        }
+        completeLogin(data);
+      } catch (e) { document.getElementById("login-btn").disabled = false; document.getElementById("login-error").textContent = "Connection failed"; }
+    }
+
+    async function doLoginVerify() {
+      if (!pendingLogin) { cancelTotp(); return; }
+      const totpCode = document.getElementById("login-totp").value.trim();
+      if (!totpCode) { document.getElementById("login-error").textContent = "Enter the 6-digit code"; return; }
+      document.getElementById("login-error").textContent = "";
+      document.getElementById("login-btn").disabled = true;
+      try {
+        const res = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: pendingLogin.username, password: pendingLogin.password, totpCode }) });
+        const data = await res.json();
+        document.getElementById("login-btn").disabled = false;
+        if (!res.ok) { document.getElementById("login-error").textContent = data.error || "Invalid code"; return; }
+        pendingLogin = null;
+        completeLogin(data);
+      } catch (e) { document.getElementById("login-btn").disabled = false; document.getElementById("login-error").textContent = "Connection failed"; }
+    }
+
+    function completeLogin(data) {
         setToken(data.token);
         localStorage.setItem("cp-user", JSON.stringify(data.user));
         currentUser = data.user;
@@ -393,6 +477,7 @@
         document.getElementById("main-app").style.display = "";
         document.getElementById("user-display").textContent = data.user.username + " (" + data.user.role + ")";
         loadClients();
+        updateTwoFaBadge(data.user.totpEnabled);
         if (currentUser.role === "admin") {
           document.getElementById("tab-btn-users").style.display = "";
         }
@@ -400,6 +485,22 @@
     }
 
     function doLogout() { clearAuth(); showLogin(); }
+
+    function updateTwoFaBadge(enabled) {
+      const el = document.getElementById("twofa-badge");
+      if (!el) return;
+      if (enabled) {
+        el.textContent = "2FA On";
+        el.style.background = "rgba(34,197,94,0.15)";
+        el.style.color = "var(--success)";
+        el.style.border = "1px solid rgba(34,197,94,0.3)";
+      } else {
+        el.textContent = "2FA Off";
+        el.style.background = "rgba(239,68,68,0.1)";
+        el.style.color = "var(--danger)";
+        el.style.border = "1px solid rgba(239,68,68,0.2)";
+      }
+    }
 
     async function initAuth() {
       const token = getToken();
@@ -412,6 +513,7 @@
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("main-app").style.display = "";
         document.getElementById("user-display").textContent = currentUser.username + " (" + currentUser.role + ")";
+        updateTwoFaBadge(data.user.totpEnabled);
         if (currentUser.role === "admin") {
           document.getElementById("tab-btn-users").style.display = "";
         }
@@ -578,6 +680,58 @@
     function hideEditModal() { document.getElementById("edit-modal-overlay").classList.remove("show"); }
     function showChangelogModal() { document.getElementById("changelog-modal-overlay").classList.add("show"); document.getElementById("cl-version").value = ""; document.getElementById("cl-title").value = ""; document.getElementById("cl-body").value = ""; }
     function hideChangelogModal() { document.getElementById("changelog-modal-overlay").classList.remove("show"); }
+    function hideTwoFaModal() { document.getElementById("twofa-modal-overlay").classList.remove("show"); }
+
+    async function openTwoFaModal() {
+      document.getElementById("twofa-modal-overlay").classList.add("show");
+      const c = document.getElementById("twofa-content");
+      c.innerHTML = '<p style="color:var(--text-muted)">Loading...</p>';
+      try {
+        const res = await api("/api/auth/2fa/status");
+        if (res.error) { c.innerHTML = '<p style="color:var(--danger)">' + esc(res.error) + '</p>'; return; }
+        if (res.enabled) {
+          c.innerHTML = '<div style="text-align:center;margin-bottom:1rem"><span style="color:var(--success);font-size:1.5rem">&#10003;</span><p style="margin-top:0.5rem">2FA is <strong>enabled</strong>. You need a code from your authenticator app to log in.</p></div><div class="field"><label>Disable 2FA — enter your password to confirm</label><input type="password" id="twofa-disable-pass" placeholder="Password"></div><button class="btn btn-danger" style="width:100%" onclick="disableTwoFa()">Disable 2FA</button>';
+        } else {
+          c.innerHTML = '<p style="color:var(--text-muted);margin-bottom:1rem">Protect your account with an authenticator app (Google Authenticator, Authy, 1Password, etc.).</p><button class="btn btn-primary" style="width:100%" onclick="setupTwoFa()">Set Up 2FA</button>';
+        }
+      } catch (e) { c.innerHTML = '<p style="color:var(--danger)">' + esc(e.message) + '</p>'; }
+    }
+
+    async function setupTwoFa() {
+      const c = document.getElementById("twofa-content");
+      c.innerHTML = '<p style="color:var(--text-muted)">Generating...</p>';
+      try {
+        const res = await api("/api/auth/2fa/setup", { method: "POST" });
+        if (res.error) { c.innerHTML = '<p style="color:var(--danger)">' + esc(res.error) + '</p>'; return; }
+        const qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(res.otpauthUrl);
+        c.innerHTML = '<div style="text-align:center;margin-bottom:1rem"><img src="' + esc(qrUrl) + '" alt="QR Code" style="border-radius:8px;width:200px;height:200px"></div><p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem">Scan this QR code with your authenticator app, or manually enter this key:</p><code style="display:block;background:var(--bg);padding:0.75rem;border-radius:var(--radius);font-family:monospace;font-size:0.82rem;word-break:break-all;margin-bottom:1rem">' + esc(res.secret) + '</code><div class="field"><label>Enter the 6-digit code from your app</label><input type="text" id="twofa-verify-code" placeholder="123456" maxlength="6" inputmode="numeric" onkeydown="if(event.key===\'Enter\')enableTwoFa()"></div><button class="btn btn-primary" style="width:100%" onclick="enableTwoFa()">Enable 2FA</button><button class="btn btn-ghost" style="width:100%;margin-top:0.5rem" onclick="openTwoFaModal()">Cancel</button>';
+        setTimeout(() => { const inp = document.getElementById("twofa-verify-code"); if (inp) inp.focus(); }, 100);
+      } catch (e) { c.innerHTML = '<p style="color:var(--danger)">' + esc(e.message) + '</p>'; }
+    }
+
+    async function enableTwoFa() {
+      const code = document.getElementById("twofa-verify-code").value.trim();
+      if (!code) { toast("Enter the 6-digit code", "error"); return; }
+      try {
+        const res = await api("/api/auth/2fa/enable", { method: "POST", body: JSON.stringify({ totpCode: code }) });
+        if (res.error) { toast(res.error, "error"); return; }
+        toast("2FA enabled successfully!");
+        updateTwoFaBadge(true);
+        hideTwoFaModal();
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    async function disableTwoFa() {
+      const password = document.getElementById("twofa-disable-pass").value;
+      if (!password) { toast("Enter your password", "error"); return; }
+      try {
+        const res = await api("/api/auth/2fa/disable", { method: "POST", body: JSON.stringify({ password }) });
+        if (res.error) { toast(res.error, "error"); return; }
+        toast("2FA disabled.");
+        updateTwoFaBadge(false);
+        hideTwoFaModal();
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
 
     // ─── ACTIONS ──────────────────────────────────────────
     async function createClient() {
