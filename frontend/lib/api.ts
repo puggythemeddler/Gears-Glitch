@@ -2,6 +2,16 @@ const CUSTOMER_TOKEN_KEY = "customerStoreToken";
 const STAFF_TOKEN_KEY = "computerStoreToken";
 const PROVIDER_TOKEN_KEY = "providerToken";
 
+let csrfToken: string | null = null;
+
+export async function initCsrf() {
+  try {
+    const res = await fetch("/api/csrf-token", { credentials: "include" });
+    const data = await res.json();
+    csrfToken = data.csrfToken;
+  } catch {}
+}
+
 export function getCustomerToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(CUSTOMER_TOKEN_KEY);
@@ -71,6 +81,10 @@ export async function api<T = any>(
   }
   const token = getTokenForRole(role);
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  const method = (options.method || "GET").toUpperCase();
+  if (csrfToken && ["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
+    headers["X-CSRF-Token"] = csrfToken;
+  }
 
   const res = await fetch(path, { ...options, headers });
   let text = "";

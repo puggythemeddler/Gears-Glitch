@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { isCustomerLoggedIn, getCustomerToken, setCustomerSession, clearAllSessions, api } from "./api";
+import { isCustomerLoggedIn, getCustomerToken, setCustomerSession, clearAllSessions, api, initCsrf } from "./api";
 import type { Settings } from "./types";
 import { setFormatConfig } from "@/layouts/shared";
 
@@ -126,6 +126,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       userName: localStorage.getItem("customerStoreName") || "",
       selectedCurrency: detected,
     }));
+    initCsrf();
     refreshSettings();
     refreshCartCount();
     refreshRates();

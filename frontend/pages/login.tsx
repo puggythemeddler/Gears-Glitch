@@ -20,6 +20,8 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleClientId, setGoogleClientId] = useState("");
+  const [totpRequired, setTotpRequired] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const gisLoadedRef = useRef(false);
 
@@ -90,10 +92,25 @@ export default function LoginPage() {
       } else {
         clearCustomerSession();
         clearProviderSession();
-        const data = await api("/api/auth/login", {
+        const body: any = { username: email, password };
+        if (totpRequired && totpCode) body.totpCode = totpCode;
+        const res = await fetch("/api/auth/login", {
           method: "POST",
-          body: JSON.stringify({ username: email, password }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
         });
+        const data = await res.json();
+        if (!res.ok) {
+          if (data.totpRequired) {
+            setTotpRequired(true);
+            setError("Enter your 2FA code.");
+            setLoading(false);
+            return;
+          }
+          throw new Error(data.error || "Login failed");
+        }
+        setTotpRequired(false);
+        setTotpCode("");
         const role = data.role || "";
         if (role === "provider") {
           localStorage.setItem("providerToken", data.token);
@@ -152,6 +169,24 @@ export default function LoginPage() {
             autoComplete="current-password"
           />
         </div>
+        {totpRequired && (
+          <div className="field">
+            <label htmlFor="totpCode" className="input-label">2FA Code</label>
+            <input
+              id="totpCode"
+              className="input"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="6-digit code"
+              required
+              autoFocus
+            />
+          </div>
+        )}
         {tab === "customer" && (
           <div className="field">
             <label htmlFor="name" className="input-label">Name (for new accounts)</label>
@@ -172,7 +207,7 @@ export default function LoginPage() {
         )}
         {error && <p className="form-status error">{error}</p>}
         <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
-          {loading ? "Signing in..." : "Sign in"}
+          {loading ? "Signing in..." : totpRequired ? "Verify & Sign in" : "Sign in"}
         </button>
         {tab === "customer" && googleClientId && (
           <>

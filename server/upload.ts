@@ -103,6 +103,37 @@ function imageFileFilterLenient(_req: any, file: Express.Multer.File, cb: multer
   cb(null, true);
 }
 
+const IMAGE_MAGIC_BYTES: { [key: string]: number[] } = {
+  jpeg: [0xFF, 0xD8, 0xFF],
+  png: [0x89, 0x50, 0x4E, 0x47],
+  gif: [0x47, 0x49, 0x46, 0x38],
+  webp: [0x52, 0x49, 0x46, 0x46],
+  bmp: [0x42, 0x4D],
+  ico: [0x00, 0x00, 0x01, 0x00],
+  svg: [0x3C, 0x3F, 0x78, 0x6D, 0x6C],
+};
+
+function validateImageMagicBytes(buffer: Buffer): boolean {
+  if (buffer.length < 4) return false;
+  for (const [, magic] of Object.entries(IMAGE_MAGIC_BYTES)) {
+    if (magic.every((byte, i) => buffer[i] === byte)) return true;
+  }
+  return false;
+}
+
+function validateUploadedFile(file: Express.Multer.File): boolean {
+  if (!file) return true;
+  try {
+    const buffer = Buffer.alloc(8);
+    const fd = fs.openSync(file.path, "r");
+    fs.readSync(fd, buffer, 0, 8, 0);
+    fs.closeSync(fd);
+    return validateImageMagicBytes(buffer);
+  } catch {
+    return false;
+  }
+}
+
 function runMulter(uploadFn: (req: any, res: any, cb: (err?: any) => void) => void, req: any, res: any): Promise<void> {
   return new Promise((resolve, reject) => {
     uploadFn(req, res, (err: any) => {
@@ -212,4 +243,4 @@ async function deleteCloudinaryImage(imageUrl: string): Promise<void> {
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile };

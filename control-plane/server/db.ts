@@ -134,6 +134,18 @@ export async function initControlPlaneDb() {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS cp_users (
+      id SERIAL PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT DEFAULT 'viewer',
+      api_key TEXT UNIQUE NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      last_login TIMESTAMP
+    )
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS upgrade_requests (
       id SERIAL PRIMARY KEY,
       client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,

@@ -16,7 +16,9 @@ npm run dev             # http://localhost:4000
 | Variable | Required | Description |
 |---|---|---|
 | `CONTROL_PLANE_DATABASE_URL` | Yes | Neon PostgreSQL connection string (separate from client DBs) |
-| `CONTROL_PLANE_API_KEY` | Yes | API key for all control plane requests (set in GitHub Actions too) |
+| `CONTROL_PLANE_API_KEY` | No (legacy) | Legacy API key for backward compatibility (still works) |
+| `JWT_SECRET` | No | JWT signing secret (auto-generated if not set) |
+| `CP_ADMIN_PASSWORD` | No | Default admin password (defaults to `gearglitch2024`) |
 | `RENDER_API_KEY` | Yes | Render API key for provisioning/suspending services |
 | `RENDER_API_URL` | No | Defaults to `https://api.render.com/v1` |
 | `NEON_API_KEY` | Yes | Neon API key for creating databases |
@@ -102,7 +104,21 @@ Register an already-deployed instance without provisioning new resources. Just p
 
 ## API Endpoints
 
-All endpoints require `x-api-key` header (or `?key=` query param).
+All endpoints require authentication via one of:
+- **Bearer JWT token** — `Authorization: Bearer <token>` (from login)
+- **Per-user API key** — `x-api-key: <key>` (each user gets a unique key)
+- **Legacy global API key** — `x-api-key: <CONTROL_PLANE_API_KEY>` (backward compatible)
+
+### Authentication
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/auth/login` | Login (returns JWT + user info) |
+| POST | `/api/auth/register` | Create user (admin only) |
+| GET | `/api/auth/me` | Get current user |
+| GET | `/api/users` | List all users (admin only) |
+| PUT | `/api/users/:id` | Update user role/password (admin only) |
+| POST | `/api/users/:id/regenerate-key` | Regenerate user API key (admin only) |
+| DELETE | `/api/users/:id` | Delete user (admin only) |
 
 ### Clients
 | Method | Endpoint | Description |
@@ -159,7 +175,7 @@ The workflow at `.github/workflows/deploy-all-clients.yml` runs on every push to
 
 **Required GitHub Secrets:**
 - `CONTROL_PLANE_URL` — your control plane's URL
-- `CONTROL_PLANE_API_KEY` — your control plane API key
+- `CONTROL_PLANE_API_KEY` — your control plane API key (legacy global key or any per-user API key)
 - `RENDER_API_KEY` — your Render API key
 
 ## Auto-Health Check
@@ -182,6 +198,7 @@ The control plane uses its own PostgreSQL database (not shared with clients):
 | `deploy_log` | Deployment history |
 | `custom_plans` | Plans created from the control plane |
 | `upgrade_requests` | Client upgrade requests (pending review) |
+| `cp_users` | Control plane user accounts (username, role, API key) |
 
 ## Architecture
 

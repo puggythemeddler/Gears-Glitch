@@ -983,6 +983,10 @@ async function runMigrations(): Promise<void> {
     await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_levels_product_branch ON stock_levels(product_id, COALESCE(branch_id, 0))`);
   } catch {}
 
+  // ─── 2FA / TOTP ──────────────────────────────────────────────
+  try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT`); } catch {}
+  try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false`); } catch {}
+
   // Seed default static layouts if none exist
   try {
     const count = await queryOne("SELECT COUNT(*) AS count FROM storefront_layouts") as { count: number } | undefined;
@@ -3230,6 +3234,15 @@ async function listEmailLogs(limit: number = 50): Promise<any[]> {
   return await queryAll("SELECT id, to_email, from_email, subject, type, status, error_message, created_at FROM email_logs ORDER BY created_at DESC LIMIT $1", [limit]);
 }
 
+async function getUserTotp(userId: number): Promise<{ totpSecret: string | null; totpEnabled: boolean }> {
+  const row = await queryOne("SELECT totp_secret, totp_enabled FROM users WHERE id = $1", [userId]) as any;
+  return { totpSecret: row?.totp_secret || null, totpEnabled: Boolean(row?.totp_enabled) };
+}
+
+async function setUserTotp(userId: number, secret: string | null, enabled: boolean): Promise<void> {
+  await query("UPDATE users SET totp_secret = $1, totp_enabled = $2 WHERE id = $3", [secret, enabled, userId]);
+}
+
 export {
   initDb, runMigrations, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
   seedDemoProvider, seedDemoCustomer, assignInitialRoles, seedProductsIfEmpty, ensureDefaultSubscriptionPlans,
@@ -3281,4 +3294,5 @@ export {
   upsertWhatsAppConversation, getWhatsAppConversationByPhone, getWhatsAppConversations, logWhatsAppMessage, listWhatsAppLogs, getWhatsAppStats, findCustomerByPhone, findProviderByPhone,
   getDb,
   storeImage, getImage, deleteImageByRef,
+  getUserTotp, setUserTotp,
 };

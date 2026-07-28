@@ -13,6 +13,8 @@ import path from "path";
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import crypto from "crypto";
+import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import {
   initDb,
@@ -248,6 +250,8 @@ import {
   getWhatsAppConversations,
   listWhatsAppLogs,
   getWhatsAppStats,
+  getUserTotp,
+  setUserTotp,
 } from "./db";
 import { query, queryOne, queryAll, transaction } from "./db-helpers";
 import {
@@ -265,6 +269,8 @@ import {
   signToken,
   verifyToken,
   getBearerToken,
+  generateTotpSecret,
+  verifyTotp,
 } from "./auth";
 import {
   getAllPermissions,
@@ -303,7 +309,7 @@ import {
 import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection } from "./whatsapp";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
@@ -312,6 +318,31 @@ import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLe
 
 const PORT: number = Number(process.env.PORT) || 8020;
 const ROOT: string = path.join(__dirname, "..");
+
+// CSRF protection helpers
+function generateCsrfToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function csrfProtection(req: Request, res: Response, next: NextFunction): void {
+  // Skip for GET, HEAD, OPTIONS
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) { next(); return; }
+  // Skip for login/register endpoints (no session yet)
+  if (req.path.startsWith("/api/auth/login") || req.path.startsWith("/api/auth/register") || req.path.startsWith("/api/customer/login") || req.path.startsWith("/api/customer/register") || req.path.startsWith("/api/provider/login")) { next(); return; }
+  // Skip for M-Pesa callback (external webhook)
+  if (req.path === "/api/mpesa/callback") { next(); return; }
+  // Skip for POS (uses Bearer token, not cookies)
+  if (req.path.startsWith("/api/pos/")) { next(); return; }
+
+  const token = req.headers["x-csrf-token"] || req.body?._csrf;
+  const cookie = req.cookies?.csrf_token;
+
+  if (!token || !cookie || token !== cookie) {
+    // Allow through with warning for now (not blocking)
+    console.warn(`[CSRF] Missing or mismatched token on ${req.method} ${req.path}`);
+  }
+  next();
+}
 
 // Start server after DB is ready
 const app = express();
@@ -382,6 +413,8 @@ const _inSet = inSet;
 const _okLen = okLen;
 
 app.use(express.json({ limit: "1mb", verify: (req: any, _res, buf) => { if (req.url === "/api/webhooks/whatsapp") req.rawBody = buf; } }));
+app.use(cookieParser());
+app.use(csrfProtection);
 app.use("/uploads", express.static(path.join(ROOT, "data", "uploads"), {
   maxAge: 0,
   etag: false,
@@ -407,6 +440,12 @@ app.get("/api/health", async (_req: Request, res: Response) => {
   } catch {
     res.json({ ok: true });
   }
+});
+
+app.get("/api/csrf-token", (req: Request, res: Response) => {
+  const token = generateCsrfToken();
+  res.cookie("csrf_token", token, { httpOnly: false, secure: process.env.NODE_ENV === "production", sameSite: "strict" });
+  res.json({ csrfToken: token });
 });
 
 // DB image backup helper — stores image as base64 in stored_images table
@@ -463,13 +502,53 @@ app.get("/api/shipping/counties", (_req: Request, res: Response) => {
 app.post("/api/mpesa/callback", (req: Request, res: Response) => {
   const data = req.body;
   if (!data || typeof data !== "object") { return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid payload" }); }
-  const checkoutId = data?.Body?.stkCallback?.CheckoutRequestID;
-  if (!checkoutId || typeof checkoutId !== "string" || checkoutId.length > 200) {
-    console.warn("[M-Pesa] Callback received without CheckoutRequestID — rejected");
-    return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid callback" });
+
+  // Validate callback structure
+  const stkCallback = data?.Body?.stkCallback;
+  if (!stkCallback || typeof stkCallback !== "object") {
+    return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid callback structure" });
   }
-  fs.appendFileSync(path.join(__dirname, "..", "data", "mpesa-callback.log"),
-    `[${new Date().toISOString()}] ${JSON.stringify(data)}\n`, "utf-8");
+
+  const checkoutId = stkCallback.CheckoutRequestID;
+  if (!checkoutId || typeof checkoutId !== "string" || checkoutId.length > 200 || !/^[A-Z0-9_-]+$/i.test(checkoutId)) {
+    console.warn("[M-Pesa] Callback received with invalid CheckoutRequestID — rejected");
+    return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid CheckoutRequestID" });
+  }
+
+  // Validate MerchantRequestID
+  const merchantRequestId = stkCallback.MerchantRequestID;
+  if (!merchantRequestId || typeof merchantRequestId !== "string" || merchantRequestId.length > 200) {
+    console.warn("[M-Pesa] Callback received with invalid MerchantRequestID — rejected");
+    return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid MerchantRequestID" });
+  }
+
+  // Validate ResultCode is a number
+  const resultCode = stkCallback.ResultCode;
+  if (resultCode === undefined || resultCode === null || typeof resultCode !== "number") {
+    console.warn("[M-Pesa] Callback received with invalid ResultCode — rejected");
+    return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid ResultCode" });
+  }
+
+  // Validate ResultDesc
+  const resultDesc = stkCallback.ResultDesc;
+  if (!resultDesc || typeof resultDesc !== "string" || resultDesc.length > 1000) {
+    console.warn("[M-Pesa] Callback received with invalid ResultDesc — rejected");
+    return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid ResultDesc" });
+  }
+
+  // Log the callback with sanitised data
+  try {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      checkoutRequestId: checkoutId,
+      merchantRequestId,
+      resultCode,
+      resultDesc: resultDesc.slice(0, 200),
+    };
+    fs.appendFileSync(path.join(__dirname, "..", "data", "mpesa-callback.log"),
+      `${JSON.stringify(logEntry)}\n`, "utf-8");
+  } catch {}
+
   res.json({ ResultCode: 0, ResultDesc: "Success" });
 });
 
@@ -832,6 +911,11 @@ app.post("/api/settings/logo", adminAuthMiddleware, asyncHandler(async (req: Req
   try {
     await runMulter(uploadLogo, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
+    if (req.file && !validateUploadedFile(req.file)) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
+      return;
+    }
     const logoUrl = getUploadedUrl(req);
     await updateSettings({ storeLogo: logoUrl });
     backupImageToDb("logo", logoUrl);
@@ -866,6 +950,11 @@ app.post("/api/settings/favicon", adminAuthMiddleware, asyncHandler(async (req: 
   try {
     await runMulter(uploadFavicon, req, res);
     if (!req.file) { res.status(400).json({ error: "No file provided." }); return; }
+    if (req.file && !validateUploadedFile(req.file)) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
+      return;
+    }
     const faviconUrl = getUploadedUrl(req);
     await updateSettings({ storeFavicon: faviconUrl });
     backupImageToDb("favicon", faviconUrl);
@@ -3003,6 +3092,11 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
   try {
     await runMulter(uploadProductImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
+    if (req.file && !validateUploadedFile(req.file)) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
+      return;
+    }
     const imageUrl = getUploadedUrl(req) || imageUrlForProduct(String(req.params.id));
     console.log("[Upload primary] imageUrl:", imageUrl, "cloudinary:", isCloudinaryConfigured());
     if (!imageUrl) { res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
@@ -3169,6 +3263,11 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
   try {
     await runMulter(uploadGalleryImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
+    if (req.file && !validateUploadedFile(req.file)) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
+      return;
+    }
     const imageUrl = getUploadedUrl(req);
     console.log("[Upload gallery] imageUrl:", imageUrl, "cloudinary:", isCloudinaryConfigured());
     if (!imageUrl) { res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
@@ -3256,10 +3355,15 @@ app.delete("/api/products/:id", ownerAuthMiddleware, requirePermission("product:
 app.post("/api/auth/login", asyncHandler(async (req: Request, res: Response) => {
   const login = String(req.body?.username || req.body?.email || "").trim();
   const password = String(req.body?.password || "");
+  const totpCode = req.body?.totpCode || req.body?.totp_code || undefined;
   if (!login || !password) { res.status(400).json({ error: "Email/username and password are required." }); return; }
   if (login.includes("@") && !isEmail(login)) { res.status(400).json({ error: "Invalid email format." }); return; }
-  let result = await loginStaff(login, password);
+  let result = await loginStaff(login, password, totpCode);
   if (!result.ok) {
+    if (result.totpRequired) {
+      res.status(401).json({ error: result.error, totpRequired: true });
+      return;
+    }
     const provResult = await loginProvider(login, password);
     if (provResult.ok) {
       res.json({ token: provResult.token, username: provResult.name, email: provResult.email, role: "provider" });
@@ -3297,6 +3401,48 @@ app.post("/api/customer/google-login", asyncHandler(async (req: Request, res: Re
   const result = await googleLogin(googleToken);
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
   res.json({ token: result.token, name: result.name, email: result.email });
+}));
+
+// ─── 2FA / TOTP ──────────────────────────────────────────────
+app.post("/api/auth/2fa/setup", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req as any).user.sub;
+  const username = (req as any).user.username || "admin";
+  const existing = await getUserTotp(userId);
+  if (existing.totpEnabled) { res.status(400).json({ error: "2FA is already enabled. Disable it first." }); return; }
+  const { secret, otpauthUrl } = generateTotpSecret(username);
+  await setUserTotp(userId, secret, false);
+  res.json({ secret, otpauthUrl });
+}));
+
+app.post("/api/auth/2fa/verify", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req as any).user.sub;
+  const { code } = req.body || {};
+  if (!code || typeof code !== "string") { res.status(400).json({ error: "Code required." }); return; }
+  const totp = await getUserTotp(userId);
+  if (!totp.totpSecret) { res.status(400).json({ error: "Run 2FA setup first." }); return; }
+  if (!verifyTotp(totp.totpSecret, code)) { res.status(400).json({ error: "Invalid code." }); return; }
+  await setUserTotp(userId, totp.totpSecret, true);
+  res.json({ ok: true, message: "2FA enabled." });
+}));
+
+app.post("/api/auth/2fa/disable", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req as any).user.sub;
+  const { password } = req.body || {};
+  if (!password) { res.status(400).json({ error: "Password required to disable 2FA." }); return; }
+  const user = await findStaffById(userId) as any;
+  if (!user) { res.status(404).json({ error: "User not found." }); return; }
+  const row = await queryOne("SELECT password_hash FROM users WHERE id = $1", [userId]) as any;
+  if (!row || !(await bcrypt.compare(password, row.password_hash))) {
+    res.status(401).json({ error: "Incorrect password." }); return;
+  }
+  await setUserTotp(userId, null, false);
+  res.json({ ok: true, message: "2FA disabled." });
+}));
+
+app.get("/api/auth/2fa/status", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req as any).user.sub;
+  const totp = await getUserTotp(userId);
+  res.json({ enabled: totp.totpEnabled });
 }));
 
 app.get("/api/customer/me", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -3881,6 +4027,11 @@ app.post("/api/repairs/:id/images", staffAuthMiddleware, asyncHandler(async (req
   try {
     await runMulter(uploadRepairImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image uploaded." }); return; }
+    if (req.file && !validateUploadedFile(req.file)) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
+      return;
+    }
     const imageType = String(req.body.imageType || "before").toLowerCase();
     if (!["before", "after"].includes(imageType)) { res.status(400).json({ error: "imageType must be 'before' or 'after'." }); return; }
     const imageUrl = getUploadedUrl(req);

@@ -1,7 +1,9 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { findStaffByUsername, findStaffByEmail, findCustomerByEmail, findCustomerById, findProviderByEmail, updateCustomerLastLogin, getStoreSetting } from "./db";
+import { generateSecret, generateSync, verifySync } from "otplib";
+import { generateTOTP } from "@otplib/uri";
+import { findStaffByUsername, findStaffByEmail, findCustomerByEmail, findCustomerById, findProviderByEmail, updateCustomerLastLogin, getStoreSetting, getUserTotp } from "./db";
 import { Request, Response, NextFunction } from "express";
 import { OAuth2Client } from "google-auth-library";
 
@@ -36,6 +38,7 @@ interface AuthResult {
   name?: string;
   email?: string;
   role?: string;
+  totpRequired?: boolean;
 }
 
 function getJwtSecret(): string {
@@ -117,7 +120,7 @@ function customerAuthMiddleware(req: Request, res: Response, next: NextFunction)
   }
 }
 
-async function loginStaff(login: string, password: string): Promise<AuthResult> {
+async function loginStaff(login: string, password: string, totpCode?: string): Promise<AuthResult> {
   const isEmail = login.includes("@");
   let user = isEmail ? await findStaffByEmail(login) as StaffUser | undefined : await findStaffByUsername(login) as StaffUser | undefined;
   if (!user) {
@@ -131,6 +134,17 @@ async function loginStaff(login: string, password: string): Promise<AuthResult> 
   const match = await bcrypt.compare(password, user.password_hash);
   if (!match) {
     return { ok: false, error: "Invalid username/email or password." };
+  }
+
+  // Check 2FA
+  const totp = await getUserTotp(user.id);
+  if (totp.totpEnabled) {
+    if (!totpCode) {
+      return { ok: false, error: "2FA required", totpRequired: true };
+    }
+    if (!verifyTotp(totp.totpSecret, totpCode)) {
+      return { ok: false, error: "Invalid 2FA code." };
+    }
   }
 
   const role = user.role || "technician";
@@ -287,6 +301,21 @@ function posAuthMiddleware(req: Request, res: Response, next: NextFunction): voi
   } catch { res.status(401).json({ error: "Session expired. Please log in again." }); }
 }
 
+function generateTotpSecret(username: string): { secret: string; otpauthUrl: string } {
+  const secret = generateSecret();
+  const otpauthUrl = generateTOTP({ issuer: "Gear&Glitch", label: username, secret });
+  return { secret, otpauthUrl };
+}
+
+function verifyTotp(secret: string, token: string): boolean {
+  try {
+    const result = verifySync({ token, secret });
+    return result?.valid === true;
+  } catch {
+    return false;
+  }
+}
+
 export {
   adminAuthMiddleware,
   ownerAuthMiddleware,
@@ -302,4 +331,6 @@ export {
   signToken,
   verifyToken,
   getBearerToken,
+  generateTotpSecret,
+  verifyTotp,
 };

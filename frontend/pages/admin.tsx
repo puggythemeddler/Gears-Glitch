@@ -2842,6 +2842,7 @@ function AdminSplashes() {
 
 function AdminStoreInfo() {
   const { refreshSettings } = useApp();
+  const { toast } = useToast();
   const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -2851,6 +2852,12 @@ function AdminStoreInfo() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoMsg, setLogoMsg] = useState("");
+  const [totpEnabled, setTotpEnabled] = useState(false);
+  const [totpLoading, setTotpLoading] = useState(false);
+  const [totpSetup, setTotpSetup] = useState<{ secret: string; otpauthUrl: string } | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [totpMsg, setTotpMsg] = useState("");
+  const [totpDisablePassword, setTotpDisablePassword] = useState("");
 
   function handleFaviconChange(e: React.ChangeEvent<HTMLInputElement>) {
     setFaviconMsg("");
@@ -2890,6 +2897,53 @@ function AdminStoreInfo() {
       refreshSettings();
     } catch (err: any) { setLogoMsg("Error: " + err.message); }
     finally { setLogoUploading(false); }
+  }
+
+  useEffect(() => {
+    api<{ enabled: boolean }>("/api/auth/2fa/status", { method: "GET" }, "staff")
+      .then((d) => setTotpEnabled(d.enabled))
+      .catch(() => {});
+  }, []);
+
+  async function handleTotpSetup() {
+    setTotpLoading(true); setTotpMsg(""); setTotpCode("");
+    try {
+      const data = await api<{ secret: string; otpauthUrl: string }>("/api/auth/2fa/setup", { method: "POST", body: "{}" }, "staff");
+      setTotpSetup(data);
+      setTotpMsg("Scan the QR code in your authenticator app, then enter the 6-digit code below.");
+    } catch (err: any) {
+      setTotpMsg("Error: " + err.message);
+    } finally { setTotpLoading(false); }
+  }
+
+  async function handleTotpVerify() {
+    if (!totpCode || totpCode.length !== 6) { setTotpMsg("Enter a valid 6-digit code."); return; }
+    setTotpLoading(true); setTotpMsg("");
+    try {
+      await api("/api/auth/2fa/verify", { method: "POST", body: JSON.stringify({ code: totpCode }) }, "staff");
+      setTotpEnabled(true);
+      setTotpSetup(null);
+      setTotpCode("");
+      setTotpMsg("2FA enabled successfully.");
+      toast?.("2FA enabled successfully.", "success");
+    } catch (err: any) {
+      setTotpMsg("Error: " + err.message);
+    } finally { setTotpLoading(false); }
+  }
+
+  async function handleTotpDisable() {
+    if (!totpDisablePassword) { setTotpMsg("Enter your password to disable 2FA."); return; }
+    setTotpLoading(true); setTotpMsg("");
+    try {
+      await api("/api/auth/2fa/disable", { method: "POST", body: JSON.stringify({ password: totpDisablePassword }) }, "staff");
+      setTotpEnabled(false);
+      setTotpSetup(null);
+      setTotpDisablePassword("");
+      setTotpMsg("2FA disabled.");
+      toast?.("2FA disabled.", "success");
+    } catch (err: any) {
+      setTotpMsg("Error: " + err.message);
+    } finally { setTotpLoading(false); }
   }
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
@@ -2985,6 +3039,49 @@ function AdminStoreInfo() {
             </label>
             <p className="muted" style={{ fontSize: "0.8rem", margin: "0.25rem 0 0" }}>Replaces the horizontal category links with a collapsible dropdown menu for a cleaner header.</p>
           </div>
+        </div>
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <h3 style={{ marginTop: 0 }}>Two-Factor Authentication (2FA)</h3>
+          <p className="muted" style={{ fontSize: "0.85rem", margin: "0 0 0.75rem" }}>Add an extra layer of security to your admin account. When enabled, you&apos;ll need to enter a 6-digit code from your authenticator app each time you sign in.</p>
+          {totpEnabled ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#065f46", fontWeight: 600, fontSize: "0.9rem" }}>
+                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#059669" }}></span>
+                2FA is enabled
+              </div>
+              <div className="field">
+                <label style={{ fontSize: "0.85rem" }}>Password to disable 2FA</label>
+                <input type="password" value={totpDisablePassword} onChange={(e) => setTotpDisablePassword(e.target.value)} placeholder="Enter your password" style={{ maxWidth: 300 }} />
+              </div>
+              <RippleButton type="button" loading={totpLoading} onClick={handleTotpDisable} style={{ maxWidth: 300 }}>Disable 2FA</RippleButton>
+            </div>
+          ) : totpSetup ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <p style={{ margin: 0, fontSize: "0.85rem" }}>1. Open your authenticator app (Google Authenticator, Authy, etc.)</p>
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "0.75rem", wordBreak: "break-all", fontSize: "0.8rem", fontFamily: "monospace" }}>
+                <p style={{ margin: "0 0 0.25rem", fontWeight: 600, fontSize: "0.85rem" }}>Manual entry key:</p>
+                {totpSetup.secret}
+              </div>
+              <p style={{ margin: 0, fontSize: "0.85rem" }}>2. Enter the 6-digit code from your authenticator app:</p>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="6-digit code"
+                  style={{ width: 160, letterSpacing: "0.25em", fontSize: "1.1rem", textAlign: "center" }}
+                />
+                <RippleButton type="button" loading={totpLoading} onClick={handleTotpVerify}>Verify & Enable</RippleButton>
+                <RippleButton type="button" onClick={() => { setTotpSetup(null); setTotpCode(""); setTotpMsg(""); }} style={{ background: "#6b7280" }}>Cancel</RippleButton>
+              </div>
+            </div>
+          ) : (
+            <RippleButton type="button" loading={totpLoading} onClick={handleTotpSetup}>Enable 2FA</RippleButton>
+          )}
+          {totpMsg && <p style={{ marginTop: "0.5rem", padding: "0.4rem 0.75rem", borderRadius: 6, background: totpMsg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: totpMsg.startsWith("Error") ? "#991b1b" : "#065f46", fontSize: "0.85rem" }}>{totpMsg}</p>}
         </div>
         {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", marginBottom: "0.75rem" }}>{msg}</p>}
         <RippleButton type="submit" loading={saving}>Save settings</RippleButton>

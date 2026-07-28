@@ -5,6 +5,9 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import path from "path";
+import crypto from "crypto";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 import { initControlPlaneDb, queryAll, queryOne, query } from "./db";
 import {
   provisionClient,
@@ -21,25 +24,185 @@ import {
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 const API_KEY = process.env.CONTROL_PLANE_API_KEY || "";
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString("hex");
 
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "..", "..", "public")));
 
-// ─── API KEY AUTH ────────────────────────────────────────
-function requireApiKey(
+// ─── AUTH: API KEY + JWT SESSION ──────────────────────────
+interface AuthUser { id: number; username: string; role: string; }
+
+function generateApiKey(): string {
+  return "cp_" + crypto.randomBytes(24).toString("hex");
+}
+
+function signToken(user: AuthUser): string {
+  return jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+}
+
+function requireAuth(
   req: express.Request,
   res: express.Response,
   next: express.NextFunction
 ) {
-  if (!API_KEY) return next();
+  // 1. Try Bearer JWT token (from login)
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET) as AuthUser;
+      (req as any).user = decoded;
+      return next();
+    } catch {}
+  }
+  // 2. Try x-api-key (legacy + per-user)
   const key = req.headers["x-api-key"] || req.query.key;
-  if (key !== API_KEY) {
-    res.status(401).json({ error: "Unauthorized" });
+  if (key && typeof key === "string") {
+    // First check the global legacy API key
+    if (API_KEY && key === API_KEY) {
+      (req as any).user = { id: 0, username: "system", role: "admin" };
+      return next();
+    }
+    // Then check per-user API keys
+    queryOne("SELECT id, username, role FROM cp_users WHERE api_key = $1", [key])
+      .then((user) => {
+        if (user) {
+          (req as any).user = user;
+          return next();
+        }
+        res.status(401).json({ error: "Invalid API key" });
+      })
+      .catch(() => {
+        res.status(500).json({ error: "Auth error" });
+      });
+    return;
+  }
+  // 3. No auth provided
+  res.status(401).json({ error: "Unauthorized. Provide Bearer token or x-api-key." });
+}
+
+function requireAdmin(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const user = (req as any).user as AuthUser;
+  if (user?.role !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
     return;
   }
   next();
+}
+
+// ─── USER MANAGEMENT ─────────────────────────────────────
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) { res.status(400).json({ error: "Username and password required" }); return; }
+    const user = await queryOne("SELECT * FROM cp_users WHERE username = $1", [username]);
+    if (!user) { res.status(401).json({ error: "Invalid credentials" }); return; }
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) { res.status(401).json({ error: "Invalid credentials" }); return; }
+    await query("UPDATE cp_users SET last_login = NOW() WHERE id = $1", [user.id]);
+    const token = signToken({ id: user.id, username: user.username, role: user.role });
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, api_key: user.api_key } });
+  } catch (err: any) {
+    console.error("[auth] Login error:", err.message);
+    res.status(500).json({ error: "Login failed" });
+  }
+});
+
+app.post("/api/auth/register", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { username, password, role } = req.body || {};
+    if (!username || !password) { res.status(400).json({ error: "Username and password required" }); return; }
+    const existing = await queryOne("SELECT id FROM cp_users WHERE username = $1", [username]);
+    if (existing) { res.status(409).json({ error: "Username already exists" }); return; }
+    const hash = await bcrypt.hash(password, 12);
+    const apiKey = generateApiKey();
+    const result = await query(
+      "INSERT INTO cp_users (username, password_hash, role, api_key) VALUES ($1, $2, $3, $4) RETURNING id",
+      [username, hash, role || "viewer", apiKey]
+    );
+    res.status(201).json({ id: result.rows[0].id, username, role: role || "viewer", api_key: apiKey, message: `User "${username}" created.` });
+  } catch (err: any) {
+    console.error("[auth] Register error:", err.message);
+    res.status(500).json({ error: "Failed to create user" });
+  }
+});
+
+app.get("/api/auth/me", requireAuth, async (req, res) => {
+  const user = (req as any).user as AuthUser;
+  if (user.id === 0) { res.json({ user: { id: 0, username: "system", role: "admin" } }); return; }
+  const full = await queryOne("SELECT id, username, role, api_key, created_at, last_login FROM cp_users WHERE id = $1", [user.id]);
+  res.json({ user: full });
+});
+
+app.get("/api/users", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const users = await queryAll("SELECT id, username, role, api_key, created_at, last_login FROM cp_users ORDER BY created_at DESC");
+    res.json({ users });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to list users" });
+  }
+});
+
+app.put("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { role, password } = req.body || {};
+    const id = Number(req.params.id);
+    const user = await queryOne("SELECT * FROM cp_users WHERE id = $1", [id]);
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    if (role) {
+      await query("UPDATE cp_users SET role = $1 WHERE id = $2", [role, id]);
+    }
+    if (password) {
+      const hash = await bcrypt.hash(password, 12);
+      await query("UPDATE cp_users SET password_hash = $1 WHERE id = $2", [hash, id]);
+    }
+    res.json({ message: "User updated." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
+app.post("/api/users/:id/regenerate-key", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const newKey = generateApiKey();
+    await query("UPDATE cp_users SET api_key = $1 WHERE id = $2", [newKey, id]);
+    res.json({ api_key: newKey, message: "API key regenerated." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to regenerate key" });
+  }
+});
+
+app.delete("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const me = (req as any).user as AuthUser;
+    if (me.id === id) { res.status(400).json({ error: "Cannot delete yourself" }); return; }
+    await query("DELETE FROM cp_users WHERE id = $1", [id]);
+    res.json({ message: "User deleted." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});
+
+// ─── SEED DEFAULT ADMIN (on startup) ────────────────────
+async function seedDefaultAdmin() {
+  const existing = await queryOne("SELECT id FROM cp_users WHERE username = $1", ["admin"]);
+  if (existing) return;
+  const defaultPassword = process.env.CP_ADMIN_PASSWORD || "gearglitch2024";
+  const hash = await bcrypt.hash(defaultPassword, 12);
+  const apiKey = generateApiKey();
+  await query(
+    "INSERT INTO cp_users (username, password_hash, role, api_key) VALUES ($1, $2, $3, $4)",
+    ["admin", hash, "admin", apiKey]
+  );
+  console.log(`[auth] Default admin user created. Username: admin, Password: ${defaultPassword}`);
+  console.log(`[auth] Admin API key: ${apiKey}`);
 }
 
 // ─── ROUTES ──────────────────────────────────────────────
@@ -50,7 +213,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 // List all clients
-app.get("/api/clients", requireApiKey, async (_req, res) => {
+app.get("/api/clients", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll(
       "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes FROM clients ORDER BY created_at DESC"
@@ -63,7 +226,7 @@ app.get("/api/clients", requireApiKey, async (_req, res) => {
 });
 
 // Get single client
-app.get("/api/clients/:id", requireApiKey, async (req, res) => {
+app.get("/api/clients/:id", requireAuth, async (req, res) => {
   try {
     const client = await queryOne(
       "SELECT * FROM clients WHERE id = $1",
@@ -78,7 +241,7 @@ app.get("/api/clients/:id", requireApiKey, async (req, res) => {
 });
 
 // Add client — starts provisioning
-app.post("/api/clients", requireApiKey, async (req, res) => {
+app.post("/api/clients", requireAuth, async (req, res) => {
   try {
     const { name, adminEmail, plan, domain } = req.body || {};
     if (!name || !adminEmail) {
@@ -139,7 +302,7 @@ app.post("/api/clients", requireApiKey, async (req, res) => {
 });
 
 // Add existing client (no provisioning — just records existing URLs)
-app.post("/api/clients/existing", requireApiKey, async (req, res) => {
+app.post("/api/clients/existing", requireAuth, async (req, res) => {
   try {
     const { name, adminEmail, plan, domain, backendUrl, frontendUrl } = req.body || {};
     if (!name || !adminEmail) {
@@ -165,7 +328,7 @@ app.post("/api/clients/existing", requireApiKey, async (req, res) => {
 });
 
 // Delete client
-app.delete("/api/clients/:id", requireApiKey, async (req, res) => {
+app.delete("/api/clients/:id", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [
       Number(req.params.id),
@@ -198,7 +361,7 @@ app.delete("/api/clients/:id", requireApiKey, async (req, res) => {
 });
 
 // Deploy all clients
-app.post("/api/deploy-all", requireApiKey, async (_req, res) => {
+app.post("/api/deploy-all", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll(
       "SELECT name, render_service_id FROM clients WHERE status = 'active'"
@@ -214,7 +377,7 @@ app.post("/api/deploy-all", requireApiKey, async (_req, res) => {
 });
 
 // Health check all clients
-app.post("/api/health-check", requireApiKey, async (_req, res) => {
+app.post("/api/health-check", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll(
       "SELECT id, name, render_service_url FROM clients WHERE status = 'active'"
@@ -263,7 +426,7 @@ app.post("/api/health-check", requireApiKey, async (_req, res) => {
 });
 
 // ─── SUSPEND / RESUME CLIENT ─────────────────────────────
-app.put("/api/clients/:id/suspend", requireApiKey, async (req, res) => {
+app.put("/api/clients/:id/suspend", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -287,7 +450,7 @@ app.put("/api/clients/:id/suspend", requireApiKey, async (req, res) => {
   }
 });
 
-app.put("/api/clients/:id/resume", requireApiKey, async (req, res) => {
+app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -312,7 +475,7 @@ app.put("/api/clients/:id/resume", requireApiKey, async (req, res) => {
 });
 
 // ─── UPDATE CLIENT ───────────────────────────────────────
-app.put("/api/clients/:id", requireApiKey, async (req, res) => {
+app.put("/api/clients/:id", requireAuth, async (req, res) => {
   try {
     const { plan, subscription_expires, notes, feature_flags } = req.body || {};
     const id = Number(req.params.id);
@@ -341,7 +504,7 @@ app.put("/api/clients/:id", requireApiKey, async (req, res) => {
 });
 
 // ─── HEALTH HISTORY ──────────────────────────────────────
-app.get("/api/clients/:id/health-history", requireApiKey, async (req, res) => {
+app.get("/api/clients/:id/health-history", requireAuth, async (req, res) => {
   try {
     const rows = await queryAll(
       "SELECT status, checked_at FROM health_log WHERE client_id = $1 ORDER BY checked_at DESC LIMIT 100",
@@ -354,7 +517,7 @@ app.get("/api/clients/:id/health-history", requireApiKey, async (req, res) => {
 });
 
 // ─── CHANGELOG ───────────────────────────────────────────
-app.post("/api/changelog", requireApiKey, async (req, res) => {
+app.post("/api/changelog", requireAuth, async (req, res) => {
   try {
     const { version, title, body } = req.body || {};
     if (!version || !title) { res.status(400).json({ error: "version and title required" }); return; }
@@ -374,7 +537,7 @@ app.post("/api/changelog", requireApiKey, async (req, res) => {
   }
 });
 
-app.get("/api/changelog", requireApiKey, async (_req, res) => {
+app.get("/api/changelog", requireAuth, async (_req, res) => {
   try {
     const entries = await queryAll("SELECT * FROM changelog ORDER BY created_at DESC LIMIT 50");
     res.json({ entries });
@@ -384,7 +547,7 @@ app.get("/api/changelog", requireApiKey, async (_req, res) => {
 });
 
 // ─── DEPLOY LOG ──────────────────────────────────────────
-app.get("/api/deploys", requireApiKey, async (_req, res) => {
+app.get("/api/deploys", requireAuth, async (_req, res) => {
   try {
     const entries = await queryAll(
       `SELECT d.*, c.name as client_name FROM deploy_log d
@@ -405,7 +568,7 @@ import fs from "fs";
 const execAsync = promisify(exec);
 const BACKUP_DIR = path.join(__dirname, "..", "..", "backups");
 
-app.post("/api/backups/run", requireApiKey, async (_req, res) => {
+app.post("/api/backups/run", requireAuth, async (_req, res) => {
   try {
     if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -450,7 +613,7 @@ app.post("/api/backups/run", requireApiKey, async (_req, res) => {
   }
 });
 
-app.get("/api/backups", requireApiKey, async (_req, res) => {
+app.get("/api/backups", requireAuth, async (_req, res) => {
   try {
     if (!fs.existsSync(BACKUP_DIR)) { res.json({ files: [] }); return; }
     const files = fs.readdirSync(BACKUP_DIR).map(f => ({
@@ -465,7 +628,7 @@ app.get("/api/backups", requireApiKey, async (_req, res) => {
 });
 
 // ─── CUSTOM PLANS (Control Plane) ──────────────────────────
-app.get("/api/plans", requireApiKey, async (_req, res) => {
+app.get("/api/plans", requireAuth, async (_req, res) => {
   try {
     const plans = await queryAll("SELECT * FROM custom_plans ORDER BY tier_level");
     res.json({ plans });
@@ -475,7 +638,7 @@ app.get("/api/plans", requireApiKey, async (_req, res) => {
 });
 
 // Pull plans from a live client backend
-app.post("/api/clients/:id/pull-plans", requireApiKey, async (req, res) => {
+app.post("/api/clients/:id/pull-plans", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -503,7 +666,7 @@ app.post("/api/clients/:id/pull-plans", requireApiKey, async (req, res) => {
 });
 
 // Import plans from the Gear&Glitch Store (first active client)
-app.post("/api/plans/import-defaults", requireApiKey, async (_req, res) => {
+app.post("/api/plans/import-defaults", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active' AND render_service_url != ''");
     if (!clients.length) { res.status(400).json({ error: "No active clients found" }); return; }
@@ -537,7 +700,7 @@ app.post("/api/plans/import-defaults", requireApiKey, async (_req, res) => {
   }
 });
 
-app.post("/api/plans", requireApiKey, async (req, res) => {
+app.post("/api/plans", requireAuth, async (req, res) => {
   try {
     const { id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features } = req.body || {};
     if (!name) { res.status(400).json({ error: "name required" }); return; }
@@ -555,7 +718,7 @@ app.post("/api/plans", requireApiKey, async (req, res) => {
   }
 });
 
-app.put("/api/plans/:id", requireApiKey, async (req, res) => {
+app.put("/api/plans/:id", requireAuth, async (req, res) => {
   try {
     const { name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features, isActive } = req.body || {};
     const fields: string[] = []; const params: any[] = []; let idx = 1;
@@ -577,7 +740,7 @@ app.put("/api/plans/:id", requireApiKey, async (req, res) => {
   }
 });
 
-app.delete("/api/plans/:id", requireApiKey, async (req, res) => {
+app.delete("/api/plans/:id", requireAuth, async (req, res) => {
   try {
     await query("DELETE FROM custom_plans WHERE id = $1", [req.params.id]);
     res.json({ message: "Plan deleted." });
@@ -587,7 +750,7 @@ app.delete("/api/plans/:id", requireApiKey, async (req, res) => {
 });
 
 // Push plans to a specific client (sync control plane plans → client's DB)
-app.post("/api/clients/:id/sync-plans", requireApiKey, async (req, res) => {
+app.post("/api/clients/:id/sync-plans", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -621,7 +784,7 @@ app.post("/api/clients/:id/sync-plans", requireApiKey, async (req, res) => {
 });
 
 // Push plans to ALL active clients
-app.post("/api/plans/sync-all", requireApiKey, async (_req, res) => {
+app.post("/api/plans/sync-all", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active' AND render_service_url != ''");
     const plans = await queryAll("SELECT * FROM custom_plans ORDER BY tier_level");
@@ -654,7 +817,7 @@ app.post("/api/plans/sync-all", requireApiKey, async (_req, res) => {
 
 // ─── UPGRADE REQUESTS ────────────────────────────────────
 // Fetch upgrade requests from a specific client
-app.get("/api/clients/:id/upgrade-requests", requireApiKey, async (req, res) => {
+app.get("/api/clients/:id/upgrade-requests", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -670,7 +833,7 @@ app.get("/api/clients/:id/upgrade-requests", requireApiKey, async (req, res) => 
 });
 
 // Approve/reject an upgrade request on a client
-app.put("/api/clients/:id/upgrade-requests/:reqId", requireApiKey, async (req, res) => {
+app.put("/api/clients/:id/upgrade-requests/:reqId", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -697,7 +860,7 @@ app.put("/api/clients/:id/upgrade-requests/:reqId", requireApiKey, async (req, r
 });
 
 // ─── CLIENT INVOICES (proxy to client backends) ──────────────
-app.get("/api/clients/:id/invoices", requireApiKey, async (req, res) => {
+app.get("/api/clients/:id/invoices", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -712,7 +875,7 @@ app.get("/api/clients/:id/invoices", requireApiKey, async (req, res) => {
   }
 });
 
-app.post("/api/clients/:id/invoices/generate", requireApiKey, async (req, res) => {
+app.post("/api/clients/:id/invoices/generate", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -731,7 +894,7 @@ app.post("/api/clients/:id/invoices/generate", requireApiKey, async (req, res) =
   }
 });
 
-app.post("/api/clients/:id/invoices/:invId/pay", requireApiKey, async (req, res) => {
+app.post("/api/clients/:id/invoices/:invId/pay", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -746,7 +909,7 @@ app.post("/api/clients/:id/invoices/:invId/pay", requireApiKey, async (req, res)
   }
 });
 
-app.get("/api/clients/:id/invoices/:invId/view", requireApiKey, async (req, res) => {
+app.get("/api/clients/:id/invoices/:invId/view", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -771,7 +934,7 @@ app.get("/api/clients/:id/invoices/:invId/view", requireApiKey, async (req, res)
   }
 });
 
-app.post("/api/clients/:id/invoices/:invId/email", requireApiKey, async (req, res) => {
+app.post("/api/clients/:id/invoices/:invId/email", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -787,7 +950,7 @@ app.post("/api/clients/:id/invoices/:invId/email", requireApiKey, async (req, re
 });
 
 // Get subscription status from a client
-app.get("/api/clients/:id/subscription", requireApiKey, async (req, res) => {
+app.get("/api/clients/:id/subscription", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -804,7 +967,7 @@ app.get("/api/clients/:id/subscription", requireApiKey, async (req, res) => {
 
 // ─── CLIENT BRANCHES ─────────────────────────────────────
 // Get branches from a client
-app.get("/api/clients/:id/branches", requireApiKey, async (req, res) => {
+app.get("/api/clients/:id/branches", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -820,7 +983,7 @@ app.get("/api/clients/:id/branches", requireApiKey, async (req, res) => {
 });
 
 // Get branch subscription from client
-app.get("/api/clients/:id/branches/:branchId/subscription", requireApiKey, async (req, res) => {
+app.get("/api/clients/:id/branches/:branchId/subscription", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -835,7 +998,7 @@ app.get("/api/clients/:id/branches/:branchId/subscription", requireApiKey, async
 });
 
 // Set branch plan on client
-app.put("/api/clients/:id/branches/:branchId/plan", requireApiKey, async (req, res) => {
+app.put("/api/clients/:id/branches/:branchId/plan", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -989,6 +1152,7 @@ app.get("*", (_req, res) => {
 // ─── START ───────────────────────────────────────────────
 async function start() {
   await initControlPlaneDb();
+  await seedDefaultAdmin();
   app.listen(PORT, () => {
     console.log(`[control-plane] Running on http://localhost:${PORT}`);
     setTimeout(autoImportPlans, 3000);

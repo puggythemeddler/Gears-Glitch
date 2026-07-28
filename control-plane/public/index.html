@@ -117,14 +117,29 @@
   </style>
 </head>
 <body>
-  <div class="container">
+  <!-- Login Screen -->
+  <div id="login-screen" class="container" style="display:flex;justify-content:center;align-items:center;min-height:100vh">
+    <div style="width:360px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:2rem">
+      <h1 style="text-align:center;margin-bottom:0.25rem"><span style="color:var(--primary)">Gear&Glitch</span></h1>
+      <p style="text-align:center;color:var(--text-muted);font-size:0.85rem;margin-bottom:1.5rem">Control Plane</p>
+      <div class="field"><label>Username</label><input type="text" id="login-user" placeholder="admin" autofocus></div>
+      <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="Password"></div>
+      <div id="login-error" style="color:var(--danger);font-size:0.82rem;margin-bottom:0.75rem"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Sign In</button>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="main-app" class="container" style="display:none">
     <header>
       <h1><span>Gear&Glitch</span> Control Plane</h1>
       <div class="header-actions">
+        <span id="user-display" style="font-size:0.82rem;color:var(--text-muted);align-self:center"></span>
         <button class="btn btn-ghost" onclick="healthCheckAll()">Health Check</button>
         <button class="btn btn-ghost" onclick="deployAll()">Deploy All</button>
         <button class="btn btn-ghost" onclick="showExistingModal()">+ Add Existing</button>
         <button class="btn btn-primary" onclick="showModal()">+ Add Client</button>
+        <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Sign out">&#x2190; Sign Out</button>
       </div>
     </header>
 
@@ -134,6 +149,7 @@
       <button class="tab" onclick="switchTab('changelog', this)">Changelog</button>
       <button class="tab" onclick="switchTab('deploys', this)">Deploy Log</button>
       <button class="tab" onclick="switchTab('backups', this)">Backups</button>
+      <button class="tab" onclick="switchTab('users', this)" id="tab-btn-users" style="display:none">Users</button>
     </div>
 
     <div id="tab-clients">
@@ -189,6 +205,15 @@
       <div id="backup-list"></div>
     </div>
 
+    <div id="tab-users" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h2>Control Plane Users</h2>
+        <button class="btn btn-primary btn-sm" onclick="showCreateUserModal()">+ Add User</button>
+      </div>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage who can access the control plane. Admins can manage users; viewers have read-only access. Each user gets a unique API key for programmatic access.</p>
+      <div id="users-list"></div>
+    </div>
+
     <div id="tab-client-detail" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <div>
@@ -205,6 +230,32 @@
       </div>
       <div id="detail-invoices"></div>
       <div id="detail-branches" style="margin-top:1.5rem"></div>
+    </div>
+    </div>
+
+    <!-- Create User Modal -->
+    <div class="modal-overlay" id="user-modal-overlay">
+      <div class="modal" style="width:400px">
+        <h2 id="user-modal-title">Add User</h2>
+        <div class="field"><label>Username</label><input type="text" id="user-username" placeholder="e.g. john"></div>
+        <div class="field"><label>Password</label><input type="password" id="user-password" placeholder="Min 8 characters"></div>
+        <div class="field"><label>Role</label><select id="user-role"><option value="viewer">Viewer (read-only)</option><option value="admin">Admin (full access)</option></select></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="hideUserModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="createUser()">Create User</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- User Detail Modal -->
+    <div class="modal-overlay" id="user-detail-overlay">
+      <div class="modal" style="width:500px">
+        <h2>User Details</h2>
+        <div id="user-detail-content"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="hideUserDetailModal()">Close</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -309,6 +360,59 @@
     let allClients = [];
     let editingClientId = null;
     let editingPlanFeatures = [];
+    let currentUser = null;
+
+    // ─── AUTH ───────────────────────────────────────────────
+    function getToken() { return localStorage.getItem("cp-token"); }
+    function setToken(t) { localStorage.setItem("cp-token", t); }
+    function clearAuth() { localStorage.removeItem("cp-token"); localStorage.removeItem("cp-user"); currentUser = null; }
+
+    async function showLogin() {
+      document.getElementById("main-app").style.display = "none";
+      document.getElementById("login-screen").style.display = "";
+      document.getElementById("login-error").textContent = "";
+    }
+
+    async function doLogin() {
+      const username = document.getElementById("login-user").value.trim();
+      const password = document.getElementById("login-pass").value;
+      if (!username || !password) { document.getElementById("login-error").textContent = "Enter username and password"; return; }
+      try {
+        const res = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) });
+        const data = await res.json();
+        if (!res.ok) { document.getElementById("login-error").textContent = data.error || "Login failed"; return; }
+        setToken(data.token);
+        localStorage.setItem("cp-user", JSON.stringify(data.user));
+        currentUser = data.user;
+        document.getElementById("login-screen").style.display = "none";
+        document.getElementById("main-app").style.display = "";
+        document.getElementById("user-display").textContent = data.user.username + " (" + data.user.role + ")";
+        loadClients();
+        if (currentUser.role === "admin") {
+          document.getElementById("tab-btn-users").style.display = "";
+        }
+      } catch (e) { document.getElementById("login-error").textContent = "Connection failed"; }
+    }
+
+    function doLogout() { clearAuth(); showLogin(); }
+
+    async function initAuth() {
+      const token = getToken();
+      if (!token) { showLogin(); return; }
+      try {
+        const res = await fetch("/api/auth/me", { headers: { "Authorization": "Bearer " + token } });
+        if (!res.ok) { clearAuth(); showLogin(); return; }
+        const data = await res.json();
+        currentUser = data.user;
+        document.getElementById("login-screen").style.display = "none";
+        document.getElementById("main-app").style.display = "";
+        document.getElementById("user-display").textContent = currentUser.username + " (" + currentUser.role + ")";
+        if (currentUser.role === "admin") {
+          document.getElementById("tab-btn-users").style.display = "";
+        }
+        loadClients();
+      } catch { clearAuth(); showLogin(); }
+    }
 
     const FEATURE_GROUPS = [
       { group: "Core Commerce", icon: "💳", features: ["Product listing","Order management","POS integration","Payment method configuration","M-Pesa integration","Discount/coupon management","Returns management","Customer management"] },
@@ -364,12 +468,14 @@
     }
 
     function api(path, opts = {}) {
-      const key = localStorage.getItem("cp-api-key") || prompt("Enter Control Plane API Key:");
-      if (key) localStorage.setItem("cp-api-key", key);
+      const token = getToken();
       return fetch(path, {
         ...opts,
-        headers: { "Content-Type": "application/json", "x-api-key": key || "", ...(opts.headers || {}) },
-      }).then(r => r.json());
+        headers: { "Content-Type": "application/json", "Authorization": token ? "Bearer " + token : "", ...(opts.headers || {}) },
+      }).then(r => {
+        if (r.status === 401) { clearAuth(); showLogin(); throw new Error("Session expired"); }
+        return r.json();
+      });
     }
 
     function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
@@ -588,8 +694,8 @@
       } catch { document.getElementById("deploy-log").innerHTML = '<div class="empty"><p>Failed to load.</p></div>'; }
     }
 
-    loadClients();
-    setInterval(loadClients, 60000);
+    initAuth();
+    setInterval(() => { if (getToken()) loadClients(); }, 60000);
 
     // ─── PLANS ────────────────────────────────────────────
     let editingPlanId = null;
@@ -799,6 +905,90 @@
       } catch (e) { toast("Backup failed: " + e.message, "error"); }
     }
 
+    // ─── USERS ──────────────────────────────────────────────
+    async function loadUsers() {
+      try {
+        const data = await api("/api/users");
+        const users = data.users || [];
+        if (!users.length) { document.getElementById("users-list").innerHTML = '<div class="empty"><p>No users found.</p></div>'; return; }
+        let html = '<table><thead><tr><th>Username</th><th>Role</th><th>API Key</th><th>Last Login</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+        for (const u of users) {
+          const masked = u.api_key ? u.api_key.slice(0, 8) + "..." + u.api_key.slice(-4) : "—";
+          html += `<tr>
+            <td><strong>${esc(u.username)}</strong></td>
+            <td><span class="badge ${u.role === 'admin' ? 'badge-active' : 'badge-unknown'}">${u.role}</span></td>
+            <td style="font-family:monospace;font-size:0.78rem" title="${esc(u.api_key)}">${esc(masked)}</td>
+            <td>${u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}</td>
+            <td>${new Date(u.created_at).toLocaleDateString()}</td>
+            <td><div class="actions-cell">
+              <button class="btn btn-ghost btn-sm" onclick="viewUserDetail(${u.id})">Details</button>
+              <button class="btn btn-ghost btn-sm" onclick="regenerateUserKey(${u.id}, '${esc(u.username)}')">New Key</button>
+              ${u.username !== 'admin' ? '<button class="btn btn-danger btn-sm" onclick="deleteUser(' + u.id + ', \'' + esc(u.username) + '\')">Delete</button>' : ''}
+            </div></td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+        document.getElementById("users-list").innerHTML = html;
+      } catch { document.getElementById("users-list").innerHTML = '<div class="empty"><p>Failed to load users.</p></div>'; }
+    }
+
+    function showCreateUserModal() {
+      document.getElementById("user-username").value = "";
+      document.getElementById("user-password").value = "";
+      document.getElementById("user-role").value = "viewer";
+      document.getElementById("user-modal-overlay").classList.add("show");
+    }
+    function hideUserModal() { document.getElementById("user-modal-overlay").classList.remove("show"); }
+
+    async function createUser() {
+      const username = document.getElementById("user-username").value.trim();
+      const password = document.getElementById("user-password").value;
+      const role = document.getElementById("user-role").value;
+      if (!username || !password) { toast("Username and password required", "error"); return; }
+      if (password.length < 8) { toast("Password must be at least 8 characters", "error"); return; }
+      try {
+        const data = await api("/api/auth/register", { method: "POST", body: JSON.stringify({ username, password, role }) });
+        if (data.error) { toast(data.error, "error"); return; }
+        toast(`User "${username}" created. API key: ${data.api_key}`);
+        hideUserModal(); loadUsers();
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    async function viewUserDetail(id) {
+      try {
+        const data = await api("/api/users");
+        const user = (data.users || []).find(u => u.id === id);
+        if (!user) return;
+        document.getElementById("user-detail-content").innerHTML = `
+          <div class="detail-grid" style="margin-bottom:1rem">
+            <div class="detail-item"><div class="label">Username</div><div class="value">${esc(user.username)}</div></div>
+            <div class="detail-item"><div class="label">Role</div><div class="value"><span class="badge ${user.role === 'admin' ? 'badge-active' : 'badge-unknown'}">${user.role}</span></div></div>
+            <div class="detail-item"><div class="label">Created</div><div class="value">${new Date(user.created_at).toLocaleDateString()}</div></div>
+            <div class="detail-item"><div class="label">Last Login</div><div class="value">${user.last_login ? new Date(user.last_login).toLocaleString() : 'Never'}</div></div>
+          </div>
+          <div style="margin-bottom:1rem"><div class="label" style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.3rem">API Key</div>
+            <code style="display:block;padding:0.5rem 0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);font-size:0.82rem;word-break:break-all">${esc(user.api_key)}</code>
+          </div>
+          <div style="font-size:0.82rem;color:var(--text-muted)">Use this API key with <code>x-api-key</code> header or <code>?key=</code> query parameter for programmatic access.</div>
+        `;
+        document.getElementById("user-detail-overlay").classList.add("show");
+      } catch (e) { toast("Failed", "error"); }
+    }
+    function hideUserDetailModal() { document.getElementById("user-detail-overlay").classList.remove("show"); }
+
+    async function regenerateUserKey(id, username) {
+      if (!confirm(`Regenerate API key for "${username}"? The old key will stop working immediately.`)) return;
+      try {
+        const data = await api("/api/users/" + id + "/regenerate-key", { method: "POST" });
+        toast(`New API key: ${data.api_key}`); loadUsers();
+      } catch (e) { toast("Failed", "error"); }
+    }
+
+    async function deleteUser(id, username) {
+      if (!confirm(`Delete user "${username}"?`)) return;
+      try { await api("/api/users/" + id, { method: "DELETE" }); toast("User deleted."); loadUsers(); } catch (e) { toast("Failed", "error"); }
+    }
+
     // ─── CLIENT DETAILS + INVOICES ────────────────────────
     let currentDetailClientId = null;
 
@@ -810,11 +1000,13 @@
       document.getElementById("tab-changelog").style.display = tab === "changelog" ? "" : "none";
       document.getElementById("tab-deploys").style.display = tab === "deploys" ? "" : "none";
       document.getElementById("tab-backups").style.display = tab === "backups" ? "" : "none";
+      document.getElementById("tab-users").style.display = tab === "users" ? "" : "none";
       document.getElementById("tab-client-detail").style.display = tab === "client-detail" ? "" : "none";
       if (tab === "plans") loadPlans();
       if (tab === "changelog") loadChangelog();
       if (tab === "deploys") loadDeploys();
       if (tab === "backups") loadBackups();
+      if (tab === "users") loadUsers();
       if (tab === "clients") loadUpgradeRequests();
     }
 
@@ -879,6 +1071,13 @@
       document.querySelector('.tab').classList.add("active");
     }
 
+    // Show Users tab for admins
+    function showUsersTabForAdmin() {
+      if (currentUser && currentUser.role === "admin") {
+        document.getElementById("tab-btn-users").style.display = "";
+      }
+    }
+
     async function loadClientInvoices(clientId) {
       const el = document.getElementById("detail-invoices");
       el.innerHTML = '<div style="padding:1rem;color:var(--text-muted)">Loading invoices...</div>';
@@ -941,8 +1140,8 @@
 
     async function downloadClientInvoicePdf(clientId, invId) {
       try {
-        const key = localStorage.getItem("cp-api-key") || "";
-        const res = await fetch("/api/clients/" + clientId + "/invoices/" + invId + "/view?format=pdf", { headers: { "x-api-key": key } });
+        const token = getToken();
+        const res = await fetch("/api/clients/" + clientId + "/invoices/" + invId + "/view?format=pdf", { headers: { "Authorization": token ? "Bearer " + token : "" } });
         if (!res.ok) throw new Error("HTTP " + res.status);
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
