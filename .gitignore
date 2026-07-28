@@ -22,8 +22,13 @@ data/uploads/
 Thumbs.db
 *.swp
 
+# Build artifacts
 dist/
+.next/
 frontend/tsconfig.tsbuildinfo
+
+# Python virtualenv (user manual generator)
+.venv/
 
 # Control plane
 control-plane/node_modules/
