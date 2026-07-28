@@ -89,7 +89,7 @@ interface CloudinaryCredentials {
   folder: string;
 }
 
-async function createRenderService(clientName: string, dbUrl: string, clientSlug: string, cloudinary: CloudinaryCredentials | null | undefined, cpSecret: string) {
+async function createRenderService(clientName: string, dbUrl: string, clientSlug: string, cloudinary: CloudinaryCredentials | null | undefined, cpSecret: string, adminEmail: string, adminPassword: string) {
   console.log(`[provision] Creating Render service for "${clientName}"...`);
 
   const slug = slugify(clientName);
@@ -101,6 +101,14 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
     { key: "PORT", value: "8020" },
     { key: "DB_SSL_REJECT", value: "false" },
     { key: "CONTROL_PLANE_SECRET", value: cpSecret },
+    // Admin seed credentials — the backend creates this admin user on first boot
+    { key: "ADMIN_USERNAME", value: "admin" },
+    { key: "ADMIN_EMAIL", value: adminEmail },
+    { key: "ADMIN_PASSWORD", value: adminPassword },
+    // Technician seed (optional; lets the operator log in as a non-admin too)
+    { key: "TECH_USERNAME", value: "technician" },
+    { key: "TECH_EMAIL", value: `tech@${clientSlug}.com` },
+    { key: "TECH_PASSWORD", value: randomPassword(16) },
   ];
 
   // Add Cloudinary env vars if available (shared account, per-client folder)
@@ -313,7 +321,7 @@ export async function provisionClient(
     : null;
 
   // 3. Create Render service
-  const render = await createRenderService(clientName, neon.dbUrl, subdomain, cloudinary, cpSecret);
+  const render = await createRenderService(clientName, neon.dbUrl, subdomain, cloudinary, cpSecret, adminEmail, adminPassword);
 
   // 3. Create Vercel project
   const vercel = await createVercelProject(clientName, render.serviceUrl);
@@ -435,10 +443,16 @@ async function sendWelcomeEmail(
         </table>
 
         <div style="background: #f8fafc; border-radius: 8px; padding: 1.25rem; margin: 1.5rem 0;">
-          <h3 style="margin-top: 0;">Your Links</h3>
-          <p><a href="${frontendUrl}" style="color: #3b82f6;">Storefront (Frontend)</a> — ${frontendUrl}</p>
-          <p><a href="${backendUrl}" style="color: #3b82f6;">Admin Panel (Backend)</a> — ${backendUrl}</p>
+<h3 style="margin-top: 0;">Your Links</h3>
+          <p><a href="${frontendUrl}" style="color: #3b82f6;">Storefront</a> - ${frontendUrl}</p>
+          <p><a href="${frontendUrl}/login" style="color: #3b82f6;">Admin Login</a> - ${frontendUrl}/login</p>
+          <p><a href="${backendUrl}" style="color: #3b82f6;">API (Backend)</a> - ${backendUrl}</p>
         </div>
+
+        <p style="color: #666; font-size: 0.9rem; margin-top: 1rem;">
+          Log in at <a href="${frontendUrl}/login" style="color: #3b82f6;">${frontendUrl}/login</a>
+          using the admin credentials above to start setting up your store.
+        </p>
 
         <p style="color: #999; font-size: 0.85rem; margin-top: 2rem;">
           Please change your password after your first login for security.<br>
