@@ -1390,7 +1390,7 @@ function AdminPlans() {
         </div>
         <div className="panel" style={{ maxWidth: 600 }}>
           <form onSubmit={savePlan}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
+            <div className="form-grid" style={{ gap: "var(--space-4) var(--space-5)" }}>
               <div className="field"><label>Plan ID (slug)<input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} placeholder={toId(form.name) || "e.g. premium"} /></label></div>
               <div className="field"><label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label></div>
               <div className="field"><label>Monthly price (KES)<input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} required /></label></div>
@@ -1462,7 +1462,7 @@ function AdminPlans() {
           const features = parseFeatures(p.features);
           return (
             <div key={p.id} className="panel" style={{ position: "relative", display: "flex", flexDirection: "column", opacity: p.isActive === false ? 0.6 : 1 }}>
-              <div style={{ position: "absolute", top: "0.5rem", right: "0.5rem", display: "flex", gap: "0.25rem" }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.25rem", marginBottom: "0.5rem" }}>
                 <RippleButton size="small" onClick={() => toggleActive(p.id, p.isActive !== false)}>{p.isActive === false ? "Activate" : "Deactivate"}</RippleButton>
                 <RippleButton size="small" onClick={() => openEdit(p)}>Edit</RippleButton>
                 {!["starter", "basic", "pro", "enterprise"].includes(p.id) && (
@@ -1640,7 +1640,7 @@ function AdminClients() {
             <form onSubmit={saveBranch}>
               <div className="field"><label>Name<input value={branchForm.name} onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })} required /></label></div>
               <div className="field"><label>Address<input value={branchForm.address} onChange={(e) => setBranchForm({ ...branchForm, address: e.target.value })} /></label></div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
+              <div className="form-grid" style={{ gap: "var(--space-4) var(--space-5)" }}>
                 <div className="field"><label>Phone<input value={branchForm.phone} onChange={(e) => setBranchForm({ ...branchForm, phone: e.target.value })} /></label></div>
                 <div className="field"><label>Email<input type="email" value={branchForm.email} onChange={(e) => setBranchForm({ ...branchForm, email: e.target.value })} /></label></div>
               </div>
@@ -1804,7 +1804,7 @@ function AdminBranches() {
           <form onSubmit={saveBranch}>
             <div className="field"><label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label></div>
             <div className="field"><label>Address<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label></div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 1rem" }}>
+            <div className="form-grid" style={{ gap: "var(--space-4) var(--space-5)" }}>
               <div className="field"><label>Phone<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label></div>
               <div className="field"><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label></div>
             </div>

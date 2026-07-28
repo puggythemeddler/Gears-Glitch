@@ -796,6 +796,36 @@ code, pre {
 
 .card-clickable:hover { text-decoration: none; }
 
+/* ----- Panel (form/card container, was undefined for ~40 usages) ----- */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  min-width: 0;
+  text-align: left;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.panel h2, .panel h3, .panel h4 { text-align: left; }
+
+/* ----- Plan status pill (was undefined in 20+ usages) ----- */
+.plan-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* ----- Badge color variants (were referenced but undefined) ----- */
+.badge-green  { background: var(--success-light); color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 20%, transparent); }
+.badge-red    { background: var(--danger-light);  color: var(--danger);  border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent); }
+.badge-blue   { background: var(--info-light);   color: var(--info);   border: 1px solid color-mix(in srgb, var(--info) 20%, transparent); }
+
 /* ----- Badge ----- */
 .badge {
   display: inline-flex;
@@ -903,9 +933,12 @@ textarea:not(.input)::placeholder {
 
 /* ----- Catch-all for unstyled labels inside fields ----- */
 .field > label:not(.input-label) {
+  display: block;
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   color: var(--text);
+  margin-bottom: var(--space-1);
+  text-align: left;
 }
 
 .input-group {
@@ -915,9 +948,12 @@ textarea:not(.input)::placeholder {
 }
 
 .input-label {
+  display: block;
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   color: var(--text);
+  margin-bottom: var(--space-1);
+  text-align: left;
 }
 
 .input-error {
@@ -930,8 +966,50 @@ textarea:not(.input)::placeholder {
   color: var(--text-tertiary);
 }
 
+/* Local error paragraph (e.g. contact page) */
+.error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0;
+  text-align: left;
+}
+
+/* Field error text (used by ui/Input component) */
+.field-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  margin-top: var(--space-1);
+  text-align: left;
+}
+
 /* ----- Form ----- */
-.field { margin-bottom: var(--space-4); }
+.field {
+  margin-bottom: var(--space-4);
+  min-width: 0;
+  text-align: left;
+}
+.field input,
+.field select,
+.field textarea {
+  margin-top: 0;
+  text-align: left;
+}
+
+/* Two-column responsive form grid (use instead of inline 1fr 1fr grids) */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-5);
+  text-align: left;
+}
+@media (max-width: 640px) {
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Vertical rhythm utility */
+.space-y-3 > * + * { margin-top: var(--space-3); }
+.space-y-2 > * + * { margin-top: var(--space-2); }
+.space-y-4 > * + * { margin-top: var(--space-4); }
 
 .form-status {
   padding: var(--space-3) var(--space-4);
@@ -1050,7 +1128,7 @@ textarea:not(.input)::placeholder {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
-  text-align: center;
+  text-align: left;
   min-width: 0;
   transition: transform var(--duration-normal) var(--ease-bounce),
               box-shadow var(--duration-normal) ease,

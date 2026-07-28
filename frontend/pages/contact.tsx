@@ -48,7 +48,7 @@ export default function ContactPage() {
       <h1>Contact us</h1>
       <p className="page-intro">Have a question about our products or services? Reach out and we&apos;ll get back to you as soon as possible.</p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
+      <div className="form-grid" style={{ gap: "2rem" }}>
         <div className="panel">
           <h2>Get in touch</h2>
           {settings ? (

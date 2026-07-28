@@ -311,7 +311,7 @@ function OwnerOrders() {
           <h1 style={{ margin: 0 }}>Order #{o.id}</h1>
           <span className={`badge ${o.status === "delivered" ? "badge-green" : o.status === "cancelled" ? "badge-red" : "badge-blue"}`}>{o.status}</span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+        <div className="form-grid" style={{ marginBottom: "1rem" }}>
           <div className="panel">
             <h3>Customer</h3>
             <p><strong>Name:</strong> {escapeHtml(o.customerName || "")}</p>
@@ -1228,7 +1228,7 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
         <h3>Hero Section</h3>
         <p className="muted" style={{ fontSize: "0.85rem" }}>Control the hero banner, headline, and calls-to-action on your homepage.</p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
+        <div className="form-grid" style={{ marginTop: "1rem" }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem", fontWeight: 600 }}>
               <input type="checkbox" checked={heroForm.heroActive !== false} onChange={(e) => setHeroForm({ ...heroForm, heroActive: e.target.checked })} style={{ width: 18, height: 18 }} />
