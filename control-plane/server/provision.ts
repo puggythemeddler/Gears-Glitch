@@ -89,7 +89,7 @@ interface CloudinaryCredentials {
   folder: string;
 }
 
-async function createRenderService(clientName: string, dbUrl: string, clientSlug: string, cloudinary?: CloudinaryCredentials | null) {
+async function createRenderService(clientName: string, dbUrl: string, clientSlug: string, cloudinary: CloudinaryCredentials | null | undefined, cpSecret: string) {
   console.log(`[provision] Creating Render service for "${clientName}"...`);
 
   const slug = slugify(clientName);
@@ -100,6 +100,7 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
     { key: "JWT_SECRET", value: randomPassword(40) },
     { key: "PORT", value: "8020" },
     { key: "DB_SSL_REJECT", value: "false" },
+    { key: "CONTROL_PLANE_SECRET", value: cpSecret },
   ];
 
   // Add Cloudinary env vars if available (shared account, per-client folder)
@@ -248,10 +249,41 @@ export interface ProvisionResult {
   clientName: string;
   domain: string;
   adminPassword: string;
+  cpSecret: string;
   neon: { projectId: string; dbUrl: string };
   render: { serviceId: string; serviceUrl: string };
   vercel: { projectId: string; projectUrl: string };
   dns: boolean | null;
+}
+
+// Headers for authenticated control-plane → client backend calls
+export function cpHeaders(cpSecret: string, extra?: Record<string, string>): Record<string, string> {
+  const h: Record<string, string> = { ...(extra || {}) };
+  if (cpSecret) h["x-control-plane-key"] = cpSecret;
+  return h;
+}
+
+export function generateCpSecret(): string {
+  return "cps_" + crypto.randomBytes(24).toString("hex");
+}
+
+// Push (or rotate) the control-plane secret on an existing client's Render service
+export async function pushControlPlaneSecret(renderServiceId: string, cpSecret: string): Promise<void> {
+  const res = await fetch(`https://api.render.com/v1/services/${renderServiceId}`, {
+    method: "PATCH",
+    headers: headers(RENDER_API_KEY),
+    body: JSON.stringify({ envVars: [{ key: "CONTROL_PLANE_SECRET", value: cpSecret }] }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to set CONTROL_PLANE_SECRET: ${res.status} ${err}`);
+  }
+  // Redeploy so the new env var takes effect
+  await fetch(`https://api.render.com/v1/services/${renderServiceId}/deploys`, {
+    method: "POST",
+    headers: headers(RENDER_API_KEY),
+    body: JSON.stringify({ clear_cache: false }),
+  });
 }
 
 export async function provisionClient(
@@ -263,6 +295,7 @@ export async function provisionClient(
   const subdomain = slugify(clientName);
   const clientDomain = domain || `${subdomain}.${DOMAIN_BASE}`;
   const adminPassword = randomPassword(16);
+  const cpSecret = generateCpSecret();
 
   console.log(`\n[provision] ══════════════════════════════════════`);
   console.log(`[provision] Provisioning: ${clientName}`);
@@ -280,7 +313,7 @@ export async function provisionClient(
     : null;
 
   // 3. Create Render service
-  const render = await createRenderService(clientName, neon.dbUrl, subdomain, cloudinary);
+  const render = await createRenderService(clientName, neon.dbUrl, subdomain, cloudinary, cpSecret);
 
   // 3. Create Vercel project
   const vercel = await createVercelProject(clientName, render.serviceUrl);
@@ -302,6 +335,7 @@ export async function provisionClient(
     clientName,
     domain: clientDomain,
     adminPassword,
+    cpSecret,
     neon,
     render,
     vercel,
@@ -346,11 +380,13 @@ export async function deployAllClients(
 
 // ─── HEALTH CHECK ────────────────────────────────────────
 export async function checkClientHealth(
-  renderServiceUrl: string
+  renderServiceUrl: string,
+  cpSecret?: string
 ): Promise<"healthy" | "sleeping" | "down"> {
   if (!renderServiceUrl) return "down";
   try {
     const res = await fetch(`${renderServiceUrl}/api/health`, {
+      headers: cpHeaders(cpSecret || ""),
       signal: AbortSignal.timeout(45000),
     });
     if (res.ok) return "healthy";
@@ -471,13 +507,13 @@ export async function notifyAllClientsChangelog(version: string, title: string, 
 }
 
 // ─── CLIENT USAGE STATS (via client health endpoint) ─────
-export async function fetchClientUsage(backendUrl: string): Promise<{ orders?: number; revenue?: number; customers?: number } | null> {
+export async function fetchClientUsage(backendUrl: string, cpSecret?: string): Promise<{ orders?: number; revenue?: number; customers?: number; version?: string; suspended?: boolean } | null> {
   if (!backendUrl) return null;
   try {
-    const res = await fetch(`${backendUrl}/api/health`, { signal: AbortSignal.timeout(10000) });
+    const res = await fetch(`${backendUrl}/api/health`, { headers: cpHeaders(cpSecret || ""), signal: AbortSignal.timeout(10000) });
     if (!res.ok) return null;
     const data: any = await res.json();
-    return { orders: data.orders, revenue: data.revenue, customers: data.customers };
+    return { orders: data.orders, revenue: data.revenue, customers: data.customers, version: data.version, suspended: data.suspended };
   } catch {
     return null;
   }

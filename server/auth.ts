@@ -301,6 +301,56 @@ function posAuthMiddleware(req: Request, res: Response, next: NextFunction): voi
   } catch { res.status(401).json({ error: "Session expired. Please log in again." }); }
 }
 
+// ─── Control-plane machine-to-machine auth ──────────────────────────
+// The control plane authenticates with a per-tenant shared secret sent in
+// the x-control-plane-key header. The secret is provisioned as the
+// CONTROL_PLANE_SECRET env var on each client backend.
+
+const CP_SECRET_MIN_LENGTH = 16;
+
+function isControlPlaneRequest(req: Request): boolean {
+  const secret = process.env.CONTROL_PLANE_SECRET || "";
+  if (secret.length < CP_SECRET_MIN_LENGTH) return false;
+  const provided = req.headers["x-control-plane-key"];
+  if (typeof provided !== "string" || !provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(secret);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function setControlPlaneUser(req: Request): void {
+  (req as any).user = { sub: 0, username: "control-plane", role: "admin" };
+}
+
+// Only the control plane may access the route. Routes guarded by this are
+// disabled entirely when CONTROL_PLANE_SECRET is not configured.
+function controlPlaneAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const secret = process.env.CONTROL_PLANE_SECRET || "";
+  if (secret.length < CP_SECRET_MIN_LENGTH) {
+    res.status(403).json({ error: "Control plane access is not configured on this server." });
+    return;
+  }
+  if (!isControlPlaneRequest(req)) {
+    res.status(401).json({ error: "Invalid control plane key." });
+    return;
+  }
+  setControlPlaneUser(req);
+  next();
+}
+
+// Wraps an existing auth middleware, additionally allowing control-plane requests.
+function allowControlPlane(middleware: (req: Request, res: Response, next: NextFunction) => void) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (isControlPlaneRequest(req)) {
+      setControlPlaneUser(req);
+      next();
+      return;
+    }
+    middleware(req, res, next);
+  };
+}
+
 function generateTotpSecret(username: string): { secret: string; otpauthUrl: string } {
   const secret = generateSecret();
   const otpauthUrl = generateTOTP({ issuer: "Gear&Glitch", label: username, secret });
@@ -323,6 +373,9 @@ export {
   customerAuthMiddleware,
   providerAuthMiddleware,
   posAuthMiddleware,
+  controlPlaneAuthMiddleware,
+  allowControlPlane,
+  isControlPlaneRequest,
   loginStaff,
   loginCustomer,
   registerCustomer,

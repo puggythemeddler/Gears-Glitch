@@ -47,6 +47,7 @@ export interface Client {
   subscription_expires: string | null;
   feature_flags: Record<string, boolean>;
   notes: string;
+  cp_secret: string;
 }
 
 export async function getCloudinaryConfig() {
@@ -136,6 +137,8 @@ export async function initControlPlaneDb() {
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_orders INTEGER DEFAULT 0`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_customers INTEGER DEFAULT 0`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_revenue DOUBLE PRECISION DEFAULT 0`); } catch {}
+  // Per-client shared secret for authenticated control-plane → client calls
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS cp_secret TEXT DEFAULT ''`); } catch {}
 
   await query(`
     CREATE TABLE IF NOT EXISTS custom_plans (

@@ -18,6 +18,9 @@ import {
   deleteVercelProject,
   fetchClientUsage,
   notifyAllClientsChangelog,
+  cpHeaders,
+  generateCpSecret,
+  pushControlPlaneSecret,
   type ProvisionResult,
 } from "./provision";
 
@@ -232,6 +235,9 @@ app.get("/api/clients/:id", requireAuth, async (req, res) => {
       [Number(req.params.id)]
     );
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    // Never expose per-client secrets through the API
+    delete client.cp_secret;
+    delete client.neon_db_url;
     res.json({ client });
   } catch (err: any) {
     console.error("[api] Get client error:", err.message);
@@ -266,8 +272,9 @@ app.post("/api/clients", requireAuth, async (req, res) => {
             domain = $1, status = 'active',
             neon_project_id = $2, neon_db_name = $3, neon_db_url = $4,
             render_service_id = $5, render_service_url = $6,
-            vercel_project_id = $7, vercel_project_url = $8
-          WHERE id = $9`,
+            vercel_project_id = $7, vercel_project_url = $8,
+            cp_secret = $9
+          WHERE id = $10`,
           [
             result.domain,
             result.neon.projectId,
@@ -277,6 +284,7 @@ app.post("/api/clients", requireAuth, async (req, res) => {
             result.render.serviceUrl,
             result.vercel.projectId,
             result.vercel.projectUrl,
+            result.cpSecret,
             clientId,
           ]
         );
@@ -303,26 +311,54 @@ app.post("/api/clients", requireAuth, async (req, res) => {
 // Add existing client (no provisioning — just records existing URLs)
 app.post("/api/clients/existing", requireAuth, async (req, res) => {
   try {
-    const { name, adminEmail, plan, domain, backendUrl, frontendUrl } = req.body || {};
+    const { name, adminEmail, plan, domain, backendUrl, frontendUrl, renderServiceId, cpSecret } = req.body || {};
     if (!name || !adminEmail) {
       res.status(400).json({ error: "name and adminEmail are required" });
       return;
     }
 
+    // Use the provided secret (already configured on the client) or generate one
+    // that must then be pushed via POST /api/clients/:id/push-secret.
+    const secret = cpSecret || generateCpSecret();
+
     const result = await query(
-      `INSERT INTO clients (name, domain, admin_email, plan, status, render_service_url, vercel_project_url, health_status)
-       VALUES ($1, $2, $3, $4, 'active', $5, $6, 'unknown')
+      `INSERT INTO clients (name, domain, admin_email, plan, status, render_service_id, render_service_url, vercel_project_url, health_status, cp_secret)
+       VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, 'unknown', $8)
        RETURNING id`,
-      [name, domain || "", adminEmail, plan || "growth", backendUrl || "", frontendUrl || ""]
+      [name, domain || "", adminEmail, plan || "growth", renderServiceId || "", backendUrl || "", frontendUrl || "", secret]
     );
 
     res.status(201).json({
       clientId: result.rows[0].id,
-      message: `Client "${name}" added successfully.`,
+      cpSecretGenerated: !cpSecret,
+      message: cpSecret
+        ? `Client "${name}" added successfully.`
+        : `Client "${name}" added. A control-plane secret was generated — push it to the client with POST /api/clients/${result.rows[0].id}/push-secret (requires renderServiceId) or set CONTROL_PLANE_SECRET manually.`,
     });
   } catch (err: any) {
     console.error("[api] Add existing client error:", err.message);
     res.status(500).json({ error: "Failed to add client" });
+  }
+});
+
+// Push (or rotate) the control-plane secret onto a client's Render service.
+// Enables full remote management for clients provisioned before secrets existed.
+app.post("/api/clients/:id/push-secret", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_id) { res.status(400).json({ error: "Client has no Render service ID. Set it first (PUT /api/clients/:id) or configure CONTROL_PLANE_SECRET manually." }); return; }
+
+    const rotate = Boolean(req.body?.rotate);
+    const secret = (!rotate && client.cp_secret) ? client.cp_secret : generateCpSecret();
+
+    await pushControlPlaneSecret(client.render_service_id, secret);
+    await query("UPDATE clients SET cp_secret = $1 WHERE id = $2", [secret, client.id]);
+
+    res.json({ message: `Control-plane secret ${rotate ? "rotated" : "pushed"} to "${client.name}". The service is redeploying.` });
+  } catch (err: any) {
+    console.error("[api] Push secret error:", err.message);
+    res.status(500).json({ error: err.message || "Failed to push secret" });
   }
 });
 
@@ -443,7 +479,7 @@ app.post("/api/pull-cloudinary/:id", requireAuth, async (req, res) => {
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
 
-    const r = await fetch(`${client.render_service_url}/api/cloudinary-config`, { signal: AbortSignal.timeout(15000) });
+    const r = await fetch(`${client.render_service_url}/api/cloudinary-config`, { headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(15000) });
     if (!r.ok) { res.status(502).json({ error: `Client returned ${r.status}` }); return; }
     const data: any = await r.json();
 
@@ -478,12 +514,12 @@ app.get("/api/cloudinary", requireAuth, async (_req, res) => {
 app.post("/api/health-check", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll(
-      "SELECT id, name, render_service_url FROM clients WHERE status = 'active'"
+      "SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active'"
     );
 
     const results: { name: string; status: string; orders?: number; customers?: number; revenue?: number }[] = [];
-    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
-      const status = await checkClientHealth(c.render_service_url);
+    for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
+      const status = await checkClientHealth(c.render_service_url, c.cp_secret);
 
       // Track uptime
       await query(
@@ -505,7 +541,7 @@ app.post("/api/health-check", requireAuth, async (_req, res) => {
       }
 
       // Fetch usage stats from client backend
-      const usage = await fetchClientUsage(c.render_service_url);
+      const usage = await fetchClientUsage(c.render_service_url, c.cp_secret);
       if (usage) {
         await query(
           "UPDATE clients SET usage_orders = $1, usage_customers = $2, usage_revenue = $3 WHERE id = $4",
@@ -531,7 +567,20 @@ app.put("/api/clients/:id/suspend", requireAuth, async (req, res) => {
 
     await query("UPDATE clients SET status = 'suspended' WHERE id = $1", [Number(req.params.id)]);
 
-    // Try to pause Render service
+    // App-level suspend first (store returns 403 to visitors even if infra stays up)
+    let appSuspended = false;
+    if (client.render_service_url && client.cp_secret) {
+      try {
+        const r = await fetch(`${client.render_service_url}/api/control-plane/suspend`, {
+          method: "POST",
+          headers: cpHeaders(client.cp_secret),
+          signal: AbortSignal.timeout(20000),
+        });
+        appSuspended = r.ok;
+      } catch (e: any) { console.warn("[suspend] App-level suspend failed:", e?.message); }
+    }
+
+    // Then pause the Render service
     if (client.render_service_id) {
       try {
         await fetch(`https://api.render.com/v1/services/${client.render_service_id}/suspend`, {
@@ -541,7 +590,7 @@ app.put("/api/clients/:id/suspend", requireAuth, async (req, res) => {
       } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
     }
 
-    res.json({ message: `Client "${client.name}" suspended.` });
+    res.json({ message: `Client "${client.name}" suspended.`, appSuspended });
   } catch (err: any) {
     console.error("[api] Suspend error:", err.message);
     res.status(500).json({ error: "Failed to suspend client" });
@@ -565,7 +614,23 @@ app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
       } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
     }
 
-    res.json({ message: `Client "${client.name}" resumed.` });
+    // Clear the app-level suspend flag (retry a few times while the service wakes)
+    let appResumed = false;
+    if (client.render_service_url && client.cp_secret) {
+      for (let attempt = 0; attempt < 3 && !appResumed; attempt++) {
+        try {
+          const r = await fetch(`${client.render_service_url}/api/control-plane/resume`, {
+            method: "POST",
+            headers: cpHeaders(client.cp_secret),
+            signal: AbortSignal.timeout(30000),
+          });
+          appResumed = r.ok;
+        } catch (e: any) { console.warn("[resume] App-level resume attempt failed:", e?.message); }
+        if (!appResumed) await new Promise(r => setTimeout(r, 10000));
+      }
+    }
+
+    res.json({ message: `Client "${client.name}" resumed.`, appResumed, note: appResumed ? undefined : "App-level resume not confirmed; the flag will clear when the service is reachable — retry via PUT /api/clients/:id/resume." });
   } catch (err: any) {
     console.error("[api] Resume error:", err.message);
     res.status(500).json({ error: "Failed to resume client" });
@@ -575,7 +640,7 @@ app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
 // ─── UPDATE CLIENT ───────────────────────────────────────
 app.put("/api/clients/:id", requireAuth, async (req, res) => {
   try {
-    const { plan, subscription_expires, notes, feature_flags } = req.body || {};
+    const { plan, subscription_expires, notes, feature_flags, render_service_id } = req.body || {};
     const id = Number(req.params.id);
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [id]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -588,6 +653,7 @@ app.put("/api/clients/:id", requireAuth, async (req, res) => {
     if (subscription_expires !== undefined) { fields.push(`subscription_expires = $${idx}`); params.push(subscription_expires); idx++; }
     if (notes !== undefined) { fields.push(`notes = $${idx}`); params.push(notes); idx++; }
     if (feature_flags !== undefined) { fields.push(`feature_flags = $${idx}`); params.push(JSON.stringify(feature_flags)); idx++; }
+    if (render_service_id !== undefined) { fields.push(`render_service_id = $${idx}`); params.push(render_service_id); idx++; }
 
     if (fields.length === 0) { res.json({ message: "No changes" }); return; }
 
@@ -742,7 +808,7 @@ app.post("/api/clients/:id/pull-plans", requireAuth, async (req, res) => {
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
 
-    const result = await fetch(`${client.render_service_url}/api/plans/all`, { signal: AbortSignal.timeout(15000) });
+    const result = await fetch(`${client.render_service_url}/api/plans/all`, { headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(15000) });
     if (!result.ok) { res.status(502).json({ error: `Client returned ${result.status}` }); return; }
     const data: any = await result.json();
     const plans = data.plans || [];
@@ -766,13 +832,13 @@ app.post("/api/clients/:id/pull-plans", requireAuth, async (req, res) => {
 // Import plans from the Gear&Glitch Store (first active client)
 app.post("/api/plans/import-defaults", requireAuth, async (_req, res) => {
   try {
-    const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active' AND render_service_url != ''");
+    const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active' AND render_service_url != ''");
     if (!clients.length) { res.status(400).json({ error: "No active clients found" }); return; }
 
     let imported = 0;
-    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
+    for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
       try {
-        const result = await fetch(`${c.render_service_url}/api/plans/all`, { signal: AbortSignal.timeout(15000) });
+        const result = await fetch(`${c.render_service_url}/api/plans/all`, { headers: cpHeaders(c.cp_secret), signal: AbortSignal.timeout(15000) });
         if (!result.ok) continue;
         const data: any = await result.json();
         const plans = data.plans || [];
@@ -865,7 +931,7 @@ app.post("/api/clients/:id/sync-plans", requireAuth, async (req, res) => {
 
     const result = await fetch(`${client.render_service_url}/api/plans/sync`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
       body: JSON.stringify({ plans: payload }),
     });
 
@@ -884,7 +950,7 @@ app.post("/api/clients/:id/sync-plans", requireAuth, async (req, res) => {
 // Push plans to ALL active clients
 app.post("/api/plans/sync-all", requireAuth, async (_req, res) => {
   try {
-    const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active' AND render_service_url != ''");
+    const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active' AND render_service_url != ''");
     const plans = await queryAll("SELECT * FROM custom_plans ORDER BY tier_level");
     const payload = plans.map((p: any) => ({
       id: p.id, name: p.name, description: p.description,
@@ -895,11 +961,11 @@ app.post("/api/plans/sync-all", requireAuth, async (_req, res) => {
     }));
 
     const results: { name: string; success: boolean; error?: string }[] = [];
-    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
+    for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
       try {
         const r = await fetch(`${c.render_service_url}/api/plans/sync`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: cpHeaders(c.cp_secret, { "Content-Type": "application/json" }),
           body: JSON.stringify({ plans: payload }),
         });
         results.push({ name: c.name, success: r.ok });
@@ -921,7 +987,7 @@ app.get("/api/clients/:id/upgrade-requests", requireAuth, async (req, res) => {
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.json({ requests: [] }); return; }
 
-    const r = await fetch(`${client.render_service_url}/api/shop/subscription/requests`);
+    const r = await fetch(`${client.render_service_url}/api/shop/subscription/requests`, { headers: cpHeaders(client.cp_secret) });
     if (!r.ok) { res.json({ requests: [] }); return; }
     const data = await r.json() as any;
     res.json({ requests: data.requests || [] });
@@ -942,7 +1008,7 @@ app.put("/api/clients/:id/upgrade-requests/:reqId", requireAuth, async (req, res
 
     const r = await fetch(`${client.render_service_url}/api/shop/subscription/requests/${req.params.reqId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
       body: JSON.stringify({ status }),
     });
 
@@ -964,7 +1030,7 @@ app.get("/api/clients/:id/invoices", requireAuth, async (req, res) => {
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.json({ invoices: [], stats: null }); return; }
 
-    const invoicesData = await fetch(`${client.render_service_url}/api/admin/invoices`).then(r => r.ok ? r.json() : { invoices: [], stats: null }).catch(() => ({ invoices: [], stats: null })) as any;
+    const invoicesData = await fetch(`${client.render_service_url}/api/admin/invoices`, { headers: cpHeaders(client.cp_secret) }).then(r => r.ok ? r.json() : { invoices: [], stats: null }).catch(() => ({ invoices: [], stats: null })) as any;
 
     res.json({ invoices: invoicesData.invoices || [], stats: invoicesData.stats || null });
   } catch (err: any) {
@@ -981,7 +1047,7 @@ app.post("/api/clients/:id/invoices/generate", requireAuth, async (req, res) => 
 
     const r = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
       body: JSON.stringify(req.body || {}),
     });
     const data = await r.json();
@@ -998,7 +1064,7 @@ app.post("/api/clients/:id/invoices/:invId/pay", requireAuth, async (req, res) =
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
 
-    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/pay`, { method: "POST" });
+    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/pay`, { method: "POST", headers: cpHeaders(client.cp_secret) });
     const data = await r.json();
     if (!r.ok) { res.status(r.status).json(data); return; }
     res.json(data);
@@ -1014,7 +1080,7 @@ app.get("/api/clients/:id/invoices/:invId/view", requireAuth, async (req, res) =
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
 
     const format = req.query.format as string;
-    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/view${format === "pdf" ? "?format=pdf" : ""}`);
+    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/view${format === "pdf" ? "?format=pdf" : ""}`, { headers: cpHeaders(client.cp_secret) });
     if (!r.ok) { res.status(r.status).json({ error: `Client returned ${r.status}` }); return; }
 
     if (format === "pdf") {
@@ -1038,7 +1104,7 @@ app.post("/api/clients/:id/invoices/:invId/email", requireAuth, async (req, res)
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
 
-    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/email`, { method: "POST" });
+    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/email`, { method: "POST", headers: cpHeaders(client.cp_secret) });
     const data = await r.json();
     if (!r.ok) { res.status(r.status).json(data); return; }
     res.json(data);
@@ -1054,7 +1120,7 @@ app.get("/api/clients/:id/subscription", requireAuth, async (req, res) => {
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.json({ plan: null, activatedAt: null }); return; }
 
-    const r = await fetch(`${client.render_service_url}/api/shop/subscription`);
+    const r = await fetch(`${client.render_service_url}/api/shop/subscription`, { headers: cpHeaders(client.cp_secret) });
     if (!r.ok) { res.json({ plan: null, activatedAt: null }); return; }
     const data = await r.json();
     res.json(data);
@@ -1071,7 +1137,7 @@ app.get("/api/clients/:id/branches", requireAuth, async (req, res) => {
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (client.status !== "active" && client.status !== "provisioning") { res.json([]); return; }
     if (!client.render_service_url) { res.json([]); return; }
-    const resp = await fetch(`${client.render_service_url}/api/admin/branches`, { signal: AbortSignal.timeout(20000) });
+    const resp = await fetch(`${client.render_service_url}/api/admin/branches`, { headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(20000) });
     if (!resp.ok) { res.json([]); return; }
     const branches = await resp.json();
     res.json(Array.isArray(branches) ? branches : []);
@@ -1086,7 +1152,7 @@ app.get("/api/clients/:id/branches/:branchId/subscription", requireAuth, async (
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
-    const resp = await fetch(`${client.render_service_url}/api/admin/branches/${req.params.branchId}/subscription`, { signal: AbortSignal.timeout(20000) });
+    const resp = await fetch(`${client.render_service_url}/api/admin/branches/${req.params.branchId}/subscription`, { headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(20000) });
     if (!resp.ok) { res.status(resp.status).json({ error: "Client API error" }); return; }
     const sub = await resp.json();
     res.json(sub);
@@ -1103,7 +1169,7 @@ app.put("/api/clients/:id/branches/:branchId/plan", requireAuth, async (req, res
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
     const resp = await fetch(`${client.render_service_url}/api/admin/branches/${req.params.branchId}/plan`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
       body: JSON.stringify(req.body),
       signal: AbortSignal.timeout(20000),
     });
@@ -1118,9 +1184,9 @@ app.put("/api/clients/:id/branches/:branchId/plan", requireAuth, async (req, res
 // ─── AUTO HEALTH CHECK (every 5 min) ─────────────────────
 setInterval(async () => {
   try {
-    const clients = await queryAll("SELECT id, name, render_service_url FROM clients WHERE status = 'active'");
-    for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
-      const status = await checkClientHealth(c.render_service_url);
+    const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active'");
+    for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
+      const status = await checkClientHealth(c.render_service_url, c.cp_secret);
       await query(
         "UPDATE clients SET health_status = $1, last_health_check = NOW(), total_checks = total_checks + 1, failed_checks = failed_checks + CASE WHEN $1 != 'healthy' THEN 1 ELSE 0 END WHERE id = $2",
         [status, c.id]
@@ -1132,7 +1198,7 @@ setInterval(async () => {
         await query("UPDATE clients SET uptime_pct = $1 WHERE id = $2", [uptimePct, c.id]);
       }
       // Fetch usage
-      const usage = await fetchClientUsage(c.render_service_url);
+      const usage = await fetchClientUsage(c.render_service_url, c.cp_secret);
       if (usage) {
         await query("UPDATE clients SET usage_orders = $1, usage_customers = $2, usage_revenue = $3 WHERE id = $4", [usage.orders || 0, usage.customers || 0, usage.revenue || 0, c.id]);
       }

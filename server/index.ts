@@ -261,6 +261,9 @@ import {
   customerAuthMiddleware,
   providerAuthMiddleware,
   posAuthMiddleware,
+  controlPlaneAuthMiddleware,
+  allowControlPlane,
+  isControlPlaneRequest,
   loginStaff,
   loginCustomer,
   registerCustomer,
@@ -333,6 +336,8 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   if (req.path === "/api/mpesa/callback") { next(); return; }
   // Skip for POS (uses Bearer token, not cookies)
   if (req.path.startsWith("/api/pos/")) { next(); return; }
+  // Skip for authenticated control-plane machine-to-machine requests
+  if (isControlPlaneRequest(req)) { next(); return; }
 
   const token = req.headers["x-csrf-token"] || req.body?._csrf;
   const cookie = req.cookies?.csrf_token;
@@ -426,21 +431,68 @@ app.use("/uploads", express.static(path.join(ROOT, "data", "uploads"), {
   }
 }));
 
-app.get("/api/health", async (_req: Request, res: Response) => {
+// App version (reported to the control plane)
+let APP_VERSION = "unknown";
+try {
+  const pkgPath = [path.join(__dirname, "..", "package.json"), path.join(__dirname, "..", "..", "package.json")].find(p => fs.existsSync(p));
+  if (pkgPath) APP_VERSION = JSON.parse(fs.readFileSync(pkgPath, "utf8")).version || "unknown";
+} catch { console.warn("[startup] Could not determine app version"); }
+
+app.get("/api/health", async (req: Request, res: Response) => {
+  // Usage/business stats are only disclosed to the control plane.
+  if (!isControlPlaneRequest(req)) {
+    res.json({ ok: true });
+    return;
+  }
   try {
     const orders = await queryOne("SELECT COUNT(*) AS count FROM orders") as any;
     const customers = await queryOne("SELECT COUNT(*) AS count FROM users WHERE role = 'customer'") as any;
     const revenue = await queryOne("SELECT COALESCE(SUM(subtotal + shipping_fee), 0) AS total FROM orders WHERE status IN ('shipped', 'delivered', 'completed')") as any;
     res.json({
       ok: true,
+      version: APP_VERSION,
+      suspended: storeSuspended,
       orders: Number(orders?.count || 0),
       customers: Number(customers?.count || 0),
       revenue: Number(revenue?.total || 0),
     });
   } catch {
-    res.json({ ok: true });
+    res.json({ ok: true, version: APP_VERSION, suspended: storeSuspended });
   }
 });
+
+// ─── App-level store suspension (controlled by the control plane) ───────
+let storeSuspended = false;
+async function refreshSuspendedFlag(): Promise<void> {
+  try { storeSuspended = (await getStoreSetting("store_suspended")) === "true"; } catch { /* DB not ready yet */ }
+}
+refreshSuspendedFlag();
+setInterval(refreshSuspendedFlag, 60 * 1000).unref();
+
+app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+  if (!storeSuspended) { next(); return; }
+  // The control plane (and health checks) must still reach a suspended store.
+  if (req.path === "/health" || req.path.startsWith("/control-plane") || isControlPlaneRequest(req)) { next(); return; }
+  res.status(403).json({ error: "This store is currently suspended. Please contact support." });
+});
+
+app.post("/api/control-plane/suspend", controlPlaneAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  await setStoreSetting("store_suspended", "true");
+  storeSuspended = true;
+  console.warn("[control-plane] Store suspended by control plane.");
+  res.json({ ok: true, suspended: true });
+}));
+
+app.post("/api/control-plane/resume", controlPlaneAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  await setStoreSetting("store_suspended", "false");
+  storeSuspended = false;
+  console.log("[control-plane] Store resumed by control plane.");
+  res.json({ ok: true, suspended: false });
+}));
+
+app.get("/api/control-plane/status", controlPlaneAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ ok: true, version: APP_VERSION, suspended: storeSuspended });
+}));
 
 app.get("/api/csrf-token", (req: Request, res: Response) => {
   const token = generateCsrfToken();
@@ -481,7 +533,7 @@ app.get("/api/upload/status", ownerAuthMiddleware, asyncHandler(async (_req: Req
 }));
 
 // Cloudinary config for control plane provisioning (server-to-server only)
-app.get("/api/cloudinary-config", asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/cloudinary-config", controlPlaneAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   const settings = await getSettings();
   if (!settings.cloudinaryCloudName || !settings.cloudinaryApiKey || !settings.cloudinaryApiSecret) {
     res.json({ configured: false });
@@ -1144,7 +1196,7 @@ app.delete("/api/admin/plans/:id", adminAuthMiddleware, asyncHandler(async (req:
 }));
 
 // ============ PLAN SYNC (from Control Plane) ============
-app.put("/api/plans/sync", asyncHandler(async (req: Request, res: Response) => {
+app.put("/api/plans/sync", controlPlaneAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { plans } = req.body || {};
   if (!Array.isArray(plans)) { res.status(400).json({ error: "plans array required" }); return; }
 
@@ -1172,7 +1224,7 @@ app.put("/api/plans/sync", asyncHandler(async (req: Request, res: Response) => {
 
 // ============ BRANCHES ============
 
-app.get("/api/admin/branches", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/branches", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const branches = await listBranches();
   res.json({ branches });
 }));
@@ -1217,13 +1269,13 @@ app.delete("/api/admin/branches/:id", ownerAuthMiddleware, asyncHandler(async (r
 
 // ============ BRANCH SUBSCRIPTIONS ============
 
-app.get("/api/admin/branches/:id/subscription", ownerAuthMiddleware, asyncHandler(async (req, res) => {
+app.get("/api/admin/branches/:id/subscription", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req, res) => {
   const branchId = parseInt(String(req.params.id), 10);
   const sub = await getBranchSubscription(branchId);
   res.json(sub || { planId: null, plan: null, activatedAt: null, expiresAt: null, status: null });
 }));
 
-app.put("/api/admin/branches/:id/plan", ownerAuthMiddleware, asyncHandler(async (req, res) => {
+app.put("/api/admin/branches/:id/plan", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req, res) => {
   const branchId = parseInt(String(req.params.id), 10);
   const { planId } = req.body;
   if (!planId) return res.status(400).json({ error: "planId required" });
@@ -2363,7 +2415,7 @@ app.get("/api/provider/invoices", providerAuthMiddleware, asyncHandler(async (re
   res.json({ invoices: await listInvoices((req as any).provider.sub) });
 }));
 
-app.get("/api/admin/invoices", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/invoices", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const { status, dateFrom, dateTo, search, page } = req.query as any;
   if (status || dateFrom || dateTo || search) {
     const limit = 50;
@@ -2383,7 +2435,7 @@ app.get("/api/admin/invoices/export", adminAuthMiddleware, asyncHandler(async (r
   res.send(csv);
 }));
 
-app.get("/api/admin/invoices/:id/view", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/invoices/:id/view", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const invoice = await getInvoice(Number(req.params.id));
   if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
   const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
@@ -2418,7 +2470,7 @@ app.get("/api/admin/invoices/:id/view", adminAuthMiddleware, asyncHandler(async 
   }
 }));
 
-app.post("/api/admin/invoices/:id/email", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/:id/email", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const invoice = await getInvoice(Number(req.params.id));
   if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
   const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
@@ -2444,7 +2496,7 @@ app.post("/api/admin/invoices/mark-overdue", adminAuthMiddleware, asyncHandler(a
   res.json({ marked: count });
 }));
 
-app.post("/api/admin/invoices/generate", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/generate", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const { providerId, planId } = req.body || {};
   if (!providerId) { res.status(400).json({ error: "Provider ID is required." }); return; }
   if (!isPosInt(Number(providerId))) { res.status(400).json({ error: "Provider ID must be a positive integer." }); return; }
@@ -2454,7 +2506,7 @@ app.post("/api/admin/invoices/generate", adminAuthMiddleware, asyncHandler(async
   res.status(201).json(invoice);
 }));
 
-app.post("/api/admin/invoices/:id/pay", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/:id/pay", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const ok = await markInvoicePaid(Number(req.params.id));
   if (!ok) { res.status(404).json({ error: "Invoice not found." }); return; }
   res.json({ ok: true });
@@ -4572,7 +4624,7 @@ app.delete("/api/admin/splashes/:id", staffAuthMiddleware, requirePermission("re
 
 // ============ SHOP SUBSCRIPTION ============
 
-app.get("/api/shop/subscription", staffAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/shop/subscription", allowControlPlane(staffAuthMiddleware), asyncHandler(async (_req: Request, res: Response) => {
   const plan = await getShopPlan();
   const activatedRow = await queryOne("SELECT value FROM settings WHERE key = 'subscription_activated_at'") as any;
   const activatedAt = activatedRow?.value || null;
@@ -4599,12 +4651,12 @@ app.post("/api/shop/subscription/request", staffAuthMiddleware, asyncHandler(asy
   res.status(201).json({ ok: true });
 }));
 
-app.get("/api/shop/subscription/requests", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/shop/subscription/requests", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const status = req.query.status as string | undefined;
   res.json({ requests: await listSubscriptionRequests(status) });
 }));
 
-app.put("/api/shop/subscription/requests/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.put("/api/shop/subscription/requests/:id", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const { status } = req.body || {};
   if (!["approved", "rejected"].includes(status)) { res.status(400).json({ error: "Status must be approved or rejected." }); return; }
   const ok = await reviewSubscriptionRequest(Number(req.params.id), status, (req as any).user.sub);

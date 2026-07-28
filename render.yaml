@@ -41,5 +41,9 @@ services:
         value: Gear&Glitch
       - key: DB_SSL_REJECT
         value: "false"
+      # Shared secret for control-plane machine-to-machine management (min 16 chars).
+      # Leave unset to disable remote management entirely.
+      - key: CONTROL_PLANE_SECRET
+        sync: false
     healthCheckPath: /api/health
     autoDeploy: true

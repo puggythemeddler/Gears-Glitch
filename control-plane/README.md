@@ -104,7 +104,19 @@ When you add a new client, the control plane automatically:
 Provisioning is async — returns immediately with a client ID. Check status at `/api/clients/:id`.
 
 ### Add Existing Client
-Register an already-deployed instance without provisioning new resources. Just provide the name, email, backend URL, and frontend URL.
+Register an already-deployed instance without provisioning new resources. Just provide the name, email, backend URL, and frontend URL. Optionally provide the Render service ID and the client's `CONTROL_PLANE_SECRET`; if no secret is given, one is generated — push it to the client with `POST /api/clients/:id/push-secret`.
+
+## Control-Plane ↔ Client Authentication
+
+Every client backend carries a `CONTROL_PLANE_SECRET` env var (auto-generated during provisioning). The control plane stores this per-client secret (`clients.cp_secret`) and sends it as the `x-control-plane-key` header on every call to a client backend. This authenticates:
+
+- Plan sync (`PUT /api/plans/sync` on the client)
+- Cloudinary config pull (`GET /api/cloudinary-config`)
+- Subscription invoices, upgrade requests, branches, subscription status
+- Usage stats via `GET /api/health` (business stats are only disclosed to the control plane)
+- App-level suspend/resume (`POST /api/control-plane/suspend|resume` on the client)
+
+Clients without the secret configured reject all control-plane management calls. Suspend does both: sets the app-level suspended flag (storefront returns 403) and pauses the Render service.
 
 ## API Endpoints
 
@@ -133,8 +145,9 @@ All endpoints require authentication via one of:
 | POST | `/api/clients/existing` | Register existing deployment |
 | PUT | `/api/clients/:id` | Update client (plan, expiry, notes, features) |
 | DELETE | `/api/clients/:id` | Delete client and all resources |
-| PUT | `/api/clients/:id/suspend` | Suspend client (pauses Render service) |
+| PUT | `/api/clients/:id/suspend` | Suspend client (app-level 403 + pauses Render service) |
 | PUT | `/api/clients/:id/resume` | Resume client |
+| POST | `/api/clients/:id/push-secret` | Push/rotate control-plane secret onto client's Render service (admin only, `{"rotate": true}` to rotate) |
 
 ### Client Operations
 | Method | Endpoint | Description |

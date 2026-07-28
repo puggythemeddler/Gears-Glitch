@@ -122,8 +122,8 @@
     <div style="width:360px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:2rem">
       <h1 style="text-align:center;margin-bottom:0.25rem"><span style="color:var(--primary)">Gear&Glitch</span></h1>
       <p style="text-align:center;color:var(--text-muted);font-size:0.85rem;margin-bottom:1.5rem">Control Plane</p>
-      <div class="field"><label>Username</label><input type="text" id="login-user" placeholder="admin" autofocus></div>
-      <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="Password"></div>
+      <div class="field"><label>Username</label><input type="text" id="login-user" placeholder="admin" autofocus onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"></div>
+      <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <div id="login-error" style="color:var(--danger);font-size:0.82rem;margin-bottom:0.75rem"></div>
       <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Sign In</button>
     </div>
@@ -291,6 +291,8 @@
       <div class="field"><label>Backend URL</label><input type="text" id="inp-ex-backend" placeholder="e.g. https://gears-glitch.onrender.com"></div>
       <div class="field"><label>Frontend URL</label><input type="text" id="inp-ex-frontend" placeholder="e.g. https://gears-glitch.vercel.app"></div>
       <div class="field"><label>Domain (optional)</label><input type="text" id="inp-ex-domain" placeholder="e.g. gearglitch.com"></div>
+      <div class="field"><label>Render Service ID (optional)</label><input type="text" id="inp-ex-render-id" placeholder="e.g. srv-abc123 — enables push-secret & suspend"></div>
+      <div class="field"><label>Control-Plane Secret (optional)</label><input type="text" id="inp-ex-cp-secret" placeholder="Leave blank to auto-generate; must match client's CONTROL_PLANE_SECRET"></div>
       <div class="field"><label>Plan</label><select id="inp-ex-plan"><option value="starter">Starter</option><option value="growth" selected>Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hideExistingModal()">Cancel</button>
@@ -557,6 +559,7 @@
             ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" class="btn btn-ghost btn-sm">Backend</a>' : ''}
             ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
             <button class="btn btn-ghost btn-sm" onclick="editClient(${c.id})">Edit</button>
+            <button class="btn btn-ghost btn-sm" onclick="pushSecret(${c.id}, '${esc(c.name)}')" title="Push/rotate the control-plane secret onto the client's Render service">Push Secret</button>
             ${c.status === 'active' ? '<button class="btn btn-warning btn-sm" onclick="suspendClient(' + c.id + ')">Suspend</button>' : ''}
             ${c.status === 'suspended' ? '<button class="btn btn-success btn-sm" onclick="resumeClient(' + c.id + ')">Resume</button>' : ''}
             <button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${esc(c.name)}')">Delete</button>
@@ -570,7 +573,7 @@
     // ─── MODALS ───────────────────────────────────────────
     function showModal() { document.getElementById("modal-overlay").classList.add("show"); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = ""; document.getElementById("inp-domain").value = ""; document.getElementById("inp-plan").value = "growth"; }
     function hideModal() { document.getElementById("modal-overlay").classList.remove("show"); }
-    function showExistingModal() { document.getElementById("existing-modal-overlay").classList.add("show"); document.getElementById("inp-ex-name").value = ""; document.getElementById("inp-ex-email").value = ""; document.getElementById("inp-ex-backend").value = ""; document.getElementById("inp-ex-frontend").value = ""; document.getElementById("inp-ex-domain").value = ""; }
+    function showExistingModal() { document.getElementById("existing-modal-overlay").classList.add("show"); document.getElementById("inp-ex-name").value = ""; document.getElementById("inp-ex-email").value = ""; document.getElementById("inp-ex-backend").value = ""; document.getElementById("inp-ex-frontend").value = ""; document.getElementById("inp-ex-domain").value = ""; document.getElementById("inp-ex-render-id").value = ""; document.getElementById("inp-ex-cp-secret").value = ""; }
     function hideExistingModal() { document.getElementById("existing-modal-overlay").classList.remove("show"); }
     function hideEditModal() { document.getElementById("edit-modal-overlay").classList.remove("show"); }
     function showChangelogModal() { document.getElementById("changelog-modal-overlay").classList.add("show"); document.getElementById("cl-version").value = ""; document.getElementById("cl-title").value = ""; document.getElementById("cl-body").value = ""; }
@@ -603,10 +606,12 @@
       const frontendUrl = document.getElementById("inp-ex-frontend").value.trim();
       const domain = document.getElementById("inp-ex-domain").value.trim();
       const plan = document.getElementById("inp-ex-plan").value;
+      const renderServiceId = document.getElementById("inp-ex-render-id").value.trim();
+      const cpSecret = document.getElementById("inp-ex-cp-secret").value.trim();
       if (!name || !email) { toast("Name and email required", "error"); return; }
       document.getElementById("btn-add-existing").disabled = true;
       try {
-        const data = await api("/api/clients/existing", { method: "POST", body: JSON.stringify({ name, adminEmail: email, plan, domain, backendUrl, frontendUrl }) });
+        const data = await api("/api/clients/existing", { method: "POST", body: JSON.stringify({ name, adminEmail: email, plan, domain, backendUrl, frontendUrl, renderServiceId: renderServiceId || undefined, cpSecret: cpSecret || undefined }) });
         if (data.error) { toast(data.error, "error"); document.getElementById("btn-add-existing").disabled = false; return; }
         toast(data.message); hideExistingModal(); loadClients();
       } catch (e) { toast("Failed: " + e.message, "error"); document.getElementById("btn-add-existing").disabled = false; }
@@ -615,6 +620,17 @@
     async function deleteClient(id, name) {
       if (!confirm('Delete "' + name + '"? This removes their database and all deployments.')) return;
       try { const data = await api("/api/clients/" + id, { method: "DELETE" }); toast(data.message || "Deleted"); loadClients(); } catch (e) { toast("Failed", "error"); }
+    }
+
+    async function pushSecret(id, name) {
+      const choice = prompt('Push control-plane secret to "' + name + '"?\n\nType "push" to push the stored secret, or "rotate" to generate and push a new one. The client service will redeploy.', "push");
+      if (!choice) return;
+      const rotate = choice.trim().toLowerCase() === "rotate";
+      try {
+        const data = await api("/api/clients/" + id + "/push-secret", { method: "POST", body: JSON.stringify({ rotate }) });
+        if (data.error) { toast(data.error, "error"); return; }
+        toast(data.message);
+      } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
     async function suspendClient(id) {
