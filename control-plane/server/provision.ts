@@ -13,6 +13,9 @@ const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
 const FROM_EMAIL = process.env.FROM_EMAIL || "noreply@gearglitch.com";
 const FROM_NAME = process.env.FROM_NAME || "Gear&Glitch";
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
 
 function randomPassword(len = 20) {
   return crypto.randomBytes(len).toString("base64url").slice(0, len);
@@ -81,10 +84,29 @@ export async function deleteNeonProject(projectId: string) {
 }
 
 // ─── RENDER ──────────────────────────────────────────────
-async function createRenderService(clientName: string, dbUrl: string) {
+async function createRenderService(clientName: string, dbUrl: string, clientSlug: string) {
   console.log(`[provision] Creating Render service for "${clientName}"...`);
 
   const slug = slugify(clientName);
+
+  const envVars: { key: string; value: string }[] = [
+    { key: "NODE_ENV", value: "production" },
+    { key: "DATABASE_URL", value: dbUrl },
+    { key: "JWT_SECRET", value: randomPassword(40) },
+    { key: "PORT", value: "8020" },
+    { key: "DB_SSL_REJECT", value: "false" },
+  ];
+
+  // Add Cloudinary env vars if configured (shared account, per-client folder)
+  if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
+    envVars.push(
+      { key: "CLOUDINARY_CLOUD_NAME", value: CLOUDINARY_CLOUD_NAME },
+      { key: "CLOUDINARY_API_KEY", value: CLOUDINARY_API_KEY },
+      { key: "CLOUDINARY_API_SECRET", value: CLOUDINARY_API_SECRET },
+      { key: "CLOUDINARY_FOLDER", value: `gear-glitch/${clientSlug}` }
+    );
+    console.log(`[provision] Cloudinary configured for folder: gear-glitch/${clientSlug}`);
+  }
 
   const res = await fetch("https://api.render.com/v1/services", {
     method: "POST",
@@ -97,13 +119,7 @@ async function createRenderService(clientName: string, dbUrl: string) {
       runtime: "node",
       build_command: "npm ci --omit=optional && cd server && npx tsc && cd ..",
       start_command: "node server/dist/index.js",
-      env_vars: [
-        { key: "NODE_ENV", value: "production" },
-        { key: "DATABASE_URL", value: dbUrl },
-        { key: "JWT_SECRET", value: randomPassword(40) },
-        { key: "PORT", value: "8020" },
-        { key: "DB_SSL_REJECT", value: "false" },
-      ],
+      env_vars: envVars,
       plan: "free",
       region: "oregon",
     }),
@@ -253,7 +269,7 @@ export async function provisionClient(
   const neon = await createNeonDatabase(clientName);
 
   // 2. Create Render service
-  const render = await createRenderService(clientName, neon.dbUrl);
+  const render = await createRenderService(clientName, neon.dbUrl, subdomain);
 
   // 3. Create Vercel project
   const vercel = await createVercelProject(clientName, render.serviceUrl);

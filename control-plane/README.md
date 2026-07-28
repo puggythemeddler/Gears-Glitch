@@ -26,6 +26,9 @@ npm run dev             # http://localhost:4000
 | `VERCEL_TEAM_ID` | No | Vercel team ID if using a team account |
 | `DOMAIN_BASE` | No | Base domain (defaults to `gearglitch.com`) |
 | `FRONTEND_GIT_REPO` | No | GitHub repo for frontend (defaults to `puggythemeddler/Gears-Glitch`) |
+| `CLOUDINARY_CLOUD_NAME` | No | Shared Cloudinary cloud name (auto-configured for all new clients) |
+| `CLOUDINARY_API_KEY` | No | Shared Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | No | Shared Cloudinary API secret |
 | `SMTP_HOST` | No | SMTP host for sending emails |
 | `SMTP_PORT` | No | SMTP port (defaults to 587) |
 | `SMTP_USER` | No | SMTP username |
@@ -94,8 +97,9 @@ When you add a new client, the control plane automatically:
 1. **Creates a Neon database** — separate PostgreSQL for the client
 2. **Creates a Render web service** — deploys the backend from the shared repo
 3. **Creates a Vercel project** — deploys the frontend
-4. **Sets up DNS** (optional) — creates a subdomain under your base domain
-5. **Sends a welcome email** — includes login credentials, links, and plan info
+4. **Sets up Cloudinary** — shared account with per-client folder (`gear-glitch/{client-slug}`)
+5. **Sets up DNS** (optional) — creates a subdomain under your base domain
+6. **Sends a welcome email** — includes login credentials, links, and plan info
 
 Provisioning is async — returns immediately with a client ID. Check status at `/api/clients/:id`.
 
@@ -159,6 +163,7 @@ All endpoints require authentication via one of:
 |---|---|---|
 | POST | `/api/deploy-all` | Deploy latest code to all clients |
 | POST | `/api/health-check` | Check health of all clients |
+| POST | `/api/sync-cloudinary` | Push shared Cloudinary credentials to all clients |
 | POST | `/api/backups/run` | Run database backups |
 | GET | `/api/backups` | List backup files |
 | POST | `/api/changelog` | Publish changelog + notify clients |

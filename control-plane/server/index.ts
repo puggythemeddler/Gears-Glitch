@@ -376,6 +376,71 @@ app.post("/api/deploy-all", requireAuth, async (_req, res) => {
   }
 });
 
+// ─── CLOUDINARY SYNC ────────────────────────────────────
+// Push shared Cloudinary credentials to all active clients
+app.post("/api/sync-cloudinary", requireAuth, async (_req, res) => {
+  try {
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    if (!cloudName || !apiKey || !apiSecret) {
+      res.status(400).json({ error: "Cloudinary env vars not set on control plane (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)" });
+      return;
+    }
+
+    const clients = await queryAll(
+      "SELECT id, name, render_service_id FROM clients WHERE status = 'active' AND render_service_id != ''"
+    );
+    if (!clients.length) { res.json({ message: "No active clients.", results: [] }); return; }
+
+    const results: { name: string; success: boolean; error?: string; folder?: string }[] = [];
+    const RENDER_API_KEY = process.env.RENDER_API_KEY || "";
+
+    for (const c of clients as { id: number; name: string; render_service_id: string }[]) {
+      const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
+      const folder = `gear-glitch/${slug}`;
+
+      try {
+        // Update env vars on the Render service
+        const r = await fetch(`https://api.render.com/v1/services/${c.render_service_id}`, {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${RENDER_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            envVars: [
+              { key: "CLOUDINARY_CLOUD_NAME", value: cloudName },
+              { key: "CLOUDINARY_API_KEY", value: apiKey },
+              { key: "CLOUDINARY_API_SECRET", value: apiSecret },
+              { key: "CLOUDINARY_FOLDER", value: folder },
+            ],
+          }),
+        });
+
+        if (r.ok) {
+          // Trigger a deploy so env vars take effect
+          await fetch(`https://api.render.com/v1/services/${c.render_service_id}/deploys`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${RENDER_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ clear_cache: false }),
+          });
+          results.push({ name: c.name, success: true, folder });
+        } else {
+          const text = await r.text();
+          results.push({ name: c.name, success: false, error: `HTTP ${r.status}: ${text}` });
+        }
+      } catch (e: any) {
+        results.push({ name: c.name, success: false, error: e.message });
+      }
+    }
+
+    const ok = results.filter(r => r.success).length;
+    const fail = results.filter(r => !r.success).length;
+    res.json({ message: `Cloudinary synced: ${ok} ok, ${fail} failed`, results });
+  } catch (err: any) {
+    console.error("[api] Sync Cloudinary error:", err.message);
+    res.status(500).json({ error: "Failed to sync Cloudinary" });
+  }
+});
+
 // Health check all clients
 app.post("/api/health-check", requireAuth, async (_req, res) => {
   try {

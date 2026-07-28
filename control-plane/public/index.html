@@ -136,6 +136,7 @@
       <div class="header-actions">
         <span id="user-display" style="font-size:0.82rem;color:var(--text-muted);align-self:center"></span>
         <button class="btn btn-ghost" onclick="healthCheckAll()">Health Check</button>
+        <button class="btn btn-ghost" onclick="syncCloudinary()">Sync Cloudinary</button>
         <button class="btn btn-ghost" onclick="deployAll()">Deploy All</button>
         <button class="btn btn-ghost" onclick="showExistingModal()">+ Add Existing</button>
         <button class="btn btn-primary" onclick="showModal()">+ Add Client</button>
@@ -652,6 +653,17 @@
     async function healthCheckAll() {
       toast("Checking health...");
       try { const data = await api("/api/health-check", { method: "POST" }); const r = data.results || []; toast(`Health: ${r.filter(x=>x.status==="healthy").length} healthy, ${r.filter(x=>x.status==="sleeping").length} sleeping, ${r.filter(x=>x.status==="down").length} down`); loadClients(); } catch (e) { toast("Failed", "error"); }
+    }
+
+    async function syncCloudinary() {
+      if (!confirm("Push shared Cloudinary credentials to all active clients? Each client gets its own folder.")) return;
+      toast("Syncing Cloudinary...");
+      try {
+        const data = await api("/api/sync-cloudinary", { method: "POST" });
+        if (data.error) { toast(data.error, "error"); return; }
+        const r = data.results || [];
+        toast(`Cloudinary synced: ${r.filter(x=>x.success).length} ok, ${r.filter(x=>!x.success).length} failed`);
+      } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
     // ─── CHANGELOG ────────────────────────────────────────
