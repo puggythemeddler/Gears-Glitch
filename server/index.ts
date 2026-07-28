@@ -1335,7 +1335,7 @@ app.get("/api/pos/categories", asyncHandler(async (_req: Request, res: Response)
 
 app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey } = req.body || {};
+    const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey, branchId } = req.body || {};
     if (!items || !Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "Items are required." }); return; }
     if (items.length > 100) { res.status(400).json({ error: "Too many items (max 100)." }); return; }
     if (idempotencyKey) {
@@ -1346,6 +1346,17 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     const pmt = paymentMethod || "cash";
     const pmtConfig = paymentMethods.find((m: any) => m.id === pmt);
     if (!pmtConfig) { res.status(400).json({ error: "Invalid payment method." }); return; }
+    // Branch plan feature enforcement
+    if (branchId) {
+      try {
+        const branchFeatures = await getBranchFeatures(Number(branchId));
+        // Check if branch plan includes the payment method being used
+        // Multi-currency check
+        if (pmt === "multi-currency" && !branchFeatures.includes("Multi-currency support")) {
+          res.status(403).json({ error: "Multi-currency payments not available for this branch's plan." }); return;
+        }
+      } catch {}
+    }
     const staff = (req as any).user;
     const staffName = staff.username || staff.email || `Staff #${staff.sub}`;
     let customerId: number;
@@ -1368,12 +1379,17 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       if (!product) { res.status(400).json({ error: `Product ${item.productId} not found.` }); return; }
       const qty = Number(item.quantity);
       if (!Number.isInteger(qty) || qty <= 0) { res.status(400).json({ error: `Invalid quantity for ${product.name}.` }); return; }
-      // Check stock_on_hand on the product itself
-      if (product.stockOnHand !== undefined && product.stockOnHand > 0 && product.stockOnHand < qty) {
-        res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${product.stockOnHand}).` }); return;
+      if (branchId) {
+        const branchStock = await getStockLevel(item.productId, Number(branchId));
+        const branchQty = branchStock ? Number(branchStock.quantityInStock) : 0;
+        if (branchQty < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} at this branch (available: ${branchQty}).` }); return; }
+      } else {
+        if (product.stockOnHand !== undefined && product.stockOnHand > 0 && product.stockOnHand < qty) {
+          res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${product.stockOnHand}).` }); return;
+        }
+        const stock = await getStockLevel(item.productId);
+        if (stock && stock.quantityInStock < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${stock.quantityInStock}).` }); return; }
       }
-      const stock = await getStockLevel(item.productId);
-      if (stock && stock.quantityInStock < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${stock.quantityInStock}).` }); return; }
       const lineTotal = product.price * qty;
       subtotal += lineTotal;
       resolvedItems.push({ ...product, quantity: qty, lineTotal });
@@ -1414,11 +1430,38 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       const tx = (item.taxable !== false) ? 1 : 0;
       await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [orderId, item.id, item.name, item.price, item.quantity, item.lineTotal, hw, wd, tx]);
     }
-    // Deduct stock_on_hand for each product
+    // Deduct stock_on_hand AND stock_levels for each product
     for (const item of resolvedItems) {
       try {
         await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2`, [item.quantity, item.id]);
       } catch {}
+      try {
+        const bid = branchId ? Number(branchId) : null;
+        const existingLevel = bid
+          ? await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [item.id, bid])
+          : await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [item.id]);
+        const currentQty = existingLevel ? Number(existingLevel.quantity_in_stock) : 0;
+        const newQty = Math.max(0, currentQty - item.quantity);
+        if (bid) {
+          await query(
+            `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+             VALUES ($1, $2, $3, 0, 0, 5)
+             ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $3, updated_at = NOW()::text`,
+            [item.id, bid, newQty]
+          );
+        } else {
+          await query(
+            `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+             VALUES ($1, $2, 0, 0, 5)
+             ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`,
+            [item.id, newQty]
+          );
+        }
+        await query(
+          "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5, $6)",
+          [item.id, -item.quantity, String(orderId), `POS sale #${orderId}`, staff.sub, bid || null]
+        );
+      } catch (e) { console.error("[POS stock sync]", e); }
     }
     await updateOrderStatus(orderId, "delivered");
     // Generate invoice number for the order
@@ -2010,6 +2053,15 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`;
+  // Check if branch plan includes PDF generation
+  if (order.branchId && req.query.format === "pdf") {
+    try {
+      const branchFeatures = await getBranchFeatures(Number(order.branchId));
+      if (!branchFeatures.includes("Invoice/quote PDF downloads")) {
+        res.status(403).json({ error: "PDF downloads not available for this branch's plan." }); return;
+      }
+    } catch {}
+  }
   if (req.query.format === "pdf") {
     try {
       const pdf = await htmlToPdf(html);
@@ -2150,6 +2202,15 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
   <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Provided by ${escapeHtml(store)}</div>
 </div>
 </body></html>`;
+  // Check if branch plan includes PDF generation
+  if (order.branchId && req.query.format === "pdf") {
+    try {
+      const branchFeatures = await getBranchFeatures(Number(order.branchId));
+      if (!branchFeatures.includes("Invoice/quote PDF downloads")) {
+        res.status(403).json({ error: "PDF downloads not available for this branch's plan." }); return;
+      }
+    } catch {}
+  }
   if (req.query.format === "pdf") {
     try {
       const pdf = await htmlToPdf(html);
@@ -2330,6 +2391,16 @@ app.post("/api/admin/credit-notes", ownerAuthMiddleware, asyncHandler(async (req
   if (existingNotes.length > 0) { res.status(400).json({ error: "A credit note has already been created for this order." }); return; }
   const order = await getOrder(Number(orderId));
   if (!order) { res.status(400).json({ error: "Order not found or credit note creation failed." }); return; }
+  // Branch plan check for credit notes
+  const cnBranchId = order.branchId;
+  if (cnBranchId) {
+    try {
+      const branchFeatures = await getBranchFeatures(Number(cnBranchId));
+      if (!branchFeatures.includes("Credit notes")) {
+        res.status(403).json({ error: "Credit notes not available for this branch's plan." }); return;
+      }
+    } catch {}
+  }
   const orderItems = (order.items || []).map((i: any) => ({
     orderItemId: i.id, productId: i.productId, name: i.name, price: i.price, quantity: i.quantity
   }));
@@ -4131,9 +4202,18 @@ app.get("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("reports
 
 app.post("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { customerName, customerPhone, customerId: cid, notes, items, discountType, discountValue } = req.body || {};
+    const { customerName, customerPhone, customerId: cid, notes, items, discountType, discountValue, branchId } = req.body || {};
     if (!items || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({ error: "items array is required." }); return;
+    }
+    // Branch plan check for quotations
+    if (branchId) {
+      try {
+        const branchFeatures = await getBranchFeatures(Number(branchId));
+        if (!branchFeatures.includes("Quotations")) {
+          res.status(403).json({ error: "Quotations not available for this branch's plan." }); return;
+        }
+      } catch {}
     }
     let customerId = Number(cid) || 0;
     if (!customerId && customerName) {
@@ -4613,11 +4693,8 @@ app.get("/api/stock-take", ownerAuthMiddleware, asyncHandler(async (_req: Reques
 app.post("/api/stock-take/start", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { notes, branchId } = req.body || {};
-    const session = await createStockTakeSession(notes || "", (req as any).user.sub);
+    const session = await createStockTakeSession(notes || "", (req as any).user.sub, branchId ? Number(branchId) : undefined);
     if (!session) { res.status(500).json({ error: "Failed to create stock take session." }); return; }
-    if (branchId) {
-      try { await query("UPDATE stock_take_sessions SET branch_id = $1 WHERE id = $2", [branchId, session.id]); } catch {}
-    }
     const items = await getStockTakeItems(session.id);
     res.status(201).json({ session, items });
   } catch (err: any) {

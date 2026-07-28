@@ -44,7 +44,7 @@ const INDUSTRIES = [
 
 const FEATURES = [
   { icon: "📦", name: "Inventory Management", desc: "Real-time stock tracking per branch, low-stock alerts, branch-filtered stock views, stock-on-hand counts, and inter-branch stock transfers." },
-  { icon: "💳", name: "Point of Sale", desc: "Fast, intuitive POS with M-Pesa payment support, receipt generation, and customer display." },
+  { icon: "💳", name: "Point of Sale", desc: "Fast, intuitive POS with M-Pesa payment support, receipt generation, customer display, and real-time stock deduction from both product and branch inventory." },
   { icon: "🔧", name: "Repair Management", desc: "End-to-end repair lifecycle from drop-off to delivery with technician assignment, cost tracking, and quote generation." },
   { icon: "🛡", name: "Warranty Tracking", desc: "Automated warranty registration on products, duration tracking, and warranty status on invoices." },
   { icon: "👥", name: "Customer Management", desc: "Customer profiles with purchase history, repair records, order history, and communication log." },

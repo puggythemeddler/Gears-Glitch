@@ -4,8 +4,8 @@ A complete multi-branch sales & management system with product catalog, customer
 
 ## Recent highlights
 
-- **Per-branch subscriptions** — Each branch gets its own subscription plan independent of the shop-wide plan. New branches default to the shop's current plan. Admin Branches page shows a Plan column with Change Plan dropdown per branch. Owner Subscription page shows a Branch Plans table. Feature gating checks the branch plan, not the shop plan.
-- **Full per-branch stock tracking** — Stock levels and movements tracked per branch. Stock on Hand page has a branch filter dropdown to view stock at a specific branch. Stock Take sessions can be scoped to a specific branch. Completing a stock transfer deducts from the source branch and increments at the destination with dual movement records.
+- **Per-branch subscriptions** — Each branch gets its own subscription plan independent of the shop-wide plan. New branches default to the shop's current plan. Admin Branches page shows a Plan column with Change Plan dropdown per branch. Owner Subscription page shows a Branch Plans table. Feature gating checks the branch plan, not the shop plan. Branch plan enforced on POS (multi-currency), invoice PDFs, credit notes, and quotations.
+- **Full per-branch stock tracking** — Stock levels and movements tracked per branch. Stock on Hand page has a branch filter dropdown to view stock at a specific branch. Stock Take sessions scoped to a selected branch (only shows products with stock at that branch). POS checkout deducts from both `stock_on_hand` and `stock_levels` simultaneously with stock movement records. Completing a stock transfer deducts from the source branch and increments at the destination with dual movement records.
 - **Dedicated Settings tab** — Admin and owner panels restructured with a dedicated Settings group in the sidebar. Admin settings: General, Storefront, Product Positioning, Email, WhatsApp, About Us, Spec Templates, Subscription. Owner settings: Storefront, Product Positioning, About Us, Subscription, Audit Log. Settings group expanded by default.
 - **Purchase order improvements** — Inline received quantity inputs (replaced window.prompt popups), server-side PDF generation with branded A4 download, soft-delete with "View Completed" and "View Deleted" tabs, and one-click restore for deleted purchase orders. Any status can now be deleted. Completed tab shows all received orders; deleted tab shows trashed orders with restore button.
 - **Audit log in admin panel** — Audit log (previously owner-only) now accessible under Activity group in admin sidebar. Same filtering and detail view.
@@ -151,7 +151,7 @@ Opens **http://localhost:3000** in a browser.
 |-----|-----|-----------------|
 | `/` | Everyone | Browse products by category |
 | `/product?id=xxx` | Everyone | Product details, specs, image gallery with lightbox |
-| `/pos` | Staff | Point of Sale — product grid, cart, payment method selector (configurable), customer lookup, cash change calculator, thermal receipt & A4 invoice print |
+| `/pos` | Staff | Point of Sale — product grid, cart, payment method selector (configurable), customer lookup, cash change calculator, thermal receipt & A4 invoice print. Stock deducted from both `stock_on_hand` and `stock_levels` per branch. |
 | `/login` | Everyone | Unified sign-in — customer, staff, provider (Google Sign-In supported) |
 | `/dashboard` | Customers & Providers | Orders, repairs, wishlist, messages (customer) or subscription, invoices (provider) |
 | `/about` | Everyone | About Us page — content editable by admin/owner |

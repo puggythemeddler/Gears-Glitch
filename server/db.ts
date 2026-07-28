@@ -469,6 +469,7 @@ interface StockTakeSession {
   id: number;
   status: string;
   notes: string;
+  branchId: number | null;
   createdBy: number | null;
   completedAt: string | null;
   createdAt: string;
@@ -2619,28 +2620,42 @@ async function getTechnicianRepairStats(): Promise<any[]> {
   );
 }
 
-async function createStockTakeSession(notes?: string, createdBy?: number): Promise<StockTakeSession> {
+async function createStockTakeSession(notes?: string, createdBy?: number, branchId?: number): Promise<StockTakeSession> {
   const result = await query("INSERT INTO stock_take_sessions (status, notes, created_by) VALUES ('in_progress', $1, $2) RETURNING *", [notes || "", createdBy || null]);
   const session = result.rows[0] as StockTakeSession;
+  if (branchId) {
+    try { await query("UPDATE stock_take_sessions SET branch_id = $1 WHERE id = $2", [branchId, session.id]); } catch {}
+  }
   try {
-    await query(
-      `INSERT INTO stock_take_items (session_id, product_id, product_name, system_quantity, counted_quantity, variance, notes)
-       SELECT $1, p.id, p.name, COALESCE(sl.quantity_in_stock, 0), NULL, 0, ''
-       FROM products p
-       LEFT JOIN stock_levels sl ON sl.product_id = p.id
-       ON CONFLICT (session_id, product_id) DO NOTHING`,
-      [session.id]
-    );
+    if (branchId) {
+      await query(
+        `INSERT INTO stock_take_items (session_id, product_id, product_name, system_quantity, counted_quantity, variance, notes)
+         SELECT $1, p.id, p.name, COALESCE(sl.quantity_in_stock, 0), NULL, 0, ''
+         FROM products p
+         INNER JOIN stock_levels sl ON sl.product_id = p.id AND sl.branch_id = $2
+         ON CONFLICT (session_id, product_id) DO NOTHING`,
+        [session.id, branchId]
+      );
+    } else {
+      await query(
+        `INSERT INTO stock_take_items (session_id, product_id, product_name, system_quantity, counted_quantity, variance, notes)
+         SELECT $1, p.id, p.name, COALESCE(sl.quantity_in_stock, 0), NULL, 0, ''
+         FROM products p
+         LEFT JOIN stock_levels sl ON sl.product_id = p.id
+         ON CONFLICT (session_id, product_id) DO NOTHING`,
+        [session.id]
+      );
+    }
   } catch (e) { console.error("[stock-take] auto-populate products failed:", e); }
   return session;
 }
 
 async function getStockTakeSession(id: number): Promise<StockTakeSession | undefined> {
-  return await queryOne(`SELECT id, status, notes, created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt" FROM stock_take_sessions WHERE id = $1`, [id]) as StockTakeSession | undefined;
+  return await queryOne(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt" FROM stock_take_sessions WHERE id = $1`, [id]) as StockTakeSession | undefined;
 }
 
 async function listStockTakeSessions(): Promise<StockTakeSession[]> {
-  return await queryAll(`SELECT id, status, notes, created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt" FROM stock_take_sessions ORDER BY created_at DESC`) as StockTakeSession[];
+  return await queryAll(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt" FROM stock_take_sessions ORDER BY created_at DESC`) as StockTakeSession[];
 }
 
 async function getStockTakeItems(sessionId: number): Promise<StockTakeItem[]> {
@@ -2654,7 +2669,11 @@ async function getStockTakeItems(sessionId: number): Promise<StockTakeItem[]> {
 }
 
 async function recordStockCount(sessionId: number, productId: string, countedQuantity: number, notes?: string): Promise<void> {
-  const systemRow = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1", [productId]) as any;
+  const session = await queryOne("SELECT branch_id FROM stock_take_sessions WHERE id = $1", [sessionId]) as any;
+  const branchId = session?.branch_id || null;
+  const systemRow = branchId
+    ? await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [productId, branchId])
+    : await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [productId]) as any;
   const systemQuantity = systemRow ? Number(systemRow.quantity_in_stock) : 0;
   await query(
     `INSERT INTO stock_take_items (session_id, product_id, product_name, system_quantity, counted_quantity, variance, notes)
@@ -2813,15 +2832,19 @@ async function providerHasFeature(providerId: number, feature: string): Promise<
 }
 
 async function applyStockTakeAdjustments(sessionId: number): Promise<number> {
+  const session = await queryOne("SELECT * FROM stock_take_sessions WHERE id = $1", [sessionId]) as any;
+  const branchId = session?.branch_id || null;
   const items = await queryAll("SELECT * FROM stock_take_items WHERE session_id = $1 AND counted_quantity IS NOT NULL", [sessionId]) as any[];
   let adjusted = 0;
   for (const item of items) {
-    const current = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1", [item.product_id]) as any;
+    const current = branchId
+      ? await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [item.product_id, branchId])
+      : await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [item.product_id]);
     const currentQty = current ? Number(current.quantity_in_stock) : 0;
     const diff = item.counted_quantity - currentQty;
     if (diff === 0) continue;
-    await updateStockLevel(item.product_id, Math.max(0, item.counted_quantity));
-    await recordStockMovement(item.product_id, "stock_take_adjust", diff, "stock_take", String(sessionId), `Stock take #${sessionId} adjustment`);
+    await updateStockLevel(item.product_id, Math.max(0, item.counted_quantity), branchId || undefined);
+    await recordStockMovement(item.product_id, "stock_take_adjust", diff, "stock_take", String(sessionId), `Stock take #${sessionId} adjustment`, undefined, branchId || undefined);
     adjusted++;
   }
   return adjusted;
