@@ -2925,7 +2925,7 @@ function AdminStoreInfo() {
       setTotpSetup(null);
       setTotpCode("");
       setTotpMsg("2FA enabled successfully.");
-      toast?.("2FA enabled successfully.", "success");
+      toast?.("success", "2FA enabled successfully.");
     } catch (err: any) {
       setTotpMsg("Error: " + err.message);
     } finally { setTotpLoading(false); }
@@ -2940,7 +2940,7 @@ function AdminStoreInfo() {
       setTotpSetup(null);
       setTotpDisablePassword("");
       setTotpMsg("2FA disabled.");
-      toast?.("2FA disabled.", "success");
+      toast?.("success", "2FA disabled.");
     } catch (err: any) {
       setTotpMsg("Error: " + err.message);
     } finally { setTotpLoading(false); }
