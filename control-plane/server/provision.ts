@@ -138,7 +138,7 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
         runtime: "node",
         envSpecificDetails: {
           buildCommand: "NODE_ENV=development npm ci && cd server && npx tsc && cd ..",
-          startCommand: "node server/dist/index.js",
+          startCommand: "node dist/server/index.js",
         },
         plan: "free",
         region: "oregon",
