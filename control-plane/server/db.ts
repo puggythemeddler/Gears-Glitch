@@ -90,6 +90,25 @@ export async function setCloudinaryConfig(cloudName: string, apiKey: string, api
   }
 }
 
+export async function logAudit(
+  userId: number,
+  username: string,
+  action: string,
+  targetType: string,
+  targetId?: number | null,
+  targetName?: string,
+  details?: string
+) {
+  try {
+    await query(
+      "INSERT INTO audit_log (user_id, username, action, target_type, target_id, target_name, details) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+      [userId, username, action, targetType, targetId || null, targetName || "", details || ""]
+    );
+  } catch (e: any) {
+    console.warn("[audit] Failed to log:", e?.message);
+  }
+}
+
 export async function initControlPlaneDb() {
   await query(`
     CREATE TABLE IF NOT EXISTS clients (
@@ -234,6 +253,20 @@ export async function initControlPlaneDb() {
       from_email TEXT DEFAULT 'noreply@gearglitch.com',
       from_name TEXT DEFAULT 'Gear&Glitch',
       updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER DEFAULT 0,
+      username TEXT DEFAULT '',
+      action TEXT NOT NULL,
+      target_type TEXT DEFAULT '',
+      target_id INTEGER,
+      target_name TEXT DEFAULT '',
+      details TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT NOW()
     )
   `);
 

@@ -195,6 +195,7 @@
       <button class="tab" onclick="switchTab('changelog', this)">Changelog</button>
       <button class="tab" onclick="switchTab('deploys', this)">Deploy Log</button>
       <button class="tab" onclick="switchTab('backups', this)">Backups</button>
+      <button class="tab" onclick="switchTab('audit', this)">Audit Log</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
       <button class="tab" onclick="switchTab('users', this)" id="tab-btn-users" style="display:none">Users</button>
     </div>
@@ -259,6 +260,12 @@
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage who can access the control plane. Admins can manage users; viewers have read-only access. Each user gets a unique API key for programmatic access.</p>
       <div id="users-list"></div>
+    </div>
+
+    <div id="tab-audit" style="display:none">
+      <h2>Audit Log</h2>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">All actions performed on the control plane are logged here for accountability.</p>
+      <div id="audit-list"></div>
     </div>
 
     <div id="tab-settings" style="display:none">
@@ -1126,6 +1133,26 @@
       } catch { document.getElementById("deploy-log").innerHTML = '<div class="empty"><p>Failed to load.</p></div>'; }
     }
 
+    async function loadAudit() {
+      try {
+        const data = await api("/api/audit");
+        const entries = data.entries || [];
+        if (!entries.length) { document.getElementById("audit-list").innerHTML = '<div class="empty"><p>No audit entries yet.</p></div>'; return; }
+        let html = '<table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>';
+        for (const e of entries) {
+          html += `<tr>
+            <td style="white-space:nowrap;font-size:0.82rem">${new Date(e.created_at).toLocaleString()}</td>
+            <td>${esc(e.username || 'system')}</td>
+            <td><code style="background:var(--bg);padding:1px 5px;border-radius:3px">${esc(e.action)}</code></td>
+            <td>${e.target_type}${e.target_name ? ': ' + esc(e.target_name) : ''}</td>
+            <td style="font-size:0.82rem;color:var(--text-muted)">${esc(e.details || '')}</td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+        document.getElementById("audit-list").innerHTML = html;
+      } catch { document.getElementById("audit-list").innerHTML = '<div class="empty"><p>Failed to load.</p></div>'; }
+    }
+
     initAuth();
     setInterval(() => { if (getToken()) loadClients(); }, 60000);
 
@@ -1452,6 +1479,7 @@
       document.getElementById("tab-deploys").style.display = tab === "deploys" ? "" : "none";
       document.getElementById("tab-backups").style.display = tab === "backups" ? "" : "none";
       document.getElementById("tab-users").style.display = tab === "users" ? "" : "none";
+      document.getElementById("tab-audit").style.display = tab === "audit" ? "" : "none";
       document.getElementById("tab-settings").style.display = tab === "settings" ? "" : "none";
       document.getElementById("tab-client-detail").style.display = tab === "client-detail" ? "" : "none";
       if (tab === "plans") loadPlans();
@@ -1459,6 +1487,7 @@
       if (tab === "deploys") loadDeploys();
       if (tab === "backups") loadBackups();
       if (tab === "users") loadUsers();
+      if (tab === "audit") loadAudit();
       if (tab === "settings") loadSettings();
       if (tab === "clients") loadUpgradeRequests();
     }

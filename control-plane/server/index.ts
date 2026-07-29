@@ -10,7 +10,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { generateSecret, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
-import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig } from "./db";
+import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
 import {
   provisionClient,
   deployAllClients,
@@ -101,6 +101,11 @@ function requireAdmin(
     return;
   }
   next();
+}
+
+function auditLog(req: any, action: string, targetType: string, targetId?: number | null, targetName?: string, details?: string) {
+  const user = (req as any).user || { id: 0, username: "system" };
+  logAudit(user.id, user.username, action, targetType, targetId, targetName, details);
 }
 
 // ─── TOTP 2FA HELPERS ─────────────────────────────────────
@@ -445,6 +450,7 @@ app.post("/api/clients", requireAuth, async (req, res) => {
         );
       });
 
+    auditLog(req, "create_client", "client", clientId, name);
     res.status(202).json({
       clientId,
       message: `Provisioning started for "${name}". Check status at /api/clients/${clientId}`,
@@ -495,6 +501,7 @@ app.post("/api/clients/existing", requireAuth, async (req, res) => {
       [name, uniqueDomain, adminEmail, plan || "growth", renderServiceId || "", backendUrl || "", frontendUrl || "", secret]
     );
 
+    auditLog(req, "add_existing_client", "client", result.rows[0].id, name);
     res.status(201).json({
       clientId: result.rows[0].id,
       cpSecretGenerated: !cpSecret,
@@ -522,6 +529,7 @@ app.post("/api/clients/:id/push-secret", requireAuth, requireAdmin, async (req, 
     await pushControlPlaneSecret(client.render_service_id, secret);
     await query("UPDATE clients SET cp_secret = $1 WHERE id = $2", [secret, client.id]);
 
+    auditLog(req, "push_secret", "client", client.id, client.name, rotate ? "rotated" : "pushed");
     res.json({ message: `Control-plane secret ${rotate ? "rotated" : "pushed"} to "${client.name}". The service is redeploying.` });
   } catch (err: any) {
     console.error("[api] Push secret error:", err.message);
@@ -552,6 +560,7 @@ app.delete("/api/clients/:id", requireAuth, async (req, res) => {
 
     await query("DELETE FROM clients WHERE id = $1", [Number(req.params.id)]);
 
+    auditLog(req, "delete_client", "client", client.id, client.name, cleanupErrors.join("; "));
     res.json({
       message: `Client "${client.name}" deleted.`,
       cleanupErrors: cleanupErrors.length > 0 ? cleanupErrors : undefined,
@@ -571,6 +580,7 @@ app.post("/api/deploy-all", requireAuth, async (_req, res) => {
     const results = await deployAllClients(
       clients as { name: string; render_service_id: string }[]
     );
+    auditLog(req, "deploy_all", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} clients`);
     res.json({ results });
   } catch (err: any) {
     console.error("[api] Deploy all error:", err.message);
@@ -588,6 +598,7 @@ app.post("/api/clients/:id/redeploy", requireAuth, async (req, res) => {
     await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [client.id, ok ? "deploy" : "failed"]);
     if (ok) {
       await query("UPDATE clients SET health_status = 'deploying' WHERE id = $1", [client.id]);
+      auditLog(req, "redeploy_client", "client", client.id, client.name);
       res.json({ message: `Redeploy triggered for "${client.name}"` });
     } else {
       res.status(502).json({ error: `Render deploy request failed` });
@@ -651,6 +662,7 @@ app.post("/api/sync-cloudinary", requireAuth, async (_req, res) => {
 
     const ok = results.filter(r => r.success).length;
     const fail = results.filter(r => !r.success).length;
+    auditLog(req, "sync_cloudinary", "system", null, undefined, `${ok} ok, ${fail} failed`);
     res.json({ message: `Cloudinary synced: ${ok} ok, ${fail} failed`, results });
   } catch (err: any) {
     console.error("[api] Sync Cloudinary error:", err.message);
@@ -705,6 +717,7 @@ app.post("/api/cloudinary", requireAuth, async (req, res) => {
       return;
     }
     await setCloudinaryConfig(cloudName, apiKey, apiSecret, folder || "gear-glitch");
+    auditLog(req, "set_cloudinary", "config", null, undefined, `cloud: ${cloudName}, folder: ${folder || "gear-glitch"}`);
     res.json({ message: "Cloudinary config saved." });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to save Cloudinary config" });
@@ -744,6 +757,7 @@ app.post("/api/smtp", requireAuth, async (req, res) => {
       return;
     }
     await setSmtpConfig(host, port || 587, user, pass, fromEmail || "noreply@gearglitch.com", fromName || "Gear&Glitch");
+    auditLog(req, "set_smtp", "config", null, undefined, `host: ${host}, user: ${user}`);
     res.json({ message: "SMTP config saved." });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to save SMTP config" });
@@ -860,6 +874,7 @@ app.put("/api/clients/:id/suspend", requireAuth, async (req, res) => {
       } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
     }
 
+    auditLog(req, "suspend_client", "client", client.id, client.name);
     res.json({ message: `Client "${client.name}" suspended.`, appSuspended });
   } catch (err: any) {
     console.error("[api] Suspend error:", err.message);
@@ -900,6 +915,7 @@ app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
       }
     }
 
+    auditLog(req, "resume_client", "client", client.id, client.name);
     res.json({ message: `Client "${client.name}" resumed.`, appResumed, note: appResumed ? undefined : "App-level resume not confirmed; the flag will clear when the service is reachable — retry via PUT /api/clients/:id/resume." });
   } catch (err: any) {
     console.error("[api] Resume error:", err.message);
@@ -966,6 +982,7 @@ app.post("/api/changelog", requireAuth, async (req, res) => {
     // Notify all clients via email
     await notifyAllClientsChangelog(version, title, body || "");
 
+    auditLog(req, "publish_changelog", "changelog", null, undefined, `${version}: ${title}`);
     res.status(201).json({ message: "Changelog published and clients notified." });
   } catch (err: any) {
     console.error("[api] Changelog error:", err.message);
@@ -1042,6 +1059,8 @@ app.post("/api/backups/run", requireAuth, async (_req, res) => {
       }
     } catch (e: any) { console.warn("[startup] Failed to clean old backups:", e?.message); }
 
+    const ok = results.filter(r => r.success).length;
+    auditLog(req, "run_backup", "system", null, undefined, `${ok}/${results.length} succeeded`);
     res.json({ results });
   } catch (err: any) {
     console.error("[api] Backup error:", err.message);
@@ -1077,6 +1096,16 @@ app.get("/api/backups/download/:filename", requireAuth, async (req, res) => {
     stream.pipe(res);
   } catch (err: any) {
     res.status(500).json({ error: "Failed to download backup" });
+  }
+});
+
+// ─── AUDIT LOG ─────────────────────────────────────────────
+app.get("/api/audit", requireAuth, async (_req, res) => {
+  try {
+    const entries = await queryAll("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 200");
+    res.json({ entries });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get audit log" });
   }
 });
 
