@@ -180,6 +180,7 @@
         <button class="btn btn-ghost" onclick="healthCheckAll()">Health Check</button>
         <select id="pull-cloudinary-client" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull Cloudinary from...</option></select>
         <button class="btn btn-ghost" onclick="pullCloudinaryFromClient()">Pull Cloudinary</button>
+        <button class="btn btn-ghost" onclick="showCloudinaryModal()">Set Cloudinary</button>
         <button class="btn btn-ghost" onclick="syncCloudinary()">Sync Cloudinary</button>
         <button class="btn btn-ghost" onclick="deployAll()">Deploy All</button>
         <button class="btn btn-ghost" onclick="showExistingModal()">+ Add Existing</button>
@@ -410,6 +411,20 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hidePlanModal()">Cancel</button>
         <button class="btn btn-primary" id="btn-save-plan" onclick="savePlan()">Save Plan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="cloudinary-modal-overlay">
+    <div class="modal" style="width:460px">
+      <h2>Cloudinary Configuration</h2>
+      <div class="field"><label>Cloud Name</label><input type="text" id="inp-cld-cloud" placeholder="e.g. mycloud"></div>
+      <div class="field"><label>API Key</label><input type="text" id="inp-cld-key" placeholder="e.g. 123456789012345"></div>
+      <div class="field"><label>API Secret</label><input type="password" id="inp-cld-secret" placeholder="Your API secret"></div>
+      <div class="field"><label>Folder (optional)</label><input type="text" id="inp-cld-folder" placeholder="gear-glitch" value="gear-glitch"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="hideCloudinaryModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveCloudinaryConfig()">Save</button>
       </div>
     </div>
   </div>
@@ -896,6 +911,30 @@
       try {
         const data = await api("/api/pull-cloudinary/" + clientId, { method: "POST" });
         if (data.error) { toast(data.error, "error"); return; }
+        toast(data.message);
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    // ─── CLOUDINARY MANUAL CONFIG ──────────────────────────
+    function showCloudinaryModal() {
+      document.getElementById("cloudinary-modal-overlay").classList.add("show");
+      document.getElementById("inp-cld-cloud").value = "";
+      document.getElementById("inp-cld-key").value = "";
+      document.getElementById("inp-cld-secret").value = "";
+      document.getElementById("inp-cld-folder").value = "gear-glitch";
+    }
+    function hideCloudinaryModal() { document.getElementById("cloudinary-modal-overlay").classList.remove("show"); }
+    async function saveCloudinaryConfig() {
+      const cloudName = document.getElementById("inp-cld-cloud").value.trim();
+      const apiKey = document.getElementById("inp-cld-key").value.trim();
+      const apiSecret = document.getElementById("inp-cld-secret").value.trim();
+      const folder = document.getElementById("inp-cld-folder").value.trim() || "gear-glitch";
+      if (!cloudName || !apiKey || !apiSecret) { toast("Cloud Name, API Key, and API Secret are required", "error"); return; }
+      toast("Saving Cloudinary config...");
+      try {
+        const data = await api("/api/cloudinary", { method: "POST", body: JSON.stringify({ cloudName, apiKey, apiSecret, folder }) });
+        if (data.error) { toast(data.error, "error"); return; }
+        hideCloudinaryModal();
         toast(data.message);
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
