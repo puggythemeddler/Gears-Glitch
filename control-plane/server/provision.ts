@@ -53,8 +53,14 @@ async function createNeonDatabase(clientName: string) {
   const projectId = data.project.id;
 
   let dbUrl = "";
-  if (data.project.connection_uris?.length > 0) {
-    dbUrl = data.project.connection_uris[0].connection_uri || "";
+  if (data.connection_uris?.length > 0) {
+    dbUrl = data.connection_uris[0].connection_uri || "";
+  } else if (data.databases?.length > 0 && data.roles?.length > 0) {
+    // Build URL from roles/databases as fallback
+    const db = data.databases[0];
+    const role = data.roles[0];
+    const epHost = `ep-${projectId}.us-east-2.aws.neon.tech`;
+    dbUrl = `postgresql://${role.name}:${role.password}@${epHost}/${db.name}?sslmode=require`;
   }
 
   console.log(`[provision] Neon project created: ${projectId}`);
