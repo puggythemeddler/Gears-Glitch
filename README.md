@@ -986,8 +986,9 @@ npm start                # Serve production build
 7. **Configure `SMTP_*`** for real email
 8. **Create a free [Cloudinary](https://cloudinary.com) account** — set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in Render env vars. Images uploaded without Cloudinary fall back to local disk (lost on Render redeploy).
 9. **Use HTTPS** behind a reverse proxy (nginx, Caddy, Cloudflare) — all traffic (passwords, tokens, M-Pesa data) is unprotected without TLS
-9. Build backend: `npm run build`
-10. Build frontend: `cd frontend && npm run build`
+10. **Marketing page** (operator only) — set `NEXT_PUBLIC_MARKETING_ENABLED=true` on your main Vercel deployment to enable the `/marketing` landing page. Client deployments created via the control plane don't set this, so their `/marketing` renders a "not available" page.
+11. Build backend: `npm run build`
+12. Build frontend: `cd frontend && npm run build`
 11. Run with a process manager (PM2, systemd, etc.) or deploy to Render.com / Vercel
 12. Back up images — Cloudinary stores uploads in production; local `data/uploads/` is ephemeral on Render
 13. Optional: enable **database backup for images** in admin Settings → Image Storage (stores base64 in PostgreSQL `stored_images` table alongside Cloudinary)

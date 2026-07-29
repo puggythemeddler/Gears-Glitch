@@ -1,4 +1,25 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import Head from "next/head";
+
+// Marketing is operator-only. Set NEXT_PUBLIC_MARKETING_ENABLED=true on the
+// main Vercel deployment; client deployments build without it and get a
+// "not available" page instead of the full marketing content.
+const MARKETING_ENABLED = process.env.NEXT_PUBLIC_MARKETING_ENABLED === "true";
+
+function MarketingDisabled() {
+  return (
+    <>
+      <Head>
+        <title>Page not available</title>
+        <meta name="robots" content="noindex" />
+      </Head>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", padding: "2rem", textAlign: "center" }}>
+        <p style={{ fontSize: "1.1rem", color: "var(--text-secondary)" }}>This page is not available on this store.</p>
+        <a href="/" className="btn btn-primary" style={{ marginTop: "1rem" }}>Go to store</a>
+      </div>
+    </>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Config                                                             */
@@ -347,6 +368,11 @@ function FAQItem({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boo
 /* ------------------------------------------------------------------ */
 
 export default function MarketingPage() {
+  if (!MARKETING_ENABLED) return <MarketingDisabled />;
+  return <MarketingContent />;
+}
+
+function MarketingContent() {
   const heroRef = useRef<HTMLDivElement>(null);
   const [heroVisible, setHeroVisible] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
