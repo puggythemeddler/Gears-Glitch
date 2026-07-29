@@ -139,6 +139,8 @@ export async function initControlPlaneDb() {
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_revenue DOUBLE PRECISION DEFAULT 0`); } catch {}
   // Per-client shared secret for authenticated control-plane → client calls
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS cp_secret TEXT DEFAULT ''`); } catch {}
+  // Admin password set during provisioning
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS admin_password TEXT DEFAULT ''`); } catch {}
 
   await query(`
     CREATE TABLE IF NOT EXISTS custom_plans (

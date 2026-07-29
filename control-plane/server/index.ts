@@ -332,7 +332,7 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/clients", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll(
-      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes FROM clients ORDER BY created_at DESC"
+      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, admin_password FROM clients ORDER BY created_at DESC"
     );
     res.json({ clients });
   } catch (err: any) {
@@ -415,8 +415,9 @@ app.post("/api/clients", requireAuth, async (req, res) => {
             neon_project_id = $2, neon_db_name = $3, neon_db_url = $4,
             render_service_id = $5, render_service_url = $6,
             vercel_project_id = $7, vercel_project_url = $8,
-            cp_secret = $9
-          WHERE id = $10`,
+            cp_secret = $9,
+            admin_password = $10
+          WHERE id = $11`,
           [
             result.domain,
             result.neon.projectId,
@@ -427,6 +428,7 @@ app.post("/api/clients", requireAuth, async (req, res) => {
             result.vercel.projectId,
             result.vercel.projectUrl,
             result.cpSecret,
+            result.adminPassword,
             clientId,
           ]
         );
