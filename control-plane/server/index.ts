@@ -25,6 +25,7 @@ import {
   generateCpSecret,
   pushControlPlaneSecret,
   sendSlackAlert,
+  enforceUsageLimits,
   type ProvisionResult,
 } from "./provision";
 
@@ -334,7 +335,7 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/clients", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll(
-      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, admin_password FROM clients ORDER BY created_at DESC"
+      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, admin_password, phone, address, usage_over_limit FROM clients ORDER BY created_at DESC"
     );
     res.json({ clients });
   } catch (err: any) {
@@ -820,6 +821,7 @@ app.post("/api/health-check", requireAuth, async (_req, res) => {
       results.push({ name: c.name, status, orders: usage?.orders, customers: usage?.customers, revenue: usage?.revenue });
     }
 
+    await enforceUsageLimits();
     res.json({ results });
   } catch (err: any) {
     console.error("[api] Health check error:", err.message);
@@ -1490,6 +1492,7 @@ setInterval(async () => {
         await query("UPDATE clients SET usage_orders = $1, usage_customers = $2, usage_revenue = $3 WHERE id = $4", [usage.orders || 0, usage.customers || 0, usage.revenue || 0, c.id]);
       }
     }
+    await enforceUsageLimits();
     console.log(`[auto-health] Checked ${clients.length} clients.`);
   } catch (err: any) {
     console.error("[auto-health] Error:", err.message);

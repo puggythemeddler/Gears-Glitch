@@ -745,7 +745,7 @@
         html += `<tr>
           <td><strong>${esc(c.name)}</strong><br><span style="color:var(--text-muted);font-size:0.75rem">${esc(c.admin_email)}</span></td>
           <td>${esc(c.domain)}</td>
-          <td><span style="text-transform:capitalize">${esc(c.plan)}</span></td>
+          <td><span style="text-transform:capitalize">${esc(c.plan)}</span>${c.usage_over_limit ? ' <span class="badge badge-overdue" style="font-size:0.7rem">OVER LIMIT</span>' : ''}</td>
           <td>${subBadge}</td>
           <td><span class="badge badge-${c.status}">${c.status}</span></td>
           <td><span class="badge badge-${c.health_status}">${c.health_status}</span></td>

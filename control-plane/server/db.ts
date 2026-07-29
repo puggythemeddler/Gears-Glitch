@@ -164,6 +164,9 @@ export async function initControlPlaneDb() {
   // Contact fields
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT DEFAULT ''`); } catch {}
+  // Usage enforcement
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_over_limit BOOLEAN DEFAULT false`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_limit_warning TIMESTAMP`); } catch {}
 
   await query(`
     CREATE TABLE IF NOT EXISTS custom_plans (

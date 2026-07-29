@@ -552,6 +552,36 @@ export async function sendSlackAlert(message: string) {
   }
 }
 
+// ─── USAGE ENFORCEMENT ──────────────────────────────────
+export async function enforceUsageLimits() {
+  try {
+    const { queryAll, queryOne, query } = await import("./db");
+    const clients: any[] = await queryAll(
+      "SELECT id, name, plan, usage_orders, usage_revenue, usage_customers, usage_over_limit, last_limit_warning, health_status FROM clients WHERE status = 'active'"
+    );
+    for (const c of clients) {
+      const plan: any = await queryOne("SELECT * FROM custom_plans WHERE id = $1", [c.plan]);
+      if (!plan) continue;
+      let overLimit = false;
+      const issues: string[] = [];
+      if (plan.max_products > 0 && (c.usage_orders || 0) > plan.max_products) {
+        overLimit = true;
+        issues.push(`products (${c.usage_orders}/${plan.max_products})`);
+      }
+      if (overLimit && !c.usage_over_limit) {
+        await query("UPDATE clients SET usage_over_limit = true WHERE id = $1", [c.id]);
+        const msg = `:warning: *${c.name}* exceeded plan limits: ${issues.join(", ")}`;
+        await sendSlackAlert(msg);
+      } else if (!overLimit && c.usage_over_limit) {
+        await query("UPDATE clients SET usage_over_limit = false WHERE id = $1", [c.id]);
+        await sendSlackAlert(`:white_check_mark: *${c.name}* is back within plan limits`);
+      }
+    }
+  } catch (e: any) {
+    console.warn("[enforce] Error:", e?.message);
+  }
+}
+
 // ─── HEALTH CHECK ────────────────────────────────────────
 export async function checkClientHealth(
   renderServiceUrl: string,
