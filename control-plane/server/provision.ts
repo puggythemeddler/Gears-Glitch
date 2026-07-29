@@ -133,12 +133,14 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
       repo: `https://github.com/${FRONTEND_GIT_REPO}`,
       branch: "main",
       runtime: "node",
-      build_command: "npm ci --omit=optional && cd server && npx tsc && cd ..",
-      start_command: "node server/dist/index.js",
-      env_vars: envVars,
-      plan: "free",
-      region: "oregon",
       ...(RENDER_OWNER_ID ? { ownerId: RENDER_OWNER_ID } : {}),
+      serviceDetails: {
+        buildCommand: "npm ci --omit=optional && cd server && npx tsc && cd ..",
+        startCommand: "node server/dist/index.js",
+        envVars,
+        plan: "free",
+        region: "oregon",
+      },
     }),
   });
 
