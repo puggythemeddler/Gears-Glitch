@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs/promises";
 import os from "os";
 import { execSync } from "child_process";
-import { getCloudinaryConfig } from "./db";
+import { getCloudinaryConfig, getSmtpConfig } from "./db";
 
 const NEON_API_KEY = process.env.NEON_API_KEY || "";
 const NEON_ORG_ID = process.env.NEON_ORG_ID || "";
@@ -15,12 +15,6 @@ const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || "";
 const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || "";
 const DOMAIN_BASE = process.env.DOMAIN_BASE || "gearglitch.com";
 const FRONTEND_GIT_REPO = process.env.FRONTEND_GIT_REPO || "puggythemeddler/Gears-Glitch";
-const SMTP_HOST = process.env.SMTP_HOST || "";
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-const SMTP_USER = process.env.SMTP_USER || "";
-const SMTP_PASS = process.env.SMTP_PASS || "";
-const FROM_EMAIL = process.env.FROM_EMAIL || "noreply@gearglitch.com";
-const FROM_NAME = process.env.FROM_NAME || "Gear&Glitch";
 
 function randomPassword(len = 20) {
   return crypto.randomBytes(len).toString("base64url").slice(0, len);
@@ -565,6 +559,23 @@ export async function checkClientHealth(
 }
 
 // ─── WELCOME EMAIL ───────────────────────────────────────
+export async function getSmtpTransport() {
+  const cfg = await getSmtpConfig();
+  const host = cfg?.host || process.env.SMTP_HOST || "";
+  const port = cfg?.port || Number(process.env.SMTP_PORT || 587);
+  const user = cfg?.user || process.env.SMTP_USER || "";
+  const pass = cfg?.pass || process.env.SMTP_PASS || "";
+  const fromEmail = cfg?.from_email || process.env.FROM_EMAIL || "noreply@gearglitch.com";
+  const fromName = cfg?.from_name || process.env.FROM_NAME || "Gear&Glitch";
+  if (!host || !user || !pass) return null;
+  const nodemailer = await import("nodemailer");
+  const transporter = nodemailer.createTransport({
+    host, port, secure: port === 465,
+    auth: { user, pass },
+  });
+  return { transporter, fromEmail, fromName };
+}
+
 async function sendWelcomeEmail(
   toEmail: string,
   clientName: string,
@@ -573,19 +584,13 @@ async function sendWelcomeEmail(
   adminPassword: string,
   plan: string
 ) {
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+  const st = await getSmtpTransport();
+  if (!st) {
     console.log("[email] SMTP not configured — skipping welcome email.");
     return;
   }
 
   try {
-    const nodemailer = await import("nodemailer");
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    });
 
     const html = `
       <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem;">
@@ -619,8 +624,8 @@ async function sendWelcomeEmail(
       </div>
     `;
 
-    await transporter.sendMail({
-      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+    await st.transporter.sendMail({
+      from: `"${st.fromName}" <${st.fromEmail}>`,
       to: toEmail,
       subject: `Welcome to Gear&Glitch — Your Store "${clientName}" is Ready!`,
       html,
@@ -634,7 +639,8 @@ async function sendWelcomeEmail(
 
 // ─── CHANGELOG NOTIFICATION ──────────────────────────────
 export async function notifyAllClientsChangelog(version: string, title: string, body: string) {
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+  const st = await getSmtpTransport();
+  if (!st) {
     console.log("[email] SMTP not configured — skipping changelog notification.");
     return;
   }
@@ -642,14 +648,6 @@ export async function notifyAllClientsChangelog(version: string, title: string, 
   try {
     const { queryAll } = await import("./db");
     const clients = await queryAll("SELECT name, admin_email FROM clients WHERE status = 'active' AND admin_email != ''");
-
-    const nodemailer = await import("nodemailer");
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    });
 
     const html = `
       <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem;">
@@ -663,8 +661,8 @@ export async function notifyAllClientsChangelog(version: string, title: string, 
 
     for (const c of clients as { name: string; admin_email: string }[]) {
       try {
-        await transporter.sendMail({
-          from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+        await st.transporter.sendMail({
+          from: `"${st.fromName}" <${st.fromEmail}>`,
           to: c.admin_email,
           subject: `Gear&Glitch Update ${version} — ${title}`,
           html,

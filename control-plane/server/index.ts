@@ -10,7 +10,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { generateSecret, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
-import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig } from "./db";
+import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig } from "./db";
 import {
   provisionClient,
   deployAllClients,
@@ -686,6 +686,65 @@ app.post("/api/cloudinary", requireAuth, async (req, res) => {
     res.json({ message: "Cloudinary config saved." });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to save Cloudinary config" });
+  }
+});
+
+// Get SMTP config status
+app.get("/api/smtp", requireAuth, async (_req, res) => {
+  try {
+    const sc = await getSmtpConfig();
+    if (!sc || !sc.host || !sc.user || !sc.pass) {
+      const hasEnvVars = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+      res.json({ configured: false, envFallback: hasEnvVars });
+      return;
+    }
+    res.json({
+      configured: true,
+      host: sc.host,
+      port: sc.port,
+      user: sc.user,
+      hasPass: !!sc.pass,
+      fromEmail: sc.from_email,
+      fromName: sc.from_name,
+      updatedAt: sc.updated_at,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to get SMTP config" });
+  }
+});
+
+// Set SMTP config
+app.post("/api/smtp", requireAuth, async (req, res) => {
+  try {
+    const { host, port, user, pass, fromEmail, fromName } = req.body || {};
+    if (!host || !user || !pass) {
+      res.status(400).json({ error: "host, user, and pass are required" });
+      return;
+    }
+    await setSmtpConfig(host, port || 587, user, pass, fromEmail || "noreply@gearglitch.com", fromName || "Gear&Glitch");
+    res.json({ message: "SMTP config saved." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to save SMTP config" });
+  }
+});
+
+// Send test email
+app.post("/api/smtp/test", requireAuth, async (req, res) => {
+  try {
+    const { to } = req.body || {};
+    if (!to) { res.status(400).json({ error: "Recipient email (to) is required" }); return; }
+    const { getSmtpTransport } = await import("./provision");
+    const st = await getSmtpTransport();
+    if (!st) { res.status(400).json({ error: "SMTP not configured" }); return; }
+    await st.transporter.sendMail({
+      from: `"${st.fromName}" <${st.fromEmail}>`,
+      to,
+      subject: "Gear&Glitch Control Plane — Test Email",
+      html: `<div style="font-family:sans-serif;padding:2rem"><h2>Test Email</h2><p>Your SMTP configuration is working correctly.</p><p style="color:#666;font-size:0.9rem">Sent from Gear&Glitch Control Plane</p></div>`,
+    });
+    res.json({ message: `Test email sent to ${to}` });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to send test email: " + err.message });
   }
 });
 

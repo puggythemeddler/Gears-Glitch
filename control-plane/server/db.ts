@@ -55,6 +55,26 @@ export async function getCloudinaryConfig() {
   return row || null;
 }
 
+export async function getSmtpConfig() {
+  const row = await queryOne("SELECT * FROM smtp_config ORDER BY id DESC LIMIT 1");
+  return row || null;
+}
+
+export async function setSmtpConfig(host: string, port: number, user: string, pass: string, fromEmail: string, fromName: string) {
+  const existing = await queryOne("SELECT id FROM smtp_config LIMIT 1");
+  if (existing) {
+    await query(
+      "UPDATE smtp_config SET host = $1, port = $2, user = $3, pass = $4, from_email = $5, from_name = $6, updated_at = NOW() WHERE id = $7",
+      [host, port, user, pass, fromEmail, fromName, existing.id]
+    );
+  } else {
+    await query(
+      "INSERT INTO smtp_config (host, port, user, pass, from_email, from_name) VALUES ($1, $2, $3, $4, $5, $6)",
+      [host, port, user, pass, fromEmail, fromName]
+    );
+  }
+}
+
 export async function setCloudinaryConfig(cloudName: string, apiKey: string, apiSecret: string, folder: string) {
   const existing = await queryOne("SELECT id FROM cloudinary_config LIMIT 1");
   if (existing) {
@@ -194,6 +214,19 @@ export async function initControlPlaneDb() {
       api_key TEXT DEFAULT '',
       api_secret TEXT DEFAULT '',
       folder TEXT DEFAULT 'gear-glitch',
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS smtp_config (
+      id SERIAL PRIMARY KEY,
+      host TEXT DEFAULT '',
+      port INTEGER DEFAULT 587,
+      user TEXT DEFAULT '',
+      pass TEXT DEFAULT '',
+      from_email TEXT DEFAULT 'noreply@gearglitch.com',
+      from_name TEXT DEFAULT 'Gear&Glitch',
       updated_at TIMESTAMP DEFAULT NOW()
     )
   `);

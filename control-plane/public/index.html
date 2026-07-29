@@ -195,6 +195,7 @@
       <button class="tab" onclick="switchTab('changelog', this)">Changelog</button>
       <button class="tab" onclick="switchTab('deploys', this)">Deploy Log</button>
       <button class="tab" onclick="switchTab('backups', this)">Backups</button>
+      <button class="tab" onclick="switchTab('settings', this)">Settings</button>
       <button class="tab" onclick="switchTab('users', this)" id="tab-btn-users" style="display:none">Users</button>
     </div>
 
@@ -258,6 +259,51 @@
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage who can access the control plane. Admins can manage users; viewers have read-only access. Each user gets a unique API key for programmatic access.</p>
       <div id="users-list"></div>
+    </div>
+
+    <div id="tab-settings" style="display:none">
+      <h2>Settings</h2>
+
+      <div class="detail-panel" style="margin-bottom:1.5rem">
+        <h3>SMTP / Email Configuration</h3>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem">
+          Used to send welcome emails to new clients and changelog notifications.
+          For Gmail, enable 2-Step Verification and create an <strong>App Password</strong>.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <div class="field"><label>SMTP Host</label><input type="text" id="smtp-host" placeholder="smtp.gmail.com"></div>
+          <div class="field"><label>Port</label><input type="number" id="smtp-port" value="587" placeholder="587"></div>
+          <div class="field"><label>Username (email)</label><input type="text" id="smtp-user" placeholder="your@gmail.com"></div>
+          <div class="field"><label>Password / App Password</label><input type="password" id="smtp-pass" placeholder="16-char app password"></div>
+          <div class="field"><label>From Email</label><input type="text" id="smtp-from-email" placeholder="noreply@gearglitch.com"></div>
+          <div class="field"><label>From Name</label><input type="text" id="smtp-from-name" placeholder="Gear&Glitch"></div>
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center">
+          <button class="btn btn-primary" onclick="saveSmtpConfig()">Save SMTP</button>
+          <input type="text" id="smtp-test-to" placeholder="test@email.com" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem;width:200px">
+          <button class="btn btn-ghost" onclick="testSmtpConfig()">Send Test Email</button>
+          <span id="smtp-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
+        </div>
+      </div>
+
+      <div class="detail-panel">
+        <h3>Cloudinary Configuration</h3>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem">
+          Cloudinary is used for image uploads across all client stores.
+          Configure once here and sync to all clients.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <div class="field"><label>Cloud Name</label><input type="text" id="s-cld-cloud" placeholder="e.g. mycloud"></div>
+          <div class="field"><label>API Key</label><input type="text" id="s-cld-key" placeholder="e.g. 123456789012345"></div>
+          <div class="field"><label>API Secret</label><input type="password" id="s-cld-secret" placeholder="Your API secret"></div>
+          <div class="field"><label>Folder</label><input type="text" id="s-cld-folder" placeholder="gear-glitch"></div>
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center">
+          <button class="btn btn-primary" onclick="saveSettingsCloudinary()">Save Cloudinary</button>
+          <button class="btn btn-ghost" onclick="syncCloudinary()">Sync to All Clients</button>
+          <span id="cld-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
+        </div>
+      </div>
     </div>
 
     <div id="tab-client-detail" style="display:none">
@@ -939,6 +985,87 @@
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
+    // ─── SETTINGS ──────────────────────────────────────────
+    async function loadSettings() {
+      // Load SMTP config
+      try {
+        const smtp = await api("/api/smtp");
+        if (smtp.configured) {
+          document.getElementById("smtp-host").value = smtp.host || "";
+          document.getElementById("smtp-port").value = smtp.port || 587;
+          document.getElementById("smtp-user").value = smtp.user || "";
+          document.getElementById("smtp-from-email").value = smtp.fromEmail || "";
+          document.getElementById("smtp-from-name").value = smtp.fromName || "";
+          document.getElementById("smtp-pass").placeholder = "•••••••• (saved)";
+          document.getElementById("smtp-status").textContent = "Configured ✓";
+          document.getElementById("smtp-status").style.color = "var(--success)";
+        } else if (smtp.envFallback) {
+          document.getElementById("smtp-status").textContent = "Using env vars (Render dashboard)";
+          document.getElementById("smtp-status").style.color = "var(--warning)";
+        } else {
+          document.getElementById("smtp-status").textContent = "Not configured";
+          document.getElementById("smtp-status").style.color = "var(--text-muted)";
+        }
+      } catch { document.getElementById("smtp-status").textContent = "Error loading"; }
+      // Load Cloudinary config
+      try {
+        const cld = await api("/api/cloudinary");
+        if (cld.configured) {
+          document.getElementById("s-cld-cloud").value = cld.cloudName || "";
+          document.getElementById("s-cld-key").value = cld.hasApiKey ? "(saved)" : "";
+          document.getElementById("s-cld-folder").value = cld.folder || "gear-glitch";
+          document.getElementById("cld-status").textContent = "Configured ✓";
+          document.getElementById("cld-status").style.color = "var(--success)";
+        } else {
+          document.getElementById("cld-status").textContent = "Not configured";
+          document.getElementById("cld-status").style.color = "var(--text-muted)";
+        }
+      } catch { document.getElementById("cld-status").textContent = "Error loading"; }
+    }
+    async function saveSmtpConfig() {
+      const host = document.getElementById("smtp-host").value.trim();
+      const port = parseInt(document.getElementById("smtp-port").value) || 587;
+      const user = document.getElementById("smtp-user").value.trim();
+      const pass = document.getElementById("smtp-pass").value.trim();
+      const fromEmail = document.getElementById("smtp-from-email").value.trim() || "noreply@gearglitch.com";
+      const fromName = document.getElementById("smtp-from-name").value.trim() || "Gear&Glitch";
+      if (!host || !user || !pass) { toast("Host, Username, and Password are required", "error"); return; }
+      toast("Saving SMTP config...");
+      try {
+        const data = await api("/api/smtp", { method: "POST", body: JSON.stringify({ host, port, user, pass, fromEmail, fromName }) });
+        if (data.error) { toast(data.error, "error"); return; }
+        document.getElementById("smtp-pass").value = "";
+        document.getElementById("smtp-pass").placeholder = "•••••••• (saved)";
+        toast(data.message);
+        loadSettings();
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+    async function testSmtpConfig() {
+      const to = document.getElementById("smtp-test-to").value.trim();
+      if (!to) { toast("Enter a test recipient email", "error"); return; }
+      toast("Sending test email...");
+      try {
+        const data = await api("/api/smtp/test", { method: "POST", body: JSON.stringify({ to }) });
+        if (data.error) { toast(data.error, "error"); return; }
+        toast(data.message);
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+    async function saveSettingsCloudinary() {
+      const cloudName = document.getElementById("s-cld-cloud").value.trim();
+      const apiKey = document.getElementById("s-cld-key").value.trim();
+      const apiSecret = document.getElementById("s-cld-secret").value.trim();
+      const folder = document.getElementById("s-cld-folder").value.trim() || "gear-glitch";
+      if (!cloudName || !apiKey || !apiSecret) { toast("Cloud Name, API Key, and API Secret are required", "error"); return; }
+      toast("Saving Cloudinary config...");
+      try {
+        const data = await api("/api/cloudinary", { method: "POST", body: JSON.stringify({ cloudName, apiKey, apiSecret, folder }) });
+        if (data.error) { toast(data.error, "error"); return; }
+        document.getElementById("s-cld-secret").value = "";
+        toast(data.message);
+        loadSettings();
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
     // ─── CHANGELOG ────────────────────────────────────────
     async function loadChangelog() {
       try {
@@ -1286,12 +1413,14 @@
       document.getElementById("tab-deploys").style.display = tab === "deploys" ? "" : "none";
       document.getElementById("tab-backups").style.display = tab === "backups" ? "" : "none";
       document.getElementById("tab-users").style.display = tab === "users" ? "" : "none";
+      document.getElementById("tab-settings").style.display = tab === "settings" ? "" : "none";
       document.getElementById("tab-client-detail").style.display = tab === "client-detail" ? "" : "none";
       if (tab === "plans") loadPlans();
       if (tab === "changelog") loadChangelog();
       if (tab === "deploys") loadDeploys();
       if (tab === "backups") loadBackups();
       if (tab === "users") loadUsers();
+      if (tab === "settings") loadSettings();
       if (tab === "clients") loadUpgradeRequests();
     }
 
