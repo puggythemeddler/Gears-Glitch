@@ -219,16 +219,19 @@ async function deployViaVercelCli(slug: string, projectId: string, backendUrl: s
 
   try {
     await fs.rm(tmpDir, { recursive: true, force: true });
-    await fs.cp(frontendDir, tmpDir, { recursive: true });
 
-    await fs.mkdir(path.join(tmpDir, ".vercel"), { recursive: true });
+    // Mimic the monorepo structure so the project's rootDirectory:"frontend" resolves correctly
+    const frontendTmp = path.join(tmpDir, "frontend");
+    await fs.cp(frontendDir, frontendTmp, { recursive: true });
+
+    await fs.mkdir(path.join(frontendTmp, ".vercel"), { recursive: true });
     await fs.writeFile(
-      path.join(tmpDir, ".vercel", "project.json"),
+      path.join(frontendTmp, ".vercel", "project.json"),
       JSON.stringify({ projectId, orgId }, null, 2)
     );
 
     await fs.writeFile(
-      path.join(tmpDir, ".env"),
+      path.join(frontendTmp, ".env"),
       [
         `BACKEND_URL=${backendUrl}`,
         `NEXT_PUBLIC_SITE_URL=https://${vercelProjectName}.vercel.app`,
