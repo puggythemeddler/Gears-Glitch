@@ -151,15 +151,16 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
 
   console.log(`[provision] Render service created: ${serviceId}`);
 
-  // Set env vars via the dedicated env-vars endpoint (more reliable than create)
-  const envVarsBody = envVars.map((e: any) => ({ key: e.key, value: e.value, type: "env_var" }));
-  const envRes = await fetch(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
+  // Push env vars via service PATCH (same pattern as pushControlPlaneSecret)
+  const patchRes = await fetch(`https://api.render.com/v1/services/${serviceId}`, {
     method: "PATCH",
     headers: headers(RENDER_API_KEY),
-    body: JSON.stringify(envVarsBody),
+    body: JSON.stringify({
+      envVars: envVars.map((e: any) => ({ key: e.key, value: e.value })),
+    }),
   });
-  if (!envRes.ok) {
-    console.error(`[provision] Warning: env var setup failed: ${envRes.status} ${await envRes.text().catch(() => "")}`);
+  if (!patchRes.ok) {
+    console.error(`[provision] Warning: env var PATCH failed: ${patchRes.status} ${await patchRes.text().catch(() => "")}`);
   } else {
     // Trigger deploy so env vars take effect
     const depRes = await fetch(`https://api.render.com/v1/services/${serviceId}/deploys`, {
@@ -228,13 +229,27 @@ async function createVercelProject(clientName: string, backendUrl: string) {
 
   console.log(`[provision] Vercel project created: ${projectId}`);
 
-  // Trigger an initial deploy with explicit git source
-  const depBody: any = {
-    project: projectId,
-    target: "production",
-    gitSource: { type: "github", repo: FRONTEND_GIT_REPO, ref: "main" },
-  };
+  // Look up GitHub repo ID for gitSource
+  const repoParts = FRONTEND_GIT_REPO.split("/");
+  let repoId: number | null = null;
+  if (repoParts.length === 2) {
+    try {
+      const ghRes = await fetch(`https://api.github.com/repos/${FRONTEND_GIT_REPO}`, {
+        headers: { "Accept": "application/vnd.github.v3+json" },
+      });
+      if (ghRes.ok) {
+        const ghData: any = await ghRes.json();
+        repoId = ghData.id;
+        console.log(`[provision] GitHub repo ID: ${repoId}`);
+      }
+    } catch {}
+  }
+
   const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
+  const depBody: any = { project: projectId, target: "production" };
+  if (repoId) {
+    depBody.gitSource = { type: "github", repoId, ref: "main" };
+  }
   const depRes = await fetch(`https://api.vercel.com/v13/deployments${vercelQuery}`, {
     method: "POST",
     headers: headers(VERCEL_TOKEN),
