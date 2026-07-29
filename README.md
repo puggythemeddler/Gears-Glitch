@@ -2,8 +2,70 @@
 
 A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control with per-branch stock tracking, stock take, inter-branch stock transfers that actually move inventory, per-branch subscription plans, audit logging, role-based dashboards (Admin, Owner, Technician), 5 built-in storefront layout themes (Original, Amazon, Jumia, Mobile, Custom) with a runtime layout registry for admin-created dynamic JSON layouts, admin-controllable hero sections, subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management (with delete), auto-email notifications, WhatsApp Business API integration (bidirectional messaging with 24h window tracking), product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation, two-step checkout with delivery details and payment method selection, provider order management (view, cancel items, update status), customer invoice download from order history, TOTP two-factor authentication, CSRF token protection, file upload content validation, shared Cloudinary with per-client folders, and responsive design optimized for mobile, tablet, and desktop. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
+## Features at a glance
+
+### Sales & storefront
+- 5 built-in storefront layouts (Original, Amazon-style, Jumia-style, Mobile, Custom) plus a runtime JSON layout builder for admin-created custom themes
+- Admin-controllable hero section with badge, headline, CTA buttons, category chips, live stats from your data, auto-rotating featured-product carousel, and on/off toggle
+- Product catalog with image galleries, primary image management, subcategories with multi-category sharing, sale price (strikethrough pricing), and drag-and-drop product positioning
+- Two-step checkout with delivery details (Kenyan counties), payment method selection, and order tracking (`pending` → `confirmed` → `shipped` → `delivered`)
+- Customer accounts with purchase history, repair records, order history, and communication log; unified login with Google Sign-In
+- Product rating & review system (1–5 stars, one review per customer, admin moderation, rating distribution charts)
+- Dark/light theme toggle, responsive design (mobile, tablet, desktop), full-width storefront (no side gutters)
+- Promotional banners / splashes with quick presets (Black Friday, Christmas, etc.) and auto-displayed Kenyan public holiday banners
+- Springboard category menu (admin-toggleable collapsible dropdown)
+- Marketing landing page (problems, solutions, industries, features, testimonials, FAQ, CTA)
+
+### Inventory & stock
+- Real-time per-branch stock tracking with low-stock alerts, stock-on-hand counts, and stock take sessions (scoped to a selected branch)
+- Inter-branch stock transfers that actually move inventory — deducted from source, incremented at destination, with dual movement records
+- Purchase order management per supplier with inline per-item receiving, branded PDF generation, soft-delete with completed/deleted views, and one-click restore
+- Supplier directory with linked purchase orders and stock replenishment tracking
+- Stock receipt updates `stock_levels` with `purchase_receive` movement records
+
+### Repair & service
+- End-to-end repair lifecycle from drop-off to delivery with technician assignment, cost tracking, and quote generation
+- Customer self-service portal for real-time repair tracking
+- Warranty registration on products, duration tracking, and warranty status on invoices
+
+### Finance & invoicing
+- KRA eTIMS compliant invoices and credit notes with control codes, serial numbers, and receipt generation
+- Quotation engine with line items, discounts, PDF export, and one-click conversion to orders
+- M-Pesa payments with callback validation (POS + online checkout), cash and bank transfer tracking, automatic reconciliation
+- Multi-currency support with live exchange rate conversion (feature-gated)
+- Coupons & discounts (percentage or fixed-amount, usage tracking)
+- Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders — all with your store logo and configurable logo position; separate Print and Save PDF buttons
+- Subscription invoices for clients with generate, pay, email, and PDF download
+
+### Multi-branch
+- Unified dashboard across all locations with per-branch subscription plans (independent of shop-wide plan), per-branch stock tracking, and consolidated reporting
+- Feature gating per branch plan (POS multi-currency, invoice PDFs, credit notes, quotations)
+- Branch upgrade-request workflow (request → admin approve/reject)
+
+### Team & security
+- Role-based access: admin, owner, manager, staff, technician, provider, customer. Granular permissions (`messaging:view`, `invoice:download`, `credit_note:create`, `quote:update`, etc.)
+- TOTP two-factor authentication (authenticator app) with QR setup; login flow shows a 2FA input field when enabled
+- Audit log of all admin/owner actions (filterable, detail view, accessible from admin Activity group)
+- CSRF double-submit cookie protection on all state-changing requests
+- File upload content validation using magic bytes (rejects mismatched extensions)
+- Rate limiting (global + auth endpoints), Helmet (CSP enabled), timing-safe login (dummy bcrypt for non-existent users)
+- JWT auth, query-string tokens rejected, default staff role falls back to `technician` (not `admin`)
+- Feature-gated subscription plans (Starter, Growth, Pro, Enterprise) with 48+ feature flags; sidebar items, nav links, and currency selector respect feature flags
+
+### Communication
+- WhatsApp Business API integration (bidirectional messaging via Meta Cloud API, 24h window tracking, HMAC-SHA256 webhook verification, Kenyan phone normalization, full conversation logs)
+- Built-in messaging between customers, providers, and staff with real-time notifications and admin messaging panel
+- Email notifications (order status updates, quote delivery, credit notes, password resets, customer messages, repair tickets, provider welcome/plan/invoice emails); single unified email engine with configurable SMTP
+- Cloudinary image uploads with magic-byte validation, shared account with per-client folders, automatic Cloudinary cleanup on delete
+
+### Settings & organization
+- Dedicated Settings groups in admin (Store Info, Payments, Compliance, Content) and owner (Storefront, Product Positioning, About Us, Subscription, Audit Log)
+- Admin sidebar grouped: Sales, Stock, Team, Finance, Activity, Settings
+- About Us page with owner-editable content; custom nav order; footer config; company Google Sign-In setup
+
 ## Recent highlights
 
+- **Auto-provisioned admin account for new clients** — When provisioning a new client via **Add Client**, the new client's Render service now receives `ADMIN_USERNAME=admin`, `ADMIN_EMAIL=<client admin email>`, and a generated `ADMIN_PASSWORD` as env vars. On first boot, `ensureAdminUser()` creates the seeded admin so the operator (or client) can log in immediately at `{frontend-url}/login` and start populating products, settings, and branches. Previously this step was missing — new clients had no admin account and the welcome-email password was useless. A `technician` seed account is also created for testing role-gated views.
 - **Control-plane remote management (per-client secrets)** — A shared `CONTROL_PLANE_SECRET` is now generated per client (injected into the client's Render env). The control plane authenticates every call to a client backend with a timing-safe `x-control-plane-key` header. **Closes two public endpoints** that previously leaked the Cloudinary API secret (`GET /api/cloudinary-config`) and allowed unauthenticated plan rewrites (`PUT /api/plans/sync`). Unlocks the CP dashboard features that were silently 401-ing against admin-protected routes (invoices, branches, subscription, upgrade requests). `/api/health` now only discloses usage stats (orders/revenue/customers) to the authenticated CP — the public just gets `{ok:true}`. New `POST /api/control-plane/suspend|resume` endpoints let the operator flip an **app-level suspend flag** (store returns 403 to visitors even if Render stays up) without touching infra. `POST /api/clients/:id/push-secret` (admin) onboards existing clients or rotates secrets via Render API + redeploy. Suspend now does both app-level 403 + Render pause; resume clears both. `GET /api/clients/:id` no longer returns `cp_secret`/`neon_db_url` to viewer-role users. `render.yaml` and `.env.example` document the new `CONTROL_PLANE_SECRET` env var.
 - **Control-plane TOTP 2FA** — Control-plane logins now support a two-step flow: credentials, then 6-digit code from an authenticator app (Google Authenticator / Authy / 1Password). Setup, enable, disable, and status endpoints under `/api/auth/2fa/*`. API-key programmatic access bypasses 2FA so cron/GitHub Actions aren't blocked. Dashboard badge shows 2FA On/Off and a settings modal with QR code via qrserver API.
 - **Full-width storefront** — `#main`, `.header-inner`, `.footer-inner`, and the homepage/original-layout content wrappers all dropped `max-width: 1440px + margin: 0 auto`. Content now spans edge-to-edge — no more centered column with empty side gutters on wide screens. A few inner hero text columns retain inner max-widths for readability.

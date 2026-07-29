@@ -29,6 +29,11 @@ const SOLUTIONS_BENEFITS = [
   "Admin-controllable hero section with badge, headline, and CTAs",
   "WhatsApp Business API for instant customer communication",
   "Responsive design optimized for mobile, tablet, and desktop",
+  "Dark / light theme toggle with OS preference detection",
+  "Audit log of every admin and owner action for accountability",
+  "5 storefront layouts plus a custom JSON layout builder",
+  "Annual billing with built-in savings over monthly pricing",
+  "Plan upgrade requests with admin approval workflow",
 ];
 
 const INDUSTRIES = [
@@ -65,7 +70,11 @@ const FEATURES = [
   { icon: "💬", name: "Messaging System", desc: "Built-in messaging between customers, providers, and staff with real-time notifications and WhatsApp delivery." },
   { icon: "📍", name: "Product Positioning", desc: "Drag-and-drop product ordering to control how items appear on your storefront." },
   { icon: "⭐", name: "Product Reviews & Ratings", desc: "Customers rate products 1–5 stars, leave reviews, and help others decide. One review per customer enforced. Admin moderation built in." },
-  { icon: "🌐", name: "Online Storefront", desc: "Multiple storefront layouts (Amazon-style, Jumia-style, mobile-optimized) with admin-controllable hero sections (with on/off toggle), live stats from your data, auto-synced category chips, product catalog, auto-rotating carousels, springboard category menu, and a runtime layout builder for creating custom JSON-driven layouts." },
+  { icon: "🌐", name: "Online Storefront", desc: "5 storefront layouts (Original, Amazon-style, Jumia-style, Mobile, Custom) plus a runtime JSON layout builder for admin-created custom themes. Admin-controllable hero sections (with on/off toggle), live stats from your data, auto-synced category chips, product catalog, auto-rotating carousels, springboard category menu, and an About Us page with owner-editable content." },
+  { icon: "🎨", name: "Dark / Light Theme", desc: "One-tap theme toggle for staff and customers. Respects OS preference on first visit, persists per device, andtheme-color meta updates the browser chrome for a native-app feel." },
+  { icon: "📝", name: "Audit Log", desc: "Every admin and owner action is recorded — who created/updated/deleted what, when, and from where. Filterable by user, action, and entity, with a detail view for each entry. Accessible from the Activity group in both admin and owner panels." },
+  { icon: "📅", name: "Annual Billing Savings", desc: "Subscription plans support both monthly and annual pricing. Owners see both prices side-by-side with the percentage savings for annual billing clearly displayed on the subscription page." },
+  { icon: "⬆", name: "Plan Upgrade Requests", desc: "Owners can request a plan upgrade from the subscription page; admins approve or reject requests from the control plane dashboard or the admin panel — full request history is tracked." },
   { icon: "⚙", name: "Organized Settings", desc: "Dedicated Settings tab with 5 focused pages — Store Info, Payments (M-Pesa, methods, exchange rates), Compliance (eTIMS/KRA, Google Sign-In), Content (banners, image storage), and System (backup). Each page handles its own configuration." },
   { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders — all with your store logo prominently displayed. Separate Print and Save PDF buttons for instant downloads with branded templates." },
   { icon: "🔒", name: "Feature-Gated Plans", desc: "Subscription plans with grouped feature toggles (11 categories). Disable a feature and it disappears from every panel — admin, owner, backoffice, dashboard, and storefront. Pay only for what you use." },
@@ -113,6 +122,10 @@ const FAQS = [
   { q: "Can I try before I buy?", a: "Yes. We offer a free Starter plan with core features. Upgrade to Growth, Pro, or Enterprise plans when you need advanced capabilities." },
   { q: "How does multi-branch management work?", a: "Create multiple branches, each with its own subscription plan and stock inventory. Transfer stock between locations (deducted from source, incremented at destination), filter stock views by branch, and view consolidated reports across all branches from a single dashboard. Different branches can operate independently with features tailored to their plan." },
   { q: "What payment methods do you support?", a: "We support M-Pesa mobile money payments through the POS and online checkout. Cash and bank transfer payments are also tracked automatically." },
+  { q: "Can I customize the look of my storefront?", a: "Yes. Pick from 5 built-in layouts (Original, Amazon-style, Jumia-style, Mobile, Custom) in admin Settings, or build your own with the runtime JSON layout builder. Control the hero section (badge, headline, CTAs, category chips, stats, on/off toggle), nav order, footer config, About Us page, store logo, and promotional banners — no code required." },
+  { q: "Does it work on mobile?", a: "Yes. Every panel — admin, owner, POS, customer dashboard, storefront — is responsive and optimized for mobile, tablet, and desktop. Staff can check stock, make sales, and update repair tickets from a phone on the floor. Customers browsing the storefront get a mobile-optimized layout automatically." },
+  { q: "Is there an audit trail?", a: "Yes. Every admin and owner action (create, update, delete) is logged with the user, timestamp, entity, and a diff of changes. The audit log is filterable and available in the Activity group of both the admin and owner panels." },
+  { q: "Do you offer annual billing?", a: "Yes. Subscription plans support both monthly and annual pricing — the owner subscription page shows both prices side-by-side with the percentage savings for annual billing clearly displayed." },
 ];
 
 /* ------------------------------------------------------------------ */
