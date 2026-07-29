@@ -572,7 +572,7 @@ app.delete("/api/clients/:id", requireAuth, async (req, res) => {
 });
 
 // Deploy all clients
-app.post("/api/deploy-all", requireAuth, async (_req, res) => {
+app.post("/api/deploy-all", requireAuth, async (req, res) => {
   try {
     const clients = await queryAll(
       "SELECT name, render_service_id FROM clients WHERE status = 'active'"
@@ -610,7 +610,7 @@ app.post("/api/clients/:id/redeploy", requireAuth, async (req, res) => {
 
 // ─── CLOUDINARY SYNC ────────────────────────────────────
 // Push shared Cloudinary credentials to all active clients
-app.post("/api/sync-cloudinary", requireAuth, async (_req, res) => {
+app.post("/api/sync-cloudinary", requireAuth, async (req, res) => {
   try {
     const cc = await getCloudinaryConfig();
     if (!cc || !cc.cloud_name || !cc.api_key || !cc.api_secret) {
@@ -1021,7 +1021,7 @@ import fs from "fs";
 const execAsync = promisify(exec);
 const BACKUP_DIR = path.join(__dirname, "..", "..", "backups");
 
-app.post("/api/backups/run", requireAuth, async (_req, res) => {
+app.post("/api/backups/run", requireAuth, async (req, res) => {
   try {
     if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -1085,7 +1085,8 @@ app.get("/api/backups", requireAuth, async (_req, res) => {
 // Download a backup file
 app.get("/api/backups/download/:filename", requireAuth, async (req, res) => {
   try {
-    const filename = path.basename(req.params.filename);
+    const rawFilename = req.params.filename;
+    const filename = path.basename(typeof rawFilename === "string" ? rawFilename : rawFilename[0]);
     const filepath = path.join(BACKUP_DIR, filename);
     if (!fs.existsSync(filepath)) { res.status(404).json({ error: "File not found" }); return; }
     const stats = fs.statSync(filepath);
