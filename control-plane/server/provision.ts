@@ -1,4 +1,8 @@
 import crypto from "crypto";
+import path from "path";
+import fs from "fs/promises";
+import os from "os";
+import { execSync } from "child_process";
 import { getCloudinaryConfig } from "./db";
 
 const NEON_API_KEY = process.env.NEON_API_KEY || "";
@@ -185,13 +189,104 @@ export async function deleteRenderService(serviceId: string) {
 }
 
 // ─── VERCEL ──────────────────────────────────────────────
+
+/** Resolve the Vercel org/team ID for .vercel/project.json */
+async function getVercelOrgId(): Promise<string> {
+  if (VERCEL_TEAM_ID) return VERCEL_TEAM_ID;
+  const res = await fetch("https://api.vercel.com/v2/user", {
+    headers: headers(VERCEL_TOKEN),
+  });
+  if (!res.ok) return "";
+  const data: any = await res.json();
+  return data.user?.uid || "";
+}
+
+/** Fallback: use the Vercel CLI (via npx) to build and deploy without a git link. */
+async function deployViaVercelCli(slug: string, projectId: string, backendUrl: string, vercelProjectName: string): Promise<string> {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+  const frontendDir = path.join(repoRoot, "frontend");
+
+  try {
+    await fs.access(frontendDir);
+  } catch {
+    throw new Error("frontend/ directory not found (not in monorepo checkout)");
+  }
+
+  const orgId = await getVercelOrgId();
+  if (!orgId) throw new Error("Could not determine Vercel org ID (set VERCEL_TEAM_ID or ensure token has access)");
+
+  const tmpDir = path.join(os.tmpdir(), `vercel-deploy-${slug}`);
+
+  try {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    await fs.cp(frontendDir, tmpDir, { recursive: true });
+
+    await fs.mkdir(path.join(tmpDir, ".vercel"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, ".vercel", "project.json"),
+      JSON.stringify({ projectId, orgId }, null, 2)
+    );
+
+    await fs.writeFile(
+      path.join(tmpDir, ".env"),
+      [
+        `BACKEND_URL=${backendUrl}`,
+        `NEXT_PUBLIC_SITE_URL=https://${vercelProjectName}.vercel.app`,
+        `NEXT_PUBLIC_MARKETING_ENABLED=false`,
+      ].join("\n")
+    );
+
+    console.log(`[provision] Running Vercel CLI deploy (this may take a few minutes)...`);
+    const output = execSync(
+      `npx --yes vercel deploy --prod --token "${VERCEL_TOKEN}"`,
+      { cwd: tmpDir, timeout: 600_000, maxBuffer: 10 * 1024 * 1024, env: { ...process.env, VERCEL_TOKEN } }
+    );
+
+    const stdout = output.toString().trim();
+    const lines = stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+    const urlLine = lines.find((l) => l.includes("https://") && l.includes(".vercel.app"));
+    const deployUrl = (urlLine?.match(/https:\/\/[^\s]+/)?.[0] || lines[lines.length - 1]).replace(/[✅🔍\[\]\dms]+/g, "").trim();
+
+    console.log(`[provision] Vercel CLI deploy succeeded: ${deployUrl}`);
+    return deployUrl;
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Try a git-based deploy via the Vercel API (only works when the Vercel GitHub app is installed). */
+async function deployViaGitApi(slug: string, projectId: string, repoId: number, vercelProjectName: string): Promise<boolean> {
+  const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
+  const depRes = await fetch(`https://api.vercel.com/v13/deployments${vercelQuery}`, {
+    method: "POST",
+    headers: headers(VERCEL_TOKEN),
+    body: JSON.stringify({
+      name: `${slug}-frontend`,
+      project: projectId,
+      target: "production",
+      gitSource: { type: "github", repoId, ref: "main" },
+    }),
+  });
+
+  if (depRes.ok) {
+    const depData: any = await depRes.json();
+    console.log(`[provision] Vercel deploy triggered: url=${depData.url || "?"} id=${depData.id || "?"} state=${depData.state || "?"}`);
+    return true;
+  }
+
+  const depErr = await depRes.text().catch(() => "");
+  console.warn(`[provision] Vercel git deploy failed (${depRes.status}): ${depErr}`);
+  return false;
+}
+
 async function createVercelProject(clientName: string, backendUrl: string) {
   console.log(`[provision] Creating Vercel project for "${clientName}"...`);
 
   const slug = slugify(clientName);
+  const vercelProjectName = `${slug}-frontend`;
 
   const vercelBody: any = {
-    name: `${slug}-frontend`,
+    name: vercelProjectName,
     framework: "nextjs",
     gitRepository: { repo: FRONTEND_GIT_REPO, type: "github" },
     rootDirectory: "frontend",
@@ -213,7 +308,9 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   const projectUrl = `https://${data.name}.vercel.app`;
   const repoId: number | null = data.gitRepository?.repoId || null;
 
-  // Add BACKEND_URL env var after project creation
+  console.log(`[provision] Vercel project created: ${projectId}${repoId ? ` (repoId: ${repoId})` : " (git not linked)"}`);
+
+  // Add BACKEND_URL env var
   const envRes = await fetch(`https://api.vercel.com/v10/projects/${projectId}/env`, {
     method: "POST",
     headers: headers(VERCEL_TOKEN),
@@ -228,30 +325,21 @@ async function createVercelProject(clientName: string, backendUrl: string) {
     console.warn(`[provision] Vercel env var warning: ${envRes.status} ${await envRes.text().catch(() => "")}`);
   }
 
-  console.log(`[provision] Vercel project created: ${projectId}${repoId ? ` (repoId: ${repoId})` : " (git link failed)"}`);
-
+  // Try git-based deploy first, then fall back to Vercel CLI
+  let deployed = false;
   if (repoId) {
-    const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
-    const depRes = await fetch(`https://api.vercel.com/v13/deployments${vercelQuery}`, {
-      method: "POST",
-      headers: headers(VERCEL_TOKEN),
-      body: JSON.stringify({
-        name: `${slug}-frontend`,
-        project: projectId,
-        target: "production",
-        gitSource: { type: "github", repoId, ref: "main" },
-      }),
-    });
-    if (depRes.ok) {
-      const depData: any = await depRes.json();
-      console.log(`[provision] Vercel deploy triggered: url=${depData.url || "?"} id=${depData.id || "?"} state=${depData.state || "?"}`);
-    } else {
-      const depErr = await depRes.text().catch(() => "");
-      console.warn(`[provision] Vercel deploy trigger failed: ${depRes.status} ${depErr}`);
-      console.log(`[provision] Connect repo manually at https://vercel.com/${data.name}/~/git`);
+    deployed = await deployViaGitApi(slug, projectId, repoId, vercelProjectName);
+  }
+
+  if (!deployed) {
+    console.log(`[provision] Trying Vercel CLI deploy (no git link available)...`);
+    try {
+      const cliUrl = await deployViaVercelCli(slug, projectId, backendUrl, vercelProjectName);
+      return { projectId, projectUrl: cliUrl };
+    } catch (cliErr: any) {
+      console.warn(`[provision] Vercel CLI deploy failed: ${cliErr.message}`);
+      console.log(`[provision] Manual step: connect repo at https://vercel.com/${data.name}/~/git`);
     }
-  } else {
-    console.log(`[provision] Connect repo manually at https://vercel.com/${data.name}/~/git`);
   }
 
   return { projectId, projectUrl };
@@ -259,7 +347,8 @@ async function createVercelProject(clientName: string, backendUrl: string) {
 
 export async function deleteVercelProject(projectId: string) {
   console.log(`[provision] Deleting Vercel project ${projectId}...`);
-  await fetch(`https://api.vercel.com/v9/projects/${projectId}?teamId=`, {
+  const query = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
+  await fetch(`https://api.vercel.com/v9/projects/${projectId}${query}`, {
     method: "DELETE",
     headers: headers(VERCEL_TOKEN),
   });

@@ -21,6 +21,8 @@ services:
         sync: false
       - key: VERCEL_TOKEN
         sync: false
+      - key: VERCEL_TEAM_ID
+        value: team_BoJsvNRaS2WAfBRsLIp1ycZS
       - key: CLOUDFLARE_API_TOKEN
         sync: false
       - key: CLOUDFLARE_ZONE_ID
