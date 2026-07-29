@@ -211,6 +211,7 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   const data: any = await res.json();
   const projectId = data.id;
   const projectUrl = `https://${data.name}.vercel.app`;
+  const repoId: number | null = data.gitRepository?.repoId || null;
 
   // Add BACKEND_URL env var after project creation
   const envRes = await fetch(`https://api.vercel.com/v10/projects/${projectId}/env`, {
@@ -227,27 +228,7 @@ async function createVercelProject(clientName: string, backendUrl: string) {
     console.warn(`[provision] Vercel env var warning: ${envRes.status} ${await envRes.text().catch(() => "")}`);
   }
 
-  console.log(`[provision] Vercel project created: ${projectId}`);
-
-  // Look up GitHub repo ID for gitSource
-  const repoParts = FRONTEND_GIT_REPO.split("/");
-  let repoId: number | null = null;
-  if (repoParts.length === 2) {
-    try {
-      const ghRes = await fetch(`https://api.github.com/repos/${FRONTEND_GIT_REPO}`, {
-        headers: { "Accept": "application/vnd.github.v3+json" },
-      });
-      if (ghRes.ok) {
-        const ghData: any = await ghRes.json();
-        repoId = ghData.id;
-        console.log(`[provision] GitHub repo ID: ${repoId}`);
-      } else {
-        console.warn(`[provision] GitHub API error: ${ghRes.status}`);
-      }
-    } catch (e: any) {
-      console.warn(`[provision] GitHub API fetch failed: ${e.message}`);
-    }
-  }
+  console.log(`[provision] Vercel project created: ${projectId}${repoId ? ` (repoId: ${repoId})` : ""}`);
 
   const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
   const depBody: any = { name: `${slug}-frontend`, project: projectId, target: "production" };
