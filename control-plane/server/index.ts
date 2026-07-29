@@ -1029,6 +1029,23 @@ app.get("/api/backups", requireAuth, async (_req, res) => {
   }
 });
 
+// Download a backup file
+app.get("/api/backups/download/:filename", requireAuth, async (req, res) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    const filepath = path.join(BACKUP_DIR, filename);
+    if (!fs.existsSync(filepath)) { res.status(404).json({ error: "File not found" }); return; }
+    const stats = fs.statSync(filepath);
+    res.setHeader("Content-Type", "application/gzip");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", stats.size);
+    const stream = fs.createReadStream(filepath);
+    stream.pipe(res);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to download backup" });
+  }
+});
+
 // ─── CUSTOM PLANS (Control Plane) ──────────────────────────
 app.get("/api/plans", requireAuth, async (_req, res) => {
   try {

@@ -1295,13 +1295,32 @@
         const data = await api("/api/backups");
         const files = data.files || [];
         if (!files.length) { document.getElementById("backup-list").innerHTML = '<div class="empty"><p>No backups yet. Auto-backups run daily at 3 AM, or click "Run Backup Now" to create one immediately. Requires pg_dump CLI on the server.</p></div>'; return; }
-        let html = '<table><thead><tr><th>File</th><th>Size</th><th>Date</th></tr></thead><tbody>';
+        let html = '<table><thead><tr><th>File</th><th>Size</th><th>Date</th><th></th></tr></thead><tbody>';
         for (const f of files) {
-          html += `<tr><td style="font-family:monospace;font-size:0.82rem">${esc(f.name)}</td><td>${f.size}</td><td>${new Date(f.date).toLocaleString()}</td></tr>`;
+          html += `<tr><td style="font-family:monospace;font-size:0.82rem">${esc(f.name)}</td><td>${f.size}</td><td>${new Date(f.date).toLocaleString()}</td><td><button class="btn btn-ghost btn-sm" onclick="downloadBackup('${esc(f.name)}')">Download</button></td></tr>`;
         }
         html += '</tbody></table>';
         document.getElementById("backup-list").innerHTML = html;
       } catch { document.getElementById("backup-list").innerHTML = '<div class="empty"><p>Failed to load backups.</p></div>'; }
+    }
+
+    async function downloadBackup(filename) {
+      const token = getToken();
+      try {
+        const res = await fetch(`/api/backups/download/${encodeURIComponent(filename)}`, {
+          headers: { "Authorization": token ? "Bearer " + token : "" },
+        });
+        if (!res.ok) { toast("Download failed: " + res.statusText, "error"); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (e) { toast("Download failed: " + e.message, "error"); }
     }
 
     async function runBackups() {
