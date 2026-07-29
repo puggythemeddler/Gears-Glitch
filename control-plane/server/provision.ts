@@ -58,6 +58,7 @@ async function createNeonDatabase(clientName: string) {
   }
 
   console.log(`[provision] Neon project created: ${projectId}`);
+  console.log(`[provision] dbUrl ${dbUrl ? "obtained" : "EMPTY"} (length: ${dbUrl.length})`);
   return { projectId, dbUrl };
 }
 
@@ -143,20 +144,25 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
 
   console.log(`[provision] Render service created: ${serviceId}`);
 
-  // Apply env vars via PATCH (create doesn't reliably apply them to initial deploy)
-  const patchRes = await fetch(`https://api.render.com/v1/services/${serviceId}`, {
+  // Set env vars via the dedicated env-vars endpoint (more reliable than create)
+  const envVarsBody = envVars.map((e: any) => ({ key: e.key, value: e.value, type: "env_var" }));
+  const envRes = await fetch(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
     method: "PATCH",
     headers: headers(RENDER_API_KEY),
-    body: JSON.stringify({ envVars }),
+    body: JSON.stringify(envVarsBody),
   });
-  if (!patchRes.ok) {
-    console.error(`[provision] Warning: env var PATCH failed: ${patchRes.status}`);
+  if (!envRes.ok) {
+    console.error(`[provision] Warning: env var setup failed: ${envRes.status} ${await envRes.text().catch(() => "")}`);
   } else {
-    await fetch(`https://api.render.com/v1/services/${serviceId}/deploys`, {
+    // Trigger deploy so env vars take effect
+    const depRes = await fetch(`https://api.render.com/v1/services/${serviceId}/deploys`, {
       method: "POST",
       headers: headers(RENDER_API_KEY),
       body: JSON.stringify({ clear_cache: false }),
-    }).catch(() => {});
+    });
+    if (!depRes.ok) {
+      console.warn(`[provision] Deploy trigger warning: ${depRes.status}`);
+    }
   }
 
   return { serviceId, serviceUrl };
