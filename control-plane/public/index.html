@@ -419,6 +419,7 @@
     let editingClientId = null;
     let editingPlanFeatures = [];
     let currentUser = null;
+    let operatorEmail = "";
 
     // ─── AUTH ───────────────────────────────────────────────
     function getToken() { return localStorage.getItem("cp-token"); }
@@ -502,6 +503,7 @@
         setToken(data.token);
         localStorage.setItem("cp-user", JSON.stringify(data.user));
         currentUser = data.user;
+        operatorEmail = data.operatorEmail || "";
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("main-app").style.display = "";
         document.getElementById("user-display").textContent = data.user.username + " (" + data.user.role + ")";
@@ -538,6 +540,7 @@
         if (!res.ok) { clearAuth(); showLogin(); return; }
         const data = await res.json();
         currentUser = data.user;
+        operatorEmail = data.operatorEmail || "";
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("main-app").style.display = "";
         document.getElementById("user-display").textContent = currentUser.username + " (" + currentUser.role + ")";
@@ -701,9 +704,9 @@
     }
 
     // ─── MODALS ───────────────────────────────────────────
-    function showModal() { document.getElementById("modal-overlay").classList.add("show"); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = ""; document.getElementById("inp-domain").value = ""; document.getElementById("inp-plan").value = "growth"; }
+    function showModal() { document.getElementById("modal-overlay").classList.add("show"); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = operatorEmail || ""; document.getElementById("inp-domain").value = ""; document.getElementById("inp-plan").value = "growth"; }
     function hideModal() { document.getElementById("modal-overlay").classList.remove("show"); }
-    function showExistingModal() { document.getElementById("existing-modal-overlay").classList.add("show"); document.getElementById("inp-ex-name").value = ""; document.getElementById("inp-ex-email").value = ""; document.getElementById("inp-ex-backend").value = ""; document.getElementById("inp-ex-frontend").value = ""; document.getElementById("inp-ex-domain").value = ""; document.getElementById("inp-ex-render-id").value = ""; document.getElementById("inp-ex-cp-secret").value = ""; }
+    function showExistingModal() { document.getElementById("existing-modal-overlay").classList.add("show"); document.getElementById("inp-ex-name").value = ""; document.getElementById("inp-ex-email").value = operatorEmail || ""; document.getElementById("inp-ex-backend").value = ""; document.getElementById("inp-ex-frontend").value = ""; document.getElementById("inp-ex-domain").value = ""; document.getElementById("inp-ex-render-id").value = ""; document.getElementById("inp-ex-cp-secret").value = ""; }
     function hideExistingModal() { document.getElementById("existing-modal-overlay").classList.remove("show"); }
     function hideEditModal() { document.getElementById("edit-modal-overlay").classList.remove("show"); }
     function showChangelogModal() { document.getElementById("changelog-modal-overlay").classList.add("show"); document.getElementById("cl-version").value = ""; document.getElementById("cl-title").value = ""; document.getElementById("cl-body").value = ""; }

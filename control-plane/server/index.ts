@@ -144,7 +144,14 @@ app.post("/api/auth/login", async (req, res) => {
 
     await query("UPDATE cp_users SET last_login = NOW() WHERE id = $1", [user.id]);
     const token = signToken({ id: user.id, username: user.username, role: user.role });
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role, api_key: user.api_key, totpEnabled: !!user.totp_enabled } });
+    let operatorEmail = process.env.OPERATOR_ADMIN_EMAIL || "";
+    if (!operatorEmail) {
+      try {
+        const row = await queryOne("SELECT admin_email FROM clients WHERE status IN ('active','provisioning') ORDER BY id DESC LIMIT 1");
+        if (row?.admin_email) operatorEmail = row.admin_email;
+      } catch { /* ignore */ }
+    }
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, api_key: user.api_key, totpEnabled: !!user.totp_enabled }, operatorEmail });
   } catch (err: any) {
     console.error("[auth] Login error:", err.message);
     res.status(500).json({ error: "Login failed" });
@@ -236,9 +243,17 @@ app.post("/api/auth/register", requireAuth, requireAdmin, async (req, res) => {
 
 app.get("/api/auth/me", requireAuth, async (req, res) => {
   const user = (req as any).user as AuthUser;
-  if (user.id === 0) { res.json({ user: { id: 0, username: "system", role: "admin", totpEnabled: false } }); return; }
+  let operatorEmail = process.env.OPERATOR_ADMIN_EMAIL || "";
+  // Fall back to the admin_email of the most recent active client (likely yours)
+  if (!operatorEmail) {
+    try {
+      const row = await queryOne("SELECT admin_email FROM clients WHERE status IN ('active','provisioning') ORDER BY id DESC LIMIT 1");
+      if (row?.admin_email) operatorEmail = row.admin_email;
+    } catch { /* ignore */ }
+  }
+  if (user.id === 0) { res.json({ user: { id: 0, username: "system", role: "admin", totpEnabled: false }, operatorEmail }); return; }
   const full = await queryOne("SELECT id, username, role, api_key, created_at, last_login, totp_enabled FROM cp_users WHERE id = $1", [user.id]);
-  res.json({ user: { ...full, totpEnabled: !!full?.totp_enabled } });
+  res.json({ user: { ...full, totpEnabled: !!full?.totp_enabled }, operatorEmail });
 });
 
 app.get("/api/users", requireAuth, requireAdmin, async (_req, res) => {
@@ -355,8 +370,15 @@ app.post("/api/clients", requireAuth, async (req, res) => {
     // Operator can set a default admin email via env var so every new client's
     // admin account is created with the operator's email (e.g. yours).
     if (!adminEmail) adminEmail = process.env.OPERATOR_ADMIN_EMAIL || "";
+    // Fall back to the most recent active client's admin_email (likely yours)
     if (!adminEmail) {
-      res.status(400).json({ error: "adminEmail is required (or set OPERATOR_ADMIN_EMAIL env var)" });
+      try {
+        const row = await queryOne("SELECT admin_email FROM clients WHERE status IN ('active','provisioning') ORDER BY id DESC LIMIT 1");
+        if (row?.admin_email) adminEmail = row.admin_email;
+      } catch { /* ignore */ }
+    }
+    if (!adminEmail) {
+      res.status(400).json({ error: "Enter an admin email — it will be remembered for next time (or set OPERATOR_ADMIN_EMAIL env var)." });
       return;
     }
 
@@ -438,7 +460,13 @@ app.post("/api/clients/existing", requireAuth, async (req, res) => {
     }
     if (!adminEmail) adminEmail = process.env.OPERATOR_ADMIN_EMAIL || "";
     if (!adminEmail) {
-      res.status(400).json({ error: "adminEmail is required (or set OPERATOR_ADMIN_EMAIL env var)" });
+      try {
+        const row = await queryOne("SELECT admin_email FROM clients WHERE status IN ('active','provisioning') ORDER BY id DESC LIMIT 1");
+        if (row?.admin_email) adminEmail = row.admin_email;
+      } catch { /* ignore */ }
+    }
+    if (!adminEmail) {
+      res.status(400).json({ error: "Enter an admin email — it will be remembered for next time (or set OPERATOR_ADMIN_EMAIL env var)." });
       return;
     }
 
