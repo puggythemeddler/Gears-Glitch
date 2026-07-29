@@ -240,8 +240,9 @@ async function deployViaVercelCli(slug: string, projectId: string, backendUrl: s
     );
 
     console.log(`[provision] Running Vercel CLI deploy (this may take a few minutes)...`);
+    const scopeFlag = VERCEL_TEAM_ID ? ` --scope ${VERCEL_TEAM_ID}` : "";
     const output = execSync(
-      `npx --yes vercel deploy --prod --token "${VERCEL_TOKEN}"`,
+      `npx --yes vercel deploy --prod --yes${scopeFlag} --token "${VERCEL_TOKEN}"`,
       { cwd: tmpDir, timeout: 600_000, maxBuffer: 10 * 1024 * 1024, env: { ...process.env, VERCEL_TOKEN } }
     );
 

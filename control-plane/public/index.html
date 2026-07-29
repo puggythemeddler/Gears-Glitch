@@ -775,12 +775,27 @@
       const prog = document.getElementById("modal-progress");
       document.getElementById("modal-form").style.display = "none";
       prog.style.display = "";
-      prog.innerHTML = '<div style="padding:1rem;color:var(--primary)">Provisioning "' + esc(name) + '"...</div>';
+      prog.innerHTML = '<div style="padding:1rem;color:var(--primary)">Starting provisioning for "' + esc(name) + '"...</div>';
       try {
         const data = await api("/api/clients", { method: "POST", body: JSON.stringify({ name, adminEmail: email || undefined, plan, domain: domain || undefined }) });
         if (data.error) { prog.innerHTML = '<div style="padding:1rem;color:var(--danger)">' + esc(data.error) + '</div>'; document.getElementById("btn-create").disabled = false; return; }
-        prog.innerHTML = '<div style="padding:1rem;color:var(--success)">Provisioning started! (ID: ' + data.clientId + '). Refresh in a few minutes.</div>';
+        const clientId = data.clientId;
+        prog.innerHTML = '<div style="padding:1rem;color:var(--primary)">Provisioning "' + esc(name) + '"...<br><span style="font-size:0.85rem;color:var(--text-muted)">Setting up database, backend, frontend...</span></div>';
         setTimeout(() => { hideModal(); loadClients(); }, 2000);
+        let pollCount = 0;
+        const pollTimer = setInterval(async () => {
+          pollCount++;
+          try {
+            const refreshed = await api("/api/clients");
+            const client = (refreshed.clients || []).find(c => c.id === clientId);
+            if (client && client.status !== "provisioning") {
+              clearInterval(pollTimer);
+              loadClients();
+              toast(client.status === "active" ? '"' + name + '" is ready!' : '"' + name + '" provisioning failed.', client.status === "active" ? "success" : "error");
+            }
+          } catch {}
+          if (pollCount > 24) clearInterval(pollTimer); // stop after ~2 min
+        }, 5000);
       } catch (e) { prog.innerHTML = '<div style="padding:1rem;color:var(--danger)">' + esc(e.message) + '</div>'; document.getElementById("btn-create").disabled = false; }
     }
 
