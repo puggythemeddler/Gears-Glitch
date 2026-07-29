@@ -203,26 +203,8 @@ async function createVercelProject(clientName: string, backendUrl: string) {
     }),
   }).catch(() => {});
 
-  // Deploy from git
-  const deployRes = await fetch("https://api.vercel.com/v13/deployments", {
-    method: "POST",
-    headers: headers(VERCEL_TOKEN),
-    body: JSON.stringify({
-      name: data.name,
-      gitSource: { type: "github", ref: "main", repo: FRONTEND_GIT_REPO },
-      project: projectId,
-    }),
-  });
-
-  if (deployRes.ok) {
-    const deployData: any = await deployRes.json();
-    console.log(`[provision] Vercel deployment triggered: ${deployData.id}`);
-  } else {
-    const err = await deployRes.text();
-    console.error(`[provision] Vercel deployment failed: ${deployRes.status} ${err}`);
-  }
-
   console.log(`[provision] Vercel project created: ${projectId}`);
+  console.log(`[provision] Connect your GitHub repo at https://vercel.com/${data.name}/~/git`);
   return { projectId, projectUrl };
 }
 
