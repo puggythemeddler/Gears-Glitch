@@ -1,5 +1,7 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import { imageUrlForProduct, deleteProductImages } from "./upload";
 import { CATEGORIES } from "./categories";
 import { query, queryOne, queryAll, transaction, runSchema, getPool } from "./db-helpers";
@@ -598,6 +600,14 @@ function getDb(): any {
 }
 
 async function initDb(): Promise<void> {
+  // Create tables from schema.sql if they don't exist yet
+  const schemaPath = path.join(__dirname, "..", "..", "server", "schema.sql");
+  if (fs.existsSync(schemaPath)) {
+    const schemaSql = fs.readFileSync(schemaPath, "utf8");
+    await runSchema(schemaSql);
+  } else {
+    console.warn("[db] schema.sql not found at", schemaPath);
+  }
   await runMigrations();
   await ensureDefaultSettings();
   await ensureDefaultCategories();
