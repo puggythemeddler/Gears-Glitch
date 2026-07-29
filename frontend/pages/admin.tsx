@@ -27,7 +27,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
   {
@@ -83,6 +83,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "settings-store-info", label: "Store Info" },
       { key: "settings-payments", label: "Payments" },
       { key: "settings-compliance", label: "Compliance" },
+      { key: "delivery-fees", label: "Delivery Fees" },
       { key: "settings-content", label: "Content" },
       { key: "settings-system", label: "System" },
       { key: "storefront", label: "Storefront" },
@@ -403,6 +404,7 @@ export default function AdminPage() {
             {view === "settings-compliance" && <AdminCompliance />}
             {view === "settings-content" && <AdminContent />}
             {view === "settings-system" && <AdminSystem />}
+            {view === "delivery-fees" && <AdminDeliveryFees />}
             {view === "messages" && <AdminMessages />}
             {view === "reviews" && <AdminReviews />}
             {view === "product-positioning" && <AdminProductPositioning />}
@@ -5054,6 +5056,108 @@ function AdminWhatsAppSettings() {
             </table>
           </div>
         )}
+      </div>
+    </>
+  );
+}
+
+
+// ─── Delivery Fees (admin-configurable per-county) ─────────────────────
+function AdminDeliveryFees() {
+  const [counties, setCounties] = useState<{ id: string; name: string; region: string; fee: number }[]>([]);
+  const [fees, setFees] = useState<Record<string, number>>({});
+  const [defaults, setDefaults] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = getStaffToken() || "";
+        const res = await fetch("/api/admin/delivery-fees", { headers: { Authorization: "Bearer " + token } });
+        if (!res.ok) throw new Error("Failed to load");
+        const data = await res.json();
+        setCounties(data.counties || []);
+        const o = data.overrides || {};
+        setFees(o);
+        const d: Record<string, number> = {};
+        for (const c of (data.counties || [])) d[c.id] = c.fee;
+        setDefaults(d);
+      } catch (e: any) { setMsg({ text: e.message || "Failed to load", error: true }); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    try {
+      const token = getStaffToken() || "";
+      const res = await fetch("/api/admin/delivery-fees", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ fees }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Save failed");
+      setMsg({ text: data.message || "Saved." });
+      if (data.counties) setCounties(data.counties);
+    } catch (e: any) { setMsg({ text: e.message || "Save failed", error: true }); }
+    finally { setSaving(false); }
+  }
+
+  async function reset() {
+    if (!confirm("Reset all delivery fees to defaults?")) return;
+    setSaving(true); setMsg(null);
+    try {
+      const token = getStaffToken() || "";
+      const res = await fetch("/api/admin/delivery-fees", { method: "DELETE", headers: { Authorization: "Bearer " + token } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Reset failed");
+      setFees({}); setMsg({ text: data.message || "Reset to defaults." });
+      if (data.counties) setCounties(data.counties);
+    } catch (e: any) { setMsg({ text: e.message || "Reset failed", error: true }); }
+    finally { setSaving(false); }
+  }
+
+  if (loading) return <Spinner />;
+  if (counties.length === 0) return <EmptyState title="No counties" description="Could not load county list." />;
+
+  // Group counties by region for readability
+  const regions: Record<string, { id: string; name: string; fee: number }[]> = {};
+  for (const c of counties) (regions[c.region] ||= []).push(c);
+
+  return (
+    <>
+      <h1>Delivery Fees</h1>
+      <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "1.5rem" }}>Set the delivery charge (in KES) for each Kenyan county. Customers see these fees at checkout.</p>
+      {msg && <div className={"form-status " + (msg.error ? "error" : "success")} style={{ marginBottom: "1rem" }}>{msg.text}</div>}
+      <div className="panel" style={{ maxWidth: 720 }}>
+        {Object.entries(regions).map(([region, cs]) => (
+          <div key={region} style={{ marginBottom: "1.5rem" }}>
+            <h3 style={{ marginTop: 0, marginBottom: "0.5rem", fontSize: "0.85rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>{escapeHtml(region)}</h3>
+            <div className="form-grid" style={{ gap: "0.75rem" }}>
+              {cs.map((c) => (
+                <div className="field" key={c.id} style={{ marginBottom: 0 }}>
+                  <label className="input-label">{escapeHtml(c.name)}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={10}
+                    className="input"
+                    value={fees[c.id] ?? defaults[c.id] ?? c.fee}
+                    onChange={(e) => setFees((f) => ({ ...f, [c.id]: Number(e.target.value) }))}
+                    placeholder={String(c.fee)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
+          <RippleButton onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Fees"}</RippleButton>
+          <RippleButton variant="ghost" onClick={reset} disabled={saving}>Reset to Defaults</RippleButton>
+        </div>
       </div>
     </>
   );

@@ -50,11 +50,22 @@ const COUNTIES = [
 
 export type County = { id: string; name: string; region: string; fee: number };
 
+// Default fees (used when no admin override is configured)
 export function getCounties(): County[] {
   return COUNTIES;
 }
 
-export function getShippingFee(countyId: string): number {
-  const county = COUNTIES.find(c => c.id === countyId);
+// Apply admin-configured per-county fees (stored as a JSON settings value).
+// `overrides` is a Record<countyId, fee>. Missing entries fall back to defaults.
+export function getCountiesWithOverrides(overrides?: Record<string, number> | null): County[] {
+  if (!overrides) return COUNTIES;
+  return COUNTIES.map((c) => ({ ...c, fee: typeof overrides[c.id] === "number" ? overrides[c.id]! : c.fee }));
+}
+
+// Sync helper: read overrides from the DB settings table.
+// Inline db dependency would create a cycle, so callers pass the JSON mapping.
+export function getShippingFee(countyId: string, overrides?: Record<string, number> | null): number {
+  if (overrides && typeof overrides[countyId] === "number") return overrides[countyId]!;
+  const county = COUNTIES.find((c) => c.id === countyId);
   return county?.fee ?? 0;
 }

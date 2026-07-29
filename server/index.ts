@@ -313,7 +313,7 @@ import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection } from "./whatsapp";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
-import { getCounties, getShippingFee } from "./shipping";
+import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
 import { htmlToPdf, closeBrowser } from "./pdf";
@@ -562,9 +562,65 @@ app.get("/api/images/:refId", asyncHandler(async (req: Request, res: Response) =
 const requirePermission = requirePermissionShared;
 
 // Shipping
-app.get("/api/shipping/counties", (_req: Request, res: Response) => {
-  res.json({ counties: getCounties() });
-});
+// ─── Delivery fees (per-county, admin-configurable) ────────────────────
+// Admin-configured fees are stored as a JSON Record<countyId, fee> in the
+// settings table under key 'delivery_fees'. Missing entries fall back to
+// the hardcoded defaults in shipping.ts.
+async function loadDeliveryFeeOverrides(): Promise<Record<string, number> | null> {
+  try {
+    const raw = await getStoreSetting("delivery_fees");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const out: Record<string, number> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        const n = Number(v);
+        if (!isNaN(n) && n >= 0) out[k] = n;
+      }
+      return out;
+    }
+  } catch { /* ignore parse issues - fall back to defaults */ }
+  return null;
+}
+
+// Public: counties with admin-configured fees applied
+app.get("/api/shipping/counties", asyncHandler(async (_req: Request, res: Response) => {
+  const overrides = await loadDeliveryFeeOverrides();
+  res.json({ counties: getCountiesWithOverrides(overrides) });
+}));
+
+// Admin: get current fees (returns overlay + defaults)
+app.get("/api/admin/delivery-fees", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  const overrides = await loadDeliveryFeeOverrides();
+  res.json({ counties: getCountiesWithOverrides(overrides), overrides: overrides || {} });
+}));
+
+// Admin: save per-county fee overrides
+app.put("/api/admin/delivery-fees", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { fees } = req.body || {};
+  if (!fees || typeof fees !== "object" || Array.isArray(fees)) {
+    res.status(400).json({ error: "fees must be an object mapping countyId -> fee." });
+    return;
+  }
+  const cleaned: Record<string, number> = {};
+  const validIds = new Set(getCounties().map((c) => c.id));
+  for (const [k, v] of Object.entries(fees)) {
+    if (!validIds.has(k)) continue;
+    const n = Number(v);
+    if (isNaN(n) || n < 0) continue;
+    cleaned[k] = n;
+  }
+  await setStoreSetting("delivery_fees", JSON.stringify(cleaned));
+  try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "delivery-fees", "delivery_fees", { count: Object.keys(cleaned).length }, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
+  res.json({ message: "Delivery fees saved.", overrides: cleaned, counties: getCountiesWithOverrides(cleaned) });
+}));
+
+// Admin: reset to defaults
+app.delete("/api/admin/delivery-fees", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  await setStoreSetting("delivery_fees", "");
+  try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "reset", "delivery-fees", "delivery_fees", {}, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
+  res.json({ message: "Delivery fees reset to defaults.", counties: getCounties() });
+}));
 
 // M-Pesa callback (called by Safaricom — body validated for expected structure)
 app.post("/api/mpesa/callback", (req: Request, res: Response) => {
@@ -1884,7 +1940,7 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
     if (!isStr(shippingCounty, 100)) { res.status(400).json({ error: "Shipping county must be a valid string." }); return; }
     if (shippingPhone !== undefined && shippingPhone !== "" && !isStr(shippingPhone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
     if (mpesaPhone !== undefined && mpesaPhone !== "" && !isStr(mpesaPhone, 20)) { res.status(400).json({ error: "M-Pesa phone must be a valid string." }); return; }
-    const shippingF = getShippingFee(shippingCounty);
+    const shippingF = getShippingFee(shippingCounty, await loadDeliveryFeeOverrides());
     const customerId = (req as any).customer.sub;
     const customerDetails = await findCustomerById(customerId);
     const cartItems = await getCartItems(customerId);
@@ -1970,7 +2026,7 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
     if (!order || order.customerId !== customerId) { res.status(404).json({ error: "Order not found." }); return; }
     if (order.status !== "pending") { res.status(400).json({ error: "Can only edit a pending order." }); return; }
     const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, paymentMethod } = req.body || {};
-    const shippingF = shippingCounty ? getShippingFee(shippingCounty) : undefined;
+    const shippingF = shippingCounty ? getShippingFee(shippingCounty, await loadDeliveryFeeOverrides()) : undefined;
     await updateOrderDetails(orderId, {
       ...(shippingName !== undefined && { shippingName }),
       ...(shippingAddress !== undefined && { shippingAddress }),

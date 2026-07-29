@@ -301,6 +301,35 @@ code, pre {
   .currency-selector-wrap .currency-select-label { display: none; }
 }
 
+/* Header settings popover (theme + currency) */
+.header-settings-popover {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-4);
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.header-settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.header-settings-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  min-width: 4.5rem;
+}
+.header-settings-row .currency-selector-wrap { flex: 1; }
+
 .brand {
   font-size: var(--text-lg);
   font-weight: var(--font-bold);

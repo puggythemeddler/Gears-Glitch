@@ -32,6 +32,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [springboardOpen, setSpringboardOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { configLoading, layout } = useLayout();
   const messagingEnabled = useFeature("Messaging");
   const repairsEnabled = useFeature("Repair ticketing");
@@ -57,14 +58,15 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   }, []);
 
   useEffect(() => {
-    if (!springboardOpen) return;
+    if (!springboardOpen && !settingsOpen) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (!target.closest(".springboard-wrap")) setSpringboardOpen(false);
+      if (!target.closest(".header-settings-wrap")) setSettingsOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [springboardOpen]);
+  }, [springboardOpen, settingsOpen]);
 
   useEffect(() => {
     fetch("/api/settings/nav-order").then(r => r.json()).then(d => {
@@ -157,18 +159,43 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             <input name="q" type="search" placeholder="Search..." aria-label="Search products" />
             <button type="submit" aria-label="Search">🔍</button>
           </form>
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={toggleDark}
-            aria-pressed={isDark}
-            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            <span className="theme-toggle-track">
-              <span className="theme-toggle-thumb" />
-            </span>
-          </button>
-          <CurrencySelector />
+          <div className="header-settings-wrap" style={{ position: "relative" }}>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => setSettingsOpen((o) => !o)}
+              aria-expanded={settingsOpen}
+              aria-label="Display settings"
+              title="Theme & currency"
+            >
+              ⚙
+            </button>
+            {settingsOpen && (
+              <div className="header-settings-popover" role="menu">
+                <div className="header-settings-row">
+                  <span className="header-settings-label">Theme</span>
+                  <button
+                    type="button"
+                    className="theme-toggle"
+                    onClick={toggleDark}
+                    aria-pressed={isDark}
+                    aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                  >
+                    <span className="theme-toggle-track">
+                      <span className="theme-toggle-thumb" />
+                    </span>
+                  </button>
+                  <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>{isDark ? "Dark" : "Light"}</span>
+                </div>
+                {multiCurrencyEnabled && (
+                  <div className="header-settings-row">
+                    <span className="header-settings-label">Currency</span>
+                    <CurrencySelector />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           {isLoggedIn ? (
             <Link href="/dashboard" className="btn btn-sm btn-ghost">
               {userName || "Account"}
