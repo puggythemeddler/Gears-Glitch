@@ -1,27 +1,30 @@
 # GitHub Action Points
 
-Use this document to create issues or project cards directly on GitHub.
+Use this document to create issues or project cards directly on GitHub. Mirrors `ACTION_ITEMS.md`.
 
 ## Major
 
-- ~~Confirm POS invoice printing and ensure the thermal receipt and A4 invoice buttons appear in the charge flow.~~
-- ~~Finish responsive UI fixes for mobile and tablet across the storefront, POS screen, owner dashboard, admin dashboard, and header/navigation.~~
-- Verify owner branch visibility and admin branch/subscription management:
-  - owner can see all assigned branches
-  - admin can manage branches and subscription limits
-- Ensure storefront layout controls remain admin-only in the owner panel.
-- Re-upload previously lost product images (wiped by Render ephemeral filesystem before Cloudinary was configured).
+- [ ] Rotate the Neon database password (plaintext in local `.env`) — reset in Neon console, update `DATABASE_URL` on Render + local.
+- [ ] Regenerate the Cloudinary API secret (was exposed via `GET /api/cloudinary-config` until lockdown) — regenerate in Cloudinary, update `CLOUDINARY_API_SECRET` on Render, re-pull via control plane.
+- [ ] Set `NEXT_PUBLIC_MARKETING_ENABLED=true` on the main Vercel project (client deployments don't get marketing).
+- [ ] Push control-plane secrets to existing clients via the control plane **Push Secret** button.
+- [ ] Set `CONTROL_PLANE_SECRET` on the store's Render service and register in the control plane.
+- [ ] Change the control-plane default password (`gearglitch2024`) → set `CP_ADMIN_PASSWORD`, then enable TOTP 2FA from the dashboard header.
 
 ## Medium
 
-- Add owner-friendly messaging on the storefront page for non-admin users.
-- Validate the custom storefront layout is fully registered and selectable in the admin storefront selector.
-- ~~Review README for missing deployment or setup details after recent changes.~~
-- Add a short note about the current layout system and admin-only control to the documentation if needed.
-- Regenerate Cloudinary API secret (was shared publicly) and update the env var in Render.
+- [ ] Verify owner branch visibility and admin branch/subscription management.
+- [ ] Ensure storefront layout controls remain admin-only in the owner panel.
+- [ ] Re-upload previously lost product images (wiped by Render ephemeral filesystem before Cloudinary).
+- [ ] Validate the custom storefront layout is fully registered and selectable.
+- [ ] Add owner-friendly messaging on storefront for non-admin users.
+- [ ] Document the layout system and admin-only control.
 
 ## Low / Future
 
-- Plan runtime layout import support as a later enhancement.
-- Add tests or QA checks for layout switching, branch visibility, and subscription requests.
-- Add GitHub issues or a project board for follow-up work.
+- [ ] Runtime layout import support.
+- [ ] Tests / QA checks: layout switching, branch visibility, subscription requests, delivery fees, CP auth.
+- [ ] Break up `server/index.ts` and `admin.tsx` monoliths into route/domain modules.
+- [ ] Enable `strict: true` TypeScript + ESLint/Prettier + CI quality gate.
+- [ ] Formal SQL migrations instead of imperative startup migrations.
+- [ ] Enforce CSRF (hard-fail) + strict CSP.
