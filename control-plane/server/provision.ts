@@ -4,6 +4,7 @@ import { getCloudinaryConfig } from "./db";
 const NEON_API_KEY = process.env.NEON_API_KEY || "";
 const NEON_ORG_ID = process.env.NEON_ORG_ID || "";
 const RENDER_API_KEY = process.env.RENDER_API_KEY || "";
+const RENDER_OWNER_ID = process.env.RENDER_OWNER_ID || "";
 const VERCEL_TOKEN = process.env.VERCEL_TOKEN || "";
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || "";
 const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || "";
@@ -137,6 +138,7 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
       env_vars: envVars,
       plan: "free",
       region: "oregon",
+      ...(RENDER_OWNER_ID ? { ownerId: RENDER_OWNER_ID } : {}),
     }),
   });
 
