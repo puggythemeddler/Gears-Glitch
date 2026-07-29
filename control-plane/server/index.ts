@@ -674,6 +674,21 @@ app.get("/api/cloudinary", requireAuth, async (_req, res) => {
   }
 });
 
+// Set Cloudinary config manually
+app.post("/api/cloudinary", requireAuth, async (req, res) => {
+  try {
+    const { cloudName, apiKey, apiSecret, folder } = req.body || {};
+    if (!cloudName || !apiKey || !apiSecret) {
+      res.status(400).json({ error: "cloudName, apiKey, and apiSecret are required" });
+      return;
+    }
+    await setCloudinaryConfig(cloudName, apiKey, apiSecret, folder || "gear-glitch");
+    res.json({ message: "Cloudinary config saved." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to save Cloudinary config" });
+  }
+});
+
 // Health check all clients
 app.post("/api/health-check", requireAuth, async (_req, res) => {
   try {
