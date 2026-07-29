@@ -19,9 +19,12 @@ npm run dev             # http://localhost:4000
 | `CONTROL_PLANE_API_KEY` | No (legacy) | Legacy API key for backward compatibility (still works) |
 | `JWT_SECRET` | No | JWT signing secret (auto-generated if not set) |
 | `CP_ADMIN_PASSWORD` | No | Default admin password (defaults to `gearglitch2024`) |
+| `OPERATOR_ADMIN_EMAIL` | No | Default admin email for new clients (defaults to `admin@gearandglitch.com`) |
 | `RENDER_API_KEY` | Yes | Render API key for provisioning/suspending services |
 | `RENDER_API_URL` | No | Defaults to `https://api.render.com/v1` |
+| `RENDER_OWNER_ID` | No | Render owner/team ID for service creation |
 | `NEON_API_KEY` | Yes | Neon API key for creating databases |
+| `NEON_ORG_ID` | No | Neon organization ID (for org-level projects) |
 | `VERCEL_TOKEN` | Yes | Vercel token for creating frontend projects |
 | `VERCEL_TEAM_ID` | No | Vercel team ID if using a team account |
 | `DOMAIN_BASE` | No | Base domain (defaults to `gearglitch.com`) |
@@ -40,10 +43,12 @@ npm run dev             # http://localhost:4000
 1. Push this repo to GitHub
 2. Create a new **Web Service** on Render
 3. Set **Root Directory** to `control-plane`
-4. Build Command: `npm install && npm run build`
-5. Start Command: `npm start`
+4. **Build Command**: `npm ci && npx tsc && cp -r public dist/public`
+5. **Start Command**: `node dist/server/index.js`
 6. Add all environment variables from `.env.example`
 7. Set up a **Managed Database** (PostgreSQL) on Neon and paste the URL
+
+> **Note:** Client backend services are also deployed on Render via the same repo. Their build command uses `NODE_ENV=development npm ci && cd server && npx tsc && cd ..` to include devDependencies (type definitions) during compilation, and their start command is `node dist/server/index.js`.
 
 ## Dashboard Tabs
 
@@ -102,16 +107,23 @@ Administrators can protect their control-plane accounts with TOTP two-factor aut
 
 ## Client Provisioning
 
-When you add a new client, the control plane automatically:
+When you add a new client via the **Add Client** modal, the control plane automatically:
 
-1. **Creates a Neon database** — separate PostgreSQL for the client
-2. **Creates a Render web service** — deploys the backend from the shared repo
-3. **Creates a Vercel project** — deploys the frontend
-4. **Sets up Cloudinary** — shared account with per-client folder (`gear-glitch/{client-slug}`)
-5. **Sets up DNS** (optional) — creates a subdomain under your base domain
-6. **Sends a welcome email** — includes login credentials, links, and plan info
+1. **Creates a Neon database** — separate PostgreSQL for the client. The connection URI is extracted from the project creation response.
+2. **Creates a Render web service** — deploys the backend with all required env vars (`DATABASE_URL`, `JWT_SECRET`, `ADMIN_*`, `TECH_*`, `CONTROL_PLANE_SECRET`, Cloudinary). Env vars are applied via the dedicated `env-vars` endpoint after service creation, then a deploy is triggered.
+3. **Creates a Vercel project** — creates the project, links the GitHub repo, sets `BACKEND_URL`, and triggers an initial deploy from the `frontend/` directory.
+4. **Sets up Cloudinary** — shared account with per-client folder (`gear-glitch/{client-slug}`), configured automatically from stored credentials.
+5. **Sets up DNS** (optional) — creates a subdomain under your base domain via Cloudflare.
+6. **Sends a welcome email** — includes login credentials, frontend/backend URLs, and plan info. SMTP must be configured.
 
-Provisioning is async — returns immediately with a client ID. Check status at `/api/clients/:id`.
+### Provisioning Details
+
+- **Admin account** — Every new client gets `ADMIN_USERNAME=admin`, `ADMIN_EMAIL` (taken from the modal or defaults to `OPERATOR_ADMIN_EMAIL`), and a generated `ADMIN_PASSWORD`. The backend creates this admin on first boot.
+- **Technician account** — A `technician` seed account is also created for testing role-gated views.
+- **Schema** — On first boot, the client backend loads `server/schema.sql` to create all database tables, ensuring a fresh database is fully initialized before running migrations.
+- **Vercel frontend** — After project creation, the control plane triggers a production deploy from `main` with `rootDirectory: "frontend"`. The `BACKEND_URL` env var is set before triggering the deploy.
+
+Provisioning runs synchronously — the UI shows progress as each step completes. If any step fails, previously created resources are cleaned up.
 
 ### Add Existing Client
 Register an already-deployed instance without provisioning new resources. Just provide the name, email, backend URL, and frontend URL. Optionally provide the Render service ID and the client's `CONTROL_PLANE_SECRET`; if no secret is given, one is generated — push it to the client with `POST /api/clients/:id/push-secret`.
