@@ -52,23 +52,9 @@ async function createNeonDatabase(clientName: string) {
   const data: any = await res.json();
   const projectId = data.project.id;
 
-  // Get connection string
-  const connRes = await fetch(`https://console.neon.tech/api/v2/projects/${projectId}/connection_uri`, {
-    headers: headers(NEON_API_KEY),
-  });
-
   let dbUrl = "";
-  if (connRes.ok) {
-    const connData: any = await connRes.json();
-    dbUrl = connData.uri || "";
-  }
-
-  // Fallback: build connection string from endpoints
-  if (!dbUrl && data.project.endpoints?.length > 0) {
-    const ep = data.project.endpoints[0];
-    const dbName = data.project.database_name || "neondb";
-    const dbUser = data.project.database_user || "neondb_owner";
-    dbUrl = `postgresql://${dbUser}:${ep.password}@${ep.host}/${dbName}?sslmode=require`;
+  if (data.project.connection_uris?.length > 0) {
+    dbUrl = data.project.connection_uris[0].connection_uri || "";
   }
 
   console.log(`[provision] Neon project created: ${projectId}`);
@@ -156,6 +142,23 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
   const serviceUrl = data.service.service_url || `https://${slug}-backend.onrender.com`;
 
   console.log(`[provision] Render service created: ${serviceId}`);
+
+  // Apply env vars via PATCH (create doesn't reliably apply them to initial deploy)
+  const patchRes = await fetch(`https://api.render.com/v1/services/${serviceId}`, {
+    method: "PATCH",
+    headers: headers(RENDER_API_KEY),
+    body: JSON.stringify({ envVars }),
+  });
+  if (!patchRes.ok) {
+    console.error(`[provision] Warning: env var PATCH failed: ${patchRes.status}`);
+  } else {
+    await fetch(`https://api.render.com/v1/services/${serviceId}/deploys`, {
+      method: "POST",
+      headers: headers(RENDER_API_KEY),
+      body: JSON.stringify({ clear_cache: false }),
+    }).catch(() => {});
+  }
+
   return { serviceId, serviceUrl };
 }
 
