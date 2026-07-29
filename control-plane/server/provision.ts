@@ -6,6 +6,7 @@ const NEON_ORG_ID = process.env.NEON_ORG_ID || "";
 const RENDER_API_KEY = process.env.RENDER_API_KEY || "";
 const RENDER_OWNER_ID = process.env.RENDER_OWNER_ID || "";
 const VERCEL_TOKEN = process.env.VERCEL_TOKEN || "";
+const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID || "";
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || "";
 const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || "";
 const DOMAIN_BASE = process.env.DOMAIN_BASE || "gearglitch.com";
@@ -211,7 +212,7 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   const projectUrl = `https://${data.name}.vercel.app`;
 
   // Add BACKEND_URL env var after project creation
-  await fetch(`https://api.vercel.com/v10/projects/${projectId}/env`, {
+  const envRes = await fetch(`https://api.vercel.com/v10/projects/${projectId}/env`, {
     method: "POST",
     headers: headers(VERCEL_TOKEN),
     body: JSON.stringify({
@@ -220,19 +221,28 @@ async function createVercelProject(clientName: string, backendUrl: string) {
       type: "encrypted",
       target: ["production", "preview", "development"],
     }),
-  }).catch(() => {});
+  });
+  if (!envRes.ok) {
+    console.warn(`[provision] Vercel env var warning: ${envRes.status} ${await envRes.text().catch(() => "")}`);
+  }
 
   console.log(`[provision] Vercel project created: ${projectId}`);
 
-  // Trigger an initial deploy
-  const depRes = await fetch(`https://api.vercel.com/v13/deployments`, {
+  // Trigger an initial deploy with explicit git source
+  const depBody: any = {
+    project: projectId,
+    target: "production",
+    gitSource: { type: "github", repo: FRONTEND_GIT_REPO, ref: "main" },
+  };
+  const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
+  const depRes = await fetch(`https://api.vercel.com/v13/deployments${vercelQuery}`, {
     method: "POST",
     headers: headers(VERCEL_TOKEN),
-    body: JSON.stringify({ project: projectId, target: "production" }),
+    body: JSON.stringify(depBody),
   });
   if (depRes.ok) {
     const depData: any = await depRes.json();
-    console.log(`[provision] Vercel deploy triggered: ${depData.url || depData.id || "unknown"}`);
+    console.log(`[provision] Vercel deploy triggered: url=${depData.url || "?"} id=${depData.id || "?"} state=${depData.state || "?"}`);
   } else {
     const depErr = await depRes.text().catch(() => "");
     console.warn(`[provision] Vercel deploy trigger failed: ${depRes.status} ${depErr}`);
