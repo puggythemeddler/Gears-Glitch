@@ -311,8 +311,21 @@ async function createVercelProject(clientName: string, backendUrl: string) {
 
   const data: any = await res.json();
   const projectId = data.id;
-  const projectUrl = `https://${data.name}.vercel.app`;
   const repoId: number | null = data.gitRepository?.repoId || null;
+
+  // Fetch the actual production domain alias (may differ from data.name)
+  const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
+  let projectUrl = `https://${data.name}.vercel.app`;
+  try {
+    const domRes = await fetch(`https://api.vercel.com/v9/projects/${projectId}/domains${vercelQuery}`, {
+      headers: headers(VERCEL_TOKEN),
+    });
+    if (domRes.ok) {
+      const domData: any = await domRes.json();
+      const prodDomain = domData.domains?.find((d: any) => !d.redirect);
+      if (prodDomain) projectUrl = `https://${prodDomain.name}`;
+    }
+  } catch {}
 
   console.log(`[provision] Vercel project created: ${projectId}${repoId ? ` (repoId: ${repoId})` : " (git not linked)"}`);
 
