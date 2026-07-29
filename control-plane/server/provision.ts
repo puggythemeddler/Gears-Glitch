@@ -191,10 +191,6 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   const vercelBody: any = {
     name: `${slug}-frontend`,
     framework: "nextjs",
-    gitRepository: {
-      repo: FRONTEND_GIT_REPO,
-      type: "github",
-    },
     rootDirectory: "frontend",
   };
 
