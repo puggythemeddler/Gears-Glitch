@@ -241,12 +241,16 @@ async function createVercelProject(clientName: string, backendUrl: string) {
         const ghData: any = await ghRes.json();
         repoId = ghData.id;
         console.log(`[provision] GitHub repo ID: ${repoId}`);
+      } else {
+        console.warn(`[provision] GitHub API error: ${ghRes.status}`);
       }
-    } catch {}
+    } catch (e: any) {
+      console.warn(`[provision] GitHub API fetch failed: ${e.message}`);
+    }
   }
 
   const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
-  const depBody: any = { project: projectId, target: "production" };
+  const depBody: any = { name: `${slug}-frontend`, project: projectId, target: "production" };
   if (repoId) {
     depBody.gitSource = { type: "github", repoId, ref: "main" };
   }
