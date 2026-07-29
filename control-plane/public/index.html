@@ -311,7 +311,7 @@
       <p class="subtitle">Provisions a new database, backend, and frontend automatically.</p>
       <div id="modal-form">
         <div class="field"><label>Business Name</label><input type="text" id="inp-name" placeholder="e.g. John's Electronics"></div>
-        <div class="field"><label>Admin Email</label><input type="email" id="inp-email" placeholder="e.g. john@example.com"></div>
+        <div class="field"><label>Admin Email <span style="font-size:0.72rem;color:var(--text-muted)">(optional — defaults to your operator email)</span></label><input type="email" id="inp-email" placeholder="defaults to OPERATOR_ADMIN_EMAIL"></div>
         <div class="field"><label>Domain (optional)</label><input type="text" id="inp-domain" placeholder="e.g. johns.gearglitch.com"></div>
         <div class="field"><label>Plan</label><select id="inp-plan"><option value="starter">Starter</option><option value="growth" selected>Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
       </div>
@@ -329,7 +329,7 @@
       <h2>Add Existing Client</h2>
       <p class="subtitle">Register an existing deployment without provisioning new resources.</p>
       <div class="field"><label>Business Name</label><input type="text" id="inp-ex-name" placeholder="e.g. Gear&Glitch Store"></div>
-      <div class="field"><label>Admin Email</label><input type="email" id="inp-ex-email" placeholder="e.g. admin@gearglitch.com"></div>
+      <div class="field"><label>Admin Email <span style="font-size:0.72rem;color:var(--text-muted)">(optional — defaults to your operator email)</span></label><input type="email" id="inp-ex-email" placeholder="defaults to OPERATOR_ADMIN_EMAIL"></div>
       <div class="field"><label>Backend URL</label><input type="text" id="inp-ex-backend" placeholder="e.g. https://gears-glitch.onrender.com"></div>
       <div class="field"><label>Frontend URL</label><input type="text" id="inp-ex-frontend" placeholder="e.g. https://gears-glitch.vercel.app"></div>
       <div class="field"><label>Domain (optional)</label><input type="text" id="inp-ex-domain" placeholder="e.g. gearglitch.com"></div>
@@ -767,14 +767,14 @@
       const email = document.getElementById("inp-email").value.trim();
       const domain = document.getElementById("inp-domain").value.trim();
       const plan = document.getElementById("inp-plan").value;
-      if (!name || !email) { toast("Name and email required", "error"); return; }
+      if (!name) { toast("Business name required", "error"); return; }
       document.getElementById("btn-create").disabled = true;
       const prog = document.getElementById("modal-progress");
       document.getElementById("modal-form").style.display = "none";
       prog.style.display = "";
       prog.innerHTML = '<div style="padding:1rem;color:var(--primary)">Provisioning "' + esc(name) + '"...</div>';
       try {
-        const data = await api("/api/clients", { method: "POST", body: JSON.stringify({ name, adminEmail: email, plan, domain: domain || undefined }) });
+        const data = await api("/api/clients", { method: "POST", body: JSON.stringify({ name, adminEmail: email || undefined, plan, domain: domain || undefined }) });
         if (data.error) { prog.innerHTML = '<div style="padding:1rem;color:var(--danger)">' + esc(data.error) + '</div>'; document.getElementById("btn-create").disabled = false; return; }
         prog.innerHTML = '<div style="padding:1rem;color:var(--success)">Provisioning started! (ID: ' + data.clientId + '). Refresh in a few minutes.</div>';
         setTimeout(() => { hideModal(); loadClients(); }, 2000);
@@ -790,10 +790,10 @@
       const plan = document.getElementById("inp-ex-plan").value;
       const renderServiceId = document.getElementById("inp-ex-render-id").value.trim();
       const cpSecret = document.getElementById("inp-ex-cp-secret").value.trim();
-      if (!name || !email) { toast("Name and email required", "error"); return; }
+      if (!name) { toast("Business name required", "error"); return; }
       document.getElementById("btn-add-existing").disabled = true;
       try {
-        const data = await api("/api/clients/existing", { method: "POST", body: JSON.stringify({ name, adminEmail: email, plan, domain, backendUrl, frontendUrl, renderServiceId: renderServiceId || undefined, cpSecret: cpSecret || undefined }) });
+        const data = await api("/api/clients/existing", { method: "POST", body: JSON.stringify({ name, adminEmail: email || undefined, plan, domain, backendUrl, frontendUrl, renderServiceId: renderServiceId || undefined, cpSecret: cpSecret || undefined }) });
         if (data.error) { toast(data.error, "error"); document.getElementById("btn-add-existing").disabled = false; return; }
         toast(data.message); hideExistingModal(); loadClients();
       } catch (e) { toast("Failed: " + e.message, "error"); document.getElementById("btn-add-existing").disabled = false; }

@@ -347,10 +347,31 @@ app.get("/api/clients/:id", requireAuth, async (req, res) => {
 // Add client — starts provisioning
 app.post("/api/clients", requireAuth, async (req, res) => {
   try {
-    const { name, adminEmail, plan, domain } = req.body || {};
-    if (!name || !adminEmail) {
-      res.status(400).json({ error: "name and adminEmail are required" });
+    let { name, adminEmail, plan, domain } = req.body || {};
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
       return;
+    }
+    // Operator can set a default admin email via env var so every new client's
+    // admin account is created with the operator's email (e.g. yours).
+    if (!adminEmail) adminEmail = process.env.OPERATOR_ADMIN_EMAIL || "";
+    if (!adminEmail) {
+      res.status(400).json({ error: "adminEmail is required (or set OPERATOR_ADMIN_EMAIL env var)" });
+      return;
+    }
+
+    const DOMAIN_BASE = process.env.DOMAIN_BASE || "gearglitch.com";
+
+    // Derive a unique domain if not provided — the column is UNIQUE NOT NULL,
+    // so an empty string collides on the second client.
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
+    if (!domain) domain = `${slug}.${DOMAIN_BASE}`;
+
+    // If the derived domain already exists, append a numeric suffix until unique
+    let uniqueDomain = domain;
+    let suffix = 2;
+    while (await queryOne("SELECT id FROM clients WHERE domain = $1", [uniqueDomain])) {
+      uniqueDomain = `${domain}-${suffix++}`;
     }
 
     // Insert placeholder immediately
@@ -358,14 +379,14 @@ app.post("/api/clients", requireAuth, async (req, res) => {
       `INSERT INTO clients (name, domain, admin_email, plan, status)
        VALUES ($1, $2, $3, $4, 'provisioning')
        RETURNING id`,
-      [name, domain || "", adminEmail, plan || "starter"]
+      [name, uniqueDomain, adminEmail, plan || "starter"]
     );
     const clientId = insertResult.rows[0].id;
 
     // Provision in background
-    provisionClient(name, adminEmail, plan || "starter", domain)
+    provisionClient(name, adminEmail, plan || "starter", uniqueDomain)
       .then(async (result: ProvisionResult) => {
-        const subdomain = result.domain.replace(`.${process.env.DOMAIN_BASE || "gearglitch.com"}`, "");
+        const subdomain = result.domain.replace(`.${DOMAIN_BASE}`, "");
         await query(
           `UPDATE clients SET
             domain = $1, status = 'active',
@@ -403,17 +424,31 @@ app.post("/api/clients", requireAuth, async (req, res) => {
     });
   } catch (err: any) {
     console.error("[api] Create client error:", err.message);
-    res.status(500).json({ error: "Failed to create client" });
+    res.status(500).json({ error: err.message || "Failed to create client" });
   }
 });
 
 // Add existing client (no provisioning — just records existing URLs)
 app.post("/api/clients/existing", requireAuth, async (req, res) => {
   try {
-    const { name, adminEmail, plan, domain, backendUrl, frontendUrl, renderServiceId, cpSecret } = req.body || {};
-    if (!name || !adminEmail) {
-      res.status(400).json({ error: "name and adminEmail are required" });
+    let { name, adminEmail, plan, domain, backendUrl, frontendUrl, renderServiceId, cpSecret } = req.body || {};
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
       return;
+    }
+    if (!adminEmail) adminEmail = process.env.OPERATOR_ADMIN_EMAIL || "";
+    if (!adminEmail) {
+      res.status(400).json({ error: "adminEmail is required (or set OPERATOR_ADMIN_EMAIL env var)" });
+      return;
+    }
+
+    const DOMAIN_BASE = process.env.DOMAIN_BASE || "gearglitch.com";
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
+    if (!domain) domain = `${slug}.${DOMAIN_BASE}`;
+    let uniqueDomain = domain;
+    let suffix = 2;
+    while (await queryOne("SELECT id FROM clients WHERE domain = $1", [uniqueDomain])) {
+      uniqueDomain = `${domain}-${suffix++}`;
     }
 
     // Use the provided secret (already configured on the client) or generate one
@@ -424,7 +459,7 @@ app.post("/api/clients/existing", requireAuth, async (req, res) => {
       `INSERT INTO clients (name, domain, admin_email, plan, status, render_service_id, render_service_url, vercel_project_url, health_status, cp_secret)
        VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, 'unknown', $8)
        RETURNING id`,
-      [name, domain || "", adminEmail, plan || "growth", renderServiceId || "", backendUrl || "", frontendUrl || "", secret]
+      [name, uniqueDomain, adminEmail, plan || "growth", renderServiceId || "", backendUrl || "", frontendUrl || "", secret]
     );
 
     res.status(201).json({

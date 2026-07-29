@@ -62,6 +62,7 @@ Redeploy after adding env vars (Vercel → Deployments → Redeploy).
 | `CLOUDFLARE_API_TOKEN` | (optional) | For automatic subdomain DNS on provisioning |
 | `CLOUDFLARE_ZONE_ID` | (optional) | The zone for your base domain |
 | `DOMAIN_BASE` | `gearglitch.com` | Base domain for provisioned client subdomains |
+| `OPERATOR_ADMIN_EMAIL` | (your email, e.g. `jolly@gearandglitch.com`) | Default admin email for new clients — when you leave "Admin Email" blank on Add Client, the seeded admin account uses this email. Set this to your account so you control every client. |
 | `FRONTEND_GIT_REPO` | `puggythemeddler/Gears-Glitch` | Repo that gets deployed for each client |
 | `SMTP_*` + `FROM_EMAIL` | (your SMTP) | Welcome emails on provisioning |
 
