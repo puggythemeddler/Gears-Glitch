@@ -43,5 +43,7 @@ services:
         sync: false
       - key: FROM_NAME
         value: "Gear&Glitch"
+      - key: SLACK_WEBHOOK_URL
+        sync: false
     healthCheckPath: /api/health
     autoDeploy: true

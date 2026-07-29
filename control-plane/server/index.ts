@@ -24,6 +24,7 @@ import {
   cpHeaders,
   generateCpSecret,
   pushControlPlaneSecret,
+  sendSlackAlert,
   type ProvisionResult,
 } from "./provision";
 
@@ -777,7 +778,16 @@ app.post("/api/health-check", requireAuth, async (_req, res) => {
 
     const results: { name: string; status: string; orders?: number; customers?: number; revenue?: number }[] = [];
     for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
+      const prev: any = await queryOne("SELECT health_status FROM clients WHERE id = $1", [c.id]);
+      const prevStatus = prev?.health_status || "unknown";
       const status = await checkClientHealth(c.render_service_url, c.cp_secret);
+
+      // Slack alert on status change
+      if (status === "down" && prevStatus !== "down") {
+        sendSlackAlert(`:red_circle: *${c.name}* is DOWN`);
+      } else if (status === "healthy" && prevStatus === "down") {
+        sendSlackAlert(`:large_green_circle: *${c.name}* is back ONLINE`);
+      }
 
       // Track uptime
       await query(
