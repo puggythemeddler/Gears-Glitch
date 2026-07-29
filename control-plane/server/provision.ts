@@ -179,9 +179,6 @@ async function createVercelProject(clientName: string, backendUrl: string) {
     body: JSON.stringify({
       name: `${slug}-frontend`,
       framework: "nextjs",
-      envVariables: {
-        BACKEND_URL: { value: backendUrl, type: "encrypted" },
-      },
     }),
   });
 
@@ -193,6 +190,18 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   const data: any = await res.json();
   const projectId = data.id;
   const projectUrl = `https://${data.name}.vercel.app`;
+
+  // Add BACKEND_URL env var after project creation
+  await fetch(`https://api.vercel.com/v10/projects/${projectId}/env`, {
+    method: "POST",
+    headers: headers(VERCEL_TOKEN),
+    body: JSON.stringify({
+      key: "BACKEND_URL",
+      value: backendUrl,
+      type: "encrypted",
+      target: ["production", "preview", "development"],
+    }),
+  }).catch(() => {});
 
   // Deploy from git
   const deployRes = await fetch("https://api.vercel.com/v13/deployments", {
