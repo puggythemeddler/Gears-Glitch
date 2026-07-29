@@ -176,13 +176,20 @@ async function createVercelProject(clientName: string, backendUrl: string) {
 
   const slug = slugify(clientName);
 
+  const vercelBody: any = {
+    name: `${slug}-frontend`,
+    framework: "nextjs",
+    gitRepository: {
+      repo: FRONTEND_GIT_REPO,
+      type: "github",
+    },
+    rootDirectory: "frontend",
+  };
+
   const res = await fetch("https://api.vercel.com/v10/projects", {
     method: "POST",
     headers: headers(VERCEL_TOKEN),
-    body: JSON.stringify({
-      name: `${slug}-frontend`,
-      framework: "nextjs",
-    }),
+    body: JSON.stringify(vercelBody),
   });
 
   if (!res.ok) {
@@ -207,7 +214,6 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   }).catch(() => {});
 
   console.log(`[provision] Vercel project created: ${projectId}`);
-  console.log(`[provision] Connect your GitHub repo at https://vercel.com/${data.name}/~/git`);
   return { projectId, projectUrl };
 }
 
