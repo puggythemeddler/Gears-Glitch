@@ -14,6 +14,7 @@ import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, set
 import {
   provisionClient,
   deployAllClients,
+  deployRenderService,
   checkClientHealth,
   deleteNeonProject,
   deleteRenderService,
@@ -572,6 +573,25 @@ app.post("/api/deploy-all", requireAuth, async (_req, res) => {
   } catch (err: any) {
     console.error("[api] Deploy all error:", err.message);
     res.status(500).json({ error: "Failed to deploy" });
+  }
+});
+
+// Redeploy a single client
+app.post("/api/clients/:id/redeploy", requireAuth, async (req, res) => {
+  try {
+    const client: any = await queryOne("SELECT id, name, render_service_id FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_id) { res.status(400).json({ error: "Client has no Render service ID" }); return; }
+    const ok = await deployRenderService(client.render_service_id);
+    await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [client.id, ok ? "deploy" : "failed"]);
+    if (ok) {
+      await query("UPDATE clients SET health_status = 'deploying' WHERE id = $1", [client.id]);
+      res.json({ message: `Redeploy triggered for "${client.name}"` });
+    } else {
+      res.status(502).json({ error: `Render deploy request failed` });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to trigger redeploy" });
   }
 });
 

@@ -754,6 +754,7 @@
             ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
             <button class="btn btn-ghost btn-sm" onclick="editClient(${c.id})">Edit</button>
             <button class="btn btn-ghost btn-sm" onclick="pushSecret(${c.id}, '${esc(c.name)}')" title="Push/rotate the control-plane secret onto the client's Render service">Push Secret</button>
+            <button class="btn btn-ghost btn-sm" onclick="redeployClient(${c.id})">Redeploy</button>
             ${c.status === 'active' ? '<button class="btn btn-warning btn-sm" onclick="suspendClient(' + c.id + ')">Suspend</button>' : ''}
             ${c.status === 'suspended' ? '<button class="btn btn-success btn-sm" onclick="resumeClient(' + c.id + ')">Resume</button>' : ''}
             <button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${esc(c.name)}')">Delete</button>
@@ -901,6 +902,17 @@
 
     async function resumeClient(id) {
       try { const data = await api("/api/clients/" + id + "/resume", { method: "PUT" }); toast(data.message); loadClients(); } catch (e) { toast("Failed", "error"); }
+    }
+
+    async function redeployClient(id) {
+      if (!confirm("Trigger a Render redeploy for this client?")) return;
+      toast("Redeploying...");
+      try {
+        const data = await api("/api/clients/" + id + "/redeploy", { method: "POST" });
+        if (data.error) { toast(data.error, "error"); return; }
+        toast(data.message);
+        loadClients();
+      } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
     function editClient(id) {

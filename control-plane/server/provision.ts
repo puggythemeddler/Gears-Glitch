@@ -504,37 +504,35 @@ export async function provisionClient(
 }
 
 // ─── DEPLOY ALL CLIENTS ──────────────────────────────────
+export async function deployRenderService(renderServiceId: string) {
+  const res = await fetch(
+    `https://api.render.com/v1/services/${renderServiceId}/deploys`,
+    {
+      method: "POST",
+      headers: headers(RENDER_API_KEY),
+      body: JSON.stringify({ clear_cache: false }),
+    }
+  );
+  return res.ok;
+}
+
 export async function deployAllClients(
   clients: { render_service_id: string; name: string }[]
 ) {
   console.log(`[deploy] Triggering deploy for ${clients.length} clients...`);
-
   const results: { name: string; success: boolean; error?: string }[] = [];
-
   for (const client of clients) {
     if (!client.render_service_id) {
       results.push({ name: client.name, success: false, error: "No Render service ID" });
       continue;
     }
     try {
-      const res = await fetch(
-        `https://api.render.com/v1/services/${client.render_service_id}/deploys`,
-        {
-          method: "POST",
-          headers: headers(RENDER_API_KEY),
-          body: JSON.stringify({ clear_cache: false }),
-        }
-      );
-      results.push({
-        name: client.name,
-        success: res.ok,
-        error: res.ok ? undefined : `HTTP ${res.status}`,
-      });
+      const ok = await deployRenderService(client.render_service_id);
+      results.push({ name: client.name, success: ok, error: ok ? undefined : `HTTP error` });
     } catch (e: any) {
       results.push({ name: client.name, success: false, error: e.message });
     }
   }
-
   return results;
 }
 
