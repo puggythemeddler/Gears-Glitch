@@ -228,24 +228,29 @@ async function createVercelProject(clientName: string, backendUrl: string) {
     console.warn(`[provision] Vercel env var warning: ${envRes.status} ${await envRes.text().catch(() => "")}`);
   }
 
-  console.log(`[provision] Vercel project created: ${projectId}${repoId ? ` (repoId: ${repoId})` : ""}`);
+  console.log(`[provision] Vercel project created: ${projectId}${repoId ? ` (repoId: ${repoId})` : " (git link failed)"}`);
 
-  const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
-  const depBody: any = { name: `${slug}-frontend`, project: projectId, target: "production" };
   if (repoId) {
-    depBody.gitSource = { type: "github", repoId, ref: "main" };
-  }
-  const depRes = await fetch(`https://api.vercel.com/v13/deployments${vercelQuery}`, {
-    method: "POST",
-    headers: headers(VERCEL_TOKEN),
-    body: JSON.stringify(depBody),
-  });
-  if (depRes.ok) {
-    const depData: any = await depRes.json();
-    console.log(`[provision] Vercel deploy triggered: url=${depData.url || "?"} id=${depData.id || "?"} state=${depData.state || "?"}`);
+    const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
+    const depRes = await fetch(`https://api.vercel.com/v13/deployments${vercelQuery}`, {
+      method: "POST",
+      headers: headers(VERCEL_TOKEN),
+      body: JSON.stringify({
+        name: `${slug}-frontend`,
+        project: projectId,
+        target: "production",
+        gitSource: { type: "github", repoId, ref: "main" },
+      }),
+    });
+    if (depRes.ok) {
+      const depData: any = await depRes.json();
+      console.log(`[provision] Vercel deploy triggered: url=${depData.url || "?"} id=${depData.id || "?"} state=${depData.state || "?"}`);
+    } else {
+      const depErr = await depRes.text().catch(() => "");
+      console.warn(`[provision] Vercel deploy trigger failed: ${depRes.status} ${depErr}`);
+      console.log(`[provision] Connect repo manually at https://vercel.com/${data.name}/~/git`);
+    }
   } else {
-    const depErr = await depRes.text().catch(() => "");
-    console.warn(`[provision] Vercel deploy trigger failed: ${depRes.status} ${depErr}`);
     console.log(`[provision] Connect repo manually at https://vercel.com/${data.name}/~/git`);
   }
 
