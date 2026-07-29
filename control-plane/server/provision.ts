@@ -224,12 +224,14 @@ async function deployViaVercelCli(slug: string, projectId: string, backendUrl: s
     const frontendTmp = path.join(tmpDir, "frontend");
     await fs.cp(frontendDir, frontendTmp, { recursive: true });
 
-    await fs.mkdir(path.join(frontendTmp, ".vercel"), { recursive: true });
+    // .vercel/project.json goes in cwd (tmpDir) so vercel deploy finds it
+    await fs.mkdir(path.join(tmpDir, ".vercel"), { recursive: true });
     await fs.writeFile(
-      path.join(frontendTmp, ".vercel", "project.json"),
+      path.join(tmpDir, ".vercel", "project.json"),
       JSON.stringify({ projectId, orgId }, null, 2)
     );
 
+    // .env goes in the frontend directory for Next.js build
     await fs.writeFile(
       path.join(frontendTmp, ".env"),
       [
@@ -247,9 +249,9 @@ async function deployViaVercelCli(slug: string, projectId: string, backendUrl: s
     );
 
     const stdout = output.toString().trim();
-    const lines = stdout.split("\n").map((l) => l.trim()).filter(Boolean);
-    const urlLine = lines.find((l) => l.includes("https://") && l.includes(".vercel.app"));
-    const deployUrl = (urlLine?.match(/https:\/\/[^\s]+/)?.[0] || lines[lines.length - 1]).replace(/[✅🔍\[\]\dms]+/g, "").trim();
+    // Pick the last URL with .vercel.app (the aliased production URL)
+    const matches = [...stdout.matchAll(/https:\/\/[^\s]+\.vercel\.app/g)];
+    const deployUrl = matches.length > 0 ? matches[matches.length - 1][0] : `https://${vercelProjectName}.vercel.app`;
 
     console.log(`[provision] Vercel CLI deploy succeeded: ${deployUrl}`);
     return deployUrl;
