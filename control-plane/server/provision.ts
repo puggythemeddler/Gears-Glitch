@@ -194,7 +194,7 @@ async function createVercelProject(clientName: string, backendUrl: string) {
     headers: headers(VERCEL_TOKEN),
     body: JSON.stringify({
       name: data.name,
-      gitSource: { type: "github", ref: "main", repoId: FRONTEND_GIT_REPO },
+      gitSource: { type: "github", ref: "main", repo: FRONTEND_GIT_REPO },
       project: projectId,
     }),
   });
@@ -202,6 +202,9 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   if (deployRes.ok) {
     const deployData: any = await deployRes.json();
     console.log(`[provision] Vercel deployment triggered: ${deployData.id}`);
+  } else {
+    const err = await deployRes.text();
+    console.error(`[provision] Vercel deployment failed: ${deployRes.status} ${err}`);
   }
 
   console.log(`[provision] Vercel project created: ${projectId}`);
