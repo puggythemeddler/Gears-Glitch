@@ -226,6 +226,20 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   }).catch(() => {});
 
   console.log(`[provision] Vercel project created: ${projectId}`);
+
+  // Trigger an initial deploy
+  const depRes = await fetch(`https://api.vercel.com/v13/deployments`, {
+    method: "POST",
+    headers: headers(VERCEL_TOKEN),
+    body: JSON.stringify({ project: projectId, target: "production" }),
+  });
+  if (depRes.ok) {
+    const depData: any = await depRes.json();
+    console.log(`[provision] Vercel deploy triggered: ${depData.url || depData.id || "unknown"}`);
+  } else {
+    console.warn(`[provision] Vercel deploy trigger failed: ${depRes.status} ${await depRes.text().catch(() => "")}`);
+  }
+
   return { projectId, projectUrl };
 }
 
