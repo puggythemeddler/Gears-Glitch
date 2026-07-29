@@ -898,7 +898,7 @@ app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
 // ─── UPDATE CLIENT ───────────────────────────────────────
 app.put("/api/clients/:id", requireAuth, async (req, res) => {
   try {
-    const { plan, subscription_expires, notes, feature_flags, render_service_id } = req.body || {};
+    const { plan, subscription_expires, notes, feature_flags, render_service_id, phone, address } = req.body || {};
     const id = Number(req.params.id);
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [id]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -909,6 +909,8 @@ app.put("/api/clients/:id", requireAuth, async (req, res) => {
 
     if (plan !== undefined) { fields.push(`plan = $${idx}`); params.push(plan); idx++; }
     if (subscription_expires !== undefined) { fields.push(`subscription_expires = $${idx}`); params.push(subscription_expires); idx++; }
+    if (phone !== undefined) { fields.push(`phone = $${idx}`); params.push(phone); idx++; }
+    if (address !== undefined) { fields.push(`address = $${idx}`); params.push(address); idx++; }
     if (notes !== undefined) { fields.push(`notes = $${idx}`); params.push(notes); idx++; }
     if (feature_flags !== undefined) { fields.push(`feature_flags = $${idx}`); params.push(JSON.stringify(feature_flags)); idx++; }
     if (render_service_id !== undefined) { fields.push(`render_service_id = $${idx}`); params.push(render_service_id); idx++; }

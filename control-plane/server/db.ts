@@ -161,6 +161,9 @@ export async function initControlPlaneDb() {
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS cp_secret TEXT DEFAULT ''`); } catch {}
   // Admin password set during provisioning
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS admin_password TEXT DEFAULT ''`); } catch {}
+  // Contact fields
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT DEFAULT ''`); } catch {}
 
   await query(`
     CREATE TABLE IF NOT EXISTS custom_plans (

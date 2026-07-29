@@ -392,14 +392,18 @@
 
   <!-- Edit Client Modal -->
   <div class="modal-overlay" id="edit-modal-overlay">
-    <div class="modal">
+    <div class="modal" style="width:520px">
       <h2>Edit Client</h2>
-      <div class="field"><label>Plan</label><select id="edit-plan"><option value="starter">Starter</option><option value="growth">Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
-      <div class="field"><label>Subscription Expires</label><input type="date" id="edit-expires"></div>
-      <div class="field"><label>Notes</label><textarea id="edit-notes" placeholder="Internal notes about this client..."></textarea></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div class="field"><label>Plan</label><select id="edit-plan"><option value="starter">Starter</option><option value="growth">Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
+        <div class="field"><label>Subscription Expires</label><input type="date" id="edit-expires"></div>
+        <div class="field"><label>Phone</label><input type="text" id="edit-phone" placeholder="+254 7XX XXX XXX"></div>
+        <div class="field"><label>Address</label><input type="text" id="edit-address" placeholder="Nairobi, Kenya"></div>
+      </div>
+      <div class="field"><label>Notes</label><textarea id="edit-notes" placeholder="Internal notes about this client..." rows="2"></textarea></div>
       <div class="field">
         <label>Feature Flags (JSON)</label>
-        <textarea id="edit-features" rows="6" placeholder='{"repairs": true, "whatsapp": false}'></textarea>
+        <textarea id="edit-features" rows="4" placeholder='{"repairs": true, "whatsapp": false}'></textarea>
         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">JSON object of feature toggles. These override the plan defaults for this specific client.</div>
       </div>
       <div class="modal-actions">
@@ -921,6 +925,8 @@
       editingClientId = id;
       document.getElementById("edit-plan").value = c.plan || "growth";
       document.getElementById("edit-expires").value = c.subscription_expires ? c.subscription_expires.split("T")[0] : "";
+      document.getElementById("edit-phone").value = c.phone || "";
+      document.getElementById("edit-address").value = c.address || "";
       document.getElementById("edit-notes").value = c.notes || "";
       document.getElementById("edit-features").value = c.feature_flags && c.feature_flags !== '{}' ? JSON.stringify(typeof c.feature_flags === 'string' ? JSON.parse(c.feature_flags) : c.feature_flags, null, 2) : "";
       document.getElementById("edit-modal-overlay").classList.add("show");
@@ -929,13 +935,15 @@
     async function saveClientEdit() {
       const plan = document.getElementById("edit-plan").value;
       const expires = document.getElementById("edit-expires").value || null;
+      const phone = document.getElementById("edit-phone").value;
+      const address = document.getElementById("edit-address").value;
       const notes = document.getElementById("edit-notes").value;
       let featureFlags = null;
       const raw = document.getElementById("edit-features").value.trim();
       if (raw) { try { featureFlags = JSON.parse(raw); } catch { toast("Invalid JSON in feature flags", "error"); return; } }
 
       try {
-        await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ plan, subscription_expires: expires, notes, feature_flags: featureFlags }) });
+        await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ plan, subscription_expires: expires, phone, address, notes, feature_flags: featureFlags }) });
         toast("Client updated."); hideEditModal(); loadClients();
       } catch (e) { toast("Failed", "error"); }
     }
@@ -1488,6 +1496,17 @@
         <div class="stat-card"><div class="value">${orders}</div><div class="label">Orders</div></div>
         <div class="stat-card"><div class="value" style="color:var(--primary)">${revenue}</div><div class="label">Revenue</div></div>
       `;
+
+      // Contact info
+      let contactHtml = '<div class="detail-panel"><h3>Contact</h3>';
+      contactHtml += `<div style="display:flex;gap:2rem;font-size:0.9rem">`;
+      contactHtml += `<div><span style="color:var(--text-muted)">Email:</span> <strong>${esc(c.admin_email)}</strong></div>`;
+      contactHtml += `<div><span style="color:var(--text-muted)">Phone:</span> <strong>${c.phone ? esc(c.phone) : '—'}</strong></div>`;
+      contactHtml += `<div><span style="color:var(--text-muted)">Address:</span> <strong>${c.address ? esc(c.address) : '—'}</strong></div>`;
+      contactHtml += '</div>';
+      if (c.notes) contactHtml += `<div style="margin-top:0.75rem;font-size:0.85rem;color:var(--text-secondary)"><span style="color:var(--text-muted)">Notes:</span> ${esc(c.notes)}</div>`;
+      contactHtml += '</div>';
+      document.getElementById("detail-subscription").insertAdjacentHTML("beforebegin", contactHtml);
 
       // Subscription info
       let subHtml = '<div class="detail-panel"><h3>Subscription</h3>';
