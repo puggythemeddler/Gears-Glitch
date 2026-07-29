@@ -15,6 +15,32 @@ const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || "";
 const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || "";
 const DOMAIN_BASE = process.env.DOMAIN_BASE || "gearglitch.com";
 const FRONTEND_GIT_REPO = process.env.FRONTEND_GIT_REPO || "puggythemeddler/Gears-Glitch";
+const DEFAULT_GIT_REPO_OWNER = "puggythemeddler";
+
+function parseGitRepo(repo: string): { owner: string; name: string; full: string } {
+  const trimmed = repo.trim();
+  const slash = trimmed.indexOf("/");
+  if (slash <= 0 || slash === trimmed.length - 1) {
+    throw new Error(`FRONTEND_GIT_REPO must be owner/repo (e.g. puggythemeddler/Gears-Glitch), got: ${repo}`);
+  }
+  const owner = trimmed.slice(0, slash);
+  const name = trimmed.slice(slash + 1);
+  return { owner, name, full: `${owner}/${name}` };
+}
+
+const GIT_REPO = parseGitRepo(FRONTEND_GIT_REPO);
+if (GIT_REPO.owner !== DEFAULT_GIT_REPO_OWNER) {
+  console.warn(
+    `[provision] FRONTEND_GIT_REPO owner is "${GIT_REPO.owner}"; expected "${DEFAULT_GIT_REPO_OWNER}" for Vercel git integration`
+  );
+}
+
+function vercelApiUrl(path: string): string {
+  const base = `https://api.vercel.com${path}`;
+  if (!VERCEL_TEAM_ID) return base;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${base}${sep}teamId=${encodeURIComponent(VERCEL_TEAM_ID)}`;
+}
 
 function randomPassword(len = 20) {
   return crypto.randomBytes(len).toString("base64url").slice(0, len);
@@ -122,7 +148,7 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
     body: JSON.stringify({
       type: "web_service",
       name: `${slug}-backend`,
-      repo: `https://github.com/${FRONTEND_GIT_REPO}`,
+      repo: `https://github.com/${GIT_REPO.full}`,
       branch: "main",
       ...(RENDER_OWNER_ID ? { ownerId: RENDER_OWNER_ID } : {}),
       envVars,
@@ -256,15 +282,20 @@ async function deployViaVercelCli(slug: string, projectId: string, backendUrl: s
 
 /** Try a git-based deploy via the Vercel API (only works when the Vercel GitHub app is installed). */
 async function deployViaGitApi(slug: string, projectId: string, repoId: number, vercelProjectName: string): Promise<boolean> {
-  const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
-  const depRes = await fetch(`https://api.vercel.com/v13/deployments${vercelQuery}`, {
+  const depRes = await fetch(vercelApiUrl("/v13/deployments"), {
     method: "POST",
     headers: headers(VERCEL_TOKEN),
     body: JSON.stringify({
       name: `${slug}-frontend`,
       project: projectId,
       target: "production",
-      gitSource: { type: "github", repoId, ref: "main" },
+      gitSource: {
+        type: "github",
+        org: GIT_REPO.owner,
+        repo: GIT_REPO.name,
+        repoId,
+        ref: "main",
+      },
     }),
   });
 
@@ -288,11 +319,11 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   const vercelBody: any = {
     name: vercelProjectName,
     framework: "nextjs",
-    gitRepository: { repo: FRONTEND_GIT_REPO, type: "github" },
+    gitRepository: { repo: GIT_REPO.full, type: "github" },
     rootDirectory: "frontend",
   };
 
-  const res = await fetch("https://api.vercel.com/v10/projects", {
+  const res = await fetch(vercelApiUrl("/v10/projects"), {
     method: "POST",
     headers: headers(VERCEL_TOKEN),
     body: JSON.stringify(vercelBody),
@@ -308,10 +339,9 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   const repoId: number | null = data.gitRepository?.repoId || null;
 
   // Fetch the actual production domain alias (may differ from data.name)
-  const vercelQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
   let projectUrl = `https://${data.name}.vercel.app`;
   try {
-    const domRes = await fetch(`https://api.vercel.com/v9/projects/${projectId}/domains${vercelQuery}`, {
+    const domRes = await fetch(vercelApiUrl(`/v9/projects/${projectId}/domains`), {
       headers: headers(VERCEL_TOKEN),
     });
     if (domRes.ok) {
@@ -324,7 +354,7 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   console.log(`[provision] Vercel project created: ${projectId}${repoId ? ` (repoId: ${repoId})` : " (git not linked)"}`);
 
   // Add BACKEND_URL env var
-  const envRes = await fetch(`https://api.vercel.com/v10/projects/${projectId}/env`, {
+  const envRes = await fetch(vercelApiUrl(`/v10/projects/${projectId}/env`), {
     method: "POST",
     headers: headers(VERCEL_TOKEN),
     body: JSON.stringify({
@@ -360,8 +390,7 @@ async function createVercelProject(clientName: string, backendUrl: string) {
 
 export async function deleteVercelProject(projectId: string) {
   console.log(`[provision] Deleting Vercel project ${projectId}...`);
-  const query = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : "";
-  await fetch(`https://api.vercel.com/v9/projects/${projectId}${query}`, {
+  await fetch(vercelApiUrl(`/v9/projects/${projectId}`), {
     method: "DELETE",
     headers: headers(VERCEL_TOKEN),
   });

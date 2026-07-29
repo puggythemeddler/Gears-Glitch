@@ -1,0 +1,15 @@
+#!/bin/sh
+# Ensure commits stay attributed to the repo owner (required for Vercel git deploys).
+EXPECTED_NAME="puggythemeddler"
+EXPECTED_EMAIL="puggythemeddler@users.noreply.github.com"
+
+name="$(git config user.name 2>/dev/null || true)"
+email="$(git config user.email 2>/dev/null || true)"
+
+if [ "$name" != "$EXPECTED_NAME" ] || [ "$email" != "$EXPECTED_EMAIL" ]; then
+  echo "Git author must be $EXPECTED_NAME <$EXPECTED_EMAIL> (repo owner)."
+  echo "Current: ${name:-unset} <${email:-unset}>"
+  echo "Run: git config user.name \"$EXPECTED_NAME\""
+  echo "     git config user.email \"$EXPECTED_EMAIL\""
+  exit 1
+fi
