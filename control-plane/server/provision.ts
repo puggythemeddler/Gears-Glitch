@@ -191,6 +191,7 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   const vercelBody: any = {
     name: `${slug}-frontend`,
     framework: "nextjs",
+    gitRepository: { repo: FRONTEND_GIT_REPO, type: "github" },
     rootDirectory: "frontend",
   };
 
@@ -223,15 +224,11 @@ async function createVercelProject(clientName: string, backendUrl: string) {
 
   console.log(`[provision] Vercel project created: ${projectId}`);
 
-  // Trigger an initial deploy with explicit git source
+  // Trigger an initial deploy
   const depRes = await fetch(`https://api.vercel.com/v13/deployments`, {
     method: "POST",
     headers: headers(VERCEL_TOKEN),
-    body: JSON.stringify({
-      project: projectId,
-      target: "production",
-      gitSource: { type: "github", repo: FRONTEND_GIT_REPO, ref: "main" },
-    }),
+    body: JSON.stringify({ project: projectId, target: "production" }),
   });
   if (depRes.ok) {
     const depData: any = await depRes.json();
@@ -239,6 +236,7 @@ async function createVercelProject(clientName: string, backendUrl: string) {
   } else {
     const depErr = await depRes.text().catch(() => "");
     console.warn(`[provision] Vercel deploy trigger failed: ${depRes.status} ${depErr}`);
+    console.log(`[provision] Connect repo manually at https://vercel.com/${data.name}/~/git`);
   }
 
   return { projectId, projectUrl };
