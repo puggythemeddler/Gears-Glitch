@@ -1065,8 +1065,6 @@ async function ensureDefaultCategories(): Promise<void> {
 }
 
 async function ensureAdminUser(): Promise<void> {
-  const row = await queryOne("SELECT COUNT(*) AS count FROM users") as { count: number } | undefined;
-  if (row && Number(row.count) > 0) return;
   const username = process.env.ADMIN_USERNAME || "admin";
   const email = process.env.ADMIN_EMAIL || "admin@gearandglitch.com";
   let password = process.env.ADMIN_PASSWORD || "";
@@ -1076,7 +1074,12 @@ async function ensureAdminUser(): Promise<void> {
     console.warn(`[auth] ADMIN_PASSWORD not set — generated temporary dev password: ${password}`);
   }
   const passwordHash = await bcrypt.hash(password, 10);
-  await query("INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'admin')", [username, email, passwordHash]);
+  const existing = await queryOne("SELECT id FROM users WHERE username = $1", [username]) as any;
+  if (existing) {
+    await query("UPDATE users SET password_hash = $1, email = $2 WHERE id = $3", [passwordHash, email, existing.id]);
+  } else {
+    await query("INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'admin')", [username, email, passwordHash]);
+  }
 }
 
 async function ensureTechnicianUser(): Promise<void> {
