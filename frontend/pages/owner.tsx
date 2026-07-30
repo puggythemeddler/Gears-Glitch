@@ -25,7 +25,7 @@ function formatPrice(amount: number) {
 
 function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 
-type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "credit-notes" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "about-us" | "quotes" | "product-positioning";
+type OwnerView = "dashboard" | "orders" | "products" | "providers" | "customers" | "messages" | "reports" | "invoices" | "credit-notes" | "stock-control" | "stock-take" | "tech-repairs" | "branches" | "audit" | "shop-subscription" | "storefront" | "about-us" | "quotes" | "product-positioning" | "whatsapp-settings";
 
 const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string; feature?: string }[] }[] = [
   {
@@ -69,6 +69,7 @@ const NAV_GROUPS: { label: string; items: { key: OwnerView; label: string; featu
       { key: "about-us", label: "About Us" },
       { key: "shop-subscription", label: "Subscription" },
       { key: "audit", label: "Audit Log", feature: "Audit log" },
+      { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
     ],
   },
 ];
@@ -199,6 +200,7 @@ export default function OwnerPage() {
             {view === "about-us" && <OwnerAboutUs />}
             {view === "storefront" && <OwnerStorefront staffRole={staffRole} />}
             {view === "audit" && <OwnerAuditLog />}
+            {view === "whatsapp-settings" && <WhatsAppSettings />}
           </div>
       </div>
     </div>

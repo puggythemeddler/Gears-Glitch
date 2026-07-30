@@ -248,7 +248,7 @@ export async function initControlPlaneDb() {
       id SERIAL PRIMARY KEY,
       host TEXT DEFAULT '',
       port INTEGER DEFAULT 587,
-      user TEXT DEFAULT '',
+      "user" TEXT DEFAULT '',
       pass TEXT DEFAULT '',
       from_email TEXT DEFAULT 'noreply@gearglitch.com',
       from_name TEXT DEFAULT 'Gear&Glitch',

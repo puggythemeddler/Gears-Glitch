@@ -180,6 +180,29 @@ Three layers, cleanly separated:
 
 **Security middleware** applied globally: Helmet (CSP disabled), CORS (configurable via `CORS_ORIGIN`), rate limiting (200 req/15min global, 10 req/15min on auth endpoints). The Next.js dev server proxies `/api/*` and `/uploads/*` to the Express backend automatically.
 
+## Control Plane
+
+A separate operator dashboard at `control-plane/` serves as the central admin hub for managing all Gear&Glitch client instances. It runs as an independent Express server (port 4000) with its own PostgreSQL database.
+
+**Features:**
+- **Client lifecycle management** — Provision, suspend, resume, and delete client deployments (Neon DB + Render backend + Vercel frontend)
+- **Health monitoring** — 5-minute auto-health-check loop pings each client's `/api/health`, tracks uptime %, alerts on down transitions via Slack
+- **Plan management** — Create/edit custom subscription plans, sync to all clients, approve/reject upgrade requests
+- **Subscription invoicing** — Generate, pay, view (HTML/PDF), and email invoices per client
+- **Changelog publishing** — Push version updates with email notifications to all active clients
+- **Database backups** — Run `pg_dump` for all clients, download `.sql.gz` files from the UI
+- **Cloudinary management** — Pull config from any live client, push to all clients, store in DB
+- **SMTP configuration** — Store and test SMTP settings via the UI (DB-backed with env var fallback)
+- **Slack alerting** — Down-client and over-usage alerts sent to a Slack webhook
+- **Usage enforcement** — Periodic check comparing order counts against plan limits, Slack alert when exceeded
+- **Audit log** — All admin actions recorded (create/delete/suspend/resume/redeploy/push-secret/backup/cloudinary/smtp/changelog)
+- **TOTP 2FA** — Time-based one-time password protection for admin accounts, API keys bypass 2FA
+- **Per-user accounts** — Role-based (admin/viewer) with unique API keys
+- **Single-client redeploy** — Trigger a Render deploy for an individual client from the UI
+- **Client contact fields** — Phone and address fields on client records
+
+See `control-plane/README.md` for full documentation.
+
 ---
 
 ## Quick Start

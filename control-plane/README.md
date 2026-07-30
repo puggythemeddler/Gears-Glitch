@@ -1,6 +1,6 @@
 # Gear&Glitch Control Plane
 
-Central dashboard for managing all Gear&Glitch client instances. Provision new clients, monitor health, manage subscriptions, deploy updates, and handle invoicing — all from one place.
+Central dashboard for managing all Gear&Glitch client instances. Provision new clients, monitor health, manage subscriptions, deploy updates, handle invoicing, configure SMTP/Cloudinary, receive Slack alerts on down clients, enforce usage limits, track admin actions in an audit log, and download database backups — all from one place.
 
 ## Quick Start
 
@@ -37,6 +37,7 @@ npm run dev             # http://localhost:4000
 | `SMTP_USER` | No | SMTP username |
 | `SMTP_PASS` | No | SMTP password |
 | `FROM_EMAIL` | No | Sender email address |
+| `SLACK_WEBHOOK_URL` | No | Slack webhook URL for down-client and over-usage alerts |
 
 ## Deploy to Render
 
@@ -54,16 +55,18 @@ npm run dev             # http://localhost:4000
 
 ### Clients
 - **Stats**: Total clients, active count, total revenue, total orders
-- **Client table**: Name, domain, plan, subscription status (color-coded), health, uptime %, orders, revenue
+- **Client table**: Name, domain, plan, subscription status (color-coded), health, uptime %, orders, revenue, contact fields (phone, address)
 - **Subscription column**:
   - Green = active, OK
   - Yellow = expiring within 30 days (shows days left)
   - Red = expired (shows days since expiry)
   - Gray = no plan/expiry set
+  - **OVER LIMIT** badge — shown when client usage exceeds plan max products
 - **Actions per client**:
   - **Details** — opens full client panel with invoices
   - **Backend/Frontend** — links to client's live URLs
-  - **Edit** — change plan, expiry, notes, feature flags
+  - **Edit** — change plan, expiry, notes, feature flags, phone, address
+  - **Redeploy** — trigger a Render deploy for this client individually
   - **Suspend/Resume** — pause or unpause the client's Render service
   - **Delete** — removes DB + all cloud resources
 
@@ -94,6 +97,16 @@ Click **Details** on any client to see:
 ### Backups
 - Run `pg_dump` backups for all active client databases
 - Backups stored locally with 7-day auto-cleanup
+- **Download** — download any `.sql.gz` backup file directly from the UI
+
+### Settings
+- **SMTP Configuration** — configure SMTP host, port, user, password, and sender email via the UI. Settings stored in the database with env var fallback. Test the configuration by sending a test email.
+- **Cloudinary** — view stored Cloudinary credentials, update cloud name, API key, and API secret directly from the UI without needing a live client.
+
+### Audit Log
+- Record of all admin actions: create/delete/suspend/resume/redeploy/push-secret/deploy-all/cloudinary/smtp/backup/changelog
+- Filterable table showing action type, user, timestamp, target entity, and details
+- Accessible from the **Audit Log** tab in the dashboard
 
 ## Two-Factor Authentication (2FA)
 
@@ -137,6 +150,8 @@ Every client backend carries a `CONTROL_PLANE_SECRET` env var (auto-generated du
 - Subscription invoices, upgrade requests, branches, subscription status
 - Usage stats via `GET /api/health` (business stats are only disclosed to the control plane)
 - App-level suspend/resume (`POST /api/control-plane/suspend|resume` on the client)
+- Redeploy trigger (`POST /api/control-plane/redeploy`)
+- Backup (`GET /api/control-plane/trigger-backup`)
 
 Clients without the secret configured reject all control-plane management calls. Suspend does both: sets the app-level suspended flag (storefront returns 403) and pauses the Render service.
 
@@ -178,6 +193,7 @@ All endpoints require authentication via one of:
 ### Client Operations
 | Method | Endpoint | Description |
 |---|---|---|
+| POST | `/api/clients/:id/redeploy` | Redeploy a single client's Render service |
 | POST | `/api/clients/:id/sync-plans` | Push plans to one client |
 | GET | `/api/clients/:id/upgrade-requests` | Get upgrade requests from client |
 | PUT | `/api/clients/:id/upgrade-requests/:reqId` | Approve/reject upgrade request |
@@ -205,11 +221,21 @@ All endpoints require authentication via one of:
 | POST | `/api/sync-cloudinary` | Push stored Cloudinary credentials to all clients |
 | POST | `/api/pull-cloudinary/:id` | Pull Cloudinary config from a live client |
 | GET | `/api/cloudinary` | Get stored Cloudinary config status |
+| POST | `/api/cloudinary` | Set/update Cloudinary credentials in DB |
 | POST | `/api/backups/run` | Run database backups |
 | GET | `/api/backups` | List backup files |
+| GET | `/api/backups/download/:filename` | Download a backup `.sql.gz` file |
 | POST | `/api/changelog` | Publish changelog + notify clients |
 | GET | `/api/changelog` | List changelog entries |
 | GET | `/api/deploys` | List deploy history |
+| GET | `/api/audit` | List audit log entries (last 200) |
+
+### SMTP Configuration
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/smtp` | Get SMTP config status (masked password) |
+| POST | `/api/smtp` | Set/update SMTP configuration |
+| POST | `/api/smtp/test` | Send a test email to verify configuration |
 
 ## GitHub Actions Auto-Deploy
 
@@ -231,6 +257,8 @@ The control plane checks all active clients every 5 minutes:
 - Tracks uptime % (rolling average)
 - Fetches usage stats (orders, customers, revenue)
 - Stores results in the `health_log` table
+- Sends Slack alerts when a client transitions from `healthy` → `down` or `down` → `healthy` (requires `SLACK_WEBHOOK_URL`)
+- Enforces usage limits by comparing order counts against plan `max_products` — shows **OVER LIMIT** badge and sends a Slack alert when exceeded
 
 ## Database Schema
 
@@ -238,14 +266,16 @@ The control plane uses its own PostgreSQL database (not shared with clients):
 
 | Table | Purpose |
 |---|---|
-| `clients` | All client instances with URLs, plans, health, usage, per-client `cp_secret` |
+| `clients` | All client instances with URLs, plans, health, usage, per-client `cp_secret`, phone, address |
 | `health_log` | Health check history per client |
 | `changelog` | Published updates |
 | `deploy_log` | Deployment history |
 | `custom_plans` | Plans created from the control plane |
 | `upgrade_requests` | Client upgrade requests (pending review) |
 | `cp_users` | Control plane user accounts (username, role, API key, TOTP 2FA) |
-| `cloudinary_config` | Shared Cloudinary credentials (pulled from a client) |
+| `cloudinary_config` | Shared Cloudinary credentials (pulled from a client or set manually) |
+| `smtp_config` | SMTP email configuration (host, port, user, pass, from email) |
+| `audit_log` | Audit trail of all admin actions (action type, user, target, details, timestamp) |
 
 ## Architecture
 

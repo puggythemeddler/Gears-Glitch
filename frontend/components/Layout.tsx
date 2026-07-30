@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useApp } from "@/lib/app-context";
 import { useLayout, LayoutHeader, LayoutFooter } from "@/layouts";
-import { getStaffToken, getCustomerToken, getProviderToken } from "@/lib/api";
-import NotificationBell from "./NotificationBell";
+import { getStaffToken } from "@/lib/api";
+
 import CurrencySelector from "./CurrencySelector";
 import MarqueeBanner from "./MarqueeBanner";
 import { useFeature } from "@/lib/features";
@@ -34,7 +34,6 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [springboardOpen, setSpringboardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { configLoading, layout } = useLayout();
-  const messagingEnabled = useFeature("Messaging");
   const repairsEnabled = useFeature("Repair ticketing");
   const multiCurrencyEnabled = useFeature("Multi-currency support");
   const springboardMenu = settings?.springboardMenu ?? false;
@@ -150,11 +149,6 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           )}
         </div>
         <div className="header-right">
-          {(getCustomerToken() || getProviderToken() || isStaff) && messagingEnabled && (
-            <NotificationBell onClick={() => {
-              window.location.href = isStaff ? "/owner" : "/dashboard";
-            }} />
-          )}
           <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) window.location.href = `/?search=${encodeURIComponent(q)}`; }}>
             <input name="q" type="search" placeholder="Search..." aria-label="Search products" />
             <button type="submit" aria-label="Search">🔍</button>

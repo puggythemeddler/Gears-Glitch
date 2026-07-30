@@ -99,8 +99,6 @@ const FEATURES = [
   { icon: "⚙", name: "Organized Settings", desc: "Dedicated Settings tab with 5 focused pages — Store Info, Payments (M-Pesa, methods, exchange rates), Compliance (eTIMS/KRA, Google Sign-In), Content (banners, image storage), and System (backup). Each page handles its own configuration." },
   { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders — all with your store logo prominently displayed. Separate Print and Save PDF buttons for instant downloads with branded templates." },
   { icon: "🔒", name: "Feature-Gated Plans", desc: "Subscription plans with grouped feature toggles (11 categories). Disable a feature and it disappears from every panel — admin, owner, backoffice, dashboard, and storefront. Pay only for what you use." },
-  { icon: "🎛", name: "Multi-Tenant Control Plane", desc: "Provision, monitor, suspend, resume, and decommission client deployments from a single operator dashboard. Per-tenant shared secrets authenticate every control-plane → client call (timing-safe). Push or rotate secrets with one click. App-level kill switch suspends a storefront (403) even while infra stays up — perfect for non-paying tenants." },
-  { icon: "🛡", name: "TOTP 2FA on Control Plane", desc: "Admin access to the multi-tenant control plane is protected by Time-based One-Time Password two-factor authentication, in addition to username + password. Two-step login, QR setup, and per-user enable/disable. Programmatic API-key access bypasses 2FA so automation keeps running." },
   { icon: "🖥", name: "Full-Width Storefront", desc: "Layouts span edge-to-edge across the screen with no side gutters on wide displays — modern, full-bleed look. Hero, header, footer, and product grids all stretch to fill the viewport. Inner text columns retain max-widths for readability." },
 ];
 
@@ -590,7 +588,7 @@ function MarketingContent() {
         id="features"
         label="Features"
         title="Everything You Need to Succeed"
-        subtitle="Twenty-six powerful modules that work together to run every part of your electronics business."
+        subtitle="Thirty-one powerful modules that work together to run every part of your electronics business."
       >
         <StaggerContainer className="mk-features-grid">
           {FEATURES.map((f, i) => (
