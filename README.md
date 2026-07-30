@@ -52,6 +52,10 @@ A complete multi-branch sales & management system with product catalog, customer
 - JWT auth, query-string tokens rejected, default staff role falls back to `technician` (not `admin`)
 - Feature-gated subscription plans (Starter, Growth, Pro, Enterprise) with 48+ feature flags; sidebar items, nav links, and currency selector respect feature flags
 
+### Analytics
+- Visitor analytics with page view tracking, session tracking, top pages/referrers, device breakdown, and daily visitor trend charts — gated behind Growth+ subscription plans
+- Sales reports, employee sales, technician performance, purchases, and stock summary reports with date range filtering, per-branch breakdown, SVG trend charts, and Excel/PDF export
+
 ### Communication
 - WhatsApp Business API integration (bidirectional messaging via Meta Cloud API, 24h window tracking, HMAC-SHA256 webhook verification, Kenyan phone normalization, full conversation logs)
 - Built-in messaging between customers, providers, and staff with real-time notifications and admin messaging panel

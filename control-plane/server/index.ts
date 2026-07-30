@@ -1488,6 +1488,35 @@ app.get("/api/clients/:id/subscription", requireAuth, async (req, res) => {
   }
 });
 
+// Get/set feature overrides for a client
+app.get("/api/clients/:id/features", requireAuth, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.json({ overrides: {} }); return; }
+    const r = await fetch(`${client.render_service_url}/api/admin/features/overrides`, { headers: cpHeaders(client.cp_secret) });
+    if (!r.ok) { res.json({ overrides: {} }); return; }
+    res.json(await r.json());
+  } catch { res.status(500).json({ error: "Failed to get feature overrides" }); }
+});
+
+app.post("/api/clients/:id/features", requireAuth, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+    const r = await fetch(`${client.render_service_url}/api/admin/features/overrides`, {
+      method: "POST",
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ overrides: req.body.overrides || {} }),
+    });
+    if (!r.ok) { res.status(r.status).json({ error: "Failed to set overrides" }); return; }
+    // Also store in control-plane local DB for reference
+    await query("UPDATE clients SET feature_flags = $1 WHERE id = $2", [JSON.stringify(req.body.overrides || {}), client.id]);
+    res.json(await r.json());
+  } catch { res.status(500).json({ error: "Failed to set feature overrides" }); }
+});
+
 // ─── CLIENT BRANCHES ─────────────────────────────────────
 // Get branches from a client
 app.get("/api/clients/:id/branches", requireAuth, async (req, res) => {

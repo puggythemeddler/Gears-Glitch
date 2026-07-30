@@ -1,6 +1,6 @@
 # Gear&Glitch Control Plane
 
-Central dashboard for managing all Gear&Glitch client instances. Provision new clients, monitor health, manage subscriptions, deploy updates, handle invoicing, configure SMTP/Cloudinary, receive Slack alerts on down clients, enforce usage limits, track admin actions in an audit log, and download database backups — all from one place.
+Central dashboard for managing all Gear&Glitch client instances. Provision new clients, monitor health, manage subscriptions, deploy updates, handle invoicing, configure SMTP/Cloudinary, toggle per-client features (including Visitor analytics), receive Slack alerts on down clients, enforce usage limits, track admin actions in an audit log, and download database backups — all from one place.
 
 ## Quick Start
 

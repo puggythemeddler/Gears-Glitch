@@ -4724,7 +4724,30 @@ app.put("/api/shop/subscription/requests/:id", allowControlPlane(adminAuthMiddle
 
 app.get("/api/shop/features", asyncHandler(async (_req: Request, res: Response) => {
   const plan = await getShopPlan();
-  res.json({ features: plan?.features || [] });
+  const baseFeatures: string[] = plan?.features || [];
+  const overridesRaw = await getStoreSetting("featureOverrides");
+  let overrides: Record<string, boolean> = {};
+  try { if (overridesRaw) overrides = JSON.parse(overridesRaw); } catch {}
+  const merged = overrides ? baseFeatures.filter(f => overrides[f] !== false) : baseFeatures;
+  for (const [key, val] of Object.entries(overrides)) {
+    if (val === true && !merged.includes(key)) merged.push(key);
+  }
+  res.json({ features: merged });
+}));
+
+// Set feature overrides (control-plane only)
+app.post("/api/admin/features/overrides", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
+  const { overrides } = req.body || {};
+  if (!overrides || typeof overrides !== "object") { res.status(400).json({ error: "overrides object required" }); return; }
+  await setStoreSetting("featureOverrides", JSON.stringify(overrides));
+  res.json({ ok: true });
+}));
+
+app.get("/api/admin/features/overrides", allowControlPlane(adminAuthMiddleware), asyncHandler(async (_req: Request, res: Response) => {
+  const raw = await getStoreSetting("featureOverrides");
+  let overrides: Record<string, boolean> = {};
+  try { if (raw) overrides = JSON.parse(raw); } catch {}
+  res.json({ overrides });
 }));
 
 app.get("/api/audit-log", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {

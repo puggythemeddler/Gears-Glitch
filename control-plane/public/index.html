@@ -413,7 +413,8 @@
       <div class="field"><label>Notes</label><textarea id="edit-notes" placeholder="Internal notes about this client..." rows="2"></textarea></div>
       <div class="field">
         <label>Feature Flags (JSON)</label>
-        <textarea id="edit-features" rows="4" placeholder='{"repairs": true, "whatsapp": false}'></textarea>
+        <textarea id="edit-features" rows="4" placeholder='{"Visitor analytics": true}'></textarea>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">Override plan features per client. Set <code>true</code> to enable or <code>false</code> to disable a feature. Available: Visitor analytics, WhatsApp integration, Repair ticketing, Multi-currency support, etc.</p>
         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">JSON object of feature toggles. These override the plan defaults for this specific client.</div>
       </div>
       <div class="modal-actions">
@@ -954,6 +955,10 @@
 
       try {
         await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ plan, subscription_expires: expires, phone, address, notes, feature_flags: featureFlags }) });
+        // Push feature overrides to the client backend
+        if (featureFlags) {
+          await api("/api/clients/" + editingClientId + "/features", { method: "POST", body: JSON.stringify({ overrides: featureFlags }) }).catch(() => {});
+        }
         toast("Client updated."); hideEditModal(); loadClients();
       } catch (e) { toast("Failed", "error"); }
     }
