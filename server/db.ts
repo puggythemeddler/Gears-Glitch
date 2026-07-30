@@ -938,6 +938,32 @@ async function runMigrations(): Promise<void> {
     await query(`CREATE INDEX IF NOT EXISTS idx_wa_logs_phone ON whatsapp_logs(phone_number)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_wa_logs_status ON whatsapp_logs(status)`);
   } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS whatsapp_media (
+      id SERIAL PRIMARY KEY,
+      wa_message_id TEXT NOT NULL,
+      phone_number TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+      media_data TEXT NOT NULL,
+      filename TEXT DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_wa_media_msg ON whatsapp_media(wa_message_id)`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS whatsapp_templates (
+      id SERIAL PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      language TEXT NOT NULL DEFAULT 'en',
+      category TEXT NOT NULL DEFAULT 'UTILITY',
+      body_text TEXT NOT NULL,
+      header_type TEXT DEFAULT 'none',
+      header_text TEXT DEFAULT '',
+      footer_text TEXT DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (NOW()::text),
+      updated_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+  } catch {}
 
   // Soft-delete support for purchase_orders
   try {
@@ -3243,6 +3269,38 @@ async function findProviderByPhone(phone: string): Promise<any | null> {
   return await queryOne("SELECT id, company_name, contact_name, phone FROM providers WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE $1", [`%${digits.slice(-9)}%`]) || null;
 }
 
+async function storeWhatsAppMedia(waMessageId: string, phoneNumber: string, mimeType: string, mediaData: string, filename: string): Promise<void> {
+  await query("INSERT INTO whatsapp_media (wa_message_id, phone_number, mime_type, media_data, filename) VALUES ($1, $2, $3, $4, $5)", [waMessageId, phoneNumber, mimeType, mediaData, filename]);
+}
+
+async function getWhatsAppMedia(waMessageId: string): Promise<any | null> {
+  return await queryOne("SELECT * FROM whatsapp_media WHERE wa_message_id = $1 ORDER BY id DESC LIMIT 1", [waMessageId]) || null;
+}
+
+async function getWhatsAppMediaById(id: number): Promise<any | null> {
+  return await queryOne("SELECT * FROM whatsapp_media WHERE id = $1", [id]) || null;
+}
+
+async function createWhatsAppTemplate(name: string, bodyText: string, language: string, category: string, headerType: string, headerText: string, footerText: string): Promise<any> {
+  const row = await queryOne(
+    "INSERT INTO whatsapp_templates (name, language, category, body_text, header_type, header_text, footer_text) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+    [name, language, category, bodyText, headerType, headerText, footerText]
+  );
+  return row;
+}
+
+async function listWhatsAppTemplates(): Promise<any[]> {
+  return await queryAll("SELECT * FROM whatsapp_templates ORDER BY name ASC");
+}
+
+async function getWhatsAppTemplateByName(name: string): Promise<any | null> {
+  return await queryOne("SELECT * FROM whatsapp_templates WHERE name = $1", [name]) || null;
+}
+
+async function deleteWhatsAppTemplate(id: number): Promise<void> {
+  await query("DELETE FROM whatsapp_templates WHERE id = $1", [id]);
+}
+
 async function listEmailLogs(limit: number = 50): Promise<any[]> {
   return await queryAll("SELECT id, to_email, from_email, subject, type, status, error_message, created_at FROM email_logs ORDER BY created_at DESC LIMIT $1", [limit]);
 }
@@ -3305,6 +3363,8 @@ export {
   listActiveSplashes, listAllSplashes, getSplash, createSplash, updateSplash, deleteSplash,
   updateProductSortOrder, updateCategorySortOrder, logEmail, listEmailLogs,
   upsertWhatsAppConversation, getWhatsAppConversationByPhone, getWhatsAppConversations, logWhatsAppMessage, listWhatsAppLogs, getWhatsAppStats, findCustomerByPhone, findProviderByPhone,
+  storeWhatsAppMedia, getWhatsAppMedia, getWhatsAppMediaById,
+  createWhatsAppTemplate, listWhatsAppTemplates, getWhatsAppTemplateByName, deleteWhatsAppTemplate,
   getDb,
   storeImage, getImage, deleteImageByRef,
   getUserTotp, setUserTotp,

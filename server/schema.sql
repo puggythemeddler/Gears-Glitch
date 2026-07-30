@@ -711,3 +711,27 @@ CREATE TABLE IF NOT EXISTS whatsapp_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_wa_logs_phone ON whatsapp_logs(phone_number);
 CREATE INDEX IF NOT EXISTS idx_wa_logs_status ON whatsapp_logs(status);
+
+CREATE TABLE IF NOT EXISTS whatsapp_media (
+  id SERIAL PRIMARY KEY,
+  wa_message_id TEXT NOT NULL,
+  phone_number TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+  media_data TEXT NOT NULL,
+  filename TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_wa_media_msg ON whatsapp_media(wa_message_id);
+
+CREATE TABLE IF NOT EXISTS whatsapp_templates (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  language TEXT NOT NULL DEFAULT 'en',
+  category TEXT NOT NULL DEFAULT 'UTILITY',
+  body_text TEXT NOT NULL,
+  header_type TEXT DEFAULT 'none',
+  header_text TEXT DEFAULT '',
+  footer_text TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (NOW()::text),
+  updated_at TEXT NOT NULL DEFAULT (NOW()::text)
+);

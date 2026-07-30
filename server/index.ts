@@ -311,7 +311,8 @@ import {
 } from "./repairs";
 import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail } from "./email";
-import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection } from "./whatsapp";
+import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage } from "./whatsapp";
+import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate } from "./db";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
@@ -5160,6 +5161,57 @@ app.get("/api/admin/whatsapp/logs", adminAuthMiddleware, asyncHandler(async (req
 app.get("/api/admin/whatsapp/stats", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   const stats = await getWhatsAppStats();
   res.json(stats);
+}));
+
+// Serve stored WhatsApp media (public for displaying in admin)
+app.get("/api/whatsapp/media/:id", asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid media ID" });
+  const media = await getWhatsAppMediaById(id);
+  if (!media) return res.status(404).json({ error: "Media not found" });
+  const buf = Buffer.from(media.media_data, "base64");
+  res.set("Content-Type", media.mime_type || "image/jpeg");
+  res.set("Content-Length", String(buf.length));
+  if (media.filename) res.set("Content-Disposition", `inline; filename="${media.filename}"`);
+  res.send(buf);
+}));
+
+// WhatsApp Template CRUD
+app.get("/api/admin/whatsapp/templates", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  const templates = await listWhatsAppTemplates();
+  res.json({ templates });
+}));
+
+app.post("/api/admin/whatsapp/templates", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { name, bodyText, language, category, headerType, headerText, footerText } = req.body || {};
+  if (!name || !bodyText) return res.status(400).json({ error: "Name and bodyText are required" });
+  try {
+    const template = await createWhatsAppTemplate(name, bodyText, language || "en", category || "UTILITY", headerType || "none", headerText || "", footerText || "");
+    res.json({ ok: true, template });
+  } catch (err: any) {
+    if (err?.code === "23505") return res.status(409).json({ error: "Template name already exists" });
+    res.status(500).json({ error: err?.message || "Failed to create template" });
+  }
+}));
+
+app.delete("/api/admin/whatsapp/templates/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid template ID" });
+  await deleteWhatsAppTemplate(id);
+  res.json({ ok: true });
+}));
+
+// Send interactive WhatsApp message
+app.post("/api/admin/whatsapp/send-interactive", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { to, type, bodyText, buttons, buttonText, sections } = req.body || {};
+  if (!to) return res.status(400).json({ error: "Recipient phone is required" });
+  let result;
+  if (type === "list") {
+    result = await sendWhatsAppListMessage(to, bodyText || "", buttonText || "Options", sections || []);
+  } else {
+    result = await sendWhatsAppInteractiveButtons(to, bodyText || "", buttons || []);
+  }
+  res.json(result);
 }));
 
 // Global error handler
