@@ -64,12 +64,12 @@ export async function setSmtpConfig(host: string, port: number, user: string, pa
   const existing = await queryOne("SELECT id FROM smtp_config LIMIT 1");
   if (existing) {
     await query(
-      "UPDATE smtp_config SET host = $1, port = $2, user = $3, pass = $4, from_email = $5, from_name = $6, updated_at = NOW() WHERE id = $7",
+      'UPDATE smtp_config SET host = $1, port = $2, "user" = $3, pass = $4, from_email = $5, from_name = $6, updated_at = NOW() WHERE id = $7',
       [host, port, user, pass, fromEmail, fromName, existing.id]
     );
   } else {
     await query(
-      "INSERT INTO smtp_config (host, port, user, pass, from_email, from_name) VALUES ($1, $2, $3, $4, $5, $6)",
+      'INSERT INTO smtp_config (host, port, "user", pass, from_email, from_name) VALUES ($1, $2, $3, $4, $5, $6)',
       [host, port, user, pass, fromEmail, fromName]
     );
   }
