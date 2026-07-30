@@ -325,7 +325,10 @@
       <div id="detail-subscription" style="margin-bottom:1.5rem"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Invoices</h2>
-        <button class="btn btn-primary btn-sm" onclick="generateClientInvoice()">+ Generate Invoice</button>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-primary btn-sm" onclick="generateClientInvoice()">+ Generate Invoice</button>
+          <button class="btn btn-success btn-sm" onclick="recordClientPayment()">+ Record Payment</button>
+        </div>
       </div>
       <div id="detail-invoices"></div>
       <div id="detail-branches" style="margin-top:1.5rem"></div>
@@ -1619,6 +1622,22 @@
         const data = await api("/api/clients/" + currentDetailClientId + "/invoices/generate", { method: "POST" });
         if (data.error) { toast(data.error, "error"); return; }
         toast("Invoice generated!"); loadClientInvoices(currentDetailClientId);
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    async function recordClientPayment() {
+      if (!currentDetailClientId) return;
+      const period = confirm("Record a Monthly payment?\n\n• OK = Monthly (30 days)\n• Cancel = Annual (365 days)");
+      const periodType = period ? "monthly" : "annual";
+      toast("Recording " + periodType + " payment...");
+      try {
+        const data = await api("/api/clients/" + currentDetailClientId + "/invoices/record-payment", {
+          method: "POST",
+          body: JSON.stringify({ periodType }),
+        });
+        if (data.error) { toast(data.error, "error"); return; }
+        toast(periodType.charAt(0).toUpperCase() + periodType.slice(1) + " payment recorded! Subscription extended to " + new Date(data.expiry).toLocaleDateString());
+        loadClientInvoices(currentDetailClientId);
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 

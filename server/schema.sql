@@ -735,3 +735,17 @@ CREATE TABLE IF NOT EXISTS whatsapp_templates (
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
+
+CREATE TABLE IF NOT EXISTS page_views (
+  id SERIAL PRIMARY KEY,
+  branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+  path TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  referrer TEXT DEFAULT '',
+  user_agent TEXT DEFAULT '',
+  device_type TEXT DEFAULT 'desktop',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_page_views_created ON page_views(created_at);
+CREATE INDEX IF NOT EXISTS idx_page_views_session ON page_views(session_id);
+CREATE INDEX IF NOT EXISTS idx_page_views_branch ON page_views(branch_id);

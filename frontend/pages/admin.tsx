@@ -144,6 +144,7 @@ export default function AdminPage() {
     "Client/tenant management": useFeature("Client/tenant management"),
     "eTIMS/KRA compliance": useFeature("eTIMS/KRA compliance"),
     "POS integration": useFeature("POS integration"),
+    "Visitor analytics": useFeature("Visitor analytics"),
   };
   const hasFeature = (f?: string) => !f || featureFlags[f] === true;
   const visibleNavGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => hasFeature(i.feature)) })).filter((g) => g.items.length > 0);
@@ -3670,7 +3671,8 @@ function AdminQuotations() {
 
 // ===================== REPORTS =====================
 function AdminReports() {
-  const [tab, setTab] = useState<"sales" | "employee-sales" | "tech-performance" | "purchases" | "stock">("sales");
+  const hasVisitorAnalytics = useFeature("Visitor analytics");
+  const [tab, setTab] = useState<"sales" | "employee-sales" | "tech-performance" | "purchases" | "stock" | "visitors">("sales");
 
   return (
     <>
@@ -3680,12 +3682,14 @@ function AdminReports() {
         <RippleButton size="small" variant={tab === "tech-performance" ? "primary" : "ghost"} onClick={() => setTab("tech-performance")}>Technician Performance</RippleButton>
         <RippleButton size="small" variant={tab === "purchases" ? "primary" : "ghost"} onClick={() => setTab("purchases")}>Purchases</RippleButton>
         <RippleButton size="small" variant={tab === "stock" ? "primary" : "ghost"} onClick={() => setTab("stock")}>Stock Summary</RippleButton>
+        {hasVisitorAnalytics && <RippleButton size="small" variant={tab === "visitors" ? "primary" : "ghost"} onClick={() => setTab("visitors")}>Visitors</RippleButton>}
       </div>
       {tab === "sales" && <AdminSalesReport />}
       {tab === "employee-sales" && <AdminEmployeeSales />}
       {tab === "tech-performance" && <AdminTechPerformance />}
       {tab === "purchases" && <AdminPurchasesReport />}
       {tab === "stock" && <AdminStockSummary />}
+      {tab === "visitors" && <AdminVisitorsReport />}
     </>
   );
 }
@@ -3939,6 +3943,132 @@ function SalesTrendsChart({ from, to, branchId }: { from: string; to: string; br
                 <title>{t.day}: {formatPrice(t.revenue)} ({t.orders} orders)</title>
               </rect>
               {trends.length <= 14 && <text x={x + barWidth / 2} y={chartH - 2} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">{t.day.slice(5)}</text>}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function AdminVisitorsReport() {
+  const today = new Date().toISOString().slice(0, 10);
+  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  const [to, setTo] = useState(today);
+  const [branchId, setBranchId] = useState("");
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const { data: branches } = useFetch(() => api<{ branches: Branch[] }>("/api/admin/branches"), []);
+
+  useEffect(() => { fetchStats(); }, []);
+
+  function fetchStats() {
+    setLoading(true); setError("");
+    let url = `/api/reports/visitors?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    if (branchId) url += `&branch_id=${encodeURIComponent(branchId)}`;
+    api<any>(url).then(setStats).catch((e: any) => setError(e.message)).finally(() => setLoading(false));
+  }
+
+  return (
+    <>
+      <h1>Visitor Analytics</h1>
+      <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
+        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
+        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <div className="field" style={{ margin: 0 }}>
+          <label>Branch
+            <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+              <option value="">All Branches</option>
+              {(branches?.branches || []).filter((b: any) => b.isActive).map((b: any) => (
+                <option key={b.id} value={b.id}>{escapeHtml(b.name)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <RippleButton onClick={fetchStats} loading={loading}>Generate</RippleButton>
+      </div>
+      {error && <ErrorMsg msg={error} />}
+      {stats && (
+        <>
+          <div className="stat-grid">
+            <div className="stat-card"><div className="stat-card__value">{stats.totalVisits}</div><div className="stat-card__label">Total Visits</div></div>
+            <div className="stat-card"><div className="stat-card__value">{stats.uniqueSessions}</div><div className="stat-card__label">Unique Sessions</div></div>
+          </div>
+          {stats.dailyTrend?.length > 0 && (
+            <VisitorTrendChart data={stats.dailyTrend} />
+          )}
+          {stats.topPages?.length > 0 && (
+            <>
+              <h3>Top Pages</h3>
+              <div className="table-wrap" style={{ marginBottom: "1rem" }}>
+                <table className="data-table">
+                  <thead><tr><th>Page</th><th>Visits</th></tr></thead>
+                  <tbody>
+                    {stats.topPages.map((p: any, i: number) => (
+                      <tr key={i}><td>{escapeHtml(p.path)}</td><td>{p.count}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+          {stats.topReferrers?.length > 0 && (
+            <>
+              <h3>Top Referrers</h3>
+              <div className="table-wrap" style={{ marginBottom: "1rem" }}>
+                <table className="data-table">
+                  <thead><tr><th>Referrer</th><th>Visits</th></tr></thead>
+                  <tbody>
+                    {stats.topReferrers.map((r: any, i: number) => (
+                      <tr key={i}><td>{escapeHtml(r.referrer)}</td><td>{r.count}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+          {stats.deviceBreakdown?.length > 0 && (
+            <>
+              <h3>Device Breakdown</h3>
+              <div className="table-wrap" style={{ marginBottom: "1rem" }}>
+                <table className="data-table">
+                  <thead><tr><th>Device</th><th>Visits</th></tr></thead>
+                  <tbody>
+                    {stats.deviceBreakdown.map((d: any, i: number) => (
+                      <tr key={i}><td>{escapeHtml(d.device_type)}</td><td>{d.count}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function VisitorTrendChart({ data }: { data: any[] }) {
+  const maxVal = Math.max(...data.map((d: any) => d.visits), 1);
+  const barWidth = Math.max(12, Math.min(60, 600 / data.length));
+  const chartW = Math.max(300, data.length * (barWidth + 4));
+  const chartH = 200;
+
+  return (
+    <div style={{ overflowX: "auto", marginBottom: "1rem" }}>
+      <h3>Daily Visits Trend</h3>
+      <svg width={chartW} height={chartH} style={{ display: "block" }}>
+        {data.map((d: any, i: number) => {
+          const barH = (d.visits / maxVal) * (chartH - 20);
+          const x = i * (barWidth + 4);
+          const y = chartH - 10 - barH;
+          return (
+            <g key={d.day}>
+              <rect x={x} y={y} width={barWidth} height={barH} fill="var(--primary, #2563eb)" rx={2}>
+                <title>{d.day}: {d.visits} visits, {d.sessions} sessions</title>
+              </rect>
+              {data.length <= 14 && <text x={x + barWidth / 2} y={chartH - 2} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">{d.day.slice(5)}</text>}
             </g>
           );
         })}

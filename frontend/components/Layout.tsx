@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import { useApp } from "@/lib/app-context";
 import { useLayout, LayoutHeader, LayoutFooter } from "@/layouts";
 import { getStaffToken } from "@/lib/api";
@@ -39,6 +40,27 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const springboardMenu = settings?.springboardMenu ?? false;
   const [navLinks, setNavLinks] = useState(NAV_LINKS);
   const [footerConfig, setFooterConfig] = useState<any>(null);
+  const router = useRouter();
+  const sessionIdRef = useRef<string>("");
+
+  useEffect(() => {
+    let sid = sessionStorage.getItem("wa_sid");
+    if (!sid) { sid = crypto.randomUUID?.() || Math.random().toString(36).substring(2, 15); sessionStorage.setItem("wa_sid", sid); }
+    sessionIdRef.current = sid;
+  }, []);
+
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    const timer = setTimeout(() => {
+      fetch("/api/track/pageview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: router.asPath, referrer: document.referrer, sessionId: sid, deviceType: "" }),
+      }).catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [router.asPath]);
 
   useEffect(() => { setIsStaff(!!getStaffToken()); }, []);
 

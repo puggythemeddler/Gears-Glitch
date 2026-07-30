@@ -1367,13 +1367,53 @@ app.post("/api/clients/:id/invoices/generate", requireAuth, async (req, res) => 
     const r = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
       method: "POST",
       headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
-      body: JSON.stringify(req.body || {}),
+      body: JSON.stringify({ providerId: 1, planId: client.plan, ...req.body }),
     });
     const data = await r.json();
     if (!r.ok) { res.status(r.status).json(data); return; }
     res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: "Failed to generate invoice" });
+  }
+});
+
+// Record payment — one step: generate invoice, mark paid, extend subscription
+app.post("/api/clients/:id/invoices/record-payment", requireAuth, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const periodType = req.body.periodType === "annual" ? "annual" : "monthly";
+    const daysToAdd = periodType === "annual" ? 365 : 30;
+
+    // 1. Generate invoice
+    const gen = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
+      method: "POST",
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ providerId: 1, planId: client.plan }),
+    });
+    const invoice: any = await gen.json();
+    if (!gen.ok) { res.status(gen.status).json({ error: invoice?.error || "Failed to generate invoice" }); return; }
+
+    // 2. Mark invoice as paid
+    const pay = await fetch(`${client.render_service_url}/api/admin/invoices/${invoice.id}/pay`, {
+      method: "POST",
+      headers: cpHeaders(client.cp_secret),
+    });
+    if (!pay.ok) { res.status(500).json({ error: "Generated invoice but failed to mark paid" }); return; }
+
+    // 3. Extend subscription expiry
+    const now = new Date();
+    const currentExpiry = client.subscription_expires ? new Date(client.subscription_expires) : null;
+    const newExpiry = currentExpiry && currentExpiry > now ? new Date(currentExpiry.getTime() + daysToAdd * 86400000) : new Date(now.getTime() + daysToAdd * 86400000);
+    await query("UPDATE clients SET subscription_expires = $1 WHERE id = $2", [newExpiry, client.id]);
+
+    auditLog(req, "record_payment", "client", client.id, client.name, `${periodType} — extended to ${newExpiry.toISOString().slice(0, 10)}`);
+    res.json({ ok: true, invoice, expiry: newExpiry.toISOString() });
+  } catch (err: any) {
+    console.error("[api] Record payment error:", err.message);
+    res.status(500).json({ error: "Failed to record payment" });
   }
 });
 

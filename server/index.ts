@@ -312,7 +312,7 @@ import {
 import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage } from "./whatsapp";
-import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate } from "./db";
+import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
@@ -4927,6 +4927,24 @@ app.get("/api/reports/sales", ownerAuthMiddleware, requirePermission("reports:vi
   const from = String(req.query.from || "1970-01-01");
   const to = String(req.query.to || "2099-12-31");
   res.json(await getSalesReportWithRange(from, to));
+}));
+
+// Visitor tracking (public — called by storefront frontend)
+app.post("/api/track/pageview", asyncHandler(async (req: Request, res: Response) => {
+  const { path, referrer, sessionId, deviceType } = req.body || {};
+  if (!path || !sessionId) { res.status(400).json({ error: "path and sessionId required" }); return; }
+  const userAgent = req.headers["user-agent"] || "";
+  const derivedDevice = deviceType || (userAgent.includes("Mobi") || userAgent.includes("Android") ? "mobile" : userAgent.includes("Tablet") ? "tablet" : "desktop");
+  await trackPageView(String(path).slice(0, 500), String(sessionId).slice(0, 64), null, String(referrer || "").slice(0, 500), userAgent.slice(0, 500), derivedDevice);
+  res.json({ ok: true });
+}));
+
+app.get("/api/reports/visitors", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
+  const from = String(req.query.from || new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  const to = String(req.query.to || new Date().toISOString().slice(0, 10));
+  const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+  const stats = await getVisitorStats(from, to, branchId);
+  res.json(stats);
 }));
 
 app.get("/api/reports/stock-summary", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (_req: Request, res: Response) => {

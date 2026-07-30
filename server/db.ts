@@ -787,6 +787,15 @@ async function runMigrations(): Promise<void> {
       updated.push("Multi-currency support");
       await query(`UPDATE subscription_plans SET features = $1 WHERE id = 'enterprise'`, [JSON.stringify(updated)]);
     }
+    // Add Visitor analytics to Growth+ plans
+    for (const planId of ["growth", "pro", "enterprise"]) {
+      const plan = await queryOne(`SELECT features FROM subscription_plans WHERE id = $1`, [planId]) as any;
+      if (plan && !plan.features.includes("Visitor analytics")) {
+        const updated = JSON.parse(plan.features);
+        updated.push("Visitor analytics");
+        await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(updated), planId]);
+      }
+    }
   } catch {}
 
   // Fix sequences after potential manual deletes or migrations
@@ -963,6 +972,21 @@ async function runMigrations(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (NOW()::text),
       updated_at TEXT NOT NULL DEFAULT (NOW()::text)
     )`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS page_views (
+      id SERIAL PRIMARY KEY,
+      branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+      path TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      referrer TEXT DEFAULT '',
+      user_agent TEXT DEFAULT '',
+      device_type TEXT DEFAULT 'desktop',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_page_views_created ON page_views(created_at)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_page_views_session ON page_views(session_id)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_page_views_branch ON page_views(branch_id)`);
   } catch {}
 
   // Soft-delete support for purchase_orders
@@ -3317,6 +3341,33 @@ async function setUserTotp(userId: number, secret: string | null, enabled: boole
   await query("UPDATE users SET totp_secret = $1, totp_enabled = $2 WHERE id = $3", [secret, enabled, userId]);
 }
 
+async function trackPageView(path: string, sessionId: string, branchId: number | null, referrer: string, userAgent: string, deviceType: string): Promise<void> {
+  await query(
+    "INSERT INTO page_views (path, session_id, branch_id, referrer, user_agent, device_type) VALUES ($1, $2, $3, $4, $5, $6)",
+    [path, sessionId, branchId, referrer, userAgent, deviceType]
+  );
+}
+
+async function getVisitorStats(from: string, to: string, branchId?: number): Promise<any> {
+  const params: any[] = [from, to];
+  let branchSql = "";
+  if (branchId) { branchSql = " AND branch_id = $3"; params.push(branchId); }
+  const totalVisits = await queryOne(`SELECT COUNT(*) AS count FROM page_views WHERE created_at::date >= $1 AND created_at::date <= $2${branchSql}`, params) as any;
+  const uniqueSessions = await queryOne(`SELECT COUNT(DISTINCT session_id) AS count FROM page_views WHERE created_at::date >= $1 AND created_at::date <= $2${branchSql}`, params) as any;
+  const topPages = await queryAll(`SELECT path, COUNT(*) AS count FROM page_views WHERE created_at::date >= $1 AND created_at::date <= $2${branchSql} GROUP BY path ORDER BY count DESC LIMIT 10`, params);
+  const topReferrers = await queryAll(`SELECT referrer, COUNT(*) AS count FROM page_views WHERE created_at::date >= $1 AND created_at::date <= $2${branchSql} AND referrer != '' GROUP BY referrer ORDER BY count DESC LIMIT 10`, params);
+  const deviceBreakdown = await queryAll(`SELECT device_type, COUNT(*) AS count FROM page_views WHERE created_at::date >= $1 AND created_at::date <= $2${branchSql} GROUP BY device_type ORDER BY count DESC`, params);
+  const dailyTrend = await queryAll(`SELECT DATE(created_at) AS day, COUNT(*) AS visits, COUNT(DISTINCT session_id) AS sessions FROM page_views WHERE created_at::date >= $1 AND created_at::date <= $2${branchSql} GROUP BY day ORDER BY day`, params);
+  return {
+    totalVisits: Number(totalVisits?.count || 0),
+    uniqueSessions: Number(uniqueSessions?.count || 0),
+    topPages: topPages || [],
+    topReferrers: topReferrers || [],
+    deviceBreakdown: deviceBreakdown || [],
+    dailyTrend: dailyTrend || [],
+  };
+}
+
 export {
   initDb, runMigrations, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
   seedDemoProvider, seedDemoCustomer, assignInitialRoles, seedProductsIfEmpty, ensureDefaultSubscriptionPlans,
@@ -3367,6 +3418,7 @@ export {
   updateProductSortOrder, updateCategorySortOrder, logEmail, listEmailLogs,
   upsertWhatsAppConversation, getWhatsAppConversationByPhone, getWhatsAppConversations, logWhatsAppMessage, listWhatsAppLogs, getWhatsAppStats, findCustomerByPhone, findProviderByPhone,
   storeWhatsAppMedia, getWhatsAppMedia, getWhatsAppMediaById,
+  trackPageView, getVisitorStats,
   createWhatsAppTemplate, listWhatsAppTemplates, getWhatsAppTemplateByName, deleteWhatsAppTemplate,
   getDb,
   storeImage, getImage, deleteImageByRef,
