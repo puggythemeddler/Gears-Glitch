@@ -10,6 +10,7 @@ import { useApp } from "@/lib/app-context";
 import { useToast } from "@/components/Toast";
 import QuotesPage from "./quotes";
 import NotificationBell from "@/components/NotificationBell";
+import WhatsAppSettings from "@/components/admin/WhatsAppSettings";
 import { useFeature } from "@/lib/features";
 import AdminProducts from "@/components/admin/AdminProducts";
 import ProvidersPage from "@/components/admin/ProvidersPage";
