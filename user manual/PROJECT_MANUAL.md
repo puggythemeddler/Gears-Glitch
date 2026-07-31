@@ -263,7 +263,7 @@ Dark mode by default with a light/dark toggle, persisted in `localStorage` and a
 ## 11. Feature Flags & Per-Client Overrides
 
 ### Subscription plan features
-Plans carry 48+ feature flags organized into 11 groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency). The frontend `useFeature()` hook shows/hides nav items and UI sections; server middleware enforces plan features on APIs.
+Plans carry 51+ feature flags organized into 11 groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency). Recent additions include Gift cards, Campaign pages, and Cart recovery. The frontend `useFeature()` hook shows/hides nav items and UI sections; server middleware enforces plan features on APIs.
 
 ### Control-plane overrides
 From the control plane **Edit Client** modal, the operator can override a tenant's feature set without touching the plan:

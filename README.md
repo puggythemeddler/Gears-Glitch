@@ -1,6 +1,6 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control with per-branch stock tracking, stock take, inter-branch stock transfers that actually move inventory, per-branch subscription plans, audit logging, role-based dashboards (Admin, Owner, Technician), 5 built-in storefront layout themes (Original, Amazon, Jumia, Mobile, Custom) with a runtime layout registry for admin-created dynamic JSON layouts, admin-controllable hero sections, subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management (with delete), auto-email notifications, WhatsApp Business API integration (bidirectional messaging with 24h window tracking), product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation, two-step checkout with delivery details and payment method selection, provider order management (view, cancel items, update status), customer invoice download from order history, TOTP two-factor authentication, CSRF token protection, file upload content validation, shared Cloudinary with per-client folders, and responsive design optimized for mobile, tablet, and desktop. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control with per-branch stock tracking, stock take, inter-branch stock transfers that actually move inventory, per-branch subscription plans, audit logging, role-based dashboards (Admin, Owner, Technician), 5 built-in storefront layout themes (Original, Amazon, Jumia, Mobile, Custom) with a runtime layout registry for admin-created dynamic JSON layouts, admin-controllable hero sections, subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, gift cards with balance tracking and automatic checkout redemption, campaign landing pages for promotions, abandoned cart recovery with reminder emails, order refunds (full or per-line) with history, sales-by-channel reporting (storefront/POS/quotes), store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management (with delete), auto-email notifications, WhatsApp Business API integration (bidirectional messaging with 24h window tracking), product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation, two-step checkout with delivery details and payment method selection, provider order management (view, cancel items, update status), customer invoice download from order history, TOTP two-factor authentication, CSRF token protection, file upload content validation, shared Cloudinary with per-client folders, and responsive design optimized for mobile, tablet, and desktop. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ## Features at a glance
 
@@ -15,6 +15,9 @@ A complete multi-branch sales & management system with product catalog, customer
 - Promotional banners / splashes with quick presets (Black Friday, Christmas, etc.) and auto-displayed Kenyan public holiday banners
 - Springboard category menu (admin-toggleable collapsible dropdown)
 - Marketing landing page (problems, solutions, industries, features, testimonials, FAQ, CTA)
+- Gift cards — issue gift cards with unique codes, balance, and optional expiry; customers redeem them automatically at checkout before payment, with a full redemption audit trail
+- Campaign landing pages — create promotional campaigns from the admin (title, slug, hero image, banner color, curated products) served on public `/campaign/[slug]` pages
+- Abandoned cart recovery — admin dashboard lists carts sitting in the last 24/48/72 hours with item previews and one-click reminder emails through the shared email engine
 
 ### Inventory & stock
 - Real-time per-branch stock tracking with low-stock alerts, stock-on-hand counts, and stock take sessions (scoped to a selected branch)
@@ -34,6 +37,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - M-Pesa payments with callback validation (POS + online checkout), cash and bank transfer tracking, automatic reconciliation
 - Multi-currency support with live exchange rate conversion (feature-gated)
 - Coupons & discounts (percentage or fixed-amount, usage tracking)
+- Refunds — full-order or per-line-item refunds with reason, staff attribution, and a refund history panel on each order; refunded amounts are tracked and reflected in order totals
 - Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders — all with your store logo and configurable logo position; separate Print and Save PDF buttons
 - Subscription invoices for clients with generate, pay, email, and PDF download
 
@@ -50,11 +54,12 @@ A complete multi-branch sales & management system with product catalog, customer
 - File upload content validation using magic bytes (rejects mismatched extensions)
 - Rate limiting (global + auth endpoints), Helmet (CSP enabled), timing-safe login (dummy bcrypt for non-existent users)
 - JWT auth, query-string tokens rejected, default staff role falls back to `technician` (not `admin`)
-- Feature-gated subscription plans (Starter, Growth, Pro, Enterprise) with 48+ feature flags; sidebar items, nav links, and currency selector respect feature flags
+- Feature-gated subscription plans (Starter, Growth, Pro, Enterprise) with 51+ feature flags; sidebar items, nav links, and currency selector respect feature flags
 
 ### Analytics
 - Visitor analytics with page view tracking, session tracking, top pages/referrers, device breakdown, and daily visitor trend charts — gated behind Growth+ subscription plans
 - Sales reports, employee sales, technician performance, purchases, and stock summary reports with date range filtering, per-branch breakdown, SVG trend charts, and Excel/PDF export
+- Sales by channel — every order is tagged `storefront`, `pos`, or `quote` (auto-detected with legacy backfill); the Sales Report includes a channel breakdown table showing revenue per sales channel
 
 ### Communication
 - WhatsApp Business API integration (bidirectional messaging via Meta Cloud API, 24h window tracking, HMAC-SHA256 webhook verification, Kenyan phone normalization, full conversation logs)
@@ -69,6 +74,7 @@ A complete multi-branch sales & management system with product catalog, customer
 
 ## Recent highlights
 
+- **Growth & retention suite** — Five new modules shipped together. **Gift cards**: admins issue cards with a unique code, value, optional expiry, and notes; customers enter the code at checkout and the balance is applied automatically (after coupons, before loyalty points) so M-Pesa only covers the remaining total — every redemption is recorded in a `gift_card_redemptions` audit table. **Campaign landing pages**: admins build promotional pages (title, slug, hero image, banner color, curated products, active toggle) rendered on public `/campaign/[slug]` URLs via `/api/campaigns/:slug`. **Abandoned cart recovery**: the admin lists carts abandoned in the last 24/48/72 hours (with item previews) and sends one-click reminder emails through the shared email engine, logged in `cart_recovery_reminders`. **Order refunds**: full-order or per-line-item refunds with reason and staff attribution, a refund history panel per order, and `amount_refunded` tracked on the order. **Sales-by-channel reporting**: online checkout, POS, and quote-to-order conversions each tag orders `storefront`/`pos`/`quote` (legacy orders backfilled), and the Sales Report gained a channel breakdown table. All three new admin sections (Gift Cards, Campaigns, Abandoned Carts) are feature-gated in the subscription plans.
 - **Per-client store identity** — Newly provisioned clients no longer inherit the "Gear&Glitch" brand. The control plane injects `STORE_NAME=<client name>` into each client's Render env, and the backend seeds that name on first boot. The browser tab title, `og:site_name`, and `og:title` now use the store's own `settings.storeName` (with a neutral "Welcome to our store" placeholder before settings load) instead of a hardcoded brand — so each tenant's tab and social tags show their own name.
 - **Auto-provisioned admin account for new clients** — When provisioning a new client via **Add Client**, the new client's Render service now receives `ADMIN_USERNAME=admin`, `ADMIN_EMAIL=<client admin email>`, and a generated `ADMIN_PASSWORD` as env vars. On first boot, `ensureAdminUser()` creates the seeded admin so the operator (or client) can log in immediately at `{frontend-url}/login` and start populating products, settings, and branches. Previously this step was missing — new clients had no admin account and the welcome-email password was useless. A `technician` seed account is also created for testing role-gated views.
 - **End-to-end provisioning pipeline fixes** — The Add Client flow now correctly completes all three infrastructure steps (Neon, Render, Vercel). Fixed: Neon connection URI extraction (was reading `data.project.connection_uris` instead of `data.connection_uris`), Render env vars now applied via dedicated `env-vars` endpoint with explicit `type: "env_var"` and a triggered deploy, Vercel project auto-links the GitHub repo and triggers a production deploy with `rootDirectory: "frontend"`. Client backend now loads `server/schema.sql` at startup so fresh databases are fully initialized. `typescript` moved to dependencies (not devDependencies) so client builds succeed under `NODE_ENV=production`.
@@ -141,7 +147,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - **Admin reports expanded** — Reports tab now includes 5 sub-tabs: Sales Report, Employee Sales, Technician Performance, Purchases Report, and Stock Summary.
 - **Unified product pages** — Admin and owner product pages now use the same `AdminProducts` component with full sale price, subcategory, warranty, taxable, CSV import/export, and bulk edit support.
 - **Unified quotations** — Admin quotations panel now uses the full-featured `QuotesPage` component with status management, approve/cancel workflows, PDF downloads, and discounts.
-- **Marketing page** — Full marketing landing page with problems, solutions, industries, features (25 real modules), testimonials, stats, FAQ, and CTA. All content verified against actual implemented features.
+- **Marketing page** — Full marketing landing page with problems, solutions, industries, features (36 real modules), testimonials, stats, FAQ, and CTA. All content verified against actual implemented features.
 - **Annual pricing** — Subscription plans now support both monthly and annual pricing. Plans table has `price_annual` column. Admin plans UI shows both Monthly and Annual price fields. Owner subscription page displays both prices with percentage savings for annual billing.
 - **Multi-currency feature gating** — `CurrencySelector` checks `useFeature("Multi-currency support")` and returns null when the plan doesn't include it. Multi-currency support added to Growth, Pro, and Enterprise plan features.
 - **Provider PIN fix** — Removed `PinLock` from dashboard page entirely. Providers now log in and see the dashboard immediately. PIN lock only appears when clicking POS (which has its own correct PinLock).
@@ -261,6 +267,7 @@ Opens **http://localhost:3000** in a browser.
 | `/dashboard` | Customers & Providers | Orders, repairs, wishlist, messages (customer) or subscription, invoices (provider) |
 | `/about` | Everyone | About Us page — content editable by admin/owner |
 | `/cart` | Customers | Shopping cart — manage quantities, then Checkout creates pending order and redirects to order detail |
+| `/campaign/[slug]` | Everyone | Public promotional landing pages created in admin → Campaigns (hero banner + curated product grid) |
 | `/order?id=xxx` | Customers | Order detail — fill in delivery details + payment method (pending), view items, download invoice (shipped/delivered) |
 | `/orders` | Customers | Order history with inline invoice download for shipped/delivered orders |
 | `/repair-book` | Customers | Book a repair with detailed device/issue form |
@@ -279,20 +286,23 @@ Opens **http://localhost:3000** in a browser.
 
 ### Admin Panel (`/admin`)
 
-Full store management with 29 sections:
+Full store management with 32 sections:
 
 - **Dashboard** — Stats overview with clickable animated counters (products, staff, pending subscription requests)
 - **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking, sale price (strikethrough pricing)
 - **Coupons** — Create discount/promo codes (percentage or fixed amount), set min order, max uses, expiry date, usage tracking per order
+- **Gift Cards** — Issue gift cards with code, value, optional expiry, and notes; view balance and full redemption history per card; toggle active/inactive or delete. Feature-gated ("Gift cards").
+- **Campaigns** — Build promotional landing pages (title, slug, hero image, banner color, curated products, active toggle) published at `/campaign/[slug]`. Feature-gated ("Campaign pages").
+- **Abandoned Carts** — Carts abandoned in the last 24/48/72 hours with item previews and one-click reminder emails. Feature-gated ("Cart recovery").
 - **Categories** — Manage product categories + subcategories (shareable across categories)
-- **Orders** — View all customer orders with shipping details, status updates, branch assignment, coupon discount display
+- **Orders** — View all customer orders with shipping details, status updates, branch assignment, coupon/gift-card discount display, and full or per-line-item refunds with a refund history panel
 - **Users & Permissions** — Staff management, fine-grained role-based permissions (editable for all roles)
 - **Roles** — Define custom roles with granular permission toggles (messaging, invoicing, credit notes, quotes, etc.)
-- **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes (55+ available features). Plans can be activated/deactivated to control visibility on the public pricing page. Inactive plans are hidden from customers. Plan editor features organized into 11 collapsible groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency) with select-all toggles per group and feature count badges.
+- **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes (58+ available features). Plans can be activated/deactivated to control visibility on the public pricing page. Inactive plans are hidden from customers. Plan editor features organized into 11 collapsible groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency) with select-all toggles per group and feature count badges.
 - **Providers** — View providers, assign plans, custom pricing, status
 - **Invoices** — Generate invoices per provider, mark paid, PDF download for order invoices
 - **Credit Notes** — Create eTIMS-compliant credit notes from invoices in admin and owner views, with printable audit details and submission tracking, PDF download
-- **Reports** — 5 sub-tabs: Sales Report with combined/per-branch filtering and export to Excel/PDF, Employee Sales, Technician Performance, Purchases Report, and Stock Summary
+- **Reports** — 5 sub-tabs: Sales Report with combined/per-branch filtering, channel breakdown (Storefront / POS / Quote), and export to Excel/PDF, Employee Sales, Technician Performance, Purchases Report, and Stock Summary
 - **Stock on Hand** — Current stock levels per branch (filter by branch), snapshot history, low-stock alerts
 - **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow; completing a transfer actually moves stock between branches with dual movement records
 - **Stock Take** — Create sessions, count inventory, view variance, auto-apply adjustments
@@ -522,7 +532,7 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │   ├── my-repairs.tsx        # Ticket tracking — skeleton loading
 │   ├── orders.tsx            # Order history
 │   ├── account.tsx           # Account details
-│   ├── admin.tsx             # Admin panel (21 sections)
+│   ├── admin.tsx             # Admin panel (24 sections)
 │   ├── owner.tsx             # Owner panel (13 sections, shares components with admin)
 │   ├── backoffice.tsx        # Back office (repairs, stock, reports)
 │   └── stock-take/
@@ -583,6 +593,7 @@ data/
 | GET | `/api/shop/features` | Active subscription features for feature-gating UI |
 | GET | `/api/images/:refId` | DB-backed-up image (base64 served as binary) |
 | GET | `/api/splashes` | Active promotional banners (public, filtered by date range) |
+| GET | `/api/campaigns/:slug` | Public campaign landing page data (campaign + curated products) |
 
 ### Customer
 
@@ -608,7 +619,8 @@ data/
 | GET | `/api/quotes` | Hardware quotes |
 | POST | `/api/quotes/from-wishlist` | Request quote from wishlist items |
 | PATCH | `/api/quotes/:id/status` | Update quote status |
-| POST | `/api/orders` | Place order with M-Pesa payment |
+| POST | `/api/orders` | Place order with M-Pesa payment (accepts `couponCode`, `giftCardCode`, and `redeemPoints` — applied in order before the M-Pesa amount is calculated) |
+| POST | `/api/gift-cards/validate` | Validate a gift card code and return remaining balance / applicable discount (customer auth) |
 | POST | `/api/orders/create-pending` | Create pending order from cart (no details required, redirects to order detail) |
 | PATCH | `/api/orders/:id` | Update pending order delivery details + payment method |
 | GET | `/api/messages` | Messages with providers |
@@ -680,6 +692,19 @@ Full CRUD for products, categories (including subcategories), staff, roles, plan
 | PUT | `/api/settings/logo-position` | Update logo position (top-left/top-middle/top-right) |
 | GET | `/api/admin/coupons` | List all coupons |
 | POST | `/api/admin/coupons` | Create a coupon |
+| GET | `/api/admin/gift-cards` | List all gift cards |
+| POST | `/api/admin/gift-cards` | Create a gift card |
+| PUT | `/api/admin/gift-cards/:id` | Update a gift card (code, balance, expiry, active, notes) |
+| DELETE | `/api/admin/gift-cards/:id` | Delete a gift card |
+| GET | `/api/admin/gift-cards/:id/redemptions` | Redemption history for a gift card |
+| GET | `/api/admin/campaigns` | List all campaign landing pages |
+| POST | `/api/admin/campaigns` | Create a campaign |
+| PUT | `/api/admin/campaigns/:id` | Update a campaign |
+| DELETE | `/api/admin/campaigns/:id` | Delete a campaign |
+| GET | `/api/admin/abandoned-carts` | Abandoned carts in the last N hours (`?hours=`) plus reminder history |
+| POST | `/api/admin/abandoned-carts/send-reminder` | Send a cart recovery reminder email to a customer |
+| GET | `/api/admin/orders/:id/refunds` | Refund history for an order |
+| POST | `/api/admin/orders/:id/refunds` | Create a full or per-line-item refund |
 | PUT | `/api/admin/branches/:id/plan` | Set a branch's subscription plan |
 | GET | `/api/admin/branches/:id/subscription` | Get branch subscription details |
 | GET | `/api/admin/branches/:id/features` | Get branch feature list |
@@ -1001,6 +1026,11 @@ npm start                # Serve production build
 - **Product Deletion**: All product-referencing tables use `ON DELETE CASCADE`. Deleting a product automatically removes related order items, quote items, stock records, price history, and reviews.
 - **Sales Report**: Includes per-branch breakdown table when viewing combined data, plus date range and branch filter, daily revenue trend chart (SVG), and export to Excel (CSV) or printable PDF.
 - **Coupons**: Admin can create percentage or fixed discount codes with min order, max uses, and expiry. Customers apply at checkout. Discount recorded per order.
+- **Gift cards**: Admins issue cards with a unique code, value, optional expiry, and notes (`gift_cards` table). At storefront checkout customers enter the code and the balance is applied in order: coupon → gift card → loyalty points, so M-Pesa only charges the remainder. Redemptions are recorded per order in `gift_card_redemptions` with an audit trail; the admin panel shows per-card redemption history. Validated server-side via `validateGiftCard`/`redeemGiftCard` in `server/db.ts`.
+- **Campaign landing pages**: Admin-created campaigns (`campaigns` table) render on public `/campaign/[slug]` pages via `GET /api/campaigns/:slug` — hero banner with custom color and a grid of curated products. Feature-gated behind "Campaign pages".
+- **Abandoned cart recovery**: `listAbandonedCarts(hours)` returns carts whose items haven't been touched in the last N hours (with product/item previews); admin sends one-click reminder emails via the shared email engine (`sendEmail(..., "cart_recovery")`), each recorded in `cart_recovery_reminders`. Feature-gated behind "Cart recovery".
+- **Refunds**: Admins can refund an entire order or individual lines with a reason. Refunds live in the `refunds` table, are summed into `orders.amount_refunded`, and per-line refunds mark the order item cancelled. Refund history is shown in the order detail panel.
+- **Sales by channel**: Orders carry a `source` tag — `storefront` (online checkout), `pos` (POS), or `quote` (quote-to-order conversion). A migration backfills legacy orders by inspecting `branch_id`, `processed_by`, and `notes`. The Sales Report's channel breakdown aggregates revenue by source.
 - **Bulk Edit**: Products table supports multi-select with checkboxes and bulk price/category/stock updates.
 - **Price History**: Every price change is automatically recorded and viewable per product.
 - **Database Backup**: PostgreSQL backups are handled by your provider (Neon, Railway, etc.) — enable automatic backups. Product images are stored on Cloudinary (production) or `data/uploads/` (dev).

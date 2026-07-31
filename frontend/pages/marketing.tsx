@@ -53,6 +53,10 @@ const SOLUTIONS_BENEFITS = [
   "Dark / light theme toggle with OS preference detection",
   "Audit log of every admin and owner action for accountability",
   "5 storefront layouts plus a custom JSON layout builder",
+  "Gift cards for prepaid revenue and repeat purchases",
+  "Campaign landing pages for seasonal promotions",
+  "Automated recovery of abandoned carts with reminder emails",
+  "Refunds and sales-by-channel insights to stay on top of revenue",
   "Annual billing with built-in savings over monthly pricing",
   "Plan upgrade requests with admin approval workflow",
 ];
@@ -101,6 +105,11 @@ const FEATURES = [
   { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders — all with your store logo prominently displayed. Separate Print and Save PDF buttons for instant downloads with branded templates." },
   { icon: "🔒", name: "Feature-Gated Plans", desc: "Subscription plans with grouped feature toggles (11 categories). Disable a feature and it disappears from every panel — admin, owner, backoffice, dashboard, and storefront. Pay only for what you use." },
   { icon: "🖥", name: "Full-Width Storefront", desc: "Layouts span edge-to-edge across the screen with no side gutters on wide displays — modern, full-bleed look. Hero, header, footer, and product grids all stretch to fill the viewport. Inner text columns retain max-widths for readability." },
+  { icon: "🎁", name: "Gift Cards", desc: "Issue gift cards with unique codes, balance, and optional expiry. Customers redeem them automatically at checkout — the balance is applied before M-Pesa payment, and every redemption is tracked in a full audit trail." },
+  { icon: "📣", name: "Campaign Landing Pages", desc: "Build promotional pages with a hero banner, brand colors, and a curated product grid. No code required — publish and share a dedicated campaign link in minutes." },
+  { icon: "🛒", name: "Abandoned Cart Recovery", desc: "See every cart customers left behind in the last 24/48/72 hours, with item previews, and send one-click reminder emails to bring them back to complete their order." },
+  { icon: "↩️", name: "Refunds & Returns", desc: "Refund an entire order or individual line items with a reason. Full refund history per order, automatically reflected in order totals." },
+  { icon: "📈", name: "Sales by Channel", desc: "Know exactly where your revenue comes from. Every order is tagged Storefront, POS, or Quote, and the sales report breaks down revenue by channel." },
 ];
 
 const WHY_CHOOSE = [
@@ -589,7 +598,7 @@ function MarketingContent() {
         id="features"
         label="Features"
         title="Everything You Need to Succeed"
-        subtitle="Thirty-one powerful modules that work together to run every part of your electronics business."
+        subtitle="Thirty-six powerful modules that work together to run every part of your electronics business."
       >
         <StaggerContainer className="mk-features-grid">
           {FEATURES.map((f, i) => (
