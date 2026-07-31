@@ -1048,6 +1048,15 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT`); } catch {}
   try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false`); } catch {}
 
+  // ─── STOCK TAKE BRANCH SUPPORT ─────────────────────────────
+  try { await query(`ALTER TABLE stock_take_sessions ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id)`); } catch {}
+
+  // ─── M-Pesa order columns ──────────────────────────────────────
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS checkout_request_id TEXT`); } catch {}
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS mpesa_receipt TEXT`); } catch {}
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS mpesa_phone TEXT`); } catch {}
+  try { await query(`CREATE INDEX IF NOT EXISTS idx_orders_checkout_request ON orders(checkout_request_id)`); } catch {}
+
   // Seed default static layouts if none exist
   try {
     const count = await queryOne("SELECT COUNT(*) AS count FROM storefront_layouts") as { count: number } | undefined;
@@ -1589,17 +1598,19 @@ async function getStockLevel(productId: string, branchId?: number): Promise<Stoc
 
 async function updateStockLevel(productId: string, quantityInStock: number, branchId?: number): Promise<void> {
   if (branchId !== undefined) {
-    await query(
-      `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, $3, 0, 0, 5)
-       ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = EXCLUDED.quantity_in_stock, updated_at = NOW()::text`,
-      [productId, branchId, quantityInStock]
-    );
+    const exist = await queryOne("SELECT 1 FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [productId, branchId]);
+    if (exist) {
+      await query("UPDATE stock_levels SET quantity_in_stock = $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [quantityInStock, productId, branchId]);
+    } else {
+      await query("INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, $3, 0, 0, 5)", [productId, branchId, quantityInStock]);
+    }
   } else {
-    await query(
-      `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, 0, 0, 5)
-       ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = EXCLUDED.quantity_in_stock, updated_at = NOW()::text`,
-      [productId, quantityInStock]
-    );
+    const exist = await queryOne("SELECT 1 FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [productId]);
+    if (exist) {
+      await query("UPDATE stock_levels SET quantity_in_stock = $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [quantityInStock, productId]);
+    } else {
+      await query("INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, 0, 0, 5)", [productId, quantityInStock]);
+    }
   }
 }
 
@@ -2222,6 +2233,22 @@ async function listOrders(customerId?: number): Promise<Order[]> {
 async function updateOrderStatus(id: number, status: string): Promise<boolean> {
   const result = await query("UPDATE orders SET status = $1, updated_at = NOW()::text WHERE id = $2", [status, id]);
   return (result.rowCount ?? 0) > 0;
+}
+
+async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: number, mpesaReceipt?: string): Promise<void> {
+  const order = await queryOne("SELECT id FROM orders WHERE checkout_request_id = $1", [checkoutRequestId]) as any;
+  if (!order) return;
+  if (resultCode === 0 && mpesaReceipt) {
+    await query("UPDATE orders SET status = 'paid', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
+  } else {
+    await query("UPDATE orders SET mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt || null, order.id]);
+  }
+}
+
+async function getOrderByCheckoutRequest(checkoutRequestId: string): Promise<Order | undefined> {
+  const row = await queryOne("SELECT id FROM orders WHERE checkout_request_id = $1", [checkoutRequestId]) as any;
+  if (!row) return undefined;
+  return getOrder(row.id);
 }
 
 async function updateOrderDetails(id: number, data: { shippingName?: string; shippingAddress?: string; shippingCity?: string; shippingCounty?: string; shippingPostcode?: string; shippingPhone?: string; shippingFee?: number; notes?: string; paymentMethod?: string }): Promise<boolean> {
@@ -3394,7 +3421,7 @@ export {
   generateQuoteNumber, createQuoteFromWishlist, createQuote, getQuote, updateQuote, deleteQuote, listQuotesForCustomer, updateQuoteStatus, listAllQuotes, convertQuoteToOrder, generateInvoiceNumber,
   recordAuditLog, listAllAuditLogs,
   validateCoupon, listCoupons, getCoupon, createCoupon, updateCoupon, deleteCoupon, recordCouponUsage,
-  createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, cancelOrderItem,
+  createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, updateOrderMpesaStatus, getOrderByCheckoutRequest, cancelOrderItem,
   recordProductView, getPopularProducts, getTotalViews,
   createInvoice, getInvoice, listInvoices, markInvoicePaid, generateProviderInvoice, getInvoiceRevenue, searchInvoices, markOverdueInvoices, getOverdueInvoices, getInvoiceStats, exportInvoicesCsv,
   getEtimsMode, generateEtimsInvoiceNumber, createEtimsSalesTransaction,

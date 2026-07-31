@@ -22,6 +22,8 @@ export default function OrderDetailPage() {
   const [shippingCounty, setShippingCounty] = useState("");
   const [shippingPhone, setShippingPhone] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [mpesaPhone, setMpesaPhone] = useState("");
+  const [mpesaMsg, setMpesaMsg] = useState("");
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
@@ -49,14 +51,24 @@ export default function OrderDetailPage() {
       setSaveMsg({ text: "Name, address, and county are required.", error: true });
       return;
     }
+    if (paymentMethod === "mpesa" && !mpesaPhone.trim()) {
+      setSaveMsg({ text: "M-Pesa phone number is required.", error: true });
+      return;
+    }
     setSaving(true);
     setSaveMsg(null);
+    setMpesaMsg("");
     try {
+      const body: any = { shippingName, shippingAddress, shippingCounty, shippingPhone, paymentMethod, notes };
+      if (paymentMethod === "mpesa") body.mpesaPhone = mpesaPhone.trim();
       const updated = await api<Order>(`/api/orders/${order!.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ shippingName, shippingAddress, shippingCounty, shippingPhone, paymentMethod, notes }),
+        body: JSON.stringify(body),
       });
       setOrder(updated);
+      if ((updated as any).mpesaRequested) {
+        setMpesaMsg("M-Pesa STK push sent to your phone. Complete payment to confirm.");
+      }
       setSaveMsg({ text: "Order details saved!" });
     } catch (e: any) {
       setSaveMsg({ text: e.message || "Failed to save.", error: true });
@@ -152,7 +164,7 @@ export default function OrderDetailPage() {
             {paymentMethods.length > 0 && (
               <div className="field">
                 <label htmlFor="oPayment" className="input-label">Payment method</label>
-                <select id="oPayment" className="input" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                <select id="oPayment" className="input" value={paymentMethod} onChange={(e) => { setPaymentMethod(e.target.value); setMpesaMsg(""); }}>
                   <option value="">Select payment method…</option>
                   {paymentMethods.filter((m: any) => m.active !== false).map((m: any) => (
                     <option key={m.id} value={m.id}>{m.label || m.id}</option>
@@ -160,11 +172,18 @@ export default function OrderDetailPage() {
                 </select>
               </div>
             )}
+            {paymentMethod === "mpesa" && (
+              <div className="field">
+                <label htmlFor="oMpesaPhone" className="input-label">M-Pesa phone number</label>
+                <input id="oMpesaPhone" type="tel" className="input" value={mpesaPhone} onChange={(e) => setMpesaPhone(e.target.value)} placeholder="e.g. 0712345678" />
+              </div>
+            )}
             <div className="field">
               <label htmlFor="oNotes" className="input-label">Delivery instructions (optional)</label>
               <textarea id="oNotes" className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Leave at the gate, call on arrival…" />
             </div>
             {saveMsg && <p style={{ fontSize: "0.85rem", color: saveMsg.error ? "var(--danger, #dc2626)" : "var(--success, #16a34a)" }}>{saveMsg.text}</p>}
+            {mpesaMsg && <p style={{ fontSize: "0.85rem", color: "var(--success, #16a34a)" }}>{mpesaMsg}</p>}
             <button className="btn btn-primary" onClick={saveDetails} disabled={saving} style={{ alignSelf: "flex-start" }}>{saving ? "Saving…" : "Save Details"}</button>
           </div>
         ) : (

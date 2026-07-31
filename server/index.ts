@@ -83,6 +83,8 @@ import {
   updateOrderDetails,
   cancelOrderItem,
   updateOrderItemWarranty,
+  updateOrderMpesaStatus,
+  getOrderByCheckoutRequest,
   recordProductView,
   getPopularProducts,
   getTotalViews,
@@ -624,7 +626,7 @@ app.delete("/api/admin/delivery-fees", adminAuthMiddleware, asyncHandler(async (
 }));
 
 // M-Pesa callback (called by Safaricom — body validated for expected structure)
-app.post("/api/mpesa/callback", (req: Request, res: Response) => {
+app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
   const data = req.body;
   if (!data || typeof data !== "object") { return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid payload" }); }
 
@@ -661,6 +663,23 @@ app.post("/api/mpesa/callback", (req: Request, res: Response) => {
     return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid ResultDesc" });
   }
 
+  // Extract transaction metadata if successful
+  let mpesaReceipt: string | undefined;
+  if (resultCode === 0) {
+    const metadata = stkCallback.CallbackMetadata?.Item;
+    if (metadata && Array.isArray(metadata)) {
+      const receiptItem = metadata.find((item: any) => item.Name === "MpesaReceiptNumber");
+      if (receiptItem && receiptItem.Value) mpesaReceipt = String(receiptItem.Value);
+    }
+  }
+
+  // Update order in database
+  try {
+    await updateOrderMpesaStatus(checkoutId, resultCode, mpesaReceipt);
+  } catch (err: any) {
+    console.warn("[M-Pesa] Failed to update order status:", err.message);
+  }
+
   // Log the callback with sanitised data
   try {
     const logEntry = {
@@ -669,6 +688,7 @@ app.post("/api/mpesa/callback", (req: Request, res: Response) => {
       merchantRequestId,
       resultCode,
       resultDesc: resultDesc.slice(0, 200),
+      mpesaReceipt,
     };
       fs.appendFileSync(path.join(__dirname, "..", "data", "mpesa-callback.log"),
       `${JSON.stringify(logEntry)}\n`, "utf-8");
@@ -997,7 +1017,10 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
   if (mpesaShortcode !== undefined) mpesaUpdates.shortcode = mpesaShortcode;
   if (mpesaTillNumber !== undefined) mpesaUpdates.tillNumber = mpesaTillNumber;
   if (mpesaEnv !== undefined) mpesaUpdates.env = mpesaEnv;
-  if (Object.keys(mpesaUpdates).length) updateMpesaConfig(mpesaUpdates);
+  if (Object.keys(mpesaUpdates).length) {
+    updateMpesaConfig(mpesaUpdates);
+    await setStoreSetting("mpesa_config", JSON.stringify({ ...getMpesaConfig() }));
+  }
   reconfigureCloudinary(settings.cloudinaryCloudName, settings.cloudinaryApiKey, settings.cloudinaryApiSecret, settings.cloudinaryFolder);
   const { emailSender, emailSenderName, emailNotificationsEnabled } = req.body || {};
   const emailUpdates: any = {};
@@ -1549,7 +1572,7 @@ app.get("/api/pos/categories", asyncHandler(async (_req: Request, res: Response)
 
 app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey, branchId } = req.body || {};
+    const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey, branchId, mpesaPhone } = req.body || {};
     if (!items || !Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "Items are required." }); return; }
     if (items.length > 100) { res.status(400).json({ error: "Too many items (max 100)." }); return; }
     if (idempotencyKey) {
@@ -1681,6 +1704,20 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     // Generate invoice number for the order
     const invNum = await generateInvoiceNumber();
     await query("UPDATE orders SET invoice_number = $1 WHERE id = $2", [invNum, orderId]);
+    // M-Pesa STK push for POS (fire-and-forget — don't block checkout)
+    if (pmt === "mpesa" && mpesaPhone) {
+      try {
+        const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
+        const accountRef = `POS${orderId}`;
+        const stkResult = await stkPush(mpesaPhone, subtotal, accountRef, callbackUrl);
+        const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
+        if (checkoutRequestId) {
+          await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, orderId]);
+        }
+      } catch (err: any) {
+        console.warn("[M-Pesa] POS STK push failed (non-blocking):", err.message);
+      }
+    }
     const updated = await getOrder(orderId);
     if (!updated) { res.status(500).json({ error: "Order created but could not be retrieved." }); return; }
     const change = pmt === "cash" && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
@@ -1967,7 +2004,11 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
       try {
         const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
         const accountRef = `ORD${order.id}`;
-        await stkPush(mpesaPhone, order.subtotal + shippingF, accountRef, callbackUrl);
+        const stkResult = await stkPush(mpesaPhone, order.subtotal + shippingF, accountRef, callbackUrl);
+        const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
+        if (checkoutRequestId) {
+          await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, order.id]);
+        }
         mpesaRequested = true;
       } catch (err: any) {
         console.error("M-Pesa STK push failed:", err.message);
@@ -2026,7 +2067,7 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
     const order = await getOrder(orderId);
     if (!order || order.customerId !== customerId) { res.status(404).json({ error: "Order not found." }); return; }
     if (order.status !== "pending") { res.status(400).json({ error: "Can only edit a pending order." }); return; }
-    const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, paymentMethod } = req.body || {};
+    const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, paymentMethod, mpesaPhone } = req.body || {};
     const shippingF = shippingCounty ? getShippingFee(shippingCounty, await loadDeliveryFeeOverrides()) : undefined;
     await updateOrderDetails(orderId, {
       ...(shippingName !== undefined && { shippingName }),
@@ -2037,8 +2078,24 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
       ...(paymentMethod !== undefined && { paymentMethod }),
       ...(shippingF !== undefined && { shippingFee: shippingF }),
     });
+    let mpesaRequested = false;
+    if (paymentMethod === "mpesa" && mpesaPhone) {
+      try {
+        const total = order.subtotal + (order.shippingFee || 0);
+        const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
+        const accountRef = `ORD${orderId}`;
+        const stkResult = await stkPush(mpesaPhone, total, accountRef, callbackUrl);
+        const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
+        if (checkoutRequestId) {
+          await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, orderId]);
+        }
+        mpesaRequested = true;
+      } catch (err: any) {
+        console.error("[M-Pesa] STK push failed on order update:", err.message);
+      }
+    }
     const updated = await getOrder(orderId);
-    res.json(updated);
+    res.json({ ...updated, mpesaRequested });
   } catch (err: any) {
     console.error("[order update]", err?.message || err);
     res.status(500).json({ error: "Failed to update order." });
@@ -5264,6 +5321,14 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Start server
 (async () => {
   await initDb();
+  // Load persisted M-Pesa config from database
+  try {
+    const savedMpesa = await getStoreSetting("mpesa_config");
+    if (savedMpesa) {
+      const parsed = JSON.parse(savedMpesa);
+      if (parsed.consumerKey) updateMpesaConfig(parsed);
+    }
+  } catch { console.warn("[server] Failed to load M-Pesa config from DB"); }
   const startupSettings = await getSettings();
   reconfigureCloudinary(startupSettings.cloudinaryCloudName, startupSettings.cloudinaryApiKey, startupSettings.cloudinaryApiSecret, startupSettings.cloudinaryFolder);
 

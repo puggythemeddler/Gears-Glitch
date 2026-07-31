@@ -93,7 +93,22 @@ export default function CartPage() {
     setLoading(true);
     setStatusMsg(null);
     try {
-      const order = await api<any>("/api/orders/create-pending", { method: "POST" });
+      if (!shippingName.trim() || !shippingAddress.trim() || !selectedCounty) {
+        setStatusMsg({ text: "Please fill in name, address, and county.", error: true });
+        setLoading(false); return;
+      }
+      const body: any = {
+        shippingName: shippingName.trim(),
+        shippingAddress: shippingAddress.trim(),
+        shippingCounty: counties.find((c) => c.id === Number(selectedCounty))?.name || selectedCounty,
+        shippingPhone: shippingPhone.trim(),
+        notes: "",
+      };
+      if (mpesaPhone.trim()) body.mpesaPhone = mpesaPhone.trim();
+      const order = await api<any>("/api/orders", { method: "POST", body: JSON.stringify(body) });
+      if (order.mpesaRequested) {
+        setStatusMsg({ text: "M-Pesa STK push sent to your phone. Complete payment to confirm order.", error: false });
+      }
       window.location.href = `/order?id=${order.id}`;
     } catch (err: any) {
       setStatusMsg({ text: err.message, error: true });

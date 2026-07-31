@@ -115,7 +115,7 @@ export async function stkPush(phone: string, amount: number, accountRef: string,
     PhoneNumber: partyA,
     CallBackURL: callbackUrl,
     AccountReference: accountRef.slice(0, 12),
-    TransactionDesc: "Laptop Store Purchase",
+    TransactionDesc: "Laptop Pay",
   };
 
   const res = await fetch(`${getBaseUrl()}/mpesa/stkpush/v1/processrequest`, {

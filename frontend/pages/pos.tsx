@@ -47,6 +47,7 @@ export default function POSPage() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [paymentMethod, setPaymentMethod] = useState("");
   const [tenderedAmount, setTenderedAmount] = useState("");
+  const [mpesaPhonePos, setMpesaPhonePos] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -137,6 +138,7 @@ export default function POSPage() {
     if (cart.length === 0) return;
     if (needsTender && !tenderedAmount) { setStatus("Enter amount tendered."); return; }
     if (needsTender && Number(tenderedAmount) < subtotal) { setStatus("Insufficient amount."); return; }
+    if (paymentMethod === "mpesa" && !mpesaPhonePos.trim()) { setStatus("Enter M-Pesa phone number."); return; }
     setProcessing(true);
     setStatus("");
     const idempotencyKey = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -149,6 +151,7 @@ export default function POSPage() {
       };
       if (selectedCustomer) body.customerId = selectedCustomer.id;
       if (needsTender) body.tenderedAmount = Number(tenderedAmount);
+      if (paymentMethod === "mpesa") body.mpesaPhone = mpesaPhonePos.trim();
       const res = await api<{ order: { id: number }; change: number }>("/api/pos/checkout", {
         method: "POST",
         body: JSON.stringify(body),
@@ -158,6 +161,7 @@ export default function POSPage() {
       setStatus("Sale completed!");
       setCart([]);
       setTenderedAmount("");
+      setMpesaPhonePos("");
       setSelectedCustomer(null);
       setCustomerQuery("");
     } catch (e: any) { setStatus(e.message || "Checkout failed."); }
@@ -268,6 +272,11 @@ export default function POSPage() {
             </select>
             {needsTender && (
               <input type="number" className="input" placeholder="Amount tendered" value={tenderedAmount} onChange={(e) => setTenderedAmount(e.target.value)} min="0" step="0.01" style={{ width: "100%", fontSize: "0.85rem" }} />
+            )}
+            {paymentMethod === "mpesa" && (
+              <div style={{ marginBottom: "0.4rem" }}>
+                <input type="tel" className="input" placeholder="M-Pesa phone (e.g. 0712345678)" value={mpesaPhonePos} onChange={(e) => setMpesaPhonePos(e.target.value)} style={{ width: "100%", fontSize: "0.85rem" }} />
+              </div>
             )}
           </div>
         )}
