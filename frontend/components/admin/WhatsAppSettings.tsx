@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "@/lib/app-context";
 import RippleButton from "@/components/RippleButton";
-
-declare function api<T>(url: string, opts?: any): Promise<T>;
-declare function escapeHtml(v: string): string;
+import { api } from "@/lib/api";
+import { escapeHtml } from "@/components/admin/shared";
 
 function Spinner() { return <div style={{ textAlign: "center", padding: "2rem" }}><div className="loading-bar" /><p className="muted">Loading...</p></div>; }
 
