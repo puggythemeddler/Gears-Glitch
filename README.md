@@ -77,6 +77,7 @@ A complete multi-branch sales & management system with product catalog, customer
 ## Recent highlights
 
 - **Storefront categories always current** — The header nav buttons (next to Sign in) and the hero's category chips reconcile against the live category list on every page load: categories deleted from the admin panel automatically disappear from the header and hero, and newly added categories automatically appear — no manual "Sync" step or stale snapshots. Static page links (Repairs, Cart, Wishlist, About Us, Contact) and the admin-configured nav order are preserved, with Cart, Wishlist, About Us and Contact displayed on the right side of the header, left of the search box.
+- **Admin Repairs section** — A new **Services › Repairs** panel brings repair management into the admin panel: **Tickets** (filter by status/technician, edit status, assignment, ETA, calendar schedule, diagnosis, costs, parts used, customer-visible notes, send quotes), **Calendar** (week view of scheduled repairs that jump to the ticket), and **Page Content** (edit the intro and service panels shown on the public `/repairs` page, stored in settings and served via `/api/repairs-page`).
 - **Production startup crash fix** — A `CREATE INDEX` on `products(group_id)` in `schema.sql` ran against pre-existing production tables before the migration added the column, crashing `initDb` with `column "group_id" does not exist`. The index moved into the migration (after the `ALTER TABLE ADD COLUMN`), so existing databases boot cleanly.
 - **Product groups** — The category `group` free-text field is now a first-class, managed entity (`product_groups` table). Admins create/edit/delete groups and toggle each one **active** from a new **Groups** panel under Sales; inactive groups stay hidden from the storefront. Existing categories were migrated automatically — their `group_name` values became group rows and `products.group_id` was backfilled from each product's category. The product form now has a Group dropdown and category is **optional** (products can have category, group, both, or neither). Each active group is browsable on the storefront at `/groups` (index with product counts) and `/group/[slug]` (product grid). Groups also filter the **Sales Report** and **Stock Summary** (`?group_id=` on `/api/reports/sales` and `/api/reports/stock-summary`), and `/api/products` accepts a `?group=` filter.
 - **Growth & retention suite** — Five new modules shipped together. **Gift cards**: admins issue cards with a unique code, value, optional expiry, and notes; customers enter the code at checkout and the balance is applied automatically (after coupons, before loyalty points) so M-Pesa only covers the remaining total — every redemption is recorded in a `gift_card_redemptions` audit table. **Campaign landing pages**: admins build promotional pages (title, slug, hero image, banner color, curated products, active toggle) rendered on public `/campaign/[slug]` URLs via `/api/campaigns/:slug`. **Abandoned cart recovery**: the admin lists carts abandoned in the last 24/48/72 hours (with item previews) and sends one-click reminder emails through the shared email engine, logged in `cart_recovery_reminders`. **Order refunds**: full-order or per-line-item refunds with reason and staff attribution, a refund history panel per order, and `amount_refunded` tracked on the order. **Sales-by-channel reporting**: online checkout, POS, and quote-to-order conversions each tag orders `storefront`/`pos`/`quote` (legacy orders backfilled), and the Sales Report gained a channel breakdown table. All three new admin sections (Gift Cards, Campaigns, Abandoned Carts) are feature-gated in the subscription plans.
@@ -293,7 +294,7 @@ Opens **http://localhost:3000** in a browser.
 
 ### Admin Panel (`/admin`)
 
-Full store management with 32 sections:
+Full store management with 33 sections:
 
 - **Dashboard** — Stats overview with clickable animated counters (products, staff, pending subscription requests)
 - **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking, sale price (strikethrough pricing). Category is optional; products can be assigned to a Group instead (or both/neither)
@@ -304,6 +305,7 @@ Full store management with 32 sections:
 - **Abandoned Carts** — Carts abandoned in the last 24/48/72 hours with item previews and one-click reminder emails. Feature-gated ("Cart recovery").
 - **Categories** — Manage product categories + subcategories (shareable across categories); each category can link to a Group via a dropdown. Storefront header nav and hero chips auto-sync with the category list — deleted categories disappear, new ones appear
 - **Category Order** — Drag-and-drop ordering of the category grid displayed on the storefront
+- **Repairs** — Full repair service management under Services: **Tickets** (list with status/technician filters; open a ticket to edit status, assigned technician, ETA, calendar schedule, diagnosis, costs, parts used, and add customer-visible notes; send quotes), **Calendar** (week-at-a-glance of scheduled repairs, click to jump to the ticket), and **Page Content** (edit the intro and service panels shown on the public `/repairs` page). Feature-gated ("Repair ticketing").
 - **Orders** — View all customer orders with shipping details, status updates, branch assignment, coupon/gift-card discount display, and full or per-line-item refunds with a refund history panel
 - **Users & Permissions** — Staff management, fine-grained role-based permissions (editable for all roles)
 - **Roles** — Define custom roles with granular permission toggles (messaging, invoicing, credit notes, quotes, etc.)
@@ -541,7 +543,7 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │   ├── my-repairs.tsx        # Ticket tracking — skeleton loading
 │   ├── orders.tsx            # Order history
 │   ├── account.tsx           # Account details
-│   ├── admin.tsx             # Admin panel (24 sections)
+│   ├── admin.tsx             # Admin panel (33 sections)
 │   ├── owner.tsx             # Owner panel (13 sections, shares components with admin)
 │   ├── backoffice.tsx        # Back office (repairs, stock, reports)
 │   └── stock-take/

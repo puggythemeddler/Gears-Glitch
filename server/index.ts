@@ -4217,6 +4217,59 @@ app.get("/api/repairs/types", asyncHandler(async (_req: Request, res: Response) 
   res.json({ types: await listRepairTypes() });
 }));
 
+// ============ REPAIRS PAGE CONTENT ============
+const DEFAULT_REPAIRS_PAGE = {
+  intro: "We offer professional repair services for laptops, desktops, Macs, tablets, and printers.",
+  panels: [
+    { title: "Laptop & PC repairs", description: "Screen replacement, keyboard repair, battery replacement, motherboard diagnostics, and more." },
+    { title: "Software & OS", description: "Virus removal, OS reinstallation, data recovery, driver updates, and software troubleshooting." },
+    { title: "Upgrades", description: "RAM upgrades, SSD installation, CPU upgrades, and general performance improvements." },
+    { title: "Mac & Apple devices", description: "MacBook, iMac, and Mac Pro repairs including display, keyboard, and logic board issues." },
+  ],
+};
+
+async function loadRepairsPage(): Promise<any> {
+  try {
+    const raw = await getStoreSetting("repairs_page");
+    if (!raw) return DEFAULT_REPAIRS_PAGE;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.panels)) return DEFAULT_REPAIRS_PAGE;
+    return parsed;
+  } catch {
+    return DEFAULT_REPAIRS_PAGE;
+  }
+}
+
+app.get("/api/repairs-page", asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await loadRepairsPage());
+}));
+
+app.get("/api/admin/repairs-page", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await loadRepairsPage());
+}));
+
+app.put("/api/admin/repairs-page", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { intro, panels } = req.body || {};
+  if (intro !== undefined && !okLen(intro, 0, 2000)) { res.status(400).json({ error: "Intro must be ≤2000 characters." }); return; }
+  if (panels !== undefined && (!Array.isArray(panels) || panels.length > 20)) { res.status(400).json({ error: "Panels must be an array of at most 20." }); return; }
+
+  const cleaned: { intro: string; panels: { title: string; description: string }[] } = {
+    intro: String(intro || "").trim(),
+    panels: [],
+  };
+  if (panels !== undefined) {
+    for (const p of panels) {
+      const title = String(p?.title || "").trim();
+      const description = String(p?.description || "").trim();
+      if (!title || !description) { res.status(400).json({ error: "Each panel needs a title and description." }); return; }
+      if (title.length > 200 || description.length > 2000) { res.status(400).json({ error: "Panel title/description too long." }); return; }
+      cleaned.panels.push({ title, description });
+    }
+  }
+  await setStoreSetting("repairs_page", JSON.stringify(cleaned));
+  res.json(cleaned);
+}));
+
 app.get("/api/repairs/statuses", (_req: Request, res: Response) => {
   res.json({ statuses: STATUS_LABELS });
 });

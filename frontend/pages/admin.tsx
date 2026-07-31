@@ -21,6 +21,7 @@ import ProductPositioningPage from "@/components/admin/ProductPositioningPage";
 import StockTakeListPage from "@/components/admin/StockTakeListPage";
 import StockOnHandPage from "@/components/admin/StockOnHandPage";
 import CategoryPositioningPage from "@/components/admin/CategoryPositioningPage";
+import AdminRepairs from "@/components/admin/AdminRepairs";
 
 declare global {
   interface Window {
@@ -28,7 +29,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
   {
@@ -44,6 +45,12 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "abandoned-carts", label: "Abandoned Carts", feature: "Cart recovery" },
       { key: "quotations", label: "Quotations", feature: "Quotations" },
       { key: "category-positioning", label: "Category Order" },
+    ],
+  },
+  {
+    label: "Services",
+    items: [
+      { key: "repairs", label: "Repairs", feature: "Repair ticketing" },
     ],
   },
   {
@@ -122,7 +129,7 @@ export default function AdminPage() {
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const gisLoadedRef = useRef(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Team", "Settings"]);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Services", "Team", "Settings"]);
   const featureFlags: Record<string, boolean> = {
     "Messaging": useFeature("Messaging"),
     "Credit notes": useFeature("Credit notes"),
@@ -424,6 +431,7 @@ export default function AdminPage() {
             {view === "email-settings" && <AdminEmailSettings />}
             {view === "whatsapp-settings" && <WhatsAppSettings />}
             {view === "category-positioning" && <CategoryPositioningPage />}
+            {view === "repairs" && <AdminRepairs />}
           </div>
       </div>
     </div>

@@ -1,6 +1,24 @@
-﻿import React from "react";
+﻿import React, { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+
+const DEFAULT_PANELS = [
+  { title: "Laptop & PC repairs", description: "Screen replacement, keyboard repair, battery replacement, motherboard diagnostics, and more." },
+  { title: "Software & OS", description: "Virus removal, OS reinstallation, data recovery, driver updates, and software troubleshooting." },
+  { title: "Upgrades", description: "RAM upgrades, SSD installation, CPU upgrades, and general performance improvements." },
+  { title: "Mac & Apple devices", description: "MacBook, iMac, and Mac Pro repairs including display, keyboard, and logic board issues." },
+];
 
 export default function RepairsPage() {
+  const [intro, setIntro] = useState("We offer professional repair services for laptops, desktops, Macs, tablets, and printers.");
+  const [panels, setPanels] = useState(DEFAULT_PANELS);
+
+  useEffect(() => {
+    api<any>("/api/repairs-page").then((d) => {
+      if (d?.intro) setIntro(d.intro);
+      if (Array.isArray(d?.panels) && d.panels.length > 0) setPanels(d.panels);
+    }).catch(() => {});
+  }, []);
+
   return (
     <>
       <nav className="breadcrumbs" aria-label="Breadcrumb">
@@ -10,24 +28,14 @@ export default function RepairsPage() {
         </ol>
       </nav>
       <h1>Repair services</h1>
-      <p className="page-intro">We offer professional repair services for laptops, desktops, Macs, tablets, and printers.</p>
+      <p className="page-intro">{intro}</p>
       <div className="product-grid">
-        <div className="panel">
-          <h3>Laptop &amp; PC repairs</h3>
-          <p>Screen replacement, keyboard repair, battery replacement, motherboard diagnostics, and more.</p>
-        </div>
-        <div className="panel">
-          <h3>Software &amp; OS</h3>
-          <p>Virus removal, OS reinstallation, data recovery, driver updates, and software troubleshooting.</p>
-        </div>
-        <div className="panel">
-          <h3>Upgrades</h3>
-          <p>RAM upgrades, SSD installation, CPU upgrades, and general performance improvements.</p>
-        </div>
-        <div className="panel">
-          <h3>Mac &amp; Apple devices</h3>
-          <p>MacBook, iMac, and Mac Pro repairs including display, keyboard, and logic board issues.</p>
-        </div>
+        {panels.map((p, i) => (
+          <div className="panel" key={i}>
+            <h3>{p.title}</h3>
+            <p>{p.description}</p>
+          </div>
+        ))}
       </div>
       <div style={{ textAlign: "center", marginTop: "2rem" }}>
         <a href="/repair-book" className="btn">Book a repair</a>

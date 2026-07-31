@@ -170,7 +170,7 @@ See `LOCAL_SETUP.md` for the detailed step-by-step guide.
 ## 6. Key Panels
 
 ### Admin Panel (`/admin`)
-Products, **Groups** (create/edit/delete and toggle active; drives public storefront `/groups` pages), Categories (with shareable subcategories), **Category Order** (drag-and-drop grid ordering), Coupons, Orders, Users & Permissions, Roles, Plans (feature checkboxes in 11 groups), Providers, Invoices, Credit Notes, Reports (5 sub-tabs), Stock on Hand, Stock Transfers, Stock Take, Purchases, Suppliers, Branches, Clients, Messages, Reviews, Spec Templates, Splashes, About Us, Storefront, Shop Subscription, Settings.
+Products, **Groups** (create/edit/delete and toggle active; drives public storefront `/groups` pages), Categories (with shareable subcategories), **Category Order** (drag-and-drop grid ordering), **Repairs** (Services: Tickets with status/technician filters and full ticket editing, Calendar week view of scheduled repairs, and Page Content editor for the public `/repairs` page), Coupons, Orders, Users & Permissions, Roles, Plans (feature checkboxes in 11 groups), Providers, Invoices, Credit Notes, Reports (5 sub-tabs), Stock on Hand, Stock Transfers, Stock Take, Purchases, Suppliers, Branches, Clients, Messages, Reviews, Spec Templates, Splashes, About Us, Storefront, Shop Subscription, Settings.
 
 ### Owner Panel (`/owner`)
 Dashboard, Products, Providers, Customers, Messages, Quotes, Reports, Stock Control, Stock Take, Tech Repairs, About Us, Storefront, Shop Subscription, Audit Log.
@@ -190,6 +190,9 @@ Five built-in layout themes — Original, Amazon, Jumia, Mobile, Custom — plus
 
 ### Product Groups
 Managed collections built from the old free-text category groups (`product_groups` table). Admins create/edit/delete groups and toggle each one **active** from Admin → Groups. Active groups get public `/groups` (index) and `/group/[slug]` (product grid) pages, and appear as filters in the Sales Report and Stock Summary. Products assign to a group via the product form's Group dropdown; category remains optional. Existing category group names were migrated into group rows automatically, and `products.group_id` was backfilled from each product's category.
+
+### Repairs page content
+The public `/repairs` page is fully editable from **Admin → Services → Repairs → Page Content**: change the intro paragraph and add/remove/edit the service panels (title + description) customers see. Content is saved in settings and served to the storefront via `GET /api/repairs-page` (falls back to the default panels if nothing has been saved yet).
 
 ### Header navigation & hero chips stay in sync with categories
 The storefront header nav buttons (next to the Sign in button) and the hero's category chips are reconciled against the live category list on every load — no manual "sync" step needed:
@@ -224,6 +227,7 @@ Dark mode by default with a light/dark toggle, persisted in `localStorage` and a
 - `GET /api/categories`, `GET /api/subcategories`.
 - `GET /api/plans`, `GET /api/layouts`, `GET /api/shipping/counties`, `GET /api/splashes`.
 - `GET /api/shop/features` — merged subscription + override features for UI gating.
+- `GET /api/repairs-page` — intro + service panels for the public `/repairs` page.
 
 ### Customer
 - `POST /api/customer/login`, `POST /api/customer/google-login`.
