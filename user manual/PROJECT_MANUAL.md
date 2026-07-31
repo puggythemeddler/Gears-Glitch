@@ -189,13 +189,14 @@ Clients, Plans, Changelog, Deploy Log, Backups, Settings (SMTP/Cloudinary), Audi
 Five built-in layout themes — Original, Amazon, Jumia, Mobile, Custom — plus a runtime JSON layout builder for admin-created dynamic themes. The active layout is stored in the `storefront_layouts` table and selected from Admin → Settings → Storefront.
 
 ### Product Groups
-Managed collections built from the old free-text category groups (`product_groups` table). Admins create/edit/delete groups and toggle each one **active** from Admin → Groups. Active groups get public `/groups` (index) and `/group/[slug]` (product grid) pages linked from the storefront nav, and appear as filters in the Sales Report and Stock Summary. Products assign to a group via the product form's Group dropdown; category remains optional. Existing category group names were migrated into group rows automatically, and `products.group_id` was backfilled from each product's category.
+Managed collections built from the old free-text category groups (`product_groups` table). Admins create/edit/delete groups and toggle each one **active** from Admin → Groups. Active groups get public `/groups` (index) and `/group/[slug]` (product grid) pages, and appear as filters in the Sales Report and Stock Summary. Products assign to a group via the product form's Group dropdown; category remains optional. Existing category group names were migrated into group rows automatically, and `products.group_id` was backfilled from each product's category.
 
 ### Header navigation & hero chips stay in sync with categories
 The storefront header nav buttons (next to the Sign in button) and the hero's category chips are reconciled against the live category list on every load — no manual "sync" step needed:
 - **Deleted categories** are automatically removed from the header nav and hero chips.
 - **Newly added categories** are automatically appended to both.
-- Static page links (Groups, Repairs, Cart, Wishlist, About Us, Contact) are preserved, as is the admin-configured nav order for existing items.
+- Static page links (Repairs, Cart, Wishlist, About Us, Contact) are preserved, as is the admin-configured nav order for existing items.
+- Cart, Wishlist, About Us and Contact display on the right side of the header, left of the search box. The "Groups" button is not shown in the storefront header (groups are still reachable at `/groups` and `/group/[slug]`).
 - The admin "Category Order" panel (drag-and-drop) still controls display order of the category grid.
 
 ### Marketing hero (Original layout)

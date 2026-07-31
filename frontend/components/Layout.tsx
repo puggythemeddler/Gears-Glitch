@@ -20,7 +20,6 @@ const NAV_LINKS = [
   { id: "graphics-cards", label: "Graphics Cards", href: "/graphics-cards" },
   { id: "servers", label: "Servers", href: "/servers" },
   { id: "printers", label: "Printers", href: "/printers" },
-  { id: "groups", label: "Groups", href: "/groups" },
   { id: "repairs", label: "Repairs", href: "/repairs" },
   { id: "cart", label: "Cart", href: "/cart" },
   { id: "wishlist", label: "Wishlist", href: "/wishlist" },
@@ -28,7 +27,8 @@ const NAV_LINKS = [
   { id: "contact", label: "Contact", href: "/contact" },
 ];
 
-const STATIC_NAV_IDS = new Set(["groups", "repairs", "cart", "wishlist", "about", "contact"]);
+const STATIC_NAV_IDS = new Set(["repairs", "cart", "wishlist", "about", "contact"]);
+const RIGHT_NAV_IDS = new Set(["cart", "wishlist", "about", "contact"]);
 
 export default function Layout({ children, activeNav }: LayoutProps) {
   const { isLoggedIn, userName, cartCount, settings, isDark, toggleDark, logout } = useApp();
@@ -88,6 +88,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   })();
 
   const filteredNavLinks = resolvedNavLinks.filter((l: any) => l.id !== "repairs" || repairsEnabled);
+  const leftNavLinks = filteredNavLinks.filter((l: any) => !RIGHT_NAV_IDS.has(l.id));
+  const rightNavLinks = filteredNavLinks.filter((l: any) => RIGHT_NAV_IDS.has(l.id));
 
   useEffect(() => {
     const handler = () => { setMobileOpen(false); setSpringboardOpen(false); };
@@ -153,7 +155,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
               </button>
               {springboardOpen && (
                 <div className="springboard-dropdown">
-                  {filteredNavLinks.map((link: any) => (
+                  {leftNavLinks.map((link: any) => (
                     <Link
                       key={link.id}
                       href={link.href}
@@ -171,7 +173,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             </div>
           ) : (
             <nav className="main-nav-desktop" aria-label="Main">
-              {filteredNavLinks.map((link: any) => (
+              {leftNavLinks.map((link: any) => (
                 <Link
                   key={link.id}
                   href={link.href}
@@ -188,6 +190,17 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           )}
         </div>
         <div className="header-right">
+          <div className="header-right-nav">
+            {rightNavLinks.map((link: any) => (
+              <Link
+                key={link.id}
+                href={link.href}
+                className={`header-right-link${activeNav === link.id ? " active" : ""}`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
           <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) window.location.href = `/?search=${encodeURIComponent(q)}`; }}>
             <input name="q" type="search" placeholder="Search..." aria-label="Search products" />
             <button type="submit" aria-label="Search">🔍</button>
