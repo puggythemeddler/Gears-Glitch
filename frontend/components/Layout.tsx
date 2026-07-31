@@ -30,6 +30,14 @@ const NAV_LINKS = [
 const STATIC_NAV_IDS = new Set(["repairs", "cart", "wishlist", "about", "contact"]);
 const RIGHT_NAV_IDS = new Set(["cart", "wishlist", "about", "contact"]);
 
+const STATIC_NAV_LINKS = [
+  { id: "repairs", label: "Repairs", href: "/repairs" },
+  { id: "cart", label: "Cart", href: "/cart" },
+  { id: "wishlist", label: "Wishlist", href: "/wishlist" },
+  { id: "about", label: "About Us", href: "/about" },
+  { id: "contact", label: "Contact", href: "/contact" },
+];
+
 export default function Layout({ children, activeNav }: LayoutProps) {
   const { isLoggedIn, userName, cartCount, settings, isDark, toggleDark, logout } = useApp();
   const [isStaff, setIsStaff] = useState(false);
@@ -39,7 +47,6 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [springboardOpen, setSpringboardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { configLoading, layout } = useLayout();
-  const repairsEnabled = useFeature("Repair ticketing");
   const multiCurrencyEnabled = useFeature("Multi-currency support");
   const springboardMenu = settings?.springboardMenu ?? false;
   const [navLinks, setNavLinks] = useState(NAV_LINKS);
@@ -87,7 +94,15 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     return [...kept, ...added];
   })();
 
-  const filteredNavLinks = resolvedNavLinks.filter((l: any) => l.id !== "repairs" || repairsEnabled);
+  const filteredNavLinks = (() => {
+    const byId = new Set(resolvedNavLinks.map((l: any) => l.id));
+    const merged = [...resolvedNavLinks];
+    for (const s of STATIC_NAV_LINKS) {
+      if (!byId.has(s.id)) merged.push(s);
+    }
+    return merged;
+  })();
+
   const leftNavLinks = filteredNavLinks.filter((l: any) => !RIGHT_NAV_IDS.has(l.id));
   const rightNavLinks = filteredNavLinks.filter((l: any) => RIGHT_NAV_IDS.has(l.id));
 
