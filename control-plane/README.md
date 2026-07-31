@@ -65,7 +65,7 @@ npm run dev             # http://localhost:4000
 - **Actions per client**:
   - **Details** — opens full client panel with invoices
   - **Backend/Frontend** — links to client's live URLs
-  - **Edit** — change plan, expiry, notes, feature flags, phone, address
+  - **Edit** — change plan, expiry, notes, phone, address, and per-client feature overrides
   - **Redeploy** — trigger a Render deploy for this client individually
   - **Suspend/Resume** — pause or unpause the client's Render service
   - **Delete** — removes DB + all cloud resources
@@ -80,6 +80,16 @@ Click **Details** on any client to see:
   - **View** — open branded HTML invoice in new tab
   - **PDF** — download invoice as PDF
   - **Email** — send invoice to client's email
+
+### Feature Overrides
+Use the **Feature Overrides** picker in the Edit Client modal to fine-tune what an individual tenant can use, independent of their subscription plan:
+- All features are listed in the same 11 collapsible groups as the plan editor (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency)
+- Click a feature chip to cycle through three states:
+  - **Enabled** (blue) — force-adds a feature the plan doesn't include (`true` override)
+  - **Blocked** (red, struck through) — hides a feature the plan normally includes (`false` override)
+  - **Inherit** (neutral dash) — falls back to the plan's defaults (no override)
+- Group-level **Select all** and **Block** buttons, plus a **Clear overrides** button to reset everything to plan defaults
+- Saving always pushes the overrides to the client's backend (`POST /api/admin/features/overrides`) — even when empty, which clears stale overrides — and they're merged with the plan's features on the client's `/api/shop/features`
 
 ### Plans
 - Create, edit, activate/deactivate, delete custom subscription plans

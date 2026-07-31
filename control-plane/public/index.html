@@ -412,10 +412,12 @@
       </div>
       <div class="field"><label>Notes</label><textarea id="edit-notes" placeholder="Internal notes about this client..." rows="2"></textarea></div>
       <div class="field">
-        <label>Feature Flags (JSON)</label>
-        <textarea id="edit-features" rows="4" placeholder='{"Visitor analytics": true}'></textarea>
-        <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">Override plan features per client. Set <code>true</code> to enable or <code>false</code> to disable a feature. Available: Visitor analytics, WhatsApp integration, Repair ticketing, Multi-currency support, etc.</p>
-        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">JSON object of feature toggles. These override the plan defaults for this specific client.</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+          <label style="margin:0">Feature Overrides</label>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="clearClientOverrides()">Clear overrides</button>
+        </div>
+        <div id="client-feature-groups-container" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">Click a feature to cycle: <span style="color:var(--primary);font-weight:600">Enabled</span> &rarr; <span style="color:var(--danger);font-weight:600">Blocked</span> &rarr; <span style="font-weight:600">Inherit</span> (plan default). "Blocked" hides a feature this plan normally includes; "Enabled" adds one it doesn't.</p>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hideEditModal()">Cancel</button>
@@ -493,6 +495,7 @@
   <script>
     let allClients = [];
     let editingClientId = null;
+    let editingClientOverrides = {};
     let editingPlanFeatures = [];
     let currentUser = null;
     let operatorEmail = "";
@@ -679,6 +682,88 @@
       if (on) { editingPlanFeatures = [...new Set([...editingPlanFeatures, ...grp.features])]; }
       else { editingPlanFeatures = editingPlanFeatures.filter(f => !grp.features.includes(f)); }
       renderFeatureGroups(editingPlanFeatures);
+    }
+
+    const ALL_FEATURES = FEATURE_GROUPS.reduce((acc, g) => acc.concat(g.features), []);
+
+    function clientFeatureState(f) {
+      return Object.prototype.hasOwnProperty.call(editingClientOverrides, f) ? editingClientOverrides[f] : undefined;
+    }
+
+    function renderClientFeatureGroups() {
+      const container = document.getElementById("client-feature-groups-container");
+      let html = "";
+      let idx = 0;
+      for (const grp of FEATURE_GROUPS) {
+        const onCount = grp.features.filter(f => clientFeatureState(f) === true).length;
+        const offCount = grp.features.filter(f => clientFeatureState(f) === false).length;
+        const allOn = onCount === grp.features.length;
+        html += `<details style="margin-bottom:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
+          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'rgba(59,130,246,0.1)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="event.preventDefault();this.parentElement.open=!this.parentElement.open">
+            <span style="font-size:0.65rem;opacity:0.5;transition:transform 0.2s;transform:rotate(90deg)">&#9654;</span>
+            <span>${grp.icon}</span>
+            <span style="flex:1">${grp.group}</span>
+            <span style="font-size:0.7rem;font-weight:400;opacity:0.6">${onCount} on / ${offCount} blocked</span>
+            <label style="font-size:0.7rem;font-weight:400;padding:0.1rem 0.4rem;border-radius:4px;background:${allOn ? 'var(--primary)' : 'var(--border)'};color:${allOn ? '#fff' : 'var(--text)'};cursor:pointer" onclick="event.stopPropagation()">
+              <input type="checkbox" ${allOn ? 'checked' : ''} onchange="setClientFeatureGroup('${grp.group}', this.checked)" style="display:none">
+              ${allOn ? 'All' : 'Select all'}
+            </label>
+            <span style="font-size:0.7rem;font-weight:400;padding:0.1rem 0.4rem;border-radius:4px;background:${offCount === grp.features.length ? 'var(--danger)' : 'var(--border)'};color:${offCount === grp.features.length ? '#fff' : 'var(--text)'};cursor:pointer" onclick="event.stopPropagation();blockClientFeatureGroup('${grp.group}')">Block</span>
+          </summary>
+          <div style="display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.5rem 0.75rem 0.75rem">
+            ${grp.features.map(f => {
+              const s = clientFeatureState(f);
+              const on = s === true;
+              const off = s === false;
+              return `<label title="Click to cycle: Enable / Block / Inherit" style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.78rem;cursor:pointer;padding:0.25rem 0.5rem;border-radius:6px;background:${on ? 'var(--primary)' : off ? 'rgba(239,68,68,0.12)' : 'var(--bg)'};color:${on ? '#fff' : off ? 'var(--danger)' : 'var(--text)'};border:1px solid ${on ? 'var(--primary)' : off ? 'var(--danger)' : 'var(--border)'};text-decoration:${off ? 'line-through' : 'none'}" onclick="cycleClientFeature(${idx++})">
+              <span style="font-size:0.7rem;font-weight:700">${on ? '&#10003;' : off ? '&#10007;' : '&ndash;'}</span>
+              <span>${esc(f)}</span>
+            </label>`;
+            }).join('')}
+          </div>
+        </details>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function cycleClientFeature(index) {
+      const key = ALL_FEATURES[index];
+      const cur = clientFeatureState(key);
+      if (cur === undefined) editingClientOverrides[key] = true;
+      else if (cur === true) editingClientOverrides[key] = false;
+      else delete editingClientOverrides[key];
+      renderClientFeatureGroups();
+    }
+
+    function setClientFeatureGroup(groupName, on) {
+      const grp = FEATURE_GROUPS.find(g => g.group === groupName);
+      if (!grp) return;
+      for (const f of grp.features) {
+        if (on) editingClientOverrides[f] = true;
+        else delete editingClientOverrides[f];
+      }
+      renderClientFeatureGroups();
+    }
+
+    function blockClientFeatureGroup(groupName) {
+      const grp = FEATURE_GROUPS.find(g => g.group === groupName);
+      if (!grp) return;
+      for (const f of grp.features) editingClientOverrides[f] = false;
+      renderClientFeatureGroups();
+    }
+
+    function clearClientOverrides() {
+      editingClientOverrides = {};
+      renderClientFeatureGroups();
+      toast("All overrides cleared. Client will inherit plan defaults.");
+    }
+
+    function clientOverridesToObject() {
+      const out = {};
+      for (const [k, v] of Object.entries(editingClientOverrides)) {
+        if (v === true || v === false) out[k] = v;
+      }
+      return out;
     }
 
     function api(path, opts = {}) {
@@ -939,7 +1024,19 @@
       document.getElementById("edit-phone").value = c.phone || "";
       document.getElementById("edit-address").value = c.address || "";
       document.getElementById("edit-notes").value = c.notes || "";
-      document.getElementById("edit-features").value = c.feature_flags && c.feature_flags !== '{}' ? JSON.stringify(typeof c.feature_flags === 'string' ? JSON.parse(c.feature_flags) : c.feature_flags, null, 2) : "";
+      editingClientOverrides = {};
+      try {
+        const raw = c.feature_flags;
+        if (raw && raw !== '{}') {
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          if (parsed && typeof parsed === "object") {
+            for (const [k, v] of Object.entries(parsed)) {
+              if (v === true || v === false) editingClientOverrides[k] = v;
+            }
+          }
+        }
+      } catch {}
+      renderClientFeatureGroups();
       document.getElementById("edit-modal-overlay").classList.add("show");
     }
 
@@ -949,16 +1046,12 @@
       const phone = document.getElementById("edit-phone").value;
       const address = document.getElementById("edit-address").value;
       const notes = document.getElementById("edit-notes").value;
-      let featureFlags = null;
-      const raw = document.getElementById("edit-features").value.trim();
-      if (raw) { try { featureFlags = JSON.parse(raw); } catch { toast("Invalid JSON in feature flags", "error"); return; } }
+      const featureFlags = clientOverridesToObject();
 
       try {
         await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ plan, subscription_expires: expires, phone, address, notes, feature_flags: featureFlags }) });
-        // Push feature overrides to the client backend
-        if (featureFlags) {
-          await api("/api/clients/" + editingClientId + "/features", { method: "POST", body: JSON.stringify({ overrides: featureFlags }) }).catch(() => {});
-        }
+        // Push feature overrides to the client backend (empty object clears them)
+        await api("/api/clients/" + editingClientId + "/features", { method: "POST", body: JSON.stringify({ overrides: featureFlags }) }).catch(() => {});
         toast("Client updated."); hideEditModal(); loadClients();
       } catch (e) { toast("Failed", "error"); }
     }

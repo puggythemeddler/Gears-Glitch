@@ -204,6 +204,7 @@ A separate operator dashboard at `control-plane/` serves as the central admin hu
 - **Per-user accounts** — Role-based (admin/viewer) with unique API keys
 - **Single-client redeploy** — Trigger a Render deploy for an individual client from the UI
 - **Client contact fields** — Phone and address fields on client records
+- **Per-client feature overrides** — Fine-tune a tenant's feature set without changing their plan: the Edit modal lists all features as grouped checkboxes with tri-state toggles (Enabled / Blocked / Inherit), pushed to the client's backend and merged with the plan's features on `/api/shop/features`
 
 See `control-plane/README.md` for full documentation.
 
