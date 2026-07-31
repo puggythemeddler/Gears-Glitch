@@ -2312,6 +2312,12 @@ function AdminStorefront() {
     headline: "Power Your",
     headlineAccent: "Next Build",
     subtitle: "Discover premium gaming PCs, laptops, graphics cards, servers, and accessories at unbeatable prices. Kenya\u2019s trusted all-in-one tech platform.",
+    headlineVariants: [] as { headline: string; accent: string; subtitle: string }[],
+    showSearch: true,
+    showTrustStrip: true,
+    showWhatsApp: true,
+    countdownLabel: "Offer ends in",
+    countdownEnd: "",
     shopNowLabel: "Shop Now",
     shopNowLink: "/pc",
     browseLabel: "Browse Categories",
@@ -2339,7 +2345,15 @@ function AdminStorefront() {
       setCfg(d);
       setBannerInputs((d.banners || []).map((b: any) => ({ title: b.title || "", subtitle: b.subtitle || "" })));
       if (d.hero) {
-        setHeroForm((prev) => ({ ...prev, ...d.hero }));
+        const h = { ...d.hero };
+        if (h.countdownEnd) {
+          const dt = new Date(h.countdownEnd);
+          if (!isNaN(dt.getTime())) {
+            const off = dt.getTimezoneOffset();
+            h.countdownEnd = new Date(dt.getTime() - off * 60000).toISOString().slice(0, 16);
+          }
+        }
+        setHeroForm((prev) => ({ ...prev, ...h }));
       }
       try { const cd = await api<any>("/api/categories"); setCatList(cd.categories || []); } catch {}
     } catch {}
@@ -2369,7 +2383,14 @@ function AdminStorefront() {
 
   async function saveHero() {
     setSaving(true);
-    try { await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ hero: heroForm }) }); await load(); }
+    try {
+      const payload = { ...heroForm };
+      if (payload.countdownEnd) {
+        const dt = new Date(payload.countdownEnd);
+        payload.countdownEnd = isNaN(dt.getTime()) ? "" : dt.toISOString();
+      }
+      await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ hero: payload }) }); await load();
+    }
     catch {}
     finally { setSaving(false); }
   }
@@ -2496,6 +2517,54 @@ function AdminStorefront() {
           <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>Trust Text</label>
             <input value={heroForm.trustText} onChange={(e) => setHeroForm({ ...heroForm, trustText: e.target.value })} />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Marketing Boosters</label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.5rem" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.85rem" }}>
+                <input type="checkbox" checked={heroForm.showSearch} onChange={(e) => setHeroForm({ ...heroForm, showSearch: e.target.checked })} style={{ width: 17, height: 17 }} />
+                Search bar in hero
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.85rem" }}>
+                <input type="checkbox" checked={heroForm.showTrustStrip} onChange={(e) => setHeroForm({ ...heroForm, showTrustStrip: e.target.checked })} style={{ width: 17, height: 17 }} />
+                Payment &amp; delivery trust strip
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.85rem" }}>
+                <input type="checkbox" checked={heroForm.showWhatsApp} onChange={(e) => setHeroForm({ ...heroForm, showWhatsApp: e.target.checked })} style={{ width: 17, height: 17 }} />
+                Chat on WhatsApp button
+              </label>
+            </div>
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "0.35rem 0 0" }}>WhatsApp button uses the store phone number in Settings. Countdown, headline rotation and sale badges below.</p>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Sale Countdown</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+              <div className="field" style={{ margin: 0 }}>
+                <label>Countdown Label</label>
+                <input value={heroForm.countdownLabel} onChange={(e) => setHeroForm({ ...heroForm, countdownLabel: e.target.value })} placeholder="Offer ends in" />
+              </div>
+              <div className="field" style={{ margin: 0 }}>
+                <label>Sale Ends At</label>
+                <input type="datetime-local" value={heroForm.countdownEnd} onChange={(e) => setHeroForm({ ...heroForm, countdownEnd: e.target.value })} />
+              </div>
+            </div>
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "0.35rem 0 0" }}>Leave the end time empty to hide the countdown. It disappears automatically once the sale ends.</p>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Rotating Headlines <span className="muted" style={{ fontWeight: 400 }}>(optional &mdash; cycles every 6s)</span></label>
+            {heroForm.headlineVariants.map((v, i) => (
+              <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
+                <input value={v.headline} onChange={(e) => { const copy = [...heroForm.headlineVariants]; copy[i] = { ...copy[i], headline: e.target.value }; setHeroForm({ ...heroForm, headlineVariants: copy }); }} placeholder="Headline (before accent)" style={{ flex: 1 }} />
+                <input value={v.accent} onChange={(e) => { const copy = [...heroForm.headlineVariants]; copy[i] = { ...copy[i], accent: e.target.value }; setHeroForm({ ...heroForm, headlineVariants: copy }); }} placeholder="Accent" style={{ flex: 1 }} />
+                <input value={v.subtitle} onChange={(e) => { const copy = [...heroForm.headlineVariants]; copy[i] = { ...copy[i], subtitle: e.target.value }; setHeroForm({ ...heroForm, headlineVariants: copy }); }} placeholder="Subtitle (optional)" style={{ flex: 1 }} />
+                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, headlineVariants: heroForm.headlineVariants.filter((_, j) => j !== i) })}>&times;</button>
+              </div>
+            ))}
+            <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, headlineVariants: [...heroForm.headlineVariants, { headline: "", accent: "", subtitle: "" }] })}>+ Add Headline Variant</RippleButton>
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "0.35rem 0 0" }}>When variants exist, they override the headline, accent, and subtitle above on a rotation.</p>
           </div>
 
           <div style={{ gridColumn: "1 / -1" }}>

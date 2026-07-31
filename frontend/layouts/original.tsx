@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
+import { api } from "@/lib/api";
+import { useApp } from "@/lib/app-context";
 import { formatPrice } from "./shared";
 
 export const LAYOUT_KEY = "original";
@@ -53,10 +56,77 @@ function HeroParticle({ delay, left, size }: { delay: number; left: number; size
   );
 }
 
+function HeroCountdown({ endTime, label }: { endTime: number; label: string }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const diff = Math.max(0, endTime - now);
+  if (diff <= 0) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor(diff / 3600000) % 24;
+  const m = Math.floor(diff / 60000) % 60;
+  const s = Math.floor(diff / 1000) % 60;
+  return (
+    <div className="hero-countdown" role="timer" aria-label="Countdown to sale end">
+      <span className="hero-countdown-label">{label}</span>
+      <span className="hero-countdown-unit">{d}<em>days</em></span>
+      <span className="hero-countdown-unit">{pad(h)}<em>hrs</em></span>
+      <span className="hero-countdown-unit">{pad(m)}<em>min</em></span>
+      <span className="hero-countdown-unit">{pad(s)}<em>sec</em></span>
+    </div>
+  );
+}
+
+function useCountUp(target: string): string {
+  const [val, setVal] = useState(target);
+
+  useEffect(() => {
+    const m = target.match(/^(\d+)(.*)$/);
+    if (!m) { setVal(target); return; }
+    const end = parseInt(m[1], 10);
+    const suffix = m[2] || "";
+    const dur = 1200;
+    const t0 = performance.now();
+    let raf = 0;
+    const step = (t: number) => {
+      const p = Math.min(1, (t - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setVal(Math.round(end * eased).toLocaleString() + suffix);
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target]);
+
+  return val;
+}
+
+function HeroStatValue({ value }: { value: string }) {
+  return <span className="hero-stat-value">{useCountUp(value)}</span>;
+}
+
+function HeroStarRating({ average }: { average: number }) {
+  return (
+    <span style={{ color: "#f59e0b", fontSize: "0.8rem", letterSpacing: "1px" }} aria-label={`${average} out of 5 stars`}>
+      {Array.from({ length: 5 }).map((_, i) => i < Math.round(average) ? "★" : "☆").join("")}
+    </span>
+  );
+}
+
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
+  const router = useRouter();
+  const { isLoggedIn, userName, settings } = useApp();
   const [activeIdx, setActiveIdx] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [liveStats, setLiveStats] = useState<any>(null);
+  const [ratings, setRatings] = useState<Record<string, { average: number; count: number }>>({});
+  const [variantIdx, setVariantIdx] = useState(0);
+  const [searchQ, setSearchQ] = useState("");
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
 
@@ -80,18 +150,45 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     return () => clearInterval(timer);
   }, [featured.length, prefersReducedMotion]);
 
+  useEffect(() => {
+    let cancelled = false;
+    products.filter((p) => p.imageUrl).slice(0, 6).forEach((p) => {
+      api<{ rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(p.id)}/reviews`)
+        .then((d) => { if (!cancelled && d.rating && d.rating.count > 0) setRatings((prev) => ({ ...prev, [p.id]: d.rating })); })
+        .catch(() => {});
+    });
+    return () => { cancelled = true; };
+  }, [products]);
+
+  const variants = hero?.headlineVariants?.length > 0 ? hero.headlineVariants : [];
+  useEffect(() => {
+    if (variants.length <= 1 || prefersReducedMotion) return;
+    const timer = setInterval(() => {
+      setVariantIdx((i) => (i + 1) % variants.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [variants.length, prefersReducedMotion]);
+
+  const variant = variants.length > 0 ? variants[variantIdx % variants.length] : null;
+  const headline = variant?.headline || hero?.headline || "Power Your";
+  const headlineAccent = variant?.accent || hero?.headlineAccent || "Next Build";
+  const subtitle = variant?.subtitle || hero?.subtitle || "Discover premium gaming PCs, laptops, graphics cards, servers, and accessories at unbeatable prices. Kenya\u2019s trusted all-in-one tech platform.";
+
   const badgeText = hero?.badgeText || "Summer Tech Sale \u2014 Up to 30% Off";
   const badgeActive = hero?.badgeActive !== false;
   const badgeLink = hero?.badgeLink || "";
-
-  const headline = hero?.headline || "Power Your";
-  const headlineAccent = hero?.headlineAccent || "Next Build";
-  const subtitle = hero?.subtitle || "Discover premium gaming PCs, laptops, graphics cards, servers, and accessories at unbeatable prices. Kenya\u2019s trusted all-in-one tech platform.";
 
   const shopNowLabel = hero?.shopNowLabel || "Shop Now";
   const shopNowLink = hero?.shopNowLink || "/pc";
   const browseLabel = hero?.browseLabel || "Browse Categories";
   const browseLink = hero?.browseLink || "/#categories";
+
+  const countdownEnd = hero?.countdownEnd ? new Date(hero.countdownEnd).getTime() : 0;
+  const countdownLabel = hero?.countdownLabel || "Offer ends in";
+  const showSearch = hero?.showSearch !== false;
+  const showTrustStrip = hero?.showTrustStrip !== false;
+  const showWhatsApp = hero?.showWhatsApp !== false;
+  const waPhone = settings?.storePhone ? settings.storePhone.replace(/[^0-9]/g, "") : "";
 
   const catChips = hero?.catChips?.length > 0
     ? hero.catChips
@@ -129,6 +226,12 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
   const trustText = hero?.trustText || "Trusted by 5,000+ customers across Kenya";
 
+  function submitSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const q = searchQ.trim();
+    if (q) router.push("/?search=" + encodeURIComponent(q));
+  }
+
   return (
     <section className="hero">
       <div className="hero-bg">
@@ -141,6 +244,13 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
       <div className="hero-inner">
         <div className="hero-content">
+          {isLoggedIn && userName && (
+            <div className="hero-greeting">
+              Welcome back, {userName.split(/\s+/)[0]}
+              <span>&mdash; we saved you some great deals</span>
+            </div>
+          )}
+
           {badgeActive && (
             badgeLink ? (
               <a href={badgeLink} className="hero-badge" style={{ textDecoration: "none" }}>
@@ -155,13 +265,26 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
             )
           )}
 
-          <h1 className="hero-headline">
+          <h1 className="hero-headline" key={variant ? variantIdx : "static"}>
             {headline} <span className="hero-headline-accent">{headlineAccent}</span>
           </h1>
 
           <p className="hero-sub">
             {subtitle}
           </p>
+
+          {showSearch && (
+            <form className="hero-search" onSubmit={submitSearch} role="search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+                placeholder="Search laptops, GPUs, PCs..."
+                aria-label="Search products"
+              />
+              <button type="submit">Search</button>
+            </form>
+          )}
 
           <div className="hero-actions">
             <Link href={shopNowLink} className="btn btn-primary btn-lg hero-btn-glass">
@@ -172,7 +295,20 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
               {browseLabel}
             </Link>
+            {showWhatsApp && waPhone && (
+              <a
+                href={`https://wa.me/${waPhone}?text=${encodeURIComponent("Hello! I'm interested in your products.")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary btn-lg hero-btn-glass hero-wa-btn"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                Chat on WhatsApp
+              </a>
+            )}
           </div>
+
+          {countdownEnd > 0 && <HeroCountdown endTime={countdownEnd} label={countdownLabel} />}
 
           <div className="hero-highlights">
             {highlights.map((h: string) => (
@@ -182,6 +318,27 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
               </span>
             ))}
           </div>
+
+          {showTrustStrip && (
+            <div className="hero-truststrip">
+              <span className="hero-truststrip-item">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                M-Pesa &amp; Cards accepted
+              </span>
+              <span className="hero-truststrip-item">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                Nationwide delivery
+              </span>
+              <span className="hero-truststrip-item">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+                Warranty on all items
+              </span>
+              <span className="hero-truststrip-item">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Nairobi delivery in 24h
+              </span>
+            </div>
+          )}
 
           <div className="hero-chips">
             {catChips.map((c: { label: string; href: string }) => (
@@ -199,8 +356,9 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
                   key={p.id}
                   className={`hero-product-slide${i === activeIdx ? " active" : ""}`}
                 >
+                  {p.salePrice && <span className="hero-sale-badge">Sale</span>}
                   {p.imageUrl ? (
-                    <img src={p.imageUrl} alt={p.name} className="hero-product-img" />
+                    <img src={p.imageUrl} alt={p.name} className={`hero-product-img${!prefersReducedMotion ? " hero-kenburns" : ""}`} />
                   ) : (
                     <div className="hero-product-placeholder">
                       {p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
@@ -216,6 +374,15 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
                         </>
                       ) : formatPrice(p.price)}
                     </span>
+                    {ratings[p.id] && (
+                      <span className="hero-rating">
+                        <HeroStarRating average={ratings[p.id].average} />
+                        <span>({ratings[p.id].count})</span>
+                      </span>
+                    )}
+                    {p.inStock && typeof p.stockOnHand === "number" && p.stockOnHand <= 5 && (
+                      <span className="hero-stocknote">Only {p.stockOnHand} left</span>
+                    )}
                   </div>
                 </div>
               ))
@@ -245,7 +412,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
                 className="hero-stat hero-stat-glass"
                 style={{ animationDelay: `${i * 0.3}s` }}
               >
-                <span className="hero-stat-value">{s.value}</span>
+                <HeroStatValue value={s.value} />
                 <span className="hero-stat-label">{s.label}</span>
               </div>
             ))}
