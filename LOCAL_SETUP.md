@@ -82,6 +82,20 @@ ADMIN_PASSWORD=a-strong-password-here
 TECH_PASSWORD=a-strong-password-here
 ```
 
+### M-Pesa (optional)
+
+To test M-Pesa payments, add your Daraja API credentials to `.env`:
+
+```env
+MPESA_CONSUMER_KEY=your-sandbox-consumer-key
+MPESA_CONSUMER_SECRET=your-sandbox-consumer-secret
+MPESA_PASSKEY=your-sandbox-passkey
+MPESA_SHORTCODE=174379
+MPESA_ENV=sandbox
+```
+
+The same values can also be entered in **Admin → Settings → Payments**, where they are saved to the database and reloaded on server restart (DB values take precedence over `.env`). Set `MPESA_ENV=production` and use live credentials before taking real payments. The STK push callback URL must be publicly reachable — use a tunnel (e.g. ngrok) pointing to `https://<your-host>/api/mpesa/callback`.
+
 ---
 
 ## 5. Run the App
