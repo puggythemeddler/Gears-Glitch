@@ -2667,11 +2667,14 @@ app.post("/api/admin/invoices/mark-overdue", adminAuthMiddleware, asyncHandler(a
 
 app.post("/api/admin/invoices/generate", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const { providerId, planId } = req.body || {};
-  if (!providerId) { res.status(400).json({ error: "Provider ID is required." }); return; }
-  if (!isPosInt(Number(providerId))) { res.status(400).json({ error: "Provider ID must be a positive integer." }); return; }
+  let pid: number | null = null;
+  if (providerId !== undefined && providerId !== null && providerId !== "") {
+    if (!isPosInt(Number(providerId))) { res.status(400).json({ error: "Provider ID must be a positive integer." }); return; }
+    pid = Number(providerId);
+  }
   if (planId !== undefined && !isStr(planId)) { res.status(400).json({ error: "Plan ID must be a valid string." }); return; }
-  const invoice = await generateProviderInvoice(Number(providerId), planId || "starter");
-  if (!invoice) { res.status(400).json({ error: "Could not generate invoice. Provider may have no active plan or plan is free." }); return; }
+  const invoice = await generateProviderInvoice(pid, planId || "starter");
+  if (!invoice) { res.status(400).json({ error: "Could not generate invoice. Plan not found." }); return; }
   res.status(201).json(invoice);
 }));
 
@@ -4956,10 +4959,10 @@ app.get("/api/shop/subscription/requests", allowControlPlane(adminAuthMiddleware
 app.put("/api/shop/subscription/requests/:id", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const { status } = req.body || {};
   if (!["approved", "rejected"].includes(status)) { res.status(400).json({ error: "Status must be approved or rejected." }); return; }
-  const ok = await reviewSubscriptionRequest(Number(req.params.id), status, (req as any).user.sub);
-  if (!ok) { res.status(400).json({ error: "Request not found or already reviewed." }); return; }
+  const result = await reviewSubscriptionRequest(Number(req.params.id), status, (req as any).user.sub);
+  if (!result) { res.status(400).json({ error: "Request not found or already reviewed." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "request_" + status, "subscription_request", String(req.params.id), {}, (req as any).user.role);
-  res.json({ ok: true });
+  res.json({ ok: true, plan: typeof result === "string" ? result : null });
 }));
 
 app.get("/api/shop/features", asyncHandler(async (_req: Request, res: Response) => {

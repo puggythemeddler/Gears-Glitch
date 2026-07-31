@@ -208,6 +208,7 @@ interface ProductView {
 interface Invoice {
   id: number;
   providerId: number;
+  providerName?: string;
   planId: string;
   planName: string;
   amount: number;
@@ -2121,6 +2122,18 @@ async function createProvider(data: { companyName: string; contactName: string; 
   return result.rows[0] as Provider;
 }
 
+// Provider row that represents the Gear&Glitch platform billing the store's own
+// subscription. Invoice generation falls back to this when the requested
+// provider doesn't exist (e.g. a fresh production DB has no seeded providers).
+const PLATFORM_PROVIDER_EMAIL = "subscriptions@gearandglitch.com";
+
+async function getOrCreatePlatformProvider(): Promise<Provider> {
+  const existing = await findProviderByEmail(PLATFORM_PROVIDER_EMAIL);
+  if (existing) return existing;
+  const password = crypto.randomBytes(24).toString("hex");
+  return await createProvider({ companyName: "Gear&Glitch", contactName: "Billing", email: PLATFORM_PROVIDER_EMAIL, phone: "", password });
+}
+
 async function verifyProviderPin(providerId: number, pin: string): Promise<boolean> {
   const row = await queryOne("SELECT pin_hash FROM providers WHERE id = $1", [providerId]) as any;
   if (!row || !row.pin_hash) return false;
@@ -2730,10 +2743,10 @@ async function createInvoice(data: { providerId: number; planId: string; amount:
 
 async function getInvoice(id: number): Promise<Invoice | undefined> {
   const row = await queryOne(
-    `SELECT i.*, sp.name AS plan_name FROM invoices i LEFT JOIN subscription_plans sp ON sp.id = i.plan_id WHERE i.id = $1`, [id]
+    `SELECT i.*, sp.name AS plan_name, pr.company_name AS provider_name FROM invoices i LEFT JOIN subscription_plans sp ON sp.id = i.plan_id LEFT JOIN providers pr ON pr.id = i.provider_id WHERE i.id = $1`, [id]
   ) as any;
   if (!row) return undefined;
-  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: row.plan_name || "", amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
+  return { id: row.id, providerId: row.provider_id, providerName: row.provider_name || "", planId: row.plan_id, planName: row.plan_name || "", amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
 }
 
 async function listInvoices(providerId?: number): Promise<Invoice[]> {
@@ -2752,9 +2765,11 @@ async function markInvoicePaid(id: number): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
-async function generateProviderInvoice(providerId: number, planId: string): Promise<Invoice | null> {
+async function generateProviderInvoice(providerId: number | null | undefined, planId: string): Promise<Invoice | null> {
   const plan = await getSubscriptionPlan(planId);
   if (!plan) return null;
+  let targetProvider = providerId ? await findProviderById(providerId) : undefined;
+  if (!targetProvider) targetProvider = await getOrCreatePlatformProvider();
   const now = new Date();
   const periodStart = now.toISOString().slice(0, 10);
   const periodEnd = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
@@ -2762,10 +2777,10 @@ async function generateProviderInvoice(providerId: number, planId: string): Prom
   const invoiceNumber = await generateSubInvoiceNumber();
   const result = await query(
     "INSERT INTO invoices (provider_id, plan_id, amount, currency, period_start, period_end, due_date, invoice_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
-    [providerId, plan.id, plan.price, "KES", periodStart, periodEnd, dueDate, invoiceNumber]
+    [targetProvider.id, plan.id, plan.price, "KES", periodStart, periodEnd, dueDate, invoiceNumber]
   );
   const row = result.rows[0];
-  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: plan.name, amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
+  return { id: row.id, providerId: targetProvider.id, planId: row.plan_id, planName: plan.name, providerName: targetProvider.companyName, amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
 }
 
 async function generateSubInvoiceNumber(): Promise<string> {
@@ -3461,13 +3476,14 @@ async function listSubscriptionRequests(status?: string): Promise<any[]> {
   return await queryAll(sql, params);
 }
 
-async function reviewSubscriptionRequest(id: number, status: string, reviewedBy: number): Promise<boolean> {
+async function reviewSubscriptionRequest(id: number, status: string, reviewedBy: number): Promise<string | true | false> {
   if (!["approved", "rejected"].includes(status)) return false;
   const req = await queryOne("SELECT * FROM subscription_requests WHERE id = $1 AND status = 'pending'", [id]) as any;
   if (!req) return false;
   await query("UPDATE subscription_requests SET status = $1, reviewed_by = $2, reviewed_at = NOW()::text WHERE id = $3", [status, reviewedBy, id]);
   if (status === "approved") {
     await setShopPlan(req.requested_plan_id);
+    return req.requested_plan_id;
   }
   return true;
 }

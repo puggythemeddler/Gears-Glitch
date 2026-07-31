@@ -1336,6 +1336,10 @@ app.put("/api/clients/:id/upgrade-requests/:reqId", requireAuth, async (req, res
       res.status(502).json({ error: `Client returned ${r.status}: ${text}` });
       return;
     }
+    const data: any = await r.json().catch(() => ({}));
+    if (status === "approved" && data.plan) {
+      await query("UPDATE clients SET plan = $1 WHERE id = $2", [data.plan, client.id]);
+    }
     res.json({ message: `Request ${status}.` });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to update request" });
