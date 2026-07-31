@@ -28,10 +28,13 @@ const NAV_LINKS = [
   { id: "contact", label: "Contact", href: "/contact" },
 ];
 
+const STATIC_NAV_IDS = new Set(["groups", "repairs", "cart", "wishlist", "about", "contact"]);
+
 export default function Layout({ children, activeNav }: LayoutProps) {
   const { isLoggedIn, userName, cartCount, settings, isDark, toggleDark, logout } = useApp();
   const [isStaff, setIsStaff] = useState(false);
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [springboardOpen, setSpringboardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -68,10 +71,23 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   useEffect(() => {
     fetch("/api/categories").then((r) => r.json()).then((d) => {
       if (d?.categories) setCategories(d.categories);
-    }).catch(() => {});
+      setCategoriesLoaded(true);
+    }).catch(() => { setCategoriesLoaded(true); });
   }, []);
 
-  const filteredNavLinks = navLinks.filter((l) => l.id !== "repairs" || repairsEnabled);
+  const resolvedNavLinks = (() => {
+    const normalized = navLinks.map((l: any) => ({ id: l.id, label: l.label, href: l.href || "/" + l.id }));
+    if (!categoriesLoaded) return normalized;
+    const catHrefs = new Set(categories.map((c) => "/" + c.id));
+    const kept = normalized.filter((l) => STATIC_NAV_IDS.has(l.id) || catHrefs.has(l.href) || categories.some((c) => c.id === l.id));
+    const keptHrefs = new Set(kept.map((l) => l.href));
+    const added = categories
+      .filter((c) => !keptHrefs.has("/" + c.id))
+      .map((c) => ({ id: c.id, label: c.label, href: "/" + c.id }));
+    return [...kept, ...added];
+  })();
+
+  const filteredNavLinks = resolvedNavLinks.filter((l: any) => l.id !== "repairs" || repairsEnabled);
 
   useEffect(() => {
     const handler = () => { setMobileOpen(false); setSpringboardOpen(false); };
