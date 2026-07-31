@@ -186,17 +186,30 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const showWhatsApp = hero?.showWhatsApp !== false;
   const waPhone = settings?.storePhone ? settings.storePhone.replace(/[^0-9]/g, "") : "";
 
-  const catChips = hero?.catChips?.length > 0
-    ? hero.catChips
-    : liveStats?.categories?.length > 0
-      ? liveStats.categories.slice(0, 6).map((c: any) => ({ label: c.label, href: "/" + c.id }))
-      : [
-          { label: "Gaming PCs", href: "/pc" },
-          { label: "Graphics Cards", href: "/graphics-cards" },
-          { label: "Laptops", href: "/laptops" },
-          { label: "Servers", href: "/servers" },
-          { label: "Repairs", href: "/repairs" },
-        ];
+  const liveCats: { id: string; label: string }[] = Array.isArray(liveStats?.categories) ? liveStats.categories : [];
+  const savedChips: { label: string; href: string }[] = Array.isArray(hero?.catChips) && hero.catChips.length > 0 ? hero.catChips : [];
+
+  const catChips = (() => {
+    if (liveCats.length === 0) {
+      return savedChips.length > 0 ? savedChips : [
+        { label: "Gaming PCs", href: "/pc" },
+        { label: "Graphics Cards", href: "/graphics-cards" },
+        { label: "Laptops", href: "/laptops" },
+        { label: "Servers", href: "/servers" },
+        { label: "Repairs", href: "/repairs" },
+      ];
+    }
+    if (savedChips.length === 0) {
+      return liveCats.slice(0, 6).map((c) => ({ label: c.label, href: "/" + c.id }));
+    }
+    const liveByHref = new Map(liveCats.map((c) => ["/" + c.id, c.label]));
+    const kept = savedChips.filter((c) => c.href && liveByHref.has(c.href));
+    const existing = new Set(kept.map((c) => c.href));
+    const added = liveCats
+      .filter((c) => !existing.has("/" + c.id))
+      .map((c) => ({ label: c.label, href: "/" + c.id }));
+    return [...kept, ...added];
+  })();
 
   const stats = hero?.stats?.length > 0
     ? hero.stats
