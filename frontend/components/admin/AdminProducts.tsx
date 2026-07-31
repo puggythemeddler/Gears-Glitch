@@ -15,6 +15,7 @@ export default function AdminProducts() {
   const galleryRef = useRef<HTMLInputElement>(null);
   const [selCategory, setSelCategory] = useState("");
   const [categories, setCategories] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [subcategories, setSubcategories] = useState<any[]>([]);
   const [specFields, setSpecFields] = useState<any[]>([]);
   const [specValues, setSpecValues] = useState<Record<string, string>>({});
@@ -103,10 +104,11 @@ export default function AdminProducts() {
     finally { setBulkSaving(false); }
   }
 
-  const empty: Product = { id: "", name: "", price: 0, salePrice: 0, currency: "KES", imageUrl: "", category: "", subcategory: "", inStock: true, isNonStock: false, hasWarranty: false, warrantyDuration: 0, taxable: true, specs: [], minTier: 0 };
+  const empty: Product = { id: "", name: "", price: 0, salePrice: 0, currency: "KES", imageUrl: "", category: "", groupId: "", subcategory: "", inStock: true, isNonStock: false, hasWarranty: false, warrantyDuration: 0, taxable: true, specs: [], minTier: 0 };
 
   useEffect(() => {
     fetch("/api/categories").then(r => r.json()).then((d) => setCategories(d.categories || [])).catch(() => setCategories([]));
+    fetch("/api/groups").then(r => r.json()).then((d) => setGroups(d.groups || [])).catch(() => setGroups([]));
   }, []);
 
   useEffect(() => {
@@ -192,6 +194,7 @@ export default function AdminProducts() {
     const fd = new FormData(e.currentTarget);
     const body: any = {
       name: fd.get("name"), price: Number(fd.get("price")), category: fd.get("category"),
+      groupId: fd.get("groupId") || "",
       inStock: fd.get("inStock") === "true", isNonStock: fd.get("isNonStock") === "on",
       hasWarranty: fd.get("hasWarranty") === "on",
       warrantyDuration: Number(fd.get("warrantyDuration") || 0),
@@ -252,10 +255,17 @@ export default function AdminProducts() {
                   name="category"
                   value={selCategory || editing?.category || ""}
                   onChange={(e) => setSelCategory(e.target.value)}
-                  required
                 >
-                  <option value="">-- Select --</option>
+                  <option value="">None (optional)</option>
                   {categories.map((cat: any) => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="field">
+              <label>Group
+                <select name="groupId" defaultValue={editing?.groupId || ""}>
+                  <option value="">None</option>
+                  {groups.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
               </label>
             </div>
@@ -356,7 +366,7 @@ export default function AdminProducts() {
       </div>
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th><input type="checkbox" checked={products.length > 0 && selectedIds.size === products.length} onChange={toggleSelectAll} /></th><th>Image</th><th>Name</th><th>Price</th><th>Category</th><th>Stock</th><th></th></tr></thead>
+          <thead><tr><th><input type="checkbox" checked={products.length > 0 && selectedIds.size === products.length} onChange={toggleSelectAll} /></th><th>Image</th><th>Name</th><th>Price</th><th>Category</th><th>Group</th><th>Stock</th><th></th></tr></thead>
           <tbody>
             {products.map((p) => (
               <tr key={p.id}>
@@ -365,6 +375,7 @@ export default function AdminProducts() {
                 <td>{escapeHtml(p.name)}</td>
                 <td>{p.salePrice ? <><span style={{ textDecoration: "line-through", color: "#999", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "#dc2626", fontWeight: 600 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}</td>
                 <td>{p.category || "—"}</td>
+                <td>{groups.find((g: any) => g.id === p.groupId)?.name || "—"}</td>
                 <td>{p.inStock ? <span style={{ color: "#16a34a" }}>In stock</span> : <span style={{ color: "#dc2626" }}>Out</span>}</td>
                 <td style={{ display: "flex", gap: "0.35rem" }}>
                   <RippleButton size="small" variant="ghost" onClick={() => { setCreating(false); setEditing(p); }}>Edit</RippleButton>
@@ -372,7 +383,7 @@ export default function AdminProducts() {
                 </td>
               </tr>
             ))}
-            {products.length === 0 && <tr><td colSpan={7}><EmptyState icon="products" title="No products yet" description="Add your first product to start selling." actionLabel="+ Add Product" onAction={() => { setCreating(true); setEditing(empty); }} /></td></tr>}
+            {products.length === 0 && <tr><td colSpan={8}><EmptyState icon="products" title="No products yet" description="Add your first product to start selling." actionLabel="+ Add Product" onAction={() => { setCreating(true); setEditing(empty); }} /></td></tr>}
           </tbody>
         </table>
       </div>

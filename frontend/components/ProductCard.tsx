@@ -93,8 +93,12 @@ export function ProductCard({ product }: ProductCardProps) {
   );
 }
 
-export async function getProducts(category?: string): Promise<Product[]> {
-  const url = category ? `/api/products?category=${encodeURIComponent(category)}` : "/api/products";
+export async function getProducts(category?: string, group?: string): Promise<Product[]> {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  if (group) params.set("group", group);
+  const qs = params.toString();
+  const url = qs ? `/api/products?${qs}` : "/api/products";
   const data = await api<{ products: Product[] }>(url);
   return data.products || [];
 }

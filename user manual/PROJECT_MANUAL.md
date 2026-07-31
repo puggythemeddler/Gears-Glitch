@@ -170,7 +170,7 @@ See `LOCAL_SETUP.md` for the detailed step-by-step guide.
 ## 6. Key Panels
 
 ### Admin Panel (`/admin`)
-Products, Categories (with shareable subcategories), Coupons, Orders, Users & Permissions, Roles, Plans (feature checkboxes in 11 groups), Providers, Invoices, Credit Notes, Reports (5 sub-tabs), Stock on Hand, Stock Transfers, Stock Take, Purchases, Suppliers, Branches, Clients, Messages, Reviews, Spec Templates, Splashes, About Us, Storefront, Shop Subscription, Settings.
+Products, **Groups** (create/edit/delete and toggle active; drives public storefront `/groups` pages), Categories (with shareable subcategories), Coupons, Orders, Users & Permissions, Roles, Plans (feature checkboxes in 11 groups), Providers, Invoices, Credit Notes, Reports (5 sub-tabs), Stock on Hand, Stock Transfers, Stock Take, Purchases, Suppliers, Branches, Clients, Messages, Reviews, Spec Templates, Splashes, About Us, Storefront, Shop Subscription, Settings.
 
 ### Owner Panel (`/owner`)
 Dashboard, Products, Providers, Customers, Messages, Quotes, Reports, Stock Control, Stock Take, Tech Repairs, About Us, Storefront, Shop Subscription, Audit Log.
@@ -187,6 +187,9 @@ Clients, Plans, Changelog, Deploy Log, Backups, Settings (SMTP/Cloudinary), Audi
 
 ### Layouts
 Five built-in layout themes — Original, Amazon, Jumia, Mobile, Custom — plus a runtime JSON layout builder for admin-created dynamic themes. The active layout is stored in the `storefront_layouts` table and selected from Admin → Settings → Storefront.
+
+### Product Groups
+Managed collections built from the old free-text category groups (`product_groups` table). Admins create/edit/delete groups and toggle each one **active** from Admin → Groups. Active groups get public `/groups` (index) and `/group/[slug]` (product grid) pages linked from the storefront nav, and appear as filters in the Sales Report and Stock Summary. Products assign to a group via the product form's Group dropdown; category remains optional. Existing category group names were migrated into group rows automatically, and `products.group_id` was backfilled from each product's category.
 
 ### Marketing hero (Original layout)
 The hero section is fully admin-configurable from the Storefront panel and doubles as a conversion tool:
@@ -263,9 +266,7 @@ Dark mode by default with a light/dark toggle, persisted in `localStorage` and a
 ## 11. Feature Flags & Per-Client Overrides
 
 ### Subscription plan features
-Plans carry 51+ feature flags organized into 11 groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency). Recent additions include Gift cards, Campaign pages, and Cart recovery. The frontend `useFeature()` hook shows/hides nav items and UI sections; server middleware enforces plan features on APIs.
-
-### Control-plane overrides
+Plans carry 51+ feature flags organized into 11 groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency). Recent additions include Gift cards, Campaign pages, and Cart recovery. The frontend `useFeature()` hook shows/hides nav items and UI sections; server middleware enforces plan features on APIs.### Control-plane overrides
 From the control plane **Edit Client** modal, the operator can override a tenant's feature set without touching the plan:
 - **Enabled** (blue) — force-adds a feature the plan doesn't include.
 - **Blocked** (red, struck through) — hides a feature the plan normally includes.

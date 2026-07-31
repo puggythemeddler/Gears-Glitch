@@ -28,13 +28,14 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
   {
     label: "Sales",
     items: [
       { key: "products", label: "Products" },
+      { key: "groups", label: "Groups" },
       { key: "categories", label: "Categories" },
       { key: "orders", label: "Orders" },
       { key: "coupons", label: "Coupons", feature: "Discount/coupon management" },
@@ -384,6 +385,7 @@ export default function AdminPage() {
           <div className="dash-section active" key={view}>
             {view === "dashboard" && <AdminDashboard onNavigate={setView} />}
             {view === "products" && <AdminProducts />}
+            {view === "groups" && <AdminGroups />}
             {view === "categories" && <AdminCategories />}
             {view === "orders" && <AdminOrders />}
             {view === "coupons" && <AdminCoupons />}
@@ -508,6 +510,7 @@ function AdminDashboard({ onNavigate }: { onNavigate: (v: AdminView) => void }) 
 // ===================== CATEGORIES =====================
 function AdminCategories() {
   const { data: cData, loading, error, refetch } = useFetch(() => api<any>("/api/categories"), []);
+  const [groups, setGroups] = useState<any[]>([]);
   const [detail, setDetail] = useState<{ mode: "add" | "edit"; cat: any } | null>(null);
   const [formLabel, setFormLabel] = useState("");
   const [formGroup, setFormGroup] = useState("");
@@ -517,6 +520,10 @@ function AdminCategories() {
   const [newSubName, setNewSubName] = useState("");
   const [editSubId, setEditSubId] = useState("");
   const [editSubName, setEditSubName] = useState("");
+
+  useEffect(() => {
+    fetch("/api/admin/groups").then(r => r.json()).then((d) => setGroups(d.groups || [])).catch(() => setGroups([]));
+  }, []);
 
   async function deleteCat(id: string) {
     if (!confirm(`Delete category "${id}"?`)) return;
@@ -596,7 +603,7 @@ function AdminCategories() {
         </div>
         <div className="panel" style={{ maxWidth: 600, marginBottom: "1.5rem" }}>
           <div className="field"><label>Label<input value={formLabel} onChange={(e) => setFormLabel(e.target.value)} placeholder="Laptops" /></label></div>
-          <div className="field"><label>Group<input value={formGroup} onChange={(e) => setFormGroup(e.target.value)} placeholder="e.g. Laptops, PCs" /></label></div>
+          <div className="field"><label>Group<select value={formGroup} onChange={(e) => setFormGroup(e.target.value)}><option value="">None</option>{groups.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></label></div>
           <div className="field" style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}><label style={{ margin: 0 }}>Show on POS</label><input type="checkbox" checked={formShowOnPos} onChange={(e) => setFormShowOnPos(e.target.checked)} style={{ width: "auto" }} /></div>
           {isNew && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>ID will be auto-generated as: <code>{catId}</code></p>}
           <RippleButton onClick={saveCat}>Save Category</RippleButton>
@@ -666,7 +673,7 @@ function AdminCategories() {
                 <tr key={c.id}>
                   <td><code>{c.id}</code></td>
                   <td>{escapeHtml(c.label)}</td>
-                  <td style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{c.group || "—"}</td>
+                  <td style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{groups.find((g: any) => g.id === c.group)?.name || "—"}</td>
                   <td style={{ fontSize: "0.85rem", textAlign: "center" }}>{c.showOnPos !== false ? "✓" : "✗"}</td>
                   <td style={{ fontSize: "0.85rem" }}>{subs.map((s: any) => s.name).join(", ") || "—"}</td>
                   <td>
@@ -676,6 +683,108 @@ function AdminCategories() {
                 </tr>
               );
             })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ===================== GROUPS =====================
+function AdminGroups() {
+  const { data: gData, loading, error, refetch } = useFetch(() => api<any>("/api/admin/groups"), []);
+  const [newName, setNewName] = useState("");
+  const [newSort, setNewSort] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editSort, setEditSort] = useState(0);
+  const [msg, setMsg] = useState("");
+
+  async function createGroup() {
+    if (!newName.trim()) return;
+    setSaving(true); setMsg("");
+    try {
+      await api("/api/admin/groups", { method: "POST", body: JSON.stringify({ name: newName.trim(), sortOrder: Number(newSort) || 0 }) });
+      setNewName(""); setNewSort(0); refetch();
+    } catch (e: any) { setMsg(e.message || "Failed to create group"); }
+    finally { setSaving(false); }
+  }
+
+  async function toggleActive(g: any) {
+    try { await api(`/api/admin/groups/${encodeURIComponent(g.id)}`, { method: "PUT", body: JSON.stringify({ isActive: !g.isActive }) }); refetch(); }
+    catch (e: any) { alert(e.message || "Update failed"); }
+  }
+
+  async function saveEdit() {
+    if (!editName.trim()) return;
+    setSaving(true);
+    try { await api(`/api/admin/groups/${encodeURIComponent(editingId)}`, { method: "PUT", body: JSON.stringify({ name: editName.trim(), sortOrder: Number(editSort) || 0 }) }); setEditingId(""); refetch(); }
+    catch (e: any) { setMsg(e.message || "Update failed"); }
+    finally { setSaving(false); }
+  }
+
+  async function deleteGroup(g: any) {
+    if (!confirm(`Delete group "${g.name}"? Products assigned to it will keep the value but no longer appear on the storefront.`)) return;
+    try { await api(`/api/admin/groups/${encodeURIComponent(g.id)}`, { method: "DELETE" }); refetch(); }
+    catch (e: any) { alert(e.message || "Delete failed"); }
+  }
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+  const groups = gData?.groups || [];
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
+        <h1 style={{ margin: 0 }}>Groups</h1>
+      </div>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Groups organise products on the storefront. Activate a group to make it browsable as its own page; groups are also available as report filters.
+      </p>
+
+      <div className="panel" style={{ maxWidth: 480, marginBottom: "1.5rem" }}>
+        <h3 style={{ marginTop: 0 }}>Add Group</h3>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "end", flexWrap: "wrap" }}>
+          <div className="field" style={{ margin: 0, flex: 1, minWidth: 180 }}><label>Name<input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Gaming PCs" /></label></div>
+          <div className="field" style={{ margin: 0, width: 90 }}><label>Sort<input type="number" value={newSort} onChange={(e) => setNewSort(Number(e.target.value))} /></label></div>
+          <RippleButton onClick={createGroup} loading={saving}>Add</RippleButton>
+        </div>
+      </div>
+
+      {msg && <p style={{ fontSize: "0.85rem", color: "var(--danger)", marginBottom: "0.75rem" }}>{msg}</p>}
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>Name</th><th>Sort</th><th>Products</th><th>Active</th><th></th></tr></thead>
+          <tbody>
+            {groups.map((g: any) => (
+              <tr key={g.id}>
+                <td>{editingId === g.id ? <input value={editName} onChange={(e) => setEditName(e.target.value)} /> : escapeHtml(g.name)}</td>
+                <td>{editingId === g.id ? <input type="number" value={editSort} onChange={(e) => setEditSort(Number(e.target.value))} style={{ width: 70 }} /> : g.sortOrder}</td>
+                <td>{g.productCount}</td>
+                <td>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", cursor: "pointer" }}>
+                    <input type="checkbox" checked={g.isActive} onChange={() => toggleActive(g)} />
+                    {g.isActive ? "Active" : "Inactive"}
+                  </label>
+                </td>
+                <td>
+                  {editingId === g.id ? (
+                    <>
+                      <RippleButton size="small" onClick={saveEdit} loading={saving}>Save</RippleButton>
+                      <RippleButton size="small" variant="ghost" onClick={() => setEditingId("")}>Cancel</RippleButton>
+                    </>
+                  ) : (
+                    <>
+                      <RippleButton size="small" variant="ghost" onClick={() => { setEditingId(g.id); setEditName(g.name); setEditSort(g.sortOrder); }}>Edit</RippleButton>
+                      <RippleButton size="small" variant="danger" onClick={() => deleteGroup(g)}>Delete</RippleButton>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {groups.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-secondary)", padding: "1rem" }}>No groups yet. Add one above.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -4541,10 +4650,12 @@ function AdminSalesReport() {
   const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
   const [to, setTo] = useState(today);
   const [branchId, setBranchId] = useState("");
+  const [groupId, setGroupId] = useState("");
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { data: branches } = useFetch(() => api<{ branches: Branch[] }>("/api/admin/branches"), []);
+  const { data: groups } = useFetch(() => api<{ groups: any[] }>("/api/admin/groups"), []);
 
   useEffect(() => { fetchReport(); }, []);
 
@@ -4552,6 +4663,7 @@ function AdminSalesReport() {
     setLoading(true); setError("");
     let url = `/api/reports/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
     if (branchId) url += `&branch_id=${encodeURIComponent(branchId)}`;
+    if (groupId) url += `&group_id=${encodeURIComponent(groupId)}`;
     api<any>(url)
       .then(setReport).catch((e: any) => setError(e.message)).finally(() => setLoading(false));
   }
@@ -4568,6 +4680,16 @@ function AdminSalesReport() {
               <option value="">All Branches</option>
               {(branches?.branches || []).filter((b) => b.isActive).map((b) => (
                 <option key={b.id} value={b.id}>{escapeHtml(b.name)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="field" style={{ margin: 0 }}>
+          <label>Group
+            <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+              <option value="">All Groups</option>
+              {(groups?.groups || []).map((g) => (
+                <option key={g.id} value={g.id}>{escapeHtml(g.name)}</option>
               ))}
             </select>
           </label>
@@ -4829,7 +4951,9 @@ function AdminPurchasesReport() {
 
 // ===================== STOCK SUMMARY (ADMIN) =====================
 function AdminStockSummary() {
-  const { data, loading, error } = useFetch(() => api<{ items: any[] }>("/api/reports/stock-summary"), []);
+  const [groupId, setGroupId] = useState("");
+  const { data, loading, error, refetch } = useFetch(() => api<{ items: any[] }>(`/api/reports/stock-summary${groupId ? `?group_id=${encodeURIComponent(groupId)}` : ""}`), [groupId]);
+  const { data: groups } = useFetch(() => api<{ groups: any[] }>("/api/admin/groups"), []);
 
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
@@ -4843,6 +4967,19 @@ function AdminStockSummary() {
   return (
     <>
       <h1>Stock Summary</h1>
+      <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
+        <div className="field" style={{ margin: 0 }}>
+          <label>Group
+            <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+              <option value="">All Groups</option>
+              {(groups?.groups || []).map((g) => (
+                <option key={g.id} value={g.id}>{escapeHtml(g.name)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <RippleButton onClick={() => refetch()}>Refresh</RippleButton>
+      </div>
       <div className="stat-grid" style={{ marginBottom: "1rem" }}>
         <div className="stat-card"><div className="stat-card__value">{totalProducts}</div><div className="stat-card__label">Products</div></div>
         <div className="stat-card"><div className="stat-card__value">{totalStock}</div><div className="stat-card__label">Total Units</div></div>

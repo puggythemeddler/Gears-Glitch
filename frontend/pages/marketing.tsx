@@ -57,6 +57,7 @@ const SOLUTIONS_BENEFITS = [
   "Campaign landing pages for seasonal promotions",
   "Automated recovery of abandoned carts with reminder emails",
   "Refunds and sales-by-channel insights to stay on top of revenue",
+  "Product groups with browsable storefront collections",
   "Annual billing with built-in savings over monthly pricing",
   "Plan upgrade requests with admin approval workflow",
 ];
@@ -110,6 +111,7 @@ const FEATURES = [
   { icon: "🛒", name: "Abandoned Cart Recovery", desc: "See every cart customers left behind in the last 24/48/72 hours, with item previews, and send one-click reminder emails to bring them back to complete their order." },
   { icon: "↩️", name: "Refunds & Returns", desc: "Refund an entire order or individual line items with a reason. Full refund history per order, automatically reflected in order totals." },
   { icon: "📈", name: "Sales by Channel", desc: "Know exactly where your revenue comes from. Every order is tagged Storefront, POS, or Quote, and the sales report breaks down revenue by channel." },
+  { icon: "🗂️", name: "Product Groups", desc: "Organise products into managed groups with their own public storefront pages. Toggle groups on/off from the admin panel and filter the Sales Report and Stock Summary by group — categories stay optional." },
 ];
 
 const WHY_CHOOSE = [

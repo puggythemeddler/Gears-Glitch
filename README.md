@@ -1,6 +1,6 @@
 # Gear&Glitch — Full-Stack Shop & Management System
 
-A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control with per-branch stock tracking, stock take, inter-branch stock transfers that actually move inventory, per-branch subscription plans, audit logging, role-based dashboards (Admin, Owner, Technician), 5 built-in storefront layout themes (Original, Amazon, Jumia, Mobile, Custom) with a runtime layout registry for admin-created dynamic JSON layouts, admin-controllable hero sections, subcategories with multi-category sharing, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, gift cards with balance tracking and automatic checkout redemption, campaign landing pages for promotions, abandoned cart recovery with reminder emails, order refunds (full or per-line) with history, sales-by-channel reporting (storefront/POS/quotes), store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management (with delete), auto-email notifications, WhatsApp Business API integration (bidirectional messaging with 24h window tracking), product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation, two-step checkout with delivery details and payment method selection, provider order management (view, cancel items, update status), customer invoice download from order history, TOTP two-factor authentication, CSRF token protection, file upload content validation, shared Cloudinary with per-client folders, and responsive design optimized for mobile, tablet, and desktop. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
+A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control with per-branch stock tracking, stock take, inter-branch stock transfers that actually move inventory, per-branch subscription plans, audit logging, role-based dashboards (Admin, Owner, Technician), 5 built-in storefront layout themes (Original, Amazon, Jumia, Mobile, Custom) with a runtime layout registry for admin-created dynamic JSON layouts, admin-controllable hero sections, subcategories with multi-category sharing, product groups with admin-managed storefront collections, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, gift cards with balance tracking and automatic checkout redemption, campaign landing pages for promotions, abandoned cart recovery with reminder emails, order refunds (full or per-line) with history, sales-by-channel reporting (storefront/POS/quotes), store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management (with delete), auto-email notifications, WhatsApp Business API integration (bidirectional messaging with 24h window tracking), product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation, two-step checkout with delivery details and payment method selection, provider order management (view, cancel items, update status), customer invoice download from order history, TOTP two-factor authentication, CSRF token protection, file upload content validation, shared Cloudinary with per-client folders, and responsive design optimized for mobile, tablet, and desktop. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
 ## Features at a glance
 
@@ -18,6 +18,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - Gift cards — issue gift cards with unique codes, balance, and optional expiry; customers redeem them automatically at checkout before payment, with a full redemption audit trail
 - Campaign landing pages — create promotional campaigns from the admin (title, slug, hero image, banner color, curated products) served on public `/campaign/[slug]` pages
 - Abandoned cart recovery — admin dashboard lists carts sitting in the last 24/48/72 hours with item previews and one-click reminder emails through the shared email engine
+- Product groups — managed collections (`product_groups`) built from the old free-text category groups; products link to a group instead, and every active group gets its own public `/group/[slug]` page reachable from a `/groups` index in the storefront nav. Groups are toggled on/off from the admin Groups panel and double as filters in the Sales Report and Stock Summary
 
 ### Inventory & stock
 - Real-time per-branch stock tracking with low-stock alerts, stock-on-hand counts, and stock take sessions (scoped to a selected branch)
@@ -74,6 +75,7 @@ A complete multi-branch sales & management system with product catalog, customer
 
 ## Recent highlights
 
+- **Product groups** — The category `group` free-text field is now a first-class, managed entity (`product_groups` table). Admins create/edit/delete groups and toggle each one **active** from a new **Groups** panel under Sales; inactive groups stay hidden from the storefront. Existing categories were migrated automatically — their `group_name` values became group rows and `products.group_id` was backfilled from each product's category. The product form now has a Group dropdown and category is **optional** (products can have category, group, both, or neither). Each active group is browsable on the storefront at `/groups` (index with product counts) and `/group/[slug]` (product grid), linked from the site nav. Groups also filter the **Sales Report** and **Stock Summary** (`?group_id=` on `/api/reports/sales` and `/api/reports/stock-summary`), and `/api/products` accepts a `?group=` filter.
 - **Growth & retention suite** — Five new modules shipped together. **Gift cards**: admins issue cards with a unique code, value, optional expiry, and notes; customers enter the code at checkout and the balance is applied automatically (after coupons, before loyalty points) so M-Pesa only covers the remaining total — every redemption is recorded in a `gift_card_redemptions` audit table. **Campaign landing pages**: admins build promotional pages (title, slug, hero image, banner color, curated products, active toggle) rendered on public `/campaign/[slug]` URLs via `/api/campaigns/:slug`. **Abandoned cart recovery**: the admin lists carts abandoned in the last 24/48/72 hours (with item previews) and sends one-click reminder emails through the shared email engine, logged in `cart_recovery_reminders`. **Order refunds**: full-order or per-line-item refunds with reason and staff attribution, a refund history panel per order, and `amount_refunded` tracked on the order. **Sales-by-channel reporting**: online checkout, POS, and quote-to-order conversions each tag orders `storefront`/`pos`/`quote` (legacy orders backfilled), and the Sales Report gained a channel breakdown table. All three new admin sections (Gift Cards, Campaigns, Abandoned Carts) are feature-gated in the subscription plans.
 - **Per-client store identity** — Newly provisioned clients no longer inherit the "Gear&Glitch" brand. The control plane injects `STORE_NAME=<client name>` into each client's Render env, and the backend seeds that name on first boot. The browser tab title, `og:site_name`, and `og:title` now use the store's own `settings.storeName` (with a neutral "Welcome to our store" placeholder before settings load) instead of a hardcoded brand — so each tenant's tab and social tags show their own name.
 - **Auto-provisioned admin account for new clients** — When provisioning a new client via **Add Client**, the new client's Render service now receives `ADMIN_USERNAME=admin`, `ADMIN_EMAIL=<client admin email>`, and a generated `ADMIN_PASSWORD` as env vars. On first boot, `ensureAdminUser()` creates the seeded admin so the operator (or client) can log in immediately at `{frontend-url}/login` and start populating products, settings, and branches. Previously this step was missing — new clients had no admin account and the welcome-email password was useless. A `technician` seed account is also created for testing role-gated views.
@@ -147,7 +149,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - **Admin reports expanded** — Reports tab now includes 5 sub-tabs: Sales Report, Employee Sales, Technician Performance, Purchases Report, and Stock Summary.
 - **Unified product pages** — Admin and owner product pages now use the same `AdminProducts` component with full sale price, subcategory, warranty, taxable, CSV import/export, and bulk edit support.
 - **Unified quotations** — Admin quotations panel now uses the full-featured `QuotesPage` component with status management, approve/cancel workflows, PDF downloads, and discounts.
-- **Marketing page** — Full marketing landing page with problems, solutions, industries, features (36 real modules), testimonials, stats, FAQ, and CTA. All content verified against actual implemented features.
+- **Marketing page** — Full marketing landing page with problems, solutions, industries, features (38 real modules), testimonials, stats, FAQ, and CTA. All content verified against actual implemented features.
 - **Annual pricing** — Subscription plans now support both monthly and annual pricing. Plans table has `price_annual` column. Admin plans UI shows both Monthly and Annual price fields. Owner subscription page displays both prices with percentage savings for annual billing.
 - **Multi-currency feature gating** — `CurrencySelector` checks `useFeature("Multi-currency support")` and returns null when the plan doesn't include it. Multi-currency support added to Growth, Pro, and Enterprise plan features.
 - **Provider PIN fix** — Removed `PinLock` from dashboard page entirely. Providers now log in and see the dashboard immediately. PIN lock only appears when clicking POS (which has its own correct PinLock).
@@ -268,6 +270,8 @@ Opens **http://localhost:3000** in a browser.
 | `/about` | Everyone | About Us page — content editable by admin/owner |
 | `/cart` | Customers | Shopping cart — manage quantities, then Checkout creates pending order and redirects to order detail |
 | `/campaign/[slug]` | Everyone | Public promotional landing pages created in admin → Campaigns (hero banner + curated product grid) |
+| `/groups` | Everyone | Storefront index of all active product groups with product counts |
+| `/group/[slug]` | Everyone | Product grid for a single active group (e.g. `/group/gaming-pcs`) |
 | `/order?id=xxx` | Customers | Order detail — fill in delivery details + payment method (pending), view items, download invoice (shipped/delivered) |
 | `/orders` | Customers | Order history with inline invoice download for shipped/delivered orders |
 | `/repair-book` | Customers | Book a repair with detailed device/issue form |
@@ -289,12 +293,13 @@ Opens **http://localhost:3000** in a browser.
 Full store management with 32 sections:
 
 - **Dashboard** — Stats overview with clickable animated counters (products, staff, pending subscription requests)
-- **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking, sale price (strikethrough pricing)
+- **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking, sale price (strikethrough pricing). Category is optional; products can be assigned to a Group instead (or both/neither)
+- **Groups** — Create, edit, reorder, and delete product groups; toggle each group **active/inactive**. Active groups get public `/groups` + `/group/[slug]` storefront pages and appear in Sales Report / Stock Summary filters. Categories and products link to these managed groups.
 - **Coupons** — Create discount/promo codes (percentage or fixed amount), set min order, max uses, expiry date, usage tracking per order
 - **Gift Cards** — Issue gift cards with code, value, optional expiry, and notes; view balance and full redemption history per card; toggle active/inactive or delete. Feature-gated ("Gift cards").
 - **Campaigns** — Build promotional landing pages (title, slug, hero image, banner color, curated products, active toggle) published at `/campaign/[slug]`. Feature-gated ("Campaign pages").
 - **Abandoned Carts** — Carts abandoned in the last 24/48/72 hours with item previews and one-click reminder emails. Feature-gated ("Cart recovery").
-- **Categories** — Manage product categories + subcategories (shareable across categories)
+- **Categories** — Manage product categories + subcategories (shareable across categories); each category can link to a Group via a dropdown
 - **Orders** — View all customer orders with shipping details, status updates, branch assignment, coupon/gift-card discount display, and full or per-line-item refunds with a refund history panel
 - **Users & Permissions** — Staff management, fine-grained role-based permissions (editable for all roles)
 - **Roles** — Define custom roles with granular permission toggles (messaging, invoicing, credit notes, quotes, etc.)
@@ -579,13 +584,14 @@ data/
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
 | GET | `/api/public-settings` | Store name, phone, email, currency, logo, Google Client ID, M-Pesa till |
-| GET | `/api/products` | All products |
+| GET | `/api/products` | All products (filter by `?category=` or `?group=`) |
 | GET | `/api/products/:id` | Single product |
 | GET | `/api/products/:id/images` | Gallery images |
 | GET | `/api/products/:id/reviews` | Product reviews (paginated, returns distribution + total) |
 | GET | `/api/categories` | All categories + subcategories |
 | GET | `/api/categories/:id/subcategories` | Subcategories for a category |
 | GET | `/api/subcategories` | All subcategories |
+| GET | `/api/groups` | All active product groups (with product counts) for the storefront |
 | GET | `/api/plans` | Active subscription plans |
 | GET | `/api/layouts` | All storefront layouts (public, sorted by sort_order) |
 | GET | `/api/shipping/counties` | All 47 Kenyan counties with fees |
@@ -639,8 +645,8 @@ data/
 | POST | `/api/auth/change-password` | Change own password |
 | GET | `/api/backoffice/stats` | Dashboard stats |
 | GET | `/api/staff/technicians` | Staff list |
-| GET | `/api/reports/sales` | Sales report (filterable by date) |
-| GET | `/api/reports/stock-summary` | Stock levels summary |
+| GET | `/api/reports/sales` | Sales report (filterable by date, `?branch_id=`, and `?group_id=`) |
+| GET | `/api/reports/stock-summary` | Stock levels summary (filterable by `?group_id=`) |
 | GET | `/api/stock-on-hand/current` | Current stock levels (requires `stock:on_hand`) |
 | GET | `/api/stock-on-hand/history` | Snapshot date history (requires `stock:on_hand`) |
 | GET | `/api/stock-on-hand/:date` | Stock on hand for a specific date (requires `stock:on_hand`) |
@@ -677,6 +683,10 @@ Full CRUD for products, categories (including subcategories), staff, roles, plan
 | POST | `/api/products/import` | Bulk import products from JSON array (admin/owner only) — validates name, price, category on every row; aborts entire import on any invalid row |
 | POST | `/api/admin/products/bulk-edit` | Bulk update product price, category, inStock for selected product IDs |
 | GET | `/api/admin/products/:id/price-history` | Price change history for a product (last 50 changes) |
+| GET | `/api/admin/groups` | List all product groups (including inactive) |
+| POST | `/api/admin/groups` | Create a product group (name, isActive, sortOrder) |
+| PUT | `/api/admin/groups/:id` | Update a product group (name, isActive, sortOrder) |
+| DELETE | `/api/admin/groups/:id` | Delete a product group (unlinks products/categories) |
 | GET | `/api/admin/splashes` | List all promotional banners |
 | GET | `/api/admin/layouts` | List all storefront layouts (admin) |
 | GET | `/api/admin/layouts/:id` | Get single layout details |

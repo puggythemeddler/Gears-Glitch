@@ -20,6 +20,7 @@ const NAV_LINKS = [
   { id: "graphics-cards", label: "Graphics Cards", href: "/graphics-cards" },
   { id: "servers", label: "Servers", href: "/servers" },
   { id: "printers", label: "Printers", href: "/printers" },
+  { id: "groups", label: "Groups", href: "/groups" },
   { id: "repairs", label: "Repairs", href: "/repairs" },
   { id: "cart", label: "Cart", href: "/cart" },
   { id: "wishlist", label: "Wishlist", href: "/wishlist" },

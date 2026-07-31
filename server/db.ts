@@ -9,6 +9,7 @@ import { query, queryOne, queryAll, transaction, runSchema, getPool } from "./db
 interface ProductRow {
   id: string;
   category: string;
+  group_id: string;
   name: string;
   price: number;
   sale_price: number;
@@ -29,6 +30,7 @@ interface ProductRow {
 interface Product {
   id: string;
   category: string;
+  groupId: string;
   name: string;
   price: number;
   salePrice: number | null;
@@ -533,6 +535,7 @@ function mapProduct(row: ProductRow | null): Product | null {
   return {
     id: row.id,
     category: row.category,
+    groupId: row.group_id || "",
     name: row.name,
     price: row.price,
     salePrice: row.sale_price || null,
@@ -841,6 +844,39 @@ async function runMigrations(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (NOW()::text)
     )`);
     await query(`CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds(order_id)`);
+  } catch {}
+
+  // ============ Product groups ============
+  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS group_id TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { await query(`CREATE INDEX IF NOT EXISTS idx_products_group ON products(group_id)`); } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS product_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+  } catch {}
+  try {
+    // Seed groups from any existing category group_name values, then map categories to the group ids.
+    const seedGroups = await queryAll(`SELECT DISTINCT group_name FROM categories WHERE group_name IS NOT NULL AND trim(group_name) <> ''`) as any[];
+    for (const r of seedGroups) {
+      const raw = String(r.group_name || "").trim();
+      const name = raw;
+      const id = slugifyGroupId(raw);
+      let existing = await queryOne(`SELECT id FROM product_groups WHERE id = $1 OR lower(name) = lower($2)`, [id, name]) as any;
+      if (!existing) {
+        await query(`INSERT INTO product_groups (id, name, sort_order) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`, [id, name, 0]);
+        existing = await queryOne(`SELECT id FROM product_groups WHERE id = $1`, [id]) as any;
+      }
+      const gid = existing?.id || id;
+      await query(`UPDATE categories SET group_name = $1 WHERE lower(trim(group_name)) = lower($2) AND group_name <> $1`, [gid, name]);
+    }
+  } catch (e) { console.warn("[groups] seed from categories failed:", e); }
+  try {
+    // Backfill products with their category's group.
+    await query(`UPDATE products SET group_id = c.group_name FROM categories c WHERE products.category = c.id AND products.group_id = '' AND c.group_name <> ''`);
   } catch {}
 
   // Update default plan pricing and features
@@ -1326,6 +1362,73 @@ async function deleteCategory(id: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
+function slugifyGroupId(name: string): string {
+  const slug = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return slug || "group";
+}
+
+interface ProductGroupRow {
+  id: string;
+  name: string;
+  is_active: number;
+  sort_order: number;
+}
+
+interface ProductGroup {
+  id: string;
+  name: string;
+  isActive: boolean;
+  sortOrder: number;
+  productCount: number;
+}
+
+async function listProductGroups(opts?: { activeOnly?: boolean }): Promise<ProductGroup[]> {
+  let sql = `SELECT pg.id, pg.name, pg.is_active, pg.sort_order, COUNT(p.id) AS product_count
+             FROM product_groups pg
+             LEFT JOIN products p ON p.group_id = pg.id`;
+  const params: any[] = [];
+  if (opts?.activeOnly) { sql += " WHERE pg.is_active = 1"; }
+  sql += " GROUP BY pg.id, pg.name, pg.is_active, pg.sort_order ORDER BY pg.sort_order ASC, pg.name ASC";
+  const rows = await queryAll(sql, params) as any[];
+  return rows.map((r) => ({ id: r.id, name: r.name, isActive: Boolean(r.is_active), sortOrder: r.sort_order ?? 0, productCount: Number(r.product_count || 0) }));
+}
+
+async function getProductGroup(id: string): Promise<ProductGroup | undefined> {
+  const row = await queryOne(
+    `SELECT pg.id, pg.name, pg.is_active, pg.sort_order, COUNT(p.id) AS product_count
+     FROM product_groups pg LEFT JOIN products p ON p.group_id = pg.id WHERE pg.id = $1 GROUP BY pg.id, pg.name, pg.is_active, pg.sort_order`,
+    [id]
+  ) as any;
+  if (!row) return undefined;
+  return { id: row.id, name: row.name, isActive: Boolean(row.is_active), sortOrder: row.sort_order ?? 0, productCount: Number(row.product_count || 0) };
+}
+
+async function createProductGroup(data: { name: string; isActive?: boolean; sortOrder?: number }): Promise<ProductGroup> {
+  const name = String(data.name || "").trim();
+  if (!name) throw new Error("Group name is required.");
+  const id = slugifyGroupId(name);
+  const existing = await getProductGroup(id);
+  if (existing) throw new Error("A group with this name already exists.");
+  await query("INSERT INTO product_groups (id, name, is_active, sort_order) VALUES ($1, $2, $3, $4)", [id, name, data.isActive !== false ? 1 : 0, data.sortOrder || 0]);
+  return (await getProductGroup(id))!;
+}
+
+async function updateProductGroup(id: string, updates: { name?: string; isActive?: boolean; sortOrder?: number }): Promise<ProductGroup | undefined> {
+  const existing = await getProductGroup(id);
+  if (!existing) return undefined;
+  const name = updates.name !== undefined ? String(updates.name).trim() : existing.name;
+  if (updates.name !== undefined && !name) throw new Error("Group name cannot be empty.");
+  await query("UPDATE product_groups SET name = $1, is_active = $2, sort_order = $3 WHERE id = $4", [name, updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : (existing.isActive ? 1 : 0), updates.sortOrder !== undefined ? updates.sortOrder : existing.sortOrder, id]);
+  return await getProductGroup(id);
+}
+
+async function deleteProductGroup(id: string): Promise<boolean> {
+  await query("UPDATE products SET group_id = '' WHERE group_id = $1", [id]);
+  await query("UPDATE categories SET group_name = '' WHERE group_name = $1", [id]);
+  const result = await query("DELETE FROM product_groups WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
 async function isValidCategory(id: string): Promise<boolean> {
   return Boolean(await getCategory(id));
 }
@@ -1400,7 +1503,7 @@ async function seedProductsIfEmpty(): Promise<void> {
     const catalog = JSON.parse(fs.readFileSync(seedPath, "utf8"));
     await transaction(async (client) => {
       for (const product of (catalog.products || [])) {
-        await client.query("INSERT INTO products (id, category, name, price, specs, in_stock, image_alt, image_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [product.id, product.category, product.name, product.price, JSON.stringify(product.specs || []), product.inStock ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]);
+        await client.query("INSERT INTO products (id, category, group_id, name, price, specs, in_stock, image_alt, image_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [product.id, product.category, product.groupId || "", product.name, product.price, JSON.stringify(product.specs || []), product.inStock ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]);
       }
     });
   } catch {}
@@ -1468,9 +1571,11 @@ async function setStoreSetting(key: string, value: string): Promise<void> {
   await query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [key, value]);
 }
 
-async function listProducts(category?: string): Promise<Product[]> {
-  let sql = "SELECT * FROM products"; const params: any[] = [];
-  if (category && category !== "all") { sql += " WHERE category = $1"; params.push(category); }
+async function listProducts(category?: string, group?: string): Promise<Product[]> {
+  let sql = "SELECT * FROM products"; const params: any[] = []; const conds: string[] = [];
+  if (category && category !== "all") { conds.push(`category = $${params.length + 1}`); params.push(category); }
+  if (group && group !== "all") { conds.push(`group_id = $${params.length + 1}`); params.push(group); }
+  if (conds.length) sql += " WHERE " + conds.join(" AND ");
   sql += " ORDER BY sort_order ASC, created_at DESC";
   const rows = await queryAll(sql, params) as ProductRow[];
   return rows.map(mapProduct) as Product[];
@@ -1553,27 +1658,28 @@ async function getUnreadMessageCount(customerId: number, providerId: number, rol
 }
 
 async function generateProductId(category: string): Promise<string> {
-  const prefix = category.slice(0, 3).toUpperCase();
+  const prefix = (category || "").slice(0, 3).toUpperCase() || "PRD";
   const row = await queryOne("SELECT id FROM products WHERE id LIKE $1 ORDER BY id DESC LIMIT 1", [`${prefix}-%`]) as any;
   if (!row) return `${prefix}-001`;
   const num = parseInt(row.id.split("-")[1] || "0", 10) + 1;
   return `${prefix}-${String(num).padStart(3, "0")}`;
 }
 
-async function createProduct(product: { id: string; category: string; name: string; price: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
+async function createProduct(product: { id: string; category: string; groupId?: string; name: string; price: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
   await query(
-    `INSERT INTO products (id, category, name, price, sale_price, specs, in_stock, is_non_stock, subcategory, has_warranty, warranty_duration, taxable, image_alt, image_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-    [product.id, product.category, product.name, product.price, product.salePrice || null, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
+    `INSERT INTO products (id, category, group_id, name, price, sale_price, specs, in_stock, is_non_stock, subcategory, has_warranty, warranty_duration, taxable, image_alt, image_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+    [product.id, product.category, product.groupId || "", product.name, product.price, product.salePrice || null, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
   );
   return (await getProduct(product.id))!;
 }
 
-async function updateProduct(id: string, updates: { category?: string; name?: string; price?: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
+async function updateProduct(id: string, updates: { category?: string; groupId?: string; name?: string; price?: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
   const existing = await getProduct(id);
   if (!existing) return undefined;
   const fields: string[] = []; const params: any[] = []; let idx = 1;
   if (updates.category !== undefined) { fields.push(`category = $${idx}`); params.push(updates.category); idx++; }
+  if (updates.groupId !== undefined) { fields.push(`group_id = $${idx}`); params.push(updates.groupId); idx++; }
   if (updates.name !== undefined) { fields.push(`name = $${idx}`); params.push(updates.name); idx++; }
   if (updates.price !== undefined) { fields.push(`price = $${idx}`); params.push(updates.price); idx++; }
   if (updates.salePrice !== undefined) { fields.push(`sale_price = $${idx}`); params.push(updates.salePrice); idx++; }
@@ -2970,10 +3076,14 @@ async function getSalesReport(): Promise<SalesReport> {
   return { totalRevenue: Number(orderStats?.total_revenue || 0), totalOrders: Number(orderStats?.total_orders || 0), paidInvoices: Number(invoiceStats?.paid_invoices || 0), invoiceRevenue: Number(invoiceStats?.invoice_revenue || 0), topProducts, channels };
 }
 
-async function getSalesReportWithRange(startDate?: string, endDate?: string): Promise<SalesReport> {
+async function getSalesReportWithRange(startDate?: string, endDate?: string, groupId?: string): Promise<SalesReport> {
   let where = " o.status != 'cancelled'"; const params: any[] = []; let idx = 1;
   if (startDate) { where += ` AND o.created_at::timestamp >= $${idx}`; params.push(startDate); idx++; }
   if (endDate) { where += ` AND o.created_at::timestamp <= $${idx}`; params.push(endDate); idx++; }
+  if (groupId && groupId !== "all") {
+    where += ` AND EXISTS (SELECT 1 FROM order_items oi JOIN products gp ON gp.id = oi.product_id WHERE oi.order_id = o.id AND gp.group_id = $${idx})`;
+    params.push(groupId); idx++;
+  }
   const orderStats = await queryOne(`SELECT COUNT(*) AS total_orders, COALESCE(SUM(subtotal + shipping_fee), 0) AS total_revenue FROM orders o WHERE ${where}`, params) as any;
   const invoiceStats = await queryOne("SELECT COUNT(*) AS paid_invoices, COALESCE(SUM(amount), 0) AS invoice_revenue FROM order_invoices WHERE status = 'paid'") as any;
   const topProducts = await queryAll(
@@ -3001,7 +3111,10 @@ async function getPurchaseReport(): Promise<PurchaseReport> {
   return { totalOrders: Number(row?.total_orders || 0), totalSpent: Number(row?.total_spent || 0), pendingOrders: Number(row?.pending_orders || 0), receivedOrders: Number(row?.received_orders || 0) };
 }
 
-async function getStockSummary(): Promise<{ productId: string; name: string; category: string; quantityInStock: number; quantityReserved: number; quantitySold: number; lowStockThreshold: number }[]> {
+async function getStockSummary(groupId?: string): Promise<{ productId: string; name: string; category: string; quantityInStock: number; quantityReserved: number; quantitySold: number; lowStockThreshold: number }[]> {
+  const params: any[] = [];
+  let where = "";
+  if (groupId && groupId !== "all") { where = " WHERE p.group_id = $1"; params.push(groupId); }
   return await queryAll(
     `SELECT p.id AS "productId", p.name, p.category,
       COALESCE(sl.quantity_in_stock, 0) AS "quantityInStock",
@@ -3009,8 +3122,9 @@ async function getStockSummary(): Promise<{ productId: string; name: string; cat
       COALESCE(sl.quantity_sold, 0) AS "quantitySold",
       COALESCE(sl.low_stock_threshold, 5) AS "lowStockThreshold"
     FROM products p
-    LEFT JOIN stock_levels sl ON sl.product_id = p.id
-    ORDER BY p.name`
+    LEFT JOIN stock_levels sl ON sl.product_id = p.id${where}
+    ORDER BY p.name`,
+    params
   );
 }
 
@@ -3776,6 +3890,7 @@ export {
   getLoyaltyPoints, earnLoyaltyPoints, redeemLoyaltyPoints, getLoyaltyTransactions, listAllLoyaltyCustomers,
   listActiveSplashes, listAllSplashes, getSplash, createSplash, updateSplash, deleteSplash,
   updateProductSortOrder, updateCategorySortOrder, logEmail, listEmailLogs,
+  listProductGroups, getProductGroup, createProductGroup, updateProductGroup, deleteProductGroup,
   upsertWhatsAppConversation, getWhatsAppConversationByPhone, getWhatsAppConversations, logWhatsAppMessage, listWhatsAppLogs, getWhatsAppStats, findCustomerByPhone, findProviderByPhone,
   storeWhatsAppMedia, getWhatsAppMedia, getWhatsAppMediaById,
   trackPageView, getVisitorStats,

@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS products (
   id TEXT PRIMARY KEY,
   category TEXT NOT NULL,
+  group_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
   price DOUBLE PRECISION NOT NULL,
   specs TEXT NOT NULL DEFAULT '[]',
@@ -30,6 +31,15 @@ CREATE TABLE IF NOT EXISTS products (
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_products_group ON products(group_id);
+
+CREATE TABLE IF NOT EXISTS product_groups (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
 
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,

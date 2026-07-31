@@ -61,6 +61,11 @@ import {
   updateSubcategory,
   deleteSubcategory,
   getSubcategoriesForCategory,
+  listProductGroups,
+  getProductGroup,
+  createProductGroup,
+  updateProductGroup,
+  deleteProductGroup,
   listSubscriptionPlans,
   getSubscriptionPlan,
   createSubscriptionPlan,
@@ -3077,6 +3082,47 @@ app.delete("/api/categories/:id", adminAuthMiddleware, asyncHandler(async (req: 
   res.status(204).end();
 }));
 
+// ============ PRODUCT GROUPS ============
+
+app.get("/api/groups", asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ groups: await listProductGroups({ activeOnly: true }) });
+}));
+
+app.get("/api/admin/groups", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ groups: await listProductGroups() });
+}));
+
+app.post("/api/admin/groups", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { name, isActive, sortOrder } = req.body || {};
+  if (!name || !isStr(name)) { res.status(400).json({ error: "Group name is required." }); return; }
+  let group;
+  try {
+    group = await createProductGroup({ name: String(name).trim(), isActive: isActive !== false, sortOrder: Number(sortOrder) || 0 });
+  } catch (err: any) {
+    if (err?.message && String(err.message).toLowerCase().includes("already exists")) { res.status(409).json({ error: err.message }); return; }
+    throw err;
+  }
+  res.status(201).json({ group });
+}));
+
+app.put("/api/admin/groups/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { name, isActive, sortOrder } = req.body || {};
+  if (name !== undefined && !isStr(name)) { res.status(400).json({ error: "Group name must be a non-empty string." }); return; }
+  const group = await updateProductGroup(String(req.params.id), {
+    name: name !== undefined ? String(name).trim() : undefined,
+    isActive: isActive !== undefined ? Boolean(isActive) : undefined,
+    sortOrder: sortOrder !== undefined ? Number(sortOrder) : undefined,
+  });
+  if (!group) { res.status(404).json({ error: "Group not found." }); return; }
+  res.json({ group });
+}));
+
+app.delete("/api/admin/groups/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const removed = await deleteProductGroup(String(req.params.id));
+  if (!removed) { res.status(404).json({ error: "Group not found." }); return; }
+  res.status(204).end();
+}));
+
 // ============ SUBCATEGORIES ============
 
 app.get("/api/subcategories", asyncHandler(async (_req: Request, res: Response) => {
@@ -3148,7 +3194,8 @@ function normalizeSpecs(specs: any): any[] {
 
 app.get("/api/products", asyncHandler(async (req: Request, res: Response) => {
   const category = req.query.category as string | undefined;
-  const products = await listProducts(category);
+  const group = req.query.group as string | undefined;
+  const products = await listProducts(category, group);
   res.json({ products, currency: (await getSettings()).currency });
 }));
 
@@ -3171,15 +3218,21 @@ app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create
     res.status(400).json({ error: "Choose a valid category." });
     return;
   }
+  const groupId = body.groupId || body.group_id || "";
+  if (groupId && !(await getProductGroup(groupId))) {
+    res.status(400).json({ error: "Choose a valid group." });
+    return;
+  }
   const name = String(body.name || "").trim();
   if (!name) { res.status(400).json({ error: "Product name cannot be empty." }); return; }
   if (body.price !== undefined && !isNonNegNum(Number(body.price))) { res.status(400).json({ error: "Price must be a non-negative number." }); return; }
   if (body.imageAlt !== undefined && !isStr(body.imageAlt, 500)) { res.status(400).json({ error: "imageAlt must be a valid string." }); return; }
 
   const product = await createProduct({
-    id: await generateProductId(name),
+    id: await generateProductId(String(category || "")),
     name,
     category: body.category || "",
+    groupId,
     price: Number(body.price) || 0,
     specs: normalizeSpecs(body.specs),
     inStock: Boolean(body.inStock),
@@ -3287,6 +3340,11 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
     res.status(400).json({ error: "Choose a valid category." });
     return;
   }
+  const groupId = body.groupId !== undefined ? (body.groupId || "") : undefined;
+  if (groupId !== undefined && groupId && !(await getProductGroup(groupId))) {
+    res.status(400).json({ error: "Choose a valid group." });
+    return;
+  }
   if (body.name !== undefined && !String(body.name).trim()) {
     res.status(400).json({ error: "Product name cannot be empty." });
     return;
@@ -3301,6 +3359,7 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
 
   const updates: any = {};
   if (body.category !== undefined) updates.category = body.category;
+  if (groupId !== undefined) updates.groupId = groupId;
   if (body.name !== undefined) updates.name = String(body.name).trim();
   if (body.price !== undefined) updates.price = Number(body.price);
   if (body.salePrice !== undefined) updates.salePrice = body.salePrice === null || body.salePrice === "" ? null : Number(body.salePrice);
@@ -5235,7 +5294,8 @@ app.get("/api/reports/sales/trends", ownerAuthMiddleware, requirePermission("rep
 app.get("/api/reports/sales", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
   const from = String(req.query.from || "1970-01-01");
   const to = String(req.query.to || "2099-12-31");
-  res.json(await getSalesReportWithRange(from, to));
+  const groupId = req.query.group_id ? String(req.query.group_id) : undefined;
+  res.json(await getSalesReportWithRange(from, to, groupId));
 }));
 
 // Visitor tracking (public — called by storefront frontend)
@@ -5256,8 +5316,9 @@ app.get("/api/reports/visitors", ownerAuthMiddleware, requirePermission("reports
   res.json(stats);
 }));
 
-app.get("/api/reports/stock-summary", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ items: await getStockSummary() });
+app.get("/api/reports/stock-summary", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
+  const groupId = req.query.group_id ? String(req.query.group_id) : undefined;
+  res.json({ items: await getStockSummary(groupId) });
 }));
 
 app.get("/api/reports/employee-sales", adminAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {

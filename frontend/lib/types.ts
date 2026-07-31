@@ -7,6 +7,7 @@ export interface Product {
   imageUrl: string;
   imageAlt?: string;
   category: string;
+  groupId?: string;
   subcategory: string;
   inStock: boolean;
   isNonStock: boolean;
@@ -26,6 +27,14 @@ export interface ProductImage {
   imageUrl: string;
   sortOrder: number;
   isPrimary: number;
+}
+
+export interface ProductGroup {
+  id: string;
+  name: string;
+  isActive: boolean;
+  sortOrder: number;
+  productCount: number;
 }
 
 export interface CartItem {
