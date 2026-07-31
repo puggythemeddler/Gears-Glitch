@@ -217,6 +217,7 @@ import {
   deleteClientBranch,
   validateCoupon,
   listCoupons,
+  recordCouponUsage,
   createCoupon,
   updateCoupon,
   deleteCoupon,
@@ -254,6 +255,28 @@ import {
   getWhatsAppStats,
   getUserTotp,
   setUserTotp,
+  createGiftCard,
+  listGiftCards,
+  getGiftCard,
+  getGiftCardByCode,
+  updateGiftCard,
+  deleteGiftCard,
+  validateGiftCard,
+  redeemGiftCard,
+  listGiftCardRedemptions,
+  createCampaign,
+  listCampaigns,
+  getCampaign,
+  getCampaignBySlug,
+  updateCampaign,
+  deleteCampaign,
+  listAbandonedCarts,
+  recordCartRecoveryReminder,
+  listCartRecoveryReminders,
+  createRefund,
+  listRefunds,
+  getRefundTotal,
+  cancelOrderItemQuantity,
 } from "./db";
 import { query, queryOne, queryAll, transaction } from "./db-helpers";
 import {
@@ -1636,15 +1659,15 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     try {
       if (idempotencyKey) {
         const r = await queryOne(
-          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6) RETURNING id",
-          [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey]
+          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key, source, branch_id) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6, 'pos', $7) RETURNING id",
+          [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey, branchId ? Number(branchId) : null]
         ) as any;
         if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
         orderId = r.id;
       } else {
         const r = await queryOne(
-          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5) RETURNING id",
-          [customerId, customerName || "POS Customer", notes, subtotal, staffName]
+          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6) RETURNING id",
+          [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null]
         ) as any;
         if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
         orderId = r.id;
@@ -1654,8 +1677,8 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
         // Duplicate primary key — fix sequence and retry once
         await query("SELECT setval('orders_id_seq', COALESCE((SELECT MAX(id) FROM orders), 1))");
         const r2 = await queryOne(
-          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5) RETURNING id",
-          [customerId, customerName || "POS Customer", notes, subtotal, staffName]
+          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6) RETURNING id",
+          [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null]
         ) as any;
         if (!r2) { res.status(500).json({ error: "Failed to create order after retry." }); return; }
         orderId = r2.id;
@@ -1969,7 +1992,7 @@ app.get("/api/pos/customers", posAuthMiddleware, asyncHandler(async (req: Reques
 
 app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, mpesaPhone, couponCode, redeemPoints } = req.body || {};
+    const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, mpesaPhone, couponCode, giftCardCode, redeemPoints } = req.body || {};
     if (!shippingName || !shippingAddress || !shippingCounty) {
       res.status(400).json({ error: "Shipping name, address, and county are required." }); return;
     }
@@ -1978,11 +2001,30 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
     if (!isStr(shippingCounty, 100)) { res.status(400).json({ error: "Shipping county must be a valid string." }); return; }
     if (shippingPhone !== undefined && shippingPhone !== "" && !isStr(shippingPhone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
     if (mpesaPhone !== undefined && mpesaPhone !== "" && !isStr(mpesaPhone, 20)) { res.status(400).json({ error: "M-Pesa phone must be a valid string." }); return; }
+    if (redeemPoints !== undefined && redeemPoints !== "" && !isNonNegNum(Number(redeemPoints))) { res.status(400).json({ error: "Points must be a non-negative number." }); return; }
     const shippingF = getShippingFee(shippingCounty, await loadDeliveryFeeOverrides());
     const customerId = (req as any).customer.sub;
     const customerDetails = await findCustomerById(customerId);
     const cartItems = await getCartItems(customerId);
     if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
+    const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+    let couponDiscount = 0; let couponId: number | undefined; let couponOk = false;
+    if (couponCode && String(couponCode).trim()) {
+      const couponResult = await validateCoupon(String(couponCode).trim(), subtotal);
+      if (couponResult.valid && couponResult.couponId) { couponDiscount = couponResult.discount; couponId = couponResult.couponId; couponOk = true; }
+    }
+    let giftCardDiscount = 0; let giftCardId: number | undefined; let giftCardOk = false;
+    if (giftCardCode && String(giftCardCode).trim()) {
+      const gcResult = await validateGiftCard(String(giftCardCode).trim(), Math.max(0, subtotal - couponDiscount));
+      if (gcResult.valid && gcResult.giftCardId) { giftCardDiscount = gcResult.discount; giftCardId = gcResult.giftCardId; giftCardOk = true; }
+    }
+    let pointsRedeemed = 0;
+    if (redeemPoints && Number(redeemPoints) > 0) {
+      const available = await getLoyaltyPoints(customerId);
+      const capped = Math.min(Number(redeemPoints), available, Math.max(0, subtotal - couponDiscount - giftCardDiscount));
+      pointsRedeemed = Math.floor(capped);
+    }
+    const total = subtotal + shippingF - couponDiscount - giftCardDiscount - pointsRedeemed;
     const order = await createOrder({
       customerId,
       customerName: shippingName,
@@ -1996,15 +2038,23 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
       shippingFee: shippingF,
       notes: notes || "",
       items: cartItems.map((ci) => ({ productId: ci.productId, name: ci.name, price: ci.price, quantity: ci.quantity, hasWarranty: ci.hasWarranty, warrantyDuration: ci.warrantyDuration })),
+      couponId,
+      discountAmount: couponDiscount,
+      giftCardId,
+      giftCardAmount: giftCardDiscount,
+      source: "storefront",
       processedBy: `Customer #${customerId}`,
     });
+    if (couponOk && couponId) { try { await recordCouponUsage(couponId, order.id); } catch {} }
+    if (giftCardOk && giftCardId && giftCardDiscount > 0) { await redeemGiftCard(giftCardId, order.id, customerId, giftCardDiscount); }
+    if (pointsRedeemed > 0) { await redeemLoyaltyPoints(customerId, order.id, pointsRedeemed); }
     await clearCart(customerId);
     let mpesaRequested = false;
     if (mpesaPhone) {
       try {
         const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
         const accountRef = `ORD${order.id}`;
-        const stkResult = await stkPush(mpesaPhone, order.subtotal + shippingF, accountRef, callbackUrl);
+        const stkResult = await stkPush(mpesaPhone, total, accountRef, callbackUrl);
         const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
         if (checkoutRequestId) {
           await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, order.id]);
@@ -4866,6 +4916,185 @@ app.post("/api/coupons/validate", customerAuthMiddleware, asyncHandler(async (re
   const result = await validateCoupon(String(code).trim(), Number(subtotal) || 0);
   if (!result.valid) { res.status(400).json({ error: "Invalid coupon." }); return; }
   res.json({ discount: result.discount });
+}));
+
+// ============ GIFT CARDS (Admin) ============
+
+app.get("/api/admin/gift-cards", ownerAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ giftCards: await listGiftCards() });
+}));
+
+app.post("/api/admin/gift-cards", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    if (body.code !== undefined && body.code !== "" && !isStr(body.code)) { res.status(400).json({ error: "Gift card code must be a valid string." }); return; }
+    if (body.initialValue !== undefined && !isNonNegNum(Number(body.initialValue))) { res.status(400).json({ error: "initialValue must be a non-negative number." }); return; }
+    const card = await createGiftCard({ code: body.code, initialValue: Number(body.initialValue) || 0, expiresAt: body.expiresAt, notes: body.notes, createdBy: (req as any).user.sub });
+    res.status(201).json(card);
+  } catch (err: any) {
+    console.error("[gift card create]", err?.message || err);
+    res.status(400).json({ error: "Failed to create gift card." });
+  }
+}));
+
+app.put("/api/admin/gift-cards/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const card = await updateGiftCard(Number(req.params.id), body);
+    if (!card) { res.status(404).json({ error: "Gift card not found." }); return; }
+    res.json(card);
+  } catch (err: any) {
+    console.error("[gift card update]", err?.message || err);
+    res.status(400).json({ error: "Failed to update gift card." });
+  }
+}));
+
+app.delete("/api/admin/gift-cards/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const ok = await deleteGiftCard(Number(req.params.id));
+  if (!ok) { res.status(404).json({ error: "Gift card not found." }); return; }
+  res.json({ ok: true });
+}));
+
+app.get("/api/admin/gift-cards/:id/redemptions", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  res.json({ redemptions: await listGiftCardRedemptions(Number(req.params.id)) });
+}));
+
+// ============ GIFT CARDS (Public validate) ============
+
+app.post("/api/gift-cards/validate", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { code, amount } = req.body || {};
+  if (!code) { res.status(400).json({ error: "Gift card code is required." }); return; }
+  if (!isStr(code)) { res.status(400).json({ error: "Gift card code must be a valid string." }); return; }
+  if (amount !== undefined && !isNonNegNum(Number(amount))) { res.status(400).json({ error: "Amount must be a non-negative number." }); return; }
+  const result = await validateGiftCard(String(code).trim(), Number(amount) || 0);
+  if (!result.valid) { res.status(400).json({ error: "Invalid or insufficient gift card." }); return; }
+  res.json({ balance: result.balance, discount: result.discount });
+}));
+
+// ============ CAMPAIGNS (Public) ============
+
+app.get("/api/campaigns/:slug", asyncHandler(async (req: Request, res: Response) => {
+  const campaign = await getCampaignBySlug(String(req.params.slug).toLowerCase());
+  if (!campaign) { res.status(404).json({ error: "Campaign not found." }); return; }
+  let productIds: string[] = [];
+  try { productIds = JSON.parse(campaign.product_ids || "[]"); } catch {}
+  const products: any[] = [];
+  for (const pid of productIds) {
+    const p = await getProduct(pid);
+    if (p) products.push(p);
+  }
+  res.json({ campaign, products });
+}));
+
+// ============ CAMPAIGNS (Admin) ============
+
+app.get("/api/admin/campaigns", ownerAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ campaigns: await listCampaigns() });
+}));
+
+app.post("/api/admin/campaigns", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    if (body.title !== undefined && !isStr(body.title)) { res.status(400).json({ error: "Campaign title must be a valid string." }); return; }
+    if (body.slug !== undefined && body.slug !== "" && !isStr(body.slug)) { res.status(400).json({ error: "Campaign slug must be a valid string." }); return; }
+    if (body.productIds !== undefined && !Array.isArray(body.productIds)) { res.status(400).json({ error: "productIds must be an array." }); return; }
+    const campaign = await createCampaign(body);
+    res.status(201).json(campaign);
+  } catch (err: any) {
+    console.error("[campaign create]", err?.message || err);
+    res.status(400).json({ error: "Failed to create campaign." });
+  }
+}));
+
+app.put("/api/admin/campaigns/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    if (body.title !== undefined && !isStr(body.title)) { res.status(400).json({ error: "Campaign title must be a valid string." }); return; }
+    if (body.productIds !== undefined && !Array.isArray(body.productIds)) { res.status(400).json({ error: "productIds must be an array." }); return; }
+    const campaign = await updateCampaign(Number(req.params.id), body);
+    if (!campaign) { res.status(404).json({ error: "Campaign not found." }); return; }
+    res.json(campaign);
+  } catch (err: any) {
+    console.error("[campaign update]", err?.message || err);
+    res.status(400).json({ error: "Failed to update campaign." });
+  }
+}));
+
+app.delete("/api/admin/campaigns/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const ok = await deleteCampaign(Number(req.params.id));
+  if (!ok) { res.status(404).json({ error: "Campaign not found." }); return; }
+  res.json({ ok: true });
+}));
+
+// ============ ABANDONED CART RECOVERY (Admin) ============
+
+app.get("/api/admin/abandoned-carts", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const hours = Number(req.query.hours) || 24;
+  const carts = await listAbandonedCarts(hours);
+  const reminders = await listCartRecoveryReminders();
+  res.json({ carts, reminders });
+}));
+
+app.post("/api/admin/abandoned-carts/send-reminder", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { customerId, cartTotal, channel } = req.body || {};
+  if (customerId === undefined || !isInt(Number(customerId))) { res.status(400).json({ error: "customerId must be an integer." }); return; }
+  const customer = await findCustomerById(Number(customerId));
+  if (!customer) { res.status(404).json({ error: "Customer not found." }); return; }
+  const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+  const subject = "You left items in your cart 🛒";
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
+      <h2 style="margin:0 0 8px;color:#111827">Hi ${escapeHtml(customer.name || "there")},</h2>
+      <p style="color:#4b5563;margin:0 0 16px">You still have items worth <strong>${escapeHtml(String(cartTotal || ""))}</strong> in your cart. Don't miss out!</p>
+      <a href="${baseUrl}/cart" style="display:inline-block;background:#111827;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">Complete your order</a>
+      <p style="color:#9ca3af;font-size:12px;margin-top:20px">If this wasn't you, ignore this email.</p>
+    </div>`;
+  const sent = await sendEmail(customer.email, subject, html, "cart_recovery");
+  if (sent) {
+    await recordCartRecoveryReminder(Number(customerId), Number(cartTotal) || 0, channel || "email");
+  }
+  res.json({ ok: sent, email: customer.email });
+}));
+
+// ============ REFUNDS (Admin) ============
+
+app.get("/api/admin/orders/:id/refunds", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const order = await getOrder(Number(req.params.id));
+  if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+  res.json({ refunds: await listRefunds(Number(req.params.id)), amountRefunded: order.amountRefunded });
+}));
+
+app.post("/api/admin/orders/:id/refunds", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const orderId = Number(req.params.id);
+    const order = await getOrder(orderId);
+    if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+    const body = req.body || {};
+    const amount = Number(body.amount);
+    if (!isNonNegNum(amount)) { res.status(400).json({ error: "Amount must be a non-negative number." }); return; }
+    if (amount <= 0) { res.status(400).json({ error: "Amount must be greater than zero." }); return; }
+    const paid = (order.subtotal + order.shippingFee - (order.discountAmount || 0) - order.giftCardAmount) || 0;
+    const remaining = Math.max(0, paid - (order.amountRefunded || 0));
+    if (amount > remaining) { res.status(400).json({ error: `Refund exceeds remaining balance (${remaining}).` }); return; }
+    if (body.orderItemId !== undefined) {
+      const item = order.items?.find((i: any) => i.id === Number(body.orderItemId));
+      if (!item) { res.status(400).json({ error: "Order item not found." }); return; }
+      if (amount > item.price * item.quantity) { res.status(400).json({ error: "Line refund cannot exceed the line total." }); return; }
+      await cancelOrderItemQuantity(item.id, 0);
+    }
+    const refund = await createRefund({
+      orderId,
+      orderItemId: body.orderItemId !== undefined ? Number(body.orderItemId) : undefined,
+      productId: body.productId !== undefined ? String(body.productId) : undefined,
+      amount,
+      reason: body.reason !== undefined && isStr(body.reason) ? String(body.reason) : "",
+      createdBy: (req as any).user.sub,
+    });
+    res.status(201).json(refund);
+  } catch (err: any) {
+    console.error("[refund create]", err?.message || err);
+    res.status(400).json({ error: "Failed to create refund." });
+  }
 }));
 
 // ============ SUPPLIERS (Admin) ============

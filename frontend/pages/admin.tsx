@@ -28,7 +28,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
+export type AdminView = "dashboard" | "products" | "categories" | "orders" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning";
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
   {
@@ -38,6 +38,9 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "categories", label: "Categories" },
       { key: "orders", label: "Orders" },
       { key: "coupons", label: "Coupons", feature: "Discount/coupon management" },
+      { key: "gift-cards", label: "Gift Cards", feature: "Gift cards" },
+      { key: "campaigns", label: "Campaigns", feature: "Campaign pages" },
+      { key: "abandoned-carts", label: "Abandoned Carts", feature: "Cart recovery" },
       { key: "quotations", label: "Quotations", feature: "Quotations" },
       { key: "category-positioning", label: "Category Order" },
     ],
@@ -145,6 +148,9 @@ export default function AdminPage() {
     "eTIMS/KRA compliance": useFeature("eTIMS/KRA compliance"),
     "POS integration": useFeature("POS integration"),
     "Visitor analytics": useFeature("Visitor analytics"),
+    "Gift cards": useFeature("Gift cards"),
+    "Campaign pages": useFeature("Campaign pages"),
+    "Cart recovery": useFeature("Cart recovery"),
   };
   const hasFeature = (f?: string) => !f || featureFlags[f] === true;
   const visibleNavGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => hasFeature(i.feature)) })).filter((g) => g.items.length > 0);
@@ -381,6 +387,9 @@ export default function AdminPage() {
             {view === "categories" && <AdminCategories />}
             {view === "orders" && <AdminOrders />}
             {view === "coupons" && <AdminCoupons />}
+            {view === "gift-cards" && <AdminGiftCards />}
+            {view === "campaigns" && <AdminCampaigns />}
+            {view === "abandoned-carts" && <AdminAbandonedCarts />}
             {view === "quotations" && <AdminQuotations />}
             {view === "users" && <AdminUsers />}
             {view === "roles" && <AdminRoles />}
@@ -681,6 +690,8 @@ function AdminOrders() {
   const [customerDetail, setCustomerDetail] = useState<any | null>(null);
   const [statusMsg, setStatusMsg] = useState("");
   const [creditedOrders, setCreditedOrders] = useState<Record<number, boolean>>({});
+  const [refunds, setRefunds] = useState<any[]>([]);
+  const [refundMsg, setRefundMsg] = useState("");
 
   async function updateStatus(orderId: number, status: string) {
     setStatusMsg("");
@@ -696,10 +707,30 @@ function AdminOrders() {
     try {
       const order = await api<any>(`/api/admin/orders/${orderId}`);
       setSelected(order);
+      setRefundMsg("");
+      setRefunds([]);
+      api<any>(`/api/admin/orders/${orderId}/refunds`).then((r) => setRefunds(r.refunds || [])).catch(() => setRefunds([]));
       if (order.customerId) {
         api<any>(`/api/admin/customers/${order.customerId}`).then(setCustomerDetail).catch(() => setCustomerDetail(null));
       } else { setCustomerDetail(null); }
     } catch { alert("Failed to load order"); }
+  }
+
+  async function issueRefund(amount: number, reason: string, orderItemId?: number, productId?: string) {
+    setRefundMsg("");
+    try {
+      const body: any = { amount, reason };
+      if (orderItemId !== undefined) body.orderItemId = orderItemId;
+      if (productId !== undefined) body.productId = productId;
+      await api(`/api/admin/orders/${selected.id}/refunds`, { method: "POST", body: JSON.stringify(body) });
+      const updated = await api<any>(`/api/admin/orders/${selected.id}`);
+      setSelected(updated);
+      api<any>(`/api/admin/orders/${selected.id}/refunds`).then((r) => setRefunds(r.refunds || [])).catch(() => setRefunds([]));
+      refetch();
+    } catch (e: any) {
+      setRefundMsg(e.message || "Failed to issue refund.");
+      throw e;
+    }
   }
 
   useEffect(() => {
@@ -772,9 +803,13 @@ function AdminOrders() {
           <div className="panel">
             <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>Order Info</h3>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Date: {new Date(o.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+            <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Channel: <span style={{ textTransform: "capitalize" }}>{escapeHtml(o.source || "storefront")}</span></p>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Subtotal: {formatPrice(o.subtotal)}</p>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Shipping: {formatPrice(o.shippingFee || 0)}</p>
-            <p style={{ margin: "0.2rem 0", fontWeight: 700 }}>Total: {formatPrice(total)}</p>
+            {o.discountAmount > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "#16a34a" }}>Coupon: -{formatPrice(o.discountAmount)}</p>}
+            {o.giftCardAmount > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "#16a34a" }}>Gift card: -{formatPrice(o.giftCardAmount)}</p>}
+            {o.amountRefunded > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "#dc2626" }}>Refunded: -{formatPrice(o.amountRefunded)}</p>}
+            <p style={{ margin: "0.2rem 0", fontWeight: 700 }}>Total: {formatPrice(Math.max(0, total - (o.amountRefunded || 0)))}</p>
           </div>
         </div>
 
@@ -805,15 +840,23 @@ function AdminOrders() {
               }} style={{ background: "var(--primary)", color: "#fff" }}>Credit Note</RippleButton>
             )}
             <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>
+            <RippleButton variant="danger" onClick={() => {
+              const input = prompt("Refund amount:");
+              if (!input) return;
+              const amount = Number(input);
+              if (!amount || amount <= 0) { setRefundMsg("Invalid amount."); return; }
+              const reason = prompt("Reason (optional):") || "";
+              issueRefund(amount, reason).catch(() => {});
+            }} style={{ background: "var(--danger, #dc2626)", color: "#fff" }}>Refund</RippleButton>
           </div>
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Warranty</th></tr></thead>
+            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Warranty</th><th></th></tr></thead>
             <tbody>
               {(o.items || []).map((item: any, i: number) => (
                 <tr key={item.id || i}>
-                  <td>{escapeHtml(item.name)}</td>
+                  <td>{escapeHtml(item.name)}{!!item.cancelled && <span style={{ marginLeft: "0.4rem", fontSize: "0.75rem", color: "#dc2626" }}>(refunded)</span>}</td>
                   <td>{formatPrice(item.price)}</td>
                   <td>{item.quantity}</td>
                   <td>{formatPrice(item.lineTotal)}</td>
@@ -837,11 +880,43 @@ function AdminOrders() {
                       <span>{item.hasWarranty ? "mo" : ""}</span>
                     </div>
                   </td>
+                  <td>
+                    {!item.cancelled && (
+                      <RippleButton size="small" variant="ghost" onClick={() => {
+                        const amount = Number(prompt("Line refund amount:", String(item.lineTotal)));
+                        if (!amount || amount <= 0) return;
+                        const reason = prompt("Reason (optional):") || "";
+                        issueRefund(amount, reason, item.id, item.productId).catch(() => {});
+                      }}>Refund line</RippleButton>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
+        {refundMsg && <p style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem 1rem", color: "var(--danger, #dc2626)" }}>{refundMsg}</p>}
+
+        {refunds.length > 0 && (
+          <div style={{ marginTop: "1rem" }}>
+            <h2 style={{ margin: "0 0 0.75rem" }}>Refunds</h2>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead><tr><th>Amount</th><th>Reason</th><th>Date</th></tr></thead>
+                <tbody>
+                  {refunds.map((r: any) => (
+                    <tr key={r.id}>
+                      <td style={{ color: "#dc2626" }}>-{formatPrice(r.amount)}</td>
+                      <td>{escapeHtml(r.reason || "—")}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </>
     );
   }
@@ -852,13 +927,14 @@ function AdminOrders() {
       {statusMsg && <p style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem 1rem" }}>{statusMsg}</p>}
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>#</th><th>Customer</th><th>Total</th><th>County</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Channel</th><th>County</th><th>Status</th><th>Date</th><th></th></tr></thead>
           <tbody>
             {orders.map((o) => (
               <tr key={o.id} style={{ cursor: "pointer" }} onClick={() => openOrder(o.id)}>
                 <td>{o.id}</td>
                 <td>{escapeHtml(o.shippingName || "—")}</td>
                 <td>{formatPrice(o.subtotal + o.shippingFee)}</td>
+                <td><span style={{ textTransform: "capitalize" }}>{escapeHtml((o as any).source || "storefront")}</span></td>
                 <td>{o.shippingCounty || "—"}</td>
                 <td><span className="plan-status">{o.status}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>{new Date(o.createdAt).toLocaleDateString("en-GB")}</td>
@@ -873,7 +949,7 @@ function AdminOrders() {
                 </td>
               </tr>
             ))}
-            {orders.length === 0 && <tr><td colSpan={7}><EmptyState icon="orders" title="No orders yet" description="Customer orders will appear here." /></td></tr>}
+            {orders.length === 0 && <tr><td colSpan={8}><EmptyState icon="orders" title="No orders yet" description="Customer orders will appear here." /></td></tr>}
           </tbody>
         </table>
       </div>
@@ -3929,6 +4005,325 @@ function AdminCoupons() {
   );
 }
 
+function AdminGiftCards() {
+  const { data, loading, error, refetch } = useFetch(() => api<{ giftCards: any[] }>("/api/admin/gift-cards"), []);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [redemptions, setRedemptions] = useState<any[] | null>(null);
+  const [redemptionCard, setRedemptionCard] = useState<any | null>(null);
+
+  const cards = data?.giftCards || [];
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setMsg("");
+    const fd = new FormData(e.target as HTMLFormElement);
+    const body: any = {
+      code: fd.get("code"),
+      initialValue: Number(fd.get("initialValue")) || 0,
+      expiresAt: fd.get("expires_at") || null,
+      notes: fd.get("notes") || "",
+    };
+    try {
+      await api("/api/admin/gift-cards", { method: "POST", body: JSON.stringify(body) });
+      setShowForm(false); refetch();
+    } catch (e: any) { setMsg(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function toggleActive(card: any) {
+    try {
+      await api(`/api/admin/gift-cards/${card.id}`, { method: "PUT", body: JSON.stringify({ is_active: card.is_active !== 1 }) });
+      refetch();
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function showRedemptions(card: any) {
+    try {
+      const r = await api<{ redemptions: any[] }>(`/api/admin/gift-cards/${card.id}/redemptions`);
+      setRedemptions(r.redemptions || []);
+      setRedemptionCard(card);
+    } catch { setRedemptions([]); setRedemptionCard(card); }
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <h1 style={{ margin: 0 }}>Gift Cards</h1>
+        <RippleButton size="small" onClick={() => { setShowForm(!showForm); setMsg(""); }}>{showForm ? "Cancel" : "+ New Gift Card"}</RippleButton>
+      </div>
+      {showForm && (
+        <form className="panel" onSubmit={save} style={{ maxWidth: 500, marginBottom: "1rem" }}>
+          {msg && <ErrorMsg msg={msg} />}
+          <div className="field"><label>Code (blank = auto-generate)<input name="code" placeholder="GC-XXXX-XXXX-XXXX" /></label></div>
+          <div className="field"><label>Value (KES)<input name="initialValue" type="number" step="any" min="1" required /></label></div>
+          <div className="field"><label>Expires At<input name="expires_at" type="date" /></label></div>
+          <div className="field"><label>Notes<input name="notes" /></label></div>
+          <RippleButton type="submit" loading={saving}>Create</RippleButton>
+        </form>
+      )}
+      {loading && <Spinner />}
+      {error && <ErrorMsg msg={error} />}
+      {redemptionCard && (
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+            <h3 style={{ margin: 0 }}>Redemptions — {escapeHtml(redemptionCard.code)}</h3>
+            <RippleButton size="small" variant="ghost" onClick={() => { setRedemptionCard(null); setRedemptions(null); }}>Close</RippleButton>
+          </div>
+          {redemptions && redemptions.length === 0 ? <p className="muted" style={{ margin: 0 }}>No redemptions yet.</p> : (
+            <table className="data-table">
+              <thead><tr><th>Order</th><th>Amount</th><th>Date</th></tr></thead>
+              <tbody>
+                {(redemptions || []).map((r) => (
+                  <tr key={r.id}><td>#{r.order_id}</td><td>{formatPrice(r.amount)}</td><td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleString("en-GB")}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>Code</th><th>Initial Value</th><th>Balance</th><th>Expires</th><th>Active</th><th></th></tr></thead>
+          <tbody>
+            {cards.map((c) => (
+              <tr key={c.id}>
+                <td><code>{escapeHtml(c.code)}</code></td>
+                <td>{formatPrice(c.initial_value)}</td>
+                <td>{formatPrice(c.balance)}</td>
+                <td>{c.expires_at ? new Date(c.expires_at).toLocaleDateString("en-GB") : "Never"}</td>
+                <td>{c.is_active ? "Yes" : "No"}</td>
+                <td style={{ display: "flex", gap: "0.35rem" }}>
+                  <RippleButton size="small" variant="ghost" onClick={() => showRedemptions(c)}>Redemptions</RippleButton>
+                  <RippleButton size="small" variant={c.is_active ? "danger" : "primary"} onClick={() => toggleActive(c)}>{c.is_active ? "Deactivate" : "Activate"}</RippleButton>
+                </td>
+              </tr>
+            ))}
+            {cards.length === 0 && <tr><td colSpan={6}><EmptyState icon="products" title="No gift cards yet" description="Issue gift cards your customers can redeem at checkout." /></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function AdminCampaigns() {
+  const { data, loading, error, refetch } = useFetch(() => api<{ campaigns: any[] }>("/api/admin/campaigns"), []);
+  const { data: products } = useFetch(() => api<{ products: any[] }>("/api/products"), []);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const campaigns = data?.campaigns || [];
+  const productList = products?.products || [];
+
+  function openForm(c?: any) {
+    setEditing(c || null);
+    setSelected(c ? (() => { try { return JSON.parse(c.product_ids || "[]"); } catch { return []; } })() : []);
+    setMsg("");
+    setShowForm(true);
+  }
+
+  function toggleProduct(id: string) {
+    setSelected((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]);
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setMsg("");
+    const fd = new FormData(e.target as HTMLFormElement);
+    const body: any = {
+      title: fd.get("title"),
+      slug: fd.get("slug") || undefined,
+      subtitle: fd.get("subtitle") || "",
+      description: fd.get("description") || "",
+      heroImage: fd.get("hero_image") || "",
+      bannerColor: fd.get("banner_color") || "#111827",
+      productIds: selected,
+      isActive: fd.get("is_active") === "on",
+    };
+    try {
+      if (editing) {
+        await api(`/api/admin/campaigns/${editing.id}`, { method: "PUT", body: JSON.stringify(body) });
+      } else {
+        await api("/api/admin/campaigns", { method: "POST", body: JSON.stringify(body) });
+      }
+      setShowForm(false); setEditing(null); refetch();
+    } catch (e: any) { setMsg(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function del(id: number) {
+    if (!confirm("Delete this campaign?")) return;
+    try { await api(`/api/admin/campaigns/${id}`, { method: "DELETE" }); refetch(); } catch {}
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <h1 style={{ margin: 0 }}>Campaign Pages</h1>
+        <RippleButton size="small" onClick={() => showForm ? setShowForm(false) : openForm()}>{showForm ? "Cancel" : "+ New Campaign"}</RippleButton>
+      </div>
+      {showForm && (
+        <form className="panel" onSubmit={save} style={{ marginBottom: "1rem" }}>
+          {msg && <ErrorMsg msg={msg} />}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+            <div className="field"><label>Title<input name="title" defaultValue={editing?.title || ""} required /></label></div>
+            <div className="field"><label>Slug (page URL)<input name="slug" defaultValue={editing?.slug || ""} placeholder="summer-sale" /></label></div>
+            <div className="field"><label>Subtitle<input name="subtitle" defaultValue={editing?.subtitle || ""} /></label></div>
+            <div className="field"><label>Banner Color<input name="banner_color" type="color" defaultValue={editing?.banner_color || "#111827"} /></label></div>
+            <div className="field" style={{ gridColumn: "1 / -1" }}><label>Hero Image URL<input name="hero_image" defaultValue={editing?.hero_image || ""} /></label></div>
+          </div>
+          <div className="field"><label>Description<textarea name="description" rows={3} defaultValue={editing?.description || ""} /></label></div>
+          <div className="field">
+            <label>Featured Products</label>
+            <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem" }}>
+              {productList.map((p) => (
+                <label key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", fontSize: "0.9rem" }}>
+                  <input type="checkbox" checked={selected.includes(p.id)} onChange={() => toggleProduct(p.id)} />
+                  {escapeHtml(p.name)}
+                </label>
+              ))}
+              {productList.length === 0 && <span className="muted">No products found.</span>}
+            </div>
+          </div>
+          <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><input name="is_active" type="checkbox" defaultChecked={editing ? editing.is_active : true} /> Active</label></div>
+          <RippleButton type="submit" loading={saving}>Save</RippleButton>
+          {editing && <span className="muted" style={{ marginLeft: "0.75rem" }}>Preview: /campaign/{escapeHtml(editing.slug)}</span>}
+        </form>
+      )}
+      {loading && <Spinner />}
+      {error && <ErrorMsg msg={error} />}
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>Title</th><th>Slug</th><th>Products</th><th>Active</th><th>Created</th><th></th></tr></thead>
+          <tbody>
+            {campaigns.map((c) => {
+              let count = 0;
+              try { count = (JSON.parse(c.product_ids || "[]") || []).length; } catch {}
+              return (
+                <tr key={c.id}>
+                  <td>{escapeHtml(c.title)}</td>
+                  <td><code>/campaign/{escapeHtml(c.slug)}</code></td>
+                  <td>{count}</td>
+                  <td>{c.is_active ? "Yes" : "No"}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{new Date(c.created_at).toLocaleDateString("en-GB")}</td>
+                  <td style={{ display: "flex", gap: "0.35rem" }}>
+                    <RippleButton size="small" variant="ghost" onClick={() => openForm(c)}>Edit</RippleButton>
+                    <RippleButton size="small" variant="danger" onClick={() => del(c.id)}>Delete</RippleButton>
+                  </td>
+                </tr>
+              );
+            })}
+            {campaigns.length === 0 && <tr><td colSpan={6}><EmptyState icon="products" title="No campaigns yet" description="Create landing pages to promote product collections." /></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function AdminAbandonedCarts() {
+  const [data, setData] = useState<{ carts: any[]; reminders: any[] } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [hours, setHours] = useState(24);
+  const [sendingId, setSendingId] = useState<number | null>(null);
+  const [msg, setMsg] = useState<{ id: number; text: string; error?: boolean } | null>(null);
+
+  const carts = data?.carts || [];
+  const reminders = data?.reminders || [];
+
+  function reload() {
+    setLoading(true); setError("");
+    api<{ carts: any[]; reminders: any[] }>(`/api/admin/abandoned-carts?hours=${hours}`)
+      .then(setData).catch((e: any) => setError(e.message)).finally(() => setLoading(false));
+  }
+
+  useEffect(() => { reload(); }, [hours]);
+
+  async function sendReminder(cart: any) {
+    setSendingId(cart.customer_id);
+    setMsg(null);
+    try {
+      await api("/api/admin/abandoned-carts/send-reminder", {
+        method: "POST",
+        body: JSON.stringify({ customerId: cart.customer_id, cartTotal: cart.cart_total, channel: "email" }),
+      });
+      setMsg({ id: cart.customer_id, text: "Reminder sent." });
+      reload();
+    } catch (e: any) {
+      setMsg({ id: cart.customer_id, text: e.message || "Failed to send.", error: true });
+    } finally { setSendingId(null); }
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
+        <h1 style={{ margin: 0 }}>Abandoned Carts</h1>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <label className="muted" style={{ fontSize: "0.85rem" }}>Inactive for:
+            <select value={hours} onChange={(e) => setHours(Number(e.target.value))} style={{ marginLeft: "0.4rem" }}>
+              <option value={6}>6 hours</option>
+              <option value={24}>24 hours</option>
+              <option value={72}>3 days</option>
+              <option value={168}>7 days</option>
+            </select>
+          </label>
+          <RippleButton size="small" onClick={reload}>Refresh</RippleButton>
+        </div>
+      </div>
+      {loading && <Spinner />}
+      {error && <ErrorMsg msg={error} />}
+      <div className="table-wrap" style={{ marginBottom: "1.5rem" }}>
+        <table className="data-table">
+          <thead><tr><th>Customer</th><th>Email</th><th>Phone</th><th>Cart Value</th><th>Items</th><th>Last Activity</th><th></th></tr></thead>
+          <tbody>
+            {carts.map((c) => (
+              <tr key={c.customer_id}>
+                <td>{escapeHtml(c.name || "—")}</td>
+                <td>{escapeHtml(c.email || "—")}</td>
+                <td>{escapeHtml(c.phone || "—")}</td>
+                <td>{formatPrice(c.cart_total)}</td>
+                <td>{c.item_count}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{new Date(c.last_activity).toLocaleString("en-GB")}</td>
+                <td>
+                  {msg && msg.id === c.customer_id && <span style={{ fontSize: "0.8rem", color: msg.error ? "#dc2626" : "#16a34a", marginRight: "0.5rem" }}>{msg.text}</span>}
+                  <RippleButton size="small" onClick={() => sendReminder(c)} loading={sendingId === c.customer_id}>Send reminder</RippleButton>
+                </td>
+              </tr>
+            ))}
+            {carts.length === 0 && <tr><td colSpan={7}><EmptyState icon="cart" title="No abandoned carts" description="Carts that have been inactive for the selected period will appear here." /></td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {reminders.length > 0 && (
+        <>
+          <h2 style={{ margin: "0 0 0.75rem" }}>Reminder History</h2>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th>Customer</th><th>Cart Value</th><th>Channel</th><th>Date</th></tr></thead>
+              <tbody>
+                {reminders.map((r) => (
+                  <tr key={r.id}>
+                    <td>{escapeHtml(r.customer_name || "—")}</td>
+                    <td>{formatPrice(r.cart_total)}</td>
+                    <td>{r.channel}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleString("en-GB")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 function AdminSuppliers() {
   const { data, loading, error, refetch } = useFetch(() => api<{ suppliers: any[] }>("/api/admin/suppliers"), []);
   const [saving, setSaving] = useState(false);
@@ -4197,20 +4592,24 @@ function AdminSalesReport() {
 
           <SalesTrendsChart from={from} to={to} branchId={branchId} />
 
-          {report.branchBreakdown && report.branchBreakdown.length > 0 && (
+          {report.channels && report.channels.length > 0 && (
             <>
-              <h3>Per-Branch Breakdown</h3>
+              <h3>Sales by Channel</h3>
               <div className="table-wrap" style={{ marginBottom: "1rem" }}>
                 <table className="data-table">
-                  <thead><tr><th>Branch</th><th>Orders</th><th>Revenue</th></tr></thead>
+                  <thead><tr><th>Channel</th><th>Orders</th><th>Revenue</th><th>Share</th></tr></thead>
                   <tbody>
-                    {report.branchBreakdown.map((b: any) => (
-                      <tr key={b.branchId}>
-                        <td>{escapeHtml(b.branchName)}</td>
-                        <td>{b.orders}</td>
-                        <td>{formatPrice(b.revenue)}</td>
-                      </tr>
-                    ))}
+                    {report.channels.map((c: any, i: number) => {
+                      const share = report.totalRevenue > 0 ? ((c.revenue / report.totalRevenue) * 100).toFixed(1) : "0";
+                      return (
+                        <tr key={i}>
+                          <td style={{ textTransform: "capitalize" }}>{escapeHtml(c.channel)}</td>
+                          <td>{c.orders}</td>
+                          <td>{formatPrice(c.revenue)}</td>
+                          <td>{share}%</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

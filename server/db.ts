@@ -177,6 +177,10 @@ interface Order {
   discountAmount?: number;
   processedBy?: string;
   idempotencyKey?: string;
+  source: string;
+  giftCardId?: number | null;
+  giftCardAmount: number;
+  amountRefunded: number;
 }
 
 interface OrderItem {
@@ -459,6 +463,7 @@ interface SalesReport {
   paidInvoices: number;
   invoiceRevenue: number;
   topProducts: { productId: string; name: string; totalSold: number; revenue: number }[];
+  channels: { channel: string; orders: number; revenue: number }[];
 }
 
 interface PurchaseReport {
@@ -763,6 +768,81 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
   try { await query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
 
+  // ============ Sales-by-channel, gift cards, campaigns, cart recovery, refunds ============
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'storefront'`); } catch {}
+  try { await query(`UPDATE orders SET source = 'pos' WHERE source = 'storefront' AND (branch_id IS NOT NULL OR processed_by LIKE 'POS%' OR notes LIKE 'POS sale%')`); } catch {}
+  try { await query(`UPDATE orders SET source = 'quote' WHERE source = 'storefront' AND notes LIKE 'Converted from quote%'`); } catch {}
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_id INTEGER`); } catch {}
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_amount DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount_refunded DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS gift_cards (
+      id SERIAL PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      initial_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+      balance DOUBLE PRECISION NOT NULL DEFAULT 0,
+      expires_at TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      notes TEXT NOT NULL DEFAULT '',
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (NOW()::text),
+      updated_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_gift_cards_code ON gift_cards(code)`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS gift_card_redemptions (
+      id SERIAL PRIMARY KEY,
+      gift_card_id INTEGER NOT NULL REFERENCES gift_cards(id) ON DELETE CASCADE,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      customer_id INTEGER,
+      amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_gift_redemptions_card ON gift_card_redemptions(gift_card_id)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_gift_redemptions_order ON gift_card_redemptions(order_id)`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS campaigns (
+      id SERIAL PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      subtitle TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      hero_image TEXT NOT NULL DEFAULT '',
+      banner_color TEXT NOT NULL DEFAULT '#111827',
+      product_ids TEXT NOT NULL DEFAULT '[]',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (NOW()::text),
+      updated_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_campaigns_slug ON campaigns(slug)`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS cart_recovery_reminders (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      cart_total DOUBLE PRECISION NOT NULL DEFAULT 0,
+      channel TEXT NOT NULL DEFAULT 'email',
+      order_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_cart_recovery_customer ON cart_recovery_reminders(customer_id)`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS refunds (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+      product_id TEXT,
+      amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+      reason TEXT NOT NULL DEFAULT '',
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (NOW()::text)
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds(order_id)`);
+  } catch {}
+
   // Update default plan pricing and features
   try {
     await query(`UPDATE subscription_plans SET price = 4999, price_annual = 47990 WHERE id = 'growth'`);
@@ -793,6 +873,33 @@ async function runMigrations(): Promise<void> {
       if (plan && !plan.features.includes("Visitor analytics")) {
         const updated = JSON.parse(plan.features);
         updated.push("Visitor analytics");
+        await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(updated), planId]);
+      }
+    }
+    // Add gift cards to Pro+ plans
+    for (const planId of ["pro", "enterprise"]) {
+      const plan = await queryOne(`SELECT features FROM subscription_plans WHERE id = $1`, [planId]) as any;
+      if (plan && !plan.features.includes("Gift cards")) {
+        const updated = JSON.parse(plan.features);
+        updated.push("Gift cards");
+        await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(updated), planId]);
+      }
+    }
+    // Add Campaign pages to Growth+ plans
+    for (const planId of ["growth", "pro", "enterprise"]) {
+      const plan = await queryOne(`SELECT features FROM subscription_plans WHERE id = $1`, [planId]) as any;
+      if (plan && !plan.features.includes("Campaign pages")) {
+        const updated = JSON.parse(plan.features);
+        updated.push("Campaign pages");
+        await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(updated), planId]);
+      }
+    }
+    // Add Cart recovery to Growth+ plans
+    for (const planId of ["growth", "pro", "enterprise"]) {
+      const plan = await queryOne(`SELECT features FROM subscription_plans WHERE id = $1`, [planId]) as any;
+      if (plan && !plan.features.includes("Cart recovery")) {
+        const updated = JSON.parse(plan.features);
+        updated.push("Cart recovery");
         await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(updated), planId]);
       }
     }
@@ -2117,12 +2224,32 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
   const customerName = quote.customerName || customer?.name || "Quote Customer";
   const customerEmail = customer?.email || "";
   const result = await query(
-    `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, invoice_number) VALUES ($1, $2, $3, 'delivered', $4, 'Quote Conversion', '0', 0, $5, $6, $7, $8) RETURNING id`,
+    `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, invoice_number, source) VALUES ($1, $2, $3, 'delivered', $4, 'Quote Conversion', '0', 0, $5, $6, $7, $8, 'quote') RETURNING id`,
     [quote.customerId, customerName, customerEmail, customerName, `Converted from quote ${quote.quoteNumber}`, subtotal, staffName, invoiceNumber]
   );
   const orderId = result.rows[0].id;
   for (const item of quote.items) {
     await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 1)", [orderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal]);
+  }
+  for (const item of quote.items) {
+    try {
+      await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2`, [item.quantity, item.productId]);
+    } catch { console.warn("[quote convert] Failed to update stock on hand"); }
+    try {
+      const existingLevel = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [item.productId]) as any;
+      const currentQty = existingLevel ? Number(existingLevel.quantity_in_stock) : 0;
+      const newQty = Math.max(0, currentQty - item.quantity);
+      await query(
+        `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+         VALUES ($1, $2, 0, 0, 5)
+         ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`,
+        [item.productId, newQty]
+      );
+      await query(
+        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'sale', $2, 'order', $3, $4)",
+        [item.productId, -item.quantity, String(orderId), `Converted quote #${quote.quoteNumber}`]
+      );
+    } catch { console.warn("[quote convert] Failed to sync stock levels"); }
   }
   const order = (await getOrder(orderId))!;
   await updateQuoteStatus(quoteId, "approved");
@@ -2192,12 +2319,205 @@ async function recordCouponUsage(couponId: number, orderId: number): Promise<voi
   await query("UPDATE coupons SET used_count = used_count + 1 WHERE id = $1", [couponId]);
 }
 
-async function createOrder(data: { customerId: number; customerName: string; customerEmail: string; shippingName: string; shippingAddress: string; shippingCity: string; shippingCounty: string; shippingPostcode: string; shippingPhone: string; shippingFee: number; notes?: string; items: { productId: string; name: string; price: number; quantity: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean }[]; couponId?: number; discountAmount?: number; staffId?: number; branchId?: number; processedBy?: string; idempotencyKey?: string }): Promise<Order> {
+// ============ GIFT CARDS ============
+
+function generateGiftCardCode(): string {
+  const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const block = () => Array.from({ length: 4 }, () => charset[Math.floor(Math.random() * charset.length)]).join("");
+  return `GC-${block()}-${block()}-${block()}`;
+}
+
+async function createGiftCard(data: { code?: string; initialValue: number; expiresAt?: string; notes?: string; createdBy?: number }): Promise<any> {
+  const code = data.code && data.code.trim() ? data.code.trim().toUpperCase() : generateGiftCardCode();
+  const result = await query(
+    "INSERT INTO gift_cards (code, initial_value, balance, expires_at, notes, created_by) VALUES ($1, $2, $2, $3, $4, $5) RETURNING *",
+    [code, data.initialValue, data.expiresAt || null, data.notes || "", data.createdBy || null]
+  );
+  return result.rows[0];
+}
+
+async function listGiftCards(): Promise<any[]> {
+  return await queryAll("SELECT * FROM gift_cards ORDER BY created_at DESC") as any[];
+}
+
+async function getGiftCard(id: number): Promise<any | undefined> {
+  return await queryOne("SELECT * FROM gift_cards WHERE id = $1", [id]) as any;
+}
+
+async function getGiftCardByCode(code: string): Promise<any | undefined> {
+  return await queryOne("SELECT * FROM gift_cards WHERE code = $1", [String(code).trim().toUpperCase()]) as any;
+}
+
+async function updateGiftCard(id: number, updates: Partial<{ code: string; balance: number; expires_at: string; is_active: boolean; notes: string }>): Promise<any | undefined> {
+  const fields: string[] = []; const params: any[] = []; let idx = 1;
+  if (updates.code !== undefined) { fields.push(`code = $${idx}`); params.push(String(updates.code).trim().toUpperCase()); idx++; }
+  if (updates.balance !== undefined) { fields.push(`balance = $${idx}`); params.push(updates.balance); idx++; }
+  if (updates.expires_at !== undefined) { fields.push(`expires_at = $${idx}`); params.push(updates.expires_at); idx++; }
+  if (updates.is_active !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.is_active ? 1 : 0); idx++; }
+  if (updates.notes !== undefined) { fields.push(`notes = $${idx}`); params.push(updates.notes); idx++; }
+  if (fields.length === 0) return await getGiftCard(id);
+  fields.push("updated_at = NOW()::text");
+  params.push(id);
+  await query(`UPDATE gift_cards SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+  return await getGiftCard(id);
+}
+
+async function deleteGiftCard(id: number): Promise<boolean> {
+  const result = await query("DELETE FROM gift_cards WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+async function validateGiftCard(code: string, amount: number): Promise<{ valid: boolean; giftCardId?: number; balance?: number; discount?: number }> {
+  const card = await getGiftCardByCode(code);
+  if (!card || card.is_active !== 1) return { valid: false };
+  if (card.expires_at && new Date(card.expires_at) < new Date()) return { valid: false };
+  const balance = Number(card.balance) || 0;
+  if (balance <= 0) return { valid: false };
+  const discount = Math.min(balance, amount);
+  return { valid: true, giftCardId: card.id, balance, discount };
+}
+
+async function redeemGiftCard(giftCardId: number, orderId: number, customerId: number, amount: number): Promise<boolean> {
+  const card = await getGiftCard(giftCardId);
+  if (!card) return false;
+  const balance = Number(card.balance) || 0;
+  if (balance < amount) return false;
+  await query("UPDATE gift_cards SET balance = balance - $1, updated_at = NOW()::text WHERE id = $2", [amount, giftCardId]);
+  await query("INSERT INTO gift_card_redemptions (gift_card_id, order_id, customer_id, amount) VALUES ($1, $2, $3, $4)", [giftCardId, orderId, customerId || null, amount]);
+  return true;
+}
+
+async function listGiftCardRedemptions(giftCardId?: number): Promise<any[]> {
+  let sql = "SELECT * FROM gift_card_redemptions"; const params: any[] = [];
+  if (giftCardId) { sql += " WHERE gift_card_id = $1"; params.push(giftCardId); }
+  sql += " ORDER BY created_at DESC";
+  return await queryAll(sql, params) as any[];
+}
+
+// ============ CAMPAIGNS ============
+
+function slugifyCampaign(v: string): string {
+  return String(v).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+}
+
+async function createCampaign(data: { slug?: string; title: string; subtitle?: string; description?: string; heroImage?: string; bannerColor?: string; productIds?: string[]; isActive?: boolean }): Promise<any> {
+  let slug = slugifyCampaign(data.slug || data.title);
+  if (!slug) slug = "campaign";
+  const existing = await queryOne("SELECT id FROM campaigns WHERE slug = $1", [slug]) as any;
+  if (existing) slug = `${slug}-${Date.now().toString().slice(-6)}`;
+  const result = await query(
+    "INSERT INTO campaigns (slug, title, subtitle, description, hero_image, banner_color, product_ids, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+    [slug, data.title, data.subtitle || "", data.description || "", data.heroImage || "", data.bannerColor || "#111827", JSON.stringify(data.productIds || []), data.isActive === false ? 0 : 1]
+  );
+  return result.rows[0];
+}
+
+async function listCampaigns(): Promise<any[]> {
+  return await queryAll("SELECT * FROM campaigns ORDER BY created_at DESC") as any[];
+}
+
+async function getCampaign(id: number): Promise<any | undefined> {
+  return await queryOne("SELECT * FROM campaigns WHERE id = $1", [id]) as any;
+}
+
+async function getCampaignBySlug(slug: string): Promise<any | undefined> {
+  return await queryOne("SELECT * FROM campaigns WHERE slug = $1 AND is_active = 1", [slug]) as any;
+}
+
+async function updateCampaign(id: number, updates: Partial<{ slug: string; title: string; subtitle: string; description: string; hero_image: string; banner_color: string; product_ids: string[]; is_active: boolean }>): Promise<any | undefined> {
+  const fields: string[] = []; const params: any[] = []; let idx = 1;
+  if (updates.slug !== undefined) { fields.push(`slug = $${idx}`); params.push(slugifyCampaign(updates.slug)); idx++; }
+  if (updates.title !== undefined) { fields.push(`title = $${idx}`); params.push(updates.title); idx++; }
+  if (updates.subtitle !== undefined) { fields.push(`subtitle = $${idx}`); params.push(updates.subtitle); idx++; }
+  if (updates.description !== undefined) { fields.push(`description = $${idx}`); params.push(updates.description); idx++; }
+  if (updates.hero_image !== undefined) { fields.push(`hero_image = $${idx}`); params.push(updates.hero_image); idx++; }
+  if (updates.banner_color !== undefined) { fields.push(`banner_color = $${idx}`); params.push(updates.banner_color); idx++; }
+  if (updates.product_ids !== undefined) { fields.push(`product_ids = $${idx}`); params.push(JSON.stringify(updates.product_ids)); idx++; }
+  if (updates.is_active !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.is_active ? 1 : 0); idx++; }
+  if (fields.length === 0) return await getCampaign(id);
+  fields.push("updated_at = NOW()::text");
+  params.push(id);
+  await query(`UPDATE campaigns SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+  return await getCampaign(id);
+}
+
+async function deleteCampaign(id: number): Promise<boolean> {
+  const result = await query("DELETE FROM campaigns WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+// ============ ABANDONED CART RECOVERY ============
+
+async function listAbandonedCarts(hours: number, limit = 50): Promise<any[]> {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const rows = await queryAll(`
+    SELECT c.id AS customer_id, c.name, c.email, c.phone,
+           MAX(ci.updated_at) AS last_activity,
+           COALESCE(SUM(ci.quantity * p.price), 0) AS cart_total,
+           COUNT(ci.id) AS item_count
+    FROM cart_items ci
+    JOIN customers c ON c.id = ci.customer_id
+    JOIN products p ON p.id = ci.product_id
+    WHERE ci.updated_at::timestamp < $1::timestamp
+    GROUP BY c.id, c.name, c.email, c.phone
+    HAVING COUNT(ci.id) > 0
+    ORDER BY last_activity DESC
+    LIMIT $2`, [cutoff, limit]) as any[];
+  const result: any[] = [];
+  for (const row of rows) {
+    const order = await queryOne("SELECT id FROM orders WHERE customer_id = $1 AND created_at::timestamp >= $2::timestamp LIMIT 1", [row.customer_id, row.last_activity]) as any;
+    if (order) continue;
+    const reminder = await queryOne("SELECT id, created_at FROM cart_recovery_reminders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1", [row.customer_id]) as any;
+    if (reminder && new Date(reminder.created_at).getTime() >= new Date(row.last_activity).getTime()) continue;
+    result.push(row);
+  }
+  return result;
+}
+
+async function recordCartRecoveryReminder(customerId: number, cartTotal: number, channel: string, orderId?: number): Promise<void> {
+  await query("INSERT INTO cart_recovery_reminders (customer_id, cart_total, channel, order_id) VALUES ($1, $2, $3, $4)", [customerId, cartTotal, channel, orderId || null]);
+}
+
+async function listCartRecoveryReminders(): Promise<any[]> {
+  return await queryAll("SELECT crr.*, c.name AS customer_name, c.email FROM cart_recovery_reminders crr JOIN customers c ON c.id = crr.customer_id ORDER BY crr.created_at DESC LIMIT 100") as any[];
+}
+
+// ============ REFUNDS ============
+
+async function createRefund(data: { orderId: number; orderItemId?: number; productId?: string; amount: number; reason: string; createdBy?: number }): Promise<any> {
+  const result = await query(
+    "INSERT INTO refunds (order_id, order_item_id, product_id, amount, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+    [data.orderId, data.orderItemId || null, data.productId || null, data.amount, data.reason, data.createdBy || null]
+  );
+  await query("UPDATE orders SET amount_refunded = amount_refunded + $1 WHERE id = $2", [data.amount, data.orderId]);
+  return result.rows[0];
+}
+
+async function listRefunds(orderId?: number): Promise<any[]> {
+  let sql = "SELECT * FROM refunds"; const params: any[] = [];
+  if (orderId) { sql += " WHERE order_id = $1"; params.push(orderId); }
+  sql += " ORDER BY created_at DESC";
+  return await queryAll(sql, params) as any[];
+}
+
+async function getRefundTotal(orderId: number): Promise<number> {
+  const row = await queryOne("SELECT COALESCE(SUM(amount), 0) AS total FROM refunds WHERE order_id = $1", [orderId]) as any;
+  return Number(row?.total || 0);
+}
+
+async function cancelOrderItemQuantity(orderItemId: number, quantity: number): Promise<boolean> {
+  const item = await queryOne("SELECT cancelled FROM order_items WHERE id = $1", [orderItemId]) as any;
+  if (!item) return false;
+  const result = await query("UPDATE order_items SET cancelled = 1 WHERE id = $1", [orderItemId]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+async function createOrder(data: { customerId: number; customerName: string; customerEmail: string; shippingName: string; shippingAddress: string; shippingCity: string; shippingCounty: string; shippingPostcode: string; shippingPhone: string; shippingFee: number; notes?: string; items: { productId: string; name: string; price: number; quantity: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean }[]; couponId?: number; discountAmount?: number; staffId?: number; branchId?: number; processedBy?: string; idempotencyKey?: string; source?: string; giftCardId?: number; giftCardAmount?: number }): Promise<Order> {
   const subtotal = data.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   const result = await query(
-    `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_city, shipping_county, shipping_postcode, shipping_phone, shipping_fee, notes, subtotal, coupon_id, discount_amount, staff_id, branch_id, processed_by, idempotency_key)
-     VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
-    [data.customerId, data.customerName, data.customerEmail, data.shippingName, data.shippingAddress, data.shippingCity, data.shippingCounty, data.shippingPostcode, data.shippingPhone, data.shippingFee, data.notes || "", subtotal, data.couponId || null, data.discountAmount || 0, data.staffId || null, data.branchId || null, data.processedBy || null, data.idempotencyKey || null]
+    `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_city, shipping_county, shipping_postcode, shipping_phone, shipping_fee, notes, subtotal, coupon_id, discount_amount, staff_id, branch_id, processed_by, idempotency_key, source, gift_card_id, gift_card_amount)
+     VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id`,
+    [data.customerId, data.customerName, data.customerEmail, data.shippingName, data.shippingAddress, data.shippingCity, data.shippingCounty, data.shippingPostcode, data.shippingPhone, data.shippingFee, data.notes || "", subtotal, data.couponId || null, data.discountAmount || 0, data.staffId || null, data.branchId || null, data.processedBy || null, data.idempotencyKey || null, data.source || "storefront", data.giftCardId || null, data.giftCardAmount || 0]
   );
   const orderId = result.rows[0].id;
   for (const item of data.items) {
@@ -2211,7 +2531,7 @@ async function getOrder(id: number): Promise<Order | undefined> {
   if (!row) return undefined;
   const items = await queryAll("SELECT * FROM order_items WHERE order_id = $1", [id]) as any[];
   return {
-    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key,
+    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0,
     items: items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, cancelled: i.cancelled })),
   };
 }
@@ -2643,7 +2963,11 @@ async function getSalesReport(): Promise<SalesReport> {
      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.status != 'cancelled'
      GROUP BY oi.product_id, oi.name ORDER BY "totalSold" DESC LIMIT 10`
   ) as any[];
-  return { totalRevenue: Number(orderStats?.total_revenue || 0), totalOrders: Number(orderStats?.total_orders || 0), paidInvoices: Number(invoiceStats?.paid_invoices || 0), invoiceRevenue: Number(invoiceStats?.invoice_revenue || 0), topProducts };
+  const channels = await queryAll(
+    `SELECT COALESCE(source, 'storefront') AS channel, COUNT(*) AS orders, COALESCE(SUM(subtotal + shipping_fee - COALESCE(discount_amount, 0) - COALESCE(gift_card_amount, 0)), 0) AS revenue
+     FROM orders WHERE status != 'cancelled' GROUP BY COALESCE(source, 'storefront') ORDER BY revenue DESC`
+  ) as any[];
+  return { totalRevenue: Number(orderStats?.total_revenue || 0), totalOrders: Number(orderStats?.total_orders || 0), paidInvoices: Number(invoiceStats?.paid_invoices || 0), invoiceRevenue: Number(invoiceStats?.invoice_revenue || 0), topProducts, channels };
 }
 
 async function getSalesReportWithRange(startDate?: string, endDate?: string): Promise<SalesReport> {
@@ -2657,7 +2981,12 @@ async function getSalesReportWithRange(startDate?: string, endDate?: string): Pr
      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE ${where}
      GROUP BY oi.product_id, oi.name ORDER BY "totalSold" DESC LIMIT 10`, params
   ) as any[];
-  return { totalRevenue: Number(orderStats?.total_revenue || 0), totalOrders: Number(orderStats?.total_orders || 0), paidInvoices: Number(invoiceStats?.paid_invoices || 0), invoiceRevenue: Number(invoiceStats?.invoice_revenue || 0), topProducts };
+  const channelWhere = where.replace(/o\./g, ""); const channelParams = [...params];
+  const channels = await queryAll(
+    `SELECT COALESCE(source, 'storefront') AS channel, COUNT(*) AS orders, COALESCE(SUM(subtotal + shipping_fee - COALESCE(discount_amount, 0) - COALESCE(gift_card_amount, 0)), 0) AS revenue
+     FROM orders WHERE ${channelWhere} GROUP BY COALESCE(source, 'storefront') ORDER BY revenue DESC`, channelParams
+  ) as any[];
+  return { totalRevenue: Number(orderStats?.total_revenue || 0), totalOrders: Number(orderStats?.total_orders || 0), paidInvoices: Number(invoiceStats?.paid_invoices || 0), invoiceRevenue: Number(invoiceStats?.invoice_revenue || 0), topProducts, channels };
 }
 
 async function getPurchaseReport(): Promise<PurchaseReport> {
@@ -3421,6 +3750,10 @@ export {
   generateQuoteNumber, createQuoteFromWishlist, createQuote, getQuote, updateQuote, deleteQuote, listQuotesForCustomer, updateQuoteStatus, listAllQuotes, convertQuoteToOrder, generateInvoiceNumber,
   recordAuditLog, listAllAuditLogs,
   validateCoupon, listCoupons, getCoupon, createCoupon, updateCoupon, deleteCoupon, recordCouponUsage,
+  createGiftCard, listGiftCards, getGiftCard, getGiftCardByCode, updateGiftCard, deleteGiftCard, validateGiftCard, redeemGiftCard, listGiftCardRedemptions,
+  createCampaign, listCampaigns, getCampaign, getCampaignBySlug, updateCampaign, deleteCampaign,
+  listAbandonedCarts, recordCartRecoveryReminder, listCartRecoveryReminders,
+  createRefund, listRefunds, getRefundTotal, cancelOrderItemQuantity,
   createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, updateOrderMpesaStatus, getOrderByCheckoutRequest, cancelOrderItem,
   recordProductView, getPopularProducts, getTotalViews,
   createInvoice, getInvoice, listInvoices, markInvoicePaid, generateProviderInvoice, getInvoiceRevenue, searchInvoices, markOverdueInvoices, getOverdueInvoices, getInvoiceStats, exportInvoicesCsv,

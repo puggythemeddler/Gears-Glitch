@@ -26,6 +26,9 @@ export default function CartPage() {
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponMsg, setCouponMsg] = useState("");
+  const [giftCardCode, setGiftCardCode] = useState("");
+  const [giftCardDiscount, setGiftCardDiscount] = useState(0);
+  const [giftCardMsg, setGiftCardMsg] = useState("");
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
   const [redeemPoints, setRedeemPoints] = useState(0);
   const [pointsDiscount, setPointsDiscount] = useState(0);
@@ -74,7 +77,20 @@ export default function CartPage() {
   }
 
   const subtotal = items.reduce((s, i) => s + i.lineTotal, 0);
-  const total = subtotal + shippingFee - couponDiscount - pointsDiscount;
+  const total = subtotal + shippingFee - couponDiscount - giftCardDiscount - pointsDiscount;
+
+  async function applyGiftCard() {
+    if (!giftCardCode.trim()) return;
+    setGiftCardMsg("");
+    try {
+      const res = await api<{ balance: number; discount: number }>("/api/gift-cards/validate", { method: "POST", body: JSON.stringify({ code: giftCardCode.trim(), amount: subtotal - couponDiscount }) });
+      setGiftCardDiscount(res.discount);
+      setGiftCardMsg(`Gift card applied! You save ${formatPrice(res.discount)}`);
+    } catch (e: any) {
+      setGiftCardDiscount(0);
+      setGiftCardMsg(e.message || "Invalid gift card");
+    }
+  }
 
   async function applyCoupon() {
     if (!couponCode.trim()) return;
@@ -105,6 +121,9 @@ export default function CartPage() {
         notes: "",
       };
       if (mpesaPhone.trim()) body.mpesaPhone = mpesaPhone.trim();
+      if (couponCode.trim()) body.couponCode = couponCode.trim();
+      if (giftCardCode.trim()) body.giftCardCode = giftCardCode.trim();
+      if (redeemPoints > 0) body.redeemPoints = redeemPoints;
       const order = await api<any>("/api/orders", { method: "POST", body: JSON.stringify(body) });
       if (order.mpesaRequested) {
         setStatusMsg({ text: "M-Pesa STK push sent to your phone. Complete payment to confirm order.", error: false });
@@ -190,11 +209,17 @@ export default function CartPage() {
               <span>{formatPrice(subtotal)}</span>
             </div>
             {couponDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Coupon discount</span><span style={{ color: "#16a34a" }}>-{formatPrice(couponDiscount)}</span></div>}
+            {giftCardDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Gift card</span><span style={{ color: "#16a34a" }}>-{formatPrice(giftCardDiscount)}</span></div>}
             {pointsDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Points discount</span><span style={{ color: "#16a34a" }}>-{formatPrice(pointsDiscount)}</span></div>}
             <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem" }}>
               <input type="text" className="input" placeholder="Coupon code" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} style={{ flex: 1, minWidth: 120, fontSize: "0.85rem" }} />
               <button className="btn btn-sm" onClick={applyCoupon} style={{ fontSize: "0.85rem" }}>Apply</button>
               {couponMsg && <span style={{ fontSize: "0.8rem", color: couponDiscount > 0 ? "var(--success, #16a34a)" : "var(--danger, #dc2626)", width: "100%" }}>{couponMsg}</span>}
+            </div>
+            <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem" }}>
+              <input type="text" className="input" placeholder="Gift card code" value={giftCardCode} onChange={(e) => setGiftCardCode(e.target.value)} style={{ flex: 1, minWidth: 120, fontSize: "0.85rem" }} />
+              <button className="btn btn-sm" onClick={applyGiftCard} style={{ fontSize: "0.85rem" }}>Apply</button>
+              {giftCardMsg && <span style={{ fontSize: "0.8rem", color: giftCardDiscount > 0 ? "var(--success, #16a34a)" : "var(--danger, #dc2626)", width: "100%" }}>{giftCardMsg}</span>}
             </div>
             {loyaltyPoints > 0 && (
               <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem", padding: "0.5rem 0" }}>

@@ -109,6 +109,10 @@ CREATE TABLE IF NOT EXISTS orders (
   invoice_number TEXT,
   payment_method TEXT NOT NULL DEFAULT '',
   idempotency_key TEXT,
+  source TEXT NOT NULL DEFAULT 'storefront',
+  gift_card_id INTEGER,
+  gift_card_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+  amount_refunded DOUBLE PRECISION NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (customer_id) REFERENCES customers(id)
@@ -749,3 +753,70 @@ CREATE TABLE IF NOT EXISTS page_views (
 CREATE INDEX IF NOT EXISTS idx_page_views_created ON page_views(created_at);
 CREATE INDEX IF NOT EXISTS idx_page_views_session ON page_views(session_id);
 CREATE INDEX IF NOT EXISTS idx_page_views_branch ON page_views(branch_id);
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'storefront';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_id INTEGER;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_amount DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount_refunded DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS gift_cards (
+  id SERIAL PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  initial_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+  balance DOUBLE PRECISION NOT NULL DEFAULT 0,
+  expires_at TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  notes TEXT NOT NULL DEFAULT '',
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (NOW()::text),
+  updated_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_gift_cards_code ON gift_cards(code);
+
+CREATE TABLE IF NOT EXISTS gift_card_redemptions (
+  id SERIAL PRIMARY KEY,
+  gift_card_id INTEGER NOT NULL REFERENCES gift_cards(id) ON DELETE CASCADE,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  customer_id INTEGER,
+  amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_gift_redemptions_card ON gift_card_redemptions(gift_card_id);
+CREATE INDEX IF NOT EXISTS idx_gift_redemptions_order ON gift_card_redemptions(order_id);
+
+CREATE TABLE IF NOT EXISTS campaigns (
+  id SERIAL PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  subtitle TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  hero_image TEXT NOT NULL DEFAULT '',
+  banner_color TEXT NOT NULL DEFAULT '#111827',
+  product_ids TEXT NOT NULL DEFAULT '[]',
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text),
+  updated_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_campaigns_slug ON campaigns(slug);
+
+CREATE TABLE IF NOT EXISTS cart_recovery_reminders (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  cart_total DOUBLE PRECISION NOT NULL DEFAULT 0,
+  channel TEXT NOT NULL DEFAULT 'email',
+  order_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_cart_recovery_customer ON cart_recovery_reminders(customer_id);
+
+CREATE TABLE IF NOT EXISTS refunds (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+  product_id TEXT,
+  amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+  reason TEXT NOT NULL DEFAULT '',
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds(order_id);
