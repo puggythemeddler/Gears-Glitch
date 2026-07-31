@@ -290,7 +290,7 @@ Opens **http://localhost:3000** in a browser.
 
 ### Admin Panel (`/admin`)
 
-Full store management with 32 sections:
+Full store management with 31 sections:
 
 - **Dashboard** — Stats overview with clickable animated counters (products, staff, pending subscription requests)
 - **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking, sale price (strikethrough pricing). Category is optional; products can be assigned to a Group instead (or both/neither)
