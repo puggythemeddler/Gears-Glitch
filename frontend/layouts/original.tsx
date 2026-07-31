@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -119,14 +118,12 @@ function HeroStarRating({ average }: { average: number }) {
 }
 
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
-  const router = useRouter();
   const { isLoggedIn, userName, settings } = useApp();
   const [activeIdx, setActiveIdx] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [liveStats, setLiveStats] = useState<any>(null);
   const [ratings, setRatings] = useState<Record<string, { average: number; count: number }>>({});
   const [variantIdx, setVariantIdx] = useState(0);
-  const [searchQ, setSearchQ] = useState("");
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
 
@@ -185,7 +182,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
   const countdownEnd = hero?.countdownEnd ? new Date(hero.countdownEnd).getTime() : 0;
   const countdownLabel = hero?.countdownLabel || "Offer ends in";
-  const showSearch = hero?.showSearch !== false;
   const showTrustStrip = hero?.showTrustStrip !== false;
   const showWhatsApp = hero?.showWhatsApp !== false;
   const waPhone = settings?.storePhone ? settings.storePhone.replace(/[^0-9]/g, "") : "";
@@ -225,12 +221,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
       ];
 
   const trustText = hero?.trustText || "Trusted by 5,000+ customers across Kenya";
-
-  function submitSearch(e: React.FormEvent) {
-    e.preventDefault();
-    const q = searchQ.trim();
-    if (q) router.push("/?search=" + encodeURIComponent(q));
-  }
 
   return (
     <section className="hero">
@@ -272,19 +262,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
           <p className="hero-sub">
             {subtitle}
           </p>
-
-          {showSearch && (
-            <form className="hero-search" onSubmit={submitSearch} role="search">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input
-                value={searchQ}
-                onChange={(e) => setSearchQ(e.target.value)}
-                placeholder="Search laptops, GPUs, PCs..."
-                aria-label="Search products"
-              />
-              <button type="submit">Search</button>
-            </form>
-          )}
 
           <div className="hero-actions">
             <Link href={shopNowLink} className="btn btn-primary btn-lg hero-btn-glass">

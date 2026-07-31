@@ -2313,7 +2313,6 @@ function AdminStorefront() {
     headlineAccent: "Next Build",
     subtitle: "Discover premium gaming PCs, laptops, graphics cards, servers, and accessories at unbeatable prices. Kenya\u2019s trusted all-in-one tech platform.",
     headlineVariants: [] as { headline: string; accent: string; subtitle: string }[],
-    showSearch: true,
     showTrustStrip: true,
     showWhatsApp: true,
     countdownLabel: "Offer ends in",
@@ -2522,10 +2521,6 @@ function AdminStorefront() {
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Marketing Boosters</label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.5rem" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.85rem" }}>
-                <input type="checkbox" checked={heroForm.showSearch} onChange={(e) => setHeroForm({ ...heroForm, showSearch: e.target.checked })} style={{ width: 17, height: 17 }} />
-                Search bar in hero
-              </label>
               <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.85rem" }}>
                 <input type="checkbox" checked={heroForm.showTrustStrip} onChange={(e) => setHeroForm({ ...heroForm, showTrustStrip: e.target.checked })} style={{ width: 17, height: 17 }} />
                 Payment &amp; delivery trust strip

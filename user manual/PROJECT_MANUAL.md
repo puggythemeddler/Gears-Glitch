@@ -192,7 +192,6 @@ Five built-in layout themes — Original, Amazon, Jumia, Mobile, Custom — plus
 The hero section is fully admin-configurable from the Storefront panel and doubles as a conversion tool:
 - Sale countdown timer (auto-hides when the offer ends).
 - Rotating headline/accent/subtitle variants (6s cycle).
-- In-hero product search bar.
 - "Chat on WhatsApp" CTA (uses the store's phone number).
 - Payment & delivery trust strip (M-Pesa & cards, nationwide delivery, warranty).
 - Featured products with "Sale" badges, star ratings, "Only N left" scarcity notes, and Ken Burns zoom.
