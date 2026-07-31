@@ -45,5 +45,8 @@ services:
         value: "Gear&Glitch"
       - key: SLACK_WEBHOOK_URL
         sync: false
+      # Days after a subscription expires before the client's store is auto-deactivated (default 3)
+      - key: SUSPEND_GRACE_DAYS
+        value: "3"
     healthCheckPath: /api/health
     autoDeploy: true

@@ -26,6 +26,9 @@ import {
   pushControlPlaneSecret,
   sendSlackAlert,
   enforceUsageLimits,
+  enforceSubscriptionPayments,
+  suspendClientRecord,
+  resumeClientRecord,
   getSmtpTransport,
   type ProvisionResult,
 } from "./provision";
@@ -841,6 +844,7 @@ app.post("/api/health-check", requireAuth, async (_req, res) => {
     }
 
     await enforceUsageLimits();
+    await enforceSubscriptionPayments();
     res.json({ results });
   } catch (err: any) {
     console.error("[api] Health check error:", err.message);
@@ -854,30 +858,7 @@ app.put("/api/clients/:id/suspend", requireAuth, async (req, res) => {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
 
-    await query("UPDATE clients SET status = 'suspended' WHERE id = $1", [Number(req.params.id)]);
-
-    // App-level suspend first (store returns 403 to visitors even if infra stays up)
-    let appSuspended = false;
-    if (client.render_service_url && client.cp_secret) {
-      try {
-        const r = await fetch(`${client.render_service_url}/api/control-plane/suspend`, {
-          method: "POST",
-          headers: cpHeaders(client.cp_secret),
-          signal: AbortSignal.timeout(20000),
-        });
-        appSuspended = r.ok;
-      } catch (e: any) { console.warn("[suspend] App-level suspend failed:", e?.message); }
-    }
-
-    // Then pause the Render service
-    if (client.render_service_id) {
-      try {
-        await fetch(`https://api.render.com/v1/services/${client.render_service_id}/suspend`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
-        });
-      } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
-    }
+    const { appSuspended } = await suspendClientRecord(client, "");
 
     auditLog(req, "suspend_client", "client", client.id, client.name);
     res.json({ message: `Client "${client.name}" suspended.`, appSuspended });
@@ -892,33 +873,7 @@ app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
 
-    await query("UPDATE clients SET status = 'active' WHERE id = $1", [Number(req.params.id)]);
-
-    // Resume Render service
-    if (client.render_service_id) {
-      try {
-        await fetch(`https://api.render.com/v1/services/${client.render_service_id}/resume`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
-        });
-      } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
-    }
-
-    // Clear the app-level suspend flag (retry a few times while the service wakes)
-    let appResumed = false;
-    if (client.render_service_url && client.cp_secret) {
-      for (let attempt = 0; attempt < 3 && !appResumed; attempt++) {
-        try {
-          const r = await fetch(`${client.render_service_url}/api/control-plane/resume`, {
-            method: "POST",
-            headers: cpHeaders(client.cp_secret),
-            signal: AbortSignal.timeout(30000),
-          });
-          appResumed = r.ok;
-        } catch (e: any) { console.warn("[resume] App-level resume attempt failed:", e?.message); }
-        if (!appResumed) await new Promise(r => setTimeout(r, 10000));
-      }
-    }
+    const { appResumed } = await resumeClientRecord(client);
 
     auditLog(req, "resume_client", "client", client.id, client.name);
     res.json({ message: `Client "${client.name}" resumed.`, appResumed, note: appResumed ? undefined : "App-level resume not confirmed; the flag will clear when the service is reachable — retry via PUT /api/clients/:id/resume." });
@@ -1442,6 +1397,13 @@ app.post("/api/clients/:id/invoices/record-payment", requireAuth, async (req, re
 
     const balance = Math.max(0, expected - amountPaid);
     auditLog(req, "record_payment", "client", client.id, client.name, `${periodType} KES ${amountPaid} — extended to ${newExpiry.toISOString().slice(0, 10)}, next due ${nextPaymentDate}`);
+
+    // If the client was auto/manually deactivated, reactivate now that payment is recorded
+    if (client.status === "suspended") {
+      await resumeClientRecord(client);
+      auditLog(req, "auto_resume_client", "client", client.id, client.name, "Resumed after payment recorded");
+    }
+
     res.json({ ok: true, invoice, expiry: newExpiry.toISOString(), nextPaymentDate, balance, expected });
   } catch (err: any) {
     console.error("[api] Record payment error:", err.message);
@@ -1721,6 +1683,7 @@ setInterval(async () => {
       }
     }
     await enforceUsageLimits();
+    await enforceSubscriptionPayments();
     console.log(`[auto-health] Checked ${clients.length} clients.`);
   } catch (err: any) {
     console.error("[auto-health] Error:", err.message);

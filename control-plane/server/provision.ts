@@ -612,6 +612,98 @@ export async function enforceUsageLimits() {
   }
 }
 
+// ─── SUBSCRIPTION PAYMENT ENFORCEMENT ───────────────────
+// Shared suspend routine used by the manual endpoint and the auto-enforcement job.
+// Deactivates (never deletes) the client's store: app-level 403 for visitors,
+// then pauses the Render service. Data is left fully intact.
+export async function suspendClientRecord(client: any, reason: string): Promise<{ appSuspended: boolean }> {
+  const { query } = await import("./db");
+  await query("UPDATE clients SET status = 'suspended' WHERE id = $1", [client.id]);
+
+  let appSuspended = false;
+  if (client.render_service_url && client.cp_secret) {
+    try {
+      const r = await fetch(`${client.render_service_url}/api/control-plane/suspend`, {
+        method: "POST",
+        headers: cpHeaders(client.cp_secret),
+        signal: AbortSignal.timeout(20000),
+      });
+      appSuspended = r.ok;
+    } catch (e: any) { console.warn("[suspend] App-level suspend failed:", e?.message); }
+  }
+
+  if (client.render_service_id) {
+    try {
+      await fetch(`https://api.render.com/v1/services/${client.render_service_id}/suspend`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
+      });
+    } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
+  }
+
+  if (reason) {
+    await sendSlackAlert(`:warning: *${client.name}* was suspended: ${reason}`);
+  }
+  return { appSuspended };
+}
+
+// Resume routine: clears the app-level suspend flag and unpauses the Render service.
+export async function resumeClientRecord(client: any): Promise<{ appResumed: boolean }> {
+  const { query } = await import("./db");
+  await query("UPDATE clients SET status = 'active' WHERE id = $1", [client.id]);
+
+  let appResumed = false;
+  if (client.render_service_id) {
+    try {
+      await fetch(`https://api.render.com/v1/services/${client.render_service_id}/resume`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
+      });
+    } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
+  }
+
+  if (client.render_service_url && client.cp_secret) {
+    for (let attempt = 0; attempt < 3 && !appResumed; attempt++) {
+      try {
+        const r = await fetch(`${client.render_service_url}/api/control-plane/resume`, {
+          method: "POST",
+          headers: cpHeaders(client.cp_secret),
+          signal: AbortSignal.timeout(30000),
+        });
+        appResumed = r.ok;
+      } catch (e: any) { console.warn("[resume] App-level resume attempt failed:", e?.message); }
+      if (!appResumed) await new Promise(r => setTimeout(r, 10000));
+    }
+  }
+  return { appResumed };
+}
+
+// Auto-deactivate clients whose subscription lapsed without a recorded payment.
+// Grace period (days after expiry) is configurable via SUSPEND_GRACE_DAYS (default 3).
+export async function enforceSubscriptionPayments() {
+  try {
+    const { queryAll } = await import("./db");
+    const graceDays = Number(process.env.SUSPEND_GRACE_DAYS || 3);
+    const cutoff = new Date(Date.now() - graceDays * 86400000);
+    const clients: any[] = await queryAll(
+      "SELECT id, name, render_service_url, render_service_id, cp_secret, subscription_expires, next_payment_date FROM clients WHERE status = 'active' AND subscription_expires IS NOT NULL"
+    );
+    let suspended = 0;
+    for (const c of clients) {
+      const expiry = c.subscription_expires ? new Date(c.subscription_expires) : null;
+      if (!expiry || isNaN(expiry.getTime())) continue;
+      if (expiry.getTime() < cutoff.getTime()) {
+        console.warn(`[auto-suspend] Suspending "${c.name}" — subscription expired ${expiry.toISOString().slice(0, 10)}, no payment recorded`);
+        await suspendClientRecord(c, `Subscription expired on ${expiry.toISOString().slice(0, 10)} — no payment recorded`);
+        suspended++;
+      }
+    }
+    if (suspended > 0) console.log(`[auto-suspend] Suspended ${suspended} unpaid client(s).`);
+  } catch (e: any) {
+    console.warn("[auto-suspend] Error:", e?.message);
+  }
+}
+
 // ─── HEALTH CHECK ────────────────────────────────────────
 export async function checkClientHealth(
   renderServiceUrl: string,

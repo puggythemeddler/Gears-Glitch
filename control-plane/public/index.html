@@ -1814,6 +1814,7 @@
         toast("Payment recorded! Subscription extended to " + new Date(data.expiry).toLocaleDateString() + (data.balance > 0 ? ". Balance: KES " + data.balance.toLocaleString() : ""));
         loadClientInvoices(currentDetailClientId);
         loadClientBranches(currentDetailClientId);
+        loadClients();
         loadPaymentReminders();
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
