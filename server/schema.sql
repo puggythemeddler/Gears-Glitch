@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS products (
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
-CREATE INDEX IF NOT EXISTS idx_products_group ON products(group_id);
 
 CREATE TABLE IF NOT EXISTS product_groups (
   id TEXT PRIMARY KEY,
