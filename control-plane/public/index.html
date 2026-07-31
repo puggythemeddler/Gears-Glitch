@@ -207,6 +207,7 @@
         <div class="stat-card"><div class="value" id="stat-revenue" style="color: var(--primary)">KES 0</div><div class="label">Total Revenue</div></div>
         <div class="stat-card"><div class="value" id="stat-orders">0</div><div class="label">Total Orders</div></div>
       </div>
+      <div id="payment-reminders" style="display:none;margin-bottom:1rem"></div>
       <div id="client-list"></div>
       <div id="upgrade-requests" style="margin-top:2rem"></div>
     </div>
@@ -422,6 +423,26 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hideEditModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveClientEdit()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Record Payment Modal -->
+  <div class="modal-overlay" id="payment-modal-overlay">
+    <div class="modal" style="width:540px">
+      <h2>Record Payment</h2>
+      <p class="subtitle" id="payment-client-name"></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div class="field"><label>Expected Amount (KES)</label><input type="number" id="pay-expected" readonly></div>
+        <div class="field"><label>Amount Paid (KES)</label><input type="number" id="pay-amount" min="0" oninput="updatePaymentBalance()"></div>
+        <div class="field"><label>Period</label><select id="pay-period" onchange="updatePaymentDate()"><option value="monthly">Monthly (30 days)</option><option value="annual">Annual (365 days)</option></select></div>
+        <div class="field"><label>Next Payment Date</label><input type="date" id="pay-next-date"></div>
+      </div>
+      <div class="field"><label>Notes</label><textarea id="pay-notes" rows="2" placeholder="Optional note for this payment"></textarea></div>
+      <div id="pay-balance" style="padding:0.6rem 0.75rem;border-radius:var(--radius);background:var(--bg);font-size:0.9rem;margin-bottom:1rem"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="hidePaymentModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitClientPayment()">Record Payment</button>
       </div>
     </div>
   </div>
@@ -797,6 +818,7 @@
         const ccur = cdd.value;
         cdd.innerHTML = '<option value="">Pull Cloudinary from...</option>' + allClients.filter(c => c.status === "active" && c.render_service_url).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
         cdd.value = ccur;
+        loadPaymentReminders();
       } catch { document.getElementById("client-list").innerHTML = '<div class="empty"><p>Failed to load clients.</p></div>'; }
     }
 
@@ -1590,7 +1612,7 @@
       if (tab === "users") loadUsers();
       if (tab === "audit") loadAudit();
       if (tab === "settings") loadSettings();
-      if (tab === "clients") loadUpgradeRequests();
+      if (tab === "clients") { loadUpgradeRequests(); loadPaymentReminders(); }
     }
 
     async function viewClientDetails(id) {
@@ -1723,19 +1745,76 @@
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
+    let paymentPlans = [];
+
     async function recordClientPayment() {
       if (!currentDetailClientId) return;
-      const period = confirm("Record a Monthly payment?\n\n• OK = Monthly (30 days)\n• Cancel = Annual (365 days)");
-      const periodType = period ? "monthly" : "annual";
-      toast("Recording " + periodType + " payment...");
+      const c = allClients.find(x => x.id === currentDetailClientId);
+      if (!c) return;
       try {
-        const data = await api("/api/clients/" + currentDetailClientId + "/invoices/record-payment", {
-          method: "POST",
-          body: JSON.stringify({ periodType }),
-        });
+        const data = await api("/api/plans");
+        paymentPlans = data.plans || [];
+      } catch (e) { paymentPlans = []; }
+      const plan = paymentPlans.find(p => p.id === c.plan) || null;
+
+      document.getElementById("payment-client-name").textContent = c.name + " · " + c.plan + " plan";
+      document.getElementById("pay-period").value = "monthly";
+      document.getElementById("pay-notes").value = "";
+      document.getElementById("pay-amount").value = plan ? (Number(plan.price) || "") : "";
+      updatePaymentDate();
+      document.getElementById("payment-modal-overlay").classList.add("show");
+    }
+
+    function hidePaymentModal() { document.getElementById("payment-modal-overlay").classList.remove("show"); }
+
+    function updatePaymentDate() {
+      const period = document.getElementById("pay-period").value;
+      const days = period === "annual" ? 365 : 30;
+      const c = allClients.find(x => x.id === currentDetailClientId) || null;
+      const now = new Date();
+      const cur = c && c.subscription_expires ? new Date(c.subscription_expires) : null;
+      const base = cur && cur > now ? new Date(cur) : now;
+      const next = new Date(base.getTime() + days * 86400000);
+      document.getElementById("pay-next-date").value = next.toISOString().slice(0, 10);
+
+      const plan = c ? (paymentPlans.find(p => p.id === c.plan) || null) : null;
+      const expected = period === "annual" && plan && plan.price_annual != null ? Number(plan.price_annual) : (plan ? Number(plan.price) || 0 : 0);
+      document.getElementById("pay-expected").value = expected;
+      updatePaymentBalance();
+    }
+
+    function updatePaymentBalance() {
+      const expected = Number(document.getElementById("pay-expected").value) || 0;
+      const paid = Number(document.getElementById("pay-amount").value) || 0;
+      const balance = Math.max(0, expected - paid);
+      const el = document.getElementById("pay-balance");
+      if (balance > 0) {
+        const pct = expected > 0 ? Math.round((paid / expected) * 100) : 0;
+        el.innerHTML = '<span style="color:var(--warning);font-weight:600">Balance remaining: KES ' + balance.toLocaleString() + '</span> <span style="color:var(--text-muted);font-size:0.82rem">(' + pct + '% paid)</span>';
+      } else {
+        el.innerHTML = '<span style="color:var(--success);font-weight:600">Paid in full — no balance.</span>';
+      }
+    }
+
+    async function submitClientPayment() {
+      if (!currentDetailClientId) return;
+      const amount = Number(document.getElementById("pay-amount").value);
+      if (!amount || amount <= 0) { toast("Enter the amount paid.", "error"); return; }
+      const payload = {
+        amount,
+        periodType: document.getElementById("pay-period").value,
+        nextPaymentDate: document.getElementById("pay-next-date").value,
+        notes: document.getElementById("pay-notes").value.trim(),
+      };
+      toast("Recording payment...");
+      try {
+        const data = await api("/api/clients/" + currentDetailClientId + "/invoices/record-payment", { method: "POST", body: JSON.stringify(payload) });
         if (data.error) { toast(data.error, "error"); return; }
-        toast(periodType.charAt(0).toUpperCase() + periodType.slice(1) + " payment recorded! Subscription extended to " + new Date(data.expiry).toLocaleDateString());
+        hidePaymentModal();
+        toast("Payment recorded! Subscription extended to " + new Date(data.expiry).toLocaleDateString() + (data.balance > 0 ? ". Balance: KES " + data.balance.toLocaleString() : ""));
         loadClientInvoices(currentDetailClientId);
+        loadClientBranches(currentDetailClientId);
+        loadPaymentReminders();
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
@@ -1746,15 +1825,30 @@
       } catch (e) { toast("Failed", "error"); }
     }
 
-    function viewClientInvoice(clientId, invId) {
-      window.open("/api/clients/" + clientId + "/invoices/" + invId + "/view", "_blank");
+    async function viewClientInvoice(clientId, invId) {
+      try {
+        const token = getToken();
+        const res = await fetch("/api/clients/" + clientId + "/invoices/" + invId + "/view", { headers: { "Authorization": token ? "Bearer " + token : "" } });
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          toast("Failed: " + (err && err.error ? err.error : "HTTP " + res.status), "error");
+          return;
+        }
+        const html = await res.text();
+        const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
     async function downloadClientInvoicePdf(clientId, invId) {
       try {
         const token = getToken();
         const res = await fetch("/api/clients/" + clientId + "/invoices/" + invId + "/view?format=pdf", { headers: { "Authorization": token ? "Bearer " + token : "" } });
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          throw new Error(err && err.error ? err.error : "HTTP " + res.status);
+        }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -1766,8 +1860,32 @@
     async function emailClientInvoice(clientId, invId) {
       try {
         const data = await api("/api/clients/" + clientId + "/invoices/" + invId + "/email", { method: "POST" });
-        toast(data.sent ? "Invoice emailed!" : "Failed to send. Check client SMTP.");
+        if (data.sent) toast("Invoice emailed to " + (data.to || "client") + "!");
+        else toast("Failed: " + (data.error || "Email not sent."), "error");
       } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    // ─── PAYMENT REMINDERS ─────────────────────────────────
+    async function loadPaymentReminders() {
+      try {
+        const data = await api("/api/payment-reminders");
+        const reminders = data.reminders || [];
+        const el = document.getElementById("payment-reminders");
+        if (!reminders.length) { el.style.display = "none"; return; }
+        let html = '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.4);border-radius:var(--radius);padding:0.75rem 1rem">';
+        html += '<div style="font-weight:600;color:var(--warning);margin-bottom:0.5rem">Payment reminders</div>';
+        for (const r of reminders) {
+          const label = r.daysLeft < 0 ? "Overdue" : r.daysLeft === 0 ? "Due today" : r.daysLeft === 1 ? "Due tomorrow" : "Due in " + r.daysLeft + " days";
+          html += '<div style="font-size:0.85rem;padding:0.2rem 0"><span style="cursor:pointer;color:var(--primary);text-decoration:underline" onclick="viewClientDetails(' + r.clientId + ')">' + esc(r.clientName) + '</span> <span style="color:var(--text-muted)">— ' + label + ' (' + r.dueDate + ')</span> ' + (r.daysLeft < 0 ? '<span class="badge badge-overdue">overdue</span>' : r.daysLeft <= 2 ? '<span class="badge badge-warning">soon</span>' : '') + '</div>';
+        }
+        html += '</div>';
+        el.innerHTML = html;
+        el.style.display = "";
+        for (const nr of (data.newReminders || [])) {
+          const msg = nr.daysLeft < 0 ? "Payment overdue" : nr.daysLeft === 0 ? "Payment due today" : nr.daysLeft === 2 ? "Payment due in 2 days" : "Payment due in 1 week";
+          toast(msg + " — " + nr.clientName, "error");
+        }
+      } catch (e) { /* reminders are non-critical */ }
     }
 
     // ─── CLIENT BRANCHES ─────────────────────────────────

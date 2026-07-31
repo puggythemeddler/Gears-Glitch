@@ -26,6 +26,7 @@ import {
   pushControlPlaneSecret,
   sendSlackAlert,
   enforceUsageLimits,
+  getSmtpTransport,
   type ProvisionResult,
 } from "./provision";
 
@@ -106,6 +107,10 @@ function requireAdmin(
 function auditLog(req: any, action: string, targetType: string, targetId?: number | null, targetName?: string, details?: string) {
   const user = (req as any).user || { id: 0, username: "system" };
   logAudit(user.id, user.username, action, targetType, targetId, targetName, details);
+}
+
+function esc(value: any): string {
+  return String(value ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m] as string);
 }
 
 // ─── TOTP 2FA HELPERS ─────────────────────────────────────
@@ -1381,7 +1386,7 @@ app.post("/api/clients/:id/invoices/generate", requireAuth, async (req, res) => 
   }
 });
 
-// Record payment — one step: generate invoice, mark paid, extend subscription
+// Record payment — one step: generate invoice, mark paid, record payment, extend subscription
 app.post("/api/clients/:id/invoices/record-payment", requireAuth, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
@@ -1390,6 +1395,17 @@ app.post("/api/clients/:id/invoices/record-payment", requireAuth, async (req, re
 
     const periodType = req.body.periodType === "annual" ? "annual" : "monthly";
     const daysToAdd = periodType === "annual" ? 365 : 30;
+    const notes = typeof req.body.notes === "string" ? req.body.notes.slice(0, 500) : "";
+    const amountPaid = Number(req.body.amount);
+    if (!Number.isFinite(amountPaid) || amountPaid <= 0) { res.status(400).json({ error: "Amount paid must be a positive number." }); return; }
+
+    // Expected amount from CP plan catalog (fallback: generated invoice amount)
+    const plan = await queryOne("SELECT * FROM custom_plans WHERE id = $1", [client.plan]).catch(() => null) as any;
+    let expected = 0;
+    if (plan) {
+      if (periodType === "annual" && plan.price_annual != null) expected = Number(plan.price_annual);
+      else expected = Number(plan.price) || 0;
+    }
 
     // 1. Generate invoice
     const gen = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
@@ -1399,6 +1415,8 @@ app.post("/api/clients/:id/invoices/record-payment", requireAuth, async (req, re
     });
     const invoice: any = await gen.json();
     if (!gen.ok) { res.status(gen.status).json({ error: invoice?.error || "Failed to generate invoice" }); return; }
+
+    if (!expected) expected = Number(invoice.amount) || amountPaid;
 
     // 2. Mark invoice as paid
     const pay = await fetch(`${client.render_service_url}/api/admin/invoices/${invoice.id}/pay`, {
@@ -1411,13 +1429,76 @@ app.post("/api/clients/:id/invoices/record-payment", requireAuth, async (req, re
     const now = new Date();
     const currentExpiry = client.subscription_expires ? new Date(client.subscription_expires) : null;
     const newExpiry = currentExpiry && currentExpiry > now ? new Date(currentExpiry.getTime() + daysToAdd * 86400000) : new Date(now.getTime() + daysToAdd * 86400000);
-    await query("UPDATE clients SET subscription_expires = $1 WHERE id = $2", [newExpiry, client.id]);
 
-    auditLog(req, "record_payment", "client", client.id, client.name, `${periodType} — extended to ${newExpiry.toISOString().slice(0, 10)}`);
-    res.json({ ok: true, invoice, expiry: newExpiry.toISOString() });
+    // 4. Next expected payment date (reminders driven off this)
+    const nextPaymentDate = (typeof req.body.nextPaymentDate === "string" && req.body.nextPaymentDate)
+      ? req.body.nextPaymentDate.slice(0, 10)
+      : newExpiry.toISOString().slice(0, 10);
+    await query("UPDATE clients SET subscription_expires = $1, next_payment_date = $2 WHERE id = $3", [newExpiry, nextPaymentDate, client.id]);
+    await query(
+      "INSERT INTO client_payments (client_id, invoice_id, amount, period_type, due_date, notes) VALUES ($1, $2, $3, $4, $5, $6)",
+      [client.id, invoice.id, amountPaid, periodType, nextPaymentDate, notes]
+    );
+
+    const balance = Math.max(0, expected - amountPaid);
+    auditLog(req, "record_payment", "client", client.id, client.name, `${periodType} KES ${amountPaid} — extended to ${newExpiry.toISOString().slice(0, 10)}, next due ${nextPaymentDate}`);
+    res.json({ ok: true, invoice, expiry: newExpiry.toISOString(), nextPaymentDate, balance, expected });
   } catch (err: any) {
     console.error("[api] Record payment error:", err.message);
     res.status(500).json({ error: "Failed to record payment" });
+  }
+});
+
+// Payment reminders — 1 week, 2 days, due day, and overdue windows per client
+app.get("/api/payment-reminders", requireAuth, async (_req, res) => {
+  try {
+    const clients = await queryAll("SELECT id, name, plan, next_payment_date, subscription_expires FROM clients WHERE status = 'active'") as any[];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dayMs = 86400000;
+    const reminders: any[] = [];
+    const newReminders: any[] = [];
+
+    for (const c of clients) {
+      const due = c.next_payment_date || "";
+      const dueDate = due ? new Date(due + "T00:00:00") : null;
+      if (!dueDate || isNaN(dueDate.getTime())) continue;
+      const daysLeft = Math.ceil((dueDate.getTime() - today.getTime()) / dayMs);
+
+      let window = "";
+      if (daysLeft === 7) window = "7d";
+      else if (daysLeft === 2) window = "2d";
+      else if (daysLeft === 0) window = "due";
+      else if (daysLeft < 0) window = "overdue";
+
+      let isNew = false;
+      if (window) {
+        const ins = await query(
+          "INSERT INTO payment_reminders (client_id, window, due_date) VALUES ($1, $2, $3) ON CONFLICT (client_id, window, due_date) DO NOTHING",
+          [c.id, window, due]
+        );
+        isNew = (ins.rowCount || 0) > 0;
+        if (isNew) newReminders.push({ clientId: c.id, clientName: c.name, window, dueDate: due, daysLeft });
+      }
+
+      if (daysLeft <= 14 || daysLeft < 0) {
+        reminders.push({
+          clientId: c.id,
+          clientName: c.name,
+          plan: c.plan,
+          dueDate: due,
+          daysLeft,
+          window: window || (daysLeft < 0 ? "overdue" : "due-soon"),
+          isNew,
+        });
+      }
+    }
+
+    reminders.sort((a, b) => a.daysLeft - b.daysLeft);
+    res.json({ reminders, newReminders });
+  } catch (err: any) {
+    console.error("[api] Payment reminders error:", err.message);
+    res.status(500).json({ error: "Failed to get payment reminders" });
   }
 });
 
@@ -1444,7 +1525,11 @@ app.get("/api/clients/:id/invoices/:invId/view", requireAuth, async (req, res) =
 
     const format = req.query.format as string;
     const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/view${format === "pdf" ? "?format=pdf" : ""}`, { headers: cpHeaders(client.cp_secret) });
-    if (!r.ok) { res.status(r.status).json({ error: `Client returned ${r.status}` }); return; }
+    if (!r.ok) {
+      const errBody: any = await r.json().catch(() => null);
+      res.status(r.status).json({ error: errBody?.error || `Client returned ${r.status}` });
+      return;
+    }
 
     if (format === "pdf") {
       res.setHeader("Content-Type", "application/pdf");
@@ -1466,12 +1551,52 @@ app.post("/api/clients/:id/invoices/:invId/email", requireAuth, async (req, res)
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+    if (!client.admin_email) { res.status(400).json({ error: "Client has no admin email." }); return; }
 
-    const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/email`, { method: "POST", headers: cpHeaders(client.cp_secret) });
-    const data = await r.json();
-    if (!r.ok) { res.status(r.status).json(data); return; }
-    res.json(data);
+    // Fetch invoice details from the client
+    const list = await fetch(`${client.render_service_url}/api/admin/invoices`, { headers: cpHeaders(client.cp_secret) });
+    let invoice: any = null;
+    if (list.ok) {
+      const data: any = await list.json();
+      invoice = (data.invoices || []).find((i: any) => Number(i.id) === Number(req.params.invId)) || null;
+    }
+    if (!invoice) { res.status(404).json({ error: "Invoice not found on client." }); return; }
+
+    const st = await getSmtpTransport();
+    if (!st) { res.status(400).json({ error: "Control-plane SMTP is not configured." }); return; }
+
+    const invoiceNumber = invoice.invoiceNumber || `INV-${invoice.id}`;
+    const planName = invoice.planName || invoice.planId || "Subscription";
+    const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : "";
+    const viewUrl = `${client.render_service_url}/api/admin/invoices/${invoice.id}/view`;
+
+    const subject = `Invoice ${invoiceNumber} — ${planName} Plan`;
+    const html = `
+      <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem;">
+        <h2 style="color:#3b82f6;margin-bottom:0.5rem;">Invoice ${esc(invoiceNumber)}</h2>
+        <p>Hi ${esc(client.name)},</p>
+        <p>Your subscription invoice for <strong>${esc(planName)}</strong> is ready.</p>
+        <div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
+          <p style="margin:0;"><strong>Invoice:</strong> ${esc(invoiceNumber)}</p>
+          <p style="margin:8px 0 0;"><strong>Plan:</strong> ${esc(planName)}</p>
+          <p style="margin:8px 0 0;"><strong>Amount:</strong> ${esc(invoice.currency)} ${Number(invoice.amount).toLocaleString()}</p>
+          ${dueDate ? `<p style="margin:8px 0 0;"><strong>Due Date:</strong> ${esc(dueDate)}</p>` : ""}
+        </div>
+        <p>Please ensure payment is made by the due date to avoid service interruption.</p>
+        <p><a href="${viewUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Invoice</a></p>
+      </div>
+    `;
+
+    await st.transporter.sendMail({
+      from: `"${st.fromName}" <${st.fromEmail}>`,
+      to: client.admin_email,
+      subject,
+      html,
+    });
+    auditLog(req, "email_invoice", "client", client.id, client.name, `Invoice ${invoiceNumber} → ${client.admin_email}`);
+    res.json({ sent: true, to: client.admin_email });
   } catch (err: any) {
+    console.error("[api] Email invoice error:", err.message);
     res.status(500).json({ error: "Failed to email invoice" });
   }
 });

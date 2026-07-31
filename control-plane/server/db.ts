@@ -48,6 +48,7 @@ export interface Client {
   feature_flags: Record<string, boolean>;
   notes: string;
   cp_secret: string;
+  next_payment_date?: string;
 }
 
 export async function getCloudinaryConfig() {
@@ -186,6 +187,8 @@ export async function initControlPlaneDb() {
   // Usage enforcement
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_over_limit BOOLEAN DEFAULT false`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_limit_warning TIMESTAMP`); } catch {}
+  // Next expected subscription payment date (drives payment reminders)
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS next_payment_date TEXT DEFAULT ''`); } catch {}
 
   await query(`
     CREATE TABLE IF NOT EXISTS custom_plans (
@@ -267,6 +270,30 @@ export async function initControlPlaneDb() {
       target_name TEXT DEFAULT '',
       details TEXT DEFAULT '',
       created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS client_payments (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+      invoice_id INTEGER,
+      amount DOUBLE PRECISION DEFAULT 0,
+      period_type TEXT DEFAULT 'monthly',
+      due_date TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS payment_reminders (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+      window TEXT NOT NULL,
+      due_date TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(client_id, window, due_date)
     )
   `);
 

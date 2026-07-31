@@ -479,13 +479,14 @@ app.get("/api/health", async (req: Request, res: Response) => {
     const orders = await queryOne("SELECT COUNT(*) AS count FROM orders") as any;
     const customers = await queryOne("SELECT COUNT(*) AS count FROM users WHERE role = 'customer'") as any;
     const revenue = await queryOne("SELECT COALESCE(SUM(subtotal + shipping_fee), 0) AS total FROM orders WHERE status IN ('shipped', 'delivered', 'completed')") as any;
+    const subRevenue = await getInvoiceRevenue();
     res.json({
       ok: true,
       version: APP_VERSION,
       suspended: storeSuspended,
       orders: Number(orders?.count || 0),
       customers: Number(customers?.count || 0),
-      revenue: Number(revenue?.total || 0),
+      revenue: Number(revenue?.total || 0) + Number(subRevenue || 0),
     });
   } catch {
     res.json({ ok: true, version: APP_VERSION, suspended: storeSuspended });
