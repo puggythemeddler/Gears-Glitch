@@ -4253,7 +4253,7 @@ app.put("/api/admin/repairs-page", adminAuthMiddleware, asyncHandler(async (req:
   if (intro !== undefined && !okLen(intro, 0, 2000)) { res.status(400).json({ error: "Intro must be ≤2000 characters." }); return; }
   if (panels !== undefined && (!Array.isArray(panels) || panels.length > 20)) { res.status(400).json({ error: "Panels must be an array of at most 20." }); return; }
 
-  const cleaned: { intro: string; panels: { title: string; description: string }[] } = {
+  const cleaned: { intro: string; panels: any[] } = {
     intro: String(intro || "").trim(),
     panels: [],
   };
@@ -4263,7 +4263,28 @@ app.put("/api/admin/repairs-page", adminAuthMiddleware, asyncHandler(async (req:
       const description = String(p?.description || "").trim();
       if (!title || !description) { res.status(400).json({ error: "Each panel needs a title and description." }); return; }
       if (title.length > 200 || description.length > 2000) { res.status(400).json({ error: "Panel title/description too long." }); return; }
-      cleaned.panels.push({ title, description });
+
+      const panelId = String(p?.id || "").trim().slice(0, 100);
+      const panel: any = {
+        id: panelId || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40),
+        title,
+        description,
+        active: p?.active === undefined ? true : Boolean(p.active),
+      };
+
+      const b = p?.booking;
+      if (b && typeof b === "object") {
+        const booking: any = {};
+        if (b.repairTypeId) booking.repairTypeId = String(b.repairTypeId).trim().slice(0, 100);
+        if (b.deviceType) booking.deviceType = String(b.deviceType).trim().slice(0, 100);
+        if (b.issueDescription) booking.issueDescription = String(b.issueDescription).trim().slice(0, 2000);
+        if (Array.isArray(b.symptoms)) {
+          booking.symptoms = b.symptoms.map((s: any) => String(s).trim().slice(0, 100)).filter(Boolean).slice(0, 20);
+        }
+        if (Object.keys(booking).length > 0) panel.booking = booking;
+      }
+
+      cleaned.panels.push(panel);
     }
   }
   await setStoreSetting("repairs_page", JSON.stringify(cleaned));

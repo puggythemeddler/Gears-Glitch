@@ -292,11 +292,26 @@ async function createRepairTicket(customerId: number, data: any): Promise<Ticket
     return { ok: false, error: "Device type and problem description are required." };
   }
 
+  const repairType = data.repairType ? String(data.repairType).trim() : null;
+  if (repairType) {
+    const rt = await queryOne("SELECT id FROM repair_types WHERE id = $1", [repairType]);
+    if (!rt) return { ok: false, error: "Invalid repair type." };
+  }
+
+  const symptoms = Array.isArray(data.symptoms)
+    ? data.symptoms.map((s: any) => String(s).trim()).filter(Boolean).slice(0, 30)
+    : [];
+  const fullDescription = symptoms.length
+    ? `${issueDescription}\n\nSymptoms: ${symptoms.join(", ")}`
+    : issueDescription;
+
   await query(
-    `INSERT INTO repair_tickets (id, customer_id, device_type, device_model, issue_description, status, eta_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, 'received', (NOW() + interval '48 hours')::text, NOW()::text, NOW()::text)`,
-    [id, customerId, deviceType, String(data.deviceModel || "").trim(), issueDescription]
+    `INSERT INTO repair_tickets (id, customer_id, device_type, device_model, issue_description, repair_type, status, eta_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, 'received', (NOW() + interval '48 hours')::text, NOW()::text, NOW()::text)`,
+    [id, customerId, deviceType, String(data.deviceModel || "").trim(), fullDescription, repairType]
   );
+
+  await recalculateTicketCost(id);
 
   await addRepairUpdate(id, null, "status", "Ticket created. Estimated completion within 48 hours.", true);
 

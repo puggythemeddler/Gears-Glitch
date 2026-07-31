@@ -16,6 +16,14 @@ const STATUS_LABELS: Record<string, string> = {
 };
 const STATUS_OPTIONS = Object.keys(STATUS_LABELS);
 
+const BOOKING_DEVICE_TYPES = ["Laptop", "Desktop PC", "MacBook", "Tablet", "Printer", "Other"];
+
+const BOOKING_SYMPTOMS = ["Won't turn on", "Slow performance", "Overheating", "Screen cracked", "Battery drains fast", "No display", "Keyboard not working", "Wi-Fi issues", "Software crash", "Virus / malware", "Data recovery", "Liquid damage", "Fan noise", "Other"];
+
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+}
+
 function statusBadge(status: string) {
   const bg: Record<string, string> = {
     received: "#dbeafe", diagnosing: "#fef3c7", waiting_parts: "#ede9fe",
@@ -457,7 +465,8 @@ function CalendarTab({ onOpenTicket }: { onOpenTicket: (id: string) => void }) {
 
 function ContentTab() {
   const [intro, setIntro] = useState("");
-  const [panels, setPanels] = useState<{ title: string; description: string }[]>([]);
+  const [panels, setPanels] = useState<any[]>([]);
+  const [repairTypes, setRepairTypes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ text: string; error?: boolean } | null>(null);
@@ -465,14 +474,22 @@ function ContentTab() {
   async function load() {
     setLoading(true);
     try {
-      const d = await api<any>("/api/admin/repairs-page");
+      const [d, t] = await Promise.all([
+        api<any>("/api/admin/repairs-page"),
+        api<any>("/api/repairs/types").catch(() => ({ types: [] })),
+      ]);
       setIntro(d.intro || "");
       setPanels(Array.isArray(d.panels) ? d.panels : []);
+      setRepairTypes(t.types || []);
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }
 
   useEffect(() => { load(); }, []);
+
+  function updatePanel(i: number, patch: any) {
+    setPanels(panels.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
+  }
 
   async function save() {
     if (!intro.trim()) { setStatusMsg({ text: "Intro is required.", error: true }); return; }
@@ -480,10 +497,15 @@ function ContentTab() {
     setSaving(true);
     setStatusMsg(null);
     try {
+      const cleaned = panels.map((p) => ({
+        ...p,
+        id: String(p.id || "").trim() || slugify(p.title) || `panel-${Math.random().toString(36).slice(2, 8)}`,
+      }));
       await api("/api/admin/repairs-page", {
         method: "PUT",
-        body: JSON.stringify({ intro, panels }),
+        body: JSON.stringify({ intro, panels: cleaned }),
       });
+      setPanels(cleaned);
       setStatusMsg({ text: "Saved. The storefront /repairs page now shows this content." });
     } catch (e: any) { setStatusMsg({ text: e.message, error: true }); }
     finally { setSaving(false); }
@@ -493,22 +515,66 @@ function ContentTab() {
 
   return (
     <>
-      <p className="muted">Edit the content shown on the public <strong>/repairs</strong> page. These are the fields customers see when they visit the Repairs page.</p>
-      <div className="panel" style={{ maxWidth: 760 }}>
+      <p className="muted">Edit the content shown on the public <strong>/repairs</strong> page. Any panel with <strong>"Booking button"</strong> enabled becomes a button that starts a pre-filled repair ticket.</p>
+      <div className="panel" style={{ maxWidth: 820 }}>
         <div className="field"><label>Intro paragraph<textarea rows={3} value={intro} onChange={(e) => setIntro(e.target.value)} /></label></div>
 
         <h4 style={{ margin: "1rem 0 0.5rem" }}>Service panels ({panels.length})</h4>
-        {panels.map((p, i) => (
-          <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.75rem", marginBottom: "0.75rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-              <strong>Panel {i + 1}</strong>
-              <RippleButton size="small" variant="danger" onClick={() => setPanels(panels.filter((_, idx) => idx !== i))}>Remove</RippleButton>
+        {panels.map((p, i) => {
+          const booking = p.booking || {};
+          const enabled = !!booking.repairTypeId || !!booking.deviceType || !!booking.issueDescription || Array.isArray(booking.symptoms);
+          return (
+            <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.75rem", marginBottom: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                <strong>Panel {i + 1}</strong>
+                <RippleButton size="small" variant="danger" onClick={() => setPanels(panels.filter((_, idx) => idx !== i))}>Remove</RippleButton>
+              </div>
+              <div className="field" style={{ marginTop: "0.5rem" }}><label>Title<input value={p.title} onChange={(e) => updatePanel(i, { title: e.target.value })} /></label></div>
+              <div className="field"><label>Description<textarea rows={2} value={p.description} onChange={(e) => updatePanel(i, { description: e.target.value })} /></label></div>
+
+              <div style={{ display: "flex", gap: "1.25rem", alignItems: "center", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: "normal" }}>
+                  <input type="checkbox" checked={p.active !== false} onChange={(e) => updatePanel(i, { active: e.target.checked })} />
+                  Show on the /repairs page
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: "normal" }}>
+                  <input type="checkbox" checked={enabled} onChange={(e) => updatePanel(i, { booking: e.target.checked ? { ...booking } : undefined })} />
+                  <strong>Booking button</strong> — click logs a pre-filled ticket
+                </label>
+              </div>
+              {p.active === false && <p className="muted" style={{ fontSize: "0.85rem", margin: "0.25rem 0 0" }}>Hidden — customers won't see this panel.</p>}
+
+              {enabled && (
+                <div style={{ borderTop: "1px dashed var(--border)", marginTop: "0.6rem", paddingTop: "0.6rem" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem" }}>
+                    <div className="field"><label>Repair type (sets the base price)<select value={booking.repairTypeId || ""} onChange={(e) => updatePanel(i, { booking: { ...booking, repairTypeId: e.target.value } })}><option value="">No repair type</option>{repairTypes.map((t) => <option key={t.id} value={t.id}>{t.name} — {formatPrice(t.basePrice)}</option>)}</select></label></div>
+                    <div className="field"><label>Pre-fill device type<select value={booking.deviceType || ""} onChange={(e) => updatePanel(i, { booking: { ...booking, deviceType: e.target.value } })}><option value="">Don't pre-fill</option>{BOOKING_DEVICE_TYPES.map((d) => <option key={d} value={d}>{d}</option>)}</select></label></div>
+                  </div>
+                  <div className="field"><label>Pre-fill issue description<textarea rows={2} value={booking.issueDescription || ""} onChange={(e) => updatePanel(i, { booking: { ...booking, issueDescription: e.target.value } })} placeholder="What should the customer's issue description say by default?" /></label></div>
+                  <div className="field">
+                    <label style={{ marginBottom: "0.3rem" }}>Pre-check symptoms</label>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.25rem" }}>
+                      {BOOKING_SYMPTOMS.map((s) => (
+                        <label key={s} style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: "normal", fontSize: "0.85rem" }}>
+                          <input
+                            type="checkbox"
+                            checked={Array.isArray(booking.symptoms) && booking.symptoms.includes(s)}
+                            onChange={(e) => {
+                              const list = Array.isArray(booking.symptoms) ? booking.symptoms : [];
+                              const next = e.target.checked ? [...list, s] : list.filter((x: string) => x !== s);
+                              updatePanel(i, { booking: { ...booking, symptoms: next } });
+                            }}
+                          /> {s}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="field" style={{ marginTop: "0.5rem" }}><label>Title<input value={p.title} onChange={(e) => setPanels(panels.map((x, idx) => (idx === i ? { ...x, title: e.target.value } : x)))} /></label></div>
-            <div className="field"><label>Description<textarea rows={2} value={p.description} onChange={(e) => setPanels(panels.map((x, idx) => (idx === i ? { ...x, description: e.target.value } : x)))} /></label></div>
-          </div>
-        ))}
-        <RippleButton variant="secondary" onClick={() => setPanels([...panels, { title: "", description: "" }])}>+ Add panel</RippleButton>
+          );
+        })}
+        <RippleButton variant="secondary" onClick={() => setPanels([...panels, { title: "", description: "", active: true }])}>+ Add panel</RippleButton>
 
         <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
           <RippleButton onClick={save} loading={saving}>Save changes</RippleButton>

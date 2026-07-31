@@ -10,7 +10,7 @@ const DEFAULT_PANELS = [
 
 export default function RepairsPage() {
   const [intro, setIntro] = useState("We offer professional repair services for laptops, desktops, Macs, tablets, and printers.");
-  const [panels, setPanels] = useState(DEFAULT_PANELS);
+  const [panels, setPanels] = useState<any[]>(DEFAULT_PANELS);
 
   useEffect(() => {
     api<any>("/api/repairs-page").then((d) => {
@@ -30,12 +30,27 @@ export default function RepairsPage() {
       <h1>Repair services</h1>
       <p className="page-intro">{intro}</p>
       <div className="product-grid">
-        {panels.map((p, i) => (
-          <div className="panel" key={i}>
-            <h3>{p.title}</h3>
-            <p>{p.description}</p>
-          </div>
-        ))}
+        {panels.filter((p) => p.active !== false).map((p, i) => {
+          const booking = p.booking;
+          const inner = (
+            <>
+              <h3>{p.title}</h3>
+              <p>{p.description}</p>
+              {booking && (
+                <div style={{ marginTop: "0.75rem" }}>
+                  <span className="btn btn-sm">Book this service</span>
+                </div>
+              )}
+            </>
+          );
+          return booking ? (
+            <a key={p.id || i} href={`/repair-book?service=${encodeURIComponent(p.id || i)}`} className="panel" style={{ display: "block", color: "inherit", textDecoration: "none" }}>
+              {inner}
+            </a>
+          ) : (
+            <div className="panel" key={p.id || i}>{inner}</div>
+          );
+        })}
       </div>
       <div style={{ textAlign: "center", marginTop: "2rem" }}>
         <a href="/repair-book" className="btn">Book a repair</a>
