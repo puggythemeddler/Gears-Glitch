@@ -28,7 +28,7 @@ const NAV_LINKS = [
 ];
 
 const STATIC_NAV_IDS = new Set(["repairs", "cart", "wishlist", "about", "contact"]);
-const RIGHT_NAV_IDS = new Set(["cart", "wishlist", "about", "contact"]);
+const RIGHT_NAV_IDS = new Set(["repairs", "cart", "wishlist", "about", "contact"]);
 
 const STATIC_NAV_LINKS = [
   { id: "repairs", label: "Repairs", href: "/repairs" },
