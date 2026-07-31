@@ -16,6 +16,7 @@ node -e "const c=require('crypto');console.log('JWT_SECRET='+c.randomBytes(32).t
 |---|---|---|
 | `DATABASE_URL` | (Neon connection string) | Rotate the Neon password first (Neon console → Roles → reset), then paste the new string here |
 | `JWT_SECRET` | (generated, 64 hex chars) | Replace the old one — min 32 chars; server refuses to start if it's a known placeholder |
+| `STORE_NAME` | (your store's name) | Default store name seeded on first boot; drives the browser tab title and og tags. Control plane sets this to the client's name on provisioning |
 | `ADMIN_USERNAME` | `admin` | Seeded admin account |
 | `ADMIN_EMAIL` | `admin@gearandglitch.com` | Seeded admin email |
 | `ADMIN_PASSWORD` | (generated) | Required in production — without it, no admin user is created |
@@ -79,7 +80,7 @@ When you click **Add Client** in the control plane, the following happens automa
 
 1. **Neon database** created (separate PostgreSQL per client)
 2. **Render web service** created from the shared repo with env vars pre-set:
-   - `DATABASE_URL`, a random `JWT_SECRET`, the new `CONTROL_PLANE_SECRET`
+   - `DATABASE_URL`, a random `JWT_SECRET`, the new `CONTROL_PLANE_SECRET`, and `STORE_NAME` (the client's name — so the tab title and og tags show their own brand, not Gear&Glitch)
    - `ADMIN_USERNAME=admin`, `ADMIN_EMAIL=<client admin email>`, `ADMIN_PASSWORD=<generated>`
    - `TECH_USERNAME=technician`, `TECH_EMAIL`, `TECH_PASSWORD=<generated>`
    - Cloudinary credentials with per-client folder `gear-glitch/{client-slug}`

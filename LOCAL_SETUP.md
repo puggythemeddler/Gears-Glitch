@@ -80,6 +80,7 @@ Also set:
 JWT_SECRET=any-long-random-string-here-at-least-32-characters
 ADMIN_PASSWORD=a-strong-password-here
 TECH_PASSWORD=a-strong-password-here
+STORE_NAME=My Shop   # optional — the store name shown in the tab title and og tags (defaults to "Gear&Glitch")
 ```
 
 ### M-Pesa (optional)

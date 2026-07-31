@@ -1,262 +1,341 @@
-# Gear&amp;Glitch Project User Manual
+# Gear&Glitch Project User Manual
 
 ## 1. Project Overview
 
-This project is a small Gear&amp;Glitch web application combining:
-- A shopper storefront for browsing products and managing a cart.
+Gear&Glitch is a complete multi-branch sales & management system (SaaS) combining:
+- A shopper storefront with product catalog, shopping cart, wishlist, quotes, and two-step checkout.
 - A customer repair portal for booking and tracking repair tickets.
-- A staff backoffice for repair ticket management.
-- An admin panel for catalog and product image management.
+- A staff back office for repair ticket management, stock control, and purchasing.
+- An admin panel for catalog, stock, team, finance, plans, providers, and settings.
+- An owner panel for business oversight, reports, and subscription management.
+- A provider portal for order management and messaging.
+- A **control plane** operator dashboard that provisions and manages every client instance.
 
-It uses a vanilla HTML/CSS/JavaScript frontend with a Node.js + Express backend and SQLite for persistence. The server database access layer is built with the `better-sqlite3` Node module.
+It uses a **Next.js 14 (Pages Router) + TypeScript** frontend, a **Node.js + Express + TypeScript** backend, and **PostgreSQL** for persistence (one database per client, provisioned on Neon). Multi-tenancy is handled by the control plane, which spins up an isolated Neon DB + Render backend + Vercel frontend for each client.
 
 ---
 
-## 2. Folder Structure
+## 2. Architecture
+
+Three layers, cleanly separated:
+
+| Layer | Tech | Port | Purpose |
+|-------|------|------|---------|
+| **Frontend** | Next.js 14 (Pages Router) + TypeScript | 3000 | UI rendering, client-side routing |
+| **Backend** | Express + TypeScript | 8020 | REST API, JWT auth, Cloudinary uploads, M-Pesa, PDF generation |
+| **Database** | PostgreSQL via `pg` Pool | — | Cloud database (Neon), one schema set per client |
+| **Control plane** | Express + TypeScript | 4000 | Central operator dashboard (separate app at `control-plane/`) |
+
+**Runtime architecture:**
+
+```text
+[Browser Client]
+  ├─ public storefront (/)
+  ├─ customer portal (/dashboard, /my-repairs, /orders)
+  ├─ staff back office (/backoffice)
+  ├─ admin panel (/admin)
+  └─ owner panel (/owner)
+        |
+        | HTTP / Fetch API (proxied by Next.js)
+        v
+[Express Backend] server/index.ts  (port 8020)
+  ├─ public routes
+  ├─ customer routes
+  ├─ staff/admin/owner routes
+  ├─ provider routes
+  └─ control-plane management routes (x-control-plane-key auth)
+        |
+        v
+[PostgreSQL] (per-client Neon database)
+```
+
+**Multi-tenant provisioning:**
+
+```text
+[Control Plane] control-plane/  (port 4000, own Neon DB)
+  ├─ Add Client → creates:
+  │    ├─ Neon database (client DB)
+  │    ├─ Render web service (client backend, port 8020)
+  │    └─ Vercel project (client frontend, rootDirectory: "frontend")
+  ├─ per-client CONTROL_PLANE_SECRET for remote management
+  ├─ health monitoring (every 5 min), Slack alerts
+  └─ per-client feature overrides pushed to each backend
+```
+
+---
+
+## 3. Folder Structure
 
 ```
 Laptop sale/
-├── account.html
-├── account.js
-├── customer-auth.js
-├── cart.html
-├── cart.js
-├── index.html
-├── product.html
-├── product-page.js
-├── repair-book.html
-├── my-repairs.html
-├── styles.css
-├── site.js
-├── server/
-│   ├── index.js
-│   ├── db.js
-│   ├── auth.js
-│   ├── repairs.js
-│   ├── notify.js
-│   └── upload.js
-├── admin/
-│   ├── index.html
-│   ├── admin.js
-│   └── admin.css
-├── backoffice/
-│   ├── index.html
-│   └── backoffice.js
-├── data/
-│   ├── store.db
-│   └── uploads/
-├── package.json
-└── README.md
+├── frontend/                 # Next.js 14 (Pages Router + TypeScript)
+│   ├── components/
+│   │   ├── ui/                   # Reusable component library (Button, Card, Input, Modal, Badge...)
+│   │   ├── admin/                # Admin/Owner shared components (AdminProducts, ProvidersPage, ...)
+│   │   ├── Layout.tsx            # Responsive header (default + springboard modes)
+│   │   ├── ProductCard.tsx       # Product card with strikethrough sale price
+│   │   └── ...                   # MarqueeBanner, Toast, Skeleton, LoadingScreen, ScrollReveal...
+│   ├── lib/
+│   │   ├── api.ts                # API client with token management
+│   │   ├── app-context.tsx       # React context — auth, theme, cart, settings, favicon/tab title
+│   │   ├── types.ts              # TypeScript interfaces
+│   │   └── features.ts           # useFeature() hook for subscription feature gating
+│   ├── layouts/                  # Storefront themes + runtime layout engine
+│   │   ├── original.tsx          # Original theme (premium marketing hero)
+│   │   ├── amazon.tsx, jumia.tsx, mobile.tsx, custom.tsx
+│   │   ├── dynamic-engine.tsx    # Generic JSON layout renderer
+│   │   └── index.tsx             # Layout registry + provider
+│   ├── pages/
+│   │   ├── index.tsx             # Homepage
+│   │   ├── admin.tsx             # Admin panel
+│   │   ├── owner.tsx             # Owner panel
+│   │   ├── backoffice.tsx        # Staff back office
+│   │   ├── login.tsx, dashboard.tsx, cart.tsx, orders.tsx, ...
+│   │   └── _document.tsx         # Static <title> placeholder (replaced by store name at runtime)
+│   └── styles/                   # globals.css (design tokens), animations.css
+├── server/                   # Express backend (TypeScript)
+│   ├── index.ts              # All API routes (asyncHandler-wrapped)
+│   ├── db.ts                 # PostgreSQL layer (migrations, seed, settings)
+│   ├── schema.sql            # PostgreSQL schema
+│   ├── auth.ts               # JWT auth + login/register
+│   ├── repairs.ts            # Repair ticket lifecycle
+│   ├── permissions.ts        # Role-based permissions
+│   ├── upload.ts             # Multer image upload (Cloudinary production / disk dev)
+│   ├── mpesa.ts              # Daraja API STK Push
+│   ├── email.ts              # Unified email transporter
+│   ├── notify.ts             # Email notification helpers
+│   └── routes/shared.ts      # asyncHandler, escapeHtml, validation helpers, invoice templates
+├── control-plane/            # Operator dashboard (Express + own Neon DB)
+│   ├── server/               # index.ts, provision.ts (Neon/Render/Vercel/Cloudflare), db.ts
+│   └── public/               # Static dashboard (HTML/JS) incl. feature-override picker
+├── render.yaml               # Render.com deployment config
+├── vercel.json               # Vercel deployment config
+└── README.md                 # Main project documentation
 ```
-
-### Main components
-- `account.html` / `account.js` — customer login, repair portal, ticket list, notifications.
-- `customer-auth.js` — shared customer auth helpers and API wrapper.
-- `backoffice/` — staff repair management interface.
-- `admin/` — admin product management interface.
-- `server/` — backend API, data access, repair logic, auth, and uploads.
-- `data/` — persistence storage for the SQLite DB and uploaded images.
-
----
-
-## 3. What Each Folder Contains
-
-### Root-level pages
-- `index.html` — shop home.
-- `cart.html` — cart interface.
-- `product.html` — product detail page.
-- `repair-book.html` — request a repair.
-- `my-repairs.html` — view repair tickets.
-- `account.html` — account login/register and repair dashboard.
-
-### `admin/`
-- Admin product catalog management.
-- Add/edit/delete products and change stock or price.
-- Upload product images.
-
-### `backoffice/`
-- Staff-facing management of repair tickets.
-- Technician workflow and calendar.
-
-### `server/`
-- `index.js` — Express app entry point and route registration.
-- `db.js` — SQLite database functions and queries.
-- `auth.js` — authentication for customers, staff, and admins.
-- `repairs.js` — repair ticket creation, listing, and update business logic.
-- `notify.js` — email notification helper.
-- `upload.js` — product image upload handling.
 
 ---
 
 ## 4. How the Application Starts
 
-### Setup steps
-1. Run `npm install`.
-2. Copy `.env.example` to `.env`.
-3. Set your environment values, such as `PORT`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`.
-4. Start the app with `npm start`.
+### Local setup
 
-### Default URLs
-- `http://localhost:3000` — store homepage.
-- `http://localhost:3000/account.html` — customer login/register and repair portal.
-- `http://localhost:3000/repair-book.html` — repair booking form.
-- `http://localhost:3000/backoffice/` — staff backoffice.
-- `http://localhost:3000/admin/` — product administration panel.
+1. Install PostgreSQL and create a database (`laptop_sale`).
+2. `npm install` at the root, then `cd frontend && npm install`.
+3. `copy .env.example .env` and set `DATABASE_URL`, `JWT_SECRET`, `ADMIN_PASSWORD`, `TECH_PASSWORD`.
+4. Start everything: `npm run dev:all`
+   - Backend: `http://localhost:8020`
+   - Frontend: `http://localhost:3000`
+
+See `LOCAL_SETUP.md` for the detailed step-by-step guide.
+
+### Default URLs (dev)
+
+- `http://localhost:3000` — storefront homepage.
+- `http://localhost:3000/login` — unified login (customer / staff / provider; Google Sign-In supported).
+- `http://localhost:3000/admin` — admin panel.
+- `http://localhost:3000/owner` — owner panel.
+- `http://localhost:3000/backoffice` — staff back office.
+- `http://localhost:4000` — control plane dashboard (separate app).
 
 ---
 
 ## 5. Main User Roles
 
 ### Customer
-- Browse products.
-- Create an account.
-- Add products to cart.
-- Book repairs.
-- View repair ticket status and updates.
+- Browse products, search, filter by category/subcategory.
+- Add to cart, wishlist, request quotes.
+- Two-step checkout with delivery details (47 Kenyan counties) and M-Pesa payment.
+- Track orders, download invoices (shipped/delivered), book and track repairs, message providers, review products (1–5 stars).
 
-### Staff
-- Log in to `/backoffice/`.
-- View and update repair tickets.
-- Add technician notes, ETA, schedule, and note parts used.
+### Staff (technician / manager / role-based)
+- Log in to `/backoffice`.
+- Manage repair tickets (assign, status, notes, parts, cost estimates sent to customers).
+- Stock control, stock take, inter-branch transfers, purchase orders, parts, reports.
+
+### Provider
+- Log in to `/dashboard` (provider portal).
+- View orders, cancel individual items, update order status, view subscription and invoices, message customers.
 
 ### Admin
-- Log in to `/admin/`.
-- Manage the product catalog.
-- Upload product images.
-- Adjust prices and stock.
+- Full management in `/admin`: products, categories, orders, staff, roles, plans, providers, invoices, credit notes, coupons, reports, stock, branches, clients, splashes, reviews, messages, settings, storefront layouts.
+
+### Owner
+- Business oversight in `/owner`: dashboard, products, customers, messages, quotes, reports, stock control, tech repairs, about us, storefront, shop subscription, audit log. Feature-gated by subscription plan.
+
+### Control Plane Operator (Gear&Glitch team)
+- Log in to the control plane dashboard: provision clients, monitor health, manage plans/subscriptions/invoices, deploy updates, run backups, configure SMTP/Cloudinary, and fine-tune per-client features.
 
 ---
 
-## 6. Backend API Summary
+## 6. Key Panels
 
-### Public API
-- `GET /api/products` — list products.
-- `GET /api/products/:id` — product details.
-- `GET /api/categories` — valid product categories.
-- `GET /api/settings` — store settings.
+### Admin Panel (`/admin`)
+Products, Categories (with shareable subcategories), Coupons, Orders, Users & Permissions, Roles, Plans (feature checkboxes in 11 groups), Providers, Invoices, Credit Notes, Reports (5 sub-tabs), Stock on Hand, Stock Transfers, Stock Take, Purchases, Suppliers, Branches, Clients, Messages, Reviews, Spec Templates, Splashes, About Us, Storefront, Shop Subscription, Settings.
 
-### Customer API
-- `POST /api/customer/register` — register a new customer.
-- `POST /api/customer/login` — customer login.
-- `POST /api/repairs` — create repair ticket.
-- `GET /api/repairs/mine` — list customer's repair tickets.
-- `GET /api/repairs/mine/:ticketId` — ticket details.
+### Owner Panel (`/owner`)
+Dashboard, Products, Providers, Customers, Messages, Quotes, Reports, Stock Control, Stock Take, Tech Repairs, About Us, Storefront, Shop Subscription, Audit Log.
 
-### Admin / Staff API
-- `POST /api/auth/login` — staff/admin login.
-- `POST /api/products` — create a product.
-- `POST /api/products/:id/image` — upload a product image.
-- `PATCH /api/products/:id/price` — update product price.
-- `DELETE /api/products/:id` — remove a product.
-- `PATCH /api/repairs/:id` — update a repair ticket.
+### Back Office (`/backoffice`)
+Dashboard, Repair tickets, Calendar, Parts, Stock control, Purchasing, Reports.
+
+### Control Plane Dashboard
+Clients, Plans, Changelog, Deploy Log, Backups, Settings (SMTP/Cloudinary), Audit Log, Users (with 2FA).
 
 ---
 
-## 7. How Data is Stored
+## 7. Storefront
 
-- `data/store.db` — SQLite database file.
-- `data/uploads/` — uploaded product image files.
-- The database stores products, customers, users, repair tickets, repair updates, and cart contents.
+### Layouts
+Five built-in layout themes — Original, Amazon, Jumia, Mobile, Custom — plus a runtime JSON layout builder for admin-created dynamic themes. The active layout is stored in the `storefront_layouts` table and selected from Admin → Settings → Storefront.
+
+### Marketing hero (Original layout)
+The hero section is fully admin-configurable from the Storefront panel and doubles as a conversion tool:
+- Sale countdown timer (auto-hides when the offer ends).
+- Rotating headline/accent/subtitle variants (6s cycle).
+- In-hero product search bar.
+- "Chat on WhatsApp" CTA (uses the store's phone number).
+- Payment & delivery trust strip (M-Pesa & cards, nationwide delivery, warranty).
+- Featured products with "Sale" badges, star ratings, "Only N left" scarcity notes, and Ken Burns zoom.
+- Live stats that count up on load; logged-in customers see a personalized greeting.
+- Each booster has its own admin toggle (`showSearch`, `showTrustStrip`, `showWhatsApp`, etc.).
+
+### Theme
+Dark mode by default with a light/dark toggle, persisted in `localStorage` and applied via `[data-theme]` CSS custom properties. All animations respect `prefers-reduced-motion`.
 
 ---
 
-## 8. Repair Workflow
+## 8. Backend API Summary
+
+### Public (no auth)
+- `GET /api/health` — health check (usage stats only disclosed to the control plane).
+- `GET /api/public-settings` — store name, phone, email, currency, logo, Google Client ID, M-Pesa till.
+- `GET /api/products`, `GET /api/products/:id`, `GET /api/products/:id/images`, `GET /api/products/:id/reviews`.
+- `GET /api/categories`, `GET /api/subcategories`.
+- `GET /api/plans`, `GET /api/layouts`, `GET /api/shipping/counties`, `GET /api/splashes`.
+- `GET /api/shop/features` — merged subscription + override features for UI gating.
+
+### Customer
+- `POST /api/customer/login`, `POST /api/customer/google-login`.
+- `GET/POST /api/orders`, `GET /api/orders/:id`, `GET /api/orders/:id/invoice`, `POST /api/orders/create-pending`, `PATCH /api/orders/:id`.
+- `POST /api/cart`, `PATCH/DELETE /api/cart/:productId`.
+- `POST /api/wishlist`, `POST /api/quotes/from-wishlist`.
+- `POST /api/repairs`, `GET /api/repairs/mine`, `POST /api/repairs/mine/:id/message`, `POST /api/repairs/:id/quote-response`.
+- `POST /api/products/:id/reviews`, `PUT/DELETE` review endpoints, `GET .../reviews/check`.
+- `GET/POST /api/messages`.
+
+### Staff
+- `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password`.
+- Repair, stock, stock-transfer, stock-take, report, audit-log, and subscription endpoints (permission-gated).
+
+### Admin
+- Full CRUD for products, categories, staff, roles, plans, providers, orders, invoices, coupons, suppliers, branches, settings, splashes, storefront layouts, about-us content.
+
+### Provider
+- `GET /api/provider/orders`, `GET /api/provider/orders/:id`, `PATCH .../items/:itemId/cancel`, `PATCH .../status`.
+
+### Control plane (authenticated with `x-control-plane-key`)
+- `POST /api/admin/features/overrides` — push per-client feature overrides.
+- `PUT /api/plans/sync`, `GET /api/cloudinary-config`, `POST /api/control-plane/suspend|resume|redeploy`, `GET /api/control-plane/trigger-backup`.
+
+---
+
+## 9. How Data is Stored
+
+- One **PostgreSQL database per client** (created on Neon by the control plane).
+- Backend creates all tables on first boot from `server/schema.sql` and applies migrations.
+- Settings are stored in a `settings` key/value table; the store name defaults to `STORE_NAME` env (or "Gear&Glitch").
+- Images are stored on **Cloudinary** in production (per-client folder `gear-glitch/{client-slug}`), with optional base64 database backup via the `stored_images` table, and local disk in dev (`data/uploads/`).
+
+---
+
+## 10. Repair Workflow
 
 ### Customer side
-1. Customer books a repair via `/repair-book.html`.
-2. The frontend posts to `/api/repairs`.
-3. The backend creates a ticket and saves it in SQLite.
-4. The customer views the ticket list in `account.html`.
-5. Ticket updates are visible in the repair details and notifications.
+1. Book a repair via `/repair-book`.
+2. Backend creates a ticket.
+3. Track ticket list in `/my-repairs`; view cost estimates with Accept/Decline and message the shop.
 
 ### Staff side
-1. Staff update repair ticket status in `/backoffice/`.
-2. The backend records updates and customer-visible notes.
-3. Optional notification logic can email customers or log updates.
+1. Manage tickets in `/backoffice` (assign technician, status, notes, parts, images).
+2. Send cost estimates to customers; the customer's response updates the ticket.
 
 ---
 
-## 9. Architecture Diagram
+## 11. Feature Flags & Per-Client Overrides
 
-### Runtime architecture
+### Subscription plan features
+Plans carry 48+ feature flags organized into 11 groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency). The frontend `useFeature()` hook shows/hides nav items and UI sections; server middleware enforces plan features on APIs.
 
-```text
-[Browser Client]
-  ├─ public pages
-  ├─ customer portal
-  ├─ staff backoffice
-  └─ admin panel
-        |
-        | HTTP / Fetch API
-        v
-[Express Server] server/index.js
-  ├─ public routes
-  ├─ customer routes
-  ├─ staff/admin routes
-  └─ upload/notify helpers
-        |
-        v
-[SQLite Database] data/store.db
-        |
+### Control-plane overrides
+From the control plane **Edit Client** modal, the operator can override a tenant's feature set without touching the plan:
+- **Enabled** (blue) — force-adds a feature the plan doesn't include.
+- **Blocked** (red, struck through) — hides a feature the plan normally includes.
+- **Inherit** (neutral dash) — falls back to the plan's defaults.
+- Group **Select all** / **Block** buttons and a **Clear overrides** button.
+- Saving pushes the overrides to the client backend, which merges them with plan features on `GET /api/shop/features`.
 
 ---
 
-## 10. Recent UI Enhancements
+## 12. Store Identity (Tab Title, Branding)
 
-- Category Springboard: A collapsible category springboard has been added to the header. Click the "Categories" toggle to open a left-hand panel listing persistent categories from the server (`GET /api/categories`). Links navigate to simple category pages (e.g., `gaming-laptops.html`). The springboard is closable by clicking outside it.
-- Theme Toggle: A light/dark theme toggle was added to the header. The selected theme persists in `localStorage` under `siteTheme` and updates the page meta `theme-color` for supported browsers.
-
-These features are implemented in `site.js` and styled in `styles.css`.
-
-        v
-[Uploads] data/uploads/
-```
-
-### Component flow
-
-```text
-Customer Browser
-  ├─ account.html
-  ├─ repair-book.html
-  ├─ my-repairs.html
-  └─ customer-auth.js
-        |
-        v
-Backend API
-  ├─ /api/customer/register
-  ├─ /api/repairs
-  ├─ /api/repairs/mine
-  └─ db.js / repairs.js
-```
+- The browser tab title, `og:site_name`, and `og:title` use the store's `settings.storeName`, falling back to a neutral "Welcome to our store" placeholder so no client ever displays another tenant's brand.
+- `frontend/lib/app-context.tsx` sets `document.title` to the real store name once settings load.
+- New clients provisioned by the control plane get `STORE_NAME=<client name>` injected as a Render env var, and the backend seeds that name on first boot.
+- Existing clients that were seeded before this fix should set their store name in **Admin → Settings → Store Info** once.
 
 ---
 
-## 10. Useful Files
+## 13. Control Plane
 
-- `README.md` — quick start and summary.
-- `package.json` — install and start scripts.
-- `server/index.js` — Express entry point.
-- `server/db.js` — SQLite helpers.
-- `server/repairs.js` — repair logic.
-- `account.html` / `account.js` — customer repair portal.
-- `customer-auth.js` — auth and API wrapper.
-- `admin/` — product management UI.
-- `backoffice/` — staff workflow UI.
+The control plane (`control-plane/`, port 4000, own Neon DB) is the operator hub:
+
+- **Clients** — provision (Neon + Render + Vercel), suspend/resume, redeploy, delete; health + uptime monitoring every 5 minutes; per-client feature overrides.
+- **Plans** — create/edit/activate/deactivate custom plans; sync to all clients.
+- **Changelog** — publish updates with email notifications to active clients.
+- **Backups** — `pg_dump` backups with UI download.
+- **Settings** — SMTP and Cloudinary configuration stored in DB.
+- **Invoices** — subscription invoicing (generate, pay, view HTML/PDF, email).
+- **Audit log** — all admin actions recorded.
+- **2FA** — TOTP protection for operator accounts; API keys bypass 2FA.
+
+### Provisioning (Add Client)
+1. Create a Neon database.
+2. Create a Render web service for the backend with env vars: `DATABASE_URL`, `JWT_SECRET`, `STORE_NAME`, `ADMIN_*`, `TECH_*`, `CONTROL_PLANE_SECRET`, Cloudinary.
+3. Create a Vercel project for the frontend (rootDirectory `frontend`, `BACKEND_URL` set).
+4. Set up Cloudflare DNS subdomain (optional).
+5. Send a welcome email with credentials.
 
 ---
 
-## 11. Notes
+## 14. Useful Files
 
-- The app can be run locally with Node and a `.env` file.
-- Uploads are stored in `data/uploads` and the database in `data/store.db`.
-- Customer auth uses JWT stored in `localStorage` for browser sessions.
-- Staff/admin auth is handled by middleware in `server/auth.js`.
+- `README.md` — full feature overview and architecture.
+- `LOCAL_SETUP.md` — local Windows setup guide.
+- `DEPLOY_CHECKLIST.md` — production deployment checklist.
+- `eTIMS_INTEGRATION.md` — KRA eTIMS compliance document.
+- `control-plane/README.md` — control plane documentation (endpoints, env vars, provisioning).
+- `server/index.ts` — Express entry point (all routes).
+- `server/db.ts` — PostgreSQL layer and migrations.
+- `frontend/lib/app-context.tsx` — global context (auth, theme, settings, tab title).
+- `frontend/layouts/original.tsx` — premium marketing hero implementation.
+- `control-plane/server/provision.ts` — provisioning pipeline (Neon/Render/Vercel/Cloudflare).
 
 ---
 
-## 12. Recommended Next Steps
+## 15. Notes
 
-- Add explicit notification endpoint and message storage.
-- Implement full end-to-end repair ticket tests.
-- Add stronger auth protections for staff/admin routes.
-- Add a README entry inside `user manual` for future documentation.
+- The app can be run locally with Node, a `.env` file, and a local PostgreSQL database.
+- Backend must have `DATABASE_URL` and a strong `JWT_SECRET` to start.
+- Staff tokens expire after 24h, customer tokens after 7 days.
+- Production deployments: backend on Render, frontend on Vercel, databases on Neon.
+- `npm run typecheck` runs TypeScript checks (root, `frontend/`, and `control-plane/` each have the script).
+
+---
+
+## 16. Recommended Next Steps
+
+- Enable TypeScript `strict: true` and add ESLint/Prettier + a CI quality gate.
+- Break up `server/index.ts` (~5,000 lines) and `frontend/pages/admin.tsx` into route/domain modules.
+- Move to formal SQL migrations instead of imperative startup migrations.
+- Enforce CSRF hard-fail and a strict CSP.
+- Add end-to-end tests for provisioning, feature overrides, and layout switching.

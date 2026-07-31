@@ -133,7 +133,7 @@ Administrators can protect their control-plane accounts with TOTP two-factor aut
 When you add a new client via the **Add Client** modal, the control plane automatically:
 
 1. **Creates a Neon database** — separate PostgreSQL for the client. The connection URI is extracted from the project creation response.
-2. **Creates a Render web service** — deploys the backend with all required env vars (`DATABASE_URL`, `JWT_SECRET`, `ADMIN_*`, `TECH_*`, `CONTROL_PLANE_SECRET`, Cloudinary). Env vars are applied via the dedicated `env-vars` endpoint after service creation, then a deploy is triggered.
+2. **Creates a Render web service** — deploys the backend with all required env vars (`DATABASE_URL`, `JWT_SECRET`, `STORE_NAME`, `ADMIN_*`, `TECH_*`, `CONTROL_PLANE_SECRET`, Cloudinary). `STORE_NAME` is set to the client's name so the backend seeds the client's own store name on first boot (the tab title and og tags reflect it) instead of a hardcoded brand. Env vars are applied via the dedicated `env-vars` endpoint after service creation, then a deploy is triggered.
 3. **Creates a Vercel project** — creates the project, links the GitHub repo, sets `BACKEND_URL`, and triggers an initial deploy from the `frontend/` directory.
 4. **Sets up Cloudinary** — shared account with per-client folder (`gear-glitch/{client-slug}`), configured automatically from stored credentials.
 5. **Sets up DNS** (optional) — creates a subdomain under your base domain via Cloudflare.
