@@ -1080,7 +1080,7 @@ async function runMigrations(): Promise<void> {
 
 async function ensureDefaultSettings(): Promise<void> {
   const defaults: { [key: string]: string } = {
-    storeName: "Gear&Glitch", phone: "01234 567890", email: "sales@computerstore.example", currency: "KES", storeLogo: "", storeFavicon: "",
+    storeName: process.env.STORE_NAME || "Gear&Glitch", phone: "01234 567890", email: "sales@computerstore.example", currency: "KES", storeLogo: "", storeFavicon: "",
   };
   const existing = await queryOne("SELECT COUNT(*) AS count FROM settings") as { count: number } | undefined;
   if (existing && Number(existing.count) > 0) return;

@@ -5,17 +5,13 @@ export default class MyDocument extends Document {
     return (
       <Html lang="en">
         <Head>
-          <title>Gear&Glitch — Premium PCs, Laptops & Expert Repair in Kenya</title>
+          <title>Welcome to our store</title>
           <meta name="description" content="Kenya's all-in-one platform for premium PC hardware, laptops, graphics cards, servers, printers, and expert repair services. KRA eTIMS compliant invoicing. Shop now." />
           <meta name="keywords" content="computers Kenya, laptops Nairobi, PC builds Kenya, graphics cards, server hardware, printer sales, computer repair Kenya, tech shop Kenya" />
           <meta property="og:type" content="website" />
-          <meta property="og:title" content="Gear&Glitch — Premium Tech Hardware & Repair in Kenya" />
-          <meta property="og:description" content="Kenya's trusted source for PCs, laptops, graphics cards, servers, printers, and expert repair services. KRA compliant. Shop now." />
-          <meta property="og:site_name" content="Gear&Glitch" />
+          <meta property="og:site_name" content="Welcome to our store" />
           <meta property="og:locale" content="en_KE" />
           <meta name="twitter:card" content="summary_large_image" />
-          <meta name="twitter:title" content="Gear&Glitch — Premium Tech Hardware & Repair in Kenya" />
-          <meta name="twitter:description" content="Buy PCs, laptops, graphics cards, servers, and printers. Expert repair services. Shop now." />
           <meta id="themeColorMeta" name="theme-color" content="#0b1120" />
           <link rel="shortcut icon" href="/default-favicon.png" />
           <link rel="icon" type="image/png" href="/default-favicon.png" />

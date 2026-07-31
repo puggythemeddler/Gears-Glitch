@@ -18,6 +18,7 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const { banners } = useLayout();
   const { settings } = useApp();
+  const siteName = settings?.storeName || SITE;
 
   useEffect(() => {
     let cancelled = false;
@@ -64,10 +65,11 @@ export default function HomePage() {
   return (
     <>
       <Head>
-        <title>{SITE} — Premium PCs, Laptops & Expert Repair in Kenya</title>
+        <title>{siteName} — Premium PCs, Laptops & Expert Repair in Kenya</title>
         <meta name="description" content="Kenya's all-in-one platform for premium PC hardware, laptops, graphics cards, servers, printers, and expert repair services. Shop now with nationwide delivery." />
         <link rel="canonical" href={BASE} />
-        <meta property="og:title" content={`${SITE} — Premium Tech Hardware & Repair in Kenya`} />
+        <meta property="og:site_name" content={siteName} />
+        <meta property="og:title" content={`${siteName} — Premium Tech Hardware & Repair in Kenya`} />
         <meta property="og:description" content="Buy PCs, laptops, graphics cards, servers, and printers in Kenya. Expert repair services with real-time tracking. Shop now." />
         <meta property="og:url" content={BASE} />
         <meta property="og:type" content="website" />

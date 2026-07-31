@@ -163,6 +163,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (d) {
         setState((s) => ({ ...s, settings: d }));
         applyFavicon(d.storeFavicon || DEFAULT_FAVICON);
+        if (d.storeName && document.title === "Welcome to our store") {
+          document.title = d.storeName;
+        }
       }
     }).catch(() => {
       applyFavicon(DEFAULT_FAVICON);

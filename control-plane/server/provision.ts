@@ -116,6 +116,7 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
 
   const envVars: { key: string; value: string }[] = [
     { key: "NODE_ENV", value: "production" },
+    { key: "STORE_NAME", value: clientName },
     { key: "DATABASE_URL", value: dbUrl },
     { key: "JWT_SECRET", value: randomPassword(40) },
     { key: "PORT", value: "8020" },
