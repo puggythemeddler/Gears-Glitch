@@ -1,6 +1,6 @@
 # Gear&Glitch Control Plane
 
-Central dashboard for managing all Gear&Glitch client instances. Provision new clients, monitor health, manage subscriptions, deploy updates, handle invoicing, configure SMTP/Cloudinary, toggle per-client features (including Visitor analytics), receive Slack alerts on down clients, enforce usage limits, track admin actions in an audit log, and download database backups — all from one place.
+Central dashboard for managing all Gear&Glitch client instances. Provision new clients, monitor health, manage subscriptions, deploy updates, handle invoicing, configure SMTP/Cloudinary, toggle per-client features (including Visitor analytics), receive Slack alerts on down clients, enforce usage limits, track payment reminders with automatic deactivation for missed payments, read in-app notifications, track admin actions in an audit log, and download database backups — all from one place.
 
 ## Quick Start
 
@@ -38,6 +38,7 @@ npm run dev             # http://localhost:4000
 | `SMTP_PASS` | No | SMTP password |
 | `FROM_EMAIL` | No | Sender email address |
 | `SLACK_WEBHOOK_URL` | No | Slack webhook URL for down-client and over-usage alerts |
+| `SUSPEND_GRACE_DAYS` | No | Grace period (days) before an active client is auto-suspended for a missed payment (defaults to `3`) |
 
 ## Deploy to Render
 
@@ -55,6 +56,7 @@ npm run dev             # http://localhost:4000
 
 ### Clients
 - **Stats**: Total clients, active count, total revenue, total orders
+- **Payment reminders banner** — clients whose `next_payment_date` is within 1 week, 2 days, due today, or overdue (computed by `GET /api/payment-reminders` from each client's `next_payment_date`)
 - **Client table**: Name, domain, plan, subscription status (color-coded), health, uptime %, orders, revenue, contact fields (phone, address)
 - **Subscription column**:
   - Green = active, OK
@@ -76,10 +78,23 @@ Click **Details** on any client to see:
 - Subscription status with days remaining
 - **Invoice table** with all subscription invoices:
   - **Generate** — create a new invoice for this client
-  - **Pay** — mark invoice as paid
+  - **Record Payment** — one-step payment recording: generate invoice, mark paid, extend `subscription_expires` (+30/365 days), set the next `next_payment_date`, log the payment in `client_payments`, compute the balance, auto-resume a suspended client, and clear outstanding payment notifications. A modal shows the expected amount (from the plan catalog), the amount paid, period (monthly/annual), next payment date, notes, and the resulting balance.
   - **View** — open branded HTML invoice in new tab
   - **PDF** — download invoice as PDF
-  - **Email** — send invoice to client's email
+  - **Email** — send invoice to client's email (sent via the control plane's own SMTP)
+
+### Notifications (bell)
+A bell icon in the header shows an unread-count badge and a dropdown panel of recent notifications. Alerts are generated on every health cycle and deduplicated so they never re-fire:
+- **Payment due** — 1 week, 2 days, and due today (info/warning)
+- **Payment overdue** — danger (ties into auto-deactivation)
+- **Client DOWN** — health check failed; auto-clears when the client recovers
+- **Usage over plan limits** — auto-clears when back within limits
+- **Deploy failed** — one per failed deploy (last 24h)
+- **Backup failed** — one per failed `pg_dump` (last 24h)
+- **Provisioning failed** — clients stuck in `status='failed'`; auto-clears on recovery
+- **Upgrade request** — new pending plan-upgrade request; auto-clears once reviewed
+
+Recording a payment clears that client's outstanding payment notifications. The bell polls every 60s; mark-all-read and click-through-to-client are supported.
 
 ### Feature Overrides
 Use the **Feature Overrides** picker in the Edit Client modal to fine-tune what an individual tenant can use, independent of their subscription plan:
@@ -209,9 +224,10 @@ All endpoints require authentication via one of:
 | PUT | `/api/clients/:id/upgrade-requests/:reqId` | Approve/reject upgrade request |
 | GET | `/api/clients/:id/invoices` | Get subscription invoices |
 | POST | `/api/clients/:id/invoices/generate` | Generate new invoice |
+| POST | `/api/clients/:id/invoices/record-payment` | One-step payment: generate + mark paid + extend expiry + set next payment date + log payment + compute balance + auto-resume |
 | POST | `/api/clients/:id/invoices/:invId/pay` | Mark invoice paid |
 | GET | `/api/clients/:id/invoices/:invId/view` | View invoice HTML (?format=pdf for PDF) |
-| POST | `/api/clients/:id/invoices/:invId/email` | Email invoice to client |
+| POST | `/api/clients/:id/invoices/:invId/email` | Email invoice to client (via control-plane SMTP) |
 | GET | `/api/clients/:id/subscription` | Get client's subscription info |
 
 ### Plans
@@ -228,6 +244,9 @@ All endpoints require authentication via one of:
 |---|---|---|
 | POST | `/api/deploy-all` | Deploy latest code to all clients |
 | POST | `/api/health-check` | Check health of all clients |
+| GET | `/api/payment-reminders` | Payment reminder windows (7d / 2d / due / overdue) from `next_payment_date` |
+| GET | `/api/notifications` | Unread count + last 60 in-app notifications |
+| POST | `/api/notifications/read` | Mark a notification read (`{id}`) or all read (`{all:true}`) |
 | POST | `/api/sync-cloudinary` | Push stored Cloudinary credentials to all clients |
 | POST | `/api/pull-cloudinary/:id` | Pull Cloudinary config from a live client |
 | GET | `/api/cloudinary` | Get stored Cloudinary config status |
@@ -265,10 +284,20 @@ The workflow at `.github/workflows/deploy-all-clients.yml` runs on every push to
 The control plane checks all active clients every 5 minutes:
 - Pings each client's `/api/health` endpoint
 - Tracks uptime % (rolling average)
-- Fetches usage stats (orders, customers, revenue)
+- Fetches usage stats (orders, customers, revenue) and updates `usage_orders` / `usage_customers` / `usage_revenue`
 - Stores results in the `health_log` table
 - Sends Slack alerts when a client transitions from `healthy` → `down` or `down` → `healthy` (requires `SLACK_WEBHOOK_URL`)
 - Enforces usage limits by comparing order counts against plan `max_products` — shows **OVER LIMIT** badge and sends a Slack alert when exceeded
+- Enforces subscription payments (`enforceSubscriptionPayments()`) — auto-suspends clients whose `subscription_expires` is past the `SUSPEND_GRACE_DAYS` grace period
+- Refreshes in-app notifications (`refreshNotifications()`) — payment reminders, down/usage alerts, deploy/backup/provisioning failures, and upgrade requests
+
+The client `/api/health` endpoint discloses business stats (orders, customers, revenue — including paid subscription revenue from invoices) only to the control plane; the public response is just `{ ok: true }`.
+
+## Payment Reminders & Auto-Deactivation
+
+- **Reminders** (`GET /api/payment-reminders`) compute four windows from each client's `next_payment_date`: `7d` (due in 1 week), `2d` (due in 2 days), `due` (due today), and `overdue`. Each window fires once per client per due date (recorded in the `payment_reminders` table with a `UNIQUE(client_id, "window", due_date)` constraint) and appears in the reminders banner and as a bell notification.
+- **Auto-deactivation** — `enforceSubscriptionPayments()` runs on every health cycle (5 min) and on every manual health check. An active client whose `subscription_expires` is past `SUSPEND_GRACE_DAYS` ago (default 3) is automatically **suspended** — never deleted — via the same `suspendClientRecord()` helper used by the manual Suspend button (app-level suspend flag, Render service pause, Slack alert). Clients are never deleted automatically; **Recording a Payment** resumes a suspended client and clears its outstanding payment notifications.
+- `next_payment_date` is set when a payment is recorded and drives the reminder windows; subscription expiry is stored in `subscription_expires`.
 
 ## Database Schema
 
@@ -276,16 +305,19 @@ The control plane uses its own PostgreSQL database (not shared with clients):
 
 | Table | Purpose |
 |---|---|
-| `clients` | All client instances with URLs, plans, health, usage, per-client `cp_secret`, phone, address |
+| `clients` | All client instances with URLs, plans, health, usage, per-client `cp_secret`, phone, address, `next_payment_date` |
 | `health_log` | Health check history per client |
 | `changelog` | Published updates |
-| `deploy_log` | Deployment history |
+| `deploy_log` | Deployment history (`deploy`, `backup`, `backup_failed`, `failed`) |
 | `custom_plans` | Plans created from the control plane |
 | `upgrade_requests` | Client upgrade requests (pending review) |
 | `cp_users` | Control plane user accounts (username, role, API key, TOTP 2FA) |
 | `cloudinary_config` | Shared Cloudinary credentials (pulled from a client or set manually) |
 | `smtp_config` | SMTP email configuration (host, port, user, pass, from email) |
 | `audit_log` | Audit trail of all admin actions (action type, user, target, details, timestamp) |
+| `client_payments` | Recorded subscription payments (client, invoice, amount, period, due date, notes) |
+| `payment_reminders` | One-time reminder events per client per window per due date (`UNIQUE(client_id, "window", due_date)`) |
+| `cp_notifications` | In-app notifications (type, title, body, severity, client, read state, `dedupe_key UNIQUE`) |
 
 ## Architecture
 

@@ -2,6 +2,34 @@
 
 A complete multi-branch sales & management system with product catalog, customer accounts, shopping cart, repair ticketing, provider subscriptions, invoices, order management, analytics, stock control with per-branch stock tracking, stock take, inter-branch stock transfers that actually move inventory, per-branch subscription plans, audit logging, role-based dashboards (Admin, Owner, Technician), 5 built-in storefront layout themes (Original, Amazon, Jumia, Mobile, Custom) with a runtime layout registry for admin-created dynamic JSON layouts, admin-controllable hero sections, subcategories with multi-category sharing, product groups with admin-managed storefront collections, About Us page with owner-editable content, unified login (Google SSI supported), M-Pesa payments with callback validation, Kenyan county shipping, product image galleries with gallery + primary image management, search across all products, dark/light theme toggle, sale price (strikethrough pricing), promotional banners/splashes with Kenyan holiday calendar, gift cards with balance tracking and automatic checkout redemption, campaign landing pages for promotions, abandoned cart recovery with reminder emails, order refunds (full or per-line) with history, sales-by-channel reporting (storefront/POS/quotes), store logo on all invoices/receipts/quotes, configurable logo position, server-side PDF downloads (invoices, credit notes, quotes), admin messaging panel, feature-gated subscription plans, purchase order management (with delete), auto-email notifications, WhatsApp Business API integration (bidirectional messaging with 24h window tracking), product rating & review system with interactive star ratings, rating distribution charts, per-customer review limits, customer edit/delete, and admin moderation, two-step checkout with delivery details and payment method selection, provider order management (view, cancel items, update status), customer invoice download from order history, TOTP two-factor authentication, CSRF token protection, file upload content validation, shared Cloudinary with per-client folders, and responsive design optimized for mobile, tablet, and desktop. Runs on Node.js + PostgreSQL (backend) with Next.js (frontend), deployed on Render.com (backend) + Vercel (frontend) with PostgreSQL via Neon.
 
+## Languages & Technologies
+
+**Languages**
+- **TypeScript** — backend (`server/`), frontend (`frontend/`), and control plane (`control-plane/`) are written in TypeScript
+- **JavaScript (ES2020+)** — Next.js pages/components, the control plane's static dashboard (`control-plane/public/index.html`), service workers, and build tooling
+- **HTML5 + CSS3** — storefront markup, dashboard UIs, and the design-token system (`globals.css`); modern CSS (custom properties, grid/flex, GPU-accelerated keyframe animations)
+- **SQL** — PostgreSQL DDL/DML across `server/schema.sql`, `server/db.ts` migrations, and the control plane's `control-plane/server/db.ts`
+
+**Frameworks & libraries**
+- **Frontend**: Next.js 14 (Pages Router) + React 18
+- **Backend**: Node.js + Express, `pg` (PostgreSQL driver), `jsonwebtoken`, `bcrypt`, `multer`, Helmet, `express-rate-limit`
+- **Control plane**: Express + `pg`, `jsonwebtoken`, `speakeasy` (TOTP 2FA), `puppeteer-core` + `@sparticuz/chromium` (server-side PDF)
+- **Templating**: server-rendered HTML for invoices/receipts/quotes; React components for the storefront
+
+**Data & infrastructure**
+- **PostgreSQL** on **Neon** — one database per client, plus a dedicated control-plane database
+- **Render** — client backends + control plane web services
+- **Vercel** — client storefronts (Next.js)
+- **Cloudinary** — product/image uploads (shared account, per-client folders)
+- **Cloudflare** — optional DNS subdomains per client
+
+**Integrations**
+- **M-Pesa / Daraja API** — STK push payments with callback validation
+- **WhatsApp Business Cloud API** — bidirectional messaging (HMAC-SHA256 webhook verification)
+- **Google Identity Services** — customer/staff sign-in
+- **Slack webhooks** — down-client and over-usage alerts
+- **SMTP** — unified email engine (client stores + control plane)
+
 ## Features at a glance
 
 ### Sales & storefront
@@ -76,6 +104,10 @@ A complete multi-branch sales & management system with product catalog, customer
 
 ## Recent highlights
 
+- **Control-plane notification bell** — An in-app notification center (`cp_notifications` table) with unread-count badge and dropdown panel. Alerts are generated on every health cycle and deduplicated (never re-fire): payment due (1 week / 2 days / due today), payment overdue, client DOWN (auto-clears on recovery), usage over plan limits (auto-clears), deploy failures, backup failures, provisioning failures, and new pending plan-upgrade requests. Mark-all-read, click-through to the client, 60s polling.
+- **Payment reminders & automatic deactivation** — `GET /api/payment-reminders` computes 1-week, 2-day, due, and overdue windows from each client's `next_payment_date` and surfaces them in a reminders banner. `enforceSubscriptionPayments()` auto-suspends (never deletes) any active client whose `subscription_expires` is past the `SUSPEND_GRACE_DAYS` grace period (default 3) — setting the app-level suspend flag, pausing the Render service, and sending a Slack alert. `suspendClientRecord()` / `resumeClientRecord()` are shared by the auto-deactivator and the manual Suspend/Resume buttons.
+- **Control-plane record-payment flow** — Record Payment is now a single step from the client panel: generate invoice (fallback `providerId: 1`, plan price from the CP catalog), mark it paid, extend `subscription_expires` (+30/365 days), set the next `next_payment_date`, record the payment in `client_payments`, compute the client's balance, auto-resume suspended clients, and clear that client's outstanding payment notifications. A modal (expected vs paid amount, period, next date, notes, live balance) replaced the old confirm dialogs. Invoice PDF/email/record-payment 500s were fixed by moving `@sparticuz/chromium` + `puppeteer-core` into regular `dependencies` (Render's `--omit=optional` was skipping Chromium), sending invoice email through the control plane's own SMTP, and relaying the client's real error body.
+- **Storefront empty-cart animations** — Animated SVG scenes on the empty cart: a gear-headed character leans over the cart and points into it (question marks rising out of the basket), and a worried gear-headed Santa holds an empty, drooping sack (December only). Both respect `prefers-reduced-motion`.
 - **Storefront categories always current** — The header nav buttons (next to Sign in) and the hero's category chips reconcile against the live category list on every page load: categories deleted from the admin panel automatically disappear from the header and hero, and newly added categories automatically appear — no manual "Sync" step or stale snapshots. Static page links (Repairs, Cart, Wishlist, About Us, Contact) and the admin-configured nav order are preserved, with Cart, Wishlist, About Us and Contact displayed on the right side of the header, left of the search box.
 - **Admin Repairs section** — A new **Services › Repairs** panel brings repair management into the admin panel: **Tickets** (filter by status/technician, edit status, assignment, ETA, calendar schedule, diagnosis, costs, parts used, customer-visible notes, send quotes), **Calendar** (week view of scheduled repairs that jump to the ticket), and **Page Content** (edit the intro and service panels shown on the public `/repairs` page, stored in settings and served via `/api/repairs-page`).
 - **Production startup crash fix** — A `CREATE INDEX` on `products(group_id)` in `schema.sql` ran against pre-existing production tables before the migration added the column, crashing `initDb` with `column "group_id" does not exist`. The index moved into the migration (after the `ALTER TABLE ADD COLUMN`), so existing databases boot cleanly.
@@ -205,8 +237,10 @@ A separate operator dashboard at `control-plane/` serves as the central admin hu
 **Features:**
 - **Client lifecycle management** — Provision, suspend, resume, and delete client deployments (Neon DB + Render backend + Vercel frontend)
 - **Health monitoring** — 5-minute auto-health-check loop pings each client's `/api/health`, tracks uptime %, alerts on down transitions via Slack
+- **Payment reminders & auto-deactivation** — Reminder windows (1 week / 2 days / due / overdue) from `next_payment_date`, and automatic suspension (never deletion) of clients whose subscription payment is missed past the `SUSPEND_GRACE_DAYS` grace period
+- **In-app notification bell** — Payment due/overdue, client down, usage-over-limit, deploy/backup/provisioning-failed, and upgrade-request alerts with read state and deduplication
 - **Plan management** — Create/edit custom subscription plans, sync to all clients, approve/reject upgrade requests
-- **Subscription invoicing** — Generate, pay, view (HTML/PDF), and email invoices per client
+- **Subscription invoicing** — Generate, pay, record payments, view (HTML/PDF), and email invoices per client (email sent via the control plane's own SMTP)
 - **Changelog publishing** — Push version updates with email notifications to all active clients
 - **Database backups** — Run `pg_dump` for all clients, download `.sql.gz` files from the UI
 - **Cloudinary management** — Pull config from any live client, push to all clients, store in DB
@@ -220,7 +254,7 @@ A separate operator dashboard at `control-plane/` serves as the central admin hu
 - **Client contact fields** — Phone and address fields on client records
 - **Per-client feature overrides** — Fine-tune a tenant's feature set without changing their plan: the Edit modal lists all features as grouped checkboxes with tri-state toggles (Enabled / Blocked / Inherit), pushed to the client's backend and merged with the plan's features on `/api/shop/features`
 
-See `control-plane/README.md` for full documentation.
+See `control-plane/README.md` for full documentation. See `ROADMAP.md` for the planned roadmap (payment collection, client self-service portal, phone alerts, and more).
 
 ---
 
@@ -382,7 +416,7 @@ Dark/light themes use `[data-theme="dark"]` / `[data-theme="light"]` selectors, 
 
 ### Animation System (`animations.css`)
 
-350+ lines of GPU-accelerated animations with `prefers-reduced-motion` support:
+600+ lines of GPU-accelerated animations with `prefers-reduced-motion` support:
 
 | Category | Effects |
 |----------|---------|
@@ -395,6 +429,7 @@ Dark/light themes use `[data-theme="dark"]` / `[data-theme="light"]` selectors, 
 | **Toast** | Slide-in/out notifications, auto-dismiss |
 | **Skeleton** | Shimmer animation for all placeholder sizes |
 | **Scroll reveal** | IntersectionObserver-based entrance animations (up/left/right/scale) |
+| **Empty cart & Santa scenes** | Gearhead pointing into the empty cart with rising question marks; worried Santa gearhead with empty sack (December) |
 
 ### Reusable Component Library (`components/ui/`)
 
@@ -509,6 +544,8 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │   ├── AnimatedCounter.tsx   # Number counting animation
 │   ├── Skeleton.tsx          # Skeleton loading components
 │   ├── EmptyState.tsx        # Empty state illustrations
+│   ├── EmptyCartAnimation.tsx  # Animated empty-cart scene (gearhead pointing in, question marks)
+│   ├── SantaGearAnimation.tsx  # Worried Santa gearhead with empty sack (December)
 │   ├── RippleButton.tsx      # Button with ripple + press effects
 │   ├── ScrollReveal.tsx      # IntersectionObserver entrance animations
 │   └── NotificationBell.tsx  # Unread message count badge with 30s polling
@@ -550,8 +587,8 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │       └── [id].tsx          # Dedicated stock take session page
 ├── styles/
 │   ├── globals.css           # Design token system (dark/light via [data-theme])
-│   └── animations.css        # 350+ lines — keyframes, utility classes,
-│                               skeleton, toast, loading screen, scroll reveal
+│   └── animations.css        # Keyframes, utility classes, skeleton, toast, loading
+│                               screen, scroll reveal, empty-cart & Santa scenes
 ├── .babelrc                  # Babel config (SWC disabled on this platform)
 ├── next.config.js            # Proxies /api/* and /uploads/* to Express
 ├── tsconfig.json
@@ -576,9 +613,12 @@ server/                   # Express backend (TypeScript)
 render.yaml              # Render.com deployment config
 vercel.json              # Vercel deployment config
 products.json            # Seed data (34 products)
+ROADMAP.md               # Platform roadmap (payment collection, client portal, phone alerts)
 data/
 └── uploads/              # Local image storage (dev only; production uses Cloudinary)
 ```
+
+Documentation lives in `README.md` (this file), `LOCAL_SETUP.md`, `DEPLOY_CHECKLIST.md`, `GITHUB_ACTION_POINTS.md`, `ACTION_ITEMS.md`, `eTIMS_INTEGRATION.md`, `ROADMAP.md`, `user manual/PROJECT_MANUAL.md`, and `control-plane/README.md`.
 
 ---
 

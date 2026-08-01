@@ -725,3 +725,137 @@
   margin: 0;
   animation: fadeInUp 0.5s ease 0.4s both;
 }
+
+/* ----- Empty Cart Animation ----- */
+@keyframes ecBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes ecHeadTilt {
+  0%, 100% { transform: rotate(3deg); }
+  50% { transform: rotate(-4deg); }
+}
+
+@keyframes ecPoint {
+  0%, 100% { transform: rotate(2.5deg); }
+  50% { transform: rotate(-6deg); }
+}
+
+@keyframes ecQmark {
+  0% { opacity: 0; transform: translateY(8px) scale(0.5); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-26px) scale(1.15); }
+}
+
+@keyframes ecCartWobble {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-1.2deg); }
+}
+
+.ec-scene {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-4);
+}
+
+.ec-scene svg {
+  display: block;
+  max-width: 340px;
+  width: 100%;
+  height: auto;
+}
+
+.ec-char {
+  animation: ecBob 2.8s ease-in-out infinite;
+  transform-origin: 128px 212px;
+}
+
+.ec-head {
+  animation: ecHeadTilt 3.4s ease-in-out infinite;
+  transform-origin: 127px 118px;
+}
+
+.ec-arm {
+  animation: ecPoint 1.6s ease-in-out infinite;
+  transform-origin: 154px 184px;
+}
+
+.ec-cart {
+  animation: ecCartWobble 3.8s ease-in-out infinite;
+  transform-origin: 272px 198px;
+}
+
+.ec-qmark {
+  animation: ecQmark 2.6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.ec-qmark-1 { animation-delay: 0s; }
+.ec-qmark-2 { animation-delay: 0.85s; }
+.ec-qmark-3 { animation-delay: 1.7s; }
+.ec-qmark-4 { animation-delay: 2.2s; }
+
+/* ----- Santa Gearhead (empty bag) ----- */
+@keyframes ecSantaSway {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes ecSantaHead {
+  0%, 100% { transform: rotate(2deg); }
+  30% { transform: rotate(-3.5deg); }
+  65% { transform: rotate(2.5deg); }
+}
+
+@keyframes ecSantaSack {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-3deg); }
+}
+
+@keyframes ecSantaSweat {
+  0% { opacity: 0; transform: translateY(0); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(18px); }
+}
+
+@keyframes ecSantaQ {
+  0%, 100% { opacity: 0.15; transform: translateY(0) scale(1); }
+  50% { opacity: 1; transform: translateY(-4px) scale(1.12); }
+}
+
+.ec-santa-scene {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-4);
+}
+
+.ec-santa-scene svg {
+  display: block;
+  max-width: 320px;
+  width: 100%;
+  height: auto;
+}
+
+.ec-santa {
+  animation: ecSantaSway 3s ease-in-out infinite;
+  transform-origin: 150px 236px;
+}
+
+.ec-santa-head {
+  animation: ecSantaHead 2.6s ease-in-out infinite;
+  transform-origin: 150px 125px;
+}
+
+.ec-santa-sack {
+  animation: ecSantaSack 2.8s ease-in-out infinite;
+  transform-origin: 226px 198px;
+}
+
+.ec-santa-sweat {
+  animation: ecSantaSweat 1.6s ease-in infinite;
+}
+
+.ec-santa-q {
+  animation: ecSantaQ 2.2s ease-in-out infinite;
+}

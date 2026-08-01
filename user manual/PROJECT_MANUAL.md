@@ -13,6 +13,8 @@ Gear&Glitch is a complete multi-branch sales & management system (SaaS) combinin
 
 It uses a **Next.js 14 (Pages Router) + TypeScript** frontend, a **Node.js + Express + TypeScript** backend, and **PostgreSQL** for persistence (one database per client, provisioned on Neon). Multi-tenancy is handled by the control plane, which spins up an isolated Neon DB + Render backend + Vercel frontend for each client.
 
+**Languages & tools:** TypeScript throughout (frontend, backend, control plane), with JavaScript for the control-plane dashboard and Next.js pages, HTML5/CSS3 (design-token system + GPU-accelerated CSS animations) for the UI, and SQL (PostgreSQL DDL/migrations) for data. Infrastructure: Neon (PostgreSQL), Render (backends + control plane), Vercel (storefronts), Cloudinary (images), Cloudflare (DNS).
+
 ---
 
 ## 2. Architecture
@@ -179,7 +181,7 @@ Dashboard, Products, Providers, Customers, Messages, Quotes, Reports, Stock Cont
 Dashboard, Repair tickets, Calendar, Parts, Stock control, Purchasing, Reports.
 
 ### Control Plane Dashboard
-Clients, Plans, Changelog, Deploy Log, Backups, Settings (SMTP/Cloudinary), Audit Log, Users (with 2FA).
+Clients, Plans, Changelog, Deploy Log, Backups, Settings (SMTP/Cloudinary), Audit Log, Users (with 2FA), plus a **notification bell** (unread badge + dropdown) and a **payment-reminders banner** on the Clients tab.
 
 ---
 
@@ -215,6 +217,9 @@ The hero section is fully admin-configurable from the Storefront panel and doubl
 
 ### Theme
 Dark mode by default with a light/dark toggle, persisted in `localStorage` and applied via `[data-theme]` CSS custom properties. All animations respect `prefers-reduced-motion`.
+
+### Empty-cart animations
+The empty cart page shows an animated SVG scene of the brand's gear-headed character leaning over the cart and pointing into it while question marks rise out of the basket. In December a worried Santa gearhead (with an empty, drooping sack) joins it. Both are driven by CSS keyframes in `animations.css` (`EmptyCartAnimation.tsx`, `SantaGearAnimation.tsx`).
 
 ---
 
@@ -309,7 +314,10 @@ The control plane (`control-plane/`, port 4000, own Neon DB) is the operator hub
 - **Changelog** — publish updates with email notifications to active clients.
 - **Backups** — `pg_dump` backups with UI download.
 - **Settings** — SMTP and Cloudinary configuration stored in DB.
-- **Invoices** — subscription invoicing (generate, pay, view HTML/PDF, email).
+- **Invoices** — subscription invoicing: generate, **record payment** (one step: generate + mark paid + extend expiry + set next payment date + compute balance + auto-resume), view HTML/PDF, and email via the control plane's own SMTP.
+- **Payment reminders** — the Clients tab shows a banner with clients whose payment is due in 1 week / 2 days / today / overdue (driven by each client's `next_payment_date`).
+- **Auto-deactivation** — any active client whose subscription payment is missed past the `SUSPEND_GRACE_DAYS` grace period (default 3 days) is automatically **suspended** (never deleted) on each health cycle; recording a payment resumes it.
+- **Notifications** — a bell in the header lists payment due/overdue, client down, usage-over-limit, deploy/backup/provisioning-failed, and upgrade-request alerts with read state and deduplication.
 - **Audit log** — all admin actions recorded.
 - **2FA** — TOTP protection for operator accounts; API keys bypass 2FA.
 
@@ -324,10 +332,11 @@ The control plane (`control-plane/`, port 4000, own Neon DB) is the operator hub
 
 ## 14. Useful Files
 
-- `README.md` — full feature overview and architecture.
+- `README.md` — full feature overview, languages/technologies, and architecture.
 - `LOCAL_SETUP.md` — local Windows setup guide.
 - `DEPLOY_CHECKLIST.md` — production deployment checklist.
 - `eTIMS_INTEGRATION.md` — KRA eTIMS compliance document.
+- `ROADMAP.md` — planned roadmap (payment collection, client portal, phone alerts, and more).
 - `control-plane/README.md` — control plane documentation (endpoints, env vars, provisioning).
 - `server/index.ts` — Express entry point (all routes).
 - `server/db.ts` — PostgreSQL layer and migrations.

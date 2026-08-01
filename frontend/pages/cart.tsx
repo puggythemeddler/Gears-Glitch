@@ -2,6 +2,8 @@
 import { api, isCustomerLoggedIn } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import type { CartItem, County } from "@/lib/types";
+import EmptyCartAnimation from "@/components/EmptyCartAnimation";
+import SantaGearAnimation from "@/components/SantaGearAnimation";
 
 function escapeHtml(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -176,7 +178,8 @@ export default function CartPage() {
         </div>
       ) : items.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon" style={{ fontSize: "3rem" }}>🛒</div>
+          <EmptyCartAnimation />
+          {new Date().getMonth() === 11 && <SantaGearAnimation />}
           <div className="empty-state-title">Your cart is empty</div>
           <div className="empty-state-desc">Looks like you haven't added anything to your cart yet.</div>
           <a href="/" className="btn btn-primary">Browse products</a>
