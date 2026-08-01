@@ -143,19 +143,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   function applyFavicon(url: string) {
     if (typeof document === "undefined") return;
     const href = url || DEFAULT_FAVICON;
-    const updateLink = (rel: string, type?: string) => {
+    const ext = (href.split(".").pop() || "").toLowerCase();
+    const type = ext === "ico" ? "image/x-icon" : ext === "svg" ? "image/svg+xml" : "image/png";
+    const updateLink = (rel: string, size?: string) => {
       let link = document.querySelector<HTMLLinkElement>(`link[rel='${rel}']`);
       if (!link) {
         link = document.createElement("link");
         link.rel = rel;
-        if (type) link.type = type;
         document.head.appendChild(link);
       }
-      if (type) link.type = type;
+      if (size) link.sizes = size;
+      link.type = type;
       link.href = href;
     };
     updateLink("shortcut icon");
-    updateLink("icon", "image/png");
+    updateLink("icon", "32x32");
+    updateLink("apple-touch-icon");
   }
 
   function refreshSettings() {

@@ -44,11 +44,9 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [springboardOpen, setSpringboardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { configLoading, layout } = useLayout();
   const multiCurrencyEnabled = useFeature("Multi-currency support");
-  const springboardMenu = settings?.springboardMenu ?? false;
   const [navLinks, setNavLinks] = useState(NAV_LINKS);
   const [footerConfig, setFooterConfig] = useState<any>(null);
   const router = useRouter();
@@ -106,21 +104,20 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const rightNavLinks = filteredNavLinks.filter((l: any) => RIGHT_NAV_IDS.has(l.id));
 
   useEffect(() => {
-    const handler = () => { setMobileOpen(false); setSpringboardOpen(false); };
+    const handler = () => { setMobileOpen(false); };
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);
   }, []);
 
   useEffect(() => {
-    if (!springboardOpen && !settingsOpen) return;
+    if (!settingsOpen) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest(".springboard-wrap")) setSpringboardOpen(false);
       if (!target.closest(".header-settings-wrap")) setSettingsOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [springboardOpen, settingsOpen]);
+  }, [settingsOpen]);
 
   useEffect(() => {
     fetch("/api/settings/nav-order").then(r => r.json()).then(d => {
@@ -140,7 +137,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
   const isThemedLayout = isPublicStorefront && !configLoading && layout !== "original";
 
-  function closeMobile() { setMobileOpen(false); setSpringboardOpen(false); }
+  function closeMobile() { setMobileOpen(false); }
 
   if (hideHeader) return <>{children}</>;
 
@@ -152,57 +149,16 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             {settings?.storeLogo && (
               <img src={settings.storeLogo} alt={settings.storeName || "Store"} className="site-logo" />
             )}
+            {settings?.storeFavicon && (
+              <img src={settings.storeFavicon} alt="" className="site-favicon" />
+            )}
             <span>{settings?.storeName || "Gear&Glitch"}</span>
           </Link>
-          {springboardMenu ? (
-            <div className="springboard-wrap">
-              <button
-                type="button"
-                className="springboard-btn"
-                onClick={() => setSpringboardOpen((o) => !o)}
-                aria-expanded={springboardOpen}
-                aria-label="Browse categories"
-              >
-                <span className="springboard-icon">☰</span>
-                <span className="springboard-label">Categories</span>
-                <span className={`springboard-arrow${springboardOpen ? " open" : ""}`}>▾</span>
-              </button>
-              {springboardOpen && (
-                <div className="springboard-dropdown">
-                  {leftNavLinks.map((link: any) => (
-                    <Link
-                      key={link.id}
-                      href={link.href}
-                      className={`springboard-item${activeNav === link.id ? " active" : ""}`}
-                      onClick={closeMobile}
-                    >
-                      {link.label}
-                      {link.id === "cart" && cartCount > 0 && (
-                        <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
-                      )}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <nav className="main-nav-desktop" aria-label="Main">
-              {leftNavLinks.map((link: any) => (
-                <Link
-                  key={link.id}
-                  href={link.href}
-                  className={activeNav === link.id ? "active" : ""}
-                  aria-current={activeNav === link.id ? "page" : undefined}
-                >
-                  {link.label}
-                  {link.id === "cart" && cartCount > 0 && (
-                    <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
-                  )}
-                </Link>
-              ))}
-            </nav>
-          )}
         </div>
+        <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) window.location.href = `/?search=${encodeURIComponent(q)}`; }}>
+          <input name="q" type="search" placeholder="Search..." aria-label="Search products" />
+          <button type="submit" aria-label="Search">🔍</button>
+        </form>
         <div className="header-right">
           <div className="header-right-nav">
             {rightNavLinks.map((link: any) => (
@@ -215,10 +171,6 @@ export default function Layout({ children, activeNav }: LayoutProps) {
               </Link>
             ))}
           </div>
-          <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) window.location.href = `/?search=${encodeURIComponent(q)}`; }}>
-            <input name="q" type="search" placeholder="Search..." aria-label="Search products" />
-            <button type="submit" aria-label="Search">🔍</button>
-          </form>
           <div className="header-settings-wrap" style={{ position: "relative" }}>
             <button
               type="button"
@@ -276,6 +228,21 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           </button>
         </div>
       </div>
+      <nav className="main-nav-desktop" aria-label="Main">
+        {leftNavLinks.map((link: any) => (
+          <Link
+            key={link.id}
+            href={link.href}
+            className={activeNav === link.id ? "active" : ""}
+            aria-current={activeNav === link.id ? "page" : undefined}
+          >
+            {link.label}
+            {link.id === "cart" && cartCount > 0 && (
+              <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
+            )}
+          </Link>
+        ))}
+      </nav>
       <nav className={`main-nav-mobile${mobileOpen ? " open" : ""}`} aria-label="Mobile navigation">
         {filteredNavLinks.map((link: any) => (
           <Link

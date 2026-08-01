@@ -14,7 +14,8 @@ export default class MyDocument extends Document {
           <meta name="twitter:card" content="summary_large_image" />
           <meta id="themeColorMeta" name="theme-color" content="#0b1120" />
           <link rel="shortcut icon" href="/default-favicon.png" />
-          <link rel="icon" type="image/png" href="/default-favicon.png" />
+          <link rel="icon" type="image/png" sizes="32x32" href="/default-favicon.png" />
+          <link rel="apple-touch-icon" href="/default-favicon.png" />
           <link rel="manifest" href="/manifest.webmanifest" />
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
