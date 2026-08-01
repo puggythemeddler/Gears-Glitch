@@ -1006,6 +1006,7 @@ app.post("/api/backups/run", requireAuth, async (req, res) => {
 
         results.push({ name: c.name, success: true, size: `${sizeMB} MB` });
       } catch (e: any) {
+        await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup_failed"]).catch(() => {});
         results.push({ name: c.name, success: false, error: e.message });
       }
     }
@@ -1499,6 +1500,50 @@ async function refreshNotifications() {
       );
     }
     await query("DELETE FROM cp_notifications WHERE type = 'usage_limit' AND dedupe_key <> ALL (SELECT 'usage:' || id FROM clients WHERE status = 'active' AND usage_over_limit = true)");
+
+    // Deploy failures (last 24h) → one notification per failed deploy.
+    const failedDeploys = await queryAll(
+      "SELECT d.id, d.client_id, c.name FROM deploy_log d JOIN clients c ON c.id = d.client_id WHERE d.status = 'failed' AND d.triggered_at > NOW() - INTERVAL '24 hours'"
+    ) as any[];
+    for (const d of failedDeploys) {
+      await query(
+        "INSERT INTO cp_notifications (type, title, body, severity, client_id, client_name, dedupe_key) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING",
+        ["deploy_failed", `${d.name}: deploy failed`, "Store deployment failed", "danger", d.client_id, d.name, `deploy:${d.client_id}:${d.id}`]
+      );
+    }
+
+    // Backup failures (last 24h) → one notification per failed backup.
+    const failedBackups = await queryAll(
+      "SELECT d.id, d.client_id, c.name FROM deploy_log d JOIN clients c ON c.id = d.client_id WHERE d.status = 'backup_failed' AND d.triggered_at > NOW() - INTERVAL '24 hours'"
+    ) as any[];
+    for (const b of failedBackups) {
+      await query(
+        "INSERT INTO cp_notifications (type, title, body, severity, client_id, client_name, dedupe_key) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING",
+        ["backup_failed", `${b.name}: backup failed`, "Database backup failed", "warning", b.client_id, b.name, `backup:${b.client_id}:${b.id}`]
+      );
+    }
+
+    // Clients stuck in a failed provisioning state.
+    const failedProvisioning = await queryAll("SELECT id, name FROM clients WHERE status = 'failed'") as any[];
+    for (const c of failedProvisioning) {
+      await query(
+        "INSERT INTO cp_notifications (type, title, body, severity, client_id, client_name, dedupe_key) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING",
+        ["provision_failed", `${c.name}: provisioning failed`, "Store provisioning failed", "danger", c.id, c.name, `provision:${c.id}`]
+      );
+    }
+    await query("DELETE FROM cp_notifications WHERE type = 'provision_failed' AND dedupe_key <> ALL (SELECT 'provision:' || id FROM clients WHERE status = 'failed')");
+
+    // New pending plan-upgrade requests → notify once; clear when no longer pending.
+    const pendingUpgrades = await queryAll(
+      "SELECT r.id, r.client_id, r.requested_plan, c.name FROM upgrade_requests r JOIN clients c ON c.id = r.client_id WHERE r.status = 'pending' AND r.created_at > NOW() - INTERVAL '7 days'"
+    ) as any[];
+    for (const u of pendingUpgrades) {
+      await query(
+        "INSERT INTO cp_notifications (type, title, body, severity, client_id, client_name, dedupe_key) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING",
+        ["upgrade_request", `${u.name} requested ${u.requested_plan}`, "Plan upgrade request awaiting review", "info", u.client_id, u.name, `upgrade:${u.id}`]
+      );
+    }
+    await query("DELETE FROM cp_notifications WHERE type = 'upgrade_request' AND dedupe_key <> ALL (SELECT 'upgrade:' || id FROM upgrade_requests WHERE status = 'pending')");
   } catch (err: any) {
     console.warn("[notifications] Error:", err?.message);
   }
@@ -1788,7 +1833,10 @@ function scheduleAutoBackup() {
         try {
           await execAsync(`pg_dump "${c.neon_db_url}" | gzip > "${filepath}"`, { timeout: 120000 });
           await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup"]);
-        } catch (e: any) { console.warn("[startup] Auto backup pg_dump failed:", e?.message); }
+        } catch (e: any) {
+          await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup_failed"]).catch(() => {});
+          console.warn("[startup] Auto backup pg_dump failed:", e?.message);
+        }
       }
       // Cleanup backups older than 7 days
       try {
