@@ -42,8 +42,11 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const { isLoggedIn, userName, cartCount, settings, isDark, toggleDark, logout } = useApp();
   const [isStaff, setIsStaff] = useState(false);
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
+  const [subcategories, setSubcategories] = useState<any[]>([]);
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [springboardOpen, setSpringboardOpen] = useState(false);
+  const [openSubMenu, setOpenSubMenu] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { configLoading, layout } = useLayout();
   const multiCurrencyEnabled = useFeature("Multi-currency support");
@@ -75,6 +78,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   useEffect(() => {
     fetch("/api/categories").then((r) => r.json()).then((d) => {
       if (d?.categories) setCategories(d.categories);
+      if (d?.subcategories) setSubcategories(d.subcategories);
       setCategoriesLoaded(true);
     }).catch(() => { setCategoriesLoaded(true); });
   }, []);
@@ -103,21 +107,39 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const leftNavLinks = filteredNavLinks.filter((l: any) => !RIGHT_NAV_IDS.has(l.id));
   const rightNavLinks = filteredNavLinks.filter((l: any) => RIGHT_NAV_IDS.has(l.id));
 
+  function closeAllMenus() { setMobileOpen(false); setSpringboardOpen(false); setOpenSubMenu(null); }
+
   useEffect(() => {
-    const handler = () => { setMobileOpen(false); };
+    const handler = () => { closeAllMenus(); };
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);
   }, []);
 
   useEffect(() => {
-    if (!settingsOpen) return;
+    const handler = () => closeAllMenus();
+    router.events.on("routeChangeStart", handler);
+    return () => router.events.off("routeChangeStart", handler);
+  }, [router.events]);
+
+  useEffect(() => {
+    if (!springboardOpen && !settingsOpen) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
+      if (!target.closest(".springboard-wrap")) setSpringboardOpen(false);
       if (!target.closest(".header-settings-wrap")) setSettingsOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [settingsOpen]);
+  }, [springboardOpen, settingsOpen]);
+
+  useEffect(() => {
+    if (!springboardOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setSpringboardOpen(false); setOpenSubMenu(null); }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [springboardOpen]);
 
   useEffect(() => {
     fetch("/api/settings/nav-order").then(r => r.json()).then(d => {
@@ -137,7 +159,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
   const isThemedLayout = isPublicStorefront && !configLoading && layout !== "original";
 
-  function closeMobile() { setMobileOpen(false); }
+  function closeMobile() { setMobileOpen(false); setSpringboardOpen(false); setOpenSubMenu(null); }
 
   if (hideHeader) return <>{children}</>;
 
@@ -154,6 +176,69 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             )}
             <span>{settings?.storeName || "Gear&Glitch"}</span>
           </Link>
+          <div className="springboard-wrap">
+            <button
+              type="button"
+              className={`springboard-btn${springboardOpen ? " open" : ""}`}
+              onClick={() => { setSpringboardOpen((o) => !o); setOpenSubMenu(null); }}
+              aria-expanded={springboardOpen}
+              aria-haspopup="true"
+              aria-label="Browse categories"
+            >
+              <span className="springboard-icon">☰</span>
+              <span className="springboard-label">Categories</span>
+              <span className={`springboard-arrow${springboardOpen ? " open" : ""}`}>▾</span>
+            </button>
+            {springboardOpen && (
+              <div className="springboard-dropdown">
+                {categories.map((cat) => {
+                  const subs = subcategories.filter((s) => Array.isArray(s.category_ids) && s.category_ids.includes(cat.id));
+                  const isOpen = openSubMenu === cat.id;
+                  return (
+                    <div
+                      key={cat.id}
+                      className={`springboard-row${isOpen ? " open" : ""}`}
+                      onMouseEnter={() => subs.length > 0 && setOpenSubMenu(cat.id)}
+                      onMouseLeave={() => setOpenSubMenu((cur) => (cur === cat.id ? null : cur))}
+                    >
+                      <Link
+                        href={`/${cat.id}`}
+                        className={`springboard-item${activeNav === cat.id ? " active" : ""}`}
+                        onClick={closeMobile}
+                      >
+                        {cat.label}
+                      </Link>
+                      {subs.length > 0 && (
+                        <button
+                          type="button"
+                          className={`springboard-item-toggle${isOpen ? " open" : ""}`}
+                          onClick={(e) => { e.preventDefault(); setOpenSubMenu(isOpen ? null : cat.id); }}
+                          aria-label={`${cat.label} subcategories`}
+                          aria-expanded={isOpen}
+                        >
+                          ›
+                        </button>
+                      )}
+                      {subs.length > 0 && isOpen && (
+                        <div className="springboard-submenu">
+                          {subs.map((s) => (
+                            <Link
+                              key={s.id}
+                              href={`/${cat.id}?subcategory=${encodeURIComponent(s.id)}`}
+                              className="springboard-subitem"
+                              onClick={closeMobile}
+                            >
+                              {s.name}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
         <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) window.location.href = `/?search=${encodeURIComponent(q)}`; }}>
           <input name="q" type="search" placeholder="Search..." aria-label="Search products" />
