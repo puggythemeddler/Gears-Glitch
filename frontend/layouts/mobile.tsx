@@ -127,7 +127,7 @@ export function HomePage({ products, categories, banners, hero }: {
         <h2>Shop by Brand</h2>
         <div className="mob-brand-chips">
           {brands.map((brand) => (
-            <a key={brand} href={`/products?brand=${encodeURIComponent(brand)}`} className="mob-brand-chip">{brand}</a>
+            <a key={brand} href={`/?search=${encodeURIComponent(brand)}`} className="mob-brand-chip">{brand}</a>
           ))}
         </div>
       </div>

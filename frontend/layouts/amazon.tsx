@@ -109,7 +109,7 @@ export function HomePage({ products, categories, banners, hero }: {
   const heroTitle = hero?.headline ? `${hero.headline} ${hero.headlineAccent || ""}` : "Premium Tech Deals";
   const heroSub = hero?.subtitle || "Shop the latest computers, laptops, and accessories at unbeatable prices.";
   const heroCtaLabel = hero?.shopNowLabel || "Shop Now";
-  const heroCtaLink = hero?.shopNowLink || (categories[0] ? `/${categories[0].id}` : "/products");
+  const heroCtaLink = hero?.shopNowLink || (categories[0] ? `/${categories[0].id}` : "/");
 
   return (
     <div className="amz-layout">
