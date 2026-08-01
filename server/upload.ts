@@ -110,7 +110,11 @@ const IMAGE_MAGIC_BYTES: { [key: string]: number[] } = {
   webp: [0x52, 0x49, 0x46, 0x46],
   bmp: [0x42, 0x4D],
   ico: [0x00, 0x00, 0x01, 0x00],
-  svg: [0x3C, 0x3F, 0x78, 0x6D, 0x6C],
+  tiffLe: [0x49, 0x49, 0x2A, 0x00],
+  tiffBe: [0x4D, 0x4D, 0x00, 0x2A],
+  svgXml: [0x3C, 0x3F, 0x78, 0x6D, 0x6C],
+  svgTag: [0x3C, 0x73, 0x76, 0x67],
+  svgComment: [0x3C, 0x21, 0x2D, 0x2D],
 };
 
 function validateImageMagicBytes(buffer: Buffer): boolean {
@@ -124,10 +128,23 @@ function validateImageMagicBytes(buffer: Buffer): boolean {
 function validateUploadedFile(file: Express.Multer.File): boolean {
   if (!file) return true;
   try {
-    const buffer = Buffer.alloc(8);
+    if (file.buffer && file.buffer.length > 0) {
+      return validateImageMagicBytes(file.buffer);
+    }
+    if (file.path && /^https?:\/\//i.test(file.path)) {
+      // Cloudinary storage sets file.path to a remote URL; Cloudinary already
+      // decoded/validated the image during upload, so nothing local to inspect.
+      return true;
+    }
+    if (!file.path) return false;
     const fd = fs.openSync(file.path, "r");
-    fs.readSync(fd, buffer, 0, 8, 0);
-    fs.closeSync(fd);
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.alloc(8);
+      fs.readSync(fd, buffer, 0, 8, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
     return validateImageMagicBytes(buffer);
   } catch {
     return false;
