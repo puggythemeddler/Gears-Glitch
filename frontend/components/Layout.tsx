@@ -171,9 +171,6 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             {settings?.storeLogo && (
               <img src={settings.storeLogo} alt={settings.storeName || "Store"} className="site-logo" />
             )}
-            {settings?.storeFavicon && (
-              <img src={settings.storeFavicon} alt="" className="site-favicon" />
-            )}
             <span>{settings?.storeName || "Gear&Glitch"}</span>
           </Link>
           <div className="springboard-wrap">

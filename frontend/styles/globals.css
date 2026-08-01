@@ -416,14 +416,6 @@ code, pre {
   display: block;
 }
 
-.site-favicon {
-  height: 28px;
-  width: 28px;
-  object-fit: contain;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
 /* ----- Springboard Menu ----- */
 .springboard-wrap {
   position: relative;
