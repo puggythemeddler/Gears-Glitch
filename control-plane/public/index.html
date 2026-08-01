@@ -176,6 +176,11 @@
       <h1><span>Gear&Glitch</span> Control Plane</h1>
       <div class="header-actions">
         <span id="user-display" style="font-size:0.82rem;color:var(--text-muted);align-self:center"></span>
+        <div id="notif-wrap" style="position:relative;align-self:center">
+          <button class="btn btn-ghost btn-sm" id="notif-bell" onclick="toggleNotifications()" title="Notifications">&#128276;</button>
+          <span id="notif-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:var(--danger);color:#fff;font-size:0.62rem;border-radius:50%;min-width:16px;height:16px;align-items:center;justify-content:center;padding:0 3px;font-weight:700"></span>
+          <div id="notif-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);width:350px;max-height:420px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,0.2);z-index:300"></div>
+        </div>
         <span id="twofa-badge" style="font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:var(--radius);border:1px solid var(--border);align-self:center;cursor:pointer" onclick="openTwoFaModal()" title="Click to manage 2FA">2FA Off</span>
         <button class="btn btn-ghost" onclick="healthCheckAll()">Health Check</button>
         <select id="pull-cloudinary-client" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull Cloudinary from...</option></select>
@@ -608,6 +613,7 @@
         document.getElementById("main-app").style.display = "";
         document.getElementById("user-display").textContent = data.user.username + " (" + data.user.role + ")";
         loadClients();
+        loadNotifications();
         updateTwoFaBadge(data.user.totpEnabled);
         if (currentUser.role === "admin") {
           document.getElementById("tab-btn-users").style.display = "";
@@ -649,6 +655,7 @@
           document.getElementById("tab-btn-users").style.display = "";
         }
         loadClients();
+        loadNotifications();
       } catch { clearAuth(); showLogin(); }
     }
 
@@ -1277,7 +1284,7 @@
     }
 
     initAuth();
-    setInterval(() => { if (getToken()) loadClients(); }, 60000);
+    setInterval(() => { if (getToken()) { loadClients(); loadNotifications(); } }, 60000);
 
     // ─── PLANS ────────────────────────────────────────────
     let editingPlanId = null;
@@ -1888,6 +1895,70 @@
         }
       } catch (e) { /* reminders are non-critical */ }
     }
+
+    // ─── NOTIFICATIONS (bell) ─────────────────────────────
+    async function loadNotifications() {
+      try {
+        const data = await api("/api/notifications");
+        const unread = data.unread || 0;
+        const badge = document.getElementById("notif-badge");
+        if (unread > 0) {
+          badge.style.display = "flex";
+          badge.textContent = unread > 99 ? "99+" : unread;
+        } else {
+          badge.style.display = "none";
+        }
+        const list = data.notifications || [];
+        const panel = document.getElementById("notif-panel");
+        if (!list.length) {
+          panel.innerHTML = '<div style="padding:1rem;color:var(--text-muted);font-size:0.85rem">No notifications.</div>';
+          return;
+        }
+        let html = '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0.75rem;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface)"><strong style="font-size:0.85rem">Notifications</strong>' + (unread ? '<button class="btn btn-ghost btn-sm" onclick="markAllNotificationsRead()">Mark all read</button>' : '') + '</div>';
+        for (const n of list) {
+          const sev = n.severity === "danger" ? "var(--danger)" : n.severity === "warning" ? "var(--warning)" : "var(--text-secondary)";
+          const time = new Date(n.created_at).toLocaleString();
+          html += '<div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--border);cursor:pointer;background:' + (n.read ? "transparent" : "rgba(59,130,246,0.07)") + '" onclick="openNotification(' + n.id + ',' + (n.client_id || 0) + ')">' +
+            '<div style="font-size:0.82rem;font-weight:600;color:' + sev + '">' + (n.read ? '' : '<span style="color:var(--primary)">&#9679; </span>') + esc(n.title) + '</div>' +
+            (n.body ? '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">' + esc(n.body) + '</div>' : '') +
+            '<div style="font-size:0.68rem;color:var(--text-muted);margin-top:3px">' + esc(time) + '</div></div>';
+        }
+        panel.innerHTML = html;
+      } catch (e) { /* notifications are non-critical */ }
+    }
+
+    function toggleNotifications() {
+      const panel = document.getElementById("notif-panel");
+      const showing = panel.style.display !== "none";
+      panel.style.display = showing ? "none" : "";
+      if (!showing) loadNotifications();
+    }
+
+    async function markAllNotificationsRead() {
+      try {
+        await api("/api/notifications/read", { method: "POST", body: JSON.stringify({ all: true }) });
+        loadNotifications();
+      } catch (e) { /* ignore */ }
+    }
+
+    async function openNotification(id, clientId) {
+      try {
+        await api("/api/notifications/read", { method: "POST", body: JSON.stringify({ id }) });
+      } catch (e) { /* ignore */ }
+      loadNotifications();
+      if (clientId) {
+        document.getElementById("notif-panel").style.display = "none";
+        viewClientDetails(clientId);
+      }
+    }
+
+    document.addEventListener("click", (e) => {
+      const wrap = document.getElementById("notif-wrap");
+      if (wrap && !wrap.contains(e.target)) {
+        const panel = document.getElementById("notif-panel");
+        if (panel) panel.style.display = "none";
+      }
+    });
 
     // ─── CLIENT BRANCHES ─────────────────────────────────
     async function loadClientBranches(clientId) {

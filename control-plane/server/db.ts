@@ -297,5 +297,20 @@ export async function initControlPlaneDb() {
     )
   `);
 
+  await query(`
+    CREATE TABLE IF NOT EXISTS cp_notifications (
+      id SERIAL PRIMARY KEY,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT DEFAULT '',
+      severity TEXT DEFAULT 'info',
+      client_id INTEGER,
+      client_name TEXT DEFAULT '',
+      read BOOLEAN DEFAULT false,
+      dedupe_key TEXT UNIQUE,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
   console.log("[control-plane] Database initialized.");
 }

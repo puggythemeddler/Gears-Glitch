@@ -845,6 +845,7 @@ app.post("/api/health-check", requireAuth, async (_req, res) => {
 
     await enforceUsageLimits();
     await enforceSubscriptionPayments();
+    await refreshNotifications();
     res.json({ results });
   } catch (err: any) {
     console.error("[api] Health check error:", err.message);
@@ -1404,6 +1405,9 @@ app.post("/api/clients/:id/invoices/record-payment", requireAuth, async (req, re
       auditLog(req, "auto_resume_client", "client", client.id, client.name, "Resumed after payment recorded");
     }
 
+    // Clear any outstanding payment-due/overdue notifications for this client
+    await query("UPDATE cp_notifications SET read = true WHERE read = false AND client_id = $1 AND type IN ('payment_due', 'payment_overdue')", [client.id]);
+
     res.json({ ok: true, invoice, expiry: newExpiry.toISOString(), nextPaymentDate, balance, expected });
   } catch (err: any) {
     console.error("[api] Record payment error:", err.message);
@@ -1412,55 +1416,131 @@ app.post("/api/clients/:id/invoices/record-payment", requireAuth, async (req, re
 });
 
 // Payment reminders — 1 week, 2 days, due day, and overdue windows per client
-app.get("/api/payment-reminders", requireAuth, async (_req, res) => {
-  try {
-    const clients = await queryAll("SELECT id, name, plan, next_payment_date, subscription_expires FROM clients WHERE status = 'active'") as any[];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dayMs = 86400000;
-    const reminders: any[] = [];
-    const newReminders: any[] = [];
+async function computePaymentReminders() {
+  const clients = await queryAll("SELECT id, name, plan, next_payment_date, subscription_expires FROM clients WHERE status = 'active'") as any[];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayMs = 86400000;
+  const reminders: any[] = [];
+  const newReminders: any[] = [];
 
-    for (const c of clients) {
-      const due = c.next_payment_date || "";
-      const dueDate = due ? new Date(due + "T00:00:00") : null;
-      if (!dueDate || isNaN(dueDate.getTime())) continue;
-      const daysLeft = Math.ceil((dueDate.getTime() - today.getTime()) / dayMs);
+  for (const c of clients) {
+    const due = c.next_payment_date || "";
+    const dueDate = due ? new Date(due + "T00:00:00") : null;
+    if (!dueDate || isNaN(dueDate.getTime())) continue;
+    const daysLeft = Math.ceil((dueDate.getTime() - today.getTime()) / dayMs);
 
-      let window = "";
-      if (daysLeft === 7) window = "7d";
-      else if (daysLeft === 2) window = "2d";
-      else if (daysLeft === 0) window = "due";
-      else if (daysLeft < 0) window = "overdue";
+    let window = "";
+    if (daysLeft === 7) window = "7d";
+    else if (daysLeft === 2) window = "2d";
+    else if (daysLeft === 0) window = "due";
+    else if (daysLeft < 0) window = "overdue";
 
-      let isNew = false;
-      if (window) {
-        const ins = await query(
-          'INSERT INTO payment_reminders (client_id, "window", due_date) VALUES ($1, $2, $3) ON CONFLICT (client_id, "window", due_date) DO NOTHING',
-          [c.id, window, due]
-        );
-        isNew = (ins.rowCount || 0) > 0;
-        if (isNew) newReminders.push({ clientId: c.id, clientName: c.name, window, dueDate: due, daysLeft });
-      }
-
-      if (daysLeft <= 14 || daysLeft < 0) {
-        reminders.push({
-          clientId: c.id,
-          clientName: c.name,
-          plan: c.plan,
-          dueDate: due,
-          daysLeft,
-          window: window || (daysLeft < 0 ? "overdue" : "due-soon"),
-          isNew,
-        });
-      }
+    let isNew = false;
+    if (window) {
+      const ins = await query(
+        'INSERT INTO payment_reminders (client_id, "window", due_date) VALUES ($1, $2, $3) ON CONFLICT (client_id, "window", due_date) DO NOTHING',
+        [c.id, window, due]
+      );
+      isNew = (ins.rowCount || 0) > 0;
+      if (isNew) newReminders.push({ clientId: c.id, clientName: c.name, window, dueDate: due, daysLeft });
     }
 
-    reminders.sort((a, b) => a.daysLeft - b.daysLeft);
+    if (daysLeft <= 14 || daysLeft < 0) {
+      reminders.push({
+        clientId: c.id,
+        clientName: c.name,
+        plan: c.plan,
+        dueDate: due,
+        daysLeft,
+        window: window || (daysLeft < 0 ? "overdue" : "due-soon"),
+        isNew,
+      });
+    }
+  }
+
+  reminders.sort((a, b) => a.daysLeft - b.daysLeft);
+  return { reminders, newReminders };
+}
+
+// Generate in-app notifications: payment due/overdue, clients down, usage over limit.
+// Runs on every health cycle. Uses dedupe keys so nothing is re-created each run.
+async function refreshNotifications() {
+  try {
+    const { newReminders } = await computePaymentReminders();
+    for (const r of newReminders) {
+      let title = "Payment due in 1 week";
+      let severity = "info";
+      if (r.window === "overdue") { title = "Payment overdue"; severity = "danger"; }
+      else if (r.window === "due") { title = "Payment due today"; severity = "warning"; }
+      else if (r.window === "2d") { title = "Payment due in 2 days"; severity = "warning"; }
+      await query(
+        "INSERT INTO cp_notifications (type, title, body, severity, client_id, client_name, dedupe_key) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING",
+        ["payment_due", title, `${r.clientName} — payment due ${r.dueDate}`, severity, r.clientId, r.clientName, `payment:${r.clientId}:${r.window}:${r.dueDate}`]
+      );
+    }
+
+    // Client down → notify once; remove the alert when it comes back up.
+    const downClients = await queryAll("SELECT id, name FROM clients WHERE status = 'active' AND health_status = 'down'") as any[];
+    for (const c of downClients) {
+      await query(
+        "INSERT INTO cp_notifications (type, title, body, severity, client_id, client_name, dedupe_key) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING",
+        ["client_down", `${c.name} is DOWN`, "Health check failed — store unreachable", "danger", c.id, c.name, `down:${c.id}`]
+      );
+    }
+    await query("DELETE FROM cp_notifications WHERE type = 'client_down' AND dedupe_key <> ALL (SELECT 'down:' || id FROM clients WHERE status = 'active' AND health_status = 'down')");
+
+    // Usage over plan limits → notify once; remove the alert when back within limits.
+    const overClients = await queryAll("SELECT id, name FROM clients WHERE status = 'active' AND usage_over_limit = true") as any[];
+    for (const c of overClients) {
+      await query(
+        "INSERT INTO cp_notifications (type, title, body, severity, client_id, client_name, dedupe_key) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (dedupe_key) DO NOTHING",
+        ["usage_limit", `${c.name} over plan limits`, "Usage exceeds plan limits", "danger", c.id, c.name, `usage:${c.id}`]
+      );
+    }
+    await query("DELETE FROM cp_notifications WHERE type = 'usage_limit' AND dedupe_key <> ALL (SELECT 'usage:' || id FROM clients WHERE status = 'active' AND usage_over_limit = true)");
+  } catch (err: any) {
+    console.warn("[notifications] Error:", err?.message);
+  }
+}
+
+app.get("/api/payment-reminders", requireAuth, async (_req, res) => {
+  try {
+    const { reminders, newReminders } = await computePaymentReminders();
     res.json({ reminders, newReminders });
   } catch (err: any) {
     console.error("[api] Payment reminders error:", err.message);
     res.status(500).json({ error: "Failed to get payment reminders" });
+  }
+});
+
+// ─── NOTIFICATIONS ──────────────────────────────────────
+app.get("/api/notifications", requireAuth, async (_req, res) => {
+  try {
+    const unread = await queryOne("SELECT COUNT(*) AS count FROM cp_notifications WHERE read = false") as any;
+    const notifications = await queryAll("SELECT * FROM cp_notifications ORDER BY created_at DESC LIMIT 60");
+    res.json({ unread: Number(unread?.count || 0), notifications });
+  } catch (err: any) {
+    console.error("[api] Notifications error:", err.message);
+    res.status(500).json({ error: "Failed to get notifications" });
+  }
+});
+
+app.post("/api/notifications/read", requireAuth, async (req, res) => {
+  try {
+    const { id, all } = req.body || {};
+    if (all === true) {
+      await query("UPDATE cp_notifications SET read = true WHERE read = false");
+    } else if (id) {
+      await query("UPDATE cp_notifications SET read = true WHERE id = $1", [Number(id)]);
+    } else {
+      res.status(400).json({ error: "Provide id or all: true" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[api] Mark notifications read error:", err.message);
+    res.status(500).json({ error: "Failed to mark notifications read" });
   }
 });
 
@@ -1684,6 +1764,7 @@ setInterval(async () => {
     }
     await enforceUsageLimits();
     await enforceSubscriptionPayments();
+    await refreshNotifications();
     console.log(`[auto-health] Checked ${clients.length} clients.`);
   } catch (err: any) {
     console.error("[auto-health] Error:", err.message);
