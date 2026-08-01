@@ -1436,7 +1436,7 @@ app.get("/api/payment-reminders", requireAuth, async (_req, res) => {
       let isNew = false;
       if (window) {
         const ins = await query(
-          "INSERT INTO payment_reminders (client_id, window, due_date) VALUES ($1, $2, $3) ON CONFLICT (client_id, window, due_date) DO NOTHING",
+          'INSERT INTO payment_reminders (client_id, "window", due_date) VALUES ($1, $2, $3) ON CONFLICT (client_id, "window", due_date) DO NOTHING',
           [c.id, window, due]
         );
         isNew = (ins.rowCount || 0) > 0;

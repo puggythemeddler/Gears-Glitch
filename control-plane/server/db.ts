@@ -290,10 +290,10 @@ export async function initControlPlaneDb() {
     CREATE TABLE IF NOT EXISTS payment_reminders (
       id SERIAL PRIMARY KEY,
       client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
-      window TEXT NOT NULL,
+      "window" TEXT NOT NULL,
       due_date TEXT DEFAULT '',
       created_at TIMESTAMP DEFAULT NOW(),
-      UNIQUE(client_id, window, due_date)
+      UNIQUE(client_id, "window", due_date)
     )
   `);
 
