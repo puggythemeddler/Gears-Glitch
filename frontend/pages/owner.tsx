@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useRef, useState } from "react";
-import { api, getStaffToken, downloadPdf } from "@/lib/api";
+import { api, getStaffToken, downloadPdf, getCsrfToken, initCsrf } from "@/lib/api";
 import type { Product, Order, Provider, SubscriptionPlan, Customer, Branch } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import { getLayoutList, useLayout } from "@/layouts";
@@ -871,9 +871,10 @@ function OwnerShopSubscription() {
   const changeBranchPlan = async (branchId: number, planId: string) => {
     setBranchPlanLoading(branchId);
     try {
+      if (!getCsrfToken()) await initCsrf();
       const res = await fetch(`/api/admin/branches/${branchId}/plan`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ planId }),
       });
       if (!res.ok) throw new Error("Failed");

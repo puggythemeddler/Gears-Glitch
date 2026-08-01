@@ -14,12 +14,12 @@ Use this document to create issues or project cards directly on GitHub. Mirrors 
 
 ## Medium
 
-- [ ] Verify owner branch visibility and admin branch/subscription management.
-- [ ] Ensure storefront layout controls remain admin-only in the owner panel.
+- [x] Verify owner branch visibility and admin branch/subscription management.
+- [x] Ensure storefront layout controls remain admin-only in the owner panel.
 - [ ] Re-upload previously lost product images (wiped by Render ephemeral filesystem before Cloudinary).
-- [ ] Validate the custom storefront layout is fully registered and selectable.
-- [ ] Add owner-friendly messaging on storefront for non-admin users.
-- [ ] Document the layout system and admin-only control.
+- [x] Validate the custom storefront layout is fully registered and selectable.
+- [x] Add owner-friendly messaging on storefront for non-admin users.
+- [x] Document the layout system and admin-only control.
 
 ## Low / Future
 
@@ -28,4 +28,4 @@ Use this document to create issues or project cards directly on GitHub. Mirrors 
 - [ ] Break up `server/index.ts` and `admin.tsx` monoliths into route/domain modules.
 - [ ] Enable `strict: true` TypeScript + ESLint/Prettier + CI quality gate.
 - [ ] Formal SQL migrations instead of imperative startup migrations.
-- [ ] Enforce CSRF (hard-fail) + strict CSP.
+- [x] Enforce CSRF (hard-fail) + strict CSP.

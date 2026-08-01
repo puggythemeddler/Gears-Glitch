@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useApp } from "@/lib/app-context";
 import { useLayout, LayoutHeader, LayoutFooter } from "@/layouts";
-import { getStaffToken } from "@/lib/api";
+import { getStaffToken, api } from "@/lib/api";
 
 import CurrencySelector from "./CurrencySelector";
 import MarqueeBanner from "./MarqueeBanner";
@@ -64,9 +64,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     const sid = sessionIdRef.current;
     if (!sid) return;
     const timer = setTimeout(() => {
-      fetch("/api/track/pageview", {
+      api("/api/track/pageview", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: router.asPath, referrer: document.referrer, sessionId: sid, deviceType: "" }),
       }).catch(() => {});
     }, 300);

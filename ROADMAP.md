@@ -54,7 +54,7 @@ Today the control plane acts on the client's behalf. A portal lets clients help 
 
 - [ ] **Support tickets** — client-submitted tickets linked to their store.
 - [ ] **SSO / invite flow** for CP team members (on top of existing 2FA + roles).
-- [ ] **Rate limiting** on client public endpoints; strict CSP + CSRF hard-fail on the control plane.
+- [x] **Rate limiting on client public endpoints; strict CSP + CSRF hard-fail on the control plane** — client API has global + auth rate limiting, client server enforces CSRF hard-fail (403) on mutating requests with webhook/POS/CP exemptions, both the client server and the control plane serve CSP headers (`frame-ancestors 'none'`, `object-src 'none'`).
 - [ ] **Secrets rotation** — automated rotation workflow for CP/client `CONTROL_PLANE_SECRET`, Cloudinary, and SMTP.
 
 ---
@@ -68,6 +68,8 @@ Today the control plane acts on the client's behalf. A portal lets clients help 
 - In-app notification bell: payment, down, usage-limit, deploy/backup/provisioning/upgrade alerts
 - Daily 3 AM backups (`pg_dump`), changelog, Cloudinary sync, upgrade requests
 - CP users, roles, API keys, 2FA (TOTP)
+- CSRF hard-fail on client APIs (403 on missing/mismatched tokens) and CSP on both client server and control plane
+- Storefront layout system: 5 static themes + runtime JSON layout builder, admin-only control
 
 ---
 

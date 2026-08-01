@@ -17,14 +17,14 @@ These require access to external dashboards (Neon, Cloudinary, Render, Vercel). 
 ## Medium
 
 - ~~Regenerate Cloudinary API secret (was shared publicly) and update the env var in Render.~~ — the endpoint that leaked it (`GET /api/cloudinary-config`) is now locked behind `CONTROL_PLANE_SECRET`, but the secret itself still needs rotating (see Major above).
-- [ ] Verify owner branch visibility and admin branch/subscription management:
-  - owner can see all assigned branches
-  - admin can manage branches and subscription limits
-- [ ] Ensure storefront layout controls remain admin-only in the owner panel.
+- [x] Verify owner branch visibility and admin branch/subscription management:
+  - owner can see all assigned branches (`OwnerShopSubscription` loads `/api/admin/branches` and shows the Branch Plans table)
+  - admin can manage branches and subscription limits (`AdminBranches` create/edit/delete/toggle + per-branch plan change)
+- [x] Ensure storefront layout controls remain admin-only in the owner panel (owner Storefront view shows "Only admin users can manage the public storefront layout." for non-admin staff; the API requires admin auth).
 - [ ] Re-upload previously lost product images (wiped by Render ephemeral filesystem before Cloudinary was configured).
-- [ ] Validate the custom storefront layout is fully registered and selectable in the admin storefront selector.
-- [ ] Add owner-friendly messaging on the storefront page for non-admin users.
-- [ ] Add a short note about the current layout system and admin-only control to the documentation.
+- [x] Validate the custom storefront layout is fully registered and selectable in the admin storefront selector (all 5 static layouts incl. `custom` seeded in `storefront_layouts` and registered in the frontend layout registry).
+- [x] Add owner-friendly messaging on the storefront page for non-admin users (friendly notice in the owner Storefront panel; no edit controls rendered).
+- [x] Add a short note about the current layout system and admin-only control to the documentation (README "Storefront layout system" section).
 
 ## Low / Future
 
@@ -34,4 +34,4 @@ These require access to external dashboards (Neon, Cloudinary, Render, Vercel). 
 - Break up `server/index.ts` (~5,000 lines, 281 routes) and `frontend/pages/admin.tsx` (~5,000 lines) into route/domain modules — the single biggest maintenance risk.
 - Enable TypeScript `strict: true` incrementally and add an ESLint/Prettier config + CI quality gate.
 - Move to formal SQL migrations instead of imperative startup migrations in `db.ts`.
-- Enforce CSRF (hard-fail) instead of soft-logging; enable a strict CSP in Helmet.
+- [x] Enforce CSRF (hard-fail) instead of soft-logging (client server now returns 403 on missing/mismatched tokens; frontend sends the token on all mutating requests, lazily fetching it when needed; external webhooks/POS/control-plane requests are exempt) and enable a strict CSP in Helmet (client server CSP + control-plane CSP with `frame-ancestors 'none'`).

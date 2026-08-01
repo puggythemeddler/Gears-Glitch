@@ -365,6 +365,8 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   if (req.path.startsWith("/api/auth/login") || req.path.startsWith("/api/auth/register") || req.path.startsWith("/api/customer/login") || req.path.startsWith("/api/customer/register") || req.path.startsWith("/api/provider/login")) { next(); return; }
   // Skip for M-Pesa callback (external webhook)
   if (req.path === "/api/mpesa/callback") { next(); return; }
+  // Skip for WhatsApp webhook (external webhook, raw-body signed by Meta)
+  if (req.path === "/api/webhooks/whatsapp") { next(); return; }
   // Skip for POS (uses Bearer token, not cookies)
   if (req.path.startsWith("/api/pos/")) { next(); return; }
   // Skip for authenticated control-plane machine-to-machine requests
@@ -374,8 +376,8 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   const cookie = req.cookies?.csrf_token;
 
   if (!token || !cookie || token !== cookie) {
-    // Allow through with warning for now (not blocking)
-    console.warn(`[CSRF] Missing or mismatched token on ${req.method} ${req.path}`);
+    res.status(403).json({ error: "CSRF token missing or invalid. Reload the page and try again." });
+    return;
   }
   next();
 }

@@ -12,6 +12,10 @@ export async function initCsrf() {
   } catch {}
 }
 
+export function getCsrfToken(): string | null {
+  return csrfToken;
+}
+
 export function getCustomerToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(CUSTOMER_TOKEN_KEY);
@@ -82,8 +86,9 @@ export async function api<T = any>(
   const token = getTokenForRole(role);
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const method = (options.method || "GET").toUpperCase();
-  if (csrfToken && ["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
-    headers["X-CSRF-Token"] = csrfToken;
+  if (["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
+    if (!csrfToken) await initCsrf();
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
   }
 
   const res = await fetch(path, { ...options, headers });
