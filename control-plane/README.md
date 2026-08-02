@@ -52,6 +52,14 @@ npm run dev             # http://localhost:4000
 
 > **Note:** Client backend services are also deployed on Render via the same repo. Their build command uses `NODE_ENV=development npm ci && cd server && npx tsc && cd ..` to include devDependencies (type definitions) during compilation, and their start command is `node dist/server/index.js`.
 
+## Content Security Policy
+
+The control plane serves a Content Security Policy via Helmet (`control-plane/server/index.ts`):
+
+- `default-src 'self'`; scripts and styles inline-only (`script-src` / `style-src` include `'unsafe-inline'`); images from `data:` / `blob:` / `https:` (QR codes); `object-src 'none'`; `base-uri 'self'`; `form-action 'self'`; `frame-ancestors 'none'` (clickjacking); `upgrade-insecure-requests`.
+
+> **Important — keep `scriptSrcAttr` set.** `scriptSrcAttr: ["'self'", "'unsafe-inline'"]` must stay in the policy. Helmet 7 appends `script-src-attr 'none'` to any policy that doesn't set `scriptSrcAttr` explicitly, and `'none'` blocks **every inline `onclick` handler**. The dashboard is a single static HTML file that wires all its buttons through inline `onclick=` attributes, so dropping this line makes every button on the page dead (they did nothing in production until this was added back).
+
 ## Dashboard Tabs
 
 ### Clients
