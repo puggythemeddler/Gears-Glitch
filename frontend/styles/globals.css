@@ -91,6 +91,23 @@
   --info-light: #dbeafe;
   --overlay: rgba(0, 0, 0, 0.4);
   --shadow-color: rgba(0, 0, 0, 0.06);
+
+  /* Secondary brand accent (repair cards, highlights) */
+  --accent: #f59e0b;
+  --accent-subtle: rgba(245, 158, 11, 0.14);
+
+  /* Hero brand accents (glows, particles, gradient headline, glass CTA) */
+  --brand-glow-a: rgba(59, 130, 246, 0.15);
+  --brand-glow-b: rgba(139, 92, 246, 0.12);
+  --brand-particle: rgba(96, 165, 250, 0.5);
+  --brand-hero-accent: #60a5fa;
+  --brand-gradient-a: #60a5fa;
+  --brand-gradient-b: #a78bfa;
+  --brand-btn-bg: rgba(59, 130, 246, 0.85);
+  --brand-btn-border: rgba(59, 130, 246, 0.5);
+  --brand-btn-shadow: rgba(59, 130, 246, 0.3);
+  --brand-placeholder-bg: rgba(59, 130, 246, 0.08);
+  --brand-placeholder-border: rgba(59, 130, 246, 0.15);
 }
 
 [data-theme="dark"] {
@@ -116,6 +133,113 @@
   --info-light: #1e3a5f;
   --overlay: rgba(0, 0, 0, 0.6);
   --shadow-color: rgba(0, 0, 0, 0.2);
+
+  --accent: #f59e0b;
+  --accent-subtle: rgba(245, 158, 11, 0.16);
+
+  --brand-glow-a: rgba(59, 130, 246, 0.18);
+  --brand-glow-b: rgba(139, 92, 246, 0.16);
+  --brand-particle: rgba(96, 165, 250, 0.5);
+  --brand-hero-accent: #60a5fa;
+  --brand-gradient-a: #60a5fa;
+  --brand-gradient-b: #a78bfa;
+  --brand-btn-bg: rgba(59, 130, 246, 0.85);
+  --brand-btn-border: rgba(59, 130, 246, 0.5);
+  --brand-btn-shadow: rgba(59, 130, 246, 0.35);
+  --brand-placeholder-bg: rgba(59, 130, 246, 0.1);
+  --brand-placeholder-border: rgba(59, 130, 246, 0.18);
+}
+
+/* ----- Storefront brand themes -----
+   data-brand-theme is set on <html> from the storefront config.
+   "default" needs no override — the base palettes above apply. */
+
+[data-brand-theme="kenyan"] {
+  --primary: #15803d;
+  --primary-hover: #166534;
+  --primary-light: #dcfce7;
+  --primary-subtle: rgba(21, 128, 61, 0.1);
+  --info: #15803d;
+  --info-light: #dcfce7;
+  --accent: #dc2626;
+  --accent-subtle: rgba(220, 38, 38, 0.12);
+  --brand-glow-a: rgba(34, 197, 94, 0.18);
+  --brand-glow-b: rgba(239, 68, 68, 0.14);
+  --brand-particle: rgba(34, 197, 94, 0.5);
+  --brand-hero-accent: #4ade80;
+  --brand-gradient-a: #4ade80;
+  --brand-gradient-b: #a3e635;
+  --brand-btn-bg: rgba(22, 163, 74, 0.9);
+  --brand-btn-border: rgba(22, 163, 74, 0.55);
+  --brand-btn-shadow: rgba(22, 163, 74, 0.35);
+  --brand-placeholder-bg: rgba(22, 163, 74, 0.12);
+  --brand-placeholder-border: rgba(22, 163, 74, 0.22);
+}
+
+[data-brand-theme="kenyan"][data-theme="dark"] {
+  --primary: #4ade80;
+  --primary-hover: #22c55e;
+  --primary-light: #14532d;
+  --primary-subtle: rgba(74, 222, 128, 0.12);
+  --info: #4ade80;
+  --info-light: #14532d;
+  --accent: #f87171;
+  --accent-subtle: rgba(248, 113, 113, 0.14);
+  --brand-glow-a: rgba(34, 197, 94, 0.18);
+  --brand-glow-b: rgba(239, 68, 68, 0.14);
+  --brand-particle: rgba(74, 222, 128, 0.5);
+  --brand-hero-accent: #4ade80;
+  --brand-gradient-a: #4ade80;
+  --brand-gradient-b: #a3e635;
+  --brand-btn-bg: rgba(34, 197, 94, 0.9);
+  --brand-btn-border: rgba(34, 197, 94, 0.55);
+  --brand-btn-shadow: rgba(34, 197, 94, 0.35);
+  --brand-placeholder-bg: rgba(34, 197, 94, 0.12);
+  --brand-placeholder-border: rgba(34, 197, 94, 0.22);
+}
+
+[data-brand-theme="modern"] {
+  --primary: #6d28d9;
+  --primary-hover: #5b21b6;
+  --primary-light: #ede9fe;
+  --primary-subtle: rgba(109, 40, 217, 0.08);
+  --info: #6d28d9;
+  --info-light: #ede9fe;
+  --accent: #0891b2;
+  --accent-subtle: rgba(8, 145, 178, 0.12);
+  --brand-glow-a: rgba(139, 92, 246, 0.18);
+  --brand-glow-b: rgba(34, 211, 238, 0.15);
+  --brand-particle: rgba(167, 139, 250, 0.5);
+  --brand-hero-accent: #a78bfa;
+  --brand-gradient-a: #a78bfa;
+  --brand-gradient-b: #22d3ee;
+  --brand-btn-bg: rgba(124, 58, 237, 0.9);
+  --brand-btn-border: rgba(124, 58, 237, 0.55);
+  --brand-btn-shadow: rgba(124, 58, 237, 0.35);
+  --brand-placeholder-bg: rgba(124, 58, 237, 0.12);
+  --brand-placeholder-border: rgba(124, 58, 237, 0.22);
+}
+
+[data-brand-theme="modern"][data-theme="dark"] {
+  --primary: #a78bfa;
+  --primary-hover: #8b5cf6;
+  --primary-light: #2e1065;
+  --primary-subtle: rgba(167, 139, 250, 0.12);
+  --info: #a78bfa;
+  --info-light: #2e1065;
+  --accent: #22d3ee;
+  --accent-subtle: rgba(34, 211, 238, 0.14);
+  --brand-glow-a: rgba(139, 92, 246, 0.18);
+  --brand-glow-b: rgba(34, 211, 238, 0.15);
+  --brand-particle: rgba(167, 139, 250, 0.5);
+  --brand-hero-accent: #a78bfa;
+  --brand-gradient-a: #a78bfa;
+  --brand-gradient-b: #22d3ee;
+  --brand-btn-bg: rgba(124, 58, 237, 0.9);
+  --brand-btn-border: rgba(124, 58, 237, 0.55);
+  --brand-btn-shadow: rgba(124, 58, 237, 0.35);
+  --brand-placeholder-bg: rgba(124, 58, 237, 0.12);
+  --brand-placeholder-border: rgba(124, 58, 237, 0.22);
 }
 
 /* ----- Base ----- */
@@ -505,8 +629,8 @@ code, pre {
 }
 
 .identity-card--repair .identity-icon {
-  background: rgba(245, 158, 11, 0.14);
-  color: #f59e0b;
+  background: var(--accent-subtle);
+  color: var(--accent);
 }
 
 @media (max-width: 768px) {
@@ -2027,7 +2151,7 @@ a.order-item:hover {
 .hero-glow--1 {
   width: 500px;
   height: 500px;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.15), transparent 70%);
+  background: radial-gradient(circle, var(--brand-glow-a), transparent 70%);
   top: -100px;
   left: -100px;
 }
@@ -2035,7 +2159,7 @@ a.order-item:hover {
 .hero-glow--2 {
   width: 400px;
   height: 400px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.12), transparent 70%);
+  background: radial-gradient(circle, var(--brand-glow-b), transparent 70%);
   bottom: -80px;
   right: -80px;
   animation-delay: 2s;
@@ -2045,7 +2169,7 @@ a.order-item:hover {
   position: absolute;
   bottom: 0;
   border-radius: 50%;
-  background: rgba(96, 165, 250, 0.5);
+  background: var(--brand-particle);
   animation: heroParticle linear infinite;
 }
 
@@ -2091,7 +2215,7 @@ a.order-item:hover {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #60a5fa;
+  background: var(--brand-hero-accent);
   animation: heroGlow 1.5s ease-in-out infinite;
 }
 
@@ -2105,7 +2229,7 @@ a.order-item:hover {
 }
 
 .hero-headline-accent {
-  background: linear-gradient(135deg, #60a5fa, #a78bfa);
+  background: linear-gradient(135deg, var(--brand-gradient-a), var(--brand-gradient-b));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -2132,9 +2256,9 @@ a.order-item:hover {
 }
 
 .hero-btn-glass.btn-primary {
-  background: rgba(59, 130, 246, 0.85);
-  border-color: rgba(59, 130, 246, 0.5);
-  box-shadow: 0 4px 24px rgba(59, 130, 246, 0.3);
+  background: var(--brand-btn-bg);
+  border-color: var(--brand-btn-border);
+  box-shadow: 0 4px 24px var(--brand-btn-shadow);
 }
 
 .hero-btn-glass.btn-primary:hover {
@@ -2267,11 +2391,11 @@ a.order-item:hover {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-lg);
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.15);
+  background: var(--brand-placeholder-bg);
+  border: 1px solid var(--brand-placeholder-border);
   font-size: var(--text-2xl);
   font-weight: 700;
-  color: rgba(96, 165, 250, 0.4);
+  color: var(--brand-particle);
 }
 
 .hero-product-placeholder--large {

@@ -34,8 +34,8 @@ export function LayoutStyles() {
       50% { transform: translateY(-6px); }
     }
     @keyframes heroBadgePulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.3); }
-      50% { box-shadow: 0 0 0 8px rgba(96, 165, 250, 0); }
+      0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand-hero-accent, #60a5fa) 30%, transparent); }
+      50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--brand-hero-accent, #60a5fa) 0%, transparent); }
     }
   `}</style>;
 }
@@ -438,6 +438,7 @@ export function HomePage({ products, categories, hero }: {
     <>
       {hero?.heroActive !== false && <HeroSection products={products} hero={hero} />}
 
+      {hero?.identityBandActive !== false && (
       <section className="identity-band" aria-label="Shop and repairs">
         <div className="identity-card identity-card--shop">
           <div className="identity-icon">
@@ -460,6 +461,7 @@ export function HomePage({ products, categories, hero }: {
           <Link href="/repairs" className="btn btn-secondary btn-sm">Book a repair</Link>
         </div>
       </section>
+      )}
 
       <div style={{ width: "100%", padding: "0 var(--space-5)" }}>
         {categories.length > 0 && (

@@ -20,6 +20,8 @@ export interface LayoutModule {
 
 const STATIC_LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia, mobile, custom };
 
+export const STORE_THEMES: string[] = ["default", "kenyan", "modern"];
+
 export function getLayout(layoutKey: string): LayoutModule {
   return STATIC_LAYOUTS[layoutKey] || STATIC_LAYOUTS.original;
 }
@@ -41,6 +43,7 @@ interface LayoutMeta {
 
 interface StorefrontConfig {
   layout: string;
+  theme: string;
   banners: any[];
   features: any[];
   hero: any;
@@ -52,6 +55,7 @@ interface LayoutContextType extends StorefrontConfig {
   refreshConfig: () => void;
   setLayout: (layout: string) => Promise<void>;
   setBanners: (banners: any[]) => Promise<void>;
+  setTheme: (theme: string) => Promise<void>;
   allLayouts: LayoutMeta[];
   refreshLayouts: () => void;
 }
@@ -65,14 +69,27 @@ export function useLayout(): LayoutContextType {
 }
 
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfig] = useState<StorefrontConfig>({ layout: "original", banners: [], features: [], hero: { enabled: true } });
+  const [config, setConfig] = useState<StorefrontConfig>({ layout: "original", theme: "default", banners: [], features: [], hero: { enabled: true } });
   const [configLoading, setConfigLoading] = useState(true);
   const [allLayouts, setAllLayouts] = useState<LayoutMeta[]>([]);
+
+  function applyBrandTheme(theme: string) {
+    const active = STORE_THEMES.includes(theme) ? theme : "default";
+    if (typeof document !== "undefined") {
+      if (active === "default") document.documentElement.removeAttribute("data-brand-theme");
+      else document.documentElement.setAttribute("data-brand-theme", active);
+    }
+    return active;
+  }
 
   function refreshConfig() {
     setConfigLoading(true);
     api<StorefrontConfig>("/api/storefront-config")
-      .then((d) => { if (d) setConfig(d); })
+      .then((d) => {
+        if (d) {
+          setConfig((prev) => ({ ...prev, ...d, theme: applyBrandTheme(d.theme) }));
+        }
+      })
       .catch(() => {})
       .finally(() => setConfigLoading(false));
   }
@@ -83,7 +100,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }
 
-  useEffect(() => { refreshConfig(); refreshLayouts(); }, []);
+  useEffect(() => { applyBrandTheme("default"); refreshConfig(); refreshLayouts(); }, []);
 
   async function setLayout(layout: string) {
     await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ layout }) });
@@ -96,8 +113,13 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
     refreshConfig();
   }
 
+  async function setTheme(theme: string) {
+    await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ theme }) });
+    refreshConfig();
+  }
+
   return (
-    <LayoutContext.Provider value={{ ...config, configLoading, refreshConfig, setLayout, setBanners, allLayouts, refreshLayouts }}>
+    <LayoutContext.Provider value={{ ...config, configLoading, refreshConfig, setLayout, setBanners, setTheme, allLayouts, refreshLayouts }}>
       {children}
     </LayoutContext.Provider>
   );

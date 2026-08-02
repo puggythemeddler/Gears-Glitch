@@ -2495,11 +2495,13 @@ function AdminStorefront() {
   const [cfg, setCfg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [theme, setTheme] = useState("default");
   const [catList, setCatList] = useState<{ id: string; label: string }[]>([]);
   const [bannerInputs, setBannerInputs] = useState<{ title: string; subtitle: string }[]>([]);
   const [heroForm, setHeroForm] = useState({
     heroActive: true,
     badgeActive: true,
+    identityBandActive: true,
     badgeText: "Summer Tech Sale — Up to 30% Off",
     badgeLink: "",
     headline: "Power Your",
@@ -2535,6 +2537,7 @@ function AdminStorefront() {
     try {
       const d = await api<any>("/api/admin/storefront-layout");
       setCfg(d);
+      setTheme(d.theme || "default");
       setBannerInputs((d.banners || []).map((b: any) => ({ title: b.title || "", subtitle: b.subtitle || "" })));
       if (d.hero) {
         const h = { ...d.hero };
@@ -2554,7 +2557,7 @@ function AdminStorefront() {
 
   useEffect(() => { load(); }, []);
 
-  const { allLayouts } = useLayout();
+  const { allLayouts, refreshConfig } = useLayout();
   const layouts = allLayouts.length > 0
     ? allLayouts.map((l) => ({ key: l.layout_key, label: l.label, desc: l.description, type: l.layout_type, id: l.id, isActive: l.is_active }))
     : getLayoutList().map((l) => ({ ...l, type: "static" as const, id: 0, isActive: 0 }));
@@ -2587,6 +2590,20 @@ function AdminStorefront() {
     finally { setSaving(false); }
   }
 
+  async function saveTheme(key: string) {
+    if (key === theme) return;
+    setSaving(true);
+    try { await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ theme: key }) }); setTheme(key); await load(); refreshConfig(); }
+    catch {}
+    finally { setSaving(false); }
+  }
+
+  const THEME_CARDS = [
+    { key: "default", label: "Default", desc: "Gear&Glitch signature blue", swatches: ["#2563eb", "#60a5fa", "#f59e0b"] },
+    { key: "kenyan", label: "Kenyan", desc: "Green primary with red & black accents — Kenyan flag inspired", swatches: ["#15803d", "#dc2626", "#0f172a"] },
+    { key: "modern", label: "Modern", desc: "Violet + cyan — sleek and contemporary", swatches: ["#6d28d9", "#0891b2", "#a78bfa"] },
+  ];
+
   if (loading) return <Spinner />;
 
   return (
@@ -2608,6 +2625,25 @@ function AdminStorefront() {
             {cfg?.layout === l.key && <span className="badge badge-green" style={{ marginTop: "0.5rem" }}>Active</span>}
           </div>
         ))}
+      </div>
+
+      <div className="panel" style={{ marginBottom: "1rem" }}>
+        <h3>Store Theme</h3>
+        <p className="muted" style={{ fontSize: "0.85rem" }}>Pick a color theme for the whole storefront. Applied instantly to your live site.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+          {THEME_CARDS.map((t) => (
+            <div key={t.key} className="panel" style={{ border: theme === t.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer", margin: 0 }} onClick={() => saveTheme(t.key)}>
+              <div style={{ display: "flex", gap: "0.35rem", height: 36, borderRadius: 8, overflow: "hidden", marginBottom: "0.75rem" }}>
+                {t.swatches.map((c) => <div key={c} style={{ flex: 1, background: c }} />)}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <h3 style={{ margin: 0, fontSize: "0.95rem" }}>{t.label}</h3>
+                {theme === t.key && <span className="badge badge-green">Active</span>}
+              </div>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--text-secondary)" }}>{t.desc}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
@@ -2644,6 +2680,14 @@ function AdminStorefront() {
               <input type="checkbox" checked={heroForm.badgeActive} onChange={(e) => setHeroForm({ ...heroForm, badgeActive: e.target.checked })} style={{ width: 18, height: 18 }} disabled={heroForm.heroActive === false} />
               Show announcement badge
             </label>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem" }}>
+              <input type="checkbox" checked={heroForm.identityBandActive !== false} onChange={(e) => setHeroForm({ ...heroForm, identityBandActive: e.target.checked })} style={{ width: 18, height: 18 }} disabled={heroForm.heroActive === false} />
+              Show shop &amp; repair band
+            </label>
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "0.25rem 0 0 1.75rem" }}>The "Shop premium tech" and "Need a repair?" cards under the hero.</p>
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>
