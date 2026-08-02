@@ -55,7 +55,7 @@ export default function ContactPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
               <p><strong>Email:</strong> {settings.email || "info@gearandglitch.com"}</p>
               <p><strong>Phone:</strong> {settings.phone || "Contact us via email"}</p>
-              <p><strong>Store:</strong> {settings.storeName || "Gear&Glitch"}</p>
+              <p><strong>Store:</strong> {settings.storeName || "My Shop"}</p>
             </div>
           ) : (
             <p>Loading contact details...</p>

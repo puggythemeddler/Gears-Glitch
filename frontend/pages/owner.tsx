@@ -1189,7 +1189,7 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
   }
 
   const THEME_CARDS = [
-    { key: "default", label: "Default", desc: "Gear&Glitch signature blue", swatches: ["#2563eb", "#60a5fa", "#f59e0b"] },
+    { key: "default", label: "Default", desc: "Classic blue", swatches: ["#2563eb", "#60a5fa", "#f59e0b"] },
     { key: "kenyan", label: "Kenyan", desc: "Green primary with red & black accents — Kenyan flag inspired", swatches: ["#15803d", "#dc2626", "#0f172a"] },
     { key: "modern", label: "Modern", desc: "Violet + cyan — sleek and contemporary", swatches: ["#6d28d9", "#0891b2", "#a78bfa"] },
   ];

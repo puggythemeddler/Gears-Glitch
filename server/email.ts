@@ -65,7 +65,7 @@ function wrapTemplate(title: string, bodyHtml: string): string {
 <div style="max-width:600px;margin:24px auto;background:#ffffff;border-radius:8px;border:1px solid #e5e7eb;overflow:hidden;">
 <div style="background:#1e293b;padding:20px 24px;"><h1 style="margin:0;color:#f8fafc;font-size:18px;">${title}</h1></div>
 <div style="padding:24px;color:#334155;font-size:14px;line-height:1.6;">${bodyHtml}</div>
-<div style="padding:16px 24px;background:#f8fafc;border-top:1px solid #e5e7eb;font-size:12px;color:#94a3b8;text-align:center;">Gear&Glitch — Automated Notification</div>
+<div style="padding:16px 24px;background:#f8fafc;border-top:1px solid #e5e7eb;font-size:12px;color:#94a3b8;text-align:center;">Automated Notification</div>
 </div></body></html>`;
 }
 
@@ -74,14 +74,14 @@ export function messageNotificationEmail(senderName: string, senderRole: string,
   const html = wrapTemplate(title, `
 <p>You have a new message from <strong>${esc(senderName)}</strong> (${esc(senderRole)}):</p>
 ${subject ? `<p><strong>Subject:</strong> ${esc(subject)}</p>` : ""}
-<div style="background:#f1f5f9;border-left:3px solid #3b82f6;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;white-space:pre-wrap;">${esc(preview)}</div>
+<div style="background:#f1f5f9;padding:12px 16px;margin:16px 0;border-radius:6px;white-space:pre-wrap;">${esc(preview)}</div>
 <p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View & Reply</a></p>
 `);
   return { subject: title, html };
 }
 
-export function quoteEmail(customerName: string, quoteNumber: string, total: string, currency: string, notes: string, dashboardUrl: string): { subject: string; html: string } {
-  const title = `Quote ${esc(quoteNumber)} from Gear&Glitch`;
+export function quoteEmail(customerName: string, quoteNumber: string, total: string, currency: string, notes: string, dashboardUrl: string, storeName: string = "My Shop"): { subject: string; html: string } {
+  const title = `Quote ${esc(quoteNumber)} from ${esc(storeName)}`;
   const html = wrapTemplate(title, `
 <p>Hi ${esc(customerName)},</p>
 <p>A new quote has been prepared for you.</p>
@@ -95,8 +95,8 @@ ${notes ? `<p style="margin:8px 0 0;"><strong>Notes:</strong> ${esc(notes)}</p>`
   return { subject: title, html };
 }
 
-export function creditNoteEmail(customerName: string, creditNoteId: number, reason: string, amount: string, currency: string, dashboardUrl: string): { subject: string; html: string } {
-  const title = `Credit Note #${creditNoteId} — Gear&Glitch`;
+export function creditNoteEmail(customerName: string, creditNoteId: number, reason: string, amount: string, currency: string, dashboardUrl: string, storeName: string = "My Shop"): { subject: string; html: string } {
+  const title = `Credit Note #${creditNoteId} — ${esc(storeName)}`;
   const html = wrapTemplate(title, `
 <p>Hi ${esc(customerName)},</p>
 <p>A credit note has been issued for your order.</p>

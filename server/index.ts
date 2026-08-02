@@ -2758,7 +2758,7 @@ app.post("/api/admin/credit-notes", ownerAuthMiddleware, asyncHandler(async (req
   res.status(201).json(finalCn || cn);
   if (order.customerEmail) {
     const settings = await getSettings();
-    const { subject: emailSub, html } = creditNoteEmail(order.customerName || "Customer", cn.id, reason || "", String(cn.totalAmount || order.subtotal || 0), settings.currency, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`);
+    const { subject: emailSub, html } = creditNoteEmail(order.customerName || "Customer", cn.id, reason || "", String(cn.totalAmount || order.subtotal || 0), settings.currency, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`, settings.storeName);
     sendEmail(order.customerEmail, emailSub, html, "credit_note");
   }
 }));
@@ -4763,7 +4763,7 @@ app.post("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:vi
     const cust = await findCustomerById(customerId);
     if (cust && cust.email && cust.email !== "walkin@pos") {
       const settings = await getSettings();
-      const { subject: emailSub, html } = quoteEmail(cust.name || customerName || "Customer", quote.quoteNumber, String(quote.total), settings.currency, notes || "", `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+      const { subject: emailSub, html } = quoteEmail(cust.name || customerName || "Customer", quote.quoteNumber, String(quote.total), settings.currency, notes || "", `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`, settings.storeName);
       sendEmail(cust.email, emailSub, html, "quote");
     }
   } catch (err: any) {

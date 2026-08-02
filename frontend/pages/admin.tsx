@@ -2599,7 +2599,7 @@ function AdminStorefront() {
   }
 
   const THEME_CARDS = [
-    { key: "default", label: "Default", desc: "Gear&Glitch signature blue", swatches: ["#2563eb", "#60a5fa", "#f59e0b"] },
+    { key: "default", label: "Default", desc: "Classic blue", swatches: ["#2563eb", "#60a5fa", "#f59e0b"] },
     { key: "kenyan", label: "Kenyan", desc: "Green primary with red & black accents — Kenyan flag inspired", swatches: ["#15803d", "#dc2626", "#0f172a"] },
     { key: "modern", label: "Modern", desc: "Violet + cyan — sleek and contemporary", swatches: ["#6d28d9", "#0891b2", "#a78bfa"] },
   ];
@@ -5637,7 +5637,7 @@ function AdminEmailSettings() {
         </div>
         <div className="field">
           <label>Sender Display Name
-            <input type="text" value={settings?.emailSenderName || ""} onChange={(e) => setSettings({ ...settings, emailSenderName: e.target.value })} placeholder="Gear&Glitch" />
+            <input type="text" value={settings?.emailSenderName || ""} onChange={(e) => setSettings({ ...settings, emailSenderName: e.target.value })} placeholder="My Shop" />
           </label>
         </div>
         <div className="field">

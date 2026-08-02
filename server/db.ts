@@ -1515,7 +1515,7 @@ async function getSettings(): Promise<Settings> {
   const s: { [key: string]: string } = {};
   for (const row of rows) s[row.key] = row.value;
   return {
-    storeName: s.storeName || "Gear&Glitch",
+    storeName: s.storeName || process.env.STORE_NAME || "My Shop",
     phone: s.phone || "",
     email: s.email || "",
     currency: s.currency || "KES",
@@ -1529,7 +1529,7 @@ async function getSettings(): Promise<Settings> {
     cloudinaryFolder: s.cloudinaryFolder || process.env.CLOUDINARY_FOLDER || "gear-glitch",
     logoPosition: s.logoPosition || "top-left",
     emailSender: s.emailSender || process.env.FROM_EMAIL || "",
-    emailSenderName: s.emailSenderName || process.env.SITE_NAME || "Gear&Glitch",
+    emailSenderName: s.emailSenderName || process.env.STORE_NAME || process.env.SITE_NAME || "Gear&Glitch",
     emailNotificationsEnabled: s.emailNotificationsEnabled !== "false",
     whatsappEnabled: s.whatsappEnabled === "true",
     whatsappPhoneNumberId: s.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || "",

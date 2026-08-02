@@ -34,7 +34,7 @@ export default function CampaignPage() {
   return (
     <>
       <Head>
-        <title>{campaign?.title || "Campaign"} — Gear&Glitch</title>
+        <title>{campaign?.title || "Campaign"} — My Shop</title>
         {campaign?.description ? <meta name="description" content={campaign.description} /> : null}
       </Head>
       {loading ? (

@@ -6,7 +6,7 @@ import { useLayout, LayoutEngine } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import { useRouter } from "next/router";
 
-const SITE = "Gear&Glitch";
+const SITE = "My Shop";
 const BASE = process.env.NEXT_PUBLIC_SITE_URL || "https://gearsandglitch.co.ke";
 
 export default function HomePage() {
