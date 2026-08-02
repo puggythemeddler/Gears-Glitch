@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
-import { api, isCustomerLoggedIn, requireCustomerLogin } from "@/lib/api";
+import { api, isCustomerLoggedIn, requireCustomerLogin, addGuestCartItem } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import type { Product, ProductImage } from "@/lib/types";
 import { escapeHtml } from "@/lib/sanitize";
@@ -12,7 +12,7 @@ function productInitials(name: string) {
 export default function ProductPage() {
   const router = useRouter();
   const { id } = router.query;
-  const { formatPrice } = useApp();
+  const { formatPrice, refreshCartCount } = useApp();
   const [product, setProduct] = useState<Product | null>(null);
   const [images, setImages] = useState<ProductImage[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -91,9 +91,14 @@ export default function ProductPage() {
   }, [images.length]);
 
   async function addToCart() {
-    if (!requireCustomerLogin(`/product?id=${id}`)) return;
+    if (!id) return;
     try {
-      await api("/api/cart", { method: "POST", body: JSON.stringify({ productId: id, quantity }) });
+      if (isCustomerLoggedIn()) {
+        await api("/api/cart", { method: "POST", body: JSON.stringify({ productId: id, quantity }) });
+      } else {
+        addGuestCartItem(id as string, quantity);
+      }
+      refreshCartCount();
       setStatusMsg({ text: `Added ${quantity} item${quantity > 1 ? "s" : ""} to cart!` });
     } catch (err: any) {
       setStatusMsg({ text: err.message, error: true });
@@ -322,9 +327,12 @@ export default function ProductPage() {
               {statusMsg.text}
             </p>
           )}
-          <p className="muted" style={{ fontSize: "0.85rem" }}>
-            You must <a href={`/login?redirect=${encodeURIComponent(`/product?id=${product.id}`)}`}>sign in or create an account</a> to use the cart.
-          </p>
+          {!isCustomerLoggedIn() && (
+            <p className="muted" style={{ fontSize: "0.85rem" }}>
+              Adding to cart saves items on this device.{" "}
+              <a href={`/login?redirect=${encodeURIComponent(`/product?id=${product.id}`)}`}>Sign in</a> when ready to check out and sync across devices.
+            </p>
+          )}
         </div>
       </article>
 

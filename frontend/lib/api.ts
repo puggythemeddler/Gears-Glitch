@@ -1,8 +1,72 @@
 const CUSTOMER_TOKEN_KEY = "customerStoreToken";
 const STAFF_TOKEN_KEY = "computerStoreToken";
 const PROVIDER_TOKEN_KEY = "providerToken";
+const GUEST_CART_KEY = "guestCart";
 
 let csrfToken: string | null = null;
+
+export interface GuestCartItem {
+  productId: string;
+  quantity: number;
+}
+
+export function getGuestCart(): GuestCartItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(GUEST_CART_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((i: any) => i && i.productId && Number.isFinite(Number(i.quantity))) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setGuestCart(items: GuestCartItem[]): void {
+  try { localStorage.setItem(GUEST_CART_KEY, JSON.stringify(items)); } catch {}
+}
+
+export function addGuestCartItem(productId: string, quantity: number = 1): GuestCartItem[] {
+  const items = getGuestCart();
+  const existing = items.find((i) => i.productId === productId);
+  if (existing) existing.quantity += quantity;
+  else items.push({ productId, quantity });
+  setGuestCart(items);
+  return items;
+}
+
+export function updateGuestCartQuantity(productId: string, quantity: number): GuestCartItem[] {
+  const items = getGuestCart();
+  if (quantity <= 0) return removeGuestCartItem(productId);
+  const existing = items.find((i) => i.productId === productId);
+  if (existing) existing.quantity = quantity;
+  setGuestCart(items);
+  return items;
+}
+
+export function removeGuestCartItem(productId: string): GuestCartItem[] {
+  const items = getGuestCart().filter((i) => i.productId !== productId);
+  setGuestCart(items);
+  return items;
+}
+
+export function clearGuestCart(): void {
+  setGuestCart([]);
+}
+
+export function getGuestCartCount(): number {
+  return getGuestCart().reduce((sum, i) => sum + i.quantity, 0);
+}
+
+export async function migrateGuestCartToServer(): Promise<void> {
+  const items = getGuestCart();
+  if (items.length === 0 || !isCustomerLoggedIn()) return;
+  for (const it of items) {
+    try {
+      await api("/api/cart", { method: "POST", body: JSON.stringify({ productId: it.productId, quantity: it.quantity }) });
+    } catch {}
+  }
+  clearGuestCart();
+}
 
 export async function initCsrf() {
   try {

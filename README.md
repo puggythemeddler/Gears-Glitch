@@ -37,6 +37,8 @@ A complete multi-branch sales & management system with product catalog, customer
 - Admin-controllable hero section with badge, headline, rotating headline variants, CTA buttons, category chips, live stats from your data, auto-rotating featured-product carousel, sale countdown timer, WhatsApp chat CTA, payment & delivery trust strip, and on/off toggle
 - Product catalog with image galleries, primary image management, subcategories with multi-category sharing, sale price (strikethrough pricing), and drag-and-drop product positioning
 - Two-step checkout with delivery details (Kenyan counties), payment method selection, and order tracking (`pending` → `confirmed` → `shipped` → `delivered`)
+- Guest cart — add items without an account; the cart is stored on the device and automatically merged into the account on sign-in, removing the sign-in wall at the first add-to-cart
+- Checkout review step — a "Review order" confirmation shows items, shipping details, discounts, and the total before the order is placed
 - Customer accounts with purchase history, repair records, order history, and communication log; unified login with Google Sign-In
 - Product rating & review system (1–5 stars, one review per customer, admin moderation, rating distribution charts)
 - Dark/light theme toggle, responsive design (mobile, tablet, desktop), full-width storefront (no side gutters)
@@ -109,6 +111,7 @@ A complete multi-branch sales & management system with product catalog, customer
 
 ## Recent highlights
 
+- **Storefront polish pass** — Conversion and clarity improvements across the storefront. **Guest cart**: "Add to cart" no longer requires sign-in — items are saved on the device (`localStorage`) with a live header badge, and automatically merged into the account when the customer signs in, so guest carts are never lost. **Checkout review step**: the cart now shows a "Review order" confirmation (items, shipping address, discounts, totals, payment method) before placing the order instead of charging straight from the form. **Catalog pagination**: homepage and search results are paginated (24 per page) with numbered controls, and search now matches product name, category, subcategory, specs, and description. **Decluttered header**: Cart and Wishlist moved from text links to icon buttons with a live count badge — the right-side nav is now Repairs · About · Contact. **Dual identity strip**: the Original homepage hero is followed by a "Shop premium tech / Need a repair?" band so both the product and repair sides of the business are promoted above the fold.
 - **Control-plane CSP button fix** — The CSP added in commit `589fcfc` silently broke every button on the control-plane dashboard. Helmet 7 appends `script-src-attr 'none'` to any policy that doesn't set `scriptSrcAttr` explicitly, and the dashboard wires all 89 of its controls through inline `onclick=` handlers — so every click was blocked by the browser. Fixed by adding `scriptSrcAttr: ["'self'", "'unsafe-inline'"]` to the control plane's helmet config (`control-plane/server/index.ts`). Confirmed with a Chrome headless A/B test: `'none'` → handler blocked, `'unsafe-inline'` → handler fires.
 - **Control-plane notification bell** — An in-app notification center (`cp_notifications` table) with unread-count badge and dropdown panel. Alerts are generated on every health cycle and deduplicated (never re-fire): payment due (1 week / 2 days / due today), payment overdue, client DOWN (auto-clears on recovery), usage over plan limits (auto-clears), deploy failures, backup failures, provisioning failures, and new pending plan-upgrade requests. Mark-all-read, click-through to the client, 60s polling.
 - **Payment reminders & automatic deactivation** — `GET /api/payment-reminders` computes 1-week, 2-day, due, and overdue windows from each client's `next_payment_date` and surfaces them in a reminders banner. `enforceSubscriptionPayments()` auto-suspends (never deletes) any active client whose `subscription_expires` is past the `SUSPEND_GRACE_DAYS` grace period (default 3) — setting the app-level suspend flag, pausing the Render service, and sending a Slack alert. `suspendClientRecord()` / `resumeClientRecord()` are shared by the auto-deactivator and the manual Suspend/Resume buttons.
@@ -307,13 +310,13 @@ Opens **http://localhost:3000** in a browser.
 
 | URL | Who | What You Can Do |
 |-----|-----|-----------------|
-| `/` | Everyone | Browse products by category |
+| `/` | Everyone | Browse the paginated catalog; search matches name, category, subcategory, specs, and description |
 | `/product?id=xxx` | Everyone | Product details, specs, image gallery with lightbox |
 | `/pos` | Staff | Point of Sale — product grid, cart, payment method selector (configurable), customer lookup, cash change calculator, thermal receipt & A4 invoice print. Stock deducted from both `stock_on_hand` and `stock_levels` per branch. |
 | `/login` | Everyone | Unified sign-in — customer, staff, provider (Google Sign-In supported) |
 | `/dashboard` | Customers & Providers | Orders, repairs, wishlist, messages (customer) or subscription, invoices (provider) |
 | `/about` | Everyone | About Us page — content editable by admin/owner |
-| `/cart` | Customers | Shopping cart — manage quantities, then Checkout creates pending order and redirects to order detail |
+| `/cart` | Everyone | Shopping cart — works without an account (guest items are saved on the device and merged at sign-in); manage quantities, then Review order confirms details before placing |
 | `/campaign/[slug]` | Everyone | Public promotional landing pages created in admin → Campaigns (hero banner + curated product grid) |
 | `/groups` | Everyone | Storefront index of all active product groups with product counts |
 | `/group/[slug]` | Everyone | Product grid for a single active group (e.g. `/group/gaming-pcs`) |

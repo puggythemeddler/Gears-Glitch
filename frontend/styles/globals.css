@@ -324,6 +324,40 @@ code, pre {
   color: var(--primary);
 }
 
+.header-icon-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.header-icon-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.header-icon-link:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.header-icon-link .cart-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 0;
+  vertical-align: baseline;
+}
+
 @media (max-width: 1024px) {
   .main-nav-desktop a { padding: var(--space-1) var(--space-1); font-size: var(--text-xs); }
 }
@@ -414,6 +448,75 @@ code, pre {
   max-height: 56px;
   width: auto;
   display: block;
+}
+
+/* ----- Identity band (shop + repairs) ----- */
+.identity-band {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 1440px;
+  margin: var(--space-4) auto 0;
+  padding: 0 var(--space-5);
+}
+
+.identity-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition: transform var(--duration-med) ease, box-shadow var(--duration-med) ease, border-color var(--duration-med) ease;
+}
+
+.identity-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.identity-card h3 {
+  margin: 0 0 0.25rem;
+  font-size: var(--text-lg);
+}
+
+.identity-card p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.identity-card .btn {
+  flex-shrink: 0;
+}
+
+.identity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: var(--radius-lg);
+  background: var(--primary-subtle, rgba(96, 165, 250, 0.12));
+  color: var(--primary);
+}
+
+.identity-card--repair .identity-icon {
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+@media (max-width: 768px) {
+  .identity-band {
+    grid-template-columns: 1fr;
+    padding: 0 var(--space-4);
+  }
+  .identity-card {
+    flex-wrap: wrap;
+  }
 }
 
 /* ----- Springboard Menu ----- */

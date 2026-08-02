@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useState } from "react";
-import { api, isCustomerLoggedIn } from "@/lib/api";
+import { api, isCustomerLoggedIn, getGuestCart, updateGuestCartQuantity, removeGuestCartItem } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import type { CartItem, County } from "@/lib/types";
+import type { CartItem, County, Product } from "@/lib/types";
 import EmptyCartAnimation from "@/components/EmptyCartAnimation";
 import SantaGearAnimation from "@/components/SantaGearAnimation";
 
@@ -10,7 +10,7 @@ function escapeHtml(text: string) {
 }
 
 export default function CartPage() {
-  const { formatPrice } = useApp();
+  const { formatPrice, refreshCartCount } = useApp();
   const [items, setItems] = useState<CartItem[]>([]);
   const [counties, setCounties] = useState<County[]>([]);
   const [selectedCounty, setSelectedCounty] = useState("");
@@ -23,8 +23,8 @@ export default function CartPage() {
   const [statusMsg, setStatusMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
-  const [mounted, setMounted] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponMsg, setCouponMsg] = useState("");
@@ -37,10 +37,12 @@ export default function CartPage() {
   const [pointsMsg, setPointsMsg] = useState("");
 
   useEffect(() => {
-    setMounted(true);
     const ok = isCustomerLoggedIn();
     setLoggedIn(ok);
-    if (!ok) { setPageLoading(false); return; }
+    if (!ok) {
+      loadGuestCart();
+      return;
+    }
     loadCart();
     api<{ counties: County[] }>("/api/shipping/counties").then((d) => setCounties(d.counties || [])).catch(() => {});
     api<any>("/api/public-settings").then((s) => {
@@ -48,6 +50,28 @@ export default function CartPage() {
     }).catch(() => {});
     api<{ points: number }>("/api/loyalty/points").then((d) => setLoyaltyPoints(d.points)).catch(() => {});
   }, []);
+
+  async function loadGuestCart() {
+    const guest = getGuestCart();
+    const hydrated: CartItem[] = [];
+    await Promise.all(guest.map(async (g) => {
+      try {
+        const p = await api<Product>(`/api/products/${encodeURIComponent(g.productId)}`);
+        hydrated.push({
+          productId: p.id,
+          name: p.name,
+          price: p.price,
+          quantity: g.quantity,
+          lineTotal: p.price * g.quantity,
+          imageUrl: p.imageUrl,
+          hasWarranty: p.hasWarranty,
+          warrantyDuration: p.warrantyDuration,
+        });
+      } catch {}
+    }));
+    setItems(hydrated);
+    setPageLoading(false);
+  }
 
   async function loadCart() {
     try {
@@ -65,21 +89,34 @@ export default function CartPage() {
 
   async function updateQty(productId: string, quantity: number) {
     if (quantity < 1) return;
-    try {
-      await api(`/api/cart/${encodeURIComponent(productId)}`, { method: "PATCH", body: JSON.stringify({ quantity }) });
-      await loadCart();
-    } catch (err: any) { setStatusMsg({ text: err.message, error: true }); }
+    if (isCustomerLoggedIn()) {
+      try {
+        await api(`/api/cart/${encodeURIComponent(productId)}`, { method: "PATCH", body: JSON.stringify({ quantity }) });
+        await loadCart();
+      } catch (err: any) { setStatusMsg({ text: err.message, error: true }); }
+    } else {
+      updateGuestCartQuantity(productId, quantity);
+      setItems((prev) => prev.map((it) => it.productId === productId ? { ...it, quantity, lineTotal: it.price * quantity } : it));
+      refreshCartCount();
+    }
   }
 
   async function removeItem(productId: string) {
-    try {
-      await api(`/api/cart/${encodeURIComponent(productId)}`, { method: "DELETE" });
-      await loadCart();
-    } catch (err: any) { setStatusMsg({ text: err.message, error: true }); }
+    if (isCustomerLoggedIn()) {
+      try {
+        await api(`/api/cart/${encodeURIComponent(productId)}`, { method: "DELETE" });
+        await loadCart();
+      } catch (err: any) { setStatusMsg({ text: err.message, error: true }); }
+    } else {
+      removeGuestCartItem(productId);
+      setItems((prev) => prev.filter((it) => it.productId !== productId));
+      refreshCartCount();
+    }
   }
 
   const subtotal = items.reduce((s, i) => s + i.lineTotal, 0);
   const total = subtotal + shippingFee - couponDiscount - giftCardDiscount - pointsDiscount;
+  const shippingCountyLabel = counties.find((c) => c.id === Number(selectedCounty))?.name || selectedCounty;
 
   async function applyGiftCard() {
     if (!giftCardCode.trim()) return;
@@ -107,14 +144,25 @@ export default function CartPage() {
     }
   }
 
-  async function checkout() {
+  function reviewOrder() {
+    if (!isCustomerLoggedIn()) {
+      window.location.href = `/login?redirect=/cart`;
+      return;
+    }
+    if (items.length === 0) return;
+    if (!shippingName.trim() || !shippingAddress.trim() || !selectedCounty) {
+      setStatusMsg({ text: "Please fill in name, address, and county.", error: true });
+      return;
+    }
+    setStatusMsg(null);
+    setReviewOpen(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function placeOrder() {
     setLoading(true);
     setStatusMsg(null);
     try {
-      if (!shippingName.trim() || !shippingAddress.trim() || !selectedCounty) {
-        setStatusMsg({ text: "Please fill in name, address, and county.", error: true });
-        setLoading(false); return;
-      }
       const body: any = {
         shippingName: shippingName.trim(),
         shippingAddress: shippingAddress.trim(),
@@ -136,20 +184,6 @@ export default function CartPage() {
     } finally { setLoading(false); }
   }
 
-  if (mounted && !loggedIn) {
-    return (
-      <>
-        <h1>Cart</h1>
-        <div className="empty-state">
-          <div className="empty-state-icon" style={{ fontSize: "3rem" }}>🛒</div>
-          <div className="empty-state-title">Sign in to view your cart</div>
-          <div className="empty-state-desc">Please sign in to see the items in your shopping cart.</div>
-          <a href="/login?redirect=/cart" className="btn btn-primary">Sign in</a>
-        </div>
-      </>
-    );
-  }
-
   return (
     <>
       <nav className="breadcrumbs" aria-label="Breadcrumb">
@@ -162,6 +196,13 @@ export default function CartPage() {
       <div style={{ marginBottom: "1rem" }}>
         <a href="/" className="btn btn-ghost btn-sm">&larr; Continue shopping</a>
       </div>
+
+      {!loggedIn && items.length > 0 && (
+        <div className="panel" style={{ marginBottom: "1rem", display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: "0.9rem" }}>Your cart is saved on this device. Sign in to check out and keep it synced.</span>
+          <a href="/login?redirect=/cart" className="btn btn-sm btn-primary">Sign in</a>
+        </div>
+      )}
 
       {pageLoading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
@@ -267,10 +308,46 @@ export default function CartPage() {
               <input id="mpesaPhone" type="tel" className="input" value={mpesaPhone} onChange={(e) => setMpesaPhone(e.target.value)} placeholder="e.g. 0712345678" />
             </div>
             {statusMsg && <p className={`form-status${statusMsg.error ? " error" : ""}`}>{statusMsg.text}</p>}
-            <button className="btn btn-primary btn-block" onClick={checkout} disabled={loading}>
-              {loading ? "Processing..." : "Checkout"}
+            <button className="btn btn-primary btn-block" onClick={reviewOrder} disabled={loading || items.length === 0}>
+              {isCustomerLoggedIn() ? "Review order" : "Sign in to check out"}
             </button>
           </div>
+
+          {reviewOpen && (
+            <div className="panel" style={{ marginTop: "1.5rem" }}>
+              <h3 style={{ margin: "0 0 0.25rem" }}>Review your order</h3>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0 0 1rem" }}>Please confirm the details below before placing your order.</p>
+
+              <div style={{ marginBottom: "1rem" }}>
+                {items.map((item) => (
+                  <div key={item.productId} style={{ display: "flex", justifyContent: "space-between", gap: "1rem", padding: "0.5rem 0", borderBottom: "1px solid var(--border)", fontSize: "0.9rem" }}>
+                    <span style={{ flex: 1 }}>{escapeHtml(item.name)} <span style={{ color: "var(--text-secondary)" }}>&times; {item.quantity}</span></span>
+                    <span style={{ whiteSpace: "nowrap" }}>{formatPrice(item.lineTotal)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="cart-summary__row"><span>Shipping to</span><span style={{ textAlign: "right" }}>{escapeHtml(shippingName)}<br />{escapeHtml(shippingAddress)}, {escapeHtml(shippingCountyLabel)}</span></div>
+              {shippingPhone.trim() && <div className="cart-summary__row"><span>Phone</span><span>{escapeHtml(shippingPhone)}</span></div>}
+              {mpesaPhone.trim() && <div className="cart-summary__row"><span>M-Pesa number</span><span>{escapeHtml(mpesaPhone)}</span></div>}
+              {couponDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Coupon discount</span><span style={{ color: "#16a34a" }}>-{formatPrice(couponDiscount)}</span></div>}
+              {giftCardDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Gift card</span><span style={{ color: "#16a34a" }}>-{formatPrice(giftCardDiscount)}</span></div>}
+              {pointsDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Points discount</span><span style={{ color: "#16a34a" }}>-{formatPrice(pointsDiscount)}</span></div>}
+              <div className="cart-summary__row"><span>Shipping</span><span>{shippingFee > 0 ? formatPrice(shippingFee) : "—"}</span></div>
+              <div className="cart-summary__total cart-summary__row"><span>Total</span><span>{formatPrice(total)}</span></div>
+
+              {tillNumber && <p style={{ fontSize: "0.85rem", margin: "0.5rem 0" }}>You'll pay via M-Pesa Till: <strong>{tillNumber}</strong></p>}
+
+              <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem", flexWrap: "wrap" }}>
+                <button className="btn btn-primary" onClick={placeOrder} disabled={loading}>
+                  {loading ? "Placing order..." : "Place order"}
+                </button>
+                <button className="btn btn-ghost" onClick={() => { setReviewOpen(false); setStatusMsg(null); }} disabled={loading}>
+                  Back to edit
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
     </>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
-import { api, setCustomerSession, clearCustomerSession, clearStaffSession, clearProviderSession } from "@/lib/api";
+import { api, setCustomerSession, clearCustomerSession, clearStaffSession, clearProviderSession, migrateGuestCartToServer } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 
 declare global {
@@ -10,7 +10,7 @@ declare global {
 }
 
 export default function LoginPage() {
-  const { login: contextLogin } = useApp();
+  const { login: contextLogin, refreshCartCount } = useApp();
   const router = useRouter();
   const { redirect } = router.query;
   const [tab, setTab] = useState<"customer" | "staff">("customer");
@@ -24,6 +24,13 @@ export default function LoginPage() {
   const [totpCode, setTotpCode] = useState("");
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const gisLoadedRef = useRef(false);
+
+  async function finishCustomerLogin(token: string, displayName: string) {
+    setCustomerSession(token, displayName);
+    contextLogin(token, displayName);
+    await migrateGuestCartToServer();
+    refreshCartCount();
+  }
 
   useEffect(() => {
     api<{ googleClientId: string }>("/api/public-settings").then((d) => setGoogleClientId(d.googleClientId || "")).catch(() => {});
@@ -64,8 +71,7 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({ credential: response.credential }),
       });
-      setCustomerSession(data.token, data.name || "Customer");
-      contextLogin(data.token, data.name || "Customer");
+      await finishCustomerLogin(data.token, data.name || "Customer");
       router.push((redirect as string) || "/dashboard");
     } catch (err: any) {
       setError(err.message || "Google sign-in failed");
@@ -86,8 +92,7 @@ export default function LoginPage() {
           method: "POST",
           body: JSON.stringify({ email, password }),
         });
-        setCustomerSession(data.token, data.name || "Customer");
-        contextLogin(data.token, data.name || "Customer");
+        await finishCustomerLogin(data.token, data.name || "Customer");
         router.push((redirect as string) || "/dashboard");
       } else {
         clearCustomerSession();

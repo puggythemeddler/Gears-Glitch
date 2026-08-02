@@ -16,6 +16,8 @@ export default function HomePage() {
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 24;
   const { banners } = useLayout();
   const { settings } = useApp();
   const siteName = settings?.storeName || SITE;
@@ -32,7 +34,25 @@ export default function HomePage() {
   }, []);
 
   const q = typeof search === "string" ? search.toLowerCase().trim() : "";
-  const filtered = q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
+  useEffect(() => { setPage(1); }, [q]);
+
+  const filtered = q ? products.filter((p) => {
+    const name = p.name.toLowerCase();
+    const category = p.category.toLowerCase();
+    const subcategory = (p.subcategory || "").toLowerCase();
+    const specText = (p.specs || []).map((s: any) => typeof s === "string" ? s : `${s.l || s.f || ""} ${s.v || ""}`).join(" ").toLowerCase();
+    const desc = (p.description || "").toLowerCase();
+    return q.split(/\s+/).every((term) => name.includes(term) || category.includes(term) || subcategory.includes(term) || specText.includes(term) || desc.includes(term));
+  }) : products;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageProducts = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  function goToPage(next: number) {
+    setPage(Math.min(Math.max(1, next), totalPages));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   if (loading) {
     return (
@@ -84,11 +104,35 @@ export default function HomePage() {
       )}
       <LayoutEngine
         page="home"
-        products={filtered}
+        products={pageProducts}
         categories={categories}
         banners={banners}
         settings={settings}
       />
+      {totalPages > 1 && (
+        <nav className="pagination" aria-label="Pagination" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem", margin: "2rem 0", flexWrap: "wrap" }}>
+          <button className="btn btn-sm btn-ghost" onClick={() => goToPage(safePage - 1)} disabled={safePage <= 1} aria-label="Previous page">&larr; Previous</button>
+          {Array.from({ length: totalPages }).map((_, i) => {
+            const n = i + 1;
+            const show = totalPages <= 7 || n === 1 || n === totalPages || Math.abs(n - safePage) <= 1;
+            if (!show) return <span key={n} style={{ color: "var(--text-tertiary)" }}>…</span>;
+            return (
+              <button
+                key={n}
+                className={`btn btn-sm ${n === safePage ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => goToPage(n)}
+                aria-current={n === safePage ? "page" : undefined}
+              >
+                {n}
+              </button>
+            );
+          })}
+          <button className="btn btn-sm btn-ghost" onClick={() => goToPage(safePage + 1)} disabled={safePage >= totalPages} aria-label="Next page">Next &rarr;</button>
+          <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", width: "100%", textAlign: "center" }}>
+            Page {safePage} of {totalPages} &middot; {filtered.length} product{filtered.length !== 1 ? "s" : ""}
+          </span>
+        </nav>
+      )}
     </>
   );
 }

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { isCustomerLoggedIn, getCustomerToken, setCustomerSession, clearAllSessions, api, initCsrf } from "./api";
+import { isCustomerLoggedIn, getCustomerToken, setCustomerSession, clearAllSessions, api, initCsrf, getGuestCartCount } from "./api";
 import type { Settings } from "./types";
 import { setFormatConfig } from "@/layouts/shared";
 
@@ -177,7 +177,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   function refreshCartCount() {
     if (!isCustomerLoggedIn()) {
-      setState((s) => ({ ...s, cartCount: 0 }));
+      setState((s) => ({ ...s, cartCount: getGuestCartCount() }));
       return;
     }
     api<{ count: number }>("/api/cart/count").then((d) => {
