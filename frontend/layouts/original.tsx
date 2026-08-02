@@ -111,7 +111,7 @@ function HeroStatValue({ value }: { value: string }) {
 
 function HeroStarRating({ average }: { average: number }) {
   return (
-    <span style={{ color: "#f59e0b", fontSize: "0.8rem", letterSpacing: "1px" }} aria-label={`${average} out of 5 stars`}>
+    <span style={{ color: "var(--accent)", fontSize: "0.8rem", letterSpacing: "1px" }} aria-label={`${average} out of 5 stars`}>
       {Array.from({ length: 5 }).map((_, i) => i < Math.round(average) ? "★" : "☆").join("")}
     </span>
   );
@@ -413,7 +413,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
       <div className="hero-trust">
         <div className="hero-stars">
           {[0,1,2,3,4].map((i) => (
-            <svg key={i} width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" strokeWidth="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg key={i} width="18" height="18" viewBox="0 0 24 24" style={{ fill: "var(--accent)", stroke: "var(--accent)" }} strokeWidth="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
           ))}
         </div>
         <span className="hero-trust-text">{trustText}</span>
@@ -493,8 +493,8 @@ export function HomePage({ products, categories, hero }: {
                     {p.salePrice ? (
                       <>
                         <span style={{ textDecoration: "line-through", color: "var(--muted, #999)", fontSize: "0.8em" }}>{formatPrice(p.price)}</span>
-                        <span style={{ color: "#dc2626", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span>
-                        <span style={{ display: "inline-block", background: "#dc2626", color: "#fff", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
+                        <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span>
+                        <span style={{ display: "inline-block", background: "var(--danger)", color: "#fff", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
                       </>
                     ) : (
                       formatPrice(p.price)

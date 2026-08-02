@@ -17,10 +17,8 @@ export function ProductCard({ product }: ProductCardProps) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    api<{ images: ProductImage[] }>(`/api/products/${encodeURIComponent(product.id)}/images`).then((d) => {
+    api<{ images: ProductImage[]; rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(product.id)}/extras`).then((d) => {
       if (d.images && d.images.length > 1) setGallery(d.images);
-    }).catch(() => {});
-    api<{ rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(product.id)}/reviews`).then((d) => {
       if (d.rating && d.rating.count > 0) setRating(d.rating);
     }).catch(() => {});
   }, [product.id]);
@@ -67,7 +65,7 @@ export function ProductCard({ product }: ProductCardProps) {
       <h3>{product.name}</h3>
       {rating && (
         <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginBottom: "0.25rem" }}>
-          <span style={{ fontSize: "0.8rem", color: "#f59e0b" }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating.average) ? "★" : "☆").join("")}</span>
+          <span style={{ fontSize: "0.8rem", color: "var(--accent)" }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating.average) ? "★" : "☆").join("")}</span>
           <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>({rating.count})</span>
         </div>
       )}
@@ -75,14 +73,14 @@ export function ProductCard({ product }: ProductCardProps) {
         {product.salePrice ? (
           <>
             <span style={{ textDecoration: "line-through", color: "var(--muted, #999)", fontSize: "0.85em" }}>{formatPrice(product.price)}</span>
-            <span style={{ color: "#dc2626", fontWeight: 700 }}>{formatPrice(product.salePrice)}</span>
+            <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(product.salePrice)}</span>
           </>
         ) : (
           formatPrice(product.price)
         )}
       </div>
       {product.salePrice && (
-        <span style={{ display: "inline-block", background: "#dc2626", color: "#fff", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, marginBottom: "0.5rem", textTransform: "uppercase" }}>
+        <span style={{ display: "inline-block", background: "var(--danger)", color: "#fff", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, marginBottom: "0.5rem", textTransform: "uppercase" }}>
           Sale
         </span>
       )}

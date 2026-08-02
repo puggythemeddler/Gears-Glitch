@@ -103,7 +103,7 @@ function HeroSection({ hero, colors, products, categories }: { hero: DynamicLayo
       {featured.length > 1 && (
         <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: "1.5rem", position: "relative", zIndex: 2 }}>
           {featured.map((_: any, i: number) => (
-            <button key={i} onClick={() => setCurrent(i)} style={{ width: i === current ? 24 : 8, height: 8, borderRadius: 99, border: "none", background: i === current ? (colors?.accent || "#fff") : "rgba(255,255,255,0.3)", cursor: "pointer", transition: "all 0.3s" }} />
+            <button key={i} type="button" aria-label={`Go to slide ${i + 1}`} onClick={() => setCurrent(i)} style={{ width: 28, height: 12, borderRadius: 99, border: "none", padding: 0, transform: i === current ? "scaleX(1)" : "scaleX(0.43)", transformOrigin: "left", background: i === current ? (colors?.accent || "#fff") : "rgba(255,255,255,0.3)", cursor: "pointer", transition: "background 0.3s ease, transform 0.3s ease" }} />
           ))}
         </div>
       )}

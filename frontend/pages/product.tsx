@@ -351,14 +351,20 @@ export default function ProductPage() {
                 const count = reviewDistribution[star] || 0;
                 const pct = reviewsRating.count > 0 ? (count / reviewsRating.count) * 100 : 0;
                 return (
-                  <div key={star} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: 4, cursor: "pointer" }} onClick={() => { const el = document.getElementById(`review-star-${star}`); if (el) el.scrollIntoView({ behavior: "smooth" }); }}>
+                  <button
+                    key={star}
+                    type="button"
+                    aria-label={`View ${star}-star reviews`}
+                    onClick={() => { const el = document.getElementById(`review-star-${star}`); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+                    style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: 4, cursor: "pointer", width: "100%", background: "none", border: "none", padding: "0.25rem 0", textAlign: "left", font: "inherit", color: "inherit" }}
+                  >
                     <span style={{ fontSize: "0.8rem", width: 12, textAlign: "right" }}>{star}</span>
-                    <span style={{ color: "#f59e0b", fontSize: "0.75rem" }}>★</span>
+                    <span aria-hidden="true" style={{ color: "var(--accent)", fontSize: "0.75rem" }}>★</span>
                     <div style={{ flex: 1, height: 8, background: "var(--border)", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: "#f59e0b", borderRadius: 4, transition: "width 0.3s" }} />
+                      <div style={{ width: "100%", height: "100%", background: "var(--accent)", borderRadius: 4, transform: `scaleX(${pct / 100})`, transformOrigin: "left", transition: "transform 0.3s ease" }} />
                     </div>
                     <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", width: 24 }}>{count}</span>
-                  </div>
+                  </button>
                 );
               })}
             </div>

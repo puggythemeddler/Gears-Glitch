@@ -131,7 +131,7 @@ export default function RepairTicketPage() {
         <p className="muted">No updates yet.</p>
       ) : (
         (ticket.updates || []).map((u: any) => (
-          <div key={u.id} style={{ padding: "0.75rem", borderLeft: "3px solid var(--primary)", marginBottom: "0.75rem", background: "var(--surface)", borderRadius: "0 8px 8px 0" }}>
+          <div key={u.id} style={{ padding: "0.75rem", boxShadow: "inset 3px 0 0 0 var(--primary)", marginBottom: "0.75rem", background: "var(--surface)", borderRadius: "0 8px 8px 0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.25rem" }}>
               <strong style={{ fontSize: "0.85rem" }}>{u.updateType === "customer_note" ? "You" : u.staffName || "Staff"}</strong>
               <span className="muted" style={{ fontSize: "0.8rem" }}>{formatDate(u.createdAt)}</span>

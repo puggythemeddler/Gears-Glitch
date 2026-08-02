@@ -17,7 +17,7 @@ export function LayoutStyles() {
     .mob-nav a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; font-weight: 500; transition: color 0.15s; }
     .mob-nav a:hover { color: var(--primary); }
     .mob-hero { max-width: 1440px; margin: 1.5rem auto; padding: 0 1rem; border-radius: 16px; overflow: hidden; position: relative; }
-    .mob-hero-inner { background: linear-gradient(135deg, #1e1b4b, #312e81); color: #fff; padding: 4rem 3rem; min-height: 380px; display: flex; flex-direction: column; justify-content: center; }
+    .mob-hero-inner { background: linear-gradient(135deg, var(--primary), var(--brand-gradient-b, #312e81)); color: #fff; padding: 4rem 3rem; min-height: 380px; display: flex; flex-direction: column; justify-content: center; }
     .mob-hero-inner h2 { font-size: 2.5rem; margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -1px; }
     .mob-hero-inner p { font-size: 1.1rem; margin: 0 0 1.5rem; opacity: 0.85; }
     .mob-hero-badge { display: inline-block; background: rgba(255,255,255,0.15); padding: 0.3rem 1rem; border-radius: 999px; font-size: 0.8rem; margin-bottom: 1rem; align-self: flex-start; backdrop-filter: blur(4px); }
@@ -118,7 +118,7 @@ export function HomePage({ products, categories, banners, hero }: {
           {heroBadge && <span className="mob-hero-badge">{heroBadge}</span>}
           <h2>{heroTitle}</h2>
           <p>{heroSub}</p>
-          <Link href={heroCtaLink} className="btn" style={{ alignSelf: "flex-start", background: "#fff", color: "#1e1b4b", fontWeight: 600 }}>{heroCtaLabel}</Link>
+          <Link href={heroCtaLink} className="btn" style={{ alignSelf: "flex-start", background: "#fff", color: "var(--primary)", fontWeight: 600 }}>{heroCtaLabel}</Link>
         </div>
       </div>
       )}

@@ -3458,6 +3458,40 @@ app.get("/api/products/:id/images", asyncHandler(async (req: Request, res: Respo
   }
 }));
 
+// Combined card extras (images + rating) — single request per card
+app.get("/api/products/:id/extras", asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const product = await getProduct(String(req.params.id));
+    if (!product) { res.status(404).json({ error: "Product not found." }); return; }
+    const [rawImages, rating] = await Promise.all([
+      getProductImages(String(req.params.id)),
+      getProductRating(String(req.params.id)),
+    ]);
+    const normalizeUrl = (u: string) => u.split("?")[0].replace(/\/+$/, "");
+    const primaryNorm = product.imageUrl ? normalizeUrl(product.imageUrl) : "";
+    const combined: any[] = [];
+    if (primaryNorm) {
+      const primaryExists = rawImages.some((img: any) => normalizeUrl(img.imageUrl) === primaryNorm);
+      if (!primaryExists) {
+        combined.push({ id: 0, productId: product.id, imageUrl: product.imageUrl, sortOrder: -1, isPrimary: 1 });
+      }
+    }
+    for (const img of rawImages) {
+      const imgNorm = normalizeUrl(img.imageUrl);
+      if (!combined.some((c: any) => normalizeUrl(c.imageUrl) === imgNorm)) {
+        combined.push(img);
+      }
+    }
+    if (combined.length === 0 && product.imageUrl) {
+      combined.push({ id: 0, productId: product.id, imageUrl: product.imageUrl, sortOrder: -1, isPrimary: 1 });
+    }
+    res.json({ images: combined, rating });
+  } catch (err: any) {
+    console.error("[product extras]", err?.message || err);
+    res.status(500).json({ error: "Failed to load product details." });
+  }
+}));
+
 // ============ PRODUCT REVIEWS ============
 
 app.get("/api/products/:id/reviews", asyncHandler(async (req: Request, res: Response) => {

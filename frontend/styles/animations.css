@@ -79,13 +79,6 @@
   100% { background-position: 200% 0; }
 }
 
-@keyframes bounceIn {
-  0% { opacity: 0; transform: scale(0.3); }
-  50% { transform: scale(1.05); }
-  70% { transform: scale(0.95); }
-  100% { opacity: 1; transform: scale(1); }
-}
-
 @keyframes ripple {
   to { transform: scale(4); opacity: 0; }
 }
@@ -133,7 +126,7 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes progressBar { from { width: 0%; } }
+@keyframes progressBar { from { transform: scaleX(0); } }
 
 @keyframes blurIn {
   from { opacity: 0; filter: blur(8px); }
@@ -145,7 +138,7 @@
 .anim-fade-in-up { animation: fadeInUp var(--duration-slow) ease both; }
 .anim-fade-in-down { animation: fadeInDown var(--duration-normal) ease both; }
 .anim-scale-in { animation: scaleIn var(--duration-slow) ease both; }
-.anim-bounce-in { animation: bounceIn 0.4s var(--ease-bounce) both; }
+.anim-bounce-in { animation: scaleIn var(--duration-slow) var(--ease-out) both; }
 .anim-spin { animation: spin 0.6s linear infinite; }
 .anim-pulse { animation: pulse 2s ease-in-out infinite; }
 
@@ -305,10 +298,10 @@
 
 .toast-close:hover { color: var(--text); }
 
-.toast.toast-success { border-left: 3px solid var(--success); }
-.toast.toast-error { border-left: 3px solid var(--danger); }
-.toast.toast-warning { border-left: 3px solid var(--warning); }
-.toast.toast-info { border-left: 3px solid var(--primary); }
+.toast.toast-success { box-shadow: inset 3px 0 0 0 var(--success), var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.15)); }
+.toast.toast-error { box-shadow: inset 3px 0 0 0 var(--danger), var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.15)); }
+.toast.toast-warning { box-shadow: inset 3px 0 0 0 var(--warning), var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.15)); }
+.toast.toast-info { box-shadow: inset 3px 0 0 0 var(--primary), var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.15)); }
 
 /* ----- Empty State ----- */
 .empty-state {
@@ -476,8 +469,8 @@
   height: 100%;
   background: var(--primary);
   border-radius: var(--radius-full);
+  transform-origin: left;
   animation: progressBar 2s ease-out forwards;
-  will-change: width;
 }
 
 /* ----- Scroll Reveal ----- */
@@ -748,7 +741,7 @@
   100% { opacity: 0; transform: translateY(-26px) scale(1.15); }
 }
 
-@keyframes ecCartWobble {
+@keyframes ecCartSway {
   0%, 100% { transform: rotate(0deg); }
   50% { transform: rotate(-1.2deg); }
 }
@@ -782,7 +775,7 @@
 }
 
 .ec-cart {
-  animation: ecCartWobble 3.8s ease-in-out infinite;
+  animation: ecCartSway 3.8s ease-in-out infinite;
   transform-origin: 272px 198px;
 }
 

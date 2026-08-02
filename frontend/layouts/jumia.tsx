@@ -21,7 +21,7 @@ export function LayoutStyles() {
     .jum-cat-icon:hover { background: var(--primary); color: #fff; }
     .jum-cat-icon .icon { font-size: 1.6rem; }
     .jum-slider { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; border-radius: 12px; overflow: hidden; position: relative; }
-    .jum-slide { background: linear-gradient(135deg, var(--primary), #7c3aed); color: #fff; padding: 3rem 2rem; min-height: 280px; display: flex; flex-direction: column; justify-content: center; border-radius: 12px; }
+    .jum-slide { background: linear-gradient(135deg, var(--primary), var(--brand-gradient-b, #7c3aed)); color: #fff; padding: 3rem 2rem; min-height: 280px; display: flex; flex-direction: column; justify-content: center; border-radius: 12px; }
     .jum-slide h2 { font-size: 2rem; margin: 0 0 0.5rem; }
     .jum-slide p { font-size: 1.1rem; margin: 0 0 1rem; opacity: 0.9; }
     .jum-dots { display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
@@ -40,7 +40,7 @@ export function LayoutStyles() {
     .jum-card-body h3 { margin: 0 0 0.3rem; font-size: 0.85rem; line-height: 1.3; }
     .jum-card-price { font-weight: 700; color: var(--primary); }
     .jum-card-old { font-size: 0.75rem; color: var(--text-secondary); text-decoration: line-through; margin-left: 0.3rem; }
-    .jum-discount { position: absolute; top: 8px; left: 8px; background: #dc2626; color: #fff; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 600; }
+    .jum-discount { position: absolute; top: 8px; left: 8px; background: var(--danger); color: #fff; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 600; }
     .jum-sponsored { font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.3rem; }
     @media (max-width: 768px) {
       .jum-slide { min-height: 200px; padding: 2rem 1.5rem; }
