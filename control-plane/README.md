@@ -74,6 +74,7 @@ The control plane serves a Content Security Policy via Helmet (`control-plane/se
   - **OVER LIMIT** badge — shown when client usage exceeds plan max products
 - **Actions per client**:
   - **Details** — opens full client panel with invoices
+  - **More ▾** — a scrollable dropdown grouping Backend/Frontend links, Edit, Push Secret, Redeploy, Suspend/Resume, and Delete. It scrolls internally (`max-height` + `overflow-y: auto`) and is no longer clipped by the table, so every action is reachable even for rows at the bottom of the viewport.
   - **Backend/Frontend** — links to client's live URLs
   - **Edit** — change plan, expiry, notes, phone, address, and per-client feature overrides
   - **Redeploy** — trigger a Render deploy for this client individually

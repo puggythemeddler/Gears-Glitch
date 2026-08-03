@@ -107,9 +107,13 @@
     .stat-card .value { font-size: 1.8rem; font-weight: 700; }
     .stat-card .label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
 
-    table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); }
     th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
     th { background: var(--bg); color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    thead th:first-child { border-top-left-radius: var(--radius); }
+    thead th:last-child { border-top-right-radius: var(--radius); }
+    tbody tr:last-child td:first-child { border-bottom-left-radius: var(--radius); }
+    tbody tr:last-child td:last-child { border-bottom-right-radius: var(--radius); }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: var(--tint-primary-soft); }
     .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.72rem; font-weight: 600; }
@@ -131,7 +135,7 @@
     .actions-menu { position: relative; display: inline-block; }
     .actions-menu summary { list-style: none; cursor: pointer; }
     .actions-menu summary::-webkit-details-marker { display: none; }
-    .actions-menu .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
+    .actions-menu .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 150px; max-height: min(360px, calc(100vh - 140px)); overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
     .actions-menu .menu .btn { width: 100%; text-align: left; white-space: nowrap; }
     .notif-row { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); padding: 0.6rem 0.75rem; cursor: pointer; font: inherit; color: inherit; }
     .notif-row[data-unread="1"] { background: var(--tint-primary-soft); }
