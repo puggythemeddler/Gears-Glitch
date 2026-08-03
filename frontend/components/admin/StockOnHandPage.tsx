@@ -22,7 +22,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
 
   useEffect(() => {
     if (stockBranchFilter) {
-      fetch(`/api/admin/stock/by-branch/${stockBranchFilter}`).then(r => r.json()).then(setBranchStockSummary).catch(() => {});
+      api<any>(`/api/admin/stock/by-branch/${stockBranchFilter}`).then(setBranchStockSummary).catch(() => {});
     }
   }, [stockBranchFilter]);
 

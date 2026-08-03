@@ -530,7 +530,7 @@ function AdminCategories() {
   const [editSubName, setEditSubName] = useState("");
 
   useEffect(() => {
-    fetch("/api/admin/groups").then(r => r.json()).then((d) => setGroups(d.groups || [])).catch(() => setGroups([]));
+    api<any>("/api/admin/groups").then((d) => setGroups(d.groups || [])).catch(() => setGroups([]));
   }, []);
 
   async function deleteCat(id: string) {
@@ -2124,7 +2124,7 @@ function AdminInvoices() {
 
   async function viewInvoice(id: number) {
     try {
-      const res = await fetch(`/api/admin/invoices/${id}/view`, { headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` } });
+      const res = await fetch(`/api/admin/invoices/${id}/view`, { headers: { Authorization: `Bearer ${getStaffToken() || ""}` } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const html = await res.text();
       const blob = new Blob([html], { type: "text/html" });
@@ -2136,7 +2136,7 @@ function AdminInvoices() {
 
   async function downloadInvoicePdf(id: number) {
     try {
-      const res = await fetch(`/api/admin/invoices/${id}/view?format=pdf`, { headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` } });
+      const res = await fetch(`/api/admin/invoices/${id}/view?format=pdf`, { headers: { Authorization: `Bearer ${getStaffToken() || ""}` } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -5088,7 +5088,7 @@ function AdminStockTransfers() {
   useEffect(() => {
     if (!form.fromBranchId || !form.productId) { setSourceStock(null); return; }
     setLoadingStockCheck(true);
-    fetch(`/api/admin/stock/by-branch/${form.fromBranchId}`).then(r => r.json()).then((data: any) => {
+    api<any>(`/api/admin/stock/by-branch/${form.fromBranchId}`).then((data: any) => {
       const items = data.items || data || [];
       const found = Array.isArray(items) ? items.find((i: any) => String(i.productId ?? i.id) === String(form.productId)) : null;
       setSourceStock(found ? (found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0);
@@ -5097,7 +5097,7 @@ function AdminStockTransfers() {
 
   useEffect(() => {
     if (!form.toBranchId || !form.productId) { setDestStock(null); return; }
-    fetch(`/api/admin/stock/by-branch/${form.toBranchId}`).then(r => r.json()).then((data: any) => {
+    api<any>(`/api/admin/stock/by-branch/${form.toBranchId}`).then((data: any) => {
       const items = data.items || data || [];
       const found = Array.isArray(items) ? items.find((i: any) => String(i.productId ?? i.id) === String(form.productId)) : null;
       setDestStock(found ? (found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0);

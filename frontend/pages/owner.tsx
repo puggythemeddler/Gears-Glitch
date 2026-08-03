@@ -867,7 +867,7 @@ function OwnerShopSubscription() {
   }
 
   useEffect(() => {
-    fetch("/api/admin/branches").then(r => r.json()).then(d => setBranches(d.branches || [])).catch(() => {});
+    api<any>("/api/admin/branches").then(d => setBranches(d.branches || [])).catch(() => {});
     fetch("/api/plans/all").then(r => r.json()).then(d => setBranchPlans(d.plans || d || [])).catch(() => {});
   }, []);
 
