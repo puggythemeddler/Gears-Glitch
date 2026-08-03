@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Gear&Glitch Control Plane — provision, monitor, and bill POS tenants from one dashboard.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E">
   <title>Gear&Glitch — Control Plane</title>
   <style>
     :root {
@@ -16,7 +18,10 @@
       --success: #22c55e;
       --warning: #f59e0b;
       --danger: #ef4444;
+      --overlimit: #fb923c;
+      --text-secondary: #cbd5e1;
       --radius: 8px;
+      color-scheme: dark;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
@@ -51,6 +56,11 @@
       margin-bottom: 1.5rem;
     }
     header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem; }
+    .brand { display: flex; align-items: center; gap: 0.6rem; }
+    .brand-logo { width: 28px; height: 28px; color: var(--primary); flex: none; }
+    .brand-wordmark { font-weight: 700; font-size: 1.1rem; letter-spacing: -0.01em; }
+    .brand-amp { color: var(--primary); }
+    .brand-sub { color: var(--text-muted); font-size: 0.8rem; font-weight: 500; }
     h1 { font-size: 1.5rem; }
     h1 span { color: var(--primary); }
     .header-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
@@ -93,20 +103,28 @@
     .badge-unknown { background: rgba(148,163,184,0.15); color: var(--text-muted); }
     .badge-overdue { background: rgba(239,68,68,0.15); color: var(--danger); }
     .badge-warning { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .badge-deploying { background: rgba(59,130,246,0.15); color: var(--primary); animation: pulseBadge 1.6s ease-in-out infinite; }
+    .badge-overlimit { background: rgba(251,146,60,0.15); color: var(--overlimit); }
+    @keyframes pulseBadge { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
-    .actions-cell { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .actions-cell { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .actions-menu { position: relative; display: inline-block; }
+    .actions-menu summary { list-style: none; cursor: pointer; }
+    .actions-menu summary::-webkit-details-marker { display: none; }
+    .actions-menu .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
+    .actions-menu .menu .btn { width: 100%; text-align: left; white-space: nowrap; }
+    th .th-sort { background: none; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; white-space: nowrap; }
+    th .th-sort:hover, th .th-sort:focus-visible { color: var(--primary); }
+    .feature-chip { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); line-height: 1.3; font-family: inherit; }
+    .feature-chip:hover { border-color: var(--primary); }
+    .feature-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+    .feature-chip[aria-pressed="true"] { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .feature-chip[aria-pressed="false"] { background: rgba(239,68,68,0.12); color: var(--danger); border-color: var(--danger); text-decoration: line-through; }
+    .chip-btn { font-size: 0.7rem; font-weight: 400; font-family: inherit; padding: 0.1rem 0.4rem; border-radius: 4px; background: var(--border); color: var(--text); border: none; cursor: pointer; }
+    .chip-btn:hover, .chip-btn:focus-visible { background: var(--primary); color: #fff; outline: none; }
     .empty { text-align: center; padding: 4rem 1rem; color: var(--text-muted); }
     .empty .icon { font-size: 3rem; margin-bottom: 1rem; }
     .empty p { margin-bottom: 1rem; }
-
-    /* Uptime bar */
-    .uptime-bar { display: flex; gap: 1px; height: 20px; border-radius: 3px; overflow: hidden; }
-    .uptime-bar span { flex: 1; }
-    .uptime-bar .h { background: var(--success); }
-    .uptime-bar .s { background: var(--warning); }
-    .uptime-bar .d { background: var(--danger); }
-    .uptime-bar .u { background: var(--border); }
-    .uptime-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
 
     /* Modal */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center; }
@@ -130,15 +148,22 @@
     .detail-item .value { font-size: 0.95rem; margin-top: 0.2rem; }
 
     /* Toast */
-    .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1.25rem; font-size: 0.85rem; z-index: 200; animation: slideIn 0.3s; }
+    .toast-container { position: fixed; bottom: 1.5rem; right: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 200; }
+    .toast { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1.25rem; font-size: 0.85rem; animation: slideIn 0.3s; max-width: 90vw; }
     .toast.success { border-color: var(--success); }
     .toast.error { border-color: var(--danger); }
+    .toast.info { border-color: var(--primary); }
+    .btn:focus-visible, .tab:focus-visible, a:focus-visible, .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
     @media (max-width: 768px) {
       .stats { grid-template-columns: repeat(2, 1fr); }
       .container { padding: 0.75rem; }
       .detail-grid { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+    }
+    @media (pointer: coarse) {
+      .btn, .btn-sm, .tab { min-height: 44px; }
     }
     @media (min-width: 1600px) {
       .stats { grid-template-columns: repeat(6, 1fr); }
@@ -154,14 +179,14 @@
 
       <!-- Step 1: Credentials -->
       <div id="login-step-1">
-        <div class="field"><label>Username</label><input type="text" id="login-user" placeholder="admin" autofocus onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"></div>
-        <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+        <div class="field"><label for="login-user">Username</label><input type="text" id="login-user" autocomplete="username" autofocus onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"></div>
+        <div class="field"><label for="login-pass">Password</label><input type="password" id="login-pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
       </div>
 
       <!-- Step 2: 2FA code (hidden until needed) -->
       <div id="login-step-2" style="display:none">
         <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem">Enter the 6-digit code from your authenticator app.</p>
-        <div class="field"><label>2FA Code</label><input type="text" id="login-totp" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autofocus onkeydown="if(event.key==='Enter')doLoginVerify()"></div>
+        <div class="field"><label for="login-totp">2FA Code</label><input type="text" id="login-totp" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autofocus onkeydown="if(event.key==='Enter')doLoginVerify()"></div>
       </div>
 
       <div id="login-error" style="color:var(--danger);font-size:0.82rem;margin-bottom:0.75rem"></div>
@@ -173,7 +198,11 @@
   <!-- Main App -->
   <div id="main-app" class="container" style="display:none">
     <header>
-      <h1><span>Gear&Glitch</span> Control Plane</h1>
+      <h1 class="brand">
+        <svg class="brand-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="brand-wordmark">Gear<span class="brand-amp">&amp;</span>Glitch</span>
+        <span class="brand-sub">Control Plane</span>
+      </h1>
       <div class="header-actions">
         <span id="user-display" style="font-size:0.82rem;color:var(--text-muted);align-self:center"></span>
         <div id="notif-wrap" style="position:relative;align-self:center">
@@ -181,21 +210,16 @@
           <span id="notif-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:var(--danger);color:#fff;font-size:0.62rem;border-radius:50%;min-width:16px;height:16px;align-items:center;justify-content:center;padding:0 3px;font-weight:700"></span>
           <div id="notif-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);width:350px;max-height:420px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,0.2);z-index:300"></div>
         </div>
-        <span id="twofa-badge" style="font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:var(--radius);border:1px solid var(--border);align-self:center;cursor:pointer" onclick="openTwoFaModal()" title="Click to manage 2FA">2FA Off</span>
-        <button class="btn btn-ghost" onclick="healthCheckAll()">Health Check</button>
-        <select id="pull-cloudinary-client" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull Cloudinary from...</option></select>
-        <button class="btn btn-ghost" onclick="pullCloudinaryFromClient()">Pull Cloudinary</button>
-        <button class="btn btn-ghost" onclick="showCloudinaryModal()">Set Cloudinary</button>
-        <button class="btn btn-ghost" onclick="syncCloudinary()">Sync Cloudinary</button>
-        <button class="btn btn-ghost" onclick="deployAll()">Deploy All</button>
-        <button class="btn btn-ghost" onclick="showExistingModal()">+ Add Existing</button>
-        <button class="btn btn-primary" onclick="showModal()">+ Add Client</button>
+        <button class="btn btn-ghost btn-sm" id="twofa-badge" onclick="openTwoFaModal()" title="Click to manage 2FA">2FA Off</button>
+        <button class="btn btn-ghost" onclick="healthCheckAll()" data-admin>Health Check</button>
+        <button class="btn btn-ghost" onclick="showExistingModal()" data-mutating data-admin>+ Add Existing</button>
+        <button class="btn btn-primary" onclick="showModal()" data-mutating data-admin>+ Add Client</button>
         <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Sign out">&#x2190; Sign Out</button>
       </div>
     </header>
 
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('clients', this)">Clients</button>
+      <button class="tab active" id="tab-btn-clients" onclick="switchTab('clients', this)">Clients</button>
       <button class="tab" onclick="switchTab('plans', this)">Plans</button>
       <button class="tab" onclick="switchTab('changelog', this)">Changelog</button>
       <button class="tab" onclick="switchTab('deploys', this)">Deploy Log</button>
@@ -207,13 +231,24 @@
 
     <div id="tab-clients">
       <div class="stats" id="stats">
-        <div class="stat-card"><div class="value" id="stat-total">0</div><div class="label">Total Clients</div></div>
-        <div class="stat-card"><div class="value" id="stat-active" style="color: var(--success)">0</div><div class="label">Active</div></div>
-        <div class="stat-card"><div class="value" id="stat-revenue" style="color: var(--primary)">KES 0</div><div class="label">Total Revenue</div></div>
-        <div class="stat-card"><div class="value" id="stat-orders">0</div><div class="label">Total Orders</div></div>
+        <div class="stat-card"><div class="value" id="stat-total">—</div><div class="label">Total Clients</div></div>
+        <div class="stat-card"><div class="value" id="stat-active" style="color: var(--success)">—</div><div class="label">Active</div></div>
+        <div class="stat-card"><div class="value" id="stat-revenue" style="color: var(--primary)">—</div><div class="label">Total Revenue</div></div>
+        <div class="stat-card"><div class="value" id="stat-orders">—</div><div class="label">Total Orders</div></div>
       </div>
       <div id="payment-reminders" style="display:none;margin-bottom:1rem"></div>
-      <div id="client-list"></div>
+      <div id="client-toolbar" style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+        <input type="search" id="client-search" placeholder="Search name, email, or domain…" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem;min-width:220px;flex:1;max-width:340px" aria-label="Search clients">
+        <select id="client-status-filter" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem" aria-label="Filter by status">
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="provisioning">Provisioning</option>
+          <option value="suspended">Suspended</option>
+          <option value="failed">Failed</option>
+        </select>
+        <span id="client-count" style="color:var(--text-muted);font-size:0.78rem"></span>
+      </div>
+      <div id="client-list"><div class="empty"><p>Loading clients…</p></div></div>
       <div id="upgrade-requests" style="margin-top:2rem"></div>
     </div>
 
@@ -221,11 +256,11 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Subscription Plans</h2>
         <div style="display:flex;gap:0.5rem">
-          <select id="pull-plans-client" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull from client...</option></select>
-          <button class="btn btn-ghost btn-sm" onclick="pullPlansFromClient()">Pull Plans</button>
-          <button class="btn btn-ghost btn-sm" onclick="importFromGearGlitch()">Import from Gear&Glitch Store</button>
-          <button class="btn btn-ghost btn-sm" onclick="syncAllPlans()">Sync All to Clients</button>
-          <button class="btn btn-primary btn-sm" onclick="showPlanModal()">+ Create Plan</button>
+          <select id="pull-plans-client" data-admin style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull from client...</option></select>
+          <button class="btn btn-ghost btn-sm" data-mutating data-admin onclick="pullPlansFromClient()">Pull Plans</button>
+          <button class="btn btn-ghost btn-sm" data-mutating data-admin onclick="importFromGearGlitch()">Import from Gear&Glitch Store</button>
+          <button class="btn btn-ghost btn-sm" data-mutating data-admin onclick="syncAllPlans()">Sync All to Clients</button>
+          <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="showPlanModal()">+ Create Plan</button>
         </div>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage subscription plans with feature toggles. Toggle features on/off per plan, then sync to push changes to all clients.</p>
@@ -235,7 +270,7 @@
     <div id="tab-changelog" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Changelog</h2>
-        <button class="btn btn-primary btn-sm" onclick="showChangelogModal()">+ New Update</button>
+        <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="showChangelogModal()">+ New Update</button>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Publish version updates. All active clients are notified by email automatically.</p>
       <div id="changelog-list"></div>
@@ -244,7 +279,7 @@
     <div id="tab-deploys" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Deploy Log</h2>
-        <button class="btn btn-ghost btn-sm" onclick="deployAll()">Deploy All Clients</button>
+        <button class="btn btn-ghost btn-sm" data-mutating data-admin onclick="deployAll()">Deploy All Clients</button>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Deployment history. Deploys are triggered manually or via GitHub Actions on push to main.</p>
       <div id="deploy-log"></div>
@@ -253,7 +288,7 @@
     <div id="tab-backups" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Database Backups</h2>
-        <button class="btn btn-primary btn-sm" onclick="runBackups()">Run Backup Now</button>
+        <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="runBackups()">Run Backup Now</button>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Backups run automatically daily at 3 AM. Uses <code>pg_dump</code> for each client's Neon database. Old backups auto-delete after 7 days. Requires <code>pg_dump</code> CLI on the server (available in Render paid plans).</p>
       <div id="backup-list"></div>
@@ -262,7 +297,7 @@
     <div id="tab-users" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Control Plane Users</h2>
-        <button class="btn btn-primary btn-sm" onclick="showCreateUserModal()">+ Add User</button>
+        <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="showCreateUserModal()">+ Add User</button>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage who can access the control plane. Admins can manage users; viewers have read-only access. Each user gets a unique API key for programmatic access.</p>
       <div id="users-list"></div>
@@ -284,17 +319,17 @@
           For Gmail, enable 2-Step Verification and create an <strong>App Password</strong>.
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-          <div class="field"><label>SMTP Host</label><input type="text" id="smtp-host" placeholder="smtp.gmail.com"></div>
-          <div class="field"><label>Port</label><input type="number" id="smtp-port" value="587" placeholder="587"></div>
-          <div class="field"><label>Username (email)</label><input type="text" id="smtp-user" placeholder="your@gmail.com"></div>
-          <div class="field"><label>Password / App Password</label><input type="password" id="smtp-pass" placeholder="16-char app password"></div>
-          <div class="field"><label>From Email</label><input type="text" id="smtp-from-email" placeholder="noreply@gearglitch.com"></div>
-          <div class="field"><label>From Name</label><input type="text" id="smtp-from-name" placeholder="Gear&Glitch"></div>
+          <div class="field"><label for="smtp-host">SMTP Host</label><input type="text" id="smtp-host" placeholder="smtp.gmail.com"></div>
+          <div class="field"><label for="smtp-port">Port</label><input type="number" id="smtp-port" value="587" placeholder="587"></div>
+          <div class="field"><label for="smtp-user">Username (email)</label><input type="text" id="smtp-user" placeholder="your@gmail.com"></div>
+          <div class="field"><label for="smtp-pass">Password / App Password</label><input type="password" id="smtp-pass" placeholder="16-char app password"></div>
+          <div class="field"><label for="smtp-from-email">From Email</label><input type="text" id="smtp-from-email" placeholder="noreply@gearglitch.com"></div>
+          <div class="field"><label for="smtp-from-name">From Name</label><input type="text" id="smtp-from-name" placeholder="Gear&Glitch"></div>
         </div>
-        <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center">
-          <button class="btn btn-primary" onclick="saveSmtpConfig()">Save SMTP</button>
+        <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary" data-mutating data-admin onclick="saveSmtpConfig()">Save SMTP</button>
           <input type="text" id="smtp-test-to" placeholder="test@email.com" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem;width:200px">
-          <button class="btn btn-ghost" onclick="testSmtpConfig()">Send Test Email</button>
+          <button class="btn btn-ghost" data-mutating data-admin onclick="testSmtpConfig()">Send Test Email</button>
           <span id="smtp-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
         </div>
       </div>
@@ -306,14 +341,16 @@
           Configure once here and sync to all clients.
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-          <div class="field"><label>Cloud Name</label><input type="text" id="s-cld-cloud" placeholder="e.g. mycloud"></div>
-          <div class="field"><label>API Key</label><input type="text" id="s-cld-key" placeholder="e.g. 123456789012345"></div>
-          <div class="field"><label>API Secret</label><input type="password" id="s-cld-secret" placeholder="Your API secret"></div>
-          <div class="field"><label>Folder</label><input type="text" id="s-cld-folder" placeholder="gear-glitch"></div>
+          <div class="field"><label for="s-cld-cloud">Cloud Name</label><input type="text" id="s-cld-cloud" placeholder="e.g. mycloud"></div>
+          <div class="field"><label for="s-cld-key">API Key</label><input type="text" id="s-cld-key" placeholder="e.g. 123456789012345"></div>
+          <div class="field"><label for="s-cld-secret">API Secret</label><input type="password" id="s-cld-secret" placeholder="Your API secret"></div>
+          <div class="field"><label for="s-cld-folder">Folder</label><input type="text" id="s-cld-folder" placeholder="gear-glitch"></div>
         </div>
-        <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center">
-          <button class="btn btn-primary" onclick="saveSettingsCloudinary()">Save Cloudinary</button>
-          <button class="btn btn-ghost" onclick="syncCloudinary()">Sync to All Clients</button>
+        <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary" data-mutating data-admin onclick="saveSettingsCloudinary()">Save Cloudinary</button>
+          <button class="btn btn-ghost" data-mutating data-admin onclick="syncCloudinary()">Sync to All Clients</button>
+          <select id="pull-cloudinary-client" data-admin style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull Cloudinary from...</option></select>
+          <button class="btn btn-ghost" data-mutating data-admin onclick="pullCloudinaryFromClient()">Pull Cloudinary</button>
           <span id="cld-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
         </div>
       </div>
@@ -332,22 +369,35 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Invoices</h2>
         <div style="display:flex;gap:0.5rem">
-          <button class="btn btn-primary btn-sm" onclick="generateClientInvoice()">+ Generate Invoice</button>
-          <button class="btn btn-success btn-sm" onclick="recordClientPayment()">+ Record Payment</button>
+          <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="generateClientInvoice()">+ Generate Invoice</button>
+          <button class="btn btn-success btn-sm" data-mutating data-admin onclick="recordClientPayment()">+ Record Payment</button>
         </div>
       </div>
       <div id="detail-invoices"></div>
       <div id="detail-branches" style="margin-top:1.5rem"></div>
     </div>
+
+    <!-- Confirm Dialog -->
+    <div class="modal-overlay" id="confirm-overlay">
+      <div class="modal" style="width:440px">
+        <h2 id="confirm-title">Confirm</h2>
+        <p id="confirm-msg" style="color:var(--text-muted);font-size:0.9rem;line-height:1.5"></p>
+        <div id="confirm-detail" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.6rem 0.75rem;font-size:0.82rem;color:var(--text-secondary);margin-top:0.5rem"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="confirm-secondary-btn" style="display:none"></button>
+          <button class="btn btn-ghost" id="cancel-confirm-btn" onclick="closeConfirmDialog()">Cancel</button>
+          <button class="btn btn-primary" id="confirm-btn" onclick="runConfirm()">Confirm</button>
+        </div>
+      </div>
     </div>
 
     <!-- Create User Modal -->
     <div class="modal-overlay" id="user-modal-overlay">
       <div class="modal" style="width:400px">
         <h2 id="user-modal-title">Add User</h2>
-        <div class="field"><label>Username</label><input type="text" id="user-username" placeholder="e.g. john"></div>
-        <div class="field"><label>Password</label><input type="password" id="user-password" placeholder="Min 8 characters"></div>
-        <div class="field"><label>Role</label><select id="user-role"><option value="viewer">Viewer (read-only)</option><option value="admin">Admin (full access)</option></select></div>
+        <div class="field"><label for="user-username">Username</label><input type="text" id="user-username" placeholder="e.g. john"></div>
+        <div class="field"><label for="user-password">Password</label><input type="password" id="user-password" placeholder="Min 8 characters"></div>
+        <div class="field"><label for="user-role">Role</label><select id="user-role"><option value="viewer">Viewer (read-only)</option><option value="admin">Admin (full access)</option></select></div>
         <div class="modal-actions">
           <button class="btn btn-ghost" onclick="hideUserModal()">Cancel</button>
           <button class="btn btn-primary" onclick="createUser()">Create User</button>
@@ -373,15 +423,15 @@
       <h2>Add New Client</h2>
       <p class="subtitle">Provisions a new database, backend, and frontend automatically.</p>
       <div id="modal-form">
-        <div class="field"><label>Business Name</label><input type="text" id="inp-name" placeholder="e.g. John's Electronics"></div>
-        <div class="field"><label>Admin Email <span style="font-size:0.72rem;color:var(--text-muted)">(optional — defaults to your operator email)</span></label><input type="email" id="inp-email" placeholder="defaults to OPERATOR_ADMIN_EMAIL"></div>
-        <div class="field"><label>Domain (optional)</label><input type="text" id="inp-domain" placeholder="e.g. johns.gearglitch.com"></div>
-        <div class="field"><label>Plan</label><select id="inp-plan"><option value="starter">Starter</option><option value="growth" selected>Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
+        <div class="field"><label for="inp-name">Business Name</label><input type="text" id="inp-name" placeholder="e.g. John's Electronics"></div>
+        <div class="field"><label for="inp-email">Admin Email <span style="font-size:0.72rem;color:var(--text-muted)">(optional — defaults to your operator email)</span></label><input type="email" id="inp-email" placeholder="defaults to OPERATOR_ADMIN_EMAIL"></div>
+        <div class="field"><label for="inp-domain">Domain (optional)</label><input type="text" id="inp-domain" placeholder="e.g. johns.gearglitch.com"></div>
+        <div class="field"><label for="inp-plan">Plan</label><select id="inp-plan"><option value="starter">Starter</option><option value="growth" selected>Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
       </div>
       <div id="modal-progress" style="display:none"></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
-        <button class="btn btn-primary" id="btn-create" onclick="createClient()">Create Client</button>
+        <button class="btn btn-primary" id="btn-create" onclick="createClient()">Add Client</button>
       </div>
     </div>
   </div>
@@ -391,14 +441,14 @@
     <div class="modal">
       <h2>Add Existing Client</h2>
       <p class="subtitle">Register an existing deployment without provisioning new resources.</p>
-      <div class="field"><label>Business Name</label><input type="text" id="inp-ex-name" placeholder="e.g. Gear&Glitch Store"></div>
-      <div class="field"><label>Admin Email <span style="font-size:0.72rem;color:var(--text-muted)">(optional — defaults to your operator email)</span></label><input type="email" id="inp-ex-email" placeholder="defaults to OPERATOR_ADMIN_EMAIL"></div>
-      <div class="field"><label>Backend URL</label><input type="text" id="inp-ex-backend" placeholder="e.g. https://gears-glitch.onrender.com"></div>
-      <div class="field"><label>Frontend URL</label><input type="text" id="inp-ex-frontend" placeholder="e.g. https://gears-glitch.vercel.app"></div>
-      <div class="field"><label>Domain (optional)</label><input type="text" id="inp-ex-domain" placeholder="e.g. gearglitch.com"></div>
-      <div class="field"><label>Render Service ID (optional)</label><input type="text" id="inp-ex-render-id" placeholder="e.g. srv-abc123 — enables push-secret & suspend"></div>
-      <div class="field"><label>Control-Plane Secret (optional)</label><input type="text" id="inp-ex-cp-secret" placeholder="Leave blank to auto-generate; must match client's CONTROL_PLANE_SECRET"></div>
-      <div class="field"><label>Plan</label><select id="inp-ex-plan"><option value="starter">Starter</option><option value="growth" selected>Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
+      <div class="field"><label for="inp-ex-name">Business Name</label><input type="text" id="inp-ex-name" placeholder="e.g. Gear&Glitch Store"></div>
+      <div class="field"><label for="inp-ex-email">Admin Email <span style="font-size:0.72rem;color:var(--text-muted)">(optional — defaults to your operator email)</span></label><input type="email" id="inp-ex-email" placeholder="defaults to OPERATOR_ADMIN_EMAIL"></div>
+      <div class="field"><label for="inp-ex-backend">Backend URL</label><input type="text" id="inp-ex-backend" placeholder="e.g. https://gears-glitch.onrender.com"></div>
+      <div class="field"><label for="inp-ex-frontend">Frontend URL</label><input type="text" id="inp-ex-frontend" placeholder="e.g. https://gears-glitch.vercel.app"></div>
+      <div class="field"><label for="inp-ex-domain">Domain (optional)</label><input type="text" id="inp-ex-domain" placeholder="e.g. gearglitch.com"></div>
+      <div class="field"><label for="inp-ex-render-id">Render Service ID (optional)</label><input type="text" id="inp-ex-render-id" placeholder="e.g. srv-abc123 — enables push-secret & suspend"></div>
+      <div class="field"><label for="inp-ex-cp-secret">Control-Plane Secret (optional)</label><input type="text" id="inp-ex-cp-secret" placeholder="Leave blank to auto-generate; must match client's CONTROL_PLANE_SECRET"></div>
+      <div class="field"><label for="inp-ex-plan">Plan</label><select id="inp-ex-plan"><option value="starter">Starter</option><option value="growth" selected>Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hideExistingModal()">Cancel</button>
         <button class="btn btn-primary" id="btn-add-existing" onclick="addExistingClient()">Add Client</button>
@@ -411,18 +461,18 @@
     <div class="modal" style="width:520px">
       <h2>Edit Client</h2>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-        <div class="field"><label>Plan</label><select id="edit-plan"><option value="starter">Starter</option><option value="growth">Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
-        <div class="field"><label>Subscription Expires</label><input type="date" id="edit-expires"></div>
-        <div class="field"><label>Phone</label><input type="text" id="edit-phone" placeholder="+254 7XX XXX XXX"></div>
-        <div class="field"><label>Address</label><input type="text" id="edit-address" placeholder="Nairobi, Kenya"></div>
+        <div class="field"><label for="edit-plan">Plan</label><select id="edit-plan"><option value="starter">Starter</option><option value="growth">Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
+        <div class="field"><label for="edit-expires">Subscription Expires</label><input type="date" id="edit-expires"></div>
+        <div class="field"><label for="edit-phone">Phone</label><input type="text" id="edit-phone" placeholder="+254 7XX XXX XXX"></div>
+        <div class="field"><label for="edit-address">Address</label><input type="text" id="edit-address" placeholder="Nairobi, Kenya"></div>
       </div>
-      <div class="field"><label>Notes</label><textarea id="edit-notes" placeholder="Internal notes about this client..." rows="2"></textarea></div>
+      <div class="field"><label for="edit-notes">Notes</label><textarea id="edit-notes" placeholder="Internal notes about this client..." rows="2"></textarea></div>
       <div class="field">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
-          <label style="margin:0">Feature Overrides</label>
+          <label id="client-features-label" style="margin:0">Feature Overrides</label>
           <button class="btn btn-ghost btn-sm" type="button" onclick="clearClientOverrides()">Clear overrides</button>
         </div>
-        <div id="client-feature-groups-container" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
+        <div id="client-feature-groups-container" role="group" aria-labelledby="client-features-label" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
         <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">Click a feature to cycle: <span style="color:var(--primary);font-weight:600">Enabled</span> &rarr; <span style="color:var(--danger);font-weight:600">Blocked</span> &rarr; <span style="font-weight:600">Inherit</span> (plan default). "Blocked" hides a feature this plan normally includes; "Enabled" adds one it doesn't.</p>
       </div>
       <div class="modal-actions">
@@ -438,12 +488,13 @@
       <h2>Record Payment</h2>
       <p class="subtitle" id="payment-client-name"></p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-        <div class="field"><label>Expected Amount (KES)</label><input type="number" id="pay-expected" readonly></div>
-        <div class="field"><label>Amount Paid (KES)</label><input type="number" id="pay-amount" min="0" oninput="updatePaymentBalance()"></div>
+        <div class="field"><label for="pay-expected">Expected Amount (KES)</label><input type="number" id="pay-expected" readonly></div>
+        <div class="field"><label for="pay-amount">Amount Paid (KES)</label><input type="number" id="pay-amount" min="0" oninput="updatePaymentBalance()"></div>
         <div class="field"><label>Period</label><select id="pay-period" onchange="updatePaymentDate()"><option value="monthly">Monthly (30 days)</option><option value="annual">Annual (365 days)</option></select></div>
-        <div class="field"><label>Next Payment Date</label><input type="date" id="pay-next-date"></div>
+        <div class="field"><label for="pay-next-date">Next Payment Date</label><input type="date" id="pay-next-date"></div>
       </div>
-      <div class="field"><label>Notes</label><textarea id="pay-notes" rows="2" placeholder="Optional note for this payment"></textarea></div>
+      <div id="pay-note" style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem"></div>
+      <div class="field"><label for="pay-notes">Notes</label><textarea id="pay-notes" rows="2" placeholder="Optional note for this payment"></textarea></div>
       <div id="pay-balance" style="padding:0.6rem 0.75rem;border-radius:var(--radius);background:var(--bg);font-size:0.9rem;margin-bottom:1rem"></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hidePaymentModal()">Cancel</button>
@@ -457,9 +508,9 @@
     <div class="modal">
       <h2>Publish Changelog</h2>
       <p class="subtitle">All active clients will be notified via email.</p>
-      <div class="field"><label>Version</label><input type="text" id="cl-version" placeholder="e.g. v2.1.0"></div>
-      <div class="field"><label>Title</label><input type="text" id="cl-title" placeholder="e.g. New WhatsApp Integration"></div>
-      <div class="field"><label>Details</label><textarea id="cl-body" rows="6" placeholder="What's new in this update..."></textarea></div>
+      <div class="field"><label for="cl-version">Version</label><input type="text" id="cl-version" placeholder="e.g. v2.1.0"></div>
+      <div class="field"><label for="cl-title">Title</label><input type="text" id="cl-title" placeholder="e.g. New WhatsApp Integration"></div>
+      <div class="field"><label for="cl-body">Details</label><textarea id="cl-body" rows="6" placeholder="What's new in this update..."></textarea></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hideChangelogModal()">Cancel</button>
         <button class="btn btn-primary" onclick="publishChangelog()">Publish & Notify All Clients</button>
@@ -483,19 +534,19 @@
     <div class="modal" style="width:640px;max-height:90vh">
       <h2 id="plan-modal-title">Create Plan</h2>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-        <div class="field"><label>Plan ID</label><input type="text" id="plan-id" placeholder="e.g. custom-basic"></div>
-        <div class="field"><label>Name</label><input type="text" id="plan-name" placeholder="e.g. Custom Basic"></div>
-        <div class="field"><label>Monthly Price (KES)</label><input type="number" id="plan-price" value="0" min="0"></div>
-        <div class="field"><label>Annual Price (KES)</label><input type="number" id="plan-price-annual" value="0" min="0"></div>
-        <div class="field"><label>Tier Level</label><input type="number" id="plan-tier" value="1" min="1"></div>
-        <div class="field"><label>Max Products</label><input type="number" id="plan-max-products" value="50" min="0"></div>
-        <div class="field"><label>Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
+        <div class="field"><label for="plan-id">Plan ID</label><input type="text" id="plan-id" placeholder="e.g. custom-basic"></div>
+        <div class="field"><label for="plan-name">Name</label><input type="text" id="plan-name" placeholder="e.g. Custom Basic"></div>
+        <div class="field"><label for="plan-price">Monthly Price (KES)</label><input type="number" id="plan-price" value="0" min="0"></div>
+        <div class="field"><label for="plan-price-annual">Annual Price (KES)</label><input type="number" id="plan-price-annual" value="0" min="0"></div>
+        <div class="field"><label for="plan-tier">Tier Level</label><input type="number" id="plan-tier" value="1" min="1"></div>
+        <div class="field"><label for="plan-max-products">Max Products</label><input type="number" id="plan-max-products" value="50" min="0"></div>
+        <div class="field"><label for="plan-max-branches">Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
         <div class="field" style="display:flex;align-items:end"><label style="margin:0"><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label></div>
       </div>
-      <div class="field"><label>Description</label><input type="text" id="plan-desc" placeholder="e.g. For small shops"></div>
+      <div class="field"><label for="plan-desc">Description</label><input type="text" id="plan-desc" placeholder="e.g. For small shops"></div>
       <div class="field">
-        <label>Features</label>
-        <div id="feature-groups-container" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
+        <label id="plan-features-label">Features</label>
+        <div id="feature-groups-container" role="group" aria-labelledby="plan-features-label" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hidePlanModal()">Cancel</button>
@@ -507,10 +558,10 @@
   <div class="modal-overlay" id="cloudinary-modal-overlay">
     <div class="modal" style="width:460px">
       <h2>Cloudinary Configuration</h2>
-      <div class="field"><label>Cloud Name</label><input type="text" id="inp-cld-cloud" placeholder="e.g. mycloud"></div>
-      <div class="field"><label>API Key</label><input type="text" id="inp-cld-key" placeholder="e.g. 123456789012345"></div>
-      <div class="field"><label>API Secret</label><input type="password" id="inp-cld-secret" placeholder="Your API secret"></div>
-      <div class="field"><label>Folder (optional)</label><input type="text" id="inp-cld-folder" placeholder="gear-glitch" value="gear-glitch"></div>
+      <div class="field"><label for="inp-cld-cloud">Cloud Name</label><input type="text" id="inp-cld-cloud" placeholder="e.g. mycloud"></div>
+      <div class="field"><label for="inp-cld-key">API Key</label><input type="text" id="inp-cld-key" placeholder="e.g. 123456789012345"></div>
+      <div class="field"><label for="inp-cld-secret">API Secret</label><input type="password" id="inp-cld-secret" placeholder="Your API secret"></div>
+      <div class="field"><label for="inp-cld-folder">Folder (optional)</label><input type="text" id="inp-cld-folder" placeholder="gear-glitch" value="gear-glitch"></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hideCloudinaryModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveCloudinaryConfig()">Save</button>
@@ -612,12 +663,17 @@
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("main-app").style.display = "";
         document.getElementById("user-display").textContent = data.user.username + " (" + data.user.role + ")";
+        applyRoleGates();
         loadClients();
         loadNotifications();
         updateTwoFaBadge(data.user.totpEnabled);
-        if (currentUser.role === "admin") {
-          document.getElementById("tab-btn-users").style.display = "";
-        }
+    }
+
+    function applyRoleGates() {
+      const isAdmin = currentUser && currentUser.role === "admin";
+      document.querySelectorAll("[data-admin]").forEach(el => { el.style.display = isAdmin ? "" : "none"; });
+      const usersTab = document.getElementById("tab-btn-users");
+      if (usersTab) usersTab.style.display = isAdmin ? "" : "none";
     }
 
     function doLogout() { clearAuth(); showLogin(); }
@@ -632,9 +688,9 @@
         el.style.border = "1px solid rgba(34,197,94,0.3)";
       } else {
         el.textContent = "2FA Off";
-        el.style.background = "rgba(239,68,68,0.1)";
-        el.style.color = "var(--danger)";
-        el.style.border = "1px solid rgba(239,68,68,0.2)";
+        el.style.background = "rgba(148,163,184,0.15)";
+        el.style.color = "var(--text-muted)";
+        el.style.border = "1px solid var(--border)";
       }
     }
 
@@ -651,9 +707,7 @@
         document.getElementById("main-app").style.display = "";
         document.getElementById("user-display").textContent = currentUser.username + " (" + currentUser.role + ")";
         updateTwoFaBadge(data.user.totpEnabled);
-        if (currentUser.role === "admin") {
-          document.getElementById("tab-btn-users").style.display = "";
-        }
+        applyRoleGates();
         loadClients();
         loadNotifications();
       } catch { clearAuth(); showLogin(); }
@@ -685,13 +739,10 @@
             <span>${grp.icon}</span>
             <span style="flex:1">${grp.group}</span>
             <span style="font-size:0.7rem;font-weight:400;opacity:0.6">${count}/${grp.features.length}</span>
-            <label style="font-size:0.7rem;font-weight:400;padding:0.1rem 0.4rem;border-radius:4px;background:${allOn ? 'var(--primary)' : 'var(--border)'};color:${allOn ? '#fff' : 'var(--text)'};cursor:pointer" onclick="event.stopPropagation()">
-              <input type="checkbox" ${allOn ? 'checked' : ''} onchange="toggleFeatureGroup('${grp.group}', this.checked)" style="display:none">
-              ${allOn ? 'All' : 'Select all'}
-            </label>
+            <button type="button" class="chip-btn" data-plan-group="${esc(grp.group)}" data-action="${allOn ? 'none' : 'all'}" onclick="event.stopPropagation()">${allOn ? 'All' : 'Select all'}</button>
           </summary>
           <div style="display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.5rem 0.75rem 0.75rem">
-            ${grp.features.map(f => `<label style="display:inline-flex;align-items:center;gap:0.2rem;font-size:0.78rem;cursor:pointer;padding:0.2rem 0.5rem;border-radius:6px;background:${selectedFeatures.includes(f) ? 'var(--primary)' : 'var(--bg)'};color:${selectedFeatures.includes(f) ? '#fff' : 'var(--text)'};border:1px solid ${selectedFeatures.includes(f) ? 'var(--primary)' : 'var(--border)'}"><input type="checkbox" ${selectedFeatures.includes(f) ? 'checked' : ''} onchange="toggleFeature('${f}', this.checked)" style="display:none">${f}</label>`).join('')}
+            ${grp.features.map(f => `<button type="button" class="feature-chip" aria-pressed="${selectedFeatures.includes(f) ? 'true' : 'false'}" data-plan-feature="${esc(f)}">${esc(f)}</button>`).join('')}
           </div>
         </details>`;
       }
@@ -721,7 +772,6 @@
     function renderClientFeatureGroups() {
       const container = document.getElementById("client-feature-groups-container");
       let html = "";
-      let idx = 0;
       for (const grp of FEATURE_GROUPS) {
         const onCount = grp.features.filter(f => clientFeatureState(f) === true).length;
         const offCount = grp.features.filter(f => clientFeatureState(f) === false).length;
@@ -732,21 +782,18 @@
             <span>${grp.icon}</span>
             <span style="flex:1">${grp.group}</span>
             <span style="font-size:0.7rem;font-weight:400;opacity:0.6">${onCount} on / ${offCount} blocked</span>
-            <label style="font-size:0.7rem;font-weight:400;padding:0.1rem 0.4rem;border-radius:4px;background:${allOn ? 'var(--primary)' : 'var(--border)'};color:${allOn ? '#fff' : 'var(--text)'};cursor:pointer" onclick="event.stopPropagation()">
-              <input type="checkbox" ${allOn ? 'checked' : ''} onchange="setClientFeatureGroup('${grp.group}', this.checked)" style="display:none">
-              ${allOn ? 'All' : 'Select all'}
-            </label>
-            <span style="font-size:0.7rem;font-weight:400;padding:0.1rem 0.4rem;border-radius:4px;background:${offCount === grp.features.length ? 'var(--danger)' : 'var(--border)'};color:${offCount === grp.features.length ? '#fff' : 'var(--text)'};cursor:pointer" onclick="event.stopPropagation();blockClientFeatureGroup('${grp.group}')">Block</span>
+            <button type="button" class="chip-btn" data-group="${esc(grp.group)}" data-action="${allOn ? 'none' : 'all'}" onclick="event.stopPropagation()">${allOn ? 'All' : 'Select all'}</button>
+            <button type="button" class="chip-btn" data-group="${esc(grp.group)}" data-action="block" onclick="event.stopPropagation()">Block</button>
           </summary>
           <div style="display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.5rem 0.75rem 0.75rem">
             ${grp.features.map(f => {
               const s = clientFeatureState(f);
               const on = s === true;
               const off = s === false;
-              return `<label title="Click to cycle: Enable / Block / Inherit" style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.78rem;cursor:pointer;padding:0.25rem 0.5rem;border-radius:6px;background:${on ? 'var(--primary)' : off ? 'rgba(239,68,68,0.12)' : 'var(--bg)'};color:${on ? '#fff' : off ? 'var(--danger)' : 'var(--text)'};border:1px solid ${on ? 'var(--primary)' : off ? 'var(--danger)' : 'var(--border)'};text-decoration:${off ? 'line-through' : 'none'}" onclick="cycleClientFeature(${idx++})">
+              return `<button type="button" class="feature-chip" title="Click to cycle: Enable / Block / Inherit" aria-pressed="${on ? 'true' : off ? 'false' : 'mixed'}" data-feature="${esc(f)}">
               <span style="font-size:0.7rem;font-weight:700">${on ? '&#10003;' : off ? '&#10007;' : '&ndash;'}</span>
               <span>${esc(f)}</span>
-            </label>`;
+            </button>`;
             }).join('')}
           </div>
         </details>`;
@@ -754,12 +801,11 @@
       container.innerHTML = html;
     }
 
-    function cycleClientFeature(index) {
-      const key = ALL_FEATURES[index];
-      const cur = clientFeatureState(key);
-      if (cur === undefined) editingClientOverrides[key] = true;
-      else if (cur === true) editingClientOverrides[key] = false;
-      else delete editingClientOverrides[key];
+    function cycleClientFeature(feature) {
+      const cur = clientFeatureState(feature);
+      if (cur === undefined) editingClientOverrides[feature] = true;
+      else if (cur === true) editingClientOverrides[feature] = false;
+      else delete editingClientOverrides[feature];
       renderClientFeatureGroups();
     }
 
@@ -796,17 +842,96 @@
 
     function api(path, opts = {}) {
       const token = getToken();
+      const method = opts.method || "GET";
       return fetch(path, {
         ...opts,
+        method,
         headers: { "Content-Type": "application/json", "Authorization": token ? "Bearer " + token : "", ...(opts.headers || {}) },
-      }).then(r => {
+      }).then(async r => {
         if (r.status === 401) { clearAuth(); showLogin(); throw new Error("Session expired"); }
-        return r.json();
+        const text = await r.text();
+        let data = null;
+        if (text) { try { data = JSON.parse(text); } catch { data = { error: text.slice(0, 300) || "Unexpected server response" }; } }
+        if (!r.ok) { throw new Error((data && data.error) || "Request failed (HTTP " + r.status + ")"); }
+        return data || {};
       });
     }
 
     function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
-    function toast(msg, type = "success") { const el = document.createElement("div"); el.className = `toast ${type}`; el.textContent = msg; document.body.appendChild(el); setTimeout(() => el.remove(), 4000); }
+    let toastContainer = null;
+    function toast(msg, type = "success", timeout = 4000) {
+      if (!toastContainer) { toastContainer = document.createElement("div"); toastContainer.className = "toast-container"; toastContainer.setAttribute("role", "status"); toastContainer.setAttribute("aria-live", "polite"); document.body.appendChild(toastContainer); }
+      const el = document.createElement("div"); el.className = `toast ${type}`; el.textContent = msg; toastContainer.appendChild(el);
+      setTimeout(() => el.remove(), timeout);
+    }
+
+    // ─── MODAL SYSTEM ───────────────────────────────────────
+    let openModalCount = 0;
+    const modalFocusStack = [];
+    function openModal(overlay, opts = {}) {
+      if (!overlay) return;
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      const titleEl = overlay.querySelector(".modal h2, .modal h1, .modal h3");
+      if (titleEl && !titleEl.id) titleEl.id = "modal-title-" + overlay.id;
+      if (titleEl && titleEl.id) overlay.setAttribute("aria-labelledby", titleEl.id);
+      modalFocusStack.push(document.activeElement);
+      overlay.classList.add("show");
+      openModalCount++;
+      document.body.style.overflow = "hidden";
+      const focusEl = opts.focus || overlay.querySelector('input:not([type="hidden"]):not([readonly]), select, textarea, button, a[href]');
+      if (focusEl) setTimeout(() => focusEl.focus(), 50);
+    }
+    function closeModal(overlay) {
+      if (!overlay || !overlay.classList.contains("show")) return;
+      overlay.classList.remove("show");
+      openModalCount = Math.max(0, openModalCount - 1);
+      const prev = modalFocusStack.pop();
+      if (openModalCount === 0) {
+        document.body.style.overflow = "";
+        if (prev && typeof prev.focus === "function" && document.contains(prev)) setTimeout(() => prev.focus(), 0);
+      }
+    }
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        const openOverlays = document.querySelectorAll(".modal-overlay.show");
+        const top = openOverlays[openOverlays.length - 1];
+        if (top && top.id !== "confirm-overlay") closeModal(top);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const openOverlays = document.querySelectorAll(".modal-overlay.show");
+      const top = openOverlays[openOverlays.length - 1];
+      if (!top) return;
+      const focusables = top.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+    document.addEventListener("mousedown", (e) => {
+      if (e.target && e.target.classList && e.target.classList.contains("modal-overlay") && e.target.id !== "confirm-overlay") closeModal(e.target);
+    });
+
+    // ─── CONFIRM DIALOG ─────────────────────────────────────
+    let confirmState = { action: null, secondary: null };
+    function confirmDialog(opts) {
+      confirmState = { action: opts.onConfirm || null, secondary: opts.onSecondary || null };
+      document.getElementById("confirm-title").textContent = opts.title || "Confirm";
+      document.getElementById("confirm-msg").textContent = opts.message || "";
+      const detail = document.getElementById("confirm-detail");
+      if (opts.detail) { detail.style.display = ""; detail.textContent = opts.detail; } else { detail.style.display = "none"; }
+      const secBtn = document.getElementById("confirm-secondary-btn");
+      if (opts.secondaryLabel) { secBtn.style.display = ""; secBtn.textContent = opts.secondaryLabel; secBtn.onclick = runConfirmSecondary; } else { secBtn.style.display = "none"; secBtn.onclick = null; }
+      const primaryBtn = document.getElementById("confirm-btn");
+      primaryBtn.textContent = opts.confirmLabel || "Confirm";
+      primaryBtn.className = "btn " + (opts.danger ? "btn-danger" : "btn-primary");
+      openModal(document.getElementById("confirm-overlay"), { focus: document.getElementById("cancel-confirm-btn") });
+    }
+    function runConfirm() { const a = confirmState.action; closeModal(document.getElementById("confirm-overlay")); confirmState = { action: null, secondary: null }; if (a) a(); }
+    function runConfirmSecondary() { const a = confirmState.secondary; closeModal(document.getElementById("confirm-overlay")); confirmState = { action: null, secondary: null }; if (a) a(); }
+    function closeConfirmDialog() { closeModal(document.getElementById("confirm-overlay")); confirmState = { action: null, secondary: null }; }
 
     // ─── CLIENTS ──────────────────────────────────────────
     async function loadClients() {
@@ -838,13 +963,59 @@
       document.getElementById("stat-orders").textContent = totalOrders.toLocaleString();
     }
 
+    let clientSort = { key: "name", dir: "asc" };
+    let clientSearch = "";
+    let clientStatusFilter = "";
+
+    function sortClients(key) {
+      if (clientSort.key === key) clientSort.dir = clientSort.dir === "asc" ? "desc" : "asc";
+      else clientSort = { key, dir: "asc" };
+      renderTable(allClients);
+    }
+
+    function sortArrow(key) {
+      return clientSort.key === key ? (clientSort.dir === "asc" ? " &#9650;" : " &#9660;") : " &#8597;";
+    }
+
+    function applyClientFilters(clients) {
+      let list = clients.filter(c => {
+        if (clientStatusFilter && c.status !== clientStatusFilter) return false;
+        if (clientSearch) {
+          const q = clientSearch.toLowerCase();
+          const hay = ((c.name || "") + " " + (c.admin_email || "") + " " + (c.domain || "")).toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+      return [...list].sort((a, b) => {
+        const dir = clientSort.dir === "asc" ? 1 : -1;
+        const k = clientSort.key;
+        if (k === "name") { const va = (a.name || "").toLowerCase(), vb = (b.name || "").toLowerCase(); return va < vb ? -dir : va > vb ? dir : 0; }
+        if (k === "status") { const va = (a.status || ""), vb = (b.status || ""); return va < vb ? -dir : va > vb ? dir : 0; }
+        if (k === "uptime") { return (Number(a.uptime_pct) || -1) * dir - (Number(b.uptime_pct) || -1) * dir; }
+        if (k === "orders") { return (Number(a.usage_orders) || 0) * dir - (Number(b.usage_orders) || 0) * dir; }
+        if (k === "revenue") { return (Number(a.usage_revenue) || 0) * dir - (Number(b.usage_revenue) || 0) * dir; }
+        return 0;
+      });
+    }
+
     function renderTable(clients) {
       if (!clients.length) {
-        document.getElementById("client-list").innerHTML = '<div class="empty"><div class="icon">&#128230;</div><p>No clients yet</p><button class="btn btn-primary" onclick="showModal()">+ Add Your First Client</button></div>';
+        const addBtn = currentUser && currentUser.role === "admin" ? '<button class="btn btn-primary" onclick="showModal()">+ Add Your First Client</button>' : "";
+        document.getElementById("client-list").innerHTML = '<div class="empty"><div class="icon">&#128230;</div><p>No clients yet</p>' + addBtn + '</div>';
+        document.getElementById("client-count").textContent = "0 clients";
         return;
       }
-      let html = '<table><thead><tr><th>Name</th><th>Domain</th><th>Plan</th><th>Subscription</th><th>Status</th><th>Health</th><th>Uptime</th><th>Orders</th><th>Revenue</th><th>Actions</th></tr></thead><tbody>';
-      for (const c of clients) {
+      const list = applyClientFilters(clients);
+      document.getElementById("client-count").textContent = list.length + " of " + clients.length + " clients";
+      if (!list.length) {
+        document.getElementById("client-list").innerHTML = '<div class="empty"><p>No clients match your search or filters.</p></div>';
+        return;
+      }
+      const isAdmin = currentUser && currentUser.role === "admin";
+      const thSort = (label, key) => '<th aria-sort="' + (clientSort.key === key ? (clientSort.dir === "asc" ? "ascending" : "descending") : "none") + '"><button type="button" class="th-sort" onclick="sortClients(\'' + key + '\')">' + label + sortArrow(key) + '</button></th>';
+      let html = '<table><thead><tr>' + thSort("Name", "name") + '<th>Domain</th><th>Plan</th><th>Subscription</th>' + thSort("Status", "status") + '<th>Health</th>' + thSort("Uptime", "uptime") + thSort("Orders", "orders") + thSort("Revenue", "revenue") + '<th>Actions</th></tr></thead><tbody>';
+      for (const c of list) {
         const uptime = c.uptime_pct != null ? Number(c.uptime_pct).toFixed(1) : "—";
         const revenue = c.usage_revenue ? Number(c.usage_revenue).toLocaleString() : "—";
         const orders = c.usage_orders || "—";
@@ -867,10 +1038,24 @@
         } else if (c.status === "suspended") {
           subBadge = '<span class="badge badge-suspended">Suspended</span>';
         }
+        const moreMenu = `
+          <details class="actions-menu">
+            <summary class="btn btn-ghost btn-sm">More &#9662;</summary>
+            <div class="menu">
+              ${c.render_service_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + esc(c.render_service_url) + '/api/health\',\'_blank\')">Backend</button>' : ''}
+              ${c.vercel_project_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + esc(c.vercel_project_url) + '\',\'_blank\')">Frontend</button>' : ''}
+              ${isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="editClient(${c.id})">Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="pushSecret(${c.id}, '${esc(c.name)}')" title="Push/rotate the control-plane secret onto the client's Render service">Push Secret</button>
+              <button class="btn btn-ghost btn-sm" onclick="redeployClient(${c.id})">Redeploy</button>
+              ${c.status === 'active' ? '<button class="btn btn-warning btn-sm" onclick="suspendClient(' + c.id + ')">Suspend</button>' : ''}
+              ${c.status === 'suspended' ? '<button class="btn btn-success btn-sm" onclick="resumeClient(' + c.id + ')">Resume</button>' : ''}
+              <button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${esc(c.name)}')">Delete</button>` : ''}
+            </div>
+          </details>`;
         html += `<tr>
           <td><strong>${esc(c.name)}</strong><br><span style="color:var(--text-muted);font-size:0.75rem">${esc(c.admin_email)}</span></td>
           <td>${esc(c.domain)}</td>
-          <td><span style="text-transform:capitalize">${esc(c.plan)}</span>${c.usage_over_limit ? ' <span class="badge badge-overdue" style="font-size:0.7rem">OVER LIMIT</span>' : ''}</td>
+          <td><span style="text-transform:capitalize">${esc(c.plan)}</span>${c.usage_over_limit ? ' <span class="badge badge-overlimit" style="font-size:0.7rem">OVER LIMIT</span>' : ''}</td>
           <td>${subBadge}</td>
           <td><span class="badge badge-${c.status}">${c.status}</span></td>
           <td><span class="badge badge-${c.health_status}">${c.health_status}</span></td>
@@ -879,14 +1064,8 @@
           <td>KES ${revenue}</td>
           <td><div class="actions-cell">
             <button class="btn btn-primary btn-sm" onclick="viewClientDetails(${c.id})">Details</button>
-            ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" class="btn btn-ghost btn-sm">Backend</a>' : ''}
-            ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
-            <button class="btn btn-ghost btn-sm" onclick="editClient(${c.id})">Edit</button>
-            <button class="btn btn-ghost btn-sm" onclick="pushSecret(${c.id}, '${esc(c.name)}')" title="Push/rotate the control-plane secret onto the client's Render service">Push Secret</button>
-            <button class="btn btn-ghost btn-sm" onclick="redeployClient(${c.id})">Redeploy</button>
-            ${c.status === 'active' ? '<button class="btn btn-warning btn-sm" onclick="suspendClient(' + c.id + ')">Suspend</button>' : ''}
-            ${c.status === 'suspended' ? '<button class="btn btn-success btn-sm" onclick="resumeClient(' + c.id + ')">Resume</button>' : ''}
-            <button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${esc(c.name)}')">Delete</button>
+            ${moreMenu}
+            ${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${esc(c.name)}')">Delete</button>` : ''}
           </div></td>
         </tr>`;
       }
@@ -895,17 +1074,17 @@
     }
 
     // ─── MODALS ───────────────────────────────────────────
-    function showModal() { document.getElementById("modal-overlay").classList.add("show"); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = operatorEmail || ""; document.getElementById("inp-domain").value = ""; document.getElementById("inp-plan").value = "growth"; }
-    function hideModal() { document.getElementById("modal-overlay").classList.remove("show"); }
-    function showExistingModal() { document.getElementById("existing-modal-overlay").classList.add("show"); document.getElementById("inp-ex-name").value = ""; document.getElementById("inp-ex-email").value = operatorEmail || ""; document.getElementById("inp-ex-backend").value = ""; document.getElementById("inp-ex-frontend").value = ""; document.getElementById("inp-ex-domain").value = ""; document.getElementById("inp-ex-render-id").value = ""; document.getElementById("inp-ex-cp-secret").value = ""; }
-    function hideExistingModal() { document.getElementById("existing-modal-overlay").classList.remove("show"); }
-    function hideEditModal() { document.getElementById("edit-modal-overlay").classList.remove("show"); }
-    function showChangelogModal() { document.getElementById("changelog-modal-overlay").classList.add("show"); document.getElementById("cl-version").value = ""; document.getElementById("cl-title").value = ""; document.getElementById("cl-body").value = ""; }
-    function hideChangelogModal() { document.getElementById("changelog-modal-overlay").classList.remove("show"); }
-    function hideTwoFaModal() { document.getElementById("twofa-modal-overlay").classList.remove("show"); }
+    function showModal() { openModal(document.getElementById("modal-overlay")); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = operatorEmail || ""; document.getElementById("inp-domain").value = ""; const p = document.getElementById("inp-plan"); if (p.options.length) p.selectedIndex = 0; }
+    function hideModal() { closeModal(document.getElementById("modal-overlay")); }
+    function showExistingModal() { openModal(document.getElementById("existing-modal-overlay")); document.getElementById("inp-ex-name").value = ""; document.getElementById("inp-ex-email").value = operatorEmail || ""; document.getElementById("inp-ex-backend").value = ""; document.getElementById("inp-ex-frontend").value = ""; document.getElementById("inp-ex-domain").value = ""; document.getElementById("inp-ex-render-id").value = ""; document.getElementById("inp-ex-cp-secret").value = ""; }
+    function hideExistingModal() { closeModal(document.getElementById("existing-modal-overlay")); }
+    function hideEditModal() { closeModal(document.getElementById("edit-modal-overlay")); }
+    function showChangelogModal() { openModal(document.getElementById("changelog-modal-overlay")); document.getElementById("cl-version").value = ""; document.getElementById("cl-title").value = ""; document.getElementById("cl-body").value = ""; }
+    function hideChangelogModal() { closeModal(document.getElementById("changelog-modal-overlay")); }
+    function hideTwoFaModal() { closeModal(document.getElementById("twofa-modal-overlay")); }
 
     async function openTwoFaModal() {
-      document.getElementById("twofa-modal-overlay").classList.add("show");
+      openModal(document.getElementById("twofa-modal-overlay"));
       const c = document.getElementById("twofa-content");
       c.innerHTML = '<p style="color:var(--text-muted)">Loading...</p>';
       try {
@@ -966,13 +1145,15 @@
       const prog = document.getElementById("modal-progress");
       document.getElementById("modal-form").style.display = "none";
       prog.style.display = "";
-      prog.innerHTML = '<div style="padding:1rem;color:var(--primary)">Starting provisioning for "' + esc(name) + '"...</div>';
+      const setProg = (html) => { prog.innerHTML = html; };
+      setProg('<div style="padding:1rem;color:var(--primary)">Starting provisioning for "' + esc(name) + '"...</div>');
       try {
         const data = await api("/api/clients", { method: "POST", body: JSON.stringify({ name, adminEmail: email || undefined, plan, domain: domain || undefined }) });
-        if (data.error) { prog.innerHTML = '<div style="padding:1rem;color:var(--danger)">' + esc(data.error) + '</div>'; document.getElementById("btn-create").disabled = false; return; }
+        if (data.error) { setProg('<div style="padding:1rem;color:var(--danger)">' + esc(data.error) + '</div>'); document.getElementById("btn-create").disabled = false; return; }
         const clientId = data.clientId;
-        prog.innerHTML = '<div style="padding:1rem;color:var(--primary)">Provisioning "' + esc(name) + '"...<br><span style="font-size:0.85rem;color:var(--text-muted)">Setting up database, backend, frontend...</span></div>';
-        setTimeout(() => { hideModal(); loadClients(); }, 2000);
+        setProg('<div style="padding:1rem;color:var(--primary)">Provisioning "' + esc(name) + '"...</div><div id="provision-log" style="font-size:0.85rem;color:var(--text-secondary);padding:0 1rem 1rem;line-height:1.7"></div>');
+        const appendLog = (line) => { const el = document.getElementById("provision-log"); if (el) el.innerHTML += esc(line) + '<br>'; };
+        appendLog("Request received — creating database, backend, and frontend. This usually takes a couple of minutes.");
         let pollCount = 0;
         const pollTimer = setInterval(async () => {
           pollCount++;
@@ -982,12 +1163,16 @@
             if (client && client.status !== "provisioning") {
               clearInterval(pollTimer);
               loadClients();
-              toast(client.status === "active" ? '"' + name + '" is ready!' : '"' + name + '" provisioning failed.', client.status === "active" ? "success" : "error");
+              const ok = client.status === "active";
+              appendLog(ok ? "Done — " + esc(name) + " is active." : "Provisioning finished with status \"" + esc(client.status) + "\".");
+              setTimeout(() => { hideModal(); toast('"' + name + '" ' + (ok ? 'is ready!' : 'provisioning ' + client.status + '.'), ok ? "success" : "error"); }, 700);
+            } else if (pollCount % 2 === 0) {
+              appendLog("Still provisioning… " + Math.round(pollCount * 5) + "s elapsed.");
             }
           } catch {}
-          if (pollCount > 24) clearInterval(pollTimer); // stop after ~2 min
+          if (pollCount > 36) { clearInterval(pollTimer); appendLog("Still running after ~3 minutes. You can close this and track progress in the Deploy Log."); }
         }, 5000);
-      } catch (e) { prog.innerHTML = '<div style="padding:1rem;color:var(--danger)">' + esc(e.message) + '</div>'; document.getElementById("btn-create").disabled = false; }
+      } catch (e) { setProg('<div style="padding:1rem;color:var(--danger)">' + esc(e.message) + '</div>'); document.getElementById("btn-create").disabled = false; }
     }
 
     async function addExistingClient() {
@@ -1009,39 +1194,74 @@
     }
 
     async function deleteClient(id, name) {
-      if (!confirm('Delete "' + name + '"? This removes their database and all deployments.')) return;
-      try { const data = await api("/api/clients/" + id, { method: "DELETE" }); toast(data.message || "Deleted"); loadClients(); } catch (e) { toast("Failed", "error"); }
+      confirmDialog({
+        title: "Delete client?",
+        message: 'Delete "' + name + '"? This removes their database and all deployments.',
+        confirmLabel: "Delete",
+        danger: true,
+        onConfirm: async () => {
+          try { const data = await api("/api/clients/" + id, { method: "DELETE" }); toast(data.message || "Deleted"); loadClients(); } catch (e) { toast("Failed: " + e.message, "error"); }
+        }
+      });
     }
 
     async function pushSecret(id, name) {
-      const choice = prompt('Push control-plane secret to "' + name + '"?\n\nType "push" to push the stored secret, or "rotate" to generate and push a new one. The client service will redeploy.', "push");
-      if (!choice) return;
-      const rotate = choice.trim().toLowerCase() === "rotate";
+      confirmDialog({
+        title: "Push control-plane secret?",
+        message: 'Push the stored control-plane secret to "' + name + '"? The client service will redeploy.',
+        detail: 'Choose "Push" to push the currently stored secret, or "Rotate & push" to generate a brand-new secret and push that instead.',
+        confirmLabel: "Push stored secret",
+        secondaryLabel: "Rotate & push new",
+        onConfirm: () => doPushSecret(id, false),
+        onSecondary: () => doPushSecret(id, true)
+      });
+    }
+
+    async function doPushSecret(id, rotate) {
       try {
         const data = await api("/api/clients/" + id + "/push-secret", { method: "POST", body: JSON.stringify({ rotate }) });
         if (data.error) { toast(data.error, "error"); return; }
-        toast(data.message);
+        toast(rotate ? "Secret rotated and pushed." : "Secret pushed.");
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
     async function suspendClient(id) {
-      if (!confirm("Suspend this client? Their service will be paused.")) return;
-      try { const data = await api("/api/clients/" + id + "/suspend", { method: "PUT" }); toast(data.message); loadClients(); } catch (e) { toast("Failed", "error"); }
+      confirmDialog({
+        title: "Suspend client?",
+        message: "Suspend this client? Their service will be paused.",
+        confirmLabel: "Suspend",
+        danger: true,
+        onConfirm: async () => { try { const data = await api("/api/clients/" + id + "/suspend", { method: "PUT" }); toast(data.message); loadClients(); } catch (e) { toast("Failed", "error"); } }
+      });
     }
 
-    async function resumeClient(id) {
-      try { const data = await api("/api/clients/" + id + "/resume", { method: "PUT" }); toast(data.message); loadClients(); } catch (e) { toast("Failed", "error"); }
+    function resumeClient(id) {
+      const c = allClients.find(x => x.id === id);
+      confirmDialog({
+        title: "Resume client?",
+        message: "Re-activate " + (c ? c.name : "this client") + " and restore their services?",
+        confirmLabel: "Resume",
+        onConfirm: async () => {
+          try { const data = await api("/api/clients/" + id + "/resume", { method: "PUT" }); toast(data.message); loadClients(); } catch (e) { toast("Failed", "error"); }
+        }
+      });
     }
 
     async function redeployClient(id) {
-      if (!confirm("Trigger a Render redeploy for this client?")) return;
-      toast("Redeploying...");
-      try {
-        const data = await api("/api/clients/" + id + "/redeploy", { method: "POST" });
-        if (data.error) { toast(data.error, "error"); return; }
-        toast(data.message);
-        loadClients();
-      } catch (e) { toast("Failed: " + e.message, "error"); }
+      confirmDialog({
+        title: "Redeploy client?",
+        message: "Trigger a Render redeploy for this client?",
+        confirmLabel: "Redeploy",
+        onConfirm: async () => {
+          toast("Redeploying...");
+          try {
+            const data = await api("/api/clients/" + id + "/redeploy", { method: "POST" });
+            if (data.error) { toast(data.error, "error"); return; }
+            toast(data.message);
+            loadClients();
+          } catch (e) { toast("Failed: " + e.message, "error"); }
+        }
+      });
     }
 
     function editClient(id) {
@@ -1066,7 +1286,7 @@
         }
       } catch {}
       renderClientFeatureGroups();
-      document.getElementById("edit-modal-overlay").classList.add("show");
+      openModal(document.getElementById("edit-modal-overlay"));
     }
 
     async function saveClientEdit() {
@@ -1086,9 +1306,15 @@
     }
 
     async function deployAll() {
-      if (!confirm("Deploy latest code to ALL active clients?")) return;
-      toast("Deploying...");
-      try { const data = await api("/api/deploy-all", { method: "POST" }); const r = data.results || []; toast(`Deployed: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`); } catch (e) { toast("Failed", "error"); }
+      confirmDialog({
+        title: "Deploy all clients?",
+        message: "Deploy latest code to ALL active clients?",
+        confirmLabel: "Deploy All",
+        onConfirm: async () => {
+          toast("Deploying...");
+          try { const data = await api("/api/deploy-all", { method: "POST" }); const r = data.results || []; toast(`Deployed: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`); loadDeploys(); loadClients(); } catch (e) { toast("Failed", "error"); }
+        }
+      });
     }
 
     async function healthCheckAll() {
@@ -1097,14 +1323,20 @@
     }
 
     async function syncCloudinary() {
-      if (!confirm("Push Cloudinary credentials to all active clients? Each client gets its own folder.")) return;
-      toast("Syncing Cloudinary...");
-      try {
-        const data = await api("/api/sync-cloudinary", { method: "POST" });
-        if (data.error) { toast(data.error, "error"); return; }
-        const r = data.results || [];
-        toast(`Cloudinary synced: ${r.filter(x=>x.success).length} ok, ${r.filter(x=>!x.success).length} failed`);
-      } catch (e) { toast("Failed: " + e.message, "error"); }
+      confirmDialog({
+        title: "Sync Cloudinary credentials?",
+        message: "Push Cloudinary credentials to all active clients? Each client gets its own folder.",
+        confirmLabel: "Sync All",
+        onConfirm: async () => {
+          toast("Syncing Cloudinary...");
+          try {
+            const data = await api("/api/sync-cloudinary", { method: "POST" });
+            if (data.error) { toast(data.error, "error"); return; }
+            const r = data.results || [];
+            toast(`Cloudinary synced: ${r.filter(x=>x.success).length} ok, ${r.filter(x=>!x.success).length} failed`);
+          } catch (e) { toast("Failed: " + e.message, "error"); }
+        }
+      });
     }
 
     async function pullCloudinaryFromClient() {
@@ -1120,13 +1352,13 @@
 
     // ─── CLOUDINARY MANUAL CONFIG ──────────────────────────
     function showCloudinaryModal() {
-      document.getElementById("cloudinary-modal-overlay").classList.add("show");
+      openModal(document.getElementById("cloudinary-modal-overlay"));
       document.getElementById("inp-cld-cloud").value = "";
       document.getElementById("inp-cld-key").value = "";
       document.getElementById("inp-cld-secret").value = "";
       document.getElementById("inp-cld-folder").value = "gear-glitch";
     }
-    function hideCloudinaryModal() { document.getElementById("cloudinary-modal-overlay").classList.remove("show"); }
+    function hideCloudinaryModal() { closeModal(document.getElementById("cloudinary-modal-overlay")); }
     async function saveCloudinaryConfig() {
       const cloudName = document.getElementById("inp-cld-cloud").value.trim();
       const apiKey = document.getElementById("inp-cld-key").value.trim();
@@ -1256,7 +1488,7 @@
         if (!entries.length) { document.getElementById("deploy-log").innerHTML = '<div class="empty"><p>No deploys yet. Click "Deploy All Clients" or push to main to trigger auto-deploys via GitHub Actions.</p></div>'; return; }
         let html = '<table><thead><tr><th>Client</th><th>Status</th><th>Triggered</th><th>Completed</th></tr></thead><tbody>';
         for (const e of entries) {
-          html += `<tr><td>${esc(e.client_name)}</td><td><span class="badge badge-${e.status === 'success' ? 'active' : e.status === 'failed' ? 'failed' : 'provisioning'}">${e.status}</span></td><td>${new Date(e.triggered_at).toLocaleString()}</td><td>${e.completed_at ? new Date(e.completed_at).toLocaleString() : '—'}</td></tr>`;
+          html += `<tr><td>${esc(e.client_name)}</td><td><span class="badge badge-${e.status === 'success' ? 'active' : e.status === 'failed' ? 'failed' : 'deploying'}">${e.status}</span></td><td>${new Date(e.triggered_at).toLocaleString()}</td><td>${e.completed_at ? new Date(e.completed_at).toLocaleString() : '—'}</td></tr>`;
         }
         html += '</tbody></table>';
         document.getElementById("deploy-log").innerHTML = html;
@@ -1283,8 +1515,31 @@
       } catch { document.getElementById("audit-list").innerHTML = '<div class="empty"><p>Failed to load.</p></div>'; }
     }
 
+    const searchInput = document.getElementById("client-search");
+    const statusFilter = document.getElementById("client-status-filter");
+    if (searchInput) searchInput.addEventListener("input", (e) => { clientSearch = e.target.value.trim(); renderTable(allClients); });
+    if (statusFilter) statusFilter.addEventListener("change", (e) => { clientStatusFilter = e.target.value; renderTable(allClients); });
+
+    const clientFeatureContainer = document.getElementById("client-feature-groups-container");
+    if (clientFeatureContainer) clientFeatureContainer.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-feature],button[data-group]");
+      if (!btn) return;
+      if (btn.dataset.feature) { cycleClientFeature(btn.dataset.feature); return; }
+      const grp = btn.dataset.group;
+      if (btn.dataset.action === "block") blockClientFeatureGroup(grp);
+      else setClientFeatureGroup(grp, btn.dataset.action === "all");
+    });
+
+    const planFeatureContainer = document.getElementById("feature-groups-container");
+    if (planFeatureContainer) planFeatureContainer.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-plan-feature],button[data-plan-group]");
+      if (!btn) return;
+      if (btn.dataset.planFeature) { toggleFeature(btn.dataset.planFeature, !editingPlanFeatures.includes(btn.dataset.planFeature)); return; }
+      toggleFeatureGroup(btn.dataset.planGroup, btn.dataset.action === "all");
+    });
+
     initAuth();
-    setInterval(() => { if (getToken()) { loadClients(); loadNotifications(); } }, 60000);
+    setInterval(() => { if (getToken() && !document.querySelector(".modal-overlay.show")) { loadClients(); loadNotifications(); } }, 60000);
 
     // ─── PLANS ────────────────────────────────────────────
     let editingPlanId = null;
@@ -1295,10 +1550,22 @@
       return [];
     }
 
+    function populatePlanDropdowns(plans) {
+      const seen = {};
+      let html = "";
+      for (const p of (plans || [])) { seen[p.id] = true; html += `<option value="${esc(p.id)}">${esc(p.name)}${Number(p.price) ? ' — KES ' + Number(p.price).toLocaleString() + '/mo' : ''}</option>`; }
+      for (const [id, name] of [["starter", "Starter"], ["growth", "Growth"], ["pro", "Pro"], ["enterprise", "Enterprise"]]) { if (!seen[id]) html += `<option value="${id}">${name}</option>`; }
+      for (const id of ["inp-plan", "inp-ex-plan", "edit-plan"]) {
+        const el = document.getElementById(id);
+        if (el) { const cur = el.value; el.innerHTML = html; if (cur && [...el.options].some(o => o.value === cur)) el.value = cur; }
+      }
+    }
+
     async function loadPlans() {
       try {
         const data = await api("/api/plans");
         const plans = data.plans || [];
+        populatePlanDropdowns(plans);
         if (!plans.length) { document.getElementById("plans-list").innerHTML = '<div class="empty"><p>No plans yet. Create one or pull from an existing client.</p></div>'; return; }
         let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem">';
         for (const p of plans) {
@@ -1310,11 +1577,11 @@
                 <strong style="font-size:1rem">${esc(p.name)}</strong>
                 <span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:4px;background:${active ? 'var(--success)' : 'var(--border)'};color:${active ? '#fff' : 'var(--text-muted)'};margin-left:0.4rem;font-weight:600">${active ? 'Active' : 'Inactive'}</span>
               </div>
-              <div style="display:flex;gap:0.25rem">
+              ${currentUser && currentUser.role === "admin" ? `<div style="display:flex;gap:0.25rem">
                 <button class="btn btn-ghost btn-sm" onclick="editPlan('${esc(p.id)}')">Edit</button>
                 <button class="btn btn-ghost btn-sm" onclick="togglePlanActive('${esc(p.id)}', ${!active})">${active ? 'Deactivate' : 'Activate'}</button>
-                <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}', '${esc(p.name)}')">Del</button>
-              </div>
+                <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}', '${esc(p.name)}')">Delete</button>
+              </div>` : ''}
             </div>
             <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">${esc(p.description || 'No description')}</div>
             <div style="font-size:1.15rem;font-weight:700;color:var(--primary);margin-bottom:0.25rem">KES ${Number(p.price).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;opacity:0.6">/mo</span></div>
@@ -1343,10 +1610,10 @@
       document.getElementById("plan-max-branches").value = plan ? (plan.max_branches || 1) : 1;
       document.getElementById("plan-active").checked = plan ? plan.is_active : true;
       renderFeatureGroups(editingPlanFeatures);
-      document.getElementById("plan-modal-overlay").classList.add("show");
+      openModal(document.getElementById("plan-modal-overlay"));
     }
 
-    function hidePlanModal() { document.getElementById("plan-modal-overlay").classList.remove("show"); editingPlanId = null; editingPlanFeatures = []; }
+    function hidePlanModal() { closeModal(document.getElementById("plan-modal-overlay")); editingPlanId = null; editingPlanFeatures = []; }
 
     async function savePlan() {
       const id = document.getElementById("plan-id").value.trim();
@@ -1380,26 +1647,45 @@
       } catch (e) { toast("Failed to load plan", "error"); }
     }
 
-    async function togglePlanActive(id, isActive) {
-      try {
-        await api("/api/plans/" + id, { method: "PUT", body: JSON.stringify({ isActive }) });
-        toast(isActive ? "Plan activated." : "Plan deactivated."); loadPlans();
-      } catch (e) { toast("Failed", "error"); }
+    function togglePlanActive(id, isActive) {
+      confirmDialog({
+        title: isActive ? "Activate plan?" : "Deactivate plan?",
+        message: isActive ? "Make this plan visible to clients?" : "Hide this plan from clients? Existing subscribers keep it.",
+        confirmLabel: isActive ? "Activate" : "Deactivate",
+        danger: !isActive,
+        onConfirm: async () => {
+          try {
+            await api("/api/plans/" + id, { method: "PUT", body: JSON.stringify({ isActive }) });
+            toast(isActive ? "Plan activated." : "Plan deactivated."); loadPlans();
+          } catch (e) { toast("Failed", "error"); }
+        }
+      });
     }
 
     async function deletePlan(id, name) {
-      if (!confirm('Delete plan "' + name + '"? This cannot be undone.')) return;
-      try { await api("/api/plans/" + id, { method: "DELETE" }); toast("Plan deleted."); loadPlans(); } catch (e) { toast("Failed", "error"); }
+      confirmDialog({
+        title: "Delete plan?",
+        message: 'Delete plan "' + name + '"? This cannot be undone.',
+        confirmLabel: "Delete",
+        danger: true,
+        onConfirm: async () => { try { await api("/api/plans/" + id, { method: "DELETE" }); toast("Plan deleted."); loadPlans(); } catch (e) { toast("Failed", "error"); } }
+      });
     }
 
     async function syncAllPlans() {
-      if (!confirm("Push all custom plans to every active client?")) return;
-      toast("Syncing plans...");
-      try {
-        const data = await api("/api/plans/sync-all", { method: "POST" });
-        const r = data.results || [];
-        toast(`Synced: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`);
-      } catch (e) { toast("Failed", "error"); }
+      confirmDialog({
+        title: "Sync plans to all clients?",
+        message: "Push all custom plans to every active client?",
+        confirmLabel: "Sync All",
+        onConfirm: async () => {
+          toast("Syncing plans...");
+          try {
+            const data = await api("/api/plans/sync-all", { method: "POST" });
+            const r = data.results || [];
+            toast(`Synced: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`);
+          } catch (e) { toast("Failed", "error"); }
+        }
+      });
     }
 
     async function pullPlansFromClient() {
@@ -1409,6 +1695,16 @@
       try {
         const data = await api("/api/clients/" + clientId + "/pull-plans", { method: "POST" });
         toast(data.message || "Plans imported."); loadPlans();
+      } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    async function importFromGearGlitch() {
+      toast("Importing plans from the Gear&Glitch Store...", "info");
+      try {
+        const data = await api("/api/plans/import-defaults", { method: "POST" });
+        if (data.error) { toast(data.error, "error"); return; }
+        toast(data.message || "Plans imported.");
+        loadPlans();
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
@@ -1501,16 +1797,22 @@
     }
 
     async function runBackups() {
-      if (!confirm("Run backup for all active client databases?")) return;
-      toast("Running backups...");
-      try {
-        const data = await api("/api/backups/run", { method: "POST" });
-        const r = data.results || [];
-        const ok = r.filter(x => x.success).length;
-        const fail = r.filter(x => !x.success).length;
-        toast(`Backups: ${ok} succeeded, ${fail} failed`);
-        loadBackups();
-      } catch (e) { toast("Backup failed: " + e.message, "error"); }
+      confirmDialog({
+        title: "Run backups?",
+        message: "Run backup for all active client databases?",
+        confirmLabel: "Run Backups",
+        onConfirm: async () => {
+          toast("Running backups...");
+          try {
+            const data = await api("/api/backups/run", { method: "POST" });
+            const r = data.results || [];
+            const ok = r.filter(x => x.success).length;
+            const fail = r.filter(x => !x.success).length;
+            toast(`Backups: ${ok} succeeded, ${fail} failed`);
+            loadBackups();
+          } catch (e) { toast("Backup failed: " + e.message, "error"); }
+        }
+      });
     }
 
     // ─── USERS ──────────────────────────────────────────────
@@ -1544,9 +1846,9 @@
       document.getElementById("user-username").value = "";
       document.getElementById("user-password").value = "";
       document.getElementById("user-role").value = "viewer";
-      document.getElementById("user-modal-overlay").classList.add("show");
+      openModal(document.getElementById("user-modal-overlay"));
     }
-    function hideUserModal() { document.getElementById("user-modal-overlay").classList.remove("show"); }
+    function hideUserModal() { closeModal(document.getElementById("user-modal-overlay")); }
 
     async function createUser() {
       const username = document.getElementById("user-username").value.trim();
@@ -1579,22 +1881,34 @@
           </div>
           <div style="font-size:0.82rem;color:var(--text-muted)">Use this API key with <code>x-api-key</code> header or <code>?key=</code> query parameter for programmatic access.</div>
         `;
-        document.getElementById("user-detail-overlay").classList.add("show");
-      } catch (e) { toast("Failed", "error"); }
+        openModal(document.getElementById("user-detail-overlay"));
+      } catch (e) { toast("Failed to load user: " + e.message, "error"); }
     }
-    function hideUserDetailModal() { document.getElementById("user-detail-overlay").classList.remove("show"); }
+    function hideUserDetailModal() { closeModal(document.getElementById("user-detail-overlay")); }
 
     async function regenerateUserKey(id, username) {
-      if (!confirm(`Regenerate API key for "${username}"? The old key will stop working immediately.`)) return;
-      try {
-        const data = await api("/api/users/" + id + "/regenerate-key", { method: "POST" });
-        toast(`New API key: ${data.api_key}`); loadUsers();
-      } catch (e) { toast("Failed", "error"); }
+      confirmDialog({
+        title: "Regenerate API key?",
+        message: `Regenerate API key for "${username}"? The old key will stop working immediately.`,
+        confirmLabel: "Regenerate",
+        danger: true,
+        onConfirm: async () => {
+          try {
+            const data = await api("/api/users/" + id + "/regenerate-key", { method: "POST" });
+            toast(`New API key: ${data.api_key}`); loadUsers();
+          } catch (e) { toast("Failed", "error"); }
+        }
+      });
     }
 
     async function deleteUser(id, username) {
-      if (!confirm(`Delete user "${username}"?`)) return;
-      try { await api("/api/users/" + id, { method: "DELETE" }); toast("User deleted."); loadUsers(); } catch (e) { toast("Failed", "error"); }
+      confirmDialog({
+        title: "Delete user?",
+        message: `Delete user "${username}"?`,
+        confirmLabel: "Delete",
+        danger: true,
+        onConfirm: async () => { try { await api("/api/users/" + id, { method: "DELETE" }); toast("User deleted."); loadUsers(); } catch (e) { toast("Failed", "error"); } }
+      });
     }
 
     // ─── CLIENT DETAILS + INVOICES ────────────────────────
@@ -1636,8 +1950,20 @@
       document.getElementById("tab-backups").style.display = "none";
       document.getElementById("tab-client-detail").style.display = "";
 
+      let detailTab = document.getElementById("tab-btn-detail");
+      if (!detailTab) {
+        detailTab = document.createElement("button");
+        detailTab.id = "tab-btn-detail";
+        detailTab.className = "tab active";
+        detailTab.setAttribute("role", "tab");
+        detailTab.onclick = closeClientDetails;
+        document.getElementById("tab-btn-clients").after(detailTab);
+      }
+      detailTab.textContent = "← " + (c.name || "Client");
+      detailTab.className = "tab active";
+
       document.getElementById("detail-client-name").textContent = c.name;
-      const pwHtml = c.admin_password ? '<span style="font-size:0.82rem;margin-left:1rem;color:var(--text-muted)">PW: <code style="cursor:pointer;background:var(--bg);padding:2px 6px;border-radius:4px" onclick="navigator.clipboard.writeText(\'' + c.admin_password + '\');toast(\'Password copied\')">' + esc(c.admin_password) + '</code> <span style="font-size:0.7rem;cursor:pointer;color:var(--primary)" onclick="navigator.clipboard.writeText(\'' + c.admin_password + '\');toast(\'Password copied\')">copy</span></span>' : '';
+      const pwHtml = c.admin_password ? '<span style="font-size:0.82rem;margin-left:1rem;color:var(--text-muted)">PW: <code style="cursor:pointer;background:var(--bg);padding:2px 6px;border-radius:4px" onclick="navigator.clipboard.writeText(\'' + c.admin_password + '\');toast(\'Password copied\')" title="Click to copy">' + String(c.admin_password).replace(/./g, "•") + '</code> <span style="font-size:0.7rem;cursor:pointer;color:var(--primary)" onclick="navigator.clipboard.writeText(\'' + c.admin_password + '\');toast(\'Password copied\')">copy</span></span>' : '';
       document.getElementById("detail-client-name").innerHTML += pwHtml;
       document.getElementById("detail-actions").innerHTML = `
         ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" class="btn btn-ghost btn-sm">Backend</a>' : ''}
@@ -1690,17 +2016,12 @@
 
     function closeClientDetails() {
       currentDetailClientId = null;
+      const dt = document.getElementById("tab-btn-detail");
+      if (dt) dt.remove();
       document.getElementById("tab-client-detail").style.display = "none";
       document.getElementById("tab-clients").style.display = "";
       document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      document.querySelector('.tab').classList.add("active");
-    }
-
-    // Show Users tab for admins
-    function showUsersTabForAdmin() {
-      if (currentUser && currentUser.role === "admin") {
-        document.getElementById("tab-btn-users").style.display = "";
-      }
+      document.getElementById("tab-btn-clients").classList.add("active");
     }
 
     async function loadClientInvoices(clientId) {
@@ -1753,6 +2074,8 @@
     }
 
     let paymentPlans = [];
+    let pendingInvoiceAmount = 0;
+    let pendingInvoiceDue = "";
 
     async function recordClientPayment() {
       if (!currentDetailClientId) return;
@@ -1762,17 +2085,24 @@
         const data = await api("/api/plans");
         paymentPlans = data.plans || [];
       } catch (e) { paymentPlans = []; }
+      pendingInvoiceAmount = 0;
+      pendingInvoiceDue = "";
+      try {
+        const invData = await api("/api/clients/" + currentDetailClientId + "/invoices");
+        const pending = (invData.invoices || []).find(i => i.status === "pending" || i.status === "overdue");
+        if (pending) { pendingInvoiceAmount = Number(pending.amount) || 0; pendingInvoiceDue = pending.dueDate || ""; }
+      } catch {}
       const plan = paymentPlans.find(p => p.id === c.plan) || null;
 
-      document.getElementById("payment-client-name").textContent = c.name + " · " + c.plan + " plan";
+      document.getElementById("payment-client-name").textContent = c.name + " · " + (plan ? plan.name : c.plan) + " plan";
       document.getElementById("pay-period").value = "monthly";
       document.getElementById("pay-notes").value = "";
-      document.getElementById("pay-amount").value = plan ? (Number(plan.price) || "") : "";
+      document.getElementById("pay-amount").value = (plan && Number(plan.price)) ? Number(plan.price) : (pendingInvoiceAmount || "");
       updatePaymentDate();
-      document.getElementById("payment-modal-overlay").classList.add("show");
+      openModal(document.getElementById("payment-modal-overlay"));
     }
 
-    function hidePaymentModal() { document.getElementById("payment-modal-overlay").classList.remove("show"); }
+    function hidePaymentModal() { closeModal(document.getElementById("payment-modal-overlay")); }
 
     function updatePaymentDate() {
       const period = document.getElementById("pay-period").value;
@@ -1785,7 +2115,14 @@
       document.getElementById("pay-next-date").value = next.toISOString().slice(0, 10);
 
       const plan = c ? (paymentPlans.find(p => p.id === c.plan) || null) : null;
-      const expected = period === "annual" && plan && plan.price_annual != null ? Number(plan.price_annual) : (plan ? Number(plan.price) || 0 : 0);
+      let expected = period === "annual" && plan && plan.price_annual != null ? Number(plan.price_annual) : (plan ? Number(plan.price) || 0 : 0);
+      const note = document.getElementById("pay-note");
+      if (expected <= 0 && pendingInvoiceAmount > 0) {
+        expected = period === "annual" ? pendingInvoiceAmount * 12 : pendingInvoiceAmount;
+        note.textContent = "Plan price unknown, so expected amount comes from the pending invoice" + (pendingInvoiceDue ? " (due " + new Date(pendingInvoiceDue).toLocaleDateString() + ")" : "") + ". Adjust before recording.";
+      } else {
+        note.textContent = plan ? "Amount from the " + plan.name + " plan." : "";
+      }
       document.getElementById("pay-expected").value = expected;
       updatePaymentBalance();
     }
@@ -1807,12 +2144,27 @@
       if (!currentDetailClientId) return;
       const amount = Number(document.getElementById("pay-amount").value);
       if (!amount || amount <= 0) { toast("Enter the amount paid.", "error"); return; }
+      const expected = Number(document.getElementById("pay-expected").value) || 0;
       const payload = {
         amount,
         periodType: document.getElementById("pay-period").value,
         nextPaymentDate: document.getElementById("pay-next-date").value,
         notes: document.getElementById("pay-notes").value.trim(),
       };
+      const shortfall = expected > 0 ? Math.max(0, expected - amount) : 0;
+      const c = allClients.find(x => x.id === currentDetailClientId);
+      const expiryLabel = payload.nextPaymentDate ? new Date(payload.nextPaymentDate + "T00:00:00").toLocaleDateString() : "—";
+      confirmDialog({
+        title: "Record payment?",
+        message: "Record a payment of KES " + amount.toLocaleString() + " for " + (c ? c.name : "this client") + "?",
+        detail: "Subscription extends to " + expiryLabel + ". " + (shortfall > 0 ? "This is KES " + shortfall.toLocaleString() + " short of the expected KES " + expected.toLocaleString() + " — a balance stays outstanding." : "Matches the expected amount — no balance outstanding."),
+        confirmLabel: shortfall > 0 ? "Record & leave balance" : "Record payment",
+        danger: shortfall > 0,
+        onConfirm: () => doSubmitClientPayment(payload)
+      });
+    }
+
+    async function doSubmitClientPayment(payload) {
       toast("Recording payment...");
       try {
         const data = await api("/api/clients/" + currentDetailClientId + "/invoices/record-payment", { method: "POST", body: JSON.stringify(payload) });
@@ -1826,11 +2178,18 @@
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
-    async function payClientInvoice(clientId, invId) {
-      try {
-        await api("/api/clients/" + clientId + "/invoices/" + invId + "/pay", { method: "POST" });
-        toast("Invoice marked as paid."); loadClientInvoices(clientId);
-      } catch (e) { toast("Failed", "error"); }
+    function payClientInvoice(clientId, invId) {
+      confirmDialog({
+        title: "Mark invoice as paid?",
+        message: "Record this invoice as fully paid?",
+        confirmLabel: "Mark paid",
+        onConfirm: async () => {
+          try {
+            await api("/api/clients/" + clientId + "/invoices/" + invId + "/pay", { method: "POST" });
+            toast("Invoice marked as paid."); loadClientInvoices(clientId);
+          } catch (e) { toast("Failed", "error"); }
+        }
+      });
     }
 
     async function viewClientInvoice(clientId, invId) {
@@ -1884,14 +2243,14 @@
         html += '<div style="font-weight:600;color:var(--warning);margin-bottom:0.5rem">Payment reminders</div>';
         for (const r of reminders) {
           const label = r.daysLeft < 0 ? "Overdue" : r.daysLeft === 0 ? "Due today" : r.daysLeft === 1 ? "Due tomorrow" : "Due in " + r.daysLeft + " days";
-          html += '<div style="font-size:0.85rem;padding:0.2rem 0"><span style="cursor:pointer;color:var(--primary);text-decoration:underline" onclick="viewClientDetails(' + r.clientId + ')">' + esc(r.clientName) + '</span> <span style="color:var(--text-muted)">— ' + label + ' (' + r.dueDate + ')</span> ' + (r.daysLeft < 0 ? '<span class="badge badge-overdue">overdue</span>' : r.daysLeft <= 2 ? '<span class="badge badge-warning">soon</span>' : '') + '</div>';
+          html += '<div style="font-size:0.85rem;padding:0.2rem 0"><span style="cursor:pointer;color:var(--primary);text-decoration:underline" onclick="viewClientDetails(' + r.clientId + ')">' + esc(r.clientName) + '</span> <span style="color:var(--text-muted)">— ' + label + ' (' + new Date(r.dueDate).toLocaleDateString() + ')</span> ' + (r.daysLeft < 0 ? '<span class="badge badge-overdue">overdue</span>' : r.daysLeft <= 2 ? '<span class="badge badge-warning">soon</span>' : '') + '</div>';
         }
         html += '</div>';
         el.innerHTML = html;
         el.style.display = "";
         for (const nr of (data.newReminders || [])) {
           const msg = nr.daysLeft < 0 ? "Payment overdue" : nr.daysLeft === 0 ? "Payment due today" : nr.daysLeft === 2 ? "Payment due in 2 days" : "Payment due in 1 week";
-          toast(msg + " — " + nr.clientName, "error");
+          toast(msg + " — " + nr.clientName, "info");
         }
       } catch (e) { /* reminders are non-critical */ }
     }
