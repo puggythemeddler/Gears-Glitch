@@ -1778,6 +1778,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
   const format = (req.query.format as string) || "thermal";
   const settings = await getSettings();
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
   const store = settings.storeName || "Gear&Glitch";
   const storeEmail = settings.email || "info@gearandglitch.com";
   const currency = settings.currency || "KES";
@@ -1834,7 +1835,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${title}</h1><p class="meta">${subtitle}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>${title}</h1><p class="meta">${subtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -1913,7 +1914,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${title}</h1><p class="meta">${subtitle}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>${title}</h1><p class="meta">${subtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -1967,7 +1968,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
   // Thermal format
   res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>POS Receipt #${order.id} — ${escapeHtml(store)}</title>
 <style>${THERMAL_CSS}</style></head><body>
-${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}
+${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
 <h1>${escapeHtml(store)}</h1>
 <div class="center">${escapeHtml(storeEmail)}</div>
 <hr>
@@ -2286,6 +2287,7 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
   const order = await getOrder(Number(req.params.id));
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
   const settings = await getSettings();
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
   const store = settings.storeName || "Gear&Glitch";
   const storeEmail = settings.email || "info@gearandglitch.com";
   const currency = settings.currency || "KES";
@@ -2345,7 +2347,7 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -2435,6 +2437,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
   if (!order || order.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Order not found." }); return; }
   if (order.status !== "shipped" && order.status !== "delivered") { res.status(400).json({ error: "Invoice is only available for shipped or delivered orders." }); return; }
   const settings = await getSettings();
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
   const store = settings.storeName || "Gear&Glitch";
   const storeEmail = settings.email || "info@gearandglitch.com";
   const currency = settings.currency || "KES";
@@ -2494,7 +2497,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
 </style></head><body>
 <div class="invoice">
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -2574,8 +2577,8 @@ function escapeHtml(v: string) {
   return escapeHtmlUtil(v);
 }
 
-function renderStoreLogo(logoUrl: string, position: string, storeName: string): string {
-  return renderStoreLogoUtil(logoUrl, position, storeName);
+function renderStoreLogo(logoUrl: string, position: string, storeName: string, baseUrl?: string): string {
+  return renderStoreLogoUtil(logoUrl, position, storeName, baseUrl);
 }
 
 // ============ PRODUCT ANALYTICS ============
@@ -2623,6 +2626,7 @@ app.get("/api/admin/invoices/:id/view", allowControlPlane(adminAuthMiddleware), 
   if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
   const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
   const settings = await getSettings();
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
   const format = req.query.format as string;
   const html = generateSubscriptionInvoiceHtml({
     invoice: {
@@ -2640,7 +2644,7 @@ app.get("/api/admin/invoices/:id/view", allowControlPlane(adminAuthMiddleware), 
       notes: invoice.notes || "",
       createdAt: invoice.createdAt,
     },
-    store: { name: settings.storeName, email: settings.emailSender || settings.email || "", logo: settings.storeLogo || "", logoPosition: "top-left" },
+    store: { name: settings.storeName, email: settings.emailSender || settings.email || "", logo: settings.storeLogo || "", logoPosition: "top-left", baseUrl },
   });
   if (format === "pdf") {
     const { htmlToPdf } = await import("./pdf");
@@ -2786,6 +2790,7 @@ app.get("/api/admin/credit-notes/:id/view", staffAuthMiddleware, asyncHandler(as
   const order = await getOrder(cn.orderId);
   if (!order) { res.status(404).send("Order not found."); return; }
   const settings = await getSettings();
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
   const store = settings.storeName || "Gear&Glitch";
   const storeEmail = settings.email || "";
   const currency = settings.currency || "KES";
@@ -2824,7 +2829,7 @@ app.get("/api/admin/credit-notes/:id/view", staffAuthMiddleware, asyncHandler(as
 </style></head><body>
 <div class="cn">
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>CREDIT NOTE</h1><p class="meta">Credit Note #${cn.id} | Original Order #${cn.orderId}${etimsNumber ? " | eTIMS Invoice: " + escapeHtml(etimsNumber) : ""}</p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>CREDIT NOTE</h1><p class="meta">Credit Note #${cn.id} | Original Order #${cn.orderId}${etimsNumber ? " | eTIMS Invoice: " + escapeHtml(etimsNumber) : ""}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
@@ -4573,6 +4578,7 @@ app.get("/api/purchases/:id/pdf", staffAuthMiddleware, asyncHandler(async (req: 
     const po = await getPurchaseOrder(id);
     if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
     const settings = await getSettings();
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
     const items = po.items || [];
     const totalCost = items.reduce((s: number, i: any) => s + (i.quantityOrdered || 0) * (i.unitCost || 0), 0);
     const totalReceived = items.reduce((s: number, i: any) => s + (i.quantityReceived || 0) * (i.unitCost || 0), 0);
@@ -4594,7 +4600,7 @@ app.get("/api/purchases/:id/pdf", staffAuthMiddleware, asyncHandler(async (req: 
   .footer{margin-top:30px;border-top:1px solid #e5e7eb;padding-top:10px;font-size:11px;color:#999;text-align:center}
 </style></head><body>
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", settings.storeName || "Gear&Glitch")}
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", settings.storeName || "Gear&Glitch", baseUrl)}
       <h1>Purchase Order #${po.id}</h1></div>
     <div style="text-align:right"><span class="badge badge-${po.status}">${po.status}</span></div>
   </div>
@@ -4864,6 +4870,7 @@ app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("rep
   const quote = await getQuote(Number(req.params.id));
   if (!quote) { res.status(404).json({ error: "Quote not found." }); return; }
   const settings = await getSettings();
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
   const store = settings.storeName || "Gear&Glitch";
   const storeEmail = settings.email || "info@gearandglitch.com";
   const currency = settings.currency || "KES";
@@ -4897,7 +4904,7 @@ app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("rep
 </style></head><body>
 <div class="quote">
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store)}<h1>PRICE QUOTATION</h1><p style="font-size:0.9rem;color:#6b7280">Quote #${escapeHtml(quote.quoteNumber)} <span class="status-badge">${quote.status.replace(/_/g," ").toUpperCase()}</span></p></div>
+    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>PRICE QUOTATION</h1><p style="font-size:0.9rem;color:#6b7280">Quote #${escapeHtml(quote.quoteNumber)} <span class="status-badge">${quote.status.replace(/_/g," ").toUpperCase()}</span></p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span style="font-size:0.85rem;color:#6b7280">${escapeHtml(storeEmail)}</span></div>
   </div>
   <div class="info-grid">
