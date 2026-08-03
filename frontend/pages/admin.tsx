@@ -5249,8 +5249,13 @@ function AdminPurchases() {
   async function loadOrder(id: number) {
     try {
       const d = await api<any>(`/api/purchases/${id}`);
-      setViewing(d.order || d);
-      setReceiveInputs({});
+      const po = d.order || d;
+      setViewing(po);
+      const defaults: { [itemId: number]: number } = {};
+      (po.items || []).forEach((i: any) => {
+        defaults[i.id] = Math.max(0, (i.quantityOrdered || 0) - (i.quantityReceived || 0));
+      });
+      setReceiveInputs(defaults);
     } catch (err: any) { setMsg(err.message); }
   }
 
