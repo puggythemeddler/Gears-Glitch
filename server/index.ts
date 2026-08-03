@@ -529,7 +529,11 @@ app.get("/api/control-plane/status", controlPlaneAuthMiddleware, asyncHandler(as
 }));
 
 app.get("/api/csrf-token", (req: Request, res: Response) => {
-  const token = generateCsrfToken();
+  // Idempotent: reuse an existing valid cookie token so repeated fetches (e.g.
+  // multiple tabs or mount-time + lazy inits) never overwrite the shared cookie
+  // with a different value and strand other tabs with a stale in-memory token.
+  const existing = req.cookies?.csrf_token;
+  const token = typeof existing === "string" && /^[a-f0-9]{64}$/.test(existing) ? existing : generateCsrfToken();
   res.cookie("csrf_token", token, { httpOnly: false, secure: process.env.NODE_ENV === "production", sameSite: "strict" });
   res.json({ csrfToken: token });
 });

@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState, useRef } from "react";
-import { api, getStaffToken, downloadPdf, getCsrfToken, initCsrf } from "@/lib/api";
+import { api, getStaffToken, downloadPdf } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import { SkeletonStats, SkeletonTable } from "@/components/Skeleton";
@@ -5719,17 +5719,12 @@ function AdminDeliveryFees() {
   async function save() {
     setSaving(true); setMsg(null);
     try {
-      const token = getStaffToken() || "";
-      if (!getCsrfToken()) await initCsrf();
-      const res = await fetch("/api/admin/delivery-fees", {
+      const data = await api<{ message?: string; counties?: any[] }>("/api/admin/delivery-fees", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ fees }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Save failed");
-      setMsg({ text: data.message || "Saved." });
-      if (data.counties) setCounties(data.counties);
+      setMsg({ text: data?.message || "Saved." });
+      if (data?.counties) setCounties(data.counties);
     } catch (e: any) { setMsg({ text: e.message || "Save failed", error: true }); }
     finally { setSaving(false); }
   }
@@ -5738,13 +5733,9 @@ function AdminDeliveryFees() {
     if (!confirm("Reset all delivery fees to defaults?")) return;
     setSaving(true); setMsg(null);
     try {
-      const token = getStaffToken() || "";
-      if (!getCsrfToken()) await initCsrf();
-      const res = await fetch("/api/admin/delivery-fees", { method: "DELETE", headers: { Authorization: "Bearer " + token, "X-CSRF-Token": getCsrfToken() || "" } });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Reset failed");
-      setFees({}); setMsg({ text: data.message || "Reset to defaults." });
-      if (data.counties) setCounties(data.counties);
+      const data = await api<{ message?: string; counties?: any[] }>("/api/admin/delivery-fees", { method: "DELETE" });
+      setFees({}); setMsg({ text: data?.message || "Reset to defaults." });
+      if (data?.counties) setCounties(data.counties);
     } catch (e: any) { setMsg({ text: e.message || "Reset failed", error: true }); }
     finally { setSaving(false); }
   }

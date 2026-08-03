@@ -68,12 +68,20 @@ export async function migrateGuestCartToServer(): Promise<void> {
   clearGuestCart();
 }
 
-export async function initCsrf() {
-  try {
-    const res = await fetch("/api/csrf-token", { credentials: "include" });
-    const data = await res.json();
-    csrfToken = data.csrfToken;
-  } catch {}
+let csrfInitPromise: Promise<void> | null = null;
+
+export function initCsrf(): Promise<void> {
+  if (!csrfInitPromise) {
+    csrfInitPromise = (async () => {
+      try {
+        const res = await fetch("/api/csrf-token", { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        csrfToken = data.csrfToken ?? null;
+      } catch {}
+    })().finally(() => { csrfInitPromise = null; });
+  }
+  return csrfInitPromise;
 }
 
 export function getCsrfToken(): string | null {
@@ -150,12 +158,27 @@ export async function api<T = any>(
   const token = getTokenForRole(role);
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const method = (options.method || "GET").toUpperCase();
-  if (["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
-    if (!csrfToken) await initCsrf();
-    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
-  }
+  const mutating = ["POST", "PUT", "DELETE", "PATCH"].includes(method);
+  if (mutating && !csrfToken) await initCsrf();
+  if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
 
-  const res = await fetch(path, { ...options, headers });
+  let res = await fetch(path, { ...options, headers });
+
+  // Self-heal a stale/missing CSRF token (e.g. another tab refreshed it):
+  // re-fetch a token matching the current cookie and retry the request once.
+  if (mutating && res.status === 403) {
+    let csrfError = false;
+    try {
+      const body = await res.clone().json();
+      csrfError = typeof body?.error === "string" && body.error.includes("CSRF");
+    } catch {}
+    if (csrfError) {
+      csrfToken = null;
+      await initCsrf();
+      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+      res = await fetch(path, { ...options, headers });
+    }
+  }
   let text = "";
   try {
     text = await res.text();
