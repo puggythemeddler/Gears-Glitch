@@ -6,7 +6,7 @@ import EmptyState from "@/components/EmptyState";
 import { useFetch, Spinner, ErrorMsg, formatPrice, escapeHtml } from "./shared";
 
 export default function AdminProducts() {
-  const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products"), []);
+  const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -104,7 +104,7 @@ export default function AdminProducts() {
     finally { setBulkSaving(false); }
   }
 
-  const empty: Product = { id: "", name: "", price: 0, salePrice: 0, currency: "KES", imageUrl: "", category: "", groupId: "", subcategory: "", inStock: true, isNonStock: false, hasWarranty: false, warrantyDuration: 0, taxable: true, specs: [], minTier: 0 };
+  const empty: Product = { id: "", name: "", price: 0, salePrice: 0, currency: "KES", imageUrl: "", category: "", groupId: "", subcategory: "", inStock: true, isNonStock: false, isHidden: false, hasWarranty: false, warrantyDuration: 0, taxable: true, specs: [], minTier: 0 };
 
   useEffect(() => {
     fetch("/api/categories").then(r => r.json()).then((d) => setCategories(d.categories || [])).catch(() => setCategories([]));
@@ -196,6 +196,7 @@ export default function AdminProducts() {
       name: fd.get("name"), price: Number(fd.get("price")), category: fd.get("category"),
       groupId: fd.get("groupId") || "",
       inStock: fd.get("inStock") === "true", isNonStock: fd.get("isNonStock") === "on",
+      isHidden: fd.get("isHidden") === "on",
       hasWarranty: fd.get("hasWarranty") === "on",
       warrantyDuration: Number(fd.get("warrantyDuration") || 0),
       taxable: fd.get("taxable") === "on",
@@ -274,6 +275,7 @@ export default function AdminProducts() {
             )}
             <div className="field"><label>In stock<select name="inStock" defaultValue={String(editing?.inStock ?? true)}><option value="true">Yes</option><option value="false">No</option></select></label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="isNonStock" defaultChecked={editing?.isNonStock ?? false} /> Non-stock item</label></div>
+            <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="isHidden" defaultChecked={editing?.isHidden ?? false} /> Hidden from online store (e.g. services — not shown to customers, not sold on the site)</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="hasWarranty" defaultChecked={editing?.hasWarranty ?? false} /> Has warranty</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="taxable" defaultChecked={editing?.taxable !== false} /> Taxable (eTims-compatible)</label></div>
             <div className="field"><label>Warranty duration (months)<input name="warrantyDuration" type="number" min="0" defaultValue={editing?.warrantyDuration || 0} /></label></div>
@@ -372,7 +374,7 @@ export default function AdminProducts() {
               <tr key={p.id}>
                 <td><input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} /></td>
                 <td>{p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} /> : <span style={{ opacity: 0.3 }}>{'\u200B'}</span>}</td>
-                <td>{escapeHtml(p.name)}</td>
+                <td>{escapeHtml(p.name)} {p.isHidden && <span style={{ marginLeft: "0.35rem", fontSize: "0.72rem", fontWeight: 600, color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.35rem", verticalAlign: "middle" }}>Hidden</span>}</td>
                 <td>{p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--danger)", fontWeight: 600 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}</td>
                 <td>{p.category || "—"}</td>
                 <td>{groups.find((g: any) => g.id === p.groupId)?.name || "—"}</td>

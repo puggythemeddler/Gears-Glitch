@@ -16,6 +16,7 @@ interface ProductRow {
   specs: string;
   in_stock: number;
   is_non_stock: number;
+  is_hidden: number;
   image_alt: string;
   image_url: string;
   subcategory: string;
@@ -37,6 +38,7 @@ interface Product {
   specs: any[];
   inStock: boolean;
   isNonStock: boolean;
+  isHidden: boolean;
   subcategory: string;
   hasWarranty: boolean;
   warrantyDuration: number;
@@ -543,6 +545,7 @@ function mapProduct(row: ProductRow | null): Product | null {
     specs: JSON.parse(row.specs || "[]"),
     inStock: Boolean(row.in_stock),
     isNonStock: Boolean(row.is_non_stock),
+    isHidden: Boolean(row.is_hidden),
     subcategory: row.subcategory || "",
     hasWarranty: Boolean(row.has_warranty),
     warrantyDuration: row.warranty_duration || 0,
@@ -641,6 +644,7 @@ async function initDb(): Promise<void> {
 async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT NOT NULL DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS is_non_stock INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS is_hidden INTEGER NOT NULL DEFAULT 0`); } catch {}
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory TEXT NOT NULL DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS taxable INTEGER NOT NULL DEFAULT 1`); } catch {}
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS min_tier INTEGER NOT NULL DEFAULT 0`); } catch {}
@@ -1572,10 +1576,11 @@ async function setStoreSetting(key: string, value: string): Promise<void> {
   await query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [key, value]);
 }
 
-async function listProducts(category?: string, group?: string): Promise<Product[]> {
+async function listProducts(category?: string, group?: string, includeHidden: boolean = false): Promise<Product[]> {
   let sql = "SELECT * FROM products"; const params: any[] = []; const conds: string[] = [];
   if (category && category !== "all") { conds.push(`category = $${params.length + 1}`); params.push(category); }
   if (group && group !== "all") { conds.push(`group_id = $${params.length + 1}`); params.push(group); }
+  if (!includeHidden) conds.push("is_hidden = 0");
   if (conds.length) sql += " WHERE " + conds.join(" AND ");
   sql += " ORDER BY sort_order ASC, created_at DESC";
   const rows = await queryAll(sql, params) as ProductRow[];
@@ -1666,16 +1671,16 @@ async function generateProductId(category: string): Promise<string> {
   return `${prefix}-${String(num).padStart(3, "0")}`;
 }
 
-async function createProduct(product: { id: string; category: string; groupId?: string; name: string; price: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
+async function createProduct(product: { id: string; category: string; groupId?: string; name: string; price: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
   await query(
-    `INSERT INTO products (id, category, group_id, name, price, sale_price, specs, in_stock, is_non_stock, subcategory, has_warranty, warranty_duration, taxable, image_alt, image_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-    [product.id, product.category, product.groupId || "", product.name, product.price, product.salePrice || null, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
+    `INSERT INTO products (id, category, group_id, name, price, sale_price, specs, in_stock, is_non_stock, is_hidden, subcategory, has_warranty, warranty_duration, taxable, image_alt, image_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+    [product.id, product.category, product.groupId || "", product.name, product.price, product.salePrice || null, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.isHidden ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
   );
   return (await getProduct(product.id))!;
 }
 
-async function updateProduct(id: string, updates: { category?: string; groupId?: string; name?: string; price?: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
+async function updateProduct(id: string, updates: { category?: string; groupId?: string; name?: string; price?: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
   const existing = await getProduct(id);
   if (!existing) return undefined;
   const fields: string[] = []; const params: any[] = []; let idx = 1;
@@ -1687,6 +1692,7 @@ async function updateProduct(id: string, updates: { category?: string; groupId?:
   if (updates.specs !== undefined) { fields.push(`specs = $${idx}`); params.push(JSON.stringify(updates.specs)); idx++; }
   if (updates.inStock !== undefined) { fields.push(`in_stock = $${idx}`); params.push(updates.inStock ? 1 : 0); idx++; }
   if (updates.isNonStock !== undefined) { fields.push(`is_non_stock = $${idx}`); params.push(updates.isNonStock ? 1 : 0); idx++; }
+  if (updates.isHidden !== undefined) { fields.push(`is_hidden = $${idx}`); params.push(updates.isHidden ? 1 : 0); idx++; }
   if (updates.subcategory !== undefined) { fields.push(`subcategory = $${idx}`); params.push(updates.subcategory); idx++; }
   if (updates.hasWarranty !== undefined) { fields.push(`has_warranty = $${idx}`); params.push(updates.hasWarranty ? 1 : 0); idx++; }
   if (updates.warrantyDuration !== undefined) { fields.push(`warranty_duration = $${idx}`); params.push(updates.warrantyDuration); idx++; }
@@ -1771,7 +1777,7 @@ async function createCustomer(data: { name: string; email: string; password?: st
 async function getCartItems(customerId: number): Promise<CartItem[]> {
   const rows = await queryAll(
     `SELECT c.product_id AS "productId", c.quantity, p.name, p.price, p.in_stock AS "inStock", p.image_url AS "imageUrl", p.image_alt AS "imageAlt", p.has_warranty AS "hasWarranty", p.warranty_duration AS "warrantyDuration"
-     FROM cart_items c JOIN products p ON p.id = c.product_id WHERE c.customer_id = $1 ORDER BY c.created_at`,
+     FROM cart_items c JOIN products p ON p.id = c.product_id WHERE c.customer_id = $1 AND p.is_hidden = 0 ORDER BY c.created_at`,
     [customerId]
   ) as any[];
   return rows.map((r) => ({ ...r, inStock: Boolean(r.inStock), hasWarranty: Boolean(r.hasWarranty), lineTotal: r.price * r.quantity }));
@@ -2188,7 +2194,7 @@ async function getProviderAssignmentHistory(providerId: number): Promise<Provide
 async function getWishlist(customerId: number): Promise<WishlistItem[]> {
   const rows = await queryAll(
     `SELECT w.*, p.name AS "productName", p.price AS "productPrice", p.image_url AS "productImage"
-     FROM wishlist w JOIN products p ON p.id = w.product_id WHERE w.customer_id = $1 ORDER BY w.created_at DESC`, [customerId]
+     FROM wishlist w JOIN products p ON p.id = w.product_id WHERE w.customer_id = $1 AND p.is_hidden = 0 ORDER BY w.created_at DESC`, [customerId]
   ) as any[];
   return rows.map((r) => ({ id: r.id, customerId: r.customer_id, productId: r.product_id, notes: r.notes, createdAt: r.created_at, productName: r.productName, productPrice: r.productPrice, productImage: r.productImage }));
 }
@@ -2218,7 +2224,7 @@ async function createQuoteFromWishlist(customerId: number, wishlistIds: number[]
   const quoteNumber = await generateQuoteNumber();
   const result = await query("INSERT INTO quotes (customer_id, quote_number, status) VALUES ($1, $2, 'draft') RETURNING id", [customerId, quoteNumber]);
   const quoteId = result.rows[0].id;
-  const items = await queryAll("SELECT w.product_id, p.name, p.price FROM wishlist w JOIN products p ON p.id = w.product_id WHERE w.id = ANY($1)", [wishlistIds]) as any[];
+  const items = await queryAll("SELECT w.product_id, p.name, p.price FROM wishlist w JOIN products p ON p.id = w.product_id WHERE w.id = ANY($1) AND p.is_hidden = 0", [wishlistIds]) as any[];
   for (const item of items) {
     await query("INSERT INTO quote_items (quote_id, product_id, product_name, quantity, unit_price, line_total) VALUES ($1, $2, $3, 1, $4, $4)", [quoteId, item.product_id, item.name, item.price]);
   }

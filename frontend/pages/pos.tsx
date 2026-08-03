@@ -72,7 +72,7 @@ export default function POSPage() {
     else if (role && role !== "customer") setPinUnlocked(true);
     const savedCat = sessionStorage.getItem("posCategory");
     if (savedCat) setSelectedCategory(savedCat);
-    api<{ products: Product[] }>("/api/products").then((d) => {
+    api<{ products: Product[] }>("/api/products?includeHidden=1").then((d) => {
       setProducts(d.products || []);
       setFiltered(d.products || []);
     }).catch(() => {});

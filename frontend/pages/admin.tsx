@@ -485,7 +485,7 @@ function AdminAuditLog() {
 
 function AdminDashboard({ onNavigate }: { onNavigate: (v: AdminView) => void }) {
   const { data: stats, loading: statsLoading } = useFetch(() => api<any>("/api/backoffice/stats"), []);
-  const { data: products, loading: prodLoading } = useFetch(() => api<{ products: Product[] }>("/api/products"), []);
+  const { data: products, loading: prodLoading } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
   const { data: subReq, loading: subLoading } = useFetch(() => api<{ requests: any[] }>("/api/shop/subscription/requests"), []);
 
   const pendingReqs = (subReq?.requests || []).filter((r: any) => r.status === "pending").length;
@@ -4274,7 +4274,7 @@ function AdminGiftCards() {
 
 function AdminCampaigns() {
   const { data, loading, error, refetch } = useFetch(() => api<{ campaigns: any[] }>("/api/admin/campaigns"), []);
-  const { data: products } = useFetch(() => api<{ products: any[] }>("/api/products"), []);
+  const { data: products } = useFetch(() => api<{ products: any[] }>("/api/products?includeHidden=1"), []);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -5073,7 +5073,7 @@ function AdminStockTransfers() {
   const { toast } = useToast();
   const { data: tData, loading, error, refetch } = useFetch(() => api<{ transfers: any[] }>("/api/stock-transfers"), []);
   const { data: branches } = useFetch(() => api<{ branches: any[] }>("/api/admin/branches"), []);
-  const { data: products } = useFetch(() => api<{ products: any[] }>("/api/products"), []);
+  const { data: products } = useFetch(() => api<{ products: any[] }>("/api/products?includeHidden=1"), []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ fromBranchId: "", toBranchId: "", productId: "", quantity: "", notes: "" });
   const [creating, setCreating] = useState(false);
@@ -5239,7 +5239,7 @@ function AdminPurchases() {
     try {
       const [sRes, pRes] = await Promise.all([
         api<{ suppliers: any[] }>("/api/admin/suppliers").catch(() => ({ suppliers: [] })),
-        api<{ products: any[] }>("/api/products").catch(() => ({ products: [] })),
+        api<{ products: any[] }>("/api/products?includeHidden=1").catch(() => ({ products: [] })),
       ]);
       setSuppliers(sRes.suppliers || []);
       setProducts(pRes.products || []);

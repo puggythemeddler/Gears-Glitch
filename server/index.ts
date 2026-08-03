@@ -783,7 +783,7 @@ app.get("/api/public-settings", asyncHandler(async (_req: Request, res: Response
 
 app.get("/api/storefront-stats", asyncHandler(async (_req: Request, res: Response) => {
   try {
-    const productCount = await queryOne("SELECT COUNT(*) AS count FROM products") as any;
+    const productCount = await queryOne("SELECT COUNT(*) AS count FROM products WHERE is_hidden = 0") as any;
     const customerCount = await queryOne("SELECT COUNT(*) AS count FROM customers") as any;
     const orderCount = await queryOne("SELECT COUNT(*) AS count FROM orders WHERE status != 'cancelled'") as any;
     const categories = await queryAll("SELECT id, label FROM categories ORDER BY label") as any[];
@@ -2027,6 +2027,8 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
     const customerDetails = await findCustomerById(customerId);
     const cartItems = await getCartItems(customerId);
     if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
+    const hiddenInCart = await queryOne("SELECT id FROM products WHERE id = ANY($1) AND is_hidden = 1", [cartItems.map((ci: any) => ci.productId)]) as any;
+    if (hiddenInCart) { res.status(400).json({ error: "One or more items in your cart are no longer available for purchase on the online store." }); return; }
     const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
     let couponDiscount = 0; let couponId: number | undefined; let couponOk = false;
     if (couponCode && String(couponCode).trim()) {
@@ -2107,6 +2109,8 @@ app.post("/api/orders/create-pending", customerAuthMiddleware, asyncHandler(asyn
     const customerDetails = await findCustomerById(customerId);
     const cartItems = await getCartItems(customerId);
     if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
+    const hiddenInCart = await queryOne("SELECT id FROM products WHERE id = ANY($1) AND is_hidden = 1", [cartItems.map((ci: any) => ci.productId)]) as any;
+    if (hiddenInCart) { res.status(400).json({ error: "One or more items in your cart are no longer available for purchase on the online store." }); return; }
     const order = await createOrder({
       customerId,
       customerName: customerDetails?.name || "",
@@ -3217,7 +3221,8 @@ function normalizeSpecs(specs: any): any[] {
 app.get("/api/products", asyncHandler(async (req: Request, res: Response) => {
   const category = req.query.category as string | undefined;
   const group = req.query.group as string | undefined;
-  const products = await listProducts(category, group);
+  const includeHidden = req.query.includeHidden === "1";
+  const products = await listProducts(category, group, includeHidden);
   res.json({ products, currency: (await getSettings()).currency });
 }));
 
@@ -3225,6 +3230,7 @@ app.get("/api/products/:id", asyncHandler(async (req: Request, res: Response) =>
   try {
     const product = await getProduct(String(req.params.id));
     if (!product) { res.status(404).json({ error: "Product not found." }); return; }
+    if (product.isHidden && req.query.includeHidden !== "1") { res.status(404).json({ error: "Product not found." }); return; }
     try { await recordProductView(String(req.params.id), "anonymous"); } catch { console.warn("[analytics] Failed to record product view"); }
     res.json(product);
   } catch (err: any) {
@@ -3259,6 +3265,7 @@ app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create
     specs: normalizeSpecs(body.specs),
     inStock: Boolean(body.inStock),
     isNonStock: Boolean(body.isNonStock),
+    isHidden: Boolean(body.isHidden),
     imageAlt: String(body.imageAlt || "").trim(),
   });
   res.status(201).json(product);
@@ -3322,6 +3329,7 @@ app.post("/api/admin/products/bulk-edit", ownerAuthMiddleware, asyncHandler(asyn
     if (updates.inStock !== undefined) change.inStock = Boolean(updates.inStock);
     if (updates.category !== undefined) change.category = String(updates.category).trim();
     if (updates.isNonStock !== undefined) change.isNonStock = Boolean(updates.isNonStock);
+    if (updates.isHidden !== undefined) change.isHidden = Boolean(updates.isHidden);
     if (updates.taxable !== undefined) change.taxable = Boolean(updates.taxable);
     await updateProduct(id, change);
     updated.push(id);
@@ -3388,6 +3396,7 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
   if (body.specs !== undefined) updates.specs = normalizeSpecs(body.specs);
   if (body.inStock !== undefined) updates.inStock = Boolean(body.inStock);
   if (body.isNonStock !== undefined) updates.isNonStock = Boolean(body.isNonStock);
+  if (body.isHidden !== undefined) updates.isHidden = Boolean(body.isHidden);
   if (body.subcategory !== undefined) updates.subcategory = String(body.subcategory).trim();
   if (body.hasWarranty !== undefined) updates.hasWarranty = Boolean(body.hasWarranty);
   if (body.warrantyDuration !== undefined) updates.warrantyDuration = Number(body.warrantyDuration);
@@ -4147,7 +4156,7 @@ app.get("/api/stock/low-items", ownerAuthMiddleware, requirePermission("stock:vi
 }));
 
 app.get("/api/stock", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (_req: Request, res: Response) => {
-  const products = await listProducts();
+  const products = await listProducts(undefined, undefined, true);
   const stock = await Promise.all(products.map((p) => getStockLevel(p.id)));
   res.json({ stock });
 }));
@@ -4227,6 +4236,9 @@ app.post("/api/cart", customerAuthMiddleware, asyncHandler(async (req: Request, 
   const qty = Number(quantity) || 1;
   if (!isPosInt(qty)) { res.status(400).json({ error: "Quantity must be a positive integer." }); return; }
   try {
+    const product = await getProduct(productId);
+    if (!product) { res.status(400).json({ error: "Product not found." }); return; }
+    if (product.isHidden) { res.status(400).json({ error: "This product is not available for purchase on the online store." }); return; }
     await addToCart((req as any).customer.sub, productId, qty);
     res.json({ ok: true });
   } catch (e: any) {
@@ -4723,6 +4735,9 @@ app.post("/api/wishlist", customerAuthMiddleware, asyncHandler(async (req: Reque
   const { productId, notes } = req.body || {};
   if (!productId) { res.status(400).json({ error: "productId is required." }); return; }
   if (!isStr(productId)) { res.status(400).json({ error: "productId must be a valid string." }); return; }
+  const product = await getProduct(productId);
+  if (!product) { res.status(400).json({ error: "Product not found." }); return; }
+  if (product.isHidden) { res.status(400).json({ error: "This product is not available on the online store." }); return; }
   await addToWishlist((req as any).customer.sub, productId, notes);
   res.status(201).json({ ok: true });
 }));
@@ -5172,7 +5187,7 @@ app.get("/api/campaigns/:slug", asyncHandler(async (req: Request, res: Response)
   const products: any[] = [];
   for (const pid of productIds) {
     const p = await getProduct(pid);
-    if (p) products.push(p);
+    if (p && !p.isHidden) products.push(p);
   }
   res.json({ campaign, products });
 }));

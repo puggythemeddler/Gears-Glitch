@@ -11,6 +11,7 @@ export interface Product {
   subcategory: string;
   inStock: boolean;
   isNonStock: boolean;
+  isHidden?: boolean;
   hasWarranty?: boolean;
   warrantyDuration?: number;
   taxable?: boolean;

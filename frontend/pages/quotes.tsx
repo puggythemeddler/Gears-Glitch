@@ -211,7 +211,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
     setEditDiscountValue(quote.discountValue || 0);
     setEditNotes(quote.notes || "");
     try {
-      const d = await api<{ products: Product[] }>("/api/products");
+      const d = await api<{ products: Product[] }>("/api/products?includeHidden=1");
       setProducts(d.products || []);
     } catch {}
     setEditing(true);
@@ -483,7 +483,7 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    api<{ products: Product[] }>("/api/products").then((d) => setProducts(d.products || [])).catch(() => {});
+    api<{ products: Product[] }>("/api/products?includeHidden=1").then((d) => setProducts(d.products || [])).catch(() => {});
   }, []);
 
   const filteredProducts = search

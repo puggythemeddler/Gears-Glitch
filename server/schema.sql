@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS products (
   specs TEXT NOT NULL DEFAULT '[]',
   in_stock INTEGER NOT NULL DEFAULT 1,
   is_non_stock INTEGER NOT NULL DEFAULT 0,
+  is_hidden INTEGER NOT NULL DEFAULT 0,
   image_alt TEXT NOT NULL DEFAULT '',
   image_url TEXT NOT NULL DEFAULT '',
   subcategory TEXT NOT NULL DEFAULT '',

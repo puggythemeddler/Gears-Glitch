@@ -45,7 +45,7 @@ export default function StockTakeSessionPage() {
 
   async function loadProducts() {
     try {
-      const d = await api<{ products: any[] }>("/api/products");
+      const d = await api<{ products: any[] }>("/api/products?includeHidden=1");
       setAllProducts(d.products || []);
     } catch {}
   }

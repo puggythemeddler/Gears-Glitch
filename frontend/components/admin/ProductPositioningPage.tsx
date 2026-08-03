@@ -5,7 +5,7 @@ import RippleButton from "@/components/RippleButton";
 import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
 
 export default function ProductPositioningPage() {
-  const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products"), []);
+  const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
