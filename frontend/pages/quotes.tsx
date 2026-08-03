@@ -37,10 +37,10 @@ interface Quote {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  pending: { label: "Pending", color: "#f59e0b", bg: "#fef3c7" },
-  waiting_for_approval: { label: "Waiting for Approval", color: "#3b82f6", bg: "#dbeafe" },
-  cancelled: { label: "Cancelled", color: "#ef4444", bg: "#fee2e2" },
-  approved: { label: "Approved", color: "#10b981", bg: "#d1fae5" },
+  pending: { label: "Pending", color: "var(--warning)", bg: "var(--warning-light)" },
+  waiting_for_approval: { label: "Waiting for Approval", color: "var(--info)", bg: "var(--info-light)" },
+  cancelled: { label: "Cancelled", color: "var(--danger)", bg: "var(--danger-light)" },
+  approved: { label: "Approved", color: "var(--success)", bg: "var(--success-light)" },
 };
 
 export default function QuotesPage() {
@@ -320,7 +320,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
                     <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
                     <div style={{ fontSize: "0.8rem", color: "var(--primary)" }}>{formatPrice(p.salePrice && p.salePrice > 0 ? p.salePrice : p.price)}</div>
                   </div>
-                  {selected && <span style={{ color: "#10b981", fontWeight: 700 }}>✓</span>}
+                  {selected && <span style={{ color: "var(--success)", fontWeight: 700 }}>✓</span>}
                 </button>
               );
             })}
@@ -342,11 +342,11 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
                   <div style={{ fontSize: "0.8rem" }}>@ {formatPrice(item.unitPrice)}</div>
                 </div>
                 <div style={{ display: "flex", gap: "0.25rem", marginTop: "0.25rem", alignItems: "center" }}>
-                  <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "percentage" ? "var(--primary)" : "var(--bg)", color: item.discountType === "percentage" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+                  <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "percentage" ? "var(--primary)" : "var(--bg)", color: item.discountType === "percentage" ? "var(--surface)" : "var(--text)", border: "1px solid var(--border)" }}
                     onClick={() => updateEditItemDiscount(item.productId, item.discountType === "percentage" ? "" : "percentage", item.discountType === "percentage" ? 0 : 0)}>
                     % Discount
                   </button>
-                  <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "amount" ? "var(--primary)" : "var(--bg)", color: item.discountType === "amount" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+                  <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "amount" ? "var(--primary)" : "var(--bg)", color: item.discountType === "amount" ? "var(--surface)" : "var(--text)", border: "1px solid var(--border)" }}
                     onClick={() => updateEditItemDiscount(item.productId, item.discountType === "amount" ? "" : "amount", item.discountType === "amount" ? 0 : 0)}>
                     KES Discount
                   </button>
@@ -362,9 +362,9 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
         <div className="panel" style={{ padding: "1rem", marginTop: "1rem" }}>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>Quote Discount:</span>
-            <button className="btn btn-sm" style={{ background: editDiscountType === "percentage" ? "var(--primary)" : "var(--bg)", color: editDiscountType === "percentage" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+            <button className="btn btn-sm" style={{ background: editDiscountType === "percentage" ? "var(--primary)" : "var(--bg)", color: editDiscountType === "percentage" ? "var(--surface)" : "var(--text)", border: "1px solid var(--border)" }}
               onClick={() => setEditDiscountType(editDiscountType === "percentage" ? "" : "percentage")}>Percentage</button>
-            <button className="btn btn-sm" style={{ background: editDiscountType === "amount" ? "var(--primary)" : "var(--bg)", color: editDiscountType === "amount" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+            <button className="btn btn-sm" style={{ background: editDiscountType === "amount" ? "var(--primary)" : "var(--bg)", color: editDiscountType === "amount" ? "var(--surface)" : "var(--text)", border: "1px solid var(--border)" }}
               onClick={() => setEditDiscountType(editDiscountType === "amount" ? "" : "amount")}>Amount</button>
             {editDiscountType && (
               <input type="number" className="input" value={editDiscountValue || ""} onChange={(e) => setEditDiscountValue(Number(e.target.value))} min={0} placeholder="0" style={{ width: 100, padding: "0.3rem", fontSize: "0.85rem" }} />
@@ -376,7 +376,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
           </div>
           <div style={{ textAlign: "right", marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "2px solid var(--border)" }}>
             {editDiscountType && editDiscountValue > 0 && (
-              <div style={{ fontSize: "0.9rem", color: "#10b981", marginBottom: "0.25rem" }}>
+              <div style={{ fontSize: "0.9rem", color: "var(--success)", marginBottom: "0.25rem" }}>
                 Discount: {editDiscountType === "percentage" ? `${editDiscountValue}%` : formatPrice(editDiscountValue)}
               </div>
             )}
@@ -434,7 +434,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
                   <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border)" }}>{escapeHtml(item.productName)}</td>
                   <td style={{ padding: "0.5rem", textAlign: "center", borderBottom: "1px solid var(--border)" }}>{item.quantity}</td>
                   <td style={{ padding: "0.5rem", textAlign: "right", borderBottom: "1px solid var(--border)" }}>{formatPrice(item.unitPrice)}</td>
-                  <td style={{ padding: "0.5rem", textAlign: "center", borderBottom: "1px solid var(--border)", color: hasDiscount ? "#10b981" : "var(--text-secondary)" }}>
+                  <td style={{ padding: "0.5rem", textAlign: "center", borderBottom: "1px solid var(--border)", color: hasDiscount ? "var(--success)" : "var(--text-secondary)" }}>
                     {hasDiscount ? (item.discountType === "percentage" ? `${item.discountValue}%` : formatPrice(item.discountValue)) : "—"}
                   </td>
                   <td style={{ padding: "0.5rem", textAlign: "right", borderBottom: "1px solid var(--border)", fontWeight: 600 }}>{formatPrice(item.lineTotal)}</td>
@@ -445,7 +445,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
         </table>
         <div style={{ textAlign: "right", padding: "1rem 0 0", borderTop: "2px solid var(--border)", marginTop: "0.5rem" }}>
           {quote.discountType && quote.discountValue > 0 && (
-            <div style={{ fontSize: "0.9rem", marginBottom: "0.25rem", color: "#10b981" }}>
+            <div style={{ fontSize: "0.9rem", marginBottom: "0.25rem", color: "var(--success)" }}>
               Quote Discount: {quote.discountType === "percentage" ? `${quote.discountValue}%` : formatPrice(quote.discountValue)}
             </div>
           )}
@@ -456,12 +456,12 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         <button className="btn btn-primary" onClick={openPdf} disabled={actionLoading}>Download PDF</button>
         {isPending && (
-          <button className="btn" style={{ background: "#8b5cf6", color: "#fff" }} onClick={startEditing} disabled={actionLoading}>Edit Items</button>
+          <button className="btn" style={{ background: "var(--violet)", color: "var(--surface)" }} onClick={startEditing} disabled={actionLoading}>Edit Items</button>
         )}
         {(quote.status === "pending" || quote.status === "waiting_for_approval") && (
           <>
-            <button className="btn" style={{ background: "#10b981", color: "#fff" }} onClick={approve} disabled={actionLoading}>Approve &amp; Convert to Invoice</button>
-            <button className="btn" style={{ background: "#f59e0b", color: "#fff" }} onClick={cancel} disabled={actionLoading}>Cancel Quote</button>
+            <button className="btn" style={{ background: "var(--success)", color: "var(--surface)" }} onClick={approve} disabled={actionLoading}>Approve &amp; Convert to Invoice</button>
+            <button className="btn" style={{ background: "var(--warning)", color: "var(--surface)" }} onClick={cancel} disabled={actionLoading}>Cancel Quote</button>
           </>
         )}
         <button className="btn btn-danger" onClick={del} disabled={actionLoading}>Delete</button>
@@ -550,7 +550,7 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
 
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
         {(["Client Details", "Add Products", "Review & Generate"] as const).map((label, idx) => (
-          <div key={idx} style={{ flex: 1, textAlign: "center", padding: "0.5rem", borderRadius: 8, background: step === idx + 1 ? "var(--primary)" : step > idx + 1 ? "#10b981" : "var(--surface)", color: step === idx + 1 ? "#fff" : step > idx + 1 ? "#fff" : "var(--text-secondary)", fontWeight: 600, fontSize: "0.85rem" }}>
+          <div key={idx} style={{ flex: 1, textAlign: "center", padding: "0.5rem", borderRadius: 8, background: step === idx + 1 ? "var(--primary)" : step > idx + 1 ? "var(--success)" : "var(--surface)", color: step === idx + 1 ? "var(--surface)" : step > idx + 1 ? "var(--surface)" : "var(--text-secondary)", fontWeight: 600, fontSize: "0.85rem" }}>
             {step > idx + 1 ? "✓ " : ""}{label}
           </div>
         ))}
@@ -593,7 +593,7 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
                       <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
                       <div style={{ fontSize: "0.8rem", color: "var(--primary)" }}>{formatPrice(p.price)}</div>
                     </div>
-                    {selected && <span style={{ color: "#10b981", fontWeight: 700 }}>✓</span>}
+                    {selected && <span style={{ color: "var(--success)", fontWeight: 700 }}>✓</span>}
                   </button>
                 );
               })}
@@ -615,11 +615,11 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
                     <div style={{ fontSize: "0.8rem" }}>@ {formatPrice(item.unitPrice)}</div>
                   </div>
                   <div style={{ display: "flex", gap: "0.25rem", marginTop: "0.25rem", alignItems: "center" }}>
-                    <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "percentage" ? "var(--primary)" : "var(--bg)", color: item.discountType === "percentage" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+                    <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "percentage" ? "var(--primary)" : "var(--bg)", color: item.discountType === "percentage" ? "var(--surface)" : "var(--text)", border: "1px solid var(--border)" }}
                       onClick={() => updateItemDiscount(item.productId, item.discountType === "percentage" ? "" : "percentage", item.discountType === "percentage" ? 0 : 0)}>
                       % Discount
                     </button>
-                    <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "amount" ? "var(--primary)" : "var(--bg)", color: item.discountType === "amount" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+                    <button className="btn btn-sm" style={{ fontSize: "0.7rem", padding: "2px 6px", background: item.discountType === "amount" ? "var(--primary)" : "var(--bg)", color: item.discountType === "amount" ? "var(--surface)" : "var(--text)", border: "1px solid var(--border)" }}
                       onClick={() => updateItemDiscount(item.productId, item.discountType === "amount" ? "" : "amount", item.discountType === "amount" ? 0 : 0)}>
                       $ Discount
                     </button>
@@ -677,7 +677,7 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
                       <td style={{ padding: "0.4rem", borderBottom: "1px solid var(--border)" }}>{escapeHtml(item.productName)}</td>
                       <td style={{ padding: "0.4rem", textAlign: "center", borderBottom: "1px solid var(--border)" }}>{item.quantity}</td>
                       <td style={{ padding: "0.4rem", textAlign: "right", borderBottom: "1px solid var(--border)" }}>{formatPrice(item.unitPrice)}</td>
-                      <td style={{ padding: "0.4rem", textAlign: "center", borderBottom: "1px solid var(--border)", color: hasDisc ? "#10b981" : "var(--text-secondary)" }}>
+                      <td style={{ padding: "0.4rem", textAlign: "center", borderBottom: "1px solid var(--border)", color: hasDisc ? "var(--success)" : "var(--text-secondary)" }}>
                         {hasDisc ? (item.discountType === "percentage" ? `${item.discountValue}%` : formatPrice(item.discountValue)) : "—"}
                       </td>
                       <td style={{ padding: "0.4rem", textAlign: "right", borderBottom: "1px solid var(--border)", fontWeight: 600 }}>{formatPrice(calcItemTotal(item))}</td>
@@ -690,9 +690,9 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
             <div style={{ marginTop: "1rem" }}>
               <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem" }}>Quote Discount</h4>
               <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <button className="btn btn-sm" style={{ background: quoteDiscountType === "percentage" ? "var(--primary)" : "var(--bg)", color: quoteDiscountType === "percentage" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+                <button className="btn btn-sm" style={{ background: quoteDiscountType === "percentage" ? "var(--primary)" : "var(--bg)", color: quoteDiscountType === "percentage" ? "var(--surface)" : "var(--text)", border: "1px solid var(--border)" }}
                   onClick={() => setQuoteDiscountType(quoteDiscountType === "percentage" ? "" : "percentage")}>Percentage</button>
-                <button className="btn btn-sm" style={{ background: quoteDiscountType === "amount" ? "var(--primary)" : "var(--bg)", color: quoteDiscountType === "amount" ? "#fff" : "var(--text)", border: "1px solid var(--border)" }}
+                <button className="btn btn-sm" style={{ background: quoteDiscountType === "amount" ? "var(--primary)" : "var(--bg)", color: quoteDiscountType === "amount" ? "var(--surface)" : "var(--text)", border: "1px solid var(--border)" }}
                   onClick={() => setQuoteDiscountType(quoteDiscountType === "amount" ? "" : "amount")}>Amount</button>
                 {quoteDiscountType && (
                   <input type="number" className="input" value={quoteDiscountValue || ""} onChange={(e) => setQuoteDiscountValue(Number(e.target.value))} min={0} placeholder="0" style={{ width: 100, padding: "0.3rem", fontSize: "0.85rem" }} />
@@ -702,7 +702,7 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
 
             <div style={{ textAlign: "right", marginTop: "1rem", paddingTop: "0.75rem", borderTop: "2px solid var(--border)" }}>
               {quoteDiscountType && quoteDiscountValue > 0 && (
-                <div style={{ fontSize: "0.9rem", color: "#10b981", marginBottom: "0.25rem" }}>
+                <div style={{ fontSize: "0.9rem", color: "var(--success)", marginBottom: "0.25rem" }}>
                   Discount: {quoteDiscountType === "percentage" ? `${quoteDiscountValue}%` : formatPrice(quoteDiscountValue)}
                 </div>
               )}

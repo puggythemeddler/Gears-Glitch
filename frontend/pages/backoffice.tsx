@@ -183,7 +183,7 @@ function BackofficeRepairs() {
                 <td>{t.etaAt ? new Date(t.etaAt).toLocaleDateString("en-GB") : "—"}</td>
                 <td>
                   {t.quoteSentAt ? (
-                    <span className="plan-status" style={{ background: t.quoteResponse === "accepted" ? "#d1fae5" : t.quoteResponse === "declined" ? "#fee2e2" : "#fef3c7", color: t.quoteResponse === "accepted" ? "#065f46" : t.quoteResponse === "declined" ? "#991b1b" : "#92400e" }}>
+                    <span className="plan-status" style={{ background: t.quoteResponse === "accepted" ? "var(--success-light)" : t.quoteResponse === "declined" ? "var(--danger-light)" : "var(--warning-light)", color: t.quoteResponse === "accepted" ? "var(--success-text)" : t.quoteResponse === "declined" ? "var(--danger-text)" : "var(--warning-text)" }}>
                       {t.quoteResponse ? t.quoteResponse : "Sent"}
                     </span>
                   ) : "—"}
@@ -230,8 +230,8 @@ function BackofficeRepairs() {
             {detail.totalCost > 0 && <span style={{ fontWeight: 600, fontSize: "1.1rem" }}>{formatPrice(detail.totalCost)}</span>}
             {detail.quoteSentAt && (
               <span className="plan-status" style={{
-                background: detail.quoteResponse === "accepted" ? "#d1fae5" : detail.quoteResponse === "declined" ? "#fee2e2" : "#fef3c7",
-                color: detail.quoteResponse === "accepted" ? "#065f46" : detail.quoteResponse === "declined" ? "#991b1b" : "#92400e"
+                background: detail.quoteResponse === "accepted" ? "var(--success-light)" : detail.quoteResponse === "declined" ? "var(--danger-light)" : "var(--warning-light)",
+                color: detail.quoteResponse === "accepted" ? "var(--success-text)" : detail.quoteResponse === "declined" ? "var(--danger-text)" : "var(--warning-text)"
               }}>
                 {detail.quoteResponse ? `Customer ${detail.quoteResponse}` : "Awaiting customer response"}
               </span>

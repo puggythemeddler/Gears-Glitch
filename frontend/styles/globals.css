@@ -95,6 +95,8 @@
   --overlay: rgba(0, 0, 0, 0.4);
   --shadow-color: rgba(0, 0, 0, 0.06);
   --bg-secondary: var(--surface-hover);
+  --muted: #94a3b8;
+  --violet: #8b5cf6;
 
   /* Secondary brand accent (repair cards, highlights) */
   --accent: #f59e0b;
@@ -141,6 +143,8 @@
   --overlay: rgba(0, 0, 0, 0.6);
   --shadow-color: rgba(0, 0, 0, 0.2);
   --bg-secondary: var(--surface-hover);
+  --muted: #64748b;
+  --violet: #a78bfa;
 
   --accent: #f59e0b;
   --accent-subtle: rgba(245, 158, 11, 0.16);

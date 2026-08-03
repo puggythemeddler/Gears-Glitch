@@ -252,18 +252,18 @@ export default function CartPage() {
               <span>Subtotal</span>
               <span>{formatPrice(subtotal)}</span>
             </div>
-            {couponDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Coupon discount</span><span style={{ color: "#16a34a" }}>-{formatPrice(couponDiscount)}</span></div>}
-            {giftCardDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Gift card</span><span style={{ color: "#16a34a" }}>-{formatPrice(giftCardDiscount)}</span></div>}
-            {pointsDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Points discount</span><span style={{ color: "#16a34a" }}>-{formatPrice(pointsDiscount)}</span></div>}
+            {couponDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Coupon discount</span><span style={{ color: "var(--success)" }}>-{formatPrice(couponDiscount)}</span></div>}
+            {giftCardDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Gift card</span><span style={{ color: "var(--success)" }}>-{formatPrice(giftCardDiscount)}</span></div>}
+            {pointsDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Points discount</span><span style={{ color: "var(--success)" }}>-{formatPrice(pointsDiscount)}</span></div>}
             <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem" }}>
               <input type="text" className="input" placeholder="Coupon code" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} style={{ flex: 1, minWidth: 120, fontSize: "0.85rem" }} />
               <button className="btn btn-sm" onClick={applyCoupon} style={{ fontSize: "0.85rem" }}>Apply</button>
-              {couponMsg && <span style={{ fontSize: "0.8rem", color: couponDiscount > 0 ? "var(--success, #16a34a)" : "var(--danger, #dc2626)", width: "100%" }}>{couponMsg}</span>}
+              {couponMsg && <span style={{ fontSize: "0.8rem", color: couponDiscount > 0 ? "var(--success)" : "var(--danger)", width: "100%" }}>{couponMsg}</span>}
             </div>
             <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem" }}>
               <input type="text" className="input" placeholder="Gift card code" value={giftCardCode} onChange={(e) => setGiftCardCode(e.target.value)} style={{ flex: 1, minWidth: 120, fontSize: "0.85rem" }} />
               <button className="btn btn-sm" onClick={applyGiftCard} style={{ fontSize: "0.85rem" }}>Apply</button>
-              {giftCardMsg && <span style={{ fontSize: "0.8rem", color: giftCardDiscount > 0 ? "var(--success, #16a34a)" : "var(--danger, #dc2626)", width: "100%" }}>{giftCardMsg}</span>}
+              {giftCardMsg && <span style={{ fontSize: "0.8rem", color: giftCardDiscount > 0 ? "var(--success)" : "var(--danger)", width: "100%" }}>{giftCardMsg}</span>}
             </div>
             {loyaltyPoints > 0 && (
               <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem", padding: "0.5rem 0" }}>
@@ -274,7 +274,7 @@ export default function CartPage() {
                   if (redeemPoints > loyaltyPoints) { setPointsMsg("Not enough points."); return; }
                   setPointsDiscount(redeemPoints); setPointsMsg(`Will redeem ${redeemPoints} points on checkout.`);
                 }} style={{ fontSize: "0.85rem" }}>Redeem</button>
-                {pointsMsg && <span style={{ fontSize: "0.8rem", color: pointsDiscount > 0 ? "var(--success, #16a34a)" : "var(--danger, #dc2626)", width: "100%" }}>{pointsMsg}</span>}
+                {pointsMsg && <span style={{ fontSize: "0.8rem", color: pointsDiscount > 0 ? "var(--success)" : "var(--danger)", width: "100%" }}>{pointsMsg}</span>}
               </div>
             )}
             <div className="field">
@@ -330,9 +330,9 @@ export default function CartPage() {
               <div className="cart-summary__row"><span>Shipping to</span><span style={{ textAlign: "right" }}>{escapeHtml(shippingName)}<br />{escapeHtml(shippingAddress)}, {escapeHtml(shippingCountyLabel)}</span></div>
               {shippingPhone.trim() && <div className="cart-summary__row"><span>Phone</span><span>{escapeHtml(shippingPhone)}</span></div>}
               {mpesaPhone.trim() && <div className="cart-summary__row"><span>M-Pesa number</span><span>{escapeHtml(mpesaPhone)}</span></div>}
-              {couponDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Coupon discount</span><span style={{ color: "#16a34a" }}>-{formatPrice(couponDiscount)}</span></div>}
-              {giftCardDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Gift card</span><span style={{ color: "#16a34a" }}>-{formatPrice(giftCardDiscount)}</span></div>}
-              {pointsDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "#16a34a" }}>Points discount</span><span style={{ color: "#16a34a" }}>-{formatPrice(pointsDiscount)}</span></div>}
+              {couponDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Coupon discount</span><span style={{ color: "var(--success)" }}>-{formatPrice(couponDiscount)}</span></div>}
+              {giftCardDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Gift card</span><span style={{ color: "var(--success)" }}>-{formatPrice(giftCardDiscount)}</span></div>}
+              {pointsDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Points discount</span><span style={{ color: "var(--success)" }}>-{formatPrice(pointsDiscount)}</span></div>}
               <div className="cart-summary__row"><span>Shipping</span><span>{shippingFee > 0 ? formatPrice(shippingFee) : "—"}</span></div>
               <div className="cart-summary__total cart-summary__row"><span>Total</span><span>{formatPrice(total)}</span></div>
 

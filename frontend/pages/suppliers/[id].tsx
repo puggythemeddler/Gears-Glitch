@@ -58,7 +58,7 @@ export default function EditSupplierPage() {
         <h1>Edit Supplier</h1>
 
         {msg && (
-          <div className="panel" style={{ marginBottom: "1rem", background: "var(--danger-light, #fee2e2)", color: "var(--danger, #991b1b)", padding: "0.75rem", borderRadius: 6 }}>
+          <div className="panel" style={{ marginBottom: "1rem", background: "var(--danger-light)", color: "var(--danger-text)", padding: "0.75rem", borderRadius: 6 }}>
             {msg}
           </div>
         )}

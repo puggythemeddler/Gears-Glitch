@@ -182,8 +182,8 @@ export default function OrderDetailPage() {
               <label htmlFor="oNotes" className="input-label">Delivery instructions (optional)</label>
               <textarea id="oNotes" className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Leave at the gate, call on arrival…" />
             </div>
-            {saveMsg && <p style={{ fontSize: "0.85rem", color: saveMsg.error ? "var(--danger, #dc2626)" : "var(--success, #16a34a)" }}>{saveMsg.text}</p>}
-            {mpesaMsg && <p style={{ fontSize: "0.85rem", color: "var(--success, #16a34a)" }}>{mpesaMsg}</p>}
+            {saveMsg && <p style={{ fontSize: "0.85rem", color: saveMsg.error ? "var(--danger)" : "var(--success)" }}>{saveMsg.text}</p>}
+            {mpesaMsg && <p style={{ fontSize: "0.85rem", color: "var(--success)" }}>{mpesaMsg}</p>}
             <button className="btn btn-primary" onClick={saveDetails} disabled={saving} style={{ alignSelf: "flex-start" }}>{saving ? "Saving…" : "Save Details"}</button>
           </div>
         ) : (
@@ -225,7 +225,7 @@ export default function OrderDetailPage() {
                 <td>{i.quantity}</td>
                 <td>{formatPrice(i.price)}</td>
                 <td>{formatPrice(i.lineTotal)}</td>
-                <td style={{ fontSize: "0.85rem", color: "var(--success, #16a34a)" }}>Active</td>
+                <td style={{ fontSize: "0.85rem", color: "var(--success)" }}>Active</td>
               </tr>
             );
           })}
@@ -235,7 +235,7 @@ export default function OrderDetailPage() {
               <td>{i.quantity}</td>
               <td>{formatPrice(i.price)}</td>
               <td>{formatPrice(i.lineTotal)}</td>
-              <td style={{ fontSize: "0.85rem", color: "var(--danger, #dc2626)" }}>Cancelled</td>
+              <td style={{ fontSize: "0.85rem", color: "var(--danger)" }}>Cancelled</td>
             </tr>
           ))}
         </tbody>
@@ -243,7 +243,7 @@ export default function OrderDetailPage() {
           <tr><td colSpan={3} style={{ textAlign: "right" }}>Subtotal</td><td>{formatPrice(order.subtotal)}</td><td /></tr>
           <tr><td colSpan={3} style={{ textAlign: "right" }}>Shipping</td><td>{formatPrice(order.shippingFee || 0)}</td><td /></tr>
           {cancelledItems.length > 0 && (
-            <tr><td colSpan={3} style={{ textAlign: "right", color: "var(--danger, #dc2626)" }}>Cancelled items</td><td style={{ color: "var(--danger, #dc2626)" }}>-{formatPrice(cancelledItems.reduce((s, i) => s + i.lineTotal, 0))}</td><td /></tr>
+            <tr><td colSpan={3} style={{ textAlign: "right", color: "var(--danger)" }}>Cancelled items</td><td style={{ color: "var(--danger)" }}>-{formatPrice(cancelledItems.reduce((s, i) => s + i.lineTotal, 0))}</td><td /></tr>
           )}
           <tr><td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Total</td><td style={{ fontWeight: 700 }}>{formatPrice(total)}</td><td /></tr>
         </tfoot>

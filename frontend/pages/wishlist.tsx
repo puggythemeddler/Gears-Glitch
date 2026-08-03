@@ -120,7 +120,7 @@ export default function WishlistPage() {
                   } catch (err: any) { alert(err.message); }
                 }}>Add to cart</button>
                 <a href={`/product?id=${encodeURIComponent(item.productId)}`} className="btn btn-sm btn-ghost">View</a>
-                <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger, #dc2626)" }} onClick={() => removeFromWishlist(item.productId)}>Remove</button>
+                <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }} onClick={() => removeFromWishlist(item.productId)}>Remove</button>
               </div>
             </div>
           ))

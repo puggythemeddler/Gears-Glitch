@@ -301,13 +301,13 @@ export default function DashboardPage() {
                           cursor: "pointer",
                           borderBottom: "1px solid var(--border)",
                           background: selectedMsgKey === c.key ? "var(--primary)" : "transparent",
-                          color: selectedMsgKey === c.key ? "#fff" : "var(--text)",
+                          color: selectedMsgKey === c.key ? "var(--surface)" : "var(--text)",
                         }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <strong style={{ fontSize: "0.9rem" }}>{escapeHtml(c.partner)}</strong>
                             {c.unread > 0 && <span style={{
-                              background: selectedMsgKey === c.key ? "#fff" : "var(--primary)",
-                              color: selectedMsgKey === c.key ? "var(--primary)" : "#fff",
+                              background: selectedMsgKey === c.key ? "var(--surface)" : "var(--primary)",
+                              color: selectedMsgKey === c.key ? "var(--primary)" : "var(--surface)",
                               borderRadius: 999, padding: "0.1rem 0.5rem", fontSize: "0.75rem", fontWeight: 600
                             }}>{c.unread}</span>}
                           </div>
@@ -340,7 +340,7 @@ export default function DashboardPage() {
                                   alignSelf: isMe ? "flex-end" : "flex-start",
                                   maxWidth: "75%",
                                   background: isMe ? "var(--primary)" : "var(--surface)",
-                                  color: isMe ? "#fff" : "var(--text)",
+                                  color: isMe ? "var(--surface)" : "var(--text)",
                                   borderRadius: "12px",
                                   padding: "0.6rem 1rem",
                                   border: isMe ? "none" : "1px solid var(--border)",
@@ -504,7 +504,7 @@ function CustomerProfileForm({ profile, onSaved }: { profile: any; onSaved: (p: 
         <div className="field"><label>Email<input value={profile.email || ""} disabled style={{ opacity: 0.6 }} /></label></div>
         <div className="field"><label>Phone<input value={phone} onChange={(e) => setPhone(e.target.value)} /></label></div>
         {error && <p className="error">{error}</p>}
-        {saved && <p style={{ color: "var(--success, #16a34a)" }}>Profile updated.</p>}
+        {saved && <p style={{ color: "var(--success)" }}>Profile updated.</p>}
         <button className="btn" disabled={saving}>{saving ? "Saving..." : "Save changes"}</button>
       </form>
       <form onSubmit={handlePasswordChange} className="auth-form" style={{ marginTop: "2rem" }}>
@@ -543,7 +543,7 @@ function ProviderProfileForm({ profile, onSaved }: { profile: any; onSaved: (p: 
       <div className="field"><label>Email<input value={profile.email || ""} disabled style={{ opacity: 0.6 }} /></label></div>
       <div className="field"><label>Phone<input value={phone} onChange={(e) => setPhone(e.target.value)} /></label></div>
       {error && <p className="error">{error}</p>}
-      {saved && <p style={{ color: "var(--success, #16a34a)" }}>Profile updated.</p>}
+      {saved && <p style={{ color: "var(--success)" }}>Profile updated.</p>}
       <button className="btn" disabled={saving}>{saving ? "Saving..." : "Save"}</button>
     </form>
   );

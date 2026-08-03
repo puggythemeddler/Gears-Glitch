@@ -119,7 +119,7 @@ export default function RepairTicketPage() {
               </button>
             </div>
           ) : (
-            <p style={{ margin: "0.5rem 0 0", fontWeight: 600, color: ticket.quoteResponse === "accepted" ? "var(--primary)" : "#e53e3e" }}>
+            <p style={{ margin: "0.5rem 0 0", fontWeight: 600, color: ticket.quoteResponse === "accepted" ? "var(--primary)" : "var(--danger)" }}>
               You {ticket.quoteResponse === "accepted" ? "accepted" : "declined"} this estimate.
             </p>
           )}

@@ -72,7 +72,7 @@ export function ProductCard({ product }: ProductCardProps) {
       <div className="price" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
         {product.salePrice ? (
           <>
-            <span style={{ textDecoration: "line-through", color: "var(--muted, #999)", fontSize: "0.85em" }}>{formatPrice(product.price)}</span>
+            <span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(product.price)}</span>
             <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(product.salePrice)}</span>
           </>
         ) : (

@@ -121,7 +121,7 @@ export default function ProductPage() {
   }
 
   function renderStars(rating: number, size: string = "1rem") {
-    return <span style={{ fontSize: size, color: "#f59e0b", letterSpacing: 1 }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating) ? "★" : "☆").join("")}</span>;
+    return <span style={{ fontSize: size, color: "var(--accent)", letterSpacing: 1 }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating) ? "★" : "☆").join("")}</span>;
   }
 
   async function fetchReviews(page: number = 1) {
@@ -270,9 +270,9 @@ export default function ProductPage() {
           <p className="product-detail__price" style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
             {product.salePrice ? (
               <>
-                <span style={{ textDecoration: "line-through", color: "var(--muted, #999)", fontSize: "0.8em" }}>{formatPrice(product.price)}</span>
-                <span style={{ color: "#dc2626", fontWeight: 700 }}>{formatPrice(product.salePrice)}</span>
-                <span style={{ display: "inline-block", background: "#dc2626", color: "#fff", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
+                <span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.8em" }}>{formatPrice(product.price)}</span>
+                <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(product.salePrice)}</span>
+                <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--surface)", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
               </>
             ) : (
               formatPrice(product.price)
@@ -374,12 +374,12 @@ export default function ProductPage() {
         {loggedIn && !userReviewed && !editingReview && (
           <div className="panel" style={{ maxWidth: 500, marginBottom: "1.5rem" }}>
             <h4 style={{ margin: "0 0 0.75rem" }}>Write a Review</h4>
-            {reviewMsg && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: reviewMsg.startsWith("Error") || reviewMsg.startsWith("Failed") ? "#dc2626" : "#16a34a" }}>{reviewMsg}</p>}
+            {reviewMsg && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: reviewMsg.startsWith("Error") || reviewMsg.startsWith("Failed") ? "var(--danger)" : "var(--success)" }}>{reviewMsg}</p>}
             <div style={{ marginBottom: "0.75rem" }}>
               <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Rating</label>
               <div style={{ display: "flex", gap: 4 }}>
                 {[1, 2, 3, 4, 5].map((s) => (
-                  <button key={s} type="button" onClick={() => setReviewRating(s)} style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: s <= reviewRating ? "#f59e0b" : "#d1d5db", padding: 0, lineHeight: 1, transition: "color 0.15s" }}>★</button>
+                  <button key={s} type="button" onClick={() => setReviewRating(s)} style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: s <= reviewRating ? "var(--accent)" : "var(--border)", padding: 0, lineHeight: 1, transition: "color 0.15s" }}>★</button>
                 ))}
               </div>
             </div>
@@ -395,7 +395,7 @@ export default function ProductPage() {
               <h4 style={{ margin: 0 }}>Your Review</h4>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <button className="btn btn-sm btn-ghost" onClick={() => { setEditingReview(true); setReviewRating(userReview.rating); setReviewTitle(userReview.title || ""); setReviewComment(userReview.comment || ""); setReviewMsg(""); }}>Edit</button>
-                <button className="btn btn-sm btn-ghost" style={{ color: "#dc2626" }} onClick={deleteReview} disabled={deletingReview}>{deletingReview ? "Deleting..." : "Delete"}</button>
+                <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }} onClick={deleteReview} disabled={deletingReview}>{deletingReview ? "Deleting..." : "Delete"}</button>
               </div>
             </div>
             <div style={{ marginBottom: "0.25rem" }}>{renderStars(userReview.rating)}</div>
@@ -407,12 +407,12 @@ export default function ProductPage() {
         {editingReview && (
           <div className="panel" style={{ maxWidth: 500, marginBottom: "1.5rem" }}>
             <h4 style={{ margin: "0 0 0.75rem" }}>Edit Your Review</h4>
-            {reviewMsg && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: reviewMsg.startsWith("Error") || reviewMsg.startsWith("Failed") ? "#dc2626" : "#16a34a" }}>{reviewMsg}</p>}
+            {reviewMsg && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: reviewMsg.startsWith("Error") || reviewMsg.startsWith("Failed") ? "var(--danger)" : "var(--success)" }}>{reviewMsg}</p>}
             <div style={{ marginBottom: "0.75rem" }}>
               <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Rating</label>
               <div style={{ display: "flex", gap: 4 }}>
                 {[1, 2, 3, 4, 5].map((s) => (
-                  <button key={s} type="button" onClick={() => setReviewRating(s)} style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: s <= reviewRating ? "#f59e0b" : "#d1d5db", padding: 0, lineHeight: 1, transition: "color 0.15s" }}>★</button>
+                  <button key={s} type="button" onClick={() => setReviewRating(s)} style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: s <= reviewRating ? "var(--accent)" : "var(--border)", padding: 0, lineHeight: 1, transition: "color 0.15s" }}>★</button>
                 ))}
               </div>
             </div>

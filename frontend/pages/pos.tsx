@@ -191,7 +191,7 @@ export default function POSPage() {
       <div className="pos-category-bar">
         <button
           onClick={() => { setSelectedCategory(""); sessionStorage.removeItem("posCategory"); }}
-          style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: !selectedCategory ? "var(--primary)" : "transparent", color: !selectedCategory ? "#fff" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: !selectedCategory ? 600 : 400 }}
+          style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: !selectedCategory ? "var(--primary)" : "transparent", color: !selectedCategory ? "var(--surface)" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: !selectedCategory ? 600 : 400 }}
         >
           All
         </button>
@@ -199,7 +199,7 @@ export default function POSPage() {
           <button
             key={cat.id}
             onClick={() => { setSelectedCategory(cat.id); sessionStorage.setItem("posCategory", cat.id); }}
-            style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: selectedCategory === cat.id ? "var(--primary)" : "transparent", color: selectedCategory === cat.id ? "#fff" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: selectedCategory === cat.id ? 600 : 400 }}
+            style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: selectedCategory === cat.id ? "var(--primary)" : "transparent", color: selectedCategory === cat.id ? "var(--surface)" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: selectedCategory === cat.id ? 600 : 400 }}
           >
             {cat.label}
           </button>
@@ -217,10 +217,10 @@ export default function POSPage() {
               {p.imageUrl ? <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 100, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
               <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{escapeHtml(p.name)}</div>
               <div style={{ fontSize: "0.9rem", color: "var(--primary)" }}>
-                {p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted, #999)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "#dc2626", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}
+                {p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}
               </div>
               {typeof p.stockOnHand === "number" && (
-                <div style={{ fontSize: "0.7rem", color: p.stockOnHand <= 0 ? "#dc2626" : p.stockOnHand <= 5 ? "#f59e0b" : "var(--text-secondary)", marginTop: 2 }}>
+                <div style={{ fontSize: "0.7rem", color: p.stockOnHand <= 0 ? "var(--danger)" : p.stockOnHand <= 5 ? "var(--warning)" : "var(--text-secondary)", marginTop: 2 }}>
                   {p.stockOnHand <= 0 ? "Out of stock" : `Stock: ${p.stockOnHand}`}
                 </div>
               )}
@@ -283,7 +283,7 @@ export default function POSPage() {
 
         <div style={{ padding: "0.75rem", borderTop: "1px solid var(--border)" }}>
           {change > 0 && !lastOrderId && (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 700, marginBottom: "0.5rem", color: "#16a34a" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 700, marginBottom: "0.5rem", color: "var(--success)" }}>
               <span>Change</span>
               <span>{formatPrice(change)}</span>
             </div>
@@ -292,11 +292,11 @@ export default function POSPage() {
             <span>Total</span>
             <span>{formatPrice(subtotal)}</span>
           </div>
-          {status && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: status.startsWith("Error") || status.startsWith("Insufficient") || status.startsWith("Enter") ? "#dc2626" : "#16a34a" }}>{status}</p>}
+          {status && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: status.startsWith("Error") || status.startsWith("Insufficient") || status.startsWith("Enter") ? "var(--danger)" : "var(--success)" }}>{status}</p>}
           {lastOrderId ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               <div style={{ fontSize: "0.9rem", textAlign: "center" }}>Order #{lastOrderId}</div>
-              {lastChange > 0 && <div style={{ fontSize: "1rem", textAlign: "center", color: "#16a34a", fontWeight: 700 }}>Change: {formatPrice(lastChange)}</div>}
+              {lastChange > 0 && <div style={{ fontSize: "1rem", textAlign: "center", color: "var(--success)", fontWeight: 700 }}>Change: {formatPrice(lastChange)}</div>}
               <button
                 className="btn btn-primary btn-block"
                 style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}

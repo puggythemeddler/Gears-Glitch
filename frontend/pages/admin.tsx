@@ -3662,9 +3662,9 @@ function AdminNavOrder() {
             onDrop={(e) => handleDrop(idx, e)}
             style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, cursor: "grab" }}
           >
-            <span style={{ cursor: "grab", color: "var(--muted, #999)" }}>&#9776;</span>
+            <span style={{ cursor: "grab", color: "var(--muted)" }}>&#9776;</span>
             <span style={{ fontWeight: 500 }}>{item.label}</span>
-            <span style={{ fontSize: "0.75rem", color: "var(--muted, #999)" }}>({item.id})</span>
+            <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>({item.id})</span>
           </div>
         ))}
       </div>
