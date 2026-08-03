@@ -775,6 +775,7 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS link_url TEXT DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
   try { await query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE product_groups ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
 
   // Backfill category sort order: assign sequential order by group then label to any
   // categories that still share the default (tied) sort_order, so clients don't have
@@ -785,6 +786,15 @@ async function runMigrations(): Promise<void> {
       await query(`UPDATE categories c SET sort_order = t.new_order FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY group_name, label) - 1 AS new_order FROM categories) t WHERE c.id = t.id`);
     }
   } catch { console.warn("[db] Category sort_order backfill skipped"); }
+
+  // Backfill product group sort order the same way: assign sequential order by name
+  // to any groups still sharing the default (tied) sort_order.
+  try {
+    const tieCount = await queryOne(`SELECT COUNT(*) AS cnt FROM (SELECT sort_order FROM product_groups GROUP BY sort_order HAVING COUNT(*) > 1) t`) as any;
+    if (Number(tieCount?.cnt || 0) > 0) {
+      await query(`UPDATE product_groups g SET sort_order = t.new_order FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY name) - 1 AS new_order FROM product_groups) t WHERE g.id = t.id`);
+    }
+  } catch { console.warn("[db] Product group sort_order backfill skipped"); }
 
 
   // ============ Sales-by-channel, gift cards, campaigns, cart recovery, refunds ============
@@ -1427,7 +1437,10 @@ async function createProductGroup(data: { name: string; isActive?: boolean; sort
   const id = slugifyGroupId(name);
   const existing = await getProductGroup(id);
   if (existing) throw new Error("A group with this name already exists.");
-  await query("INSERT INTO product_groups (id, name, is_active, sort_order) VALUES ($1, $2, $3, $4)", [id, name, data.isActive !== false ? 1 : 0, data.sortOrder || 0]);
+  const sortOrder = Number.isFinite(Number(data.sortOrder)) && Number(data.sortOrder) > 0
+    ? Number(data.sortOrder)
+    : Number((await queryOne("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM product_groups") as any)?.next_order ?? 0);
+  await query("INSERT INTO product_groups (id, name, is_active, sort_order) VALUES ($1, $2, $3, $4)", [id, name, data.isActive !== false ? 1 : 0, sortOrder]);
   return (await getProductGroup(id))!;
 }
 

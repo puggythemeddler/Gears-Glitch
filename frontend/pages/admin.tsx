@@ -709,12 +709,15 @@ function AdminGroups() {
   const [editSort, setEditSort] = useState(0);
   const [msg, setMsg] = useState("");
 
+  const groups = gData?.groups || [];
+  const nextSort = groups.length ? Math.max(...groups.map((g: any) => Number(g.sortOrder) || 0)) + 1 : 0;
+
   async function createGroup() {
     if (!newName.trim()) return;
     setSaving(true); setMsg("");
     try {
       await api("/api/admin/groups", { method: "POST", body: JSON.stringify({ name: newName.trim(), sortOrder: Number(newSort) || 0 }) });
-      setNewName(""); setNewSort(0); refetch();
+      setNewName(""); setNewSort(nextSort + 1); refetch();
     } catch (e: any) { setMsg(e.message || "Failed to create group"); }
     finally { setSaving(false); }
   }
@@ -740,7 +743,6 @@ function AdminGroups() {
 
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
-  const groups = gData?.groups || [];
 
   return (
     <>
