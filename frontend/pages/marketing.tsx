@@ -176,8 +176,6 @@ function AnimatedBackground() {
       <div className="mk-bg-glow mk-bg-glow--2" />
       <div className="mk-bg-gear mk-bg-gear--1" />
       <div className="mk-bg-gear mk-bg-gear--2" />
-      <div className="mk-bg-gear mk-bg-gear--3" />
-      <div className="mk-bg-gear mk-bg-gear--4" />
       <div className="mk-bg-circuit mk-bg-circuit--1" />
       <div className="mk-bg-circuit mk-bg-circuit--2" />
     </div>
@@ -238,6 +236,7 @@ function DashboardPreview() {
           </div>
         </div>
       </div>
+      <p className="mk-hero-preview-caption">Illustrative preview with sample data.</p>
     </div>
   );
 }
@@ -290,7 +289,7 @@ function Section({
     if (!el) return;
     const obs = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) { setVisible(true); obs.disconnect(); } },
-      { threshold: 0.1 }
+      { threshold: 0, rootMargin: "0px 0px -10% 0px" }
     );
     obs.observe(el);
     return () => obs.disconnect();
@@ -324,7 +323,7 @@ function StaggerContainer({ children, className = "" }: { children: React.ReactN
     if (!el) return;
     const obs = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) { setVisible(true); obs.disconnect(); } },
-      { threshold: 0.1 }
+      { threshold: 0, rootMargin: "0px 0px -10% 0px" }
     );
     obs.observe(el);
     return () => obs.disconnect();
@@ -359,14 +358,14 @@ function useCountUp(target: number, duration: number, start: boolean): number {
 /*  FAQ Item                                                           */
 /* ------------------------------------------------------------------ */
 
-function FAQItem({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boolean; onToggle: () => void }) {
+function FAQItem({ index, q, a, isOpen, onToggle }: { index: number; q: string; a: string; isOpen: boolean; onToggle: () => void }) {
   return (
     <div className={`mk-faq-item ${isOpen ? "mk-faq-item--open" : ""}`}>
-      <button className="mk-faq-question" onClick={onToggle} aria-expanded={isOpen}>
+      <button className="mk-faq-question" onClick={onToggle} aria-expanded={isOpen} aria-controls={`mk-faq-panel-${index}`} id={`mk-faq-question-${index}`}>
         <span>{q}</span>
-        <span className="mk-faq-arrow">▼</span>
+        <span className="mk-faq-arrow" aria-hidden="true">▼</span>
       </button>
-      <div className="mk-faq-answer" role="region">
+      <div className="mk-faq-answer" id={`mk-faq-panel-${index}`} role="region" aria-labelledby={`mk-faq-question-${index}`} aria-hidden={!isOpen}>
         <div className="mk-faq-answer-inner">{a}</div>
       </div>
     </div>
@@ -403,7 +402,7 @@ function MarketingContent() {
     if (!el) return;
     const obs = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) { setStatsVisible(true); obs.disconnect(); } },
-      { threshold: 0.3 }
+      { threshold: 0, rootMargin: "0px 0px -20% 0px" }
     );
     obs.observe(el);
     return () => obs.disconnect();
@@ -433,6 +432,7 @@ function MarketingContent() {
 
   return (
     <div className="mk-page">
+      <a className="mk-skip-link" href="#problem">Skip to content</a>
 
       <AnimatedBackground />
 
@@ -462,23 +462,23 @@ function MarketingContent() {
         </p>
 
         <div className="mk-hero-actions">
-          <button className="mk-btn mk-btn-primary" onClick={(e) => { handleRipple(e); setTimeout(() => window.location.href = "/contact", 300); }}>
+          <a className="mk-btn mk-btn-primary" href="/contact" onClick={handleRipple}>
             <span className="mk-btn-text">Book a Demo</span>
-          </button>
-          <button className="mk-btn mk-btn-secondary" onClick={(e) => { handleRipple(e); setTimeout(() => window.location.href = "/login", 300); }}>
+          </a>
+          <a className="mk-btn mk-btn-secondary" href="/login" onClick={handleRipple}>
             <span className="mk-btn-text">Start Free Trial</span>
-          </button>
-          <button className="mk-btn mk-btn-secondary" onClick={(e) => { handleRipple(e); setTimeout(() => window.location.href = "/contact", 300); }}>
+          </a>
+          <a className="mk-btn mk-btn-secondary" href="/contact" onClick={handleRipple}>
             <span className="mk-btn-text">Contact Sales</span>
-          </button>
+          </a>
         </div>
 
         <DashboardPreview />
 
-        <div className="mk-hero-scroll" onClick={() => scrollToSection("problem")} role="button" tabIndex={0} aria-label="Scroll to next section" onKeyDown={(e) => e.key === "Enter" && scrollToSection("problem")}>
+        <button className="mk-hero-scroll" onClick={() => scrollToSection("problem")} type="button" aria-label="Scroll to next section" onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && scrollToSection("problem")}>
           <span>Scroll to explore</span>
           <div className="mk-hero-scroll-line" />
-        </div>
+        </button>
       </section>
 
       {/* ================================================================
@@ -544,7 +544,7 @@ function MarketingContent() {
             <div className="mk-connector-line" />
             <div className="mk-connector-line" />
             <div className="mk-connector-line" />
-            <div className="mk-connector-dot">⬇️</div>
+            <div className="mk-connector-dot" aria-hidden="true">↓</div>
           </div>
 
           {/* Central hub */}
@@ -600,7 +600,7 @@ function MarketingContent() {
         id="features"
         label="Features"
         title="Everything You Need to Succeed"
-        subtitle="Thirty-six powerful modules that work together to run every part of your electronics business."
+        subtitle="Thirty-eight powerful modules that work together to run every part of your electronics business."
       >
         <StaggerContainer className="mk-features-grid">
           {FEATURES.map((f, i) => (
@@ -670,7 +670,8 @@ function MarketingContent() {
         <StaggerContainer className="mk-testimonials-grid">
           {TESTIMONIALS.map((t, i) => (
             <div key={i} className="mk-testimonial-card">
-              <div className="mk-testimonial-stars">{Array.from({ length: t.rating }).map((_, j) => (<span key={j}>★</span>))}</div>
+              <div className="mk-testimonial-stars" aria-hidden="true">{Array.from({ length: t.rating }).map((_, j) => (<span key={j}>★</span>))}</div>
+              <div className="mk-sr-only">{t.rating} out of 5 stars</div>
               <div className="mk-testimonial-text">"{t.text}"</div>
               <div className="mk-testimonial-author">
                 <div className="mk-testimonial-avatar">{t.name.charAt(0)}</div>
@@ -697,6 +698,7 @@ function MarketingContent() {
           {FAQS.map((faq, i) => (
             <FAQItem
               key={i}
+              index={i}
               q={faq.q}
               a={faq.a}
               isOpen={openFaq === i}
@@ -717,15 +719,15 @@ function MarketingContent() {
           operations, reduced costs, and grown revenue with Gear&Glitch.
         </p>
         <div className="mk-cta-actions">
-          <button className="mk-btn mk-btn-primary" onClick={(e) => { handleRipple(e); setTimeout(() => window.location.href = "/contact", 300); }}>
+          <a className="mk-btn mk-btn-primary" href="/contact" onClick={handleRipple}>
             <span className="mk-btn-text">Book a Demo</span>
-          </button>
-          <button className="mk-btn mk-btn-secondary" onClick={(e) => { handleRipple(e); setTimeout(() => window.location.href = "/login", 300); }}>
+          </a>
+          <a className="mk-btn mk-btn-secondary" href="/login" onClick={handleRipple}>
             <span className="mk-btn-text">Start Free Trial</span>
-          </button>
-          <button className="mk-btn mk-btn-secondary" onClick={(e) => { handleRipple(e); setTimeout(() => window.location.href = "/contact", 300); }}>
+          </a>
+          <a className="mk-btn mk-btn-secondary" href="/contact" onClick={handleRipple}>
             <span className="mk-btn-text">Request a Quote</span>
-          </button>
+          </a>
         </div>
         <p className="mk-cta-note">Free Starter plan available. No credit card required. Upgrade anytime as your business grows.</p>
       </section>
