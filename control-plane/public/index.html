@@ -192,6 +192,8 @@
       .form-grid { grid-template-columns: 1fr !important; }
       #notif-panel { width: min(350px, calc(100vw - 2rem)); }
       table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+      .actions-menu .menu { position: static; width: 100%; min-width: 0; max-height: none; overflow-y: visible; box-shadow: none; }
+      .actions-menu { max-width: 100%; }
     }
     @media (pointer: coarse) {
       .btn, .btn-sm, .tab, .th-sort { min-height: 44px; }
@@ -951,6 +953,21 @@
       if (e.target && e.target.matches && e.target.matches("details.actions-menu")) {
         const s = e.target.querySelector("summary");
         if (s) s.setAttribute("aria-expanded", e.target.open ? "true" : "false");
+        const m = e.target.querySelector(".menu");
+        if (m) {
+          if (e.target.open) {
+            m.style.top = "";
+            m.style.bottom = "";
+            const r = m.getBoundingClientRect();
+            if (r.bottom > window.innerHeight && r.top > m.offsetHeight + 12) {
+              m.style.top = "auto";
+              m.style.bottom = "calc(100% + 4px)";
+            }
+          } else {
+            m.style.top = "";
+            m.style.bottom = "";
+          }
+        }
       }
     }, true);
 
