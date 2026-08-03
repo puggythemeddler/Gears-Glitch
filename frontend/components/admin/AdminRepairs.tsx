@@ -26,14 +26,14 @@ function slugify(text: string): string {
 
 function statusBadge(status: string) {
   const bg: Record<string, string> = {
-    received: "#dbeafe", diagnosing: "#fef3c7", waiting_parts: "#ede9fe",
-    in_progress: "#d1fae5", ready: "#c7d2fe", collected: "#e5e7eb", cancelled: "#fee2e2",
+    received: "var(--info-light)", diagnosing: "var(--warning-light)", waiting_parts: "var(--violet-light)",
+    in_progress: "var(--success-light)", ready: "var(--indigo-light)", collected: "var(--neutral-light)", cancelled: "var(--danger-light)",
   };
   const fg: Record<string, string> = {
-    received: "#1e40af", diagnosing: "#92400e", waiting_parts: "#5b21b6",
-    in_progress: "#065f46", ready: "#3730a3", collected: "#374151", cancelled: "#991b1b",
+    received: "var(--info-text)", diagnosing: "var(--warning-text)", waiting_parts: "var(--violet-text)",
+    in_progress: "var(--success-text)", ready: "var(--indigo-text)", collected: "var(--neutral-text)", cancelled: "var(--danger-text)",
   };
-  return <span className="plan-status" style={{ background: bg[status] || "#e5e7eb", color: fg[status] || "#374151" }}>{STATUS_LABELS[status] || status}</span>;
+  return <span className="plan-status" style={{ background: bg[status] || "var(--neutral-light)", color: fg[status] || "var(--neutral-text)" }}>{STATUS_LABELS[status] || status}</span>;
 }
 
 function localISODate(d: Date) {
@@ -266,7 +266,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
                   <td>{t.scheduledAt ? new Date(t.scheduledAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                   <td>
                     {t.quoteSentAt ? (
-                      <span className="plan-status" style={{ background: t.quoteResponse === "accepted" ? "#d1fae5" : t.quoteResponse === "declined" ? "#fee2e2" : "#fef3c7", color: t.quoteResponse === "accepted" ? "#065f46" : t.quoteResponse === "declined" ? "#991b1b" : "#92400e" }}>
+                      <span className="plan-status" style={{ background: t.quoteResponse === "accepted" ? "var(--success-light)" : t.quoteResponse === "declined" ? "var(--danger-light)" : "var(--warning-light)", color: t.quoteResponse === "accepted" ? "var(--success-text)" : t.quoteResponse === "declined" ? "var(--danger-text)" : "var(--warning-text)" }}>
                         {t.quoteResponse || "Sent"}
                       </span>
                     ) : "—"}
@@ -323,7 +323,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
             </RippleButton>
             {detail.totalCost > 0 && <span style={{ fontWeight: 600, fontSize: "1.05rem" }}>Total: {formatPrice(detail.totalCost)}</span>}
             {detail.quoteSentAt && (
-              <span className="plan-status" style={{ background: detail.quoteResponse === "accepted" ? "#d1fae5" : detail.quoteResponse === "declined" ? "#fee2e2" : "#fef3c7", color: detail.quoteResponse === "accepted" ? "#065f46" : detail.quoteResponse === "declined" ? "#991b1b" : "#92400e" }}>
+              <span className="plan-status" style={{ background: detail.quoteResponse === "accepted" ? "var(--success-light)" : detail.quoteResponse === "declined" ? "var(--danger-light)" : "var(--warning-light)", color: detail.quoteResponse === "accepted" ? "var(--success-text)" : detail.quoteResponse === "declined" ? "var(--danger-text)" : "var(--warning-text)" }}>
                 {detail.quoteResponse ? `Customer ${detail.quoteResponse}` : "Awaiting customer response"}
               </span>
             )}
@@ -365,7 +365,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
                   <div key={u.id} className="order-item" style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}>
                     <div>
                       <strong>{escapeHtml(u.staffName || "Staff")}</strong> <span className="muted">· {new Date(u.createdAt).toLocaleString("en-GB")}</span>
-                      {!u.customerVisible && <span className="plan-status" style={{ marginLeft: "0.5rem", background: "#f3f4f6", color: "#6b7280" }}>Internal</span>}
+                      {!u.customerVisible && <span className="plan-status" style={{ marginLeft: "0.5rem", background: "var(--neutral-light)", color: "var(--neutral-text)" }}>Internal</span>}
                       <p style={{ margin: "0.25rem 0 0", whiteSpace: "pre-wrap" }}>{escapeHtml(u.message)}</p>
                     </div>
                   </div>
@@ -433,7 +433,7 @@ function CalendarTab({ onOpenTicket }: { onOpenTicket: (id: string) => void }) {
               <div key={key} className="panel" style={{ borderColor: isToday ? "var(--primary)" : undefined }}>
                 <div style={{ fontWeight: 600, fontSize: "0.85rem", marginBottom: "0.5rem" }}>
                   {d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
-                  {isToday && <span className="plan-status" style={{ marginLeft: "0.35rem", background: "var(--primary)", color: "#fff" }}>Today</span>}
+                  {isToday && <span className="plan-status" style={{ marginLeft: "0.35rem", background: "var(--primary)", color: "var(--surface)" }}>Today</span>}
                 </div>
                 {dayTickets.length === 0 ? (
                   <p className="muted" style={{ fontSize: "0.85rem" }}>No scheduled repairs.</p>
@@ -442,7 +442,7 @@ function CalendarTab({ onOpenTicket }: { onOpenTicket: (id: string) => void }) {
                     <button
                       key={t.id}
                       onClick={() => onOpenTicket(t.id)}
-                      style={{ display: "block", width: "100%", textAlign: "left", border: "1px solid var(--border)", background: "var(--card-bg, #fff)", borderRadius: 6, padding: "0.4rem 0.5rem", marginBottom: "0.35rem", cursor: "pointer", fontSize: "0.8rem" }}
+                      style={{ display: "block", width: "100%", textAlign: "left", border: "1px solid var(--border)", background: "var(--surface)", borderRadius: 6, padding: "0.4rem 0.5rem", marginBottom: "0.35rem", cursor: "pointer", fontSize: "0.8rem" }}
                     >
                       <strong>{t.id}</strong>
                       <div>{escapeHtml(t.deviceType || "")}{t.deviceModel ? " " + escapeHtml(t.deviceModel) : ""}</div>

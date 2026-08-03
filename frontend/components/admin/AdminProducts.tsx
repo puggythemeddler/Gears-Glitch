@@ -373,10 +373,10 @@ export default function AdminProducts() {
                 <td><input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} /></td>
                 <td>{p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} /> : <span style={{ opacity: 0.3 }}>{'\u200B'}</span>}</td>
                 <td>{escapeHtml(p.name)}</td>
-                <td>{p.salePrice ? <><span style={{ textDecoration: "line-through", color: "#999", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "#dc2626", fontWeight: 600 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}</td>
+                <td>{p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--danger)", fontWeight: 600 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}</td>
                 <td>{p.category || "—"}</td>
                 <td>{groups.find((g: any) => g.id === p.groupId)?.name || "—"}</td>
-                <td>{p.inStock ? <span style={{ color: "#16a34a" }}>In stock</span> : <span style={{ color: "#dc2626" }}>Out</span>}</td>
+                <td>{p.inStock ? <span style={{ color: "var(--success)" }}>In stock</span> : <span style={{ color: "var(--danger)" }}>Out</span>}</td>
                 <td style={{ display: "flex", gap: "0.35rem" }}>
                   <RippleButton size="small" variant="ghost" onClick={() => { setCreating(false); setEditing(p); }}>Edit</RippleButton>
                   <RippleButton size="small" variant="danger" onClick={() => deleteProduct(p.id)}>Delete</RippleButton>
@@ -416,7 +416,7 @@ export default function AdminProducts() {
               <input type="file" accept=".csv" ref={importFileRef} />
             </label>
           </div>
-          {importMsg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: importMsg.startsWith("Error") ? "#fee2e2" : importMsg.startsWith("Success") ? "#d1fae5" : "#fef3c7", color: importMsg.startsWith("Error") ? "#991b1b" : importMsg.startsWith("Success") ? "#065f46" : "#92400e", marginBottom: "0.75rem", fontSize: "0.85rem" }}>{importMsg}</p>}
+          {importMsg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: importMsg.startsWith("Error") ? "var(--danger-light)" : importMsg.startsWith("Success") ? "var(--success-light)" : "var(--warning-light)", color: importMsg.startsWith("Error") ? "var(--danger-text)" : importMsg.startsWith("Success") ? "var(--success-text)" : "var(--warning-text)", marginBottom: "0.75rem", fontSize: "0.85rem" }}>{importMsg}</p>}
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <RippleButton size="small" onClick={handleImport} loading={importing}>Upload & Import</RippleButton>
             <RippleButton size="small" variant="secondary" onClick={() => { setShowImport(false); setImportMsg(""); }}>Cancel</RippleButton>
