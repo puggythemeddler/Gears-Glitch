@@ -776,6 +776,17 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
   try { await query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
 
+  // Backfill category sort order: assign sequential order by group then label to any
+  // categories that still share the default (tied) sort_order, so clients don't have
+  // to manually order pre-existing categories.
+  try {
+    const tieCount = await queryOne(`SELECT COUNT(*) AS cnt FROM (SELECT sort_order FROM categories GROUP BY sort_order HAVING COUNT(*) > 1) t`) as any;
+    if (Number(tieCount?.cnt || 0) > 0) {
+      await query(`UPDATE categories c SET sort_order = t.new_order FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY group_name, label) - 1 AS new_order FROM categories) t WHERE c.id = t.id`);
+    }
+  } catch { console.warn("[db] Category sort_order backfill skipped"); }
+
+
   // ============ Sales-by-channel, gift cards, campaigns, cart recovery, refunds ============
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'storefront'`); } catch {}
   try { await query(`UPDATE orders SET source = 'pos' WHERE source = 'storefront' AND (branch_id IS NOT NULL OR processed_by LIKE 'POS%' OR notes LIKE 'POS sale%')`); } catch {}
@@ -1351,7 +1362,9 @@ async function getCategory(id: string): Promise<CategoryRow | undefined> {
 }
 
 async function createCategory(category: { id: string; label: string; group?: string; showOnPos?: boolean }): Promise<CategoryRow | undefined> {
-  await query("INSERT INTO categories (id, label, group_name, show_on_pos) VALUES ($1, $2, $3, $4)", [category.id, category.label, category.group || "", category.showOnPos !== false ? 1 : 0]);
+  const maxRow = await queryOne("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM categories") as any;
+  const sortOrder = Number(maxRow?.next_order ?? 0);
+  await query("INSERT INTO categories (id, label, group_name, show_on_pos, sort_order) VALUES ($1, $2, $3, $4, $5)", [category.id, category.label, category.group || "", category.showOnPos !== false ? 1 : 0, sortOrder]);
   return await getCategory(category.id);
 }
 
