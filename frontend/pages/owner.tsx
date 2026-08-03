@@ -238,14 +238,14 @@ function OwnerDashboard({ onNavigate }: { onNavigate: (v: OwnerView) => void }) 
     <>
       <h1 className="anim-fade-in-down">Dashboard</h1>
       <div className="stat-grid">
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} onClick={() => onNavigate("tech-repairs")}><div className="stat-card__value"><AnimatedCounter value={stats?.openRepairs ?? 0} /></div><div className="stat-card__label">Open Repairs</div></div>
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} onClick={() => onNavigate("tech-repairs")}><div className="stat-card__value"><AnimatedCounter value={stats?.repairsDueToday ?? 0} /></div><div className="stat-card__label">Due Today</div></div>
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} onClick={() => onNavigate("reports")}><div className="stat-card__value"><AnimatedCounter value={sales?.totalOrders ?? 0} /></div><div className="stat-card__label">Total Orders</div></div>
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} onClick={() => onNavigate("reports")}><div className="stat-card__value">{formatPrice(sales?.totalRevenue ?? 0)}</div><div className="stat-card__label">Revenue</div></div>
+        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("tech-repairs")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("tech-repairs"); } }}><div className="stat-card__value"><AnimatedCounter value={stats?.openRepairs ?? 0} /></div><div className="stat-card__label">Open Repairs</div></div>
+        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("tech-repairs")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("tech-repairs"); } }}><div className="stat-card__value"><AnimatedCounter value={stats?.repairsDueToday ?? 0} /></div><div className="stat-card__label">Due Today</div></div>
+        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("reports")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("reports"); } }}><div className="stat-card__value"><AnimatedCounter value={sales?.totalOrders ?? 0} /></div><div className="stat-card__label">Total Orders</div></div>
+        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("reports")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("reports"); } }}><div className="stat-card__value">{formatPrice(sales?.totalRevenue ?? 0)}</div><div className="stat-card__label">Revenue</div></div>
       </div>
       <div className="stat-grid">
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} onClick={() => onNavigate("reports")}><div className="stat-card__value"><AnimatedCounter value={stock?.items?.length ?? 0} /></div><div className="stat-card__label">Products in Stock</div></div>
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} onClick={() => onNavigate("reports")}><div className="stat-card__value"><AnimatedCounter value={stock?.items?.filter((i: any) => i.quantityInStock <= i.lowStockThreshold)?.length ?? 0} /></div><div className="stat-card__label">Low Stock Items</div></div>
+        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("reports")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("reports"); } }}><div className="stat-card__value"><AnimatedCounter value={stock?.items?.length ?? 0} /></div><div className="stat-card__label">Products in Stock</div></div>
+        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("reports")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("reports"); } }}><div className="stat-card__value"><AnimatedCounter value={stock?.items?.filter((i: any) => i.quantityInStock <= i.lowStockThreshold)?.length ?? 0} /></div><div className="stat-card__label">Low Stock Items</div></div>
       </div>
     </>
   );
@@ -525,6 +525,7 @@ function OwnerMessages() {
   // Poll for new messages
   useEffect(() => {
     const interval = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
       try {
         const d = await api<{ messages: any[] }>("/api/admin/messages");
         const newMsgs = d.messages || [];
@@ -539,7 +540,9 @@ function OwnerMessages() {
     return () => clearInterval(interval);
   }, []);
 
-  if (!prevCountRef.current && allMessages.length) prevCountRef.current = allMessages.length;
+  useEffect(() => {
+    if (!prevCountRef.current && allMessages.length) prevCountRef.current = allMessages.length;
+  }, [allMessages.length]);
 
   if (loading && !mData) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
@@ -594,16 +597,16 @@ function OwnerMessages() {
           {convos.length === 0 ? (
             <div style={{ padding: "1rem", textAlign: "center", opacity: 0.5 }}>No conversations</div>
           ) : convos.map((c) => (
-            <div key={c.key} onClick={() => selectConvo(c.key, c.msgs)} style={{
+            <div key={c.key} role="button" tabIndex={0} onClick={() => selectConvo(c.key, c.msgs)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectConvo(c.key, c.msgs); } }} style={{
               padding: "0.75rem 1rem",
               cursor: "pointer",
               borderBottom: "1px solid var(--border)",
               background: selectedKey === c.key ? "var(--primary)" : "transparent",
-              color: selectedKey === c.key ? "#fff" : "var(--text)",
+              color: selectedKey === c.key ? "var(--surface)" : "var(--text)",
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <strong style={{ fontSize: "0.9rem" }}>{escapeHtml(c.custName)} ↔ {escapeHtml(c.provName)}</strong>
-                {c.unread > 0 && <span style={{ background: selectedKey === c.key ? "#fff" : "var(--primary)", color: selectedKey === c.key ? "var(--primary)" : "#fff", borderRadius: 999, padding: "0.1rem 0.5rem", fontSize: "0.75rem", fontWeight: 600 }}>{c.unread}</span>}
+                {c.unread > 0 && <span style={{ background: selectedKey === c.key ? "var(--surface)" : "var(--primary)", color: selectedKey === c.key ? "var(--primary)" : "var(--surface)", borderRadius: 999, padding: "0.1rem 0.5rem", fontSize: "0.75rem", fontWeight: 600 }}>{c.unread}</span>}
               </div>
               <div style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: "0.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {escapeHtml(c.latest.body)}
@@ -637,7 +640,7 @@ function OwnerMessages() {
                       alignSelf: isCustomer ? "flex-start" : "flex-end",
                       maxWidth: "75%",
                       background: isCustomer ? "var(--surface)" : "var(--primary)",
-                      color: isCustomer ? "var(--text)" : "#fff",
+                      color: isCustomer ? "var(--text)" : "var(--surface)",
                       borderRadius: "12px",
                       padding: "0.6rem 1rem",
                       border: isCustomer ? "1px solid var(--border)" : "none",
@@ -891,7 +894,7 @@ function OwnerShopSubscription() {
   return (
     <>
       <h1>Shop Subscription</h1>
-      {msg && <div className="panel" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{msg}</div>}
+      {msg && <div className="panel" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)" }}>{msg}</div>}
 
       {currentPlan && (
         <div className="stat-grid" style={{ marginBottom: "1.5rem" }}>
@@ -902,11 +905,11 @@ function OwnerShopSubscription() {
             {currentPlan.priceAnnual != null && currentPlan.priceAnnual > 0 && <p style={{ fontSize: "0.9rem", color: "var(--primary)", margin: "0.25rem 0 0" }}>{formatPrice(currentPlan.priceAnnual)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/yr (save {Math.round((1 - currentPlan.priceAnnual / (currentPlan.price * 12)) * 100)}%)</span></p>}
           </div>
           <div className="stat-card">
-            <div className="stat-card__value" style={{ color: daysRemaining !== null && daysRemaining <= 7 ? "#dc2626" : undefined }}>
+            <div className="stat-card__value" style={{ color: daysRemaining !== null && daysRemaining <= 7 ? "var(--danger)" : undefined }}>
               {daysRemaining !== null ? `${daysRemaining} days` : "—"}
             </div>
             <div className="stat-card__label">Until Renewal</div>
-            {daysRemaining !== null && daysRemaining <= 7 && <p style={{ fontSize: "0.8rem", color: "#dc2626", margin: "0.25rem 0 0" }}>Renew soon!</p>}
+            {daysRemaining !== null && daysRemaining <= 7 && <p style={{ fontSize: "0.8rem", color: "var(--danger)", margin: "0.25rem 0 0" }}>Renew soon!</p>}
           </div>
         </div>
       )}
@@ -932,12 +935,12 @@ function OwnerShopSubscription() {
                     <tr key={b.id}>
                       <td style={{ fontWeight: 500 }}>{escapeHtml(b.name)}</td>
                       <td>
-                        <span className="plan-status" style={{ background: "#dbeafe", color: "#1e40af", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>
+                        <span className="plan-status" style={{ background: "var(--primary-light)", color: "var(--primary)", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>
                           {plan ? escapeHtml(plan.name) : b.planId || "No plan"}
                         </span>
                       </td>
                       <td>
-                        <span style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "#fff", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>
+                        <span style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "var(--surface)", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>
                           {b.isActive ? "Active" : "Inactive"}
                         </span>
                       </td>
@@ -985,7 +988,7 @@ function OwnerShopSubscription() {
                 <p className="muted" style={{ margin: "0.5rem 0" }}>Up to {p.maxProducts} products &bull; {p.maxBranches} branch{p.maxBranches !== 1 ? "es" : ""}</p>
                 {features.length > 0 && <ul style={{ margin: "0.5rem 0", padding: "0 0 0 1.2rem", flex: 1, fontSize: "0.85rem" }}>{features.map((f, i) => <li key={i}>{f}</li>)}</ul>}
                 {isCurrent ? (
-                  <span className="plan-status" style={{ display: "inline-block", marginTop: "0.5rem", padding: "0.3rem 0.8rem", borderRadius: 6, background: "#d1fae5", color: "#065f46", fontSize: "0.85rem", fontWeight: 600, textAlign: "center" }}>Current Plan</span>
+                  <span className="plan-status" style={{ display: "inline-block", marginTop: "0.5rem", padding: "0.3rem 0.8rem", borderRadius: 6, background: "var(--success-light)", color: "var(--success-text)", fontSize: "0.85rem", fontWeight: 600, textAlign: "center" }}>Current Plan</span>
                 ) : (
                   <RippleButton size="small" style={{ marginTop: "0.5rem" }} onClick={() => { setSelectedPlan(p.id); document.getElementById("request-form")?.scrollIntoView({ behavior: "smooth" }); }}>Switch to {escapeHtml(p.name)}</RippleButton>
                 )}
@@ -1082,7 +1085,7 @@ function OwnerBranches() {
                   <td>{escapeHtml(b.address || "—")}</td>
                   <td>{escapeHtml(b.phone || "—")}</td>
                   <td>{escapeHtml(b.email || "—")}</td>
-                  <td><span style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "#fff", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>{b.isActive ? "Active" : "Inactive"}</span></td>
+                  <td><span style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "var(--surface)", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>{b.isActive ? "Active" : "Inactive"}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -1209,12 +1212,12 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         {layouts.map((l) => (
-          <div key={l.key} className="panel" style={{ border: cfg?.layout === l.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer" }} onClick={() => switchLayout(l.key)}>
+          <div key={l.key} className="panel" role="button" tabIndex={0} style={{ border: cfg?.layout === l.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer" }} onClick={() => switchLayout(l.key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchLayout(l.key); } }}>
             <div style={{ height: 120, borderRadius: 8, background: "var(--bg)", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.5rem" }}>
               {l.key === "original" ? "🏠" : l.key === "amazon" ? "📦" : l.key === "jumia" ? "🛒" : l.type === "dynamic" ? "🎨" : "📱"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <h3 style={{ margin: "0 0 0.25rem" }}>{l.label}</h3>
+              <h2 style={{ margin: "0 0 0.25rem", fontSize: "var(--text-lg)" }}>{l.label}</h2>
               <span style={{ fontSize: "0.65rem", padding: "0.1rem 0.4rem", borderRadius: 4, background: l.type === "static" ? "var(--info-light)" : "var(--warning-light)", color: l.type === "static" ? "var(--info)" : "var(--warning)" }}>{l.type}</span>
             </div>
             <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-secondary)" }}>{l.desc}</p>
@@ -1224,11 +1227,11 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
       </div>
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
-        <h3>Store Theme</h3>
+        <h2 style={{ marginTop: 0 }}>Store Theme</h2>
         <p className="muted" style={{ fontSize: "0.85rem" }}>Pick a color theme for the whole storefront. Applied instantly to your live site.</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
           {THEME_CARDS.map((t) => (
-            <div key={t.key} className="panel" style={{ border: theme === t.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer", margin: 0 }} onClick={() => saveTheme(t.key)}>
+            <div key={t.key} className="panel" role="button" tabIndex={0} style={{ border: theme === t.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer", margin: 0 }} onClick={() => saveTheme(t.key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); saveTheme(t.key); } }}>
               <div style={{ display: "flex", gap: "0.35rem", height: 36, borderRadius: 8, overflow: "hidden", marginBottom: "0.75rem" }}>
                 {t.swatches.map((c) => <div key={c} style={{ flex: 1, background: c }} />)}
               </div>
@@ -1287,91 +1290,87 @@ function OwnerStorefront({ staffRole }: { staffRole: string | null }) {
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>
-            <label>Badge Text</label>
-            <input value={heroForm.badgeText} onChange={(e) => setHeroForm({ ...heroForm, badgeText: e.target.value })} placeholder="Summer Tech Sale — Up to 30% Off" disabled={!heroForm.badgeActive} />
+            <label>Badge Text<input value={heroForm.badgeText} onChange={(e) => setHeroForm({ ...heroForm, badgeText: e.target.value })} placeholder="Summer Tech Sale — Up to 30% Off" disabled={!heroForm.badgeActive} /></label>
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>
-            <label>Badge Link (optional)</label>
-            <select value={heroForm.badgeLink} onChange={(e) => setHeroForm({ ...heroForm, badgeLink: e.target.value })} disabled={!heroForm.badgeActive}>
-              <option value="">— no link —</option>
-              <option value="/#categories">Homepage (#categories)</option>
-              <option value="/deals">Deals</option>
-              {catList.map((c) => <option key={c.id} value={"/" + c.id}>{c.label}</option>)}
-            </select>
-            <input value={heroForm.badgeLink} onChange={(e) => setHeroForm({ ...heroForm, badgeLink: e.target.value })} placeholder="or type custom path" style={{ marginTop: "0.25rem" }} disabled={!heroForm.badgeActive} />
+            <label>Badge Link (optional)
+              <select value={heroForm.badgeLink} onChange={(e) => setHeroForm({ ...heroForm, badgeLink: e.target.value })} disabled={!heroForm.badgeActive}>
+                <option value="">— no link —</option>
+                <option value="/#categories">Homepage (#categories)</option>
+                <option value="/deals">Deals</option>
+                {catList.map((c) => <option key={c.id} value={"/" + c.id}>{c.label}</option>)}
+              </select>
+              <input value={heroForm.badgeLink} onChange={(e) => setHeroForm({ ...heroForm, badgeLink: e.target.value })} placeholder="or type custom path" style={{ marginTop: "0.25rem" }} disabled={!heroForm.badgeActive} />
+            </label>
           </div>
 
           <div className="field">
-            <label>Headline (before accent)</label>
-            <input value={heroForm.headline} onChange={(e) => setHeroForm({ ...heroForm, headline: e.target.value })} />
+            <label>Headline (before accent)<input value={heroForm.headline} onChange={(e) => setHeroForm({ ...heroForm, headline: e.target.value })} /></label>
           </div>
 
           <div className="field">
-            <label>Headline Accent</label>
-            <input value={heroForm.headlineAccent} onChange={(e) => setHeroForm({ ...heroForm, headlineAccent: e.target.value })} />
+            <label>Headline Accent<input value={heroForm.headlineAccent} onChange={(e) => setHeroForm({ ...heroForm, headlineAccent: e.target.value })} /></label>
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>
-            <label>Subtitle</label>
-            <textarea rows={3} value={heroForm.subtitle} onChange={(e) => setHeroForm({ ...heroForm, subtitle: e.target.value })} style={{ resize: "vertical" }} />
+            <label>Subtitle<textarea rows={3} value={heroForm.subtitle} onChange={(e) => setHeroForm({ ...heroForm, subtitle: e.target.value })} style={{ resize: "vertical" }} /></label>
           </div>
 
           <div className="field">
-            <label>Shop Now Label</label>
-            <input value={heroForm.shopNowLabel} onChange={(e) => setHeroForm({ ...heroForm, shopNowLabel: e.target.value })} />
+            <label>Shop Now Label<input value={heroForm.shopNowLabel} onChange={(e) => setHeroForm({ ...heroForm, shopNowLabel: e.target.value })} /></label>
           </div>
 
           <div className="field">
-            <label>Shop Now Link</label>
-            <select value={heroForm.shopNowLink} onChange={(e) => setHeroForm({ ...heroForm, shopNowLink: e.target.value })}>
-              <option value="">— none —</option>
-              {catList.map((c) => <option key={c.id} value={"/" + c.id}>{c.label}</option>)}
-            </select>
-            <input value={heroForm.shopNowLink} onChange={(e) => setHeroForm({ ...heroForm, shopNowLink: e.target.value })} placeholder="or type custom path" style={{ marginTop: "0.25rem" }} />
+            <label>Shop Now Link
+              <select value={heroForm.shopNowLink} onChange={(e) => setHeroForm({ ...heroForm, shopNowLink: e.target.value })}>
+                <option value="">— none —</option>
+                {catList.map((c) => <option key={c.id} value={"/" + c.id}>{c.label}</option>)}
+              </select>
+              <input value={heroForm.shopNowLink} onChange={(e) => setHeroForm({ ...heroForm, shopNowLink: e.target.value })} placeholder="or type custom path" style={{ marginTop: "0.25rem" }} />
+            </label>
           </div>
 
           <div className="field">
-            <label>Browse Categories Label</label>
-            <input value={heroForm.browseLabel} onChange={(e) => setHeroForm({ ...heroForm, browseLabel: e.target.value })} />
+            <label>Browse Categories Label<input value={heroForm.browseLabel} onChange={(e) => setHeroForm({ ...heroForm, browseLabel: e.target.value })} /></label>
           </div>
 
           <div className="field">
-            <label>Browse Categories Link</label>
-            <select value={heroForm.browseLink} onChange={(e) => setHeroForm({ ...heroForm, browseLink: e.target.value })}>
-              <option value="/#categories">Homepage (#categories)</option>
-              <option value="/categories">All Categories Page</option>
-              {catList.map((c) => <option key={c.id} value={"/" + c.id}>{c.label}</option>)}
-            </select>
-            <input value={heroForm.browseLink} onChange={(e) => setHeroForm({ ...heroForm, browseLink: e.target.value })} placeholder="or type custom path" style={{ marginTop: "0.25rem" }} />
+            <label>Browse Categories Link
+              <select value={heroForm.browseLink} onChange={(e) => setHeroForm({ ...heroForm, browseLink: e.target.value })}>
+                <option value="/#categories">Homepage (#categories)</option>
+                <option value="/categories">All Categories Page</option>
+                {catList.map((c) => <option key={c.id} value={"/" + c.id}>{c.label}</option>)}
+              </select>
+              <input value={heroForm.browseLink} onChange={(e) => setHeroForm({ ...heroForm, browseLink: e.target.value })} placeholder="or type custom path" style={{ marginTop: "0.25rem" }} />
+            </label>
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>
-            <label>Trust Text</label>
-            <input value={heroForm.trustText} onChange={(e) => setHeroForm({ ...heroForm, trustText: e.target.value })} />
+            <label>Trust Text<input value={heroForm.trustText} onChange={(e) => setHeroForm({ ...heroForm, trustText: e.target.value })} /></label>
           </div>
 
           <div style={{ gridColumn: "1 / -1" }}>
-            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Highlights</label>
+            <p style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, margin: "0 0 0.5rem" }}>Highlights</p>
             {heroForm.highlights.map((h, i) => (
               <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
-                <input value={h} onChange={(e) => { const copy = [...heroForm.highlights]; copy[i] = e.target.value; setHeroForm({ ...heroForm, highlights: copy }); }} style={{ flex: 1 }} />
-                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, highlights: heroForm.highlights.filter((_, j) => j !== i) })}>&times;</button>
+                <input value={h} aria-label={`Highlight ${i + 1}`} onChange={(e) => { const copy = [...heroForm.highlights]; copy[i] = e.target.value; setHeroForm({ ...heroForm, highlights: copy }); }} style={{ flex: 1 }} />
+                <button className="btn btn-sm btn-ghost" aria-label={`Remove highlight ${i + 1}`} onClick={() => setHeroForm({ ...heroForm, highlights: heroForm.highlights.filter((_, j) => j !== i) })}>&times;</button>
               </div>
             ))}
             <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, highlights: [...heroForm.highlights, ""] })}>+ Add Highlight</RippleButton>
           </div>
 
           <div style={{ gridColumn: "1 / -1" }}>
-            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Category Chips</label>
+            <p style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, margin: "0 0 0.5rem" }}>Category Chips</p>
             {heroForm.catChips.map((c, i) => (
               <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
-                <input value={c.label} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], label: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} placeholder="Label" style={{ flex: 1 }} />
-                <select value={c.href} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], href: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} style={{ flex: 1 }}>
+                <input value={c.label} aria-label={`Chip ${i + 1} label`} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], label: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} placeholder="Label" style={{ flex: 1 }} />
+                <select value={c.href} aria-label={`Chip ${i + 1} link`} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], href: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} style={{ flex: 1 }}>
                   <option value="">— pick category —</option>
                   {catList.map((cat) => <option key={cat.id} value={"/" + cat.id}>{cat.label}</option>)}
                 </select>
-                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, catChips: heroForm.catChips.filter((_, j) => j !== i) })}>&times;</button>
+                <button className="btn btn-sm btn-ghost" aria-label={`Remove chip ${i + 1}`} onClick={() => setHeroForm({ ...heroForm, catChips: heroForm.catChips.filter((_, j) => j !== i) })}>&times;</button>
               </div>
             ))}
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -1484,8 +1483,8 @@ function OwnerInvoices() {
                       <td>{inv.id}</td>
                       <td>{escapeHtml(inv.providerName || "—")}</td>
                       <td>{formatPrice(inv.amount)}</td>
-                      <td><span className="plan-status" style={{ background: inv.status === "paid" ? "#d1fae5" : "#fef3c7", color: inv.status === "paid" ? "#065f46" : "#92400e" }}>{inv.status}</span></td>
-                      <td>{inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "#fff" }} onClick={() => markPaid(inv.id)}>Mark paid</RippleButton>}</td>
+                      <td><span className="plan-status" style={{ background: inv.status === "paid" ? "var(--success-light)" : "var(--warning-light)", color: inv.status === "paid" ? "var(--success-text)" : "var(--warning-text)" }}>{inv.status}</span></td>
+                      <td>{inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "var(--surface)" }} onClick={() => markPaid(inv.id)}>Mark paid</RippleButton>}</td>
                     </tr>
                   ))}
                   {iData.length === 0 && <tr><td colSpan={5}><EmptyState icon="invoices" title="No invoices" description="Invoices will appear here once generated." /></td></tr>}
@@ -1509,13 +1508,13 @@ function OwnerInvoices() {
                       <td>#{inv.orderId}</td>
                       <td>{escapeHtml(inv.customer_name || "—")}</td>
                       <td>{formatPrice(inv.amount)}</td>
-                      <td><span className="plan-status" style={{ background: inv.status === "paid" ? "#d1fae5" : "#fef3c7", color: inv.status === "paid" ? "#065f46" : "#92400e" }}>{inv.status}</span></td>
+                      <td><span className="plan-status" style={{ background: inv.status === "paid" ? "var(--success-light)" : "var(--warning-light)", color: inv.status === "paid" ? "var(--success-text)" : "var(--warning-text)" }}>{inv.status}</span></td>
                       <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                       <td>
-                        {inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "#fff" }} onClick={() => markOiPaid(inv.id)}>Mark paid</RippleButton>}
+                        {inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "var(--surface)" }} onClick={() => markOiPaid(inv.id)}>Mark paid</RippleButton>}
                         <RippleButton size="small" variant="ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); const res = await fetch(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, { headers: { Authorization: `Bearer ${r.token}` } }); if (!res.ok) throw new Error(`HTTP ${res.status}`); const html = await res.text(); const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 30000); } catch (e: any) { alert("Failed to open invoice: " + (e?.message || "Unknown error")); } }}>View</RippleButton>
                         {creditedOrders[inv.orderId] ? (
-                          <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
+                          <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "var(--success-light)", color: "var(--success-text)", cursor: "default" }}>Credited</span>
                         ) : (
                           <RippleButton size="small" style={{ marginLeft: "0.25rem" }} onClick={() => createCreditNote(inv.orderId)}>Credit Note</RippleButton>
                         )}

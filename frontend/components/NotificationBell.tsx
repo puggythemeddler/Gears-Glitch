@@ -36,6 +36,7 @@ export default function NotificationBell({ onClick }: { onClick: () => void }) {
   useEffect(() => {
     fetchCount().then((c) => { prevRef.current = c; });
     const interval = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
       const c = await fetchCount();
       if (c > prevRef.current && prevRef.current >= 0) {
         setPulse(true);
@@ -49,7 +50,7 @@ export default function NotificationBell({ onClick }: { onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} style={{
       position: "relative", background: "none", border: "none", cursor: "pointer",
-      fontSize: "1.2rem", lineHeight: 1, padding: "0.3rem 0.4rem", color: "var(--text)",
+      fontSize: "1.2rem", lineHeight: 1, padding: "0.55rem 0.6rem", minWidth: 44, minHeight: 44, color: "var(--text)",
       animation: pulse ? "bellPulse 0.5s ease-in-out 3" : "none",
     }} aria-label={`Notifications${count > 0 ? ` (${count} unread)` : ""}`}>
       🔔

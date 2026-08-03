@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef } from "react";
+﻿import React, { useEffect, useMemo, useState, useRef } from "react";
 import { api, getStaffToken, downloadPdf } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
@@ -297,14 +297,14 @@ export default function AdminPage() {
         </form>
 
         {showForgotPw && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={() => setShowForgotPw(false)}>
-            <div className="panel" style={{ maxWidth: 400, width: "90%", position: "relative" }} onClick={(e) => e.stopPropagation()}>
-              <h3 style={{ marginTop: 0 }}>Reset Password</h3>
+          <div style={{ position: "fixed", inset: 0, background: "var(--overlay)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={() => setShowForgotPw(false)}>
+            <div className="panel" role="dialog" aria-modal="true" aria-labelledby="reset-pw-title" style={{ maxWidth: 400, width: "90%", position: "relative" }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") setShowForgotPw(false); }}>
+              <h3 id="reset-pw-title" style={{ marginTop: 0 }}>Reset Password</h3>
               <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
                 Enter your email address. If an admin account exists, we'll send a reset link.
               </p>
-              <input value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="you@example.com" style={{ width: "100%", marginBottom: "0.75rem" }} />
-              {forgotMsg && <p style={{ padding: "0.5rem", borderRadius: 6, background: "#d1fae5", color: "#065f46", fontSize: "0.85rem", marginBottom: "0.5rem" }}>{forgotMsg}</p>}
+              <input autoFocus value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="you@example.com" style={{ width: "100%", marginBottom: "0.75rem" }} />
+              {forgotMsg && <p style={{ padding: "0.5rem", borderRadius: 6, background: "var(--success-light)", color: "var(--success-text)", fontSize: "0.85rem", marginBottom: "0.5rem" }}>{forgotMsg}</p>}
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <RippleButton size="small" loading={forgotSending} onClick={async () => {
                   if (!forgotEmail.trim()) return;
@@ -497,17 +497,17 @@ function AdminDashboard({ onNavigate }: { onNavigate: (v: AdminView) => void }) 
     <>
       <h1 className="anim-fade-in-down">Dashboard</h1>
       <div className="stat-grid">
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} onClick={() => onNavigate("products")}>
+        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("products")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("products"); } }}>
           <div className="stat-card__value"><AnimatedCounter value={products?.products?.length ?? 0} /></div>
           <div className="stat-card__label">Total Products</div>
         </div>
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} onClick={() => onNavigate("users")}>
+        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("users")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("users"); } }}>
           <div className="stat-card__value"><AnimatedCounter value={stats?.totalStaff ?? 0} /></div>
           <div className="stat-card__label">Users</div>
         </div>
-        <div className="stat-card card-hover" style={{ cursor: "pointer", borderColor: pendingReqs > 0 ? "#dc2626" : undefined }} onClick={() => onNavigate("shop-subscription")}>
-          <div className="stat-card__value" style={{ color: pendingReqs > 0 ? "#dc2626" : undefined }}><AnimatedCounter value={pendingReqs} /></div>
-          <div className="stat-card__label" style={{ color: pendingReqs > 0 ? "#dc2626" : undefined }}>Pending Sub. Requests</div>
+        <div className="stat-card card-hover" style={{ cursor: "pointer", borderColor: pendingReqs > 0 ? "var(--danger)" : undefined }} role="button" tabIndex={0} onClick={() => onNavigate("shop-subscription")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("shop-subscription"); } }}>
+          <div className="stat-card__value" style={{ color: pendingReqs > 0 ? "var(--danger)" : undefined }}><AnimatedCounter value={pendingReqs} /></div>
+          <div className="stat-card__label" style={{ color: pendingReqs > 0 ? "var(--danger)" : undefined }}>Pending Sub. Requests</div>
         </div>
       </div>
     </>
@@ -612,7 +612,7 @@ function AdminCategories() {
         <div className="panel" style={{ maxWidth: 600, marginBottom: "1.5rem" }}>
           <div className="field"><label>Label<input value={formLabel} onChange={(e) => setFormLabel(e.target.value)} placeholder="Laptops" /></label></div>
           <div className="field"><label>Group<select value={formGroup} onChange={(e) => setFormGroup(e.target.value)}><option value="">None</option>{groups.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></label></div>
-          <div className="field" style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}><label style={{ margin: 0 }}>Show on POS</label><input type="checkbox" checked={formShowOnPos} onChange={(e) => setFormShowOnPos(e.target.checked)} style={{ width: "auto" }} /></div>
+          <div className="field" style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}><label style={{ margin: 0, display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>Show on POS<input type="checkbox" checked={formShowOnPos} onChange={(e) => setFormShowOnPos(e.target.checked)} style={{ width: "auto" }} /></label></div>
           {isNew && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>ID will be auto-generated as: <code>{catId}</code></p>}
           <RippleButton onClick={saveCat}>Save Category</RippleButton>
         </div>
@@ -889,7 +889,7 @@ function AdminOrders() {
               <>
                 {customerDetail.phone && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Phone: {escapeHtml(customerDetail.phone)}</p>}
                 <p style={{ margin: "0.2rem 0", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                  Status: <span style={{ color: customerDetail.is_active ? "#16a34a" : "#dc2626" }}>{customerDetail.is_active ? "Active" : "Inactive"}</span>
+                  Status: <span style={{ color: customerDetail.is_active ? "var(--success)" : "var(--danger)" }}>{customerDetail.is_active ? "Active" : "Inactive"}</span>
                   {customerDetail.last_login && <> &middot; Last login: {new Date(customerDetail.last_login).toLocaleDateString("en-GB")}</>}
                 </p>
                 <p style={{ margin: "0.2rem 0", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
@@ -923,9 +923,9 @@ function AdminOrders() {
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Channel: <span style={{ textTransform: "capitalize" }}>{escapeHtml(o.source || "storefront")}</span></p>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Subtotal: {formatPrice(o.subtotal)}</p>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Shipping: {formatPrice(o.shippingFee || 0)}</p>
-            {o.discountAmount > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "#16a34a" }}>Coupon: -{formatPrice(o.discountAmount)}</p>}
-            {o.giftCardAmount > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "#16a34a" }}>Gift card: -{formatPrice(o.giftCardAmount)}</p>}
-            {o.amountRefunded > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "#dc2626" }}>Refunded: -{formatPrice(o.amountRefunded)}</p>}
+            {o.discountAmount > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "var(--success)" }}>Coupon: -{formatPrice(o.discountAmount)}</p>}
+            {o.giftCardAmount > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "var(--success)" }}>Gift card: -{formatPrice(o.giftCardAmount)}</p>}
+            {o.amountRefunded > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "var(--danger)" }}>Refunded: -{formatPrice(o.amountRefunded)}</p>}
             <p style={{ margin: "0.2rem 0", fontWeight: 700 }}>Total: {formatPrice(Math.max(0, total - (o.amountRefunded || 0)))}</p>
           </div>
         </div>
@@ -941,7 +941,7 @@ function AdminOrders() {
           <h2 style={{ margin: 0 }}>Items</h2>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             {creditedOrders[o.id] ? (
-              <span className="btn btn-sm" style={{ background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credit Note Created</span>
+              <span className="btn btn-sm" style={{ background: "var(--success-light)", color: "var(--success-text)", cursor: "default" }}>Credit Note Created</span>
             ) : (
               <RippleButton onClick={async () => {
                 const reason = prompt("Reason for credit note (optional):");
@@ -954,7 +954,7 @@ function AdminOrders() {
                   setCreditedOrders((prev) => ({ ...prev, [o.id]: true }));
                   alert("Credit note created.");
                 } catch (e: any) { alert(e.message || "Failed to create credit note."); }
-              }} style={{ background: "var(--primary)", color: "#fff" }}>Credit Note</RippleButton>
+              }} style={{ background: "var(--primary)", color: "var(--surface)" }}>Credit Note</RippleButton>
             )}
             <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>
             <RippleButton variant="danger" onClick={() => {
@@ -964,7 +964,7 @@ function AdminOrders() {
               if (!amount || amount <= 0) { setRefundMsg("Invalid amount."); return; }
               const reason = prompt("Reason (optional):") || "";
               issueRefund(amount, reason).catch(() => {});
-            }} style={{ background: "var(--danger, #dc2626)", color: "#fff" }}>Refund</RippleButton>
+            }} style={{ background: "var(--danger)", color: "var(--surface)" }}>Refund</RippleButton>
           </div>
         </div>
         <div className="table-wrap">
@@ -973,7 +973,7 @@ function AdminOrders() {
             <tbody>
               {(o.items || []).map((item: any, i: number) => (
                 <tr key={item.id || i}>
-                  <td>{escapeHtml(item.name)}{!!item.cancelled && <span style={{ marginLeft: "0.4rem", fontSize: "0.75rem", color: "#dc2626" }}>(refunded)</span>}</td>
+                  <td>{escapeHtml(item.name)}{!!item.cancelled && <span style={{ marginLeft: "0.4rem", fontSize: "0.75rem", color: "var(--danger)" }}>(refunded)</span>}</td>
                   <td>{formatPrice(item.price)}</td>
                   <td>{item.quantity}</td>
                   <td>{formatPrice(item.lineTotal)}</td>
@@ -1013,7 +1013,7 @@ function AdminOrders() {
           </table>
         </div>
 
-        {refundMsg && <p style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem 1rem", color: "var(--danger, #dc2626)" }}>{refundMsg}</p>}
+        {refundMsg && <p style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem 1rem", color: "var(--danger)" }}>{refundMsg}</p>}
 
         {refunds.length > 0 && (
           <div style={{ marginTop: "1rem" }}>
@@ -1024,7 +1024,7 @@ function AdminOrders() {
                 <tbody>
                   {refunds.map((r: any) => (
                     <tr key={r.id}>
-                      <td style={{ color: "#dc2626" }}>-{formatPrice(r.amount)}</td>
+                      <td style={{ color: "var(--danger)" }}>-{formatPrice(r.amount)}</td>
                       <td>{escapeHtml(r.reason || "—")}</td>
                       <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                     </tr>
@@ -1047,7 +1047,7 @@ function AdminOrders() {
           <thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Channel</th><th>County</th><th>Status</th><th>Date</th><th></th></tr></thead>
           <tbody>
             {orders.map((o) => (
-              <tr key={o.id} style={{ cursor: "pointer" }} onClick={() => openOrder(o.id)}>
+              <tr key={o.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => openOrder(o.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openOrder(o.id); } }}>
                 <td>{o.id}</td>
                 <td>{escapeHtml(o.shippingName || "—")}</td>
                 <td>{formatPrice(o.subtotal + o.shippingFee)}</td>
@@ -1206,7 +1206,7 @@ function AdminUsers() {
             <button className="btn btn-sm btn-ghost" onClick={() => setSelectedUser(null)}>&larr; Back</button>
             <h1 style={{ margin: 0 }}>{escapeHtml(selectedUser.username)}</h1>
           </div>
-          {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", marginBottom: "0.75rem", fontSize: "0.85rem" }}>{msg}</p>}
+          {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", marginBottom: "0.75rem", fontSize: "0.85rem" }}>{msg}</p>}
 
           <div className="panel" style={{ marginBottom: "1rem", maxWidth: 500 }}>
             <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>Account Details</h3>
@@ -1258,7 +1258,7 @@ function AdminUsers() {
                       display: "inline-flex", alignItems: "center", gap: "0.25rem", cursor: "pointer",
                       fontSize: "0.78rem", padding: "0.2rem 0.5rem", borderRadius: 6, userSelect: "none",
                       background: isDirect ? "var(--primary)" : isInherited ? "var(--border)" : "var(--bg)",
-                      color: isDirect ? "#fff" : isInherited ? "var(--text-secondary)" : "var(--text)",
+                      color: isDirect ? "var(--surface)" : isInherited ? "var(--text-secondary)" : "var(--text)",
                       border: isDirect ? "1px solid var(--primary)" : isInherited ? "1px solid transparent" : "1px solid var(--border)",
                       opacity: isInherited ? 0.8 : 1,
                     }}
@@ -1358,7 +1358,7 @@ function AdminRoles() {
               <label>Permissions</label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", maxHeight: 300, overflowY: "auto", padding: "0.5rem 0" }}>
                 {Object.entries(permissions).map(([key, label]) => (
-                  <label key={key} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.8rem", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 6, background: roleForm.permissions.includes(key) ? "var(--primary)" : "var(--bg)", color: roleForm.permissions.includes(key) ? "#fff" : "var(--text)" }}>
+                  <label key={key} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.8rem", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 6, background: roleForm.permissions.includes(key) ? "var(--primary)" : "var(--bg)", color: roleForm.permissions.includes(key) ? "var(--surface)" : "var(--text)" }}>
                     <input type="checkbox" checked={roleForm.permissions.includes(key)} onChange={() => togglePerm(key)} style={{ display: "none" }} />
                     <span title={label}>{key}</span>
                   </label>
@@ -1607,14 +1607,14 @@ function AdminPlans() {
                         <span>{grp.icon}</span>
                         <span style={{ flex: 1 }}>{grp.group}</span>
                         <span style={{ fontSize: "0.75rem", fontWeight: 400, opacity: 0.6 }}>{grp.features.filter((f) => form.features.includes(f)).length}/{grp.features.length}</span>
-                        <label style={{ fontSize: "0.75rem", fontWeight: 400, padding: "0.1rem 0.4rem", borderRadius: 4, background: allOn ? "var(--primary)" : "var(--border)", color: allOn ? "#fff" : "var(--text)", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); }}>
+                        <label style={{ fontSize: "0.75rem", fontWeight: 400, padding: "0.1rem 0.4rem", borderRadius: 4, background: allOn ? "var(--primary)" : "var(--border)", color: allOn ? "var(--surface)" : "var(--text)", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); }}>
                           <input type="checkbox" checked={allOn} onChange={() => { const newFeatures = allOn ? form.features.filter((f) => !grp.features.includes(f)) : [...new Set([...form.features, ...grp.features])]; setForm({ ...form, features: newFeatures }); }} style={{ display: "none" }} />
                           {allOn ? "All" : "Select all"}
                         </label>
                       </summary>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", padding: "0.5rem 0.75rem 0.75rem" }}>
                         {grp.features.map((f) => (
-                          <label key={f} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.82rem", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 6, background: form.features.includes(f) ? "var(--primary)" : "var(--bg)", color: form.features.includes(f) ? "#fff" : "var(--text)", border: "1px solid " + (form.features.includes(f) ? "var(--primary)" : "var(--border)") }}>
+                          <label key={f} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.82rem", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 6, background: form.features.includes(f) ? "var(--primary)" : "var(--bg)", color: form.features.includes(f) ? "var(--surface)" : "var(--text)", border: "1px solid " + (form.features.includes(f) ? "var(--primary)" : "var(--border)") }}>
                             <input type="checkbox" checked={form.features.includes(f)} onChange={() => toggleFeature(f)} style={{ display: "none" }} />
                             {f}
                           </label>
@@ -1631,7 +1631,7 @@ function AdminPlans() {
               {form.features.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.5rem" }}>
                   {form.features.map((f) => (
-                    <span key={f} onClick={() => toggleFeature(f)} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.8rem", padding: "0.15rem 0.5rem", borderRadius: 999, background: "var(--border)", color: "var(--text)", cursor: "pointer" }}>
+                    <span key={f} role="button" tabIndex={0} onClick={() => toggleFeature(f)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFeature(f); } }} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.8rem", padding: "0.35rem 0.65rem", borderRadius: 999, background: "var(--border)", color: "var(--text)", cursor: "pointer" }}>
                       {f} &times;
                     </span>
                   ))}
@@ -1668,7 +1668,7 @@ function AdminPlans() {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
                 <h3 style={{ marginTop: 0 }}>{escapeHtml(p.name)}</h3>
-                <span style={{ fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 4, background: p.isActive === false ? "var(--border)" : "var(--success)", color: p.isActive === false ? "var(--text-secondary)" : "#fff", fontWeight: 600 }}>{p.isActive === false ? "Inactive" : "Active"}</span>
+                <span style={{ fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 4, background: p.isActive === false ? "var(--border)" : "var(--success)", color: p.isActive === false ? "var(--text-secondary)" : "var(--surface)", fontWeight: 600 }}>{p.isActive === false ? "Inactive" : "Active"}</span>
               </div>
               <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--primary)", margin: "0 0 0.25rem" }}>{formatPrice(p.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>
               {p.priceAnnual != null && p.priceAnnual > 0 && <p style={{ fontSize: "0.9rem", color: "var(--primary)", margin: "0 0 0.25rem" }}>{formatPrice(p.priceAnnual)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/yr</span></p>}
@@ -1824,7 +1824,7 @@ function AdminClients() {
           <p><strong>Email:</strong> {escapeHtml(selectedClient.email || "—")}</p>
           <p><strong>Phone:</strong> {escapeHtml(selectedClient.phone || "—")}</p>
           <p><strong>Address:</strong> {escapeHtml(selectedClient.address || "—")}</p>
-          <p><strong>Status:</strong> <span style={{ color: selectedClient.isActive ? "#16a34a" : "#dc2626" }}>{selectedClient.isActive ? "Active" : "Inactive"}</span></p>
+          <p><strong>Status:</strong> <span style={{ color: selectedClient.isActive ? "var(--success)" : "var(--danger)" }}>{selectedClient.isActive ? "Active" : "Inactive"}</span></p>
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -1893,7 +1893,7 @@ function AdminClients() {
                 <td><strong>{escapeHtml(c.name)}</strong></td>
                 <td>{escapeHtml(c.email || "—")}</td>
                 <td>{escapeHtml(c.phone || "—")}</td>
-                <td><span style={{ color: c.isActive ? "#16a34a" : "#dc2626", fontSize: "0.85rem" }}>{c.isActive ? "Active" : "Inactive"}</span></td>
+                <td><span style={{ color: c.isActive ? "var(--success)" : "var(--danger)", fontSize: "0.85rem" }}>{c.isActive ? "Active" : "Inactive"}</span></td>
                 <td>
                   <div style={{ display: "flex", gap: "0.25rem" }}>
                     <RippleButton size="small" onClick={() => setSelectedClient(c)}>Manage</RippleButton>
@@ -2006,11 +2006,12 @@ function AdminBranches() {
               <div className="field"><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label></div>
             </div>
             <div className="field">
-              <label>Assigned Owner</label>
-              <select value={form.managerId} onChange={(e) => setForm({ ...form, managerId: e.target.value })}>
-                <option value="">— No owner assigned —</option>
-                {owners.map((o) => <option key={o.id} value={o.id}>{escapeHtml(o.username)}</option>)}
-              </select>
+              <label>Assigned Owner
+                <select value={form.managerId} onChange={(e) => setForm({ ...form, managerId: e.target.value })}>
+                  <option value="">— No owner assigned —</option>
+                  {owners.map((o) => <option key={o.id} value={o.id}>{escapeHtml(o.username)}</option>)}
+                </select>
+              </label>
               {owners.length === 0 && <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>No owner users found. Create an owner user in Users first.</p>}
             </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -2063,7 +2064,7 @@ function AdminBranches() {
                       </span>
                     )}
                   </td>
-                  <td><span className={`plan-status ${b.isActive ? "active" : ""}`} style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "#fff", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>{b.isActive ? "Active" : "Inactive"}</span></td>
+                  <td><span className={`plan-status ${b.isActive ? "active" : ""}`} style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "var(--surface)", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>{b.isActive ? "Active" : "Inactive"}</span></td>
                   <td>
                     <div style={{ display: "flex", gap: "0.25rem" }}>
                       <RippleButton size="small" onClick={() => openEdit(b)}>Edit</RippleButton>
@@ -2195,8 +2196,8 @@ function AdminInvoices() {
             <div className="stat-grid" style={{ marginBottom: "1rem" }}>
               <div className="stat-card"><div className="stat-card__value">{stats.total}</div><div className="stat-card__label">Total Invoices</div></div>
               <div className="stat-card"><div className="stat-card__value" style={{ color: "var(--success)" }}>{stats.paid}</div><div className="stat-card__label">Paid</div></div>
-              <div className="stat-card"><div className="stat-card__value" style={{ color: "#f59e0b" }}>{stats.pending}</div><div className="stat-card__label">Pending</div></div>
-              <div className="stat-card"><div className="stat-card__value" style={{ color: "#dc2626" }}>{stats.overdue}</div><div className="stat-card__label">Overdue</div></div>
+              <div className="stat-card"><div className="stat-card__value" style={{ color: "var(--accent)" }}>{stats.pending}</div><div className="stat-card__label">Pending</div></div>
+              <div className="stat-card"><div className="stat-card__value" style={{ color: "var(--danger)" }}>{stats.overdue}</div><div className="stat-card__label">Overdue</div></div>
             </div>
           )}
 
@@ -2229,12 +2230,12 @@ function AdminInvoices() {
                         <td>{escapeHtml(inv.planName || inv.planId)}</td>
                         <td>{formatPrice(inv.amount)}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString("en-GB") : "—"}</td>
-                        <td><span className="plan-status" style={{ background: inv.status === "paid" ? "#d1fae5" : inv.status === "overdue" ? "#fee2e2" : "#fef3c7", color: inv.status === "paid" ? "#065f46" : inv.status === "overdue" ? "#991b1b" : "#92400e" }}>{inv.status}</span></td>
+                        <td><span className="plan-status" style={{ background: inv.status === "paid" ? "var(--success-light)" : inv.status === "overdue" ? "var(--danger-light)" : "var(--warning-light)", color: inv.status === "paid" ? "var(--success-text)" : inv.status === "overdue" ? "var(--danger-text)" : "var(--warning-text)" }}>{inv.status}</span></td>
                         <td style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
-                          {inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "#fff" }} onClick={() => markPaid(inv.id)}>Pay</RippleButton>}
+                          {inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "var(--surface)" }} onClick={() => markPaid(inv.id)}>Pay</RippleButton>}
                           <button className="btn btn-sm" style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => viewInvoice(inv.id)}>View</button>
-                          <button className="btn btn-sm" style={{ background: "#dc2626", color: "#fff", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => downloadInvoicePdf(inv.id)}>PDF</button>
-                          <button className="btn btn-sm" style={{ background: "var(--primary)", color: "#fff", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => emailInvoice(inv.id)}>Email</button>
+                          <button className="btn btn-sm" style={{ background: "var(--danger)", color: "var(--surface)", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => downloadInvoicePdf(inv.id)}>PDF</button>
+                          <button className="btn btn-sm" style={{ background: "var(--primary)", color: "var(--surface)", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => emailInvoice(inv.id)}>Email</button>
                         </td>
                       </tr>
                     ))}
@@ -2265,15 +2266,15 @@ function AdminInvoices() {
                         <td>#{inv.orderId}</td>
                         <td>{escapeHtml(inv.customer_name || "—")}</td>
                         <td>{formatPrice(inv.amount)}</td>
-                        <td><span className="plan-status" style={{ background: inv.status === "paid" ? "#d1fae5" : "#fef3c7", color: inv.status === "paid" ? "#065f46" : "#92400e" }}>{inv.status}</span></td>
+                        <td><span className="plan-status" style={{ background: inv.status === "paid" ? "var(--success-light)" : "var(--warning-light)", color: inv.status === "paid" ? "var(--success-text)" : "var(--warning-text)" }}>{inv.status}</span></td>
                         <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                         <td>
-                          {inv.status !== "paid" && <button className="btn btn-sm" style={{ background: "var(--success)", color: "#fff" }} onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
+                          {inv.status !== "paid" && <button className="btn btn-sm" style={{ background: "var(--success)", color: "var(--surface)" }} onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
                           <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); const res = await fetch(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, { headers: { Authorization: `Bearer ${r.token}` } }); if (!res.ok) throw new Error(`HTTP ${res.status}`); const html = await res.text(); const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 30000); } catch (e: any) { alert("Failed to open invoice: " + (e?.message || "Unknown error")); } }}>View</button>
                           {creditedOrders[inv.orderId] ? (
-                            <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "#d1fae5", color: "#065f46", cursor: "default" }}>Credited</span>
+                            <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "var(--success-light)", color: "var(--success-text)", cursor: "default" }}>Credited</span>
                           ) : (
-                            <button className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "var(--primary)", color: "#fff" }} onClick={() => createCreditNote(inv.orderId)}>Credit Note</button>
+                            <button className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "var(--primary)", color: "var(--surface)" }} onClick={() => createCreditNote(inv.orderId)}>Credit Note</button>
                           )}
                         </td>
                       </tr>
@@ -2311,7 +2312,9 @@ function AdminMessages() {
 
   useEffect(() => {
     loadMessages();
-    const iv = setInterval(loadMessages, 30000);
+    const iv = setInterval(() => {
+      if (document.visibilityState === "visible") loadMessages();
+    }, 30000);
     return () => clearInterval(iv);
   }, []);
 
@@ -2388,7 +2391,7 @@ function AdminMessages() {
     loadMessages();
   }
 
-  const convos = groupConversations();
+  const convos = useMemo(() => groupConversations(), [messages]);
   const activeMsgs = selectedConversation ? messages.filter((m) => {
     const key = m.sender_role === "customer" ? `customer:${m.customer_id}` : `provider:${m.provider_id}`;
     return key === selectedConversation;
@@ -2438,11 +2441,11 @@ function AdminMessages() {
           <div style={{ overflowY: "auto", maxHeight: "450px" }}>
             {convos.length === 0 && <p style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>No messages yet.</p>}
             {convos.map(([key, conv]) => (
-              <div key={key} onClick={() => { setSelectedConversation(key); markRead(key); }}
+              <div key={key} role="button" tabIndex={0} onClick={() => { setSelectedConversation(key); markRead(key); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedConversation(key); markRead(key); } }}
                 style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", cursor: "pointer", background: selectedConversation === key ? "var(--bg-secondary)" : "transparent", transition: "background 0.15s" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <strong style={{ fontSize: "0.85rem" }}>{conv.partner}</strong>
-                  {conv.unread > 0 && <span style={{ background: "var(--primary)", color: "#fff", borderRadius: 999, fontSize: "0.7rem", padding: "0.1rem 0.5rem", fontWeight: 600 }}>{conv.unread}</span>}
+                  {conv.unread > 0 && <span style={{ background: "var(--primary)", color: "var(--surface)", borderRadius: 999, fontSize: "0.7rem", padding: "0.1rem 0.5rem", fontWeight: 600 }}>{conv.unread}</span>}
                 </div>
                 <p style={{ margin: "0.25rem 0 0", fontSize: "0.78rem", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {conv.messages[conv.messages.length - 1]?.body}
@@ -2463,7 +2466,7 @@ function AdminMessages() {
                 {activeMsgs.map((m: any) => {
                   const isMe = m.sender_role === "admin";
                   return (
-                    <div key={m.id} style={{ maxWidth: "75%", alignSelf: isMe ? "flex-end" : "flex-start", background: isMe ? "var(--primary)" : "var(--bg-secondary)", color: isMe ? "#fff" : "var(--text)", borderRadius: 12, padding: "0.6rem 0.9rem", fontSize: "0.85rem" }}>
+                    <div key={m.id} style={{ maxWidth: "75%", alignSelf: isMe ? "flex-end" : "flex-start", background: isMe ? "var(--primary)" : "var(--bg-secondary)", color: isMe ? "var(--surface)" : "var(--text)", borderRadius: 12, padding: "0.6rem 0.9rem", fontSize: "0.85rem" }}>
                       {!isMe && <div style={{ fontSize: "0.7rem", fontWeight: 600, marginBottom: "0.2rem", opacity: 0.7 }}>{m.sender_role === "customer" ? (m.customerName || "Customer") : (m.providerName || "Provider")}</div>}
                       <div>{m.body}</div>
                       <div style={{ fontSize: "0.65rem", opacity: 0.6, marginTop: "0.2rem", textAlign: isMe ? "right" : "left" }}>
@@ -2613,12 +2616,12 @@ function AdminStorefront() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         {layouts.map((l) => (
-          <div key={l.key} className="panel" style={{ border: cfg?.layout === l.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer" }} onClick={() => switchLayout(l.key)}>
+          <div key={l.key} className="panel" role="button" tabIndex={0} style={{ border: cfg?.layout === l.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer" }} onClick={() => switchLayout(l.key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchLayout(l.key); } }}>
             <div style={{ height: 120, borderRadius: 8, background: "var(--bg)", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.5rem" }}>
               {l.key === "original" ? "🏠" : l.key === "amazon" ? "📦" : l.key === "jumia" ? "🛒" : l.type === "dynamic" ? "🎨" : "📱"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <h3 style={{ margin: "0 0 0.25rem" }}>{l.label}</h3>
+              <h2 style={{ margin: "0 0 0.25rem", fontSize: "var(--text-lg)" }}>{l.label}</h2>
               <span style={{ fontSize: "0.65rem", padding: "0.1rem 0.4rem", borderRadius: 4, background: l.type === "static" ? "var(--info-light)" : "var(--warning-light)", color: l.type === "static" ? "var(--info)" : "var(--warning)" }}>{l.type}</span>
             </div>
             <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-secondary)" }}>{l.desc}</p>
@@ -2628,11 +2631,11 @@ function AdminStorefront() {
       </div>
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
-        <h3>Store Theme</h3>
+        <h2 style={{ marginTop: 0 }}>Store Theme</h2>
         <p className="muted" style={{ fontSize: "0.85rem" }}>Pick a color theme for the whole storefront. Applied instantly to your live site.</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
           {THEME_CARDS.map((t) => (
-            <div key={t.key} className="panel" style={{ border: theme === t.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer", margin: 0 }} onClick={() => saveTheme(t.key)}>
+            <div key={t.key} className="panel" role="button" tabIndex={0} style={{ border: theme === t.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer", margin: 0 }} onClick={() => saveTheme(t.key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); saveTheme(t.key); } }}>
               <div style={{ display: "flex", gap: "0.35rem", height: 36, borderRadius: 8, overflow: "hidden", marginBottom: "0.75rem" }}>
                 {t.swatches.map((c) => <div key={c} style={{ flex: 1, background: c }} />)}
               </div>
@@ -2918,7 +2921,7 @@ function AdminPaymentMethods({ initial }: { initial: any[] }) {
           </tbody>
         </table>
       </div>
-      {msg && <p style={{ fontSize: "0.85rem", color: msg.startsWith("Error") ? "#dc2626" : "#16a34a", marginBottom: "0.5rem" }}>{msg}</p>}
+      {msg && <p style={{ fontSize: "0.85rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success)", marginBottom: "0.5rem" }}>{msg}</p>}
       <div style={{ display: "flex", gap: "0.5rem" }}>
         <RippleButton size="small" onClick={addMethod}>Add method</RippleButton>
         <RippleButton size="small" onClick={save} loading={saving}>Save methods</RippleButton>
@@ -3127,11 +3130,11 @@ function AdminSplashes() {
                   <td>{s.isMarquee ? "Marquee" : "Static"}</td>
                   <td style={{ fontSize: "0.8rem" }}>{s.sortOrder ?? 0}</td>
                   <td style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>{s.startDate || "—"} to {s.endDate || "—"}</td>
-                  <td><span className={`plan-status`} style={{ background: s.isActive ? "#d1fae5" : "#fee2e2", color: s.isActive ? "#065f46" : "#991b1b" }}>{s.isActive ? "Active" : "Inactive"}</span></td>
+                  <td><span className={`plan-status`} style={{ background: s.isActive ? "var(--success-light)" : "var(--danger-light)", color: s.isActive ? "var(--success-text)" : "var(--danger-text)" }}>{s.isActive ? "Active" : "Inactive"}</span></td>
                   <td>
                     <div style={{ display: "flex", gap: "0.3rem" }}>
                       <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(s); setForm({ title: s.title, text: s.text, bgColor: s.bgColor, textColor: s.textColor, isMarquee: s.isMarquee, isActive: s.isActive, startDate: s.startDate || "", endDate: s.endDate || "", imageUrl: s.imageUrl || "", linkUrl: s.linkUrl || "", sortOrder: s.sortOrder ?? 0 }); }}>Edit</button>
-                      <button className="btn btn-sm btn-ghost" style={{ color: "#dc2626" }} onClick={() => handleDelete(s.id)}>Delete</button>
+                      <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }} onClick={() => handleDelete(s.id)}>Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -3293,10 +3296,10 @@ function AdminStoreInfo() {
           <div className="field" style={{ gap: "0.75rem", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
               {settings?.storeFavicon ? (
-                <img src={settings.storeFavicon} alt="Current favicon" style={{ width: 48, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid #ddd" }} />
+                <img src={settings.storeFavicon} alt="Current favicon" style={{ width: 48, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid var(--border)" }} />
               ) : (
-                <div style={{ width: 48, height: 48, borderRadius: 8, background: "#f1f5f9", border: "1px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: 12, color: "#334155" }}>default</span>
+                <div style={{ width: 48, height: 48, borderRadius: 8, background: "var(--surface-hover)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>default</span>
                 </div>
               )}
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -3306,7 +3309,7 @@ function AdminStoreInfo() {
             </div>
             <input type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.ico,.svg" onChange={handleFaviconChange} />
             <RippleButton type="button" onClick={handleFaviconUpload} loading={faviconUploading} disabled={!faviconFile}>Upload favicon</RippleButton>
-            {faviconMsg && <p style={{ margin: 0, color: faviconMsg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{faviconMsg}</p>}
+            {faviconMsg && <p style={{ margin: 0, color: faviconMsg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)" }}>{faviconMsg}</p>}
           </div>
         </div>
         <div className="panel" style={{ marginBottom: "1rem" }}>
@@ -3314,10 +3317,10 @@ function AdminStoreInfo() {
           <div className="field" style={{ gap: "0.75rem", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
               {settings?.storeLogo ? (
-                <img src={settings.storeLogo} alt="Current logo" style={{ width: 80, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid #ddd" }} />
+                <img src={settings.storeLogo} alt="Current logo" style={{ width: 80, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid var(--border)" }} />
               ) : (
-                <div style={{ width: 80, height: 48, borderRadius: 8, background: "#f1f5f9", border: "1px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: 12, color: "#334155" }}>no logo</span>
+                <div style={{ width: 80, height: 48, borderRadius: 8, background: "var(--surface-hover)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>no logo</span>
                 </div>
               )}
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -3327,7 +3330,7 @@ function AdminStoreInfo() {
             </div>
             <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleLogoChange} />
             <RippleButton type="button" onClick={handleLogoUpload} loading={logoUploading} disabled={!logoFile}>Upload logo</RippleButton>
-            {logoMsg && <p style={{ margin: 0, color: logoMsg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{logoMsg}</p>}
+            {logoMsg && <p style={{ margin: 0, color: logoMsg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)" }}>{logoMsg}</p>}
           </div>
           <div className="field" style={{ marginTop: "0.75rem" }}>
             <label>Logo position on documents</label>
@@ -3350,8 +3353,8 @@ function AdminStoreInfo() {
           <p className="muted" style={{ fontSize: "0.85rem", margin: "0 0 0.75rem" }}>Add an extra layer of security to your admin account. When enabled, you&apos;ll need to enter a 6-digit code from your authenticator app each time you sign in.</p>
           {totpEnabled ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#065f46", fontWeight: 600, fontSize: "0.9rem" }}>
-                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#059669" }}></span>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--success-text)", fontWeight: 600, fontSize: "0.9rem" }}>
+                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--success)" }}></span>
                 2FA is enabled
               </div>
               <div className="field">
@@ -3363,7 +3366,7 @@ function AdminStoreInfo() {
           ) : totpSetup ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
               <p style={{ margin: 0, fontSize: "0.85rem" }}>1. Open your authenticator app (Google Authenticator, Authy, etc.)</p>
-              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "0.75rem", wordBreak: "break-all", fontSize: "0.8rem", fontFamily: "monospace" }}>
+              <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.75rem", wordBreak: "break-all", fontSize: "0.8rem", fontFamily: "monospace" }}>
                 <p style={{ margin: "0 0 0.25rem", fontWeight: 600, fontSize: "0.85rem" }}>Manual entry key:</p>
                 {totpSetup.secret}
               </div>
@@ -3380,15 +3383,15 @@ function AdminStoreInfo() {
                   style={{ width: 160, letterSpacing: "0.25em", fontSize: "1.1rem", textAlign: "center" }}
                 />
                 <RippleButton type="button" loading={totpLoading} onClick={handleTotpVerify}>Verify & Enable</RippleButton>
-                <RippleButton type="button" onClick={() => { setTotpSetup(null); setTotpCode(""); setTotpMsg(""); }} style={{ background: "#6b7280" }}>Cancel</RippleButton>
+                <RippleButton type="button" variant="secondary" onClick={() => { setTotpSetup(null); setTotpCode(""); setTotpMsg(""); }}>Cancel</RippleButton>
               </div>
             </div>
           ) : (
             <RippleButton type="button" loading={totpLoading} onClick={handleTotpSetup}>Enable 2FA</RippleButton>
           )}
-          {totpMsg && <p style={{ marginTop: "0.5rem", padding: "0.4rem 0.75rem", borderRadius: 6, background: totpMsg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: totpMsg.startsWith("Error") ? "#991b1b" : "#065f46", fontSize: "0.85rem" }}>{totpMsg}</p>}
+          {totpMsg && <p style={{ marginTop: "0.5rem", padding: "0.4rem 0.75rem", borderRadius: 6, background: totpMsg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: totpMsg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", fontSize: "0.85rem" }}>{totpMsg}</p>}
         </div>
-        {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", marginBottom: "0.75rem" }}>{msg}</p>}
+        {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", marginBottom: "0.75rem" }}>{msg}</p>}
         <RippleButton type="submit" loading={saving}>Save settings</RippleButton>
       </form>
     </>
@@ -3437,7 +3440,7 @@ function AdminPayments() {
           <div className="field"><label>Till Number<input name="mpesaTillNumber" defaultValue={settings?.mpesaTillNumber || ""} /></label></div>
           <div className="field"><label>Environment<select name="mpesaEnv" defaultValue={settings?.mpesaEnv || "sandbox"}><option value="sandbox">Sandbox</option><option value="production">Production</option></select></label></div>
         </div>
-        {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", marginBottom: "0.75rem" }}>{msg}</p>}
+        {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", marginBottom: "0.75rem" }}>{msg}</p>}
         <RippleButton type="submit" loading={saving}>Save M-Pesa settings</RippleButton>
       </form>
 
@@ -3522,7 +3525,7 @@ function AdminCompliance() {
             <div className="field"><label>Consumer Secret<input name="etimsOscuConsumerSecret" defaultValue={settings?.etimsOscuConsumerSecret || ""} placeholder="OSCU consumer secret" /></label></div>
           </>}
         </div>
-        {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", marginBottom: "0.75rem" }}>{msg}</p>}
+        {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", marginBottom: "0.75rem" }}>{msg}</p>}
         <RippleButton type="submit" loading={saving}>Save compliance settings</RippleButton>
       </form>
     </>
@@ -3586,7 +3589,7 @@ function AdminImageStorage({ initial }: { initial: any }) {
         <input type="checkbox" name="backupImagesToDb" defaultChecked={initial?.backupImagesToDb || false} style={{ width: 18, height: 18 }} />
         <span>Enable database backup for uploaded images</span>
       </label>
-      {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46", margin: "0.75rem 0" }}>{msg}</p>}
+      {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", margin: "0.75rem 0" }}>{msg}</p>}
       <RippleButton type="submit" loading={saving} style={{ marginTop: "0.75rem" }}>Save image storage</RippleButton>
     </form>
   );
@@ -3647,7 +3650,7 @@ function AdminNavOrder() {
     <div>
       <h3>Navigation Menu Order</h3>
       <p className="muted" style={{ marginBottom: "0.75rem" }}>Drag and drop to reorder header navigation links.</p>
-      {msg && <p style={{ marginBottom: "0.5rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success, #16a34a)" }}>{msg}</p>}
+      {msg && <p style={{ marginBottom: "0.5rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success)" }}>{msg}</p>}
       <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", maxWidth: 400 }}>
         {items.map((item, idx) => (
           <div
@@ -3722,7 +3725,7 @@ function AdminFooterConfig() {
     <div>
       <h3>Footer Configuration</h3>
       <p className="muted" style={{ marginBottom: "0.75rem" }}>Customize footer columns and links.</p>
-      {msg && <p style={{ marginBottom: "0.5rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success, #16a34a)" }}>{msg}</p>}
+      {msg && <p style={{ marginBottom: "0.5rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success)" }}>{msg}</p>}
       {config.columns.map((col: any, colIdx: number) => (
         <div key={colIdx} className="panel" style={{ marginBottom: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
@@ -3808,7 +3811,7 @@ function AdminShopSubscription() {
   return (
     <>
       <h1>Shop Subscription</h1>
-      {msg && <div className="panel" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "#fee2e2" : "#d1fae5", color: msg.startsWith("Error") ? "#991b1b" : "#065f46" }}>{msg}</div>}
+      {msg && <div className="panel" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)" }}>{msg}</div>}
 
       <div className="stat-grid">
         <div className="stat-card">
@@ -3817,11 +3820,11 @@ function AdminShopSubscription() {
           {currentPlan && <p style={{ fontSize: "1.1rem", fontWeight: 600, color: "var(--primary)", margin: "0.5rem 0 0" }}>{formatPrice(currentPlan.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>}
         </div>
         <div className="stat-card">
-          <div className="stat-card__value" style={{ color: daysRemaining !== null && daysRemaining <= 7 ? "#dc2626" : undefined }}>
+          <div className="stat-card__value" style={{ color: daysRemaining !== null && daysRemaining <= 7 ? "var(--danger)" : undefined }}>
             {daysRemaining !== null ? `${daysRemaining} days` : "—"}
           </div>
           <div className="stat-card__label">Until Renewal</div>
-          {daysRemaining !== null && daysRemaining <= 7 && <p style={{ fontSize: "0.8rem", color: "#dc2626", margin: "0.25rem 0 0" }}>Renew soon!</p>}
+          {daysRemaining !== null && daysRemaining <= 7 && <p style={{ fontSize: "0.8rem", color: "var(--danger)", margin: "0.25rem 0 0" }}>Renew soon!</p>}
         </div>
         <div className="stat-card">
           <div className="stat-card__value">{pending.length}</div>
@@ -3846,10 +3849,10 @@ function AdminShopSubscription() {
                   <tr key={r.id}>
                     <td>{r.id}</td>
                     <td>{escapeHtml(r.plan_name)}</td>
-                    <td><span className="plan-status" style={{ background: r.status === "pending" ? "#fef3c7" : r.status === "approved" ? "#d1fae5" : "#fee2e2", color: r.status === "pending" ? "#92400e" : r.status === "approved" ? "#065f46" : "#991b1b" }}>{r.status}</span></td>
+                    <td><span className="plan-status" style={{ background: r.status === "pending" ? "var(--warning-light)" : r.status === "approved" ? "var(--success-light)" : "var(--danger-light)", color: r.status === "pending" ? "var(--warning-text)" : r.status === "approved" ? "var(--success-text)" : "var(--danger-text)" }}>{r.status}</span></td>
                     <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{escapeHtml(r.notes || "—")}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleDateString("en-GB")}</td>
-                    <td>{r.status === "pending" && <div style={{ display: "flex", gap: "0.35rem" }}><RippleButton size="small" style={{ background: "#16a34a", borderColor: "#16a34a" }} onClick={() => handleRequest(r.id, "approved")}>Approve</RippleButton><RippleButton size="small" variant="danger" onClick={() => handleRequest(r.id, "rejected")}>Reject</RippleButton></div>}</td>
+                    <td>{r.status === "pending" && <div style={{ display: "flex", gap: "0.35rem" }}><RippleButton size="small" style={{ background: "var(--success)", borderColor: "var(--success)" }} onClick={() => handleRequest(r.id, "approved")}>Approve</RippleButton><RippleButton size="small" variant="danger" onClick={() => handleRequest(r.id, "rejected")}>Reject</RippleButton></div>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -4046,14 +4049,14 @@ function exportPdf(report: any, from: string, to: string) {
 <style>
   body { font-family: Arial, sans-serif; padding: 2rem; }
   h1 { margin-bottom: 0.25rem; }
-  .meta { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+  .meta { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.5rem; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
-  th, td { border: 1px solid #ccc; padding: 0.5rem 0.75rem; text-align: left; font-size: 0.85rem; }
-  th { background: #f5f5f5; font-weight: 600; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; font-size: 0.85rem; }
+  th { background: var(--surface-hover); font-weight: 600; }
   .stats { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
-  .stat-card { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; text-align: center; flex: 1; }
+  .stat-card { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; flex: 1; }
   .stat-value { font-size: 1.5rem; font-weight: 700; }
-  .stat-label { font-size: 0.8rem; color: #666; }
+  .stat-label { font-size: 0.8rem; color: var(--text-secondary); }
   @media print { body { padding: 0.5in; } }
 </style></head><body>
 <h1>Sales Report</h1>
@@ -4452,7 +4455,7 @@ function AdminAbandonedCarts() {
                 <td>{c.item_count}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{new Date(c.last_activity).toLocaleString("en-GB")}</td>
                 <td>
-                  {msg && msg.id === c.customer_id && <span style={{ fontSize: "0.8rem", color: msg.error ? "#dc2626" : "#16a34a", marginRight: "0.5rem" }}>{msg.text}</span>}
+                  {msg && msg.id === c.customer_id && <span style={{ fontSize: "0.8rem", color: msg.error ? "var(--danger)" : "var(--success)", marginRight: "0.5rem" }}>{msg.text}</span>}
                   <RippleButton size="small" onClick={() => sendReminder(c)} loading={sendingId === c.customer_id}>Send reminder</RippleButton>
                 </td>
               </tr>
@@ -4559,7 +4562,7 @@ function SalesTrendsChart({ from, to, branchId }: { from: string; to: string; br
           const y = chartH - 10 - barH;
           return (
             <g key={t.day}>
-              <rect x={x} y={y} width={barWidth} height={barH} fill="var(--primary, #2563eb)" rx={2}>
+              <rect x={x} y={y} width={barWidth} height={barH} fill="var(--primary)" rx={2}>
                 <title>{t.day}: {formatPrice(t.revenue)} ({t.orders} orders)</title>
               </rect>
               {trends.length <= 14 && <text x={x + barWidth / 2} y={chartH - 2} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">{t.day.slice(5)}</text>}
@@ -4685,7 +4688,7 @@ function VisitorTrendChart({ data }: { data: any[] }) {
           const y = chartH - 10 - barH;
           return (
             <g key={d.day}>
-              <rect x={x} y={y} width={barWidth} height={barH} fill="var(--primary, #2563eb)" rx={2}>
+              <rect x={x} y={y} width={barWidth} height={barH} fill="var(--primary)" rx={2}>
                 <title>{d.day}: {d.visits} visits, {d.sessions} sessions</title>
               </rect>
               {data.length <= 14 && <text x={x + barWidth / 2} y={chartH - 2} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">{d.day.slice(5)}</text>}
@@ -4867,7 +4870,7 @@ function AdminEmployeeSales() {
                 </tr>
               ))}
               {rows.length > 0 && (
-                <tr style={{ fontWeight: 700, background: "var(--bg-secondary, #f8f9fa)" }}>
+                <tr style={{ fontWeight: 700, background: "var(--bg-secondary)" }}>
                   <td>Total</td>
                   <td>{totalOrders}</td>
                   <td>{formatPrice(totalRevenue)}</td>
@@ -4926,7 +4929,7 @@ function AdminTechPerformance() {
                 </tr>
               ))}
               {rows.length > 0 && (
-                <tr style={{ fontWeight: 700, background: "var(--bg-secondary, #f8f9fa)" }}>
+                <tr style={{ fontWeight: 700, background: "var(--bg-secondary)" }}>
                   <td>Total</td>
                   <td>{totalAssigned}</td>
                   <td>{totalCompleted}</td>
@@ -5158,7 +5161,7 @@ function AdminStockTransfers() {
               </div>
             )}
             {sourceStock !== null && form.quantity && Number(form.quantity) > sourceStock && (
-              <div style={{ padding: "0.5rem 0.75rem", borderRadius: 6, background: "#fef3c7", color: "#92400e", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
+              <div style={{ padding: "0.5rem 0.75rem", borderRadius: 6, background: "var(--warning-light)", color: "var(--warning-text)", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
                 Warning: Source branch only has {sourceStock} unit(s) in stock. Transfer quantity ({form.quantity}) exceeds available stock.
               </div>
             )}
@@ -5186,7 +5189,7 @@ function AdminStockTransfers() {
                   <td>{escapeHtml(toName)}</td>
                   <td>{escapeHtml(pName)}</td>
                   <td>{t.quantity}</td>
-                  <td><span className="plan-status" style={{ background: t.status === "completed" ? "#d1fae5" : t.status === "rejected" ? "#fee2e2" : "#fef3c7", color: t.status === "completed" ? "#065f46" : t.status === "rejected" ? "#991b1b" : "#92400e" }}>{t.status}</span></td>
+                  <td><span className="plan-status" style={{ background: t.status === "completed" ? "var(--success-light)" : t.status === "rejected" ? "var(--danger-light)" : "var(--warning-light)", color: t.status === "completed" ? "var(--success-text)" : t.status === "rejected" ? "var(--danger-text)" : "var(--warning-text)" }}>{t.status}</span></td>
                   <td style={{ whiteSpace: "nowrap" }}>{new Date(t.createdAt).toLocaleDateString("en-GB")}</td>
                   <td>{t.status === "pending" && <div style={{ display: "flex", gap: "0.25rem" }}><RippleButton size="small" onClick={() => completeTransfer(t.id)}>Complete</RippleButton><RippleButton size="small" variant="danger" onClick={() => rejectTransfer(t.id)}>Reject</RippleButton></div>}</td>
                 </tr>
@@ -5341,7 +5344,7 @@ function AdminPurchases() {
         {msg && <ErrorMsg msg={msg} />}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
           <div className="panel">
-            <p><strong>Status:</strong> <span className="plan-status" style={{ background: viewing.status === "received" ? "#d1fae5" : viewing.status === "cancelled" ? "#fee2e2" : viewing.status === "ordered" ? "#dbeafe" : "#fef3c7", color: viewing.status === "received" ? "#065f46" : viewing.status === "cancelled" ? "#991b1b" : viewing.status === "ordered" ? "#1e40af" : "#92400e" }}>{viewing.status}</span></p>
+            <p><strong>Status:</strong> <span className="plan-status" style={{ background: viewing.status === "received" ? "var(--success-light)" : viewing.status === "cancelled" ? "var(--danger-light)" : viewing.status === "ordered" ? "var(--primary-light)" : "var(--warning-light)", color: viewing.status === "received" ? "var(--success-text)" : viewing.status === "cancelled" ? "var(--danger-text)" : viewing.status === "ordered" ? "var(--primary)" : "var(--warning-text)" }}>{viewing.status}</span></p>
             <p><strong>Date:</strong> {formatDate(viewing.orderDate || viewing.order_date)}</p>
             <p><strong>Created:</strong> {formatDate(viewing.createdAt || viewing.created_at)}</p>
             {viewing.notes && <p><strong>Notes:</strong> {escapeHtml(viewing.notes)}</p>}
@@ -5440,7 +5443,7 @@ function AdminPurchases() {
             {search && filteredSearch.length > 0 && (
               <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, zIndex: 20, maxHeight: 200, overflowY: "auto" }}>
                 {filteredSearch.map((p) => (
-                  <div key={p.id} onClick={() => addFormItem(p)} style={{ padding: "0.4rem 0.6rem", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
+                  <div key={p.id} role="button" tabIndex={0} onClick={() => addFormItem(p)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); addFormItem(p); } }} style={{ padding: "0.4rem 0.6rem", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
                     {escapeHtml(p.name)} — {formatPrice(Number(p.price) || 0)}
                   </div>
                 ))}
@@ -5472,7 +5475,7 @@ function AdminPurchases() {
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     padding: "0.4rem 0.9rem", borderRadius: 6, border: "1px solid var(--border)", background: active ? "var(--primary)" : "transparent",
-    color: active ? "#fff" : "var(--text)", cursor: "pointer", fontSize: "0.85rem", fontWeight: active ? 600 : 400,
+    color: active ? "var(--surface)" : "var(--text)", cursor: "pointer", fontSize: "0.85rem", fontWeight: active ? 600 : 400,
   });
 
   return (
@@ -5497,7 +5500,7 @@ function AdminPurchases() {
                 <td>{o.id}</td>
                 <td>{escapeHtml(o.supplierName)}</td>
                 <td>{(o.items || []).length}</td>
-                <td><span className="plan-status" style={{ background: o.status === "received" ? "#d1fae5" : o.status === "cancelled" ? "#fee2e2" : o.status === "ordered" ? "#dbeafe" : "#fef3c7", color: o.status === "received" ? "#065f46" : o.status === "cancelled" ? "#991b1b" : o.status === "ordered" ? "#1e40af" : "#92400e" }}>{o.status}</span></td>
+                <td><span className="plan-status" style={{ background: o.status === "received" ? "var(--success-light)" : o.status === "cancelled" ? "var(--danger-light)" : o.status === "ordered" ? "var(--primary-light)" : "var(--warning-light)", color: o.status === "received" ? "var(--success-text)" : o.status === "cancelled" ? "var(--danger-text)" : o.status === "ordered" ? "var(--primary)" : "var(--warning-text)" }}>{o.status}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>{formatDate(o.orderDate || o.order_date)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <RippleButton size="small" onClick={(e) => { e.stopPropagation(); loadOrder(o.id); }}>View</RippleButton>
@@ -5559,7 +5562,7 @@ function AdminReviews() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: "0.85rem", color: "#f59e0b" }}>{Array.from({ length: 5 }).map((_, i) => i < r.rating ? "★" : "☆").join("")}</span>
+                    <span style={{ fontSize: "0.85rem", color: "var(--accent)" }}>{Array.from({ length: 5 }).map((_, i) => i < r.rating ? "★" : "☆").join("")}</span>
                     <strong style={{ fontSize: "0.85rem" }}>{escapeHtml(r.customer_name || "Anonymous")}</strong>
                     <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>on</span>
                     <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{escapeHtml(r.product_name || r.product_id)}</span>
@@ -5568,7 +5571,7 @@ function AdminReviews() {
                   {r.title && <p style={{ fontWeight: 600, margin: "0.15rem 0", fontSize: "0.9rem" }}>{escapeHtml(r.title)}</p>}
                   {r.comment && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0.15rem 0" }}>{escapeHtml(r.comment)}</p>}
                 </div>
-                <button className="btn btn-sm btn-ghost" style={{ color: "#dc2626", whiteSpace: "nowrap" }} onClick={() => deleteReview(r.id, r.product_id)} disabled={deletingId === r.id}>{deletingId === r.id ? "..." : "Delete"}</button>
+                <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)", whiteSpace: "nowrap" }} onClick={() => deleteReview(r.id, r.product_id)} disabled={deletingId === r.id}>{deletingId === r.id ? "..." : "Delete"}</button>
               </div>
             </div>
           ))}
@@ -5759,16 +5762,17 @@ function AdminDeliveryFees() {
             <div className="form-grid" style={{ gap: "0.75rem" }}>
               {cs.map((c) => (
                 <div className="field" key={c.id} style={{ marginBottom: 0 }}>
-                  <label className="input-label">{escapeHtml(c.name)}</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={10}
-                    className="input"
-                    value={fees[c.id] ?? defaults[c.id] ?? c.fee}
-                    onChange={(e) => setFees((f) => ({ ...f, [c.id]: Number(e.target.value) }))}
-                    placeholder={String(c.fee)}
-                  />
+                  <label>{escapeHtml(c.name)}
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      className="input"
+                      value={fees[c.id] ?? defaults[c.id] ?? c.fee}
+                      onChange={(e) => setFees((f) => ({ ...f, [c.id]: Number(e.target.value) }))}
+                      placeholder={String(c.fee)}
+                    />
+                  </label>
                 </div>
               ))}
             </div>
