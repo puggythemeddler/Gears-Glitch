@@ -14,13 +14,31 @@
       --text: #f1f5f9;
       --text-muted: #94a3b8;
       --primary: #3b82f6;
-      --primary-hover: #2563eb;
+      --primary-strong: #60a5fa;
       --success: #22c55e;
       --warning: #f59e0b;
       --danger: #ef4444;
-      --overlimit: #fb923c;
       --text-secondary: #cbd5e1;
+      --danger-strong: #f87171;
+      --success-strong: #4ade80;
+      --warning-strong: #fbbf24;
+      --overlimit-strong: #fdba74;
+      --deploying-strong: #93c5fd;
+      --btn-primary-bg: #2563eb;
+      --btn-primary-hover: #1d4ed8;
+      --btn-success-bg: #15803d;
+      --btn-success-hover: #166534;
+      --btn-danger-bg: #dc2626;
+      --btn-danger-hover: #b91c1c;
       --radius: 8px;
+      --tint-success: rgba(34,197,94,0.15);
+      --tint-warning: rgba(245,158,11,0.15);
+      --tint-danger: rgba(239,68,68,0.15);
+      --tint-muted: rgba(148,163,184,0.15);
+      --tint-primary: rgba(59,130,246,0.15);
+      --tint-primary-soft: rgba(59,130,246,0.06);
+      --tint-overlimit: rgba(251,146,60,0.15);
+      --tint-warning-border: rgba(245,158,11,0.4);
       color-scheme: dark;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -65,24 +83,26 @@
     h1 span { color: var(--primary); }
     .header-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
     .btn { padding: 0.5rem 1rem; border-radius: var(--radius); border: none; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: all 0.15s; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; }
-    .btn-primary { background: var(--primary); color: #fff; }
-    .btn-primary:hover { background: var(--primary-hover); }
-    .btn-success { background: var(--success); color: #fff; }
+    .btn-primary { background: var(--btn-primary-bg); color: #fff; }
+    .btn-primary:hover { background: var(--btn-primary-hover); }
+    .btn-success { background: var(--btn-success-bg); color: #fff; }
+    .btn-success:hover { background: var(--btn-success-hover); }
     .btn-warning { background: var(--warning); color: #000; }
-    .btn-danger { background: var(--danger); color: #fff; }
-    .btn-danger:hover { opacity: 0.9; }
+    .btn-danger { background: var(--btn-danger-bg); color: #fff; }
+    .btn-danger:hover { background: var(--btn-danger-hover); }
     .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
     .btn-ghost:hover { background: var(--surface); }
     .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.78rem; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Tabs */
-    .tabs { display: flex; gap: 0; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
     .tab { padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.88rem; font-weight: 600; color: var(--text-muted); border-bottom: 2px solid transparent; transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none; }
     .tab:hover { color: var(--text); }
-    .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab.active { color: var(--primary-strong); border-bottom-color: var(--primary); }
 
     .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
     .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
     .stat-card .value { font-size: 1.8rem; font-weight: 700; }
     .stat-card .label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
@@ -91,20 +111,20 @@
     th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
     th { background: var(--bg); color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(59,130,246,0.05); }
+    tr:hover td { background: var(--tint-primary-soft); }
     .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.72rem; font-weight: 600; }
-    .badge-active { background: rgba(34,197,94,0.15); color: var(--success); }
-    .badge-provisioning { background: rgba(245,158,11,0.15); color: var(--warning); }
-    .badge-failed { background: rgba(239,68,68,0.15); color: var(--danger); }
-    .badge-suspended { background: rgba(148,163,184,0.15); color: var(--text-muted); }
-    .badge-healthy { background: rgba(34,197,94,0.15); color: var(--success); }
-    .badge-sleeping { background: rgba(245,158,11,0.15); color: var(--warning); }
-    .badge-down { background: rgba(239,68,68,0.15); color: var(--danger); }
-    .badge-unknown { background: rgba(148,163,184,0.15); color: var(--text-muted); }
-    .badge-overdue { background: rgba(239,68,68,0.15); color: var(--danger); }
-    .badge-warning { background: rgba(245,158,11,0.15); color: var(--warning); }
-    .badge-deploying { background: rgba(59,130,246,0.15); color: var(--primary); animation: pulseBadge 1.6s ease-in-out infinite; }
-    .badge-overlimit { background: rgba(251,146,60,0.15); color: var(--overlimit); }
+    .badge-active { background: var(--tint-success); color: var(--success-strong); }
+    .badge-provisioning { background: var(--tint-warning); color: var(--warning-strong); }
+    .badge-failed { background: var(--tint-danger); color: var(--danger-strong); }
+    .badge-suspended { background: var(--tint-muted); color: var(--text-secondary); }
+    .badge-healthy { background: var(--tint-success); color: var(--success-strong); }
+    .badge-sleeping { background: var(--tint-warning); color: var(--warning-strong); }
+    .badge-down { background: var(--tint-danger); color: var(--danger-strong); }
+    .badge-unknown { background: var(--tint-muted); color: var(--text-secondary); }
+    .badge-overdue { background: var(--tint-danger); color: var(--danger-strong); }
+    .badge-warning { background: var(--tint-warning); color: var(--warning-strong); }
+    .badge-deploying { background: var(--tint-primary); color: var(--deploying-strong); animation: pulseBadge 1.6s ease-in-out infinite; }
+    .badge-overlimit { background: var(--tint-overlimit); color: var(--overlimit-strong); }
     @keyframes pulseBadge { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
     .actions-cell { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
@@ -113,15 +133,20 @@
     .actions-menu summary::-webkit-details-marker { display: none; }
     .actions-menu .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
     .actions-menu .menu .btn { width: 100%; text-align: left; white-space: nowrap; }
+    .notif-row { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); padding: 0.6rem 0.75rem; cursor: pointer; font: inherit; color: inherit; }
+    .notif-row[data-unread="1"] { background: var(--tint-primary-soft); }
+    .notif-row:hover { background: var(--tint-primary-soft); }
+    .link-btn { background: none; border: none; padding: 0; margin: 0; color: var(--primary-strong); text-decoration: underline; cursor: pointer; font: inherit; font-size: inherit; line-height: inherit; }
     th .th-sort { background: none; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; white-space: nowrap; }
     th .th-sort:hover, th .th-sort:focus-visible { color: var(--primary); }
     .feature-chip { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); line-height: 1.3; font-family: inherit; }
     .feature-chip:hover { border-color: var(--primary); }
     .feature-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-    .feature-chip[aria-pressed="true"] { background: var(--primary); color: #fff; border-color: var(--primary); }
-    .feature-chip[aria-pressed="false"] { background: rgba(239,68,68,0.12); color: var(--danger); border-color: var(--danger); text-decoration: line-through; }
+    .feature-chip[aria-pressed="true"] { background: var(--btn-primary-bg); color: #fff; border-color: var(--btn-primary-bg); }
+    .feature-chip[aria-pressed="false"] { background: var(--tint-danger); color: var(--danger-strong); border-color: var(--danger); text-decoration: line-through; }
     .chip-btn { font-size: 0.7rem; font-weight: 400; font-family: inherit; padding: 0.1rem 0.4rem; border-radius: 4px; background: var(--border); color: var(--text); border: none; cursor: pointer; }
-    .chip-btn:hover, .chip-btn:focus-visible { background: var(--primary); color: #fff; outline: none; }
+    .chip-btn:hover, .chip-btn:focus-visible { background: var(--btn-primary-bg); color: #fff; }
+    .chip-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
     .empty { text-align: center; padding: 4rem 1rem; color: var(--text-muted); }
     .empty .icon { font-size: 3rem; margin-bottom: 1rem; }
     .empty p { margin-bottom: 1rem; }
@@ -153,17 +178,25 @@
     .toast.success { border-color: var(--success); }
     .toast.error { border-color: var(--danger); }
     .toast.info { border-color: var(--primary); }
-    .btn:focus-visible, .tab:focus-visible, a:focus-visible, .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .btn:focus-visible, .tab:focus-visible, a:focus-visible, .th-sort:focus-visible, .notif-row:focus-visible, .link-btn:focus-visible, .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
     @media (max-width: 768px) {
       .stats { grid-template-columns: repeat(2, 1fr); }
       .container { padding: 0.75rem; }
       .detail-grid { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr !important; }
+      #notif-panel { width: min(350px, calc(100vw - 2rem)); }
       table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
     }
     @media (pointer: coarse) {
-      .btn, .btn-sm, .tab { min-height: 44px; }
+      .btn, .btn-sm, .tab, .th-sort { min-height: 44px; }
+      input, select, textarea { min-height: 44px; }
+      .feature-chip { min-height: 44px; }
+      .chip-btn { min-height: 34px; padding-top: 0.3rem; padding-bottom: 0.3rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
     }
     @media (min-width: 1600px) {
       .stats { grid-template-columns: repeat(6, 1fr); }
@@ -189,7 +222,7 @@
         <div class="field"><label for="login-totp">2FA Code</label><input type="text" id="login-totp" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autofocus onkeydown="if(event.key==='Enter')doLoginVerify()"></div>
       </div>
 
-      <div id="login-error" style="color:var(--danger);font-size:0.82rem;margin-bottom:0.75rem"></div>
+      <div id="login-error" role="alert" style="color:var(--danger-strong);font-size:0.82rem;margin-bottom:0.75rem"></div>
       <button class="btn btn-primary" style="width:100%" id="login-btn" onclick="doLogin()">Sign In</button>
       <button class="btn btn-ghost" style="width:100%;margin-top:0.5rem;display:none" id="login-back-btn" onclick="cancelTotp()">Back</button>
     </div>
@@ -198,38 +231,43 @@
   <!-- Main App -->
   <div id="main-app" class="container" style="display:none">
     <header>
-      <h1 class="brand">
+      <div class="brand">
         <svg class="brand-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span class="brand-wordmark">Gear<span class="brand-amp">&amp;</span>Glitch</span>
         <span class="brand-sub">Control Plane</span>
-      </h1>
+      </div>
       <div class="header-actions">
         <span id="user-display" style="font-size:0.82rem;color:var(--text-muted);align-self:center"></span>
         <div id="notif-wrap" style="position:relative;align-self:center">
-          <button class="btn btn-ghost btn-sm" id="notif-bell" onclick="toggleNotifications()" title="Notifications">&#128276;</button>
-          <span id="notif-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:var(--danger);color:#fff;font-size:0.62rem;border-radius:50%;min-width:16px;height:16px;align-items:center;justify-content:center;padding:0 3px;font-weight:700"></span>
-          <div id="notif-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);width:350px;max-height:420px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,0.2);z-index:300"></div>
+          <button class="btn btn-ghost btn-sm" id="notif-bell" onclick="toggleNotifications()" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notif-panel">&#128276;</button>
+          <span id="notif-badge" role="status" aria-label="Unread notifications" style="display:none;position:absolute;top:-6px;right:-6px;background:var(--btn-danger-bg);color:#fff;font-size:0.62rem;border-radius:50%;min-width:16px;height:16px;align-items:center;justify-content:center;padding:0 3px;font-weight:700"></span>
+          <div id="notif-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);width:min(350px, calc(100vw - 2rem));max-height:420px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,0.2);z-index:300"></div>
         </div>
         <button class="btn btn-ghost btn-sm" id="twofa-badge" onclick="openTwoFaModal()" title="Click to manage 2FA">2FA Off</button>
-        <button class="btn btn-ghost" onclick="healthCheckAll()" data-admin>Health Check</button>
-        <button class="btn btn-ghost" onclick="showExistingModal()" data-mutating data-admin>+ Add Existing</button>
-        <button class="btn btn-primary" onclick="showModal()" data-mutating data-admin>+ Add Client</button>
+        <details class="actions-menu" data-admin>
+          <summary class="btn btn-ghost btn-sm" aria-expanded="false">More &#9662;</summary>
+          <div class="menu">
+            <button class="btn btn-ghost btn-sm" onclick="healthCheckAll()" data-admin>Health Check</button>
+            <button class="btn btn-ghost btn-sm" onclick="showExistingModal()" data-admin>+ Add Existing</button>
+          </div>
+        </details>
+        <button class="btn btn-primary" onclick="showModal()" data-admin>+ Add Client</button>
         <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Sign out">&#x2190; Sign Out</button>
       </div>
     </header>
 
-    <div class="tabs">
-      <button class="tab active" id="tab-btn-clients" onclick="switchTab('clients', this)">Clients</button>
-      <button class="tab" onclick="switchTab('plans', this)">Plans</button>
-      <button class="tab" onclick="switchTab('changelog', this)">Changelog</button>
-      <button class="tab" onclick="switchTab('deploys', this)">Deploy Log</button>
-      <button class="tab" onclick="switchTab('backups', this)">Backups</button>
-      <button class="tab" onclick="switchTab('audit', this)">Audit Log</button>
-      <button class="tab" onclick="switchTab('settings', this)">Settings</button>
-      <button class="tab" onclick="switchTab('users', this)" id="tab-btn-users" style="display:none">Users</button>
+    <div class="tabs" role="tablist" aria-label="Dashboard sections" onkeydown="tabListKeydown(event)">
+      <button class="tab active" id="tab-btn-clients" role="tab" aria-selected="true" aria-controls="tab-clients" onclick="switchTab('clients', this)">Clients</button>
+      <button class="tab" id="tab-btn-plans" role="tab" aria-selected="false" aria-controls="tab-plans" onclick="switchTab('plans', this)">Plans</button>
+      <button class="tab" id="tab-btn-changelog" role="tab" aria-selected="false" aria-controls="tab-changelog" onclick="switchTab('changelog', this)">Changelog</button>
+      <button class="tab" id="tab-btn-deploys" role="tab" aria-selected="false" aria-controls="tab-deploys" onclick="switchTab('deploys', this)">Deploy Log</button>
+      <button class="tab" id="tab-btn-backups" role="tab" aria-selected="false" aria-controls="tab-backups" onclick="switchTab('backups', this)">Backups</button>
+      <button class="tab" id="tab-btn-audit" role="tab" aria-selected="false" aria-controls="tab-audit" onclick="switchTab('audit', this)">Audit Log</button>
+      <button class="tab" id="tab-btn-settings" role="tab" aria-selected="false" aria-controls="tab-settings" onclick="switchTab('settings', this)">Settings</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-users" onclick="switchTab('users', this)" id="tab-btn-users" style="display:none">Users</button>
     </div>
 
-    <div id="tab-clients">
+    <div id="tab-clients" role="tabpanel" aria-labelledby="tab-btn-clients">
       <div class="stats" id="stats">
         <div class="stat-card"><div class="value" id="stat-total">—</div><div class="label">Total Clients</div></div>
         <div class="stat-card"><div class="value" id="stat-active" style="color: var(--success)">—</div><div class="label">Active</div></div>
@@ -252,64 +290,64 @@
       <div id="upgrade-requests" style="margin-top:2rem"></div>
     </div>
 
-    <div id="tab-plans" style="display:none">
+    <div id="tab-plans" role="tabpanel" aria-labelledby="tab-btn-plans" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Subscription Plans</h2>
         <div style="display:flex;gap:0.5rem">
           <select id="pull-plans-client" data-admin style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull from client...</option></select>
-          <button class="btn btn-ghost btn-sm" data-mutating data-admin onclick="pullPlansFromClient()">Pull Plans</button>
-          <button class="btn btn-ghost btn-sm" data-mutating data-admin onclick="importFromGearGlitch()">Import from Gear&Glitch Store</button>
-          <button class="btn btn-ghost btn-sm" data-mutating data-admin onclick="syncAllPlans()">Sync All to Clients</button>
-          <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="showPlanModal()">+ Create Plan</button>
+          <button class="btn btn-ghost btn-sm" data-admin onclick="pullPlansFromClient()">Pull Plans</button>
+          <button class="btn btn-ghost btn-sm" data-admin onclick="importFromGearGlitch()">Import from Gear&Glitch Store</button>
+          <button class="btn btn-ghost btn-sm" data-admin onclick="syncAllPlans()">Sync All to Clients</button>
+          <button class="btn btn-primary btn-sm" data-admin onclick="showPlanModal()">+ Create Plan</button>
         </div>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage subscription plans with feature toggles. Toggle features on/off per plan, then sync to push changes to all clients.</p>
       <div id="plans-list"></div>
     </div>
 
-    <div id="tab-changelog" style="display:none">
+    <div id="tab-changelog" role="tabpanel" aria-labelledby="tab-btn-changelog" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Changelog</h2>
-        <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="showChangelogModal()">+ New Update</button>
+        <button class="btn btn-primary btn-sm" data-admin onclick="showChangelogModal()">+ New Update</button>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Publish version updates. All active clients are notified by email automatically.</p>
       <div id="changelog-list"></div>
     </div>
 
-    <div id="tab-deploys" style="display:none">
+    <div id="tab-deploys" role="tabpanel" aria-labelledby="tab-btn-deploys" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Deploy Log</h2>
-        <button class="btn btn-ghost btn-sm" data-mutating data-admin onclick="deployAll()">Deploy All Clients</button>
+        <button class="btn btn-ghost btn-sm" data-admin onclick="deployAll()">Deploy All Clients</button>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Deployment history. Deploys are triggered manually or via GitHub Actions on push to main.</p>
       <div id="deploy-log"></div>
     </div>
 
-    <div id="tab-backups" style="display:none">
+    <div id="tab-backups" role="tabpanel" aria-labelledby="tab-btn-backups" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Database Backups</h2>
-        <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="runBackups()">Run Backup Now</button>
+        <button class="btn btn-primary btn-sm" data-admin onclick="runBackups()">Run Backup Now</button>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Backups run automatically daily at 3 AM. Uses <code>pg_dump</code> for each client's Neon database. Old backups auto-delete after 7 days. Requires <code>pg_dump</code> CLI on the server (available in Render paid plans).</p>
       <div id="backup-list"></div>
     </div>
 
-    <div id="tab-users" style="display:none">
+    <div id="tab-users" role="tabpanel" aria-labelledby="tab-btn-users" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Control Plane Users</h2>
-        <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="showCreateUserModal()">+ Add User</button>
+        <button class="btn btn-primary btn-sm" data-admin onclick="showCreateUserModal()">+ Add User</button>
       </div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage who can access the control plane. Admins can manage users; viewers have read-only access. Each user gets a unique API key for programmatic access.</p>
       <div id="users-list"></div>
     </div>
 
-    <div id="tab-audit" style="display:none">
+    <div id="tab-audit" role="tabpanel" aria-labelledby="tab-btn-audit" style="display:none">
       <h2>Audit Log</h2>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">All actions performed on the control plane are logged here for accountability.</p>
       <div id="audit-list"></div>
     </div>
 
-    <div id="tab-settings" style="display:none">
+    <div id="tab-settings" role="tabpanel" aria-labelledby="tab-btn-settings" style="display:none">
       <h2>Settings</h2>
 
       <div class="detail-panel" style="margin-bottom:1.5rem">
@@ -318,7 +356,7 @@
           Used to send welcome emails to new clients and changelog notifications.
           For Gmail, enable 2-Step Verification and create an <strong>App Password</strong>.
         </p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div class="form-grid">
           <div class="field"><label for="smtp-host">SMTP Host</label><input type="text" id="smtp-host" placeholder="smtp.gmail.com"></div>
           <div class="field"><label for="smtp-port">Port</label><input type="number" id="smtp-port" value="587" placeholder="587"></div>
           <div class="field"><label for="smtp-user">Username (email)</label><input type="text" id="smtp-user" placeholder="your@gmail.com"></div>
@@ -327,9 +365,9 @@
           <div class="field"><label for="smtp-from-name">From Name</label><input type="text" id="smtp-from-name" placeholder="Gear&Glitch"></div>
         </div>
         <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-primary" data-mutating data-admin onclick="saveSmtpConfig()">Save SMTP</button>
-          <input type="text" id="smtp-test-to" placeholder="test@email.com" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem;width:200px">
-          <button class="btn btn-ghost" data-mutating data-admin onclick="testSmtpConfig()">Send Test Email</button>
+          <button class="btn btn-primary" data-admin onclick="saveSmtpConfig()">Save SMTP</button>
+          <input type="text" id="smtp-test-to" aria-label="Test email recipient" placeholder="test@email.com" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem;width:200px">
+          <button class="btn btn-ghost" data-admin onclick="testSmtpConfig()">Send Test Email</button>
           <span id="smtp-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
         </div>
       </div>
@@ -340,37 +378,37 @@
           Cloudinary is used for image uploads across all client stores.
           Configure once here and sync to all clients.
         </p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div class="form-grid">
           <div class="field"><label for="s-cld-cloud">Cloud Name</label><input type="text" id="s-cld-cloud" placeholder="e.g. mycloud"></div>
           <div class="field"><label for="s-cld-key">API Key</label><input type="text" id="s-cld-key" placeholder="e.g. 123456789012345"></div>
           <div class="field"><label for="s-cld-secret">API Secret</label><input type="password" id="s-cld-secret" placeholder="Your API secret"></div>
           <div class="field"><label for="s-cld-folder">Folder</label><input type="text" id="s-cld-folder" placeholder="gear-glitch"></div>
         </div>
         <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-primary" data-mutating data-admin onclick="saveSettingsCloudinary()">Save Cloudinary</button>
-          <button class="btn btn-ghost" data-mutating data-admin onclick="syncCloudinary()">Sync to All Clients</button>
+          <button class="btn btn-primary" data-admin onclick="saveSettingsCloudinary()">Save Cloudinary</button>
+          <button class="btn btn-ghost" data-admin onclick="syncCloudinary()">Sync to All Clients</button>
           <select id="pull-cloudinary-client" data-admin style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull Cloudinary from...</option></select>
-          <button class="btn btn-ghost" data-mutating data-admin onclick="pullCloudinaryFromClient()">Pull Cloudinary</button>
+          <button class="btn btn-ghost" data-admin onclick="pullCloudinaryFromClient()">Pull Cloudinary</button>
           <span id="cld-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
         </div>
       </div>
     </div>
 
-    <div id="tab-client-detail" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div id="tab-client-detail" role="region" aria-label="Client details" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:1rem">
         <div>
           <button class="btn btn-ghost btn-sm" onclick="closeClientDetails()" style="margin-right:0.5rem">&larr; Back</button>
           <span id="detail-client-name" style="font-size:1.2rem;font-weight:700"></span>
         </div>
-        <div id="detail-actions" style="display:flex;gap:0.5rem"></div>
+        <div id="detail-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap"></div>
       </div>
       <div class="stats" id="detail-stats"></div>
       <div id="detail-subscription" style="margin-bottom:1.5rem"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Invoices</h2>
         <div style="display:flex;gap:0.5rem">
-          <button class="btn btn-primary btn-sm" data-mutating data-admin onclick="generateClientInvoice()">+ Generate Invoice</button>
-          <button class="btn btn-success btn-sm" data-mutating data-admin onclick="recordClientPayment()">+ Record Payment</button>
+          <button class="btn btn-primary btn-sm" data-admin onclick="generateClientInvoice()">+ Generate Invoice</button>
+          <button class="btn btn-success btn-sm" data-admin onclick="recordClientPayment()">+ Record Payment</button>
         </div>
       </div>
       <div id="detail-invoices"></div>
@@ -460,7 +498,7 @@
   <div class="modal-overlay" id="edit-modal-overlay">
     <div class="modal" style="width:520px">
       <h2>Edit Client</h2>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+      <div class="form-grid">
         <div class="field"><label for="edit-plan">Plan</label><select id="edit-plan"><option value="starter">Starter</option><option value="growth">Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
         <div class="field"><label for="edit-expires">Subscription Expires</label><input type="date" id="edit-expires"></div>
         <div class="field"><label for="edit-phone">Phone</label><input type="text" id="edit-phone" placeholder="+254 7XX XXX XXX"></div>
@@ -473,7 +511,7 @@
           <button class="btn btn-ghost btn-sm" type="button" onclick="clearClientOverrides()">Clear overrides</button>
         </div>
         <div id="client-feature-groups-container" role="group" aria-labelledby="client-features-label" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
-        <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">Click a feature to cycle: <span style="color:var(--primary);font-weight:600">Enabled</span> &rarr; <span style="color:var(--danger);font-weight:600">Blocked</span> &rarr; <span style="font-weight:600">Inherit</span> (plan default). "Blocked" hides a feature this plan normally includes; "Enabled" adds one it doesn't.</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">Click a feature to cycle: <span style="color:var(--primary-strong);font-weight:600">Enabled</span> &rarr; <span style="color:var(--danger-strong);font-weight:600">Blocked</span> &rarr; <span style="font-weight:600">Inherit</span> (plan default). "Blocked" hides a feature this plan normally includes; "Enabled" adds one it doesn't.</p>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hideEditModal()">Cancel</button>
@@ -487,10 +525,10 @@
     <div class="modal" style="width:540px">
       <h2>Record Payment</h2>
       <p class="subtitle" id="payment-client-name"></p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+      <div class="form-grid">
         <div class="field"><label for="pay-expected">Expected Amount (KES)</label><input type="number" id="pay-expected" readonly></div>
         <div class="field"><label for="pay-amount">Amount Paid (KES)</label><input type="number" id="pay-amount" min="0" oninput="updatePaymentBalance()"></div>
-        <div class="field"><label>Period</label><select id="pay-period" onchange="updatePaymentDate()"><option value="monthly">Monthly (30 days)</option><option value="annual">Annual (365 days)</option></select></div>
+        <div class="field"><label for="pay-period">Period</label><select id="pay-period" onchange="updatePaymentDate()"><option value="monthly">Monthly (30 days)</option><option value="annual">Annual (365 days)</option></select></div>
         <div class="field"><label for="pay-next-date">Next Payment Date</label><input type="date" id="pay-next-date"></div>
       </div>
       <div id="pay-note" style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem"></div>
@@ -533,7 +571,7 @@
   <div class="modal-overlay" id="plan-modal-overlay">
     <div class="modal" style="width:640px;max-height:90vh">
       <h2 id="plan-modal-title">Create Plan</h2>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+      <div class="form-grid">
         <div class="field"><label for="plan-id">Plan ID</label><input type="text" id="plan-id" placeholder="e.g. custom-basic"></div>
         <div class="field"><label for="plan-name">Name</label><input type="text" id="plan-name" placeholder="e.g. Custom Basic"></div>
         <div class="field"><label for="plan-price">Monthly Price (KES)</label><input type="number" id="plan-price" value="0" min="0"></div>
@@ -551,20 +589,6 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hidePlanModal()">Cancel</button>
         <button class="btn btn-primary" id="btn-save-plan" onclick="savePlan()">Save Plan</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="cloudinary-modal-overlay">
-    <div class="modal" style="width:460px">
-      <h2>Cloudinary Configuration</h2>
-      <div class="field"><label for="inp-cld-cloud">Cloud Name</label><input type="text" id="inp-cld-cloud" placeholder="e.g. mycloud"></div>
-      <div class="field"><label for="inp-cld-key">API Key</label><input type="text" id="inp-cld-key" placeholder="e.g. 123456789012345"></div>
-      <div class="field"><label for="inp-cld-secret">API Secret</label><input type="password" id="inp-cld-secret" placeholder="Your API secret"></div>
-      <div class="field"><label for="inp-cld-folder">Folder (optional)</label><input type="text" id="inp-cld-folder" placeholder="gear-glitch" value="gear-glitch"></div>
-      <div class="modal-actions">
-        <button class="btn btn-ghost" onclick="hideCloudinaryModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="saveCloudinaryConfig()">Save</button>
       </div>
     </div>
   </div>
@@ -683,12 +707,12 @@
       if (!el) return;
       if (enabled) {
         el.textContent = "2FA On";
-        el.style.background = "rgba(34,197,94,0.15)";
-        el.style.color = "var(--success)";
-        el.style.border = "1px solid rgba(34,197,94,0.3)";
+        el.style.background = "var(--tint-success)";
+        el.style.color = "var(--success-strong)";
+        el.style.border = "1px solid var(--success)";
       } else {
         el.textContent = "2FA Off";
-        el.style.background = "rgba(148,163,184,0.15)";
+        el.style.background = "var(--tint-muted)";
         el.style.color = "var(--text-muted)";
         el.style.border = "1px solid var(--border)";
       }
@@ -734,7 +758,7 @@
         const allOn = grp.features.every(f => selectedFeatures.includes(f));
         const count = grp.features.filter(f => selectedFeatures.includes(f)).length;
         html += `<details open style="margin-bottom:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
-          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'rgba(59,130,246,0.1)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="event.preventDefault();this.parentElement.open=!this.parentElement.open">
+          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'var(--tint-primary)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="event.preventDefault();this.parentElement.open=!this.parentElement.open">
             <span style="font-size:0.65rem;opacity:0.5;transition:transform 0.2s;transform:${allOn ? 'rotate(90deg)' : 'none'}">&#9654;</span>
             <span>${grp.icon}</span>
             <span style="flex:1">${grp.group}</span>
@@ -763,8 +787,6 @@
       renderFeatureGroups(editingPlanFeatures);
     }
 
-    const ALL_FEATURES = FEATURE_GROUPS.reduce((acc, g) => acc.concat(g.features), []);
-
     function clientFeatureState(f) {
       return Object.prototype.hasOwnProperty.call(editingClientOverrides, f) ? editingClientOverrides[f] : undefined;
     }
@@ -777,7 +799,7 @@
         const offCount = grp.features.filter(f => clientFeatureState(f) === false).length;
         const allOn = onCount === grp.features.length;
         html += `<details style="margin-bottom:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
-          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'rgba(59,130,246,0.1)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="event.preventDefault();this.parentElement.open=!this.parentElement.open">
+          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'var(--tint-primary)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="event.preventDefault();this.parentElement.open=!this.parentElement.open">
             <span style="font-size:0.65rem;opacity:0.5;transition:transform 0.2s;transform:rotate(90deg)">&#9654;</span>
             <span>${grp.icon}</span>
             <span style="flex:1">${grp.group}</span>
@@ -858,6 +880,12 @@
     }
 
     function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
+    function jsStr(s) { return String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
+    function copyAdminPassword(id) {
+      const c = allClients.find(x => x.id === id);
+      if (!c || !c.admin_password) { toast("No password on record.", "error"); return; }
+      navigator.clipboard.writeText(c.admin_password).then(() => toast("Password copied")).catch(() => toast("Copy failed.", "error"));
+    }
     let toastContainer = null;
     function toast(msg, type = "success", timeout = 4000) {
       if (!toastContainer) { toastContainer = document.createElement("div"); toastContainer.className = "toast-container"; toastContainer.setAttribute("role", "status"); toastContainer.setAttribute("aria-live", "polite"); document.body.appendChild(toastContainer); }
@@ -894,6 +922,8 @@
     }
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
+        document.querySelectorAll("details.actions-menu[open]").forEach(d => d.removeAttribute("open"));
+        hideNotifications();
         const openOverlays = document.querySelectorAll(".modal-overlay.show");
         const top = openOverlays[openOverlays.length - 1];
         if (top && top.id !== "confirm-overlay") closeModal(top);
@@ -913,6 +943,12 @@
     document.addEventListener("mousedown", (e) => {
       if (e.target && e.target.classList && e.target.classList.contains("modal-overlay") && e.target.id !== "confirm-overlay") closeModal(e.target);
     });
+    document.addEventListener("toggle", (e) => {
+      if (e.target && e.target.matches && e.target.matches("details.actions-menu")) {
+        const s = e.target.querySelector("summary");
+        if (s) s.setAttribute("aria-expanded", e.target.open ? "true" : "false");
+      }
+    }, true);
 
     // ─── CONFIRM DIALOG ─────────────────────────────────────
     let confirmState = { action: null, secondary: null };
@@ -974,7 +1010,7 @@
     }
 
     function sortArrow(key) {
-      return clientSort.key === key ? (clientSort.dir === "asc" ? " &#9650;" : " &#9660;") : " &#8597;";
+      return clientSort.key === key ? (clientSort.dir === "asc" ? " &#9650;" : " &#9660;") : "";
     }
 
     function applyClientFilters(clients) {
@@ -1008,6 +1044,8 @@
       }
       const list = applyClientFilters(clients);
       document.getElementById("client-count").textContent = list.length + " of " + clients.length + " clients";
+      const prevTable = document.querySelector("#client-list table");
+      const prevScrollLeft = prevTable ? prevTable.scrollLeft : 0;
       if (!list.length) {
         document.getElementById("client-list").innerHTML = '<div class="empty"><p>No clients match your search or filters.</p></div>';
         return;
@@ -1040,16 +1078,16 @@
         }
         const moreMenu = `
           <details class="actions-menu">
-            <summary class="btn btn-ghost btn-sm">More &#9662;</summary>
+            <summary class="btn btn-ghost btn-sm" aria-expanded="false">More &#9662;</summary>
             <div class="menu">
-              ${c.render_service_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + esc(c.render_service_url) + '/api/health\',\'_blank\')">Backend</button>' : ''}
-              ${c.vercel_project_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + esc(c.vercel_project_url) + '\',\'_blank\')">Frontend</button>' : ''}
+              ${c.render_service_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + jsStr(c.render_service_url) + '/api/health\',\'_blank\')">Backend</button>' : ''}
+              ${c.vercel_project_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + jsStr(c.vercel_project_url) + '\',\'_blank\')">Frontend</button>' : ''}
               ${isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="editClient(${c.id})">Edit</button>
-              <button class="btn btn-ghost btn-sm" onclick="pushSecret(${c.id}, '${esc(c.name)}')" title="Push/rotate the control-plane secret onto the client's Render service">Push Secret</button>
+              <button class="btn btn-ghost btn-sm" onclick="pushSecret(${c.id}, '${jsStr(c.name)}')" title="Push/rotate the control-plane secret onto the client's Render service">Push Secret</button>
               <button class="btn btn-ghost btn-sm" onclick="redeployClient(${c.id})">Redeploy</button>
               ${c.status === 'active' ? '<button class="btn btn-warning btn-sm" onclick="suspendClient(' + c.id + ')">Suspend</button>' : ''}
               ${c.status === 'suspended' ? '<button class="btn btn-success btn-sm" onclick="resumeClient(' + c.id + ')">Resume</button>' : ''}
-              <button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${esc(c.name)}')">Delete</button>` : ''}
+              <button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${jsStr(c.name)}')">Delete</button>` : ''}
             </div>
           </details>`;
         html += `<tr>
@@ -1059,18 +1097,19 @@
           <td>${subBadge}</td>
           <td><span class="badge badge-${c.status}">${c.status}</span></td>
           <td><span class="badge badge-${c.health_status}">${c.health_status}</span></td>
-          <td><span style="font-weight:600;color:${c.uptime_pct >= 99 ? 'var(--success)' : c.uptime_pct >= 95 ? 'var(--warning)' : 'var(--danger)'}">${uptime}%</span></td>
+          <td><span style="font-weight:600;color:${c.uptime_pct >= 99 ? 'var(--success-strong)' : c.uptime_pct >= 95 ? 'var(--warning-strong)' : 'var(--danger-strong)'}">${uptime}%</span></td>
           <td>${orders}</td>
           <td>KES ${revenue}</td>
           <td><div class="actions-cell">
             <button class="btn btn-primary btn-sm" onclick="viewClientDetails(${c.id})">Details</button>
             ${moreMenu}
-            ${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${esc(c.name)}')">Delete</button>` : ''}
           </div></td>
         </tr>`;
       }
       html += '</tbody></table>';
       document.getElementById("client-list").innerHTML = html;
+      const newTable = document.querySelector("#client-list table");
+      if (newTable && prevScrollLeft > 0) newTable.scrollLeft = prevScrollLeft;
     }
 
     // ─── MODALS ───────────────────────────────────────────
@@ -1089,13 +1128,13 @@
       c.innerHTML = '<p style="color:var(--text-muted)">Loading...</p>';
       try {
         const res = await api("/api/auth/2fa/status");
-        if (res.error) { c.innerHTML = '<p style="color:var(--danger)">' + esc(res.error) + '</p>'; return; }
+        if (res.error) { c.innerHTML = '<p style="color:var(--danger-strong)">' + esc(res.error) + '</p>'; return; }
         if (res.enabled) {
-          c.innerHTML = '<div style="text-align:center;margin-bottom:1rem"><span style="color:var(--success);font-size:1.5rem">&#10003;</span><p style="margin-top:0.5rem">2FA is <strong>enabled</strong>. You need a code from your authenticator app to log in.</p></div><div class="field"><label>Disable 2FA — enter your password to confirm</label><input type="password" id="twofa-disable-pass" placeholder="Password"></div><button class="btn btn-danger" style="width:100%" onclick="disableTwoFa()">Disable 2FA</button>';
+          c.innerHTML = '<div style="text-align:center;margin-bottom:1rem"><span style="color:var(--success-strong);font-size:1.5rem">&#10003;</span><p style="margin-top:0.5rem">2FA is <strong>enabled</strong>. You need a code from your authenticator app to log in.</p></div><div class="field"><label for="twofa-disable-pass">Disable 2FA — enter your password to confirm</label><input type="password" id="twofa-disable-pass" placeholder="Password"></div><button class="btn btn-danger" style="width:100%" onclick="disableTwoFa()">Disable 2FA</button>';
         } else {
           c.innerHTML = '<p style="color:var(--text-muted);margin-bottom:1rem">Protect your account with an authenticator app (Google Authenticator, Authy, 1Password, etc.).</p><button class="btn btn-primary" style="width:100%" onclick="setupTwoFa()">Set Up 2FA</button>';
         }
-      } catch (e) { c.innerHTML = '<p style="color:var(--danger)">' + esc(e.message) + '</p>'; }
+      } catch (e) { c.innerHTML = '<p style="color:var(--danger-strong)">' + esc(e.message) + '</p>'; }
     }
 
     async function setupTwoFa() {
@@ -1103,11 +1142,11 @@
       c.innerHTML = '<p style="color:var(--text-muted)">Generating...</p>';
       try {
         const res = await api("/api/auth/2fa/setup", { method: "POST" });
-        if (res.error) { c.innerHTML = '<p style="color:var(--danger)">' + esc(res.error) + '</p>'; return; }
+        if (res.error) { c.innerHTML = '<p style="color:var(--danger-strong)">' + esc(res.error) + '</p>'; return; }
         const qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(res.otpauthUrl);
-        c.innerHTML = '<div style="text-align:center;margin-bottom:1rem"><img src="' + esc(qrUrl) + '" alt="QR Code" style="border-radius:8px;width:200px;height:200px"></div><p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem">Scan this QR code with your authenticator app, or manually enter this key:</p><code style="display:block;background:var(--bg);padding:0.75rem;border-radius:var(--radius);font-family:monospace;font-size:0.82rem;word-break:break-all;margin-bottom:1rem">' + esc(res.secret) + '</code><div class="field"><label>Enter the 6-digit code from your app</label><input type="text" id="twofa-verify-code" placeholder="123456" maxlength="6" inputmode="numeric" onkeydown="if(event.key===\'Enter\')enableTwoFa()"></div><button class="btn btn-primary" style="width:100%" onclick="enableTwoFa()">Enable 2FA</button><button class="btn btn-ghost" style="width:100%;margin-top:0.5rem" onclick="openTwoFaModal()">Cancel</button>';
+        c.innerHTML = '<div style="text-align:center;margin-bottom:1rem"><img src="' + esc(qrUrl) + '" alt="QR Code" style="border-radius:8px;width:200px;height:200px"></div><p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem">Scan this QR code with your authenticator app, or manually enter this key:</p><code style="display:block;background:var(--bg);padding:0.75rem;border-radius:var(--radius);font-family:monospace;font-size:0.82rem;word-break:break-all;margin-bottom:1rem">' + esc(res.secret) + '</code><div class="field"><label for="twofa-verify-code">Enter the 6-digit code from your app</label><input type="text" id="twofa-verify-code" placeholder="123456" maxlength="6" inputmode="numeric" onkeydown="if(event.key===\'Enter\')enableTwoFa()"></div><button class="btn btn-primary" style="width:100%" onclick="enableTwoFa()">Enable 2FA</button><button class="btn btn-ghost" style="width:100%;margin-top:0.5rem" onclick="openTwoFaModal()">Cancel</button>';
         setTimeout(() => { const inp = document.getElementById("twofa-verify-code"); if (inp) inp.focus(); }, 100);
-      } catch (e) { c.innerHTML = '<p style="color:var(--danger)">' + esc(e.message) + '</p>'; }
+      } catch (e) { c.innerHTML = '<p style="color:var(--danger-strong)">' + esc(e.message) + '</p>'; }
     }
 
     async function enableTwoFa() {
@@ -1146,12 +1185,12 @@
       document.getElementById("modal-form").style.display = "none";
       prog.style.display = "";
       const setProg = (html) => { prog.innerHTML = html; };
-      setProg('<div style="padding:1rem;color:var(--primary)">Starting provisioning for "' + esc(name) + '"...</div>');
+      setProg('<div style="padding:1rem;color:var(--primary-strong)">Starting provisioning for "' + esc(name) + '"...</div>');
       try {
         const data = await api("/api/clients", { method: "POST", body: JSON.stringify({ name, adminEmail: email || undefined, plan, domain: domain || undefined }) });
-        if (data.error) { setProg('<div style="padding:1rem;color:var(--danger)">' + esc(data.error) + '</div>'); document.getElementById("btn-create").disabled = false; return; }
+        if (data.error) { setProg('<div style="padding:1rem;color:var(--danger-strong)">' + esc(data.error) + '</div>'); document.getElementById("btn-create").disabled = false; return; }
         const clientId = data.clientId;
-        setProg('<div style="padding:1rem;color:var(--primary)">Provisioning "' + esc(name) + '"...</div><div id="provision-log" style="font-size:0.85rem;color:var(--text-secondary);padding:0 1rem 1rem;line-height:1.7"></div>');
+        setProg('<div style="padding:1rem;color:var(--primary-strong)">Provisioning "' + esc(name) + '"...</div><div id="provision-log" style="font-size:0.85rem;color:var(--text-secondary);padding:0 1rem 1rem;line-height:1.7"></div>');
         const appendLog = (line) => { const el = document.getElementById("provision-log"); if (el) el.innerHTML += esc(line) + '<br>'; };
         appendLog("Request received — creating database, backend, and frontend. This usually takes a couple of minutes.");
         let pollCount = 0;
@@ -1172,7 +1211,7 @@
           } catch {}
           if (pollCount > 36) { clearInterval(pollTimer); appendLog("Still running after ~3 minutes. You can close this and track progress in the Deploy Log."); }
         }, 5000);
-      } catch (e) { setProg('<div style="padding:1rem;color:var(--danger)">' + esc(e.message) + '</div>'); document.getElementById("btn-create").disabled = false; }
+      } catch (e) { setProg('<div style="padding:1rem;color:var(--danger-strong)">' + esc(e.message) + '</div>'); document.getElementById("btn-create").disabled = false; }
     }
 
     async function addExistingClient() {
@@ -1196,7 +1235,7 @@
     async function deleteClient(id, name) {
       confirmDialog({
         title: "Delete client?",
-        message: 'Delete "' + name + '"? This removes their database and all deployments.',
+        message: 'Delete "' + name + '"? This removes their database and all deployments. This cannot be undone.',
         confirmLabel: "Delete",
         danger: true,
         onConfirm: async () => {
@@ -1209,7 +1248,7 @@
       confirmDialog({
         title: "Push control-plane secret?",
         message: 'Push the stored control-plane secret to "' + name + '"? The client service will redeploy.',
-        detail: 'Choose "Push" to push the currently stored secret, or "Rotate & push" to generate a brand-new secret and push that instead.',
+        detail: 'Choose "Push" to push the currently stored secret, or "Rotate & push" to generate a brand-new secret and push that instead. Rotating permanently replaces the secret the client currently holds.',
         confirmLabel: "Push stored secret",
         secondaryLabel: "Rotate & push new",
         onConfirm: () => doPushSecret(id, false),
@@ -1231,7 +1270,7 @@
         message: "Suspend this client? Their service will be paused.",
         confirmLabel: "Suspend",
         danger: true,
-        onConfirm: async () => { try { const data = await api("/api/clients/" + id + "/suspend", { method: "PUT" }); toast(data.message); loadClients(); } catch (e) { toast("Failed", "error"); } }
+        onConfirm: async () => { try { const data = await api("/api/clients/" + id + "/suspend", { method: "PUT" }); toast(data.message); loadClients(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); } }
       });
     }
 
@@ -1242,7 +1281,7 @@
         message: "Re-activate " + (c ? c.name : "this client") + " and restore their services?",
         confirmLabel: "Resume",
         onConfirm: async () => {
-          try { const data = await api("/api/clients/" + id + "/resume", { method: "PUT" }); toast(data.message); loadClients(); } catch (e) { toast("Failed", "error"); }
+          try { const data = await api("/api/clients/" + id + "/resume", { method: "PUT" }); toast(data.message); loadClients(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });
     }
@@ -1302,7 +1341,7 @@
         // Push feature overrides to the client backend (empty object clears them)
         await api("/api/clients/" + editingClientId + "/features", { method: "POST", body: JSON.stringify({ overrides: featureFlags }) }).catch(() => {});
         toast("Client updated."); hideEditModal(); loadClients();
-      } catch (e) { toast("Failed", "error"); }
+      } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
     }
 
     async function deployAll() {
@@ -1312,14 +1351,14 @@
         confirmLabel: "Deploy All",
         onConfirm: async () => {
           toast("Deploying...");
-          try { const data = await api("/api/deploy-all", { method: "POST" }); const r = data.results || []; toast(`Deployed: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`); loadDeploys(); loadClients(); } catch (e) { toast("Failed", "error"); }
+          try { const data = await api("/api/deploy-all", { method: "POST" }); const r = data.results || []; toast(`Deployed: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`); loadDeploys(); loadClients(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });
     }
 
     async function healthCheckAll() {
       toast("Checking health...");
-      try { const data = await api("/api/health-check", { method: "POST" }); const r = data.results || []; toast(`Health: ${r.filter(x=>x.status==="healthy").length} healthy, ${r.filter(x=>x.status==="sleeping").length} sleeping, ${r.filter(x=>x.status==="down").length} down`); loadClients(); } catch (e) { toast("Failed", "error"); }
+      try { const data = await api("/api/health-check", { method: "POST" }); const r = data.results || []; toast(`Health: ${r.filter(x=>x.status==="healthy").length} healthy, ${r.filter(x=>x.status==="sleeping").length} sleeping, ${r.filter(x=>x.status==="down").length} down`); loadClients(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
     }
 
     async function syncCloudinary() {
@@ -1346,30 +1385,6 @@
       try {
         const data = await api("/api/pull-cloudinary/" + clientId, { method: "POST" });
         if (data.error) { toast(data.error, "error"); return; }
-        toast(data.message);
-      } catch (e) { toast("Failed: " + e.message, "error"); }
-    }
-
-    // ─── CLOUDINARY MANUAL CONFIG ──────────────────────────
-    function showCloudinaryModal() {
-      openModal(document.getElementById("cloudinary-modal-overlay"));
-      document.getElementById("inp-cld-cloud").value = "";
-      document.getElementById("inp-cld-key").value = "";
-      document.getElementById("inp-cld-secret").value = "";
-      document.getElementById("inp-cld-folder").value = "gear-glitch";
-    }
-    function hideCloudinaryModal() { closeModal(document.getElementById("cloudinary-modal-overlay")); }
-    async function saveCloudinaryConfig() {
-      const cloudName = document.getElementById("inp-cld-cloud").value.trim();
-      const apiKey = document.getElementById("inp-cld-key").value.trim();
-      const apiSecret = document.getElementById("inp-cld-secret").value.trim();
-      const folder = document.getElementById("inp-cld-folder").value.trim() || "gear-glitch";
-      if (!cloudName || !apiKey || !apiSecret) { toast("Cloud Name, API Key, and API Secret are required", "error"); return; }
-      toast("Saving Cloudinary config...");
-      try {
-        const data = await api("/api/cloudinary", { method: "POST", body: JSON.stringify({ cloudName, apiKey, apiSecret, folder }) });
-        if (data.error) { toast(data.error, "error"); return; }
-        hideCloudinaryModal();
         toast(data.message);
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
@@ -1401,7 +1416,9 @@
         const cld = await api("/api/cloudinary");
         if (cld.configured) {
           document.getElementById("s-cld-cloud").value = cld.cloudName || "";
-          document.getElementById("s-cld-key").value = cld.hasApiKey ? "(saved)" : "";
+          const keyEl = document.getElementById("s-cld-key");
+          keyEl.value = "";
+          keyEl.placeholder = cld.hasApiKey ? "•••••••• (saved — leave blank to keep)" : "Cloudinary API key";
           document.getElementById("s-cld-folder").value = cld.folder || "gear-glitch";
           document.getElementById("cld-status").textContent = "Configured ✓";
           document.getElementById("cld-status").style.color = "var(--success)";
@@ -1463,7 +1480,7 @@
         if (!entries.length) { document.getElementById("changelog-list").innerHTML = '<div class="empty"><p>No updates published yet. Click "+ New Update" to publish your first changelog entry. All active clients will be notified by email.</p></div>'; return; }
         let html = "";
         for (const e of entries) {
-          html += `<div class="detail-panel"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">${esc(e.title)}</h2><span style="font-size:0.8rem;color:var(--text-muted)">${new Date(e.created_at).toLocaleDateString()}</span></div><div style="font-size:0.85rem;color:var(--primary);margin:0.5rem 0">${esc(e.version)}</div><div style="font-size:0.9rem;color:var(--text-secondary);white-space:pre-wrap">${esc(e.body)}</div></div>`;
+          html += `<div class="detail-panel"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">${esc(e.title)}</h2><span style="font-size:0.8rem;color:var(--text-muted)">${new Date(e.created_at).toLocaleDateString()}</span></div><div style="font-size:0.85rem;color:var(--primary-strong);margin:0.5rem 0">${esc(e.version)}</div><div style="font-size:0.9rem;color:var(--text-secondary);white-space:pre-wrap">${esc(e.body)}</div></div>`;
         }
         document.getElementById("changelog-list").innerHTML = html;
       } catch { document.getElementById("changelog-list").innerHTML = '<div class="empty"><p>Failed to load.</p></div>'; }
@@ -1477,7 +1494,7 @@
       try {
         const data = await api("/api/changelog", { method: "POST", body: JSON.stringify({ version, title, body }) });
         toast(data.message); hideChangelogModal(); loadChangelog();
-      } catch (e) { toast("Failed", "error"); }
+      } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
     }
 
     // ─── DEPLOY LOG ───────────────────────────────────────
@@ -1517,7 +1534,12 @@
 
     const searchInput = document.getElementById("client-search");
     const statusFilter = document.getElementById("client-status-filter");
-    if (searchInput) searchInput.addEventListener("input", (e) => { clientSearch = e.target.value.trim(); renderTable(allClients); });
+    let searchTimer = null;
+    if (searchInput) searchInput.addEventListener("input", (e) => {
+      clientSearch = e.target.value.trim();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => renderTable(allClients), 120);
+    });
     if (statusFilter) statusFilter.addEventListener("change", (e) => { clientStatusFilter = e.target.value; renderTable(allClients); });
 
     const clientFeatureContainer = document.getElementById("client-feature-groups-container");
@@ -1539,7 +1561,12 @@
     });
 
     initAuth();
-    setInterval(() => { if (getToken() && !document.querySelector(".modal-overlay.show")) { loadClients(); loadNotifications(); } }, 60000);
+    setInterval(() => {
+      if (!getToken() || document.querySelector(".modal-overlay.show")) return;
+      loadNotifications();
+      const clientsTab = document.getElementById("tab-clients");
+      if (clientsTab && clientsTab.style.display !== "none") loadClients();
+    }, 60000);
 
     // ─── PLANS ────────────────────────────────────────────
     let editingPlanId = null;
@@ -1571,23 +1598,23 @@
         for (const p of plans) {
           const features = parsePlanFeatures(p.features);
           const active = p.is_active;
-          html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;opacity:${active ? 1 : 0.55}">
+          html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;opacity:${active ? 1 : 0.85}">
             <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.5rem">
               <div>
                 <strong style="font-size:1rem">${esc(p.name)}</strong>
-                <span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:4px;background:${active ? 'var(--success)' : 'var(--border)'};color:${active ? '#fff' : 'var(--text-muted)'};margin-left:0.4rem;font-weight:600">${active ? 'Active' : 'Inactive'}</span>
+                <span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:4px;background:${active ? 'var(--btn-success-bg)' : 'var(--border)'};color:${active ? '#fff' : 'var(--text-secondary)'};margin-left:0.4rem;font-weight:600">${active ? 'Active' : 'Inactive'}</span>
               </div>
               ${currentUser && currentUser.role === "admin" ? `<div style="display:flex;gap:0.25rem">
                 <button class="btn btn-ghost btn-sm" onclick="editPlan('${esc(p.id)}')">Edit</button>
                 <button class="btn btn-ghost btn-sm" onclick="togglePlanActive('${esc(p.id)}', ${!active})">${active ? 'Deactivate' : 'Activate'}</button>
-                <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}', '${esc(p.name)}')">Delete</button>
+                <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}', '${jsStr(p.name)}')">Delete</button>
               </div>` : ''}
             </div>
             <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">${esc(p.description || 'No description')}</div>
-            <div style="font-size:1.15rem;font-weight:700;color:var(--primary);margin-bottom:0.25rem">KES ${Number(p.price).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;opacity:0.6">/mo</span></div>
-            ${p.price_annual ? `<div style="font-size:0.85rem;color:var(--primary);margin-bottom:0.25rem">KES ${Number(p.price_annual).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;opacity:0.6">/yr</span></div>` : ''}
+            <div style="font-size:1.15rem;font-weight:700;color:var(--primary-strong);margin-bottom:0.25rem">KES ${Number(p.price).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;color:var(--text-secondary)">/mo</span></div>
+            ${p.price_annual ? `<div style="font-size:0.85rem;color:var(--primary-strong);margin-bottom:0.25rem">KES ${Number(p.price_annual).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;color:var(--text-secondary)">/yr</span></div>` : ''}
             <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">Tier ${p.tier_level} · ${p.max_products || '∞'} products · ${p.max_branches || '∞'} branches</div>
-            ${features.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.5rem">${features.slice(0, 12).map(f => `<span style="font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:4px;background:rgba(59,130,246,0.1);color:var(--primary)">${esc(f)}</span>`).join('')}${features.length > 12 ? `<span style="font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--border);color:var(--text-muted)">+${features.length - 12} more</span>` : ''}</div>` : ''}
+            ${features.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.5rem">${features.slice(0, 12).map(f => `<span style="font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--tint-primary);color:var(--primary-strong)">${esc(f)}</span>`).join('')}${features.length > 12 ? `<span style="font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--border);color:var(--text-secondary)">+${features.length - 12} more</span>` : ''}</div>` : ''}
           </div>`;
         }
         html += '</div>';
@@ -1657,7 +1684,7 @@
           try {
             await api("/api/plans/" + id, { method: "PUT", body: JSON.stringify({ isActive }) });
             toast(isActive ? "Plan activated." : "Plan deactivated."); loadPlans();
-          } catch (e) { toast("Failed", "error"); }
+          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });
     }
@@ -1668,7 +1695,7 @@
         message: 'Delete plan "' + name + '"? This cannot be undone.',
         confirmLabel: "Delete",
         danger: true,
-        onConfirm: async () => { try { await api("/api/plans/" + id, { method: "DELETE" }); toast("Plan deleted."); loadPlans(); } catch (e) { toast("Failed", "error"); } }
+        onConfirm: async () => { try { await api("/api/plans/" + id, { method: "DELETE" }); toast("Plan deleted."); loadPlans(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); } }
       });
     }
 
@@ -1683,7 +1710,7 @@
             const data = await api("/api/plans/sync-all", { method: "POST" });
             const r = data.results || [];
             toast(`Synced: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`);
-          } catch (e) { toast("Failed", "error"); }
+          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });
     }
@@ -1759,7 +1786,7 @@
       try {
         await api("/api/clients/" + clientId + "/upgrade-requests/" + requestId, { method: "PUT", body: JSON.stringify({ status }) });
         toast("Request " + status + "."); loadUpgradeRequests();
-      } catch (e) { toast("Failed", "error"); }
+      } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
     }
 
     // ─── BACKUPS ────────────────────────────────────────
@@ -1770,7 +1797,7 @@
         if (!files.length) { document.getElementById("backup-list").innerHTML = '<div class="empty"><p>No backups yet. Auto-backups run daily at 3 AM, or click "Run Backup Now" to create one immediately. Requires pg_dump CLI on the server.</p></div>'; return; }
         let html = '<table><thead><tr><th>File</th><th>Size</th><th>Date</th><th></th></tr></thead><tbody>';
         for (const f of files) {
-          html += `<tr><td style="font-family:monospace;font-size:0.82rem">${esc(f.name)}</td><td>${f.size}</td><td>${new Date(f.date).toLocaleString()}</td><td><button class="btn btn-ghost btn-sm" onclick="downloadBackup('${esc(f.name)}')">Download</button></td></tr>`;
+          html += `<tr><td style="font-family:monospace;font-size:0.82rem">${esc(f.name)}</td><td>${f.size}</td><td>${new Date(f.date).toLocaleString()}</td><td><button class="btn btn-ghost btn-sm" onclick="downloadBackup('${jsStr(f.name)}')">Download</button></td></tr>`;
         }
         html += '</tbody></table>';
         document.getElementById("backup-list").innerHTML = html;
@@ -1827,13 +1854,13 @@
           html += `<tr>
             <td><strong>${esc(u.username)}</strong></td>
             <td><span class="badge ${u.role === 'admin' ? 'badge-active' : 'badge-unknown'}">${u.role}</span></td>
-            <td style="font-family:monospace;font-size:0.78rem" title="${esc(u.api_key)}">${esc(masked)}</td>
+            <td style="font-family:monospace;font-size:0.78rem">${esc(masked)}</td>
             <td>${u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}</td>
             <td>${new Date(u.created_at).toLocaleDateString()}</td>
             <td><div class="actions-cell">
               <button class="btn btn-ghost btn-sm" onclick="viewUserDetail(${u.id})">Details</button>
-              <button class="btn btn-ghost btn-sm" onclick="regenerateUserKey(${u.id}, '${esc(u.username)}')">New Key</button>
-              ${u.username !== 'admin' ? '<button class="btn btn-danger btn-sm" onclick="deleteUser(' + u.id + ', \'' + esc(u.username) + '\')">Delete</button>' : ''}
+              <button class="btn btn-ghost btn-sm" onclick="regenerateUserKey(${u.id}, '${jsStr(u.username)}')">New Key</button>
+              ${u.username !== 'admin' ? '<button class="btn btn-danger btn-sm" onclick="deleteUser(' + u.id + ', \'' + jsStr(u.username) + '\')">Delete</button>' : ''}
             </div></td>
           </tr>`;
         }
@@ -1889,14 +1916,14 @@
     async function regenerateUserKey(id, username) {
       confirmDialog({
         title: "Regenerate API key?",
-        message: `Regenerate API key for "${username}"? The old key will stop working immediately.`,
+        message: `Regenerate API key for "${username}"? The old key will stop working immediately and cannot be restored.`,
         confirmLabel: "Regenerate",
         danger: true,
         onConfirm: async () => {
           try {
             const data = await api("/api/users/" + id + "/regenerate-key", { method: "POST" });
             toast(`New API key: ${data.api_key}`); loadUsers();
-          } catch (e) { toast("Failed", "error"); }
+          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });
     }
@@ -1904,19 +1931,35 @@
     async function deleteUser(id, username) {
       confirmDialog({
         title: "Delete user?",
-        message: `Delete user "${username}"?`,
+        message: `Delete user "${username}"? They will immediately lose access. This cannot be undone.`,
         confirmLabel: "Delete",
         danger: true,
-        onConfirm: async () => { try { await api("/api/users/" + id, { method: "DELETE" }); toast("User deleted."); loadUsers(); } catch (e) { toast("Failed", "error"); } }
+        onConfirm: async () => { try { await api("/api/users/" + id, { method: "DELETE" }); toast("User deleted."); loadUsers(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); } }
       });
     }
 
     // ─── CLIENT DETAILS + INVOICES ────────────────────────
     let currentDetailClientId = null;
 
+    function tabListKeydown(e) {
+      const tabs = Array.from(document.querySelectorAll('.tabs [role="tab"]')).filter(t => t.offsetParent !== null);
+      const i = tabs.indexOf(document.activeElement);
+      if (i < 0) return;
+      let next = -1;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (i + 1) % tabs.length;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (i - 1 + tabs.length) % tabs.length;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = tabs.length - 1;
+      if (next < 0) return;
+      e.preventDefault();
+      tabs[next].click();
+      tabs[next].focus();
+    }
+
     function switchTab(tab, el) {
-      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".tab").forEach(t => { t.classList.remove("active"); t.setAttribute("aria-selected", "false"); });
       el.classList.add("active");
+      el.setAttribute("aria-selected", "true");
       document.getElementById("tab-clients").style.display = tab === "clients" ? "" : "none";
       document.getElementById("tab-plans").style.display = tab === "plans" ? "" : "none";
       document.getElementById("tab-changelog").style.display = tab === "changelog" ? "" : "none";
@@ -1956,6 +1999,7 @@
         detailTab.id = "tab-btn-detail";
         detailTab.className = "tab active";
         detailTab.setAttribute("role", "tab");
+        detailTab.setAttribute("aria-selected", "true");
         detailTab.onclick = closeClientDetails;
         document.getElementById("tab-btn-clients").after(detailTab);
       }
@@ -1963,11 +2007,11 @@
       detailTab.className = "tab active";
 
       document.getElementById("detail-client-name").textContent = c.name;
-      const pwHtml = c.admin_password ? '<span style="font-size:0.82rem;margin-left:1rem;color:var(--text-muted)">PW: <code style="cursor:pointer;background:var(--bg);padding:2px 6px;border-radius:4px" onclick="navigator.clipboard.writeText(\'' + c.admin_password + '\');toast(\'Password copied\')" title="Click to copy">' + String(c.admin_password).replace(/./g, "•") + '</code> <span style="font-size:0.7rem;cursor:pointer;color:var(--primary)" onclick="navigator.clipboard.writeText(\'' + c.admin_password + '\');toast(\'Password copied\')">copy</span></span>' : '';
+      const pwHtml = c.admin_password ? '<span style="font-size:0.82rem;margin-left:1rem;color:var(--text-muted)">PW: <span style="letter-spacing:2px">••••••••</span> <button type="button" class="chip-btn" style="margin-left:0.25rem" onclick="copyAdminPassword(' + c.id + ')">copy</button></span>' : '';
       document.getElementById("detail-client-name").innerHTML += pwHtml;
       document.getElementById("detail-actions").innerHTML = `
-        ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" class="btn btn-ghost btn-sm">Backend</a>' : ''}
-        ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
+        ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Backend</a>' : ''}
+        ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
         <button class="btn btn-ghost btn-sm" onclick="editClient(${c.id}); closeClientDetails()">Edit</button>
       `;
 
@@ -1977,9 +2021,9 @@
       const orders = c.usage_orders || 0;
       document.getElementById("detail-stats").innerHTML = `
         <div class="stat-card"><div class="value">${esc(c.plan)}</div><div class="label">Plan</div></div>
-        <div class="stat-card"><div class="value" style="color:${c.uptime_pct >= 99 ? 'var(--success)' : c.uptime_pct >= 95 ? 'var(--warning)' : 'var(--danger)'}">${uptime}%</div><div class="label">Uptime</div></div>
+        <div class="stat-card"><div class="value" style="color:${c.uptime_pct >= 99 ? 'var(--success-strong)' : c.uptime_pct >= 95 ? 'var(--warning-strong)' : 'var(--danger-strong)'}">${uptime}%</div><div class="label">Uptime</div></div>
         <div class="stat-card"><div class="value">${orders}</div><div class="label">Orders</div></div>
-        <div class="stat-card"><div class="value" style="color:var(--primary)">${revenue}</div><div class="label">Revenue</div></div>
+        <div class="stat-card"><div class="value" style="color:var(--primary-strong)">${revenue}</div><div class="label">Revenue</div></div>
       `;
 
       // Contact info
@@ -1991,14 +2035,20 @@
       contactHtml += '</div>';
       if (c.notes) contactHtml += `<div style="margin-top:0.75rem;font-size:0.85rem;color:var(--text-secondary)"><span style="color:var(--text-muted)">Notes:</span> ${esc(c.notes)}</div>`;
       contactHtml += '</div>';
-      document.getElementById("detail-subscription").insertAdjacentHTML("beforebegin", contactHtml);
+      const subEl = document.getElementById("detail-subscription");
+      const prevContact = document.getElementById("detail-contact");
+      if (prevContact) prevContact.remove();
+      const contactWrap = document.createElement("div");
+      contactWrap.id = "detail-contact";
+      contactWrap.innerHTML = contactHtml;
+      subEl.before(contactWrap);
 
       // Subscription info
       let subHtml = '<div class="detail-panel"><h3>Subscription</h3>';
       const expires = c.subscription_expires ? new Date(c.subscription_expires) : null;
       if (expires) {
         const daysLeft = Math.ceil((expires.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-        const color = daysLeft < 0 ? 'var(--danger)' : daysLeft <= 7 ? 'var(--warning)' : 'var(--success)';
+        const color = daysLeft < 0 ? 'var(--danger-strong)' : daysLeft <= 7 ? 'var(--warning-strong)' : 'var(--success-strong)';
         const label = daysLeft < 0 ? `Expired ${Math.abs(daysLeft)} days ago` : `${daysLeft} days remaining`;
         subHtml += `<div style="display:flex;gap:2rem;align-items:center"><div><span style="font-size:0.8rem;color:var(--text-muted)">Expires:</span> <strong>${expires.toLocaleDateString()}</strong></div><div><span style="font-size:0.8rem;color:var(--text-muted)">Status:</span> <strong style="color:${color}">${label}</strong></div></div>`;
       } else {
@@ -2020,8 +2070,10 @@
       if (dt) dt.remove();
       document.getElementById("tab-client-detail").style.display = "none";
       document.getElementById("tab-clients").style.display = "";
-      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      document.getElementById("tab-btn-clients").classList.add("active");
+      document.querySelectorAll(".tab").forEach(t => { t.classList.remove("active"); t.setAttribute("aria-selected", "false"); });
+      const clientsTab = document.getElementById("tab-btn-clients");
+      clientsTab.classList.add("active");
+      clientsTab.setAttribute("aria-selected", "true");
     }
 
     async function loadClientInvoices(clientId) {
@@ -2037,7 +2089,7 @@
         }
         let html = '';
         if (stats) {
-          html += `<div style="display:flex;gap:1rem;margin-bottom:1rem;font-size:0.85rem"><span>Total: <strong>${stats.total}</strong></span><span style="color:var(--success)">Paid: <strong>${stats.paid}</strong></span><span style="color:var(--warning)">Pending: <strong>${stats.pending}</strong></span><span style="color:var(--danger)">Overdue: <strong>${stats.overdue}</strong></span></div>`;
+          html += `<div style="display:flex;gap:1rem;margin-bottom:1rem;font-size:0.85rem"><span>Total: <strong>${stats.total}</strong></span><span style="color:var(--success-strong)">Paid: <strong>${stats.paid}</strong></span><span style="color:var(--warning-strong)">Pending: <strong>${stats.pending}</strong></span><span style="color:var(--danger-strong)">Overdue: <strong>${stats.overdue}</strong></span></div>`;
         }
         html += '<table><thead><tr><th>Invoice #</th><th>Plan</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
         for (const inv of invoices) {
@@ -2134,9 +2186,9 @@
       const el = document.getElementById("pay-balance");
       if (balance > 0) {
         const pct = expected > 0 ? Math.round((paid / expected) * 100) : 0;
-        el.innerHTML = '<span style="color:var(--warning);font-weight:600">Balance remaining: KES ' + balance.toLocaleString() + '</span> <span style="color:var(--text-muted);font-size:0.82rem">(' + pct + '% paid)</span>';
+        el.innerHTML = '<span style="color:var(--warning-strong);font-weight:600">Balance remaining: KES ' + balance.toLocaleString() + '</span> <span style="color:var(--text-muted);font-size:0.82rem">(' + pct + '% paid)</span>';
       } else {
-        el.innerHTML = '<span style="color:var(--success);font-weight:600">Paid in full — no balance.</span>';
+        el.innerHTML = '<span style="color:var(--success-strong);font-weight:600">Paid in full — no balance.</span>';
       }
     }
 
@@ -2187,7 +2239,7 @@
           try {
             await api("/api/clients/" + clientId + "/invoices/" + invId + "/pay", { method: "POST" });
             toast("Invoice marked as paid."); loadClientInvoices(clientId);
-          } catch (e) { toast("Failed", "error"); }
+          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });
     }
@@ -2239,11 +2291,11 @@
         const reminders = data.reminders || [];
         const el = document.getElementById("payment-reminders");
         if (!reminders.length) { el.style.display = "none"; return; }
-        let html = '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.4);border-radius:var(--radius);padding:0.75rem 1rem">';
-        html += '<div style="font-weight:600;color:var(--warning);margin-bottom:0.5rem">Payment reminders</div>';
+        let html = '<div style="background:var(--tint-warning);border:1px solid var(--tint-warning-border);border-radius:var(--radius);padding:0.75rem 1rem">';
+        html += '<div style="font-weight:600;color:var(--warning-strong);margin-bottom:0.5rem">Payment reminders</div>';
         for (const r of reminders) {
           const label = r.daysLeft < 0 ? "Overdue" : r.daysLeft === 0 ? "Due today" : r.daysLeft === 1 ? "Due tomorrow" : "Due in " + r.daysLeft + " days";
-          html += '<div style="font-size:0.85rem;padding:0.2rem 0"><span style="cursor:pointer;color:var(--primary);text-decoration:underline" onclick="viewClientDetails(' + r.clientId + ')">' + esc(r.clientName) + '</span> <span style="color:var(--text-muted)">— ' + label + ' (' + new Date(r.dueDate).toLocaleDateString() + ')</span> ' + (r.daysLeft < 0 ? '<span class="badge badge-overdue">overdue</span>' : r.daysLeft <= 2 ? '<span class="badge badge-warning">soon</span>' : '') + '</div>';
+          html += '<div style="font-size:0.85rem;padding:0.2rem 0"><button type="button" class="link-btn" onclick="viewClientDetails(' + r.clientId + ')">' + esc(r.clientName) + '</button> <span style="color:var(--text-muted)">— ' + label + ' (' + new Date(r.dueDate).toLocaleDateString() + ')</span> ' + (r.daysLeft < 0 ? '<span class="badge badge-overdue">overdue</span>' : r.daysLeft <= 2 ? '<span class="badge badge-warning">soon</span>' : '') + '</div>';
         }
         html += '</div>';
         el.innerHTML = html;
@@ -2275,12 +2327,12 @@
         }
         let html = '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0.75rem;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface)"><strong style="font-size:0.85rem">Notifications</strong>' + (unread ? '<button class="btn btn-ghost btn-sm" onclick="markAllNotificationsRead()">Mark all read</button>' : '') + '</div>';
         for (const n of list) {
-          const sev = n.severity === "danger" ? "var(--danger)" : n.severity === "warning" ? "var(--warning)" : "var(--text-secondary)";
+          const sev = n.severity === "danger" ? "var(--danger-strong)" : n.severity === "warning" ? "var(--warning-strong)" : "var(--text-secondary)";
           const time = new Date(n.created_at).toLocaleString();
-          html += '<div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--border);cursor:pointer;background:' + (n.read ? "transparent" : "rgba(59,130,246,0.07)") + '" onclick="openNotification(' + n.id + ',' + (n.client_id || 0) + ')">' +
-            '<div style="font-size:0.82rem;font-weight:600;color:' + sev + '">' + (n.read ? '' : '<span style="color:var(--primary)">&#9679; </span>') + esc(n.title) + '</div>' +
+          html += '<button type="button" class="notif-row" data-unread="' + (n.read ? "0" : "1") + '" onclick="openNotification(' + n.id + ',' + (n.client_id || 0) + ')">' +
+            '<div style="font-size:0.82rem;font-weight:600;color:' + sev + '">' + (n.read ? '' : '<span style="color:var(--primary-strong)">&#9679; </span>') + esc(n.title) + '</div>' +
             (n.body ? '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">' + esc(n.body) + '</div>' : '') +
-            '<div style="font-size:0.68rem;color:var(--text-muted);margin-top:3px">' + esc(time) + '</div></div>';
+            '<div style="font-size:0.68rem;color:var(--text-muted);margin-top:3px">' + esc(time) + '</div></button>';
         }
         panel.innerHTML = html;
       } catch (e) { /* notifications are non-critical */ }
@@ -2288,8 +2340,10 @@
 
     function toggleNotifications() {
       const panel = document.getElementById("notif-panel");
+      const bell = document.getElementById("notif-bell");
       const showing = panel.style.display !== "none";
       panel.style.display = showing ? "none" : "";
+      if (bell) bell.setAttribute("aria-expanded", showing ? "false" : "true");
       if (!showing) loadNotifications();
     }
 
@@ -2300,13 +2354,20 @@
       } catch (e) { /* ignore */ }
     }
 
+    function hideNotifications() {
+      const panel = document.getElementById("notif-panel");
+      if (panel) panel.style.display = "none";
+      const bell = document.getElementById("notif-bell");
+      if (bell) bell.setAttribute("aria-expanded", "false");
+    }
+
     async function openNotification(id, clientId) {
       try {
         await api("/api/notifications/read", { method: "POST", body: JSON.stringify({ id }) });
       } catch (e) { /* ignore */ }
       loadNotifications();
       if (clientId) {
-        document.getElementById("notif-panel").style.display = "none";
+        hideNotifications();
         viewClientDetails(clientId);
       }
     }
@@ -2314,8 +2375,7 @@
     document.addEventListener("click", (e) => {
       const wrap = document.getElementById("notif-wrap");
       if (wrap && !wrap.contains(e.target)) {
-        const panel = document.getElementById("notif-panel");
-        if (panel) panel.style.display = "none";
+        hideNotifications();
       }
     });
 
