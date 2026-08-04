@@ -31,31 +31,35 @@ declare global {
 
 export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs";
 
-type StaffRole = "admin" | "owner" | "technician" | "manager";
-const ALL_STAFF: StaffRole[] = ["admin", "owner", "technician", "manager"];
+type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff";
+const ALL_STAFF: StaffRole[] = ["admin", "owner", "technician", "manager", "staff"];
 const ROLE_VIEWS: Partial<Record<AdminView, StaffRole[]>> = {
   dashboard: ALL_STAFF,
-  products: ["admin", "owner"],
-  orders: ["admin", "owner"],
-  customers: ["admin", "owner"],
-  quotations: ALL_STAFF,
+  products: ["admin", "owner", "manager"],
+  orders: ["admin", "owner", "manager"],
+  customers: ["admin", "owner", "manager"],
+  quotations: ["admin", "owner", "manager"],
   repairs: ALL_STAFF,
   coupons: ["admin", "owner"],
   "gift-cards": ["admin", "owner"],
   campaigns: ["admin", "owner"],
   "abandoned-carts": ["admin", "owner"],
   providers: ["admin", "owner"],
-  "credit-notes": ["admin", "owner"],
-  reports: ["admin", "owner"],
-  messages: ["admin", "owner"],
+  invoices: ["admin", "owner", "manager"],
+  "credit-notes": ["admin", "owner", "manager"],
+  reports: ["admin", "owner", "manager"],
+  messages: ["admin", "owner", "manager"],
   reviews: ["admin", "owner"],
   audit: ["admin", "owner"],
-  "stock-take": ["admin", "owner"],
-  "stock-control": ["admin", "owner"],
+  "stock-take": ["admin", "owner", "manager"],
+  "stock-control": ["admin", "owner", "manager"],
   suppliers: ["admin", "owner"],
   branches: ["admin", "owner"],
   "spec-templates": ["admin", "owner"],
   "shop-subscription": ["admin", "owner"],
+  "about-us": ["admin", "owner"],
+  "product-positioning": ["admin", "owner"],
+  "whatsapp-settings": ["admin", "owner"],
 };
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
@@ -305,7 +309,7 @@ export default function AdminPage() {
     setLoginLoading(true);
     try {
       const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: loginUsername, password: loginPassword }) });
-      if (!["admin", "owner", "technician", "manager"].includes(data.role)) { setLoginError("Staff access required."); return; }
+      if (!["admin", "owner", "technician", "manager", "staff"].includes(data.role)) { setLoginError("Staff access required."); return; }
       localStorage.setItem("computerStoreToken", data.token);
       localStorage.setItem("staffUserName", data.username || "Staff");
       setStaffRole(data.role || "admin");
@@ -427,7 +431,7 @@ export default function AdminPage() {
               <strong style={{ fontSize: "1rem" }}>{settings?.storeName || "Store"}</strong>
               <span style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0.15rem 0.5rem", borderRadius: 999, background: "var(--primary-light)", color: "var(--primary)", fontWeight: 600 }}>{staffRole}</span>
             </div>
-            {featureFlags["Messaging"] && <NotificationBell onClick={() => setView("messages")} />}
+            {featureFlags["Messaging"] && canAccess("messages") && <NotificationBell onClick={() => setView("messages")} />}
             <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
           </div>
           <div className="dash-section active" key={view}>
@@ -1244,7 +1248,7 @@ function AdminUsers() {
             <div className="field"><label>Username<input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required /></label></div>
             <div className="field"><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label></div>
             <div className="field"><label>Password<input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label></div>
-            <div className="field"><label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="admin">Admin</option><option value="owner">Owner</option><option value="technician">Technician</option><option value="manager">Manager</option></select></label></div>
+            <div className="field"><label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="admin">Admin</option><option value="owner">Owner</option><option value="technician">Technician</option><option value="manager">Manager</option><option value="staff">Staff</option></select></label></div>
             <RippleButton type="submit" loading={saving}>Add user</RippleButton>
           </form>
         </div>

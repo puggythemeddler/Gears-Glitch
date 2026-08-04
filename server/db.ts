@@ -1327,6 +1327,7 @@ async function initRolesAsync(): Promise<void> {
   const DEFAULT_ROLES: { [key: string]: string[] } = {
     admin: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export"],
     technician: ["repair:list", "repair:view", "repair:update", "calendar:view", "calendar:schedule", "product:list"],
+    staff: ["repair:list", "repair:view", "repair:update", "calendar:view", "calendar:schedule", "product:list"],
     manager: ["staff:list", "repair:list", "repair:view", "repair:update", "repair:assign", "product:list", "product:update", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "calendar:view", "calendar:schedule", "reports:view", "reports:export"],
     owner: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export"],
   };
@@ -1343,7 +1344,7 @@ async function initRolesAsync(): Promise<void> {
 }
 
 async function assignInitialRoles(): Promise<void> {
-  for (const role of ["admin", "owner", "technician", "manager"]) {
+  for (const role of ["admin", "owner", "technician", "manager", "staff"]) {
     const user = await queryOne("SELECT id FROM users WHERE role = $1", [role]) as { id: number } | undefined;
     if (user) {
       const existingRoles = await queryAll("SELECT role_id AS id FROM user_roles WHERE user_id = $1", [user.id]) as any[];

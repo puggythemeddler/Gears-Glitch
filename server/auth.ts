@@ -71,7 +71,7 @@ function staffAuthMiddleware(req: Request, res: Response, next: NextFunction): v
   }
   try {
     const user = verifyToken(token);
-    if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician" && user.role !== "manager") {
+    if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician" && user.role !== "manager" && user.role !== "staff") {
       res.status(403).json({ error: "Staff access only." });
       return;
     }
@@ -282,7 +282,7 @@ function ownerAuthMiddleware(req: Request, res: Response, next: NextFunction): v
   if (!token) { res.status(401).json({ error: "Login required." }); return; }
   try {
     const user = verifyToken(token);
-    if (user.role !== "admin" && user.role !== "owner") { res.status(403).json({ error: "Access restricted to admin or owner." }); return; }
+    if (user.role !== "admin" && user.role !== "owner" && user.role !== "manager") { res.status(403).json({ error: "Access restricted to admin, owner, or manager." }); return; }
     (req as any).user = user;
     next();
   } catch { res.status(401).json({ error: "Session expired. Please log in again." }); }

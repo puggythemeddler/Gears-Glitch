@@ -79,6 +79,11 @@ const DEFAULT_ROLES: DefaultRoles = {
     "calendar:view", "calendar:schedule", "product:list",
     "messaging:view", "messaging:send",
   ],
+  staff: [
+    "repair:list", "repair:view", "repair:update",
+    "calendar:view", "calendar:schedule", "product:list",
+    "messaging:view", "messaging:send",
+  ],
   manager: [
     "staff:list",
     "repair:list", "repair:view", "repair:update", "repair:assign",

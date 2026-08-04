@@ -2548,7 +2548,7 @@ app.get("/api/provider/invoices", providerAuthMiddleware, asyncHandler(async (re
   res.json({ invoices: await listInvoices((req as any).provider.sub) });
 }));
 
-app.get("/api/admin/invoices", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/invoices", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const { status, dateFrom, dateTo, search, page } = req.query as any;
   if (status || dateFrom || dateTo || search) {
     const limit = 50;
@@ -2560,7 +2560,7 @@ app.get("/api/admin/invoices", allowControlPlane(adminAuthMiddleware), asyncHand
   }
 }));
 
-app.get("/api/admin/invoices/export", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/invoices/export", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { status, dateFrom, dateTo } = req.query as any;
   const csv = await exportInvoicesCsv({ status, dateFrom, dateTo });
   res.setHeader("Content-Type", "text/csv");
@@ -2568,7 +2568,7 @@ app.get("/api/admin/invoices/export", adminAuthMiddleware, asyncHandler(async (r
   res.send(csv);
 }));
 
-app.get("/api/admin/invoices/:id/view", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/invoices/:id/view", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const invoice = await getInvoice(Number(req.params.id));
   if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
   const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
@@ -2604,7 +2604,7 @@ app.get("/api/admin/invoices/:id/view", allowControlPlane(adminAuthMiddleware), 
   }
 }));
 
-app.post("/api/admin/invoices/:id/email", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/:id/email", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const invoice = await getInvoice(Number(req.params.id));
   if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
   const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
@@ -2625,12 +2625,12 @@ app.post("/api/admin/invoices/:id/email", allowControlPlane(adminAuthMiddleware)
   res.json({ sent });
 }));
 
-app.post("/api/admin/invoices/mark-overdue", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+app.post("/api/admin/invoices/mark-overdue", ownerAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   const count = await markOverdueInvoices();
   res.json({ marked: count });
 }));
 
-app.post("/api/admin/invoices/generate", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const { providerId, planId } = req.body || {};
   let pid: number | null = null;
   if (providerId !== undefined && providerId !== null && providerId !== "") {
@@ -2643,7 +2643,7 @@ app.post("/api/admin/invoices/generate", allowControlPlane(adminAuthMiddleware),
   res.status(201).json(invoice);
 }));
 
-app.post("/api/admin/invoices/:id/pay", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/:id/pay", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const ok = await markInvoicePaid(Number(req.params.id));
   if (!ok) { res.status(404).json({ error: "Invoice not found." }); return; }
   res.json({ ok: true });
@@ -3040,11 +3040,11 @@ app.get("/api/groups", asyncHandler(async (_req: Request, res: Response) => {
   res.json({ groups: await listProductGroups({ activeOnly: true }) });
 }));
 
-app.get("/api/admin/groups", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/admin/groups", ownerAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   res.json({ groups: await listProductGroups() });
 }));
 
-app.post("/api/admin/groups", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/groups", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { name, isActive, sortOrder } = req.body || {};
   if (!name || !isStr(name)) { res.status(400).json({ error: "Group name is required." }); return; }
   let group;
@@ -3057,7 +3057,7 @@ app.post("/api/admin/groups", adminAuthMiddleware, asyncHandler(async (req: Requ
   res.status(201).json({ group });
 }));
 
-app.put("/api/admin/groups/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.put("/api/admin/groups/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { name, isActive, sortOrder } = req.body || {};
   if (name !== undefined && !isStr(name)) { res.status(400).json({ error: "Group name must be a non-empty string." }); return; }
   const group = await updateProductGroup(String(req.params.id), {
@@ -3069,7 +3069,7 @@ app.put("/api/admin/groups/:id", adminAuthMiddleware, asyncHandler(async (req: R
   res.json({ group });
 }));
 
-app.delete("/api/admin/groups/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/admin/groups/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const removed = await deleteProductGroup(String(req.params.id));
   if (!removed) { res.status(404).json({ error: "Group not found." }); return; }
   res.status(204).end();
@@ -3960,7 +3960,7 @@ app.patch("/api/staff/:id", adminAuthMiddleware, requirePermission("staff:update
 app.patch("/api/staff/:id/role", adminAuthMiddleware, requirePermission("staff:update"), asyncHandler(async (req: Request, res: Response) => {
   const targetId = Number(req.params.id);
   const newRole = req.body?.role;
-  if (!["admin", "owner", "technician"].includes(newRole)) { res.status(400).json({ error: "Invalid role." }); return; }
+  if (!["admin", "owner", "technician", "manager", "staff"].includes(newRole)) { res.status(400).json({ error: "Invalid role." }); return; }
   if (targetId === (req as any).user.sub && newRole !== "admin") {
     res.status(400).json({ error: "Cannot downgrade your own admin role." });
     return;
@@ -4577,7 +4577,7 @@ app.get("/api/purchases/:id/pdf", staffAuthMiddleware, asyncHandler(async (req: 
 }));
 
 // ============ REPORTS ============
-app.get("/api/reports/tech-performance", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/reports/tech-performance", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const from = req.query.from as string | undefined;
   const to = req.query.to as string | undefined;
   const params: any[] = [];
@@ -4596,7 +4596,7 @@ app.get("/api/reports/tech-performance", adminAuthMiddleware, asyncHandler(async
   res.json({ technicians: rows });
 }));
 
-app.get("/api/reports/purchases", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/reports/purchases", ownerAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   res.json(await getPurchaseReport());
 }));
 
@@ -4933,7 +4933,7 @@ app.get("/api/shop/subscription", allowControlPlane(staffAuthMiddleware), asyncH
   res.json({ plan, activatedAt });
 }));
 
-app.put("/api/shop/subscription", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.put("/api/shop/subscription", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { planId } = req.body || {};
   if (!planId) { res.status(400).json({ error: "planId is required." }); return; }
   if (!isStr(planId)) { res.status(400).json({ error: "planId must be a valid string." }); return; }
@@ -4953,12 +4953,12 @@ app.post("/api/shop/subscription/request", staffAuthMiddleware, asyncHandler(asy
   res.status(201).json({ ok: true });
 }));
 
-app.get("/api/shop/subscription/requests", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/shop/subscription/requests", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const status = req.query.status as string | undefined;
   res.json({ requests: await listSubscriptionRequests(status) });
 }));
 
-app.put("/api/shop/subscription/requests/:id", allowControlPlane(adminAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
+app.put("/api/shop/subscription/requests/:id", allowControlPlane(ownerAuthMiddleware), asyncHandler(async (req: Request, res: Response) => {
   const { status } = req.body || {};
   if (!["approved", "rejected"].includes(status)) { res.status(400).json({ error: "Status must be approved or rejected." }); return; }
   const result = await reviewSubscriptionRequest(Number(req.params.id), status, (req as any).user.sub);
@@ -5400,7 +5400,7 @@ app.get("/api/reports/stock-summary", ownerAuthMiddleware, requirePermission("re
   res.json({ items: await getStockSummary(groupId) });
 }));
 
-app.get("/api/reports/employee-sales", adminAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/reports/employee-sales", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
   const from = req.query.from as string | undefined;
   const to = req.query.to as string | undefined;
   const params: any[] = [];
