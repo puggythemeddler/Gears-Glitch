@@ -98,6 +98,17 @@ export function getStaffToken(): string | null {
   return localStorage.getItem(STAFF_TOKEN_KEY);
 }
 
+export function getStaffRole(): string | null {
+  const token = getStaffToken();
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload?.role === "string" ? payload.role : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getProviderToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(PROVIDER_TOKEN_KEY);

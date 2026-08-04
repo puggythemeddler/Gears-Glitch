@@ -125,9 +125,7 @@ export default function LoginPage() {
           localStorage.setItem("computerStoreToken", data.token);
           localStorage.setItem("staffUserName", data.username || data.email || "Staff");
         }
-        if (role === "admin") router.push("/admin");
-        else if (role === "technician" || role === "manager") router.push("/backoffice");
-        else if (role === "owner") router.push("/owner");
+        if (role === "admin" || role === "technician" || role === "manager" || role === "owner") router.push("/admin");
         else router.push("/dashboard");
       }
     } catch (err: any) {

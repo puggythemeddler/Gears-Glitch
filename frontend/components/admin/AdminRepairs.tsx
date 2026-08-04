@@ -62,7 +62,7 @@ function fmtDate(s: string) {
   return new Date(s).toLocaleDateString("en-GB");
 }
 
-export default function AdminRepairs() {
+export default function AdminRepairs({ adminOnly = true }: { adminOnly?: boolean }) {
   const [tab, setTab] = useState<AdminRepairsTab>("tickets");
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
 
@@ -73,7 +73,7 @@ export default function AdminRepairs() {
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <RippleButton variant={tab === "tickets" ? "primary" : "ghost"} onClick={() => setTab("tickets")}>Tickets</RippleButton>
           <RippleButton variant={tab === "calendar" ? "primary" : "ghost"} onClick={() => setTab("calendar")}>Calendar</RippleButton>
-          <RippleButton variant={tab === "content" ? "primary" : "ghost"} onClick={() => setTab("content")}>Page Content</RippleButton>
+          {adminOnly && <RippleButton variant={tab === "content" ? "primary" : "ghost"} onClick={() => setTab("content")}>Page Content</RippleButton>}
         </div>
       </div>
 

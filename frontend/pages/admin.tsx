@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState, useRef } from "react";
-import { api, getStaffToken, downloadPdf } from "@/lib/api";
+import { api, getStaffToken, getStaffRole, downloadPdf } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import { SkeletonStats, SkeletonTable } from "@/components/Skeleton";
@@ -29,7 +29,34 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs";
+
+type StaffRole = "admin" | "owner" | "technician" | "manager";
+const ALL_STAFF: StaffRole[] = ["admin", "owner", "technician"];
+const ROLE_VIEWS: Partial<Record<AdminView, StaffRole[]>> = {
+  dashboard: ["admin", "owner", "technician"],
+  products: ["admin", "owner"],
+  orders: ["admin", "owner"],
+  customers: ["admin", "owner"],
+  quotations: ALL_STAFF,
+  repairs: ALL_STAFF,
+  coupons: ["admin", "owner"],
+  "gift-cards": ["admin", "owner"],
+  campaigns: ["admin", "owner"],
+  "abandoned-carts": ["admin", "owner"],
+  providers: ["admin", "owner"],
+  "credit-notes": ["admin", "owner"],
+  reports: ["admin", "owner"],
+  messages: ["admin", "owner"],
+  reviews: ["admin", "owner"],
+  audit: ["admin", "owner"],
+  "stock-take": ["admin", "owner"],
+  "stock-control": ["admin", "owner"],
+  suppliers: ["admin", "owner"],
+  branches: ["admin", "owner"],
+  "spec-templates": ["admin", "owner"],
+  "shop-subscription": ["admin", "owner"],
+};
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
   {
@@ -39,6 +66,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "groups", label: "Groups" },
       { key: "categories", label: "Categories" },
       { key: "orders", label: "Orders" },
+      { key: "customers", label: "Customers" },
       { key: "coupons", label: "Coupons", feature: "Discount/coupon management" },
       { key: "gift-cards", label: "Gift Cards", feature: "Gift cards" },
       { key: "campaigns", label: "Campaigns", feature: "Campaign pages" },
@@ -59,6 +87,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "stock-on-hand", label: "Stock on Hand", feature: "Low stock alerts" },
       { key: "stock-transfers", label: "Stock Transfers", feature: "Stock transfers" },
       { key: "stock-take", label: "Stock Take", feature: "Stock take / inventory count" },
+      { key: "stock-control", label: "Stock Control", feature: "Stock take / inventory count" },
       { key: "purchases", label: "Purchase Orders", feature: "Purchase order management" },
       { key: "suppliers", label: "Suppliers", feature: "Supplier management" },
     ],
@@ -113,6 +142,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
 export default function AdminPage() {
   const { isDark, toggleDark, settings, refreshSettings } = useApp();
   const [authed, setAuthed] = useState(false);
+  const [staffRole, setStaffRole] = useState<StaffRole>("admin");
   const [view, setView] = useState<AdminView>("dashboard");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -161,7 +191,12 @@ export default function AdminPage() {
     "Cart recovery": useFeature("Cart recovery"),
   };
   const hasFeature = (f?: string) => !f || featureFlags[f] === true;
-  const visibleNavGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => hasFeature(i.feature)) })).filter((g) => g.items.length > 0);
+  const canAccess = (key: AdminView) => {
+    const roles = ROLE_VIEWS[key];
+    if (!roles) return staffRole === "admin";
+    return roles.includes(staffRole);
+  };
+  const visibleNavGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => hasFeature(i.feature) && canAccess(i.key)) })).filter((g) => g.items.length > 0);
   const allVisibleKeys = visibleNavGroups.flatMap((g) => g.items.map((i) => i.key));
 
   useEffect(() => {
@@ -233,7 +268,8 @@ export default function AdminPage() {
         body: JSON.stringify({ credential: response.credential }),
       });
       localStorage.setItem("computerStoreToken", data.token);
-      localStorage.setItem("staffUserName", data.username || "Admin");
+      localStorage.setItem("staffUserName", data.username || "Staff");
+      setStaffRole((data.role as StaffRole) || "admin");
       setAuthed(true);
     } catch (err: any) {
       setLoginError(err.message || "Google sign-in failed");
@@ -249,11 +285,14 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    if (getStaffToken()) setAuthed(true);
+    if (getStaffToken()) {
+      setAuthed(true);
+      setStaffRole((getStaffRole() as StaffRole) || "admin");
+    }
   }, []);
 
   useEffect(() => {
-    if (authed) {
+    if (authed && staffRole === "admin") {
       api<{ requests: any[] }>("/api/shop/subscription/requests").then((d) => {
         setPendingCount((d.requests || []).filter((r) => r.status === "pending").length);
       }).catch((e) => console.warn("[admin] Failed to load subscription requests:", e?.message));
@@ -266,9 +305,10 @@ export default function AdminPage() {
     setLoginLoading(true);
     try {
       const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: loginUsername, password: loginPassword }) });
-      if (data.role !== "admin") { setLoginError("Admin access required."); return; }
+      if (!["admin", "owner", "technician", "manager"].includes(data.role)) { setLoginError("Staff access required."); return; }
       localStorage.setItem("computerStoreToken", data.token);
-      localStorage.setItem("staffUserName", data.username || "Admin");
+      localStorage.setItem("staffUserName", data.username || "Staff");
+      setStaffRole(data.role || "admin");
       setAuthed(true);
     } catch (err: any) { setLoginError(err.message); }
     finally { setLoginLoading(false); }
@@ -277,7 +317,7 @@ export default function AdminPage() {
   if (!authed) {
     return (
       <div className="auth-page" style={{ marginTop: "3rem" }}>
-        <h1>Store Manager</h1>
+        <h1>Staff Portal</h1>
         <form onSubmit={handleLogin} className="auth-form">
           <div className="field"><label>Username or email<input value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} required /></label></div>
           <div className="field"><label>Password<input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required /></label></div>
@@ -385,16 +425,18 @@ export default function AdminPage() {
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               {settings?.storeLogo && <img src={settings.storeLogo} alt="" style={{ height: 28, width: 28, objectFit: "contain", borderRadius: 4 }} />}
               <strong style={{ fontSize: "1rem" }}>{settings?.storeName || "Store"}</strong>
+              <span style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0.15rem 0.5rem", borderRadius: 999, background: "var(--primary-light)", color: "var(--primary)", fontWeight: 600 }}>{staffRole}</span>
             </div>
             {featureFlags["Messaging"] && <NotificationBell onClick={() => setView("messages")} />}
             <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
           </div>
           <div className="dash-section active" key={view}>
-            {view === "dashboard" && <AdminDashboard onNavigate={setView} />}
+            {view === "dashboard" && <AdminDashboard staffRole={staffRole} onNavigate={setView} />}
             {view === "products" && <AdminProducts />}
             {view === "groups" && <AdminGroups />}
             {view === "categories" && <AdminCategories />}
             {view === "orders" && <AdminOrders />}
+            {view === "customers" && <AdminCustomers />}
             {view === "coupons" && <AdminCoupons />}
             {view === "gift-cards" && <AdminGiftCards />}
             {view === "campaigns" && <AdminCampaigns />}
@@ -411,6 +453,7 @@ export default function AdminPage() {
             {view === "stock-on-hand" && <AdminStockOnHand />}
             {view === "stock-transfers" && <AdminStockTransfers />}
             {view === "stock-take" && <AdminStockTake />}
+            {view === "stock-control" && <AdminStockControl />}
             {view === "purchases" && <AdminPurchases />}
             {view === "clients" && <AdminClients />}
             {view === "branches" && <AdminBranches />}
@@ -431,7 +474,7 @@ export default function AdminPage() {
             {view === "email-settings" && <AdminEmailSettings />}
             {view === "whatsapp-settings" && <WhatsAppSettings />}
             {view === "category-positioning" && <CategoryPositioningPage />}
-            {view === "repairs" && <AdminRepairs />}
+            {view === "repairs" && <AdminRepairs adminOnly={staffRole === "admin"} />}
           </div>
       </div>
     </div>
@@ -483,10 +526,11 @@ function AdminAuditLog() {
   );
 }
 
-function AdminDashboard({ onNavigate }: { onNavigate: (v: AdminView) => void }) {
+function AdminDashboard({ staffRole, onNavigate }: { staffRole: StaffRole; onNavigate: (v: AdminView) => void }) {
+  const isAdmin = staffRole === "admin";
   const { data: stats, loading: statsLoading } = useFetch(() => api<any>("/api/backoffice/stats"), []);
   const { data: products, loading: prodLoading } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
-  const { data: subReq, loading: subLoading } = useFetch(() => api<{ requests: any[] }>("/api/shop/subscription/requests"), []);
+  const { data: subReq, loading: subLoading } = useFetch(() => isAdmin ? api<any>("/api/shop/subscription/requests") : Promise.resolve(null), []);
 
   const pendingReqs = (subReq?.requests || []).filter((r: any) => r.status === "pending").length;
   const loading = statsLoading || prodLoading || subLoading;
@@ -501,14 +545,18 @@ function AdminDashboard({ onNavigate }: { onNavigate: (v: AdminView) => void }) 
           <div className="stat-card__value"><AnimatedCounter value={products?.products?.length ?? 0} /></div>
           <div className="stat-card__label">Total Products</div>
         </div>
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("users")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("users"); } }}>
-          <div className="stat-card__value"><AnimatedCounter value={stats?.totalStaff ?? 0} /></div>
-          <div className="stat-card__label">Users</div>
-        </div>
-        <div className="stat-card card-hover" style={{ cursor: "pointer", borderColor: pendingReqs > 0 ? "var(--danger)" : undefined }} role="button" tabIndex={0} onClick={() => onNavigate("shop-subscription")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("shop-subscription"); } }}>
-          <div className="stat-card__value" style={{ color: pendingReqs > 0 ? "var(--danger)" : undefined }}><AnimatedCounter value={pendingReqs} /></div>
-          <div className="stat-card__label" style={{ color: pendingReqs > 0 ? "var(--danger)" : undefined }}>Pending Sub. Requests</div>
-        </div>
+        {isAdmin && (
+          <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("users")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("users"); } }}>
+            <div className="stat-card__value"><AnimatedCounter value={stats?.totalStaff ?? 0} /></div>
+            <div className="stat-card__label">Users</div>
+          </div>
+        )}
+        {isAdmin && (
+          <div className="stat-card card-hover" style={{ cursor: "pointer", borderColor: pendingReqs > 0 ? "var(--danger)" : undefined }} role="button" tabIndex={0} onClick={() => onNavigate("shop-subscription")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("shop-subscription"); } }}>
+            <div className="stat-card__value" style={{ color: pendingReqs > 0 ? "var(--danger)" : undefined }}><AnimatedCounter value={pendingReqs} /></div>
+            <div className="stat-card__label" style={{ color: pendingReqs > 0 ? "var(--danger)" : undefined }}>Pending Sub. Requests</div>
+          </div>
+        )}
       </div>
     </>
   );
@@ -5207,6 +5255,151 @@ function AdminStockTransfers() {
 
 // ===================== STOCK TAKE =====================
 const AdminStockTake = StockTakeListPage;
+
+// ===================== CUSTOMERS =====================
+function AdminCustomers() {
+  const [fetched, setFetched] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [formName, setFormName] = useState("");
+  const [formEmail, setFormEmail] = useState("");
+  const [formPass, setFormPass] = useState("");
+  const [formPhone, setFormPhone] = useState("");
+  const [formErr, setFormErr] = useState("");
+  const [formOk, setFormOk] = useState("");
+  const [deleting, setDeleting] = useState<number | null>(null);
+
+  function load() {
+    setLoading(true); setError("");
+    api<{ customers: any[] }>("/api/admin/customers?includeInactive=true")
+      .then((d) => setFetched(d.customers))
+      .catch((e: any) => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault(); setFormErr(""); setFormOk("");
+    if (!formName.trim() || !formEmail.trim() || !formPass.trim()) { setFormErr("Name, email, and password required."); return; }
+    try {
+      await api("/api/admin/customers", { method: "POST", body: JSON.stringify({ name: formName.trim(), email: formEmail.trim().toLowerCase(), password: formPass, phone: formPhone.trim() }) });
+      setFormOk("Customer created.");
+      setFormName(""); setFormEmail(""); setFormPass(""); setFormPhone(""); setShowForm(false);
+      load();
+    } catch (err: any) { setFormErr(err.message); }
+  }
+
+  async function handleToggle(c: any) {
+    try {
+      await api(`/api/admin/customers/${c.id}/status`, { method: "PATCH", body: JSON.stringify({ isActive: !c.is_active }) });
+      load();
+    } catch {}
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Delete this customer and all their data?")) return;
+    setDeleting(id);
+    try { await api(`/api/admin/customers/${id}`, { method: "DELETE" }); load(); }
+    catch {}
+    finally { setDeleting(null); }
+  }
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+  const customers = fetched || [];
+
+  return (
+    <>
+      <h1>Customer Accounts</h1>
+      <RippleButton onClick={() => setShowForm(!showForm)} style={{ marginBottom: "1rem" }}>{showForm ? "Cancel" : "Add Customer"}</RippleButton>
+      {showForm && (
+        <div className="panel" style={{ marginBottom: "1rem", maxWidth: 400 }}>
+          <form onSubmit={handleAdd}>
+            {formErr && <div className="form-error">{formErr}</div>}
+            {formOk && <div className="form-ok">{formOk}</div>}
+            <div className="field"><label>Name<input value={formName} onChange={(e) => setFormName(e.target.value)} required /></label></div>
+            <div className="field"><label>Email<input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} required /></label></div>
+            <div className="field"><label>Password<input type="password" value={formPass} onChange={(e) => setFormPass(e.target.value)} required /></label></div>
+            <div className="field"><label>Phone<input value={formPhone} onChange={(e) => setFormPhone(e.target.value)} /></label></div>
+            <RippleButton type="submit">Create</RippleButton>
+          </form>
+        </div>
+      )}
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Last Login</th><th>Registered</th><th>Actions</th></tr></thead>
+          <tbody>
+            {customers.map((c: any) => (
+              <tr key={c.id} style={!c.is_active ? { opacity: 0.6 } : {}}>
+                <td>{c.id}</td>
+                <td>{escapeHtml(c.name)}</td>
+                <td>{escapeHtml(c.email)}</td>
+                <td>{escapeHtml(c.phone || "-")}</td>
+                <td><span className={`badge ${c.is_active ? "badge-green" : "badge-red"}`}>{c.is_active ? "Active" : "Inactive"}</span></td>
+                <td style={{ whiteSpace: "nowrap" }}>{c.last_login ? new Date(c.last_login).toLocaleDateString("en-GB") : "-"}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{new Date(c.created_at).toLocaleDateString("en-GB")}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <RippleButton size="small" variant="ghost" onClick={() => handleToggle(c)}>{c.is_active ? "Deactivate" : "Activate"}</RippleButton>
+                  <RippleButton size="small" variant="danger" onClick={() => handleDelete(c.id)} loading={deleting === c.id}>Delete</RippleButton>
+                </td>
+              </tr>
+            ))}
+            {customers.length === 0 && <tr><td colSpan={8}><EmptyState icon="customers" title="No customers" description="Customers will appear here after placing orders." /></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ===================== STOCK CONTROL =====================
+function AdminStockControl() {
+  const { data: sData, loading, error } = useFetch(() => api<{ items: any[] }>("/api/reports/stock-summary"), []);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+
+  function toggle(id: string) {
+    setChecked((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }
+
+  function selectAll() { if (sData?.items) setChecked(new Set(sData.items.map((i) => i.productId))); }
+  function clearAll() { setChecked(new Set()); }
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrorMsg msg={error} />;
+  const items = sData?.items || [];
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <h1 style={{ margin: 0 }}>Stock Control</h1>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <RippleButton size="small" onClick={selectAll}>Select all</RippleButton>
+          <RippleButton size="small" variant="ghost" onClick={clearAll}>Clear</RippleButton>
+        </div>
+      </div>
+      <p className="muted">Tick items you want to count, then go to Stock Take to begin a session.</p>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th></th><th>Product</th><th>Category</th><th>System Qty</th><th>Threshold</th></tr></thead>
+          <tbody>
+            {items.map((i: any) => (
+              <tr key={i.productId} style={checked.has(i.productId) ? { background: "var(--surface)" } : {}}>
+                <td><input type="checkbox" checked={checked.has(i.productId)} onChange={() => toggle(i.productId)} /></td>
+                <td>{escapeHtml(i.name)}</td>
+                <td>{i.category || "—"}</td>
+                <td>{i.quantityInStock}</td>
+                <td>{i.lowStockThreshold}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {checked.size > 0 && <p style={{ marginTop: "0.5rem", opacity: 0.7 }}>{checked.size} item(s) selected for stock take.</p>}
+    </>
+  );
+}
 
 // ===================== PURCHASE ORDERS =====================
 function AdminPurchases() {

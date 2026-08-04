@@ -69,7 +69,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
           {isLoggedIn ? (
             <>
               <a href="/dashboard" style={{ fontSize: "0.9rem", color: "var(--text)", textDecoration: "none" }}>{userName || "Account"}</a>
-              {isStaff && <a href="/owner" style={{ fontSize: "0.9rem", color: "var(--text)", textDecoration: "none" }}>Owner</a>}
+              {isStaff && <a href="/admin" style={{ fontSize: "0.9rem", color: "var(--text)", textDecoration: "none" }}>Staff</a>}
               <button type="button" onClick={logout} style={{ background: "none", border: "none", color: "var(--text)", cursor: "pointer", fontSize: "0.9rem" }}>Sign out</button>
             </>
           ) : (

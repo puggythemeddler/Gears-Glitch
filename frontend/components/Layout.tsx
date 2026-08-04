@@ -354,9 +354,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             <Link href="/dashboard" onClick={closeMobile}>{userName || "Account"}</Link>
             {isStaff && (
               <>
-                <Link href="/owner" onClick={closeMobile}>Owner</Link>
-                <Link href="/admin" onClick={closeMobile}>Admin</Link>
-                <Link href="/backoffice" onClick={closeMobile}>Backoffice</Link>
+                <Link href="/admin" onClick={closeMobile}>Staff Portal</Link>
               </>
             )}
             <button type="button" className="nav-btn" onClick={() => { closeMobile(); logout(); }}>
