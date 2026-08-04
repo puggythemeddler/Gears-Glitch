@@ -1343,7 +1343,7 @@ async function initRolesAsync(): Promise<void> {
 }
 
 async function assignInitialRoles(): Promise<void> {
-  for (const role of ["admin", "owner", "technician"]) {
+  for (const role of ["admin", "owner", "technician", "manager"]) {
     const user = await queryOne("SELECT id FROM users WHERE role = $1", [role]) as { id: number } | undefined;
     if (user) {
       const existingRoles = await queryAll("SELECT role_id AS id FROM user_roles WHERE user_id = $1", [user.id]) as any[];
