@@ -71,7 +71,7 @@ function staffAuthMiddleware(req: Request, res: Response, next: NextFunction): v
   }
   try {
     const user = verifyToken(token);
-    if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician") {
+    if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician" && user.role !== "manager") {
       res.status(403).json({ error: "Staff access only." });
       return;
     }
@@ -293,7 +293,7 @@ function posAuthMiddleware(req: Request, res: Response, next: NextFunction): voi
   if (!token) { res.status(401).json({ error: "Login required." }); return; }
   try {
     const user = verifyToken(token);
-    if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician" && user.role !== "provider" && user.role !== "staff") {
+    if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician" && user.role !== "manager" && user.role !== "provider" && user.role !== "staff") {
       res.status(403).json({ error: "Access restricted." }); return;
     }
     (req as any).user = user;

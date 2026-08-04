@@ -32,9 +32,9 @@ declare global {
 export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager";
-const ALL_STAFF: StaffRole[] = ["admin", "owner", "technician"];
+const ALL_STAFF: StaffRole[] = ["admin", "owner", "technician", "manager"];
 const ROLE_VIEWS: Partial<Record<AdminView, StaffRole[]>> = {
-  dashboard: ["admin", "owner", "technician"],
+  dashboard: ALL_STAFF,
   products: ["admin", "owner"],
   orders: ["admin", "owner"],
   customers: ["admin", "owner"],
