@@ -44,37 +44,41 @@ export function renderStoreLogo(logoUrl: string, position: string, storeName: st
 
 // ============ INVOICE CSS ============
 export const INVOICE_CSS = `
-  body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
-  .invoice { border: 1px solid #e5e7eb; border-radius: 16px; padding: 2rem; }
-  .header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem; border-bottom: 2px solid #1f2937; padding-bottom: 1rem; margin-bottom: 1.5rem; }
-  .header h1 { margin: 0; font-size: 1.5rem; }
-  .header .meta { font-size: 0.9rem; color: #6b7280; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; background: #f1f5f9; }
+  .invoice { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #1f2937; }
+  .header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+  .header .meta { font-size: 0.85rem; color: #6b7280; margin: 0.4rem 0 0; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
-  .total-row { font-weight: 700; font-size: 1.1rem; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
-  .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
-  .footer { margin-top: 2rem; font-size: 0.85rem; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
-  .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.5rem auto 0; flex-wrap: wrap; }
-  .print-btn { display: inline-block; padding: 0.6rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  thead th { background: #f8fafc; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #475569; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #1f2937; white-space: nowrap; }
+  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th, td { font-size: 0.9rem; }
+  .total-row { font-weight: 800; font-size: 1.15rem; color: #111827; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #1f2937; }
+  .totals { text-align: right; }
+  .totals > div { padding: 0.22rem 0; font-size: 0.92rem; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin: 1.25rem 0; font-size: 0.9rem; }
+  .info-grid .label { display: block; color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 0.35rem; }
+  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
+  .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.75rem auto 0; flex-wrap: wrap; }
+  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
   .print-btn:hover { background: #374151; }
-  .pdf-btn { display: inline-block; padding: 0.6rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
   .pdf-btn:hover { background: #b91c1c; }
-  .etims-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 0.75rem; margin: 1rem 0; font-size: 0.82rem; }
-  .etims-box strong { color: #166534; }
-  .vscu-data { font-size: 0.7rem; word-break: break-all; color: #6b7280; margin-top: 0.5rem; padding: 0.5rem; background: #f9fafb; border-radius: 6px; }
-  @media print { body { margin: 0; } .invoice { border: none; } .btn-group { display: none; } }
+  .etims-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 0.9rem 1rem; margin: 1.25rem 0; font-size: 0.84rem; line-height: 1.6; }
+  .etims-box strong { color: #15803d; }
+  .vscu-data { font-size: 0.72rem; word-break: break-all; color: #6b7280; margin-top: 0.75rem; padding: 0.7rem 0.85rem; background: #f8fafc; border: 1px solid #eef2f7; border-radius: 8px; }
+  @media print { body { margin: 0; padding: 0; background: none; } .invoice { border: none; box-shadow: none; padding: 0; } .btn-group { display: none; } tr { page-break-inside: avoid; } }
 `;
 
 export const THERMAL_CSS = `
-  body { font-family: monospace; max-width: 380px; margin: 0 auto; padding: 0.75rem; font-size: 0.9rem; color: #1f2937; line-height: 1.6; }
-  h1 { font-size: 1.15rem; text-align: center; margin: 0.75rem 0; }
+  body { font-family: ui-monospace, "SF Mono", Consolas, monospace; max-width: 380px; margin: 0 auto; padding: 0.75rem; font-size: 0.9rem; color: #1f2937; line-height: 1.6; }
+  h1 { font-size: 1.15rem; text-align: center; margin: 0.75rem 0; letter-spacing: -0.01em; }
   table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; }
   th, td { padding: 0.35rem 0; text-align: left; }
-  .total { font-weight: 700; font-size: 1.1rem; border-top: 1px dashed #000; padding-top: 0.6rem; }
+  .total { font-weight: 700; font-size: 1.1rem; border-top: 1px dashed #374151; padding-top: 0.6rem; }
   .center { text-align: center; }
-  hr { border: none; border-top: 1px dashed #000; margin: 0.75rem 0; }
+  hr { border: none; border-top: 1px dashed #374151; margin: 0.75rem 0; }
   .btn-group { display: flex; justify-content: center; gap: 0.5rem; margin: 1rem auto; flex-wrap: wrap; }
   .print-btn { display: inline-block; padding: 0.5rem 1.5rem; background: #1f2937; color: #fff; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
   .print-btn:hover { background: #374151; }
@@ -85,27 +89,31 @@ export const THERMAL_CSS = `
 `;
 
 export const CREDIT_NOTE_CSS = `
-  body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
-  .cn { border: 2px solid #dc2626; border-radius: 16px; padding: 2rem; }
-  .header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem; border-bottom: 2px solid #dc2626; padding-bottom: 1rem; margin-bottom: 1.5rem; }
-  .header h1 { margin: 0; font-size: 1.5rem; color: #dc2626; }
-  .header .meta { font-size: 0.9rem; color: #6b7280; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; background: #f1f5f9; }
+  .cn { background: #ffffff; border: 1px solid #fecaca; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #dc2626; }
+  .header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; color: #dc2626; }
+  .header .meta { font-size: 0.85rem; color: #6b7280; margin: 0.4rem 0 0; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
-  .total-row { font-weight: 700; font-size: 1.1rem; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
-  .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
-  .footer { margin-top: 2rem; font-size: 0.85rem; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
-  .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.5rem auto 0; flex-wrap: wrap; }
-  .print-btn { display: inline-block; padding: 0.6rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  thead th { background: #fef2f2; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #991b1b; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #dc2626; white-space: nowrap; }
+  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #fef2f2; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th, td { font-size: 0.9rem; }
+  .total-row { font-weight: 800; font-size: 1.15rem; color: #991b1b; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #dc2626; }
+  .totals { text-align: right; }
+  .totals > div { padding: 0.22rem 0; font-size: 0.92rem; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin: 1.25rem 0; font-size: 0.9rem; }
+  .info-grid .label { display: block; color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 0.35rem; }
+  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #fecaca; padding-top: 1rem; }
+  .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.75rem auto 0; flex-wrap: wrap; }
+  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
   .print-btn:hover { background: #b91c1c; }
-  .pdf-btn { display: inline-block; padding: 0.6rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
   .pdf-btn:hover { background: #374151; }
   .badge { display: inline-block; background: #fee2e2; color: #dc2626; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
-  .etims-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 0.75rem; margin: 1rem 0; font-size: 0.82rem; }
-  .etims-box .label { color: #166534; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; margin-bottom: 0.25rem; }
-  @media print { body { margin: 0; } .cn { border: none; } .btn-group { display: none; } }
+  .etims-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 0.9rem 1rem; margin: 1.25rem 0; font-size: 0.84rem; line-height: 1.6; }
+  .etims-box .label { display: block; color: #166534; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+  @media print { body { margin: 0; padding: 0; background: none; } .cn { border: none; box-shadow: none; padding: 0; } .btn-group { display: none; } tr { page-break-inside: avoid; } }
 `;
 
 // ============ BUTTON HTML HELPERS ============
@@ -233,7 +241,7 @@ export function generateInvoiceHtml(data: InvoiceData): string {
   <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th><th style="text-align:right">VAT</th><th style="text-align:center">TT</th><th>Warranty</th></tr></thead><tbody>
     ${itemsHtml}
   </tbody></table>
-  <div style="text-align:right;">
+  <div class="totals">
     <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -262,26 +270,32 @@ export function generateInvoiceHtml(data: InvoiceData): string {
 
 // ============ SUBSCRIPTION INVOICE HTML ============
 export const SUBSCRIPTION_INVOICE_CSS = `
-  body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; }
-  .invoice { border: 1px solid #e5e7eb; border-radius: 16px; padding: 2rem; }
-  .header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem; border-bottom: 2px solid #3b82f6; padding-bottom: 1rem; margin-bottom: 1.5rem; }
-  .header h1 { margin: 0; font-size: 1.5rem; color: #3b82f6; }
-  .header .meta { font-size: 0.9rem; color: #6b7280; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; background: #f1f5f9; }
+  .invoice { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #3b82f6; }
+  .header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; color: #1d4ed8; }
+  .header .meta { font-size: 0.85rem; color: #6b7280; margin: 0.4rem 0 0; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  th, td { padding: 0.6rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-  th { font-size: 0.7rem; text-transform: uppercase; color: #6b7280; white-space:nowrap; }
-  .total-row { font-weight: 700; font-size: 1.1rem; }
-  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; font-size: 0.9rem; }
-  .info-grid .label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; }
-  .footer { margin-top: 2rem; font-size: 0.85rem; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
-  .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.5rem auto 0; flex-wrap: wrap; }
-  .print-btn { display: inline-block; padding: 0.6rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
-  .pdf-btn { display: inline-block; padding: 0.6rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  thead th { background: #eff6ff; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #1e40af; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #3b82f6; white-space: nowrap; }
+  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #eff6ff; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th, td { font-size: 0.9rem; }
+  .total-row { font-weight: 800; font-size: 1.15rem; color: #1d4ed8; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #3b82f6; }
+  .totals { text-align: right; }
+  .totals > div { padding: 0.22rem 0; font-size: 0.92rem; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin: 1.25rem 0; font-size: 0.9rem; }
+  .info-grid .label { display: block; color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 0.35rem; }
+  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
+  .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.75rem auto 0; flex-wrap: wrap; }
+  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .print-btn:hover { background: #374151; }
+  .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .pdf-btn:hover { background: #b91c1c; }
   .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
   .badge-pending { background: #fef3c7; color: #92400e; }
   .badge-paid { background: #d1fae5; color: #065f46; }
   .badge-overdue { background: #fee2e2; color: #991b1b; }
-  @media print { body { margin: 0; } .invoice { border: none; } .btn-group { display: none; } }
+  @media print { body { margin: 0; padding: 0; background: none; } .invoice { border: none; box-shadow: none; padding: 0; } .btn-group { display: none; } tr { page-break-inside: avoid; } }
 `;
 
 export interface SubscriptionInvoiceData {
@@ -337,7 +351,7 @@ export function generateSubscriptionInvoiceHtml(data: SubscriptionInvoiceData): 
   <table><thead><tr><th>Description</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead><tbody>
     ${itemsHtml}
   </tbody></table>
-  <div style="text-align:right;">
+  <div class="totals">
     <div class="total-row">Total: ${invoice.currency} ${invoice.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
   </div>
   ${invoice.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(invoice.notes)}</p>` : ""}
