@@ -5,9 +5,7 @@
 Gear&Glitch is a complete multi-branch sales & management system (SaaS) combining:
 - A shopper storefront with product catalog, shopping cart, wishlist, quotes, and two-step checkout.
 - A customer repair portal for booking and tracking repair tickets.
-- A staff back office for repair ticket management, stock control, and purchasing.
-- An admin panel for catalog, stock, team, finance, plans, providers, and settings.
-- An owner panel for business oversight, reports, and subscription management.
+- A unified, role-aware **staff portal** for repair ticket management, stock control, catalog, team, finance, plans, providers, settings, and business oversight.
 - A provider portal for order management and messaging.
 - A **control plane** operator dashboard that provisions and manages every client instance.
 
@@ -34,9 +32,7 @@ Three layers, cleanly separated:
 [Browser Client]
   ├─ public storefront (/)
   ├─ customer portal (/dashboard, /my-repairs, /orders)
-  ├─ staff back office (/backoffice)
-  ├─ admin panel (/admin)
-  └─ owner panel (/owner)
+  └─ unified staff portal (/admin) — admin/owner/manager/technician/staff roles
         |
         | HTTP / Fetch API (proxied by Next.js)
         v
@@ -89,9 +85,7 @@ Laptop sale/
 │   │   └── index.tsx             # Layout registry + provider
 │   ├── pages/
 │   │   ├── index.tsx             # Homepage
-│   │   ├── admin.tsx             # Admin panel
-│   │   ├── owner.tsx             # Owner panel
-│   │   ├── backoffice.tsx        # Staff back office
+│   │   ├── admin.tsx             # Unified role-aware staff portal (replaces /admin, /owner, /backoffice)
 │   │   ├── login.tsx, dashboard.tsx, cart.tsx, orders.tsx, ...
 │   │   └── _document.tsx         # Static <title> placeholder (replaced by store name at runtime)
 │   └── styles/                   # globals.css (design tokens), animations.css
@@ -134,9 +128,7 @@ See `LOCAL_SETUP.md` for the detailed step-by-step guide.
 
 - `http://localhost:3000` — storefront homepage.
 - `http://localhost:3000/login` — unified login (customer / staff / provider; Google Sign-In supported).
-- `http://localhost:3000/admin` — admin panel.
-- `http://localhost:3000/owner` — owner panel.
-- `http://localhost:3000/backoffice` — staff back office.
+- `http://localhost:3000/admin` — unified staff portal (admin / owner / manager / technician / staff).
 - `http://localhost:4000` — control plane dashboard (separate app).
 
 ---
@@ -150,19 +142,19 @@ See `LOCAL_SETUP.md` for the detailed step-by-step guide.
 - Track orders, download invoices (shipped/delivered), book and track repairs, message providers, review products (1–5 stars).
 
 ### Staff (technician / manager / role-based)
-- Log in to `/backoffice`.
+- Log in to the unified staff portal at `/admin`.
 - Manage repair tickets (assign, status, notes, parts, cost estimates sent to customers).
-- Stock control, stock take, inter-branch transfers, purchase orders, parts, reports.
+- What the sidebar shows depends on the user's effective permissions (base role + assigned custom roles + direct per-user permissions): technicians and staff see Dashboard + Repairs; managers additionally get Products, Orders, Customers, Quotations, Invoices, Credit Notes, Reports, Messages, and Stock; owners get business oversight on top.
 
 ### Provider
 - Log in to `/dashboard` (provider portal).
 - View orders, cancel individual items, update order status, view subscription and invoices, message customers.
 
 ### Admin
-- Full management in `/admin`: products, categories, orders, staff, roles, plans, providers, invoices, credit notes, coupons, reports, stock, branches, clients, splashes, reviews, messages, settings, storefront layouts.
+- Superuser in `/admin`: every section — products, categories, orders, staff, roles, plans, providers, invoices, credit notes, coupons, reports, stock, branches, clients, splashes, reviews, messages, settings, storefront layouts.
 
 ### Owner
-- Business oversight in `/owner`: dashboard, products, customers, messages, quotes, reports, stock control, tech repairs, about us, storefront, shop subscription, audit log. Feature-gated by subscription plan.
+- Business oversight in `/admin` (owner role): dashboard, products, customers, messages, quotes, reports, stock control, tech repairs, about us, storefront, shop subscription, audit log. Everything except Users, Roles, Plans, Settings, Storefront, and Purchases. Feature-gated by subscription plan.
 
 ### Control Plane Operator (Gear&Glitch team)
 - Log in to the control plane dashboard: provision clients, monitor health, manage plans/subscriptions/invoices, deploy updates, run backups, configure SMTP/Cloudinary, and fine-tune per-client features.
@@ -171,14 +163,10 @@ See `LOCAL_SETUP.md` for the detailed step-by-step guide.
 
 ## 6. Key Panels
 
-### Admin Panel (`/admin`)
-Products, **Groups** (create/edit/delete and toggle active; drives public storefront `/groups` pages), Categories (with shareable subcategories), **Category Order** (drag-and-drop grid ordering), **Repairs** (Services: Tickets with status/technician filters and full ticket editing, Calendar week view of scheduled repairs, and Page Content editor for the public `/repairs` page), Coupons, Orders, Users & Permissions, Roles, Plans (feature checkboxes in 11 groups), Providers, Invoices, Credit Notes, Reports (5 sub-tabs), Stock on Hand, Stock Transfers, Stock Take, Purchases, Suppliers, Branches, Clients, Messages, Reviews, Spec Templates, Splashes, About Us, Storefront, Shop Subscription, Settings.
+### Staff Portal (`/admin`)
+One unified, role-aware portal replaces the former separate `/admin`, `/owner`, and `/backoffice` pages. The sidebar shows exactly what the signed-in user's permissions allow; feature gating hides sections the active plan doesn't include. Sections include: Dashboard, Products, **Groups**, Categories, **Category Order**, **Repairs** (Services: Tickets, Calendar, Page Content), Coupons, Gift Cards, Campaigns, Abandoned Carts, Orders, Users & Permissions, Roles, Plans, Providers, Invoices, Credit Notes, Reports (5 sub-tabs), Stock on Hand, Stock Transfers, Stock Take, Purchases, Suppliers, Branches, Clients, Messages, Reviews, Spec Templates, Splashes, About Us, Storefront, Shop Subscription, Settings.
 
-### Owner Panel (`/owner`)
-Dashboard, Products, Providers, Customers, Messages, Quotes, Reports, Stock Control, Stock Take, Tech Repairs, About Us, Storefront, Shop Subscription, Audit Log.
-
-### Back Office (`/backoffice`)
-Dashboard, Repair tickets, Calendar, Parts, Stock control, Purchasing, Reports.
+Access is fine-tuned in **Users & Permissions** (assign/remove roles per user, toggle direct permissions) and **Roles** (define custom roles with granular permission toggles — every sidebar view maps to a permission such as `order:view`, `customer:view`, `invoice:view`, `reports:view`, `stock:list`, or `messaging:view`).
 
 ### Control Plane Dashboard
 Clients, Plans, Changelog, Deploy Log, Backups, Settings (SMTP/Cloudinary), Audit Log, Users (with 2FA), plus a **notification bell** (unread badge + dropdown) and a **payment-reminders banner** on the Clients tab.
@@ -276,7 +264,7 @@ The empty cart page shows an animated SVG scene of the brand's gear-headed chara
 3. Track ticket list in `/my-repairs`; view cost estimates with Accept/Decline and message the shop.
 
 ### Staff side
-1. Manage tickets in `/backoffice` (assign technician, status, notes, parts, images).
+1. Manage tickets in `/admin` → Services → Repairs (assign technician, status, notes, parts, images).
 2. Send cost estimates to customers; the customer's response updates the ticket.
 
 ---

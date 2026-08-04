@@ -106,16 +106,16 @@ A complete multi-branch sales & management system with product catalog, customer
 
 ### Storefront layout system
 - 5 built-in static layouts — **Original, Amazon, Jumia, Mobile, Custom** — registered as code modules in `frontend/layouts/` and seeded into the `storefront_layouts` table. Admins can also create **dynamic JSON layouts** (product-grid, category-grid, banner, stats, text, spacer sections) rendered by the generic engine in `frontend/layouts/dynamic-engine.tsx`.
-- The active layout is chosen from the **Storefront** panel (admin and owner Settings groups) and synced to the `store_layout` setting. Layouts only change presentation — products, orders, and settings are never touched.
-- **Layout control is admin-only.** Non-admin staff who open the Storefront view in the owner panel see a friendly notice ("Only admin users can manage the public storefront layout") and no editing controls. The API behind layout changes (`PUT /api/admin/storefront-layout`) requires admin auth server-side.
+- The active layout is chosen from the **Storefront** panel (Settings group in the staff portal) and synced to the `store_layout` setting. Layouts only change presentation — products, orders, and settings are never touched.
+- **Layout control is admin-only.** The Storefront view is only shown to admin users in the staff portal; the API behind layout changes (`PUT /api/admin/storefront-layout`) requires admin auth server-side.
 
 ## Recent highlights
 
-- **Design-token colorization across storefront & admin pages** — Hard-coded UI hex colors replaced with CSS design tokens across 13+ pages (`cart.tsx`, `order.tsx`, `dashboard.tsx`, `pos.tsx`, `product.tsx`, `quotes.tsx`, `backoffice.tsx`, `repair-ticket.tsx`, `wishlist.tsx`, `stock-take/[id].tsx`, `suppliers/*`, plus `admin.tsx`/`owner.tsx`). New **`--muted`** (slate: `#94a3b8` light / `#64748b` dark) and **`--violet`** (`#8b5cf6` light / `#a78bfa` dark) tokens, both themes. Dead `var(--x, #hex)` fallbacks cleaned up; data-driven colors (flag palettes, theme swatches, banner presets, SVG fills, `_document.tsx` theme-color) intentionally kept as literal hex.
+- **Design-token colorization across storefront & admin pages** — Hard-coded UI hex colors replaced with CSS design tokens across 13+ pages (`cart.tsx`, `order.tsx`, `dashboard.tsx`, `pos.tsx`, `product.tsx`, `quotes.tsx`, `repair-ticket.tsx`, `wishlist.tsx`, `stock-take/[id].tsx`, `suppliers/*`, plus the unified staff portal `admin.tsx`). New **`--muted`** (slate: `#94a3b8` light / `#64748b` dark) and **`--violet`** (`#8b5cf6` light / `#a78bfa` dark) tokens, both themes. Dead `var(--x, #hex)` fallbacks cleaned up; data-driven colors (flag palettes, theme swatches, banner presets, SVG fills, `_document.tsx` theme-color) intentionally kept as literal hex.
 - **Admin/owner dashboards: accessibility & polish pass** — Dashboard stat cards and selectable panels (layout pickers, store-theme swatches) are now keyboard-operable (`role="button"` + `tabIndex` + Enter/Space handling). Status pills and "Mark paid" buttons colorized to semantic tokens. Polling visibility guards: the notification bell and message polling skip network calls while the tab is hidden (and catch up on return). Bell target enlarged to a 44px touch target; `.btn-sm` raised to a 32px minimum height. New `-text` contrast tokens (`--success-text`, `--warning-text`, `--danger-text`) plus `--bg-secondary` for correct light/dark surfaces.
 - **Dropdown overflow fixes** — Two clipping bugs fixed. **Storefront category menu**: a category's subcategories were rendered as an absolutely-positioned flyout, and the dropdown's own `overflow-y: auto` clipped it, so categories with subcategories never expanded to show them. Subcategories now render in-flow below the category row, and the dropdown grows (and scrolls) when needed. **Control-plane "More ▾" menu**: the per-client action dropdown was clipped by `table { overflow: hidden }`, so items near the bottom of the table were cut off with no way to scroll. The table no longer clips (rounded corners preserved via per-cell radii) and the menu gained its own `max-height` + internal scroll.
 - **Control-plane dashboard polish (20/20)** — A full impeccable-critique pass brought the control-plane dashboard to 20/20. Accessibility: full ARIA tabs (panel roles, `aria-controls`/`aria-labelledby`, arrow-key navigation), keyboard-operable rows and links, live notification badge, complete focus-visible coverage, labelled fields. Contrast: every button/badge/inline-text path now passes WCAG AA (≥4.5:1) via new `-strong` text tokens, button-fill tokens, and tint tokens — replacing hard-coded colors. Security: the admin password was removed from the DOM (read in-memory, masked, copy chip) and all inline-handler arguments are properly escaped. Responsive: tabs wrap, client-detail header and forms collapse on mobile. Theming: all hard-coded colors and tints are now design tokens.
-- **Selectable storefront themes** — Three switchable color schemes from a **Store Theme** panel in the admin and owner dashboards: **Default** (classic blue), **Kenyan** (green primary with red & black accents, inspired by the Kenyan flag), and **Modern** (violet + cyan). Clicking a theme previews it instantly (applied as a `data-brand-theme` attribute) and saves to `store_theme` in `/api/admin/storefront-layout` for every visitor. All hero, badge, repair-card, and glass-CTA colors are driven by theme CSS variables, including dark-mode variants. The dual "Shop premium tech / Need a repair?" identity band under the hero is now admin-toggleable ("Show shop & repair band") via the hero form.
+- **Selectable storefront themes** — Three switchable color schemes from a **Store Theme** panel in the staff portal: **Default** (classic blue), **Kenyan** (green primary with red & black accents, inspired by the Kenyan flag), and **Modern** (violet + cyan). Clicking a theme previews it instantly (applied as a `data-brand-theme` attribute) and saves to `store_theme` in `/api/admin/storefront-layout` for every visitor. All hero, badge, repair-card, and glass-CTA colors are driven by theme CSS variables, including dark-mode variants. The dual "Shop premium tech / Need a repair?" identity band under the hero is now admin-toggleable ("Show shop & repair band") via the hero form.
 - **White-label branding fix** — Client storefronts no longer show the platform brand "Gear&Glitch". `getSettings()` now falls back to the per-client `STORE_NAME` env var (injected at provisioning) before the platform default, so a refresh of any client's page shows their own store name in the header, footer, page titles, and `og` tags. Frontend fallbacks use a neutral "My Shop" placeholder instead of the platform brand, and customer-facing emails (quote and credit-note subjects, plus the notification footer) carry the store's own name rather than the platform's.
 - **Storefront polish pass** — Conversion and clarity improvements across the storefront. **Guest cart**: "Add to cart" no longer requires sign-in — items are saved on the device (`localStorage`) with a live header badge, and automatically merged into the account when the customer signs in, so guest carts are never lost. **Checkout review step**: the cart now shows a "Review order" confirmation (items, shipping address, discounts, totals, payment method) before placing the order instead of charging straight from the form. **Catalog pagination**: homepage and search results are paginated (24 per page) with numbered controls, and search now matches product name, category, subcategory, specs, and description. **Decluttered header**: Cart and Wishlist moved from text links to icon buttons with a live count badge — the right-side nav is now Repairs · About · Contact. **Dual identity strip**: the Original homepage hero is followed by a "Shop premium tech / Need a repair?" band so both the product and repair sides of the business are promoted above the fold.
 - **Control-plane CSP button fix** — The CSP added in commit `589fcfc` silently broke every button on the control-plane dashboard. Helmet 7 appends `script-src-attr 'none'` to any policy that doesn't set `scriptSrcAttr` explicitly, and the dashboard wires all 89 of its controls through inline `onclick=` handlers — so every click was blocked by the browser. Fixed by adding `scriptSrcAttr: ["'self'", "'unsafe-inline'"]` to the control plane's helmet config (`control-plane/server/index.ts`). Confirmed with a Chrome headless A/B test: `'none'` → handler blocked, `'unsafe-inline'` → handler fires.
@@ -138,15 +138,15 @@ A complete multi-branch sales & management system with product catalog, customer
 - **Repo cleanup** — Untracked `data/mpesa.log` (contained a phone number despite being in `.gitignore`). Removed `Town project/` (changelog duplicate of README), `scripts/check-name.js` (broken; required `better-sqlite3`, not installed), and local SQLite `store.db` artifacts (superseded by PostgreSQL). Root `.gitignore` now covers `.next/` and `.venv/`. `tsconfig.json` dropped the stale `Town project` exclude.
 - **Security hardening** — TOTP two-factor authentication (authenticator app), CSRF double-submit cookie protection on all state-changing requests, file upload content validation using magic bytes (rejects files with mismatched extensions), credential logging removed from control plane, dev fallback passwords replaced with random generation, empty catch blocks across backend and control plane now log warnings instead of silently swallowing errors.
 - **Shared Cloudinary with per-client folders** — Single Cloudinary account shared across all clients. Each client gets an isolated folder (`gear-glitch/{client-slug}`). Cloudinary config auto-imported from existing site on control plane startup. Sync/Pull buttons on dashboard push config to all clients. No manual env vars needed.
-- **Per-branch subscriptions** — Each branch gets its own subscription plan independent of the shop-wide plan. New branches default to the shop's current plan. Admin Branches page shows a Plan column with Change Plan dropdown per branch. Owner Subscription page shows a Branch Plans table. Feature gating checks the branch plan, not the shop plan. Branch plan enforced on POS (multi-currency), invoice PDFs, credit notes, and quotations.
+- **Per-branch subscriptions** — Each branch gets its own subscription plan independent of the shop-wide plan. New branches default to the shop's current plan. Admin Branches page shows a Plan column with Change Plan dropdown per branch. The Subscription page in the staff portal shows a Branch Plans table. Feature gating checks the branch plan, not the shop plan. Branch plan enforced on POS (multi-currency), invoice PDFs, credit notes, and quotations.
 - **Full per-branch stock tracking** — Stock levels and movements tracked per branch. Stock on Hand page has a branch filter dropdown to view stock at a specific branch. Stock Take sessions scoped to a selected branch (only shows products with stock at that branch). POS checkout deducts from both `stock_on_hand` and `stock_levels` simultaneously with stock movement records. Completing a stock transfer deducts from the source branch and increments at the destination with dual movement records.
-- **Dedicated Settings tab** — Admin and owner panels restructured with a dedicated Settings group in the sidebar. Admin settings: General, Storefront, Product Positioning, Email, WhatsApp, About Us, Spec Templates, Subscription. Owner settings: Storefront, Product Positioning, About Us, Subscription, Audit Log. Settings group expanded by default.
+- **Dedicated Settings tab** — The staff portal restructured with a dedicated Settings group in the sidebar: General, Storefront, Product Positioning, Email, WhatsApp, About Us, Spec Templates, Subscription. Settings group expanded by default.
 - **Purchase order improvements** — Inline received quantity inputs (replaced window.prompt popups), server-side PDF generation with branded A4 download, soft-delete with "View Completed" and "View Deleted" tabs, and one-click restore for deleted purchase orders. Any status can now be deleted. Completed tab shows all received orders; deleted tab shows trashed orders with restore button.
-- **Audit log in admin panel** — Audit log (previously owner-only) now accessible under Activity group in admin sidebar. Same filtering and detail view.
+- **Audit log in admin panel** — Audit log (previously owner-only) now accessible under the Activity group in the staff portal sidebar. Same filtering and detail view.
 - **Render crash fixes** — Added `trust proxy` setting for Render reverse proxy (fixes `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` rate-limiter crash). Fixed SQL crash where `text` columns compared against `timestamp` parameters in 4 date-filtered queries (sales/trends, employee-sales, tech-performance, purchase reports). All `created_at` comparisons now cast to `::timestamp`.
 - **Admin sidebar Activity group** — Admin sidebar now includes Audit Log under the Activity group alongside Reports, Messages, and Reviews.
 - **Comprehensive input validation** — Added typed validation (`isEmail`, `isStr`, `isNum`, `isPosInt`, `isNonNegNum`, `isArr`, `inSet`, `okLen`) to 40+ POST/PUT endpoints across the backend. Covers auth, account creation, orders, financial operations, settings, messages, providers, coupons, purchase orders, stock transfers, categories, roles, quotes, and more. Prevents injection, type confusion, and oversized payloads.
-- **Improved sidebar groupings** — Admin sidebar reorganized into 6 focused groups: Sales, Stock, Team (Users, Roles, Clients, Branches), Finance (Invoices, Credit Notes, Plans, Providers), Activity (Messages, Reviews, Reports), and Settings. Owner sidebar converted from flat list to grouped nav with Sales, Service, Finance, Stock, and Settings groups.
+- **Improved sidebar groupings** — Staff portal sidebar reorganized into 6 focused groups: Sales, Stock, Team (Users, Roles, Clients, Branches), Finance (Invoices, Credit Notes, Plans, Providers), Activity (Messages, Reviews, Reports), and Settings.
 - **Deployment hardening** — Render: added `NODE_OPTIONS --max-old-space-size=384` for free tier memory safety, SMTP env vars as placeholders, `DB_SSL_REJECT` for Neon. Vercel: pinned region, explicit output directory. Backend tsconfig: removed unnecessary `declaration`/`declarationMap` for faster builds. Frontend package.json: added `engines >=18`.
 - **Critical bug fixes** — Fixed `createCustomer()` called with wrong args (customer registration/Google login were creating blank accounts). Fixed `updateOrderItemWarranty()` passing `orderId=0` (warranty toggle silently did nothing). Fixed M-Pesa `BASE_URL` stale constant (sandbox/production switching had no effect). Fixed WhatsApp webhook error swallowing (inbound messages could be silently lost). Fixed broken HTML in quote email template. Fixed WhatsApp inbound messages attributed to hardcoded entity ID 1. Fixed storefront stats counting wrong table (`clients` → `customers`). Fixed layout PUT response defaulting to `"amazon"` instead of `"original"`. Fixed purchase order delete missing `isNaN` guard and `try-catch`. Fixed PO delete from list view silently swallowing errors. PO delete now also blocks `"ordered"` status to prevent orphaned stock.
 - **WhatsApp settings persistence** — Admin WhatsApp settings (enabled toggle, Phone Number ID, Access Token, App Secret, Verify Token, Business Account ID) are now correctly saved to the database. Previously, the `PUT /api/settings` handler silently dropped all WhatsApp fields from the request body, so settings configured in the admin UI were never persisted.
@@ -154,11 +154,11 @@ A complete multi-branch sales & management system with product catalog, customer
 - **WhatsApp webhook signature verification** — Incoming WhatsApp webhook payloads are now verified using HMAC-SHA256 (`X-Hub-Signature-256` header) with the configured App Secret before processing. Prevents spoofed webhook payloads from being processed.
 - **Kenyan phone number normalization** — WhatsApp phone number normalization now correctly converts Kenyan `07XX` / `01XX` numbers to international `254XX` format before sending. Previously, bare stripping of non-digits left local-format numbers unusable with the WhatsApp API.
 - **Async WhatsApp message delivery** — All `sendWhatsAppMessage()` calls in message routes are now `await`ed with `.catch()` error handling instead of fire-and-forget. Prevents unhandled promise rejections from crashing the server process.
-- **Live storefront stats** — New `/api/storefront-stats` endpoint returns real product, customer, order counts and category list. Admin/Owner hero editor has "Populate from Live Data" button for stats and "Sync from Categories" button for chips. Original layout hero falls back to live data when hero config is empty.
+- **Live storefront stats** — New `/api/storefront-stats` endpoint returns real product, customer, order counts and category list. The staff portal hero editor has "Populate from Live Data" button for stats and "Sync from Categories" button for chips. Original layout hero falls back to live data when hero config is empty.
 - **Hero section admin control** — Homepage hero section (badge text, headline, subtitle, CTA buttons, category chips, stats, highlights, trust text) is now fully configurable from the admin Storefront panel. Toggle the announcement badge on/off, edit all text, add/remove category chips and stats. Config stored in `hero_config` and served to all storefront layouts via the layout context.
-- **Owner hero editor** — Owner panel has identical hero config UI as admin. Admin-only editing preserved at routing level.
+- **Owner hero editor** — Hero editing is available to admin and owner roles in the staff portal; admin-only actions are preserved at the routing level.
 - **Hero link dropdowns** — Shop Now Link, Browse Categories Link, Badge Link, and Category Chips href fields now use category dropdowns populated from the database instead of free-text inputs. Custom paths can still be typed manually.
-- **Hero on/off toggle** — Master "Show hero section on storefront" toggle in both admin and owner hero editors. Disabling hides the entire hero section (headline, badge, CTAs, chips, stats) across all 5 storefront layouts. Badge toggle is disabled when hero is off.
+- **Hero on/off toggle** — Master "Show hero section on storefront" toggle in the staff portal hero editor. Disabling hides the entire hero section (headline, badge, CTAs, chips, stats) across all 5 storefront layouts. Badge toggle is disabled when hero is off.
 - **Responsive layout overhaul** — Wider content container (1080px → 1280px) for better screen utilization. Hero section breaks out to full viewport width. Header nav gracefully hides secondary elements (currency selector) on tablet screens, collapses to hamburger on mobile. Category buttons and hero chips use `flex-wrap` and `auto-fit` grids for even distribution without scroll overflow.
 - **Employee Sales & Technician Performance reports fixed** — Both report endpoints now accept `from`/`to` date query parameters and return properly structured JSON. Frontend components match backend response fields (`employees`/`technicians` arrays with `staffName`, `totalOrders`/`totalRevenue`/`ticketsCompleted`/`ticketsAssigned`/`totalEarned`). Both reports now show a totals row.
 - **Mark-as-paid buttons themed** — All "Mark paid" buttons across admin and owner invoice panels now use `var(--success)` background color for clear visual indication of the payment confirmation action.
@@ -193,7 +193,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - **Provider order management** — Providers can view all orders, cancel individual items that are unavailable, and update order status (confirm, ship, deliver, cancel). Item-level cancellation shows strikethrough on the customer's order page. Status changes trigger email notifications to customers.
 - **Customer invoice download** — Orders list page now shows an inline "Invoice" button on shipped/delivered orders. Order detail page also has a Download Invoice button for shipped/delivered orders. No need to navigate away from the orders list.
 - **Product rating & review system** — Customers can rate products (1–5 stars) with an interactive clickable star widget. Each customer gets one review per product, with editable and deletable reviews. Product detail page shows a rating distribution bar chart, average rating display, and paginated review list. Product cards show real average ratings on category pages. Admin panel has a Reviews management section under Activity for moderation (view all reviews, delete). DB enforced via `UNIQUE(product_id, customer_id)` constraint, `CHECK(rating >= 1 AND rating <= 5)`, and performance indexes on `product_id` and `customer_id`.
-- **Component unification** — 6 near-identical admin/owner component pairs extracted to shared files (`ProvidersPage`, `CreditNotesPage`, `AboutUsPage`, `ProductPositioningPage`, `StockTakeListPage`, `StockOnHandPage`). Admin and owner panels now import the same components, eliminating ~1,600 lines of duplicated code. Feature gating in the owner panel is preserved at the routing level.
+- **Component unification** — 6 near-identical admin/owner component pairs extracted to shared files (`ProvidersPage`, `CreditNotesPage`, `AboutUsPage`, `ProductPositioningPage`, `StockTakeListPage`, `StockOnHandPage`). The unified staff portal imports these shared components, eliminating ~1,600 lines of duplicated code. Feature gating is preserved at the routing level.
 - **Premium hero section** — Original storefront layout now features a full-width two-column hero with dark gradient background, animated blue/purple glows, floating particles, glassmorphism buttons and stat cards, auto-rotating featured product carousel (5s interval with dot navigation), floating category chips (auto-synced with the category list), "Trusted by 5,000+ customers" trust bar with gold stars, and SVG wave transition into the product grid. Fully responsive (stacks vertically on mobile). Respects `prefers-reduced-motion`.
 - **Marketing-ready hero boosters** — The hero now doubles as a conversion tool, all admin-configurable from the Storefront panel: a live sale countdown timer (auto-hides when the offer ends), rotating headline/accent/subtitle variants (6s cycle), a "Chat on WhatsApp" CTA using the store's phone number, and a payment & delivery trust strip (M-Pesa & cards, nationwide delivery, warranty, 24h Nairobi delivery). Featured products gain "Sale" badges, star rating + review count, "Only N left" scarcity notes, and a subtle Ken Burns zoom. Live stats count up on load, and logged-in customers see a personalized greeting. Each booster has its own admin toggle (`showTrustStrip`, `showWhatsApp`).
 - **POS invoice save & print** — After completing a POS sale, the post-charge UI now offers separate Save Invoice (downloads PDF) and Print Invoice (opens print dialog) buttons for both thermal receipt and A4 invoice formats.
@@ -207,13 +207,13 @@ A complete multi-branch sales & management system with product catalog, customer
 - **Provider PIN fix** — Removed `PinLock` from dashboard page entirely. Providers now log in and see the dashboard immediately. PIN lock only appears when clicking POS (which has its own correct PinLock).
 - **Server-side PDF downloads** — Invoices, credit notes, and quotes can be downloaded as real PDF files via Puppeteer (`puppeteer-core` + `@sparticuz/chromium`). Add `?format=pdf` to any document endpoint to get a PDF instead of HTML. All frontend buttons now trigger actual file downloads.
 - **Admin messaging panel** — New "Messages" section under Activity in the admin panel. Conversation list with unread badges, chat-style message view with read receipts, inline reply, compose new messages (pick customer + provider). Auto-polls every 30 seconds. Notification bell links to the panel.
-- **Feature-gated subscription plans** — Plans now carry actual feature flags (Messaging, Invoice/quote PDF downloads, Credit notes, Quotations, Branch management, Repair ticketing, Technician accounts, etc.). Frontend `useFeature()` hook conditionally shows/hides nav items and UI sections. Server-side `requireProviderFeature()` middleware blocks provider API access per plan tier. Four default plans (Starter, Growth, Pro, Enterprise) seeded with progressive feature sets. **All sidebar nav items across admin, owner, backoffice, and customer dashboards are now hidden when their corresponding feature is not included in the active plan.** Storefront nav links (Cart, Wishlist) and currency selector also respect feature flags; the Repairs link always shows in the storefront header.
+- **Feature-gated subscription plans** — Plans now carry actual feature flags (Messaging, Invoice/quote PDF downloads, Credit notes, Quotations, Branch management, Repair ticketing, Technician accounts, etc.). Frontend `useFeature()` hook conditionally shows/hides nav items and UI sections. Server-side `requireProviderFeature()` middleware blocks provider API access per plan tier. Four default plans (Starter, Growth, Pro, Enterprise) seeded with progressive feature sets. **All sidebar nav items across the staff portal and customer dashboards are now hidden when their corresponding feature is not included in the active plan.** Storefront nav links (Cart, Wishlist) and currency selector also respect feature flags; the Repairs link always shows in the storefront header.
 - **Expanded role permissions** — New permissions: `messaging:view`, `messaging:send`, `invoice:view`, `invoice:download`, `credit_note:view`, `credit_note:create`, `quote:view`, `quote:create`, `quote:update`. Default roles (admin, owner, manager, technician) updated with appropriate permission sets.
 - **Sale price / strikethrough pricing** — Products support an optional sale price. Strikethrough original + red sale price displayed on product cards, product detail page, owner products table, POS grid, and admin products table.
 - **Promotional banners / Splashes** — Admin can create marquee or static promotional banners with custom background/text colors, active date ranges, and on/off toggle. Quick presets for Black Friday, Happy Hour, Christmas, New Year Sale, and Back to School.
 - **Kenyan holiday calendar** — Auto-displayed marquee banners for 12 Kenyan public holidays with unique Kenya flag-themed gradient colors and catchy taglines.
 - **Store logo on all documents** — Logo automatically appears on POS receipts (thermal + A4), customer invoices, admin order invoices, credit notes, quote PDFs, and purchase order PDFs. Configurable position via admin Settings. Logo displayed at 64px height across all storefront layouts with an 80px header for prominent branding.
-- **Product positioning editor** — Drag-and-drop product reorder for storefront. Feature-gated via "Product positioning" in plan features. Admin and owner panels.
+- **Product positioning editor** — Drag-and-drop product reorder for storefront. Feature-gated via "Product positioning" in plan features. Available in the staff portal.
 - **Runtime layout registry** — Storefront layouts are stored in a `storefront_layouts` database table and managed directly from the **Storefront** settings page. The 5 built-in static layouts (Original, Amazon, Jumia, Mobile, Custom) are registered as code modules. Admins can create new dynamic layouts using JSON config definitions with section types: product-grid, category-grid, banner, stats, text, and spacer. Dynamic layouts are rendered by a generic JSON layout engine (`dynamic-engine.tsx`). Layouts can be activated, reordered, edited, and deleted from the admin UI. The active layout key is synced with the existing `store_layout` setting. Store logo now displays next to the brand name text in the site header.
 - **Auto-email system** — Full email notification framework. Configurable sender, HTML templates for messages/quotes/credit notes/order status. Owner CC on customer-provider messages. Email logs tracked. All notification types (repairs, password resets, magic links, provider emails) share a single unified transporter backed by database settings.
 - **Cloudinary cleanup on delete** — Automatic removal of Cloudinary images when gallery images, primary images, or entire products are deleted.
@@ -300,15 +300,15 @@ Opens **http://localhost:3000** in a browser.
 | Role | URL | Credentials (dev) | Env vars to set in production |
 |------|-----|-------------------|-------------------------------|
 | **Admin** | `/admin` | `admin@gearandglitch.com` / `admin123` | `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
-| **Owner** | `/owner` | same admin credential (role-based access) | — |
-| **Technician** | `/backoffice` | `technician` or `tech@gearandglitch.com` / `tech123` | `TECH_USERNAME`, `TECH_EMAIL`, `TECH_PASSWORD` |
+| **Owner** | `/admin` | same admin credential (role-based access) | — |
+| **Technician** | `/admin` | `technician` or `tech@gearandglitch.com` / `tech123` | `TECH_USERNAME`, `TECH_EMAIL`, `TECH_PASSWORD` |
 | **Customer** | `/dashboard` | `customer@gearandglitch.com` / `customer123` | not seeded in production |
 | **Provider** | `/dashboard` | `provider@gearandglitch.com` / `provider123` | not seeded in production |
 
 - **Demo accounts** (`customer123`, `provider123`) are only seeded when `NODE_ENV !== "production"`.
 - **Admin/Technician** use a fallback dev password if the env var is unset, but **in production the server skips user creation** if the password env var is missing.
 - **Password minimum length** is 8 characters across all endpoints.
-- On first run the database table `actor_role` is auto-migrated for the audit log. The Owner role uses the same admin login but with elevated access — see the Owner panel section below.
+- On first run the database table `actor_role` is auto-migrated for the audit log. All staff roles (admin, owner, manager, technician, staff) sign into the same staff portal at `/admin`; the sidebar and API access are driven by the user's effective permissions.
 
 ---
 
@@ -321,7 +321,7 @@ Opens **http://localhost:3000** in a browser.
 | `/pos` | Staff | Point of Sale — product grid, cart, payment method selector (configurable), customer lookup, cash change calculator, thermal receipt & A4 invoice print. Stock deducted from both `stock_on_hand` and `stock_levels` per branch. |
 | `/login` | Everyone | Unified sign-in — customer, staff, provider (Google Sign-In supported) |
 | `/dashboard` | Customers & Providers | Orders, repairs, wishlist, messages (customer) or subscription, invoices (provider) |
-| `/about` | Everyone | About Us page — content editable by admin/owner |
+| `/about` | Everyone | About Us page — content editable from the staff portal |
 | `/cart` | Everyone | Shopping cart — works without an account (guest items are saved on the device and merged at sign-in); manage quantities, then Review order confirms details before placing |
 | `/campaign/[slug]` | Everyone | Public promotional landing pages created in admin → Campaigns (hero banner + curated product grid) |
 | `/groups` | Everyone | Storefront index of all active product groups with product counts |
@@ -333,18 +333,24 @@ Opens **http://localhost:3000** in a browser.
 | `/repair-ticket?id=xxx` | Customers | Single repair ticket detail — device info, cost estimate with Accept/Decline, update timeline, send messages |
 | `/wishlist` | Customers | Saved products with quote generation |
 | `/account` | Customers | Account details |
-| `/admin` | Admin staff | Full management — products, orders, staff, plans, providers, invoices, settings, stock take, spec templates, shop subscription (approve/reject requests) |
-| `/owner` | Admin/Owner role | Business oversight — dashboard, products, providers, customers, messages, quotes, reports, stock control, stock take, tech repairs, audit log (non-admin actions only), shop subscription (request plan changes) |
-| `/backoffice` | Staff (admin/technician) | Repair tickets with cost editing and quote sending, calendar, dashboard, stock control, parts, purchasing, reports |
-| `/stock-take/[id]` | Admin/Owner | Dedicated stock take session page with table input, stat cards, variance report, auto-apply adjustments |
+| `/admin` | All staff | Unified, role-aware staff portal — products, orders, staff, plans, providers, invoices, settings, stock take, spec templates, repairs, and more. The sidebar shows exactly what the signed-in user's permissions allow (admin/owner/manager/technician/staff) |
+| `/stock-take/[id]` | Staff portal (admin/owner/manager) | Dedicated stock take session page with table input, stat cards, variance report, auto-apply adjustments |
 
 ---
 
 ## Key Panels
 
-### Admin Panel (`/admin`)
+### Staff Portal (`/admin`)
 
-Full store management with 33 sections:
+One unified, role-aware portal replaces the former separate `/admin`, `/owner`, and `/backoffice` pages. All staff sign in at `/login` and land on `/admin`; the sidebar shows exactly what the signed-in user's effective permissions allow (base role + assigned custom roles + direct per-user permissions). Feature gating at the routing level also hides sections the active subscription plan doesn't include.
+
+Admin is a superuser and sees every section below. Other base roles see:
+
+- **Owner** — everything except Users, Roles, Plans, Settings, Storefront, and Purchases
+- **Manager** — Dashboard, Products, Orders, Customers, Quotations, Invoices, Credit Notes, Reports, Messages, Stock Control, Stock Take, Repairs
+- **Technician / Staff** — Dashboard and Repairs
+
+Access is fine-tuned in **Users & Permissions** (assign/remove roles per user, toggle direct permissions) and **Roles** (define custom roles with granular permission toggles — every sidebar view maps to a permission such as `order:view`, `customer:view`, `invoice:view`, `reports:view`, `stock:list`, or `messaging:view`). Full section list:
 
 - **Dashboard** — Stats overview with clickable animated counters (products, staff, pending subscription requests)
 - **Products** — CRUD, image gallery, spec templates, quick price edit, checkbox bulk edit (price/category/stock), CSV import with template download (admin/owner only), price history tracking, sale price (strikethrough pricing). Category is optional; products can be assigned to a Group instead (or both/neither)
@@ -362,7 +368,7 @@ Full store management with 33 sections:
 - **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes (58+ available features). Plans can be activated/deactivated to control visibility on the public pricing page. Inactive plans are hidden from customers. Plan editor features organized into 11 collapsible groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency) with select-all toggles per group and feature count badges.
 - **Providers** — View providers, assign plans, custom pricing, status
 - **Invoices** — Generate invoices per provider, mark paid, PDF download for order invoices
-- **Credit Notes** — Create eTIMS-compliant credit notes from invoices in admin and owner views, with printable audit details and submission tracking, PDF download
+- **Credit Notes** — Create eTIMS-compliant credit notes from invoices, with printable audit details and submission tracking, PDF download
 - **Reports** — 5 sub-tabs: Sales Report with combined/per-branch filtering, channel breakdown (Storefront / POS / Quote), and export to Excel/PDF, Employee Sales, Technician Performance, Purchases Report, and Stock Summary
 - **Stock on Hand** — Current stock levels per branch (filter by branch), snapshot history, low-stock alerts
 - **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow; completing a transfer actually moves stock between branches with dual movement records
@@ -379,37 +385,6 @@ Full store management with 33 sections:
 - **Splashes** — Create/edit/delete promotional banners with quick presets (Black Friday, Happy Hour, Christmas, New Year Sale, Back to School), custom background/text colors, marquee vs static toggle, active date ranges, and on/off toggle. Kenyan holidays auto-displayed with themed colors.
 - **Shop Subscription** — View current plan, activate new plan, approve/reject owner requests
 - **Settings** — Store info, M-Pesa config, store logo upload with position selector (top-left/top-middle/top-right), currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings), image storage (Cloudinary primary + optional database backup toggle), exchange rates, and **Storefront** page for layout management (activate, create dynamic JSON layouts, reorder)
-
-### Owner Panel (`/owner`)
-
-Business oversight with 13 sections. Shares many components with the admin panel (Products, Providers, Credit Notes, About Us, Product Positioning, Stock Take, Stock on Hand). Feature gating at the routing level controls which sections are visible based on the subscription plan.
-
-- **Dashboard** — Stats with animated counters (open repairs, due today, total orders, revenue, products in stock, low stock items), all cards clickable to navigate
-- **Products** — View products catalog
-- **Providers** — View provider list
-- **Customers** — View customer list
-- **Messages** — Two-panel chat UI with real-time polling, unread badges, notification bell
-- **Quotes** — Create hardware quotes for customers (product search, line items editor, price/quantity)
-- **Reports** — Sales Report with per-branch and combined filtering
-- **Stock Control** — Snapshot management (view/take snapshots, date picker, history), current stock levels with low-stock alerts
-- **Stock Take** — Create/delete sessions, navigate to session page
-- **Tech Repairs** — Technician performance reports (filterable by date range)
-- **About Us** — Edit the /about page content
-- **Storefront** — Change layout theme, manage promotional banners (only if role is Admin) and select the active storefront theme for the public site
-- **Shop Subscription** — View current plan, request plan change (admin approves). Branch Plans table shows each branch's individual plan with Change Plan dropdown.
-- **Audit Log** — View all actions except admin actions (owner sees non-admin activity with user names, timestamps, entity details)
-
-### Back Office (`/backoffice`)
-
-Staff operations:
-- Dashboard (open repairs, due today, scheduled, unassigned counts)
-- Repair tickets (assign technicians, update status, notes, parts, pricing, images, **send cost estimates to customers**)
-- Calendar view
-- Parts management
-- Stock control (levels, low-stock alerts, movement history)
-- Purchasing (purchase orders, itemised receiving)
-- Reports (tech performance, sales)
-- Quick link to public site
 
 ---
 
@@ -512,18 +487,20 @@ All data-fetching pages now render shimmer skeleton placeholders instead of bare
 
 ### File Splitting (admin.tsx)
 
-`admin.tsx` and `owner.tsx` share extracted components under `components/admin/`:
+The unified staff portal `admin.tsx` uses extracted components under `components/admin/`:
 - **`components/admin/shared.tsx`** — extracted `useFetch`, `Spinner`, `ErrorMsg`, `formatPrice`, `escapeHtml` utilities
-- **`components/admin/AdminProducts.tsx`** — Products CRUD (used by both admin and owner)
-- **`components/admin/ProvidersPage.tsx`** — Provider management (used by both admin and owner)
-- **`components/admin/CreditNotesPage.tsx`** — Credit notes list with PDF download (used by both admin and owner)
-- **`components/admin/AboutUsPage.tsx`** — About Us content editor (used by both admin and owner)
-- **`components/admin/ProductPositioningPage.tsx`** — Drag-and-drop product reorder (used by both admin and owner)
-- **`components/admin/StockTakeListPage.tsx`** — Stock take session list (used by both admin and owner)
-- **`components/admin/StockOnHandPage.tsx`** — Stock on hand with snapshots and low-stock alerts (used by both admin and owner, with optional auto-reorder for admin)
-- **`components/admin/AdminLayouts.tsx`** — Storefront layout management: list, create dynamic JSON layouts, edit, activate, delete, reorder (used by both admin and owner)
+- **`components/admin/AdminProducts.tsx`** — Products CRUD
+- **`components/admin/AdminRepairs.tsx`** — Repair tickets, calendar, and page content
+- **`components/admin/ProvidersPage.tsx`** — Provider management
+- **`components/admin/CreditNotesPage.tsx`** — Credit notes list with PDF download
+- **`components/admin/AboutUsPage.tsx`** — About Us content editor
+- **`components/admin/WhatsAppSettings.tsx`** — WhatsApp integration settings
+- **`components/admin/ProductPositioningPage.tsx`** — Drag-and-drop product reorder
+- **`components/admin/StockTakeListPage.tsx`** — Stock take session list
+- **`components/admin/StockOnHandPage.tsx`** — Stock on hand with snapshots and low-stock alerts (optional auto-reorder for admin)
+- **`components/admin/AdminLayouts.tsx`** — Storefront layout management: list, create dynamic JSON layouts, edit, activate, delete, reorder
 - **`components/admin/CategoryPositioningPage.tsx`** — Drag-and-drop category reorder
-- Feature gating in the owner panel is preserved at the routing level (nav items conditionally rendered based on `useFeature()` checks)
+- Feature gating in the staff portal is preserved at the routing level (nav items conditionally rendered based on `useFeature()` checks), and sidebar visibility is driven by the user's effective permissions
 
 ---
 
@@ -542,16 +519,17 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │   │   ├── StatCard.tsx         # Animated counter card
 │   │   ├── Skeleton.tsx         # Re-export from legacy
 │   │   └── EmptyState.tsx       # Re-export from legacy
-│   ├── admin/                 # Admin/Owner shared extracted components
+│   ├── admin/                 # Shared extracted components for the staff portal
 │   │   ├── shared.tsx            # useFetch, Spinner, ErrorMsg, formatPrice, escapeHtml
 │   │   ├── AdminProducts.tsx     # Products CRUD section
+│   │   ├── AdminRepairs.tsx      # Repair tickets + calendar + page content
 │   │   ├── ProvidersPage.tsx     # Provider management
 │   │   ├── CreditNotesPage.tsx   # Credit notes list
 │   │   ├── AboutUsPage.tsx       # About Us editor
+│   │   ├── WhatsAppSettings.tsx  # WhatsApp integration settings
 │   │   ├── ProductPositioningPage.tsx  # Drag-and-drop reorder
 │   │   ├── StockTakeListPage.tsx # Stock take sessions
 │   │   └── StockOnHandPage.tsx   # Stock on hand with snapshots
-│   ├── owner/                 # Owner panel extracted components
 │   ├── Layout.tsx            # Responsive header with mobile menu
 │   ├── ProductCard.tsx       # Product card — strikethrough sale price display
 │   ├── MarqueeBanner.tsx     # Kenyan holiday calendar + promotional banner marquee
@@ -596,9 +574,7 @@ frontend/                 # Next.js 14 (Pages Router + TypeScript)
 │   ├── my-repairs.tsx        # Ticket tracking — skeleton loading
 │   ├── orders.tsx            # Order history
 │   ├── account.tsx           # Account details
-│   ├── admin.tsx             # Admin panel (33 sections)
-│   ├── owner.tsx             # Owner panel (13 sections, shares components with admin)
-│   ├── backoffice.tsx        # Back office (repairs, stock, reports)
+│   ├── admin.tsx             # Unified role-aware staff portal (replaces /admin, /owner, /backoffice)
 │   └── stock-take/
 │       └── [id].tsx          # Dedicated stock take session page
 ├── styles/
@@ -818,11 +794,12 @@ Provider registration, login, subscription details, invoices, products at tier, 
 3. **Three token types** stored in localStorage: `customerStoreToken`, `computerStoreToken`, `providerToken`
 4. **JWT tokens**: Signed with `JWT_SECRET` (required — server fails without it). Staff tokens expire in **24 hours**, customer tokens in **7 days**. No query-string token support.
 5. **Rate limiting**: 10 login/register/password-reset attempts per IP per 15 minutes.
-6. **Role-based access**:
-   - Admin: full access to `/admin` and `/backoffice`
-   - Owner: access to `/owner` (elevated business oversight)
-   - Technician: restricted to `/backoffice` (repairs, stock)
-7. **Permission system**: `hasPermission()` checks both `role_permissions` and `user_permissions` tables; `assignRoleToUser()` syncs `users.role` to `user_roles`. Built-in roles (admin, manager, technician, owner) can have their permissions customized. Permissions include `staff:*`, `repair:*`, `product:*`, `stock:*` (list, update, view_low, on_hand, transfer), `settings:*`, `calendar:*`, `reports:*`, `messaging:*` (view, send), `invoice:*` (view, download), `credit_note:*` (view, create), `quote:*` (view, create, update).
+6. **Role-based access** — all staff roles sign into the same staff portal at `/admin`:
+   - **Admin**: superuser — every section
+   - **Owner**: everything except Users, Roles, Plans, Settings, Storefront, Purchases
+   - **Manager**: Dashboard, Products, Orders, Customers, Quotations, Invoices, Credit Notes, Reports, Messages, Stock Control, Stock Take, Repairs
+   - **Technician / Staff**: Dashboard and Repairs
+7. **Permission system**: `hasPermission()` checks both `role_permissions` and `user_permissions` tables; the effective permission set is the union of the user's assigned roles plus any direct permissions, and is embedded in the staff JWT so the portal can render the right sidebar. Built-in roles (admin, owner, manager, technician, staff) can have their permissions customized, and admins can create custom roles in **Roles** and assign them per-user in **Users & Permissions**. Permissions include `staff:*`, `repair:*`, `product:*`, `stock:*` (list, update, view_low, on_hand, transfer), `settings:*`, `calendar:*`, `reports:*`, `messaging:*` (view, send), `invoice:*` (view, download), `credit_note:*` (view, create), `quote:*` (view, create, update), plus view permissions for the sidebar (`order:view`, `customer:view`, `coupon:view`, `branch:view`, `audit:view`, etc.).
 8. **Audit log permission model**: Admin sees all actions; Owner sees all non-admin actions (filtered by `actor_role != 'admin'`)
 
 ---
@@ -860,7 +837,7 @@ Provider registration, login, subscription details, invoices, products at tier, 
 
 ## Stock Take Workflow
 
-1. Start a session from admin or owner panel (select a branch to scope the session)
+1. Start a session from the staff portal (select a branch to scope the session)
 2. Navigate to `/stock-take/[id]` for the dedicated session page
 3. Count items using the table input (product name, expected qty, counted qty)
 4. View variance report (green = match, yellow = over, red = under)
@@ -899,7 +876,7 @@ Five built-in layout themes controlled by admin via the Storefront panel, which 
 | **Mobile** | `mobile` | Premium minimalist, hero banners, brand chips, compare specs |
 | **Custom** | `custom` | Flexible layout for custom hero sections, featured categories, and responsive card panels |
 
-Each layout provides its own `Header`, `Footer`, `HomePage`, and `LayoutStyles` components. The admin can switch layouts and manage promotional banners from both the Admin and Owner panels.
+Each layout provides its own `Header`, `Footer`, `HomePage`, and `LayoutStyles` components. The admin can switch layouts and manage promotional banners from the Storefront panel in the staff portal.
 
 ## Adding a New Storefront Layout
 

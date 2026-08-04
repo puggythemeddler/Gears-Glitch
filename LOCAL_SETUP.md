@@ -133,7 +133,7 @@ Open **http://localhost:3000** in your browser.
 | Role | URL | Email | Password |
 |------|-----|-------|----------|
 | Admin | `/admin` | `admin@gearandglitch.com` | (whatever you set in `.env`) |
-| Technician | `/backoffice` | `tech@gearandglitch.com` | (whatever you set in `.env`) |
+| Technician | `/admin` | `tech@gearandglitch.com` | (whatever you set in `.env`) |
 | Customer | `/dashboard` | `customer@gearandglitch.com` | `customer123` (dev only) |
 
 ---

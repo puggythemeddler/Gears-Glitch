@@ -14,5 +14,5 @@
     "sourceMap": true
   },
   "include": ["server/**/*.ts"],
-  "exclude": ["node_modules", "dist", "data", "admin", "backoffice", "user manual", "frontend"]
+  "exclude": ["node_modules", "dist", "data", "user manual", "frontend"]
 }
