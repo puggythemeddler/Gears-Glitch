@@ -1325,11 +1325,11 @@ async function seedDemoCustomer(): Promise<void> {
 
 async function initRolesAsync(): Promise<void> {
   const DEFAULT_ROLES: { [key: string]: string[] } = {
-    admin: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export"],
+    admin: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "quote:update", "order:view", "customer:view", "coupon:view", "giftcard:view", "campaign:view", "cart:view", "provider:view", "spec:view", "supplier:view", "branch:view", "subscription:view", "about:view", "positioning:view", "whatsapp:view", "review:view", "audit:view"],
     technician: ["repair:list", "repair:view", "repair:update", "calendar:view", "calendar:schedule", "product:list"],
     staff: ["repair:list", "repair:view", "repair:update", "calendar:view", "calendar:schedule", "product:list"],
-    manager: ["staff:list", "repair:list", "repair:view", "repair:update", "repair:assign", "product:list", "product:update", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "calendar:view", "calendar:schedule", "reports:view", "reports:export"],
-    owner: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export"],
+    manager: ["staff:list", "repair:list", "repair:view", "repair:update", "repair:assign", "product:list", "product:update", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "order:view", "customer:view"],
+    owner: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "quote:update", "order:view", "customer:view", "coupon:view", "giftcard:view", "campaign:view", "cart:view", "provider:view", "spec:view", "supplier:view", "branch:view", "subscription:view", "about:view", "positioning:view", "whatsapp:view", "review:view", "audit:view"],
   };
   await transaction(async (client) => {
     for (const [roleId] of Object.entries(DEFAULT_ROLES)) {
@@ -1346,14 +1346,14 @@ async function initRolesAsync(): Promise<void> {
 async function assignInitialRoles(): Promise<void> {
   for (const role of ["admin", "owner", "technician", "manager", "staff"]) {
     const user = await queryOne("SELECT id FROM users WHERE role = $1", [role]) as { id: number } | undefined;
-    if (user) {
-      const existingRoles = await queryAll("SELECT role_id AS id FROM user_roles WHERE user_id = $1", [user.id]) as any[];
-      if (!existingRoles.find((r: any) => r.id === role)) {
-        const roleExists = await queryOne("SELECT id FROM roles WHERE id = $1", [role]);
-        if (roleExists) {
-          await query("INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [user.id, role]);
-        }
-      }
+    if (!user) continue;
+    // Only seed the base role for users with no roles yet, so admins can
+    // customise a user's role assignments without them being re-added on restart.
+    const roleCount = await queryOne("SELECT COUNT(*) AS count FROM user_roles WHERE user_id = $1", [user.id]) as any;
+    if (Number(roleCount?.count ?? 0) > 0) continue;
+    const roleExists = await queryOne("SELECT id FROM roles WHERE id = $1", [role]);
+    if (roleExists) {
+      await query("INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [user.id, role]);
     }
   }
 }

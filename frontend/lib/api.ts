@@ -109,6 +109,17 @@ export function getStaffRole(): string | null {
   }
 }
 
+export function getStaffPermissions(): string[] {
+  const token = getStaffToken();
+  if (!token) return [];
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return Array.isArray(payload?.permissions) ? payload.permissions : [];
+  } catch {
+    return [];
+  }
+}
+
 export function getProviderToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(PROVIDER_TOKEN_KEY);

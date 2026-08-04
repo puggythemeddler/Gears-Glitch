@@ -53,6 +53,22 @@ const PERMISSIONS: PermissionMap = {
   "quote:view": "View quotes",
   "quote:create": "Create quotes",
   "quote:update": "Update quotes",
+  "order:view": "View orders",
+  "customer:view": "View customers",
+  "coupon:view": "View coupons",
+  "giftcard:view": "View gift cards",
+  "campaign:view": "View campaigns",
+  "cart:view": "View abandoned carts",
+  "provider:view": "View providers",
+  "spec:view": "View spec templates",
+  "supplier:view": "View suppliers",
+  "branch:view": "View branches",
+  "subscription:view": "View shop subscription",
+  "about:view": "View about-us editor",
+  "positioning:view": "View product positioning",
+  "whatsapp:view": "View WhatsApp settings",
+  "review:view": "View product reviews",
+  "audit:view": "View audit log",
 };
 
 interface DefaultRoles {
@@ -73,16 +89,18 @@ const DEFAULT_ROLES: DefaultRoles = {
     "invoice:view", "invoice:download",
     "credit_note:view", "credit_note:create",
     "quote:view", "quote:create", "quote:update",
+    "order:view", "customer:view", "coupon:view", "giftcard:view",
+    "campaign:view", "cart:view", "provider:view", "spec:view",
+    "supplier:view", "branch:view", "subscription:view", "about:view",
+    "positioning:view", "whatsapp:view", "review:view", "audit:view",
   ],
   technician: [
     "repair:list", "repair:view", "repair:update",
     "calendar:view", "calendar:schedule", "product:list",
-    "messaging:view", "messaging:send",
   ],
   staff: [
     "repair:list", "repair:view", "repair:update",
     "calendar:view", "calendar:schedule", "product:list",
-    "messaging:view", "messaging:send",
   ],
   manager: [
     "staff:list",
@@ -95,6 +113,7 @@ const DEFAULT_ROLES: DefaultRoles = {
     "invoice:view", "invoice:download",
     "credit_note:view", "credit_note:create",
     "quote:view", "quote:create",
+    "order:view", "customer:view",
   ],
   owner: [
     "staff:list", "staff:create", "staff:update", "staff:delete",
@@ -109,6 +128,10 @@ const DEFAULT_ROLES: DefaultRoles = {
     "invoice:view", "invoice:download",
     "credit_note:view", "credit_note:create",
     "quote:view", "quote:create", "quote:update",
+    "order:view", "customer:view", "coupon:view", "giftcard:view",
+    "campaign:view", "cart:view", "provider:view", "spec:view",
+    "supplier:view", "branch:view", "subscription:view", "about:view",
+    "positioning:view", "whatsapp:view", "review:view", "audit:view",
   ],
 };
 

@@ -3654,7 +3654,7 @@ app.post("/api/auth/login", asyncHandler(async (req: Request, res: Response) => 
     res.status(401).json({ error: result.error });
     return;
   }
-  res.json({ token: result.token, username: result.username, email: result.email, role: result.role });
+  res.json({ token: result.token, username: result.username, email: result.email, role: result.role, permissions: result.permissions || [] });
 }));
 
 app.post("/api/customer/register", asyncHandler(async (req: Request, res: Response) => {
@@ -3851,8 +3851,9 @@ app.post("/api/auth/google-admin-login", asyncHandler(async (req: Request, res: 
     const email = payload.email.toLowerCase();
     const staff = await findStaffByEmail(email);
     if (!staff) { res.status(403).json({ error: "Login failed." }); return; }
-    const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: staff.role });
-    res.json({ token, username: staff.username, email: staff.email, role: staff.role });
+    const permissions = await getUserPermissions(staff.id);
+    const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: staff.role, permissions });
+    res.json({ token, username: staff.username, email: staff.email, role: staff.role, permissions });
   } catch (_err) {
     res.status(400).json({ error: "Google login failed." });
   }
@@ -3889,7 +3890,7 @@ app.post("/api/auth/password-reset", asyncHandler(async (req: Request, res: Resp
 
 app.get("/api/auth/me", staffAuthMiddleware, (req: Request, res: Response) => {
   const user = (req as any).user;
-  res.json({ username: user.username, role: user.role });
+  res.json({ username: user.username, email: user.email, name: user.name, role: user.role, permissions: user.permissions || [] });
 });
 
 app.post("/api/auth/change-password", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {

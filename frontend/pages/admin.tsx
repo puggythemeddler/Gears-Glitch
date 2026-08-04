@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState, useRef } from "react";
-import { api, getStaffToken, getStaffRole, downloadPdf } from "@/lib/api";
+import { api, getStaffToken, getStaffRole, getStaffPermissions, downloadPdf } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import { SkeletonStats, SkeletonTable } from "@/components/Skeleton";
@@ -32,34 +32,37 @@ declare global {
 export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff";
-const ALL_STAFF: StaffRole[] = ["admin", "owner", "technician", "manager", "staff"];
-const ROLE_VIEWS: Partial<Record<AdminView, StaffRole[]>> = {
-  dashboard: ALL_STAFF,
-  products: ["admin", "owner", "manager"],
-  orders: ["admin", "owner", "manager"],
-  customers: ["admin", "owner", "manager"],
-  quotations: ["admin", "owner", "manager"],
-  repairs: ALL_STAFF,
-  coupons: ["admin", "owner"],
-  "gift-cards": ["admin", "owner"],
-  campaigns: ["admin", "owner"],
-  "abandoned-carts": ["admin", "owner"],
-  providers: ["admin", "owner"],
-  invoices: ["admin", "owner", "manager"],
-  "credit-notes": ["admin", "owner", "manager"],
-  reports: ["admin", "owner", "manager"],
-  messages: ["admin", "owner", "manager"],
-  reviews: ["admin", "owner"],
-  audit: ["admin", "owner"],
-  "stock-take": ["admin", "owner", "manager"],
-  "stock-control": ["admin", "owner", "manager"],
-  suppliers: ["admin", "owner"],
-  branches: ["admin", "owner"],
-  "spec-templates": ["admin", "owner"],
-  "shop-subscription": ["admin", "owner"],
-  "about-us": ["admin", "owner"],
-  "product-positioning": ["admin", "owner"],
-  "whatsapp-settings": ["admin", "owner"],
+// Which permission unlocks a view in the sidebar. Views absent from this map
+// (groups, categories, users, roles, plans, stock-on-hand, stock-transfers,
+// purchases, clients, storefront, settings, delivery-fees, email-settings,
+// category-positioning) are admin-only.
+const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
+  dashboard: "",
+  products: "product:update",
+  orders: "order:view",
+  customers: "customer:view",
+  quotations: "quote:view",
+  repairs: "repair:list",
+  coupons: "coupon:view",
+  "gift-cards": "giftcard:view",
+  campaigns: "campaign:view",
+  "abandoned-carts": "cart:view",
+  providers: "provider:view",
+  invoices: "invoice:view",
+  "credit-notes": "credit_note:view",
+  reports: "reports:view",
+  messages: "messaging:view",
+  reviews: "review:view",
+  audit: "audit:view",
+  "stock-take": "stock:list",
+  "stock-control": "stock:list",
+  suppliers: "supplier:view",
+  branches: "branch:view",
+  "spec-templates": "spec:view",
+  "shop-subscription": "subscription:view",
+  "about-us": "about:view",
+  "product-positioning": "positioning:view",
+  "whatsapp-settings": "whatsapp:view",
 };
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
@@ -147,6 +150,7 @@ export default function AdminPage() {
   const { isDark, toggleDark, settings, refreshSettings } = useApp();
   const [authed, setAuthed] = useState(false);
   const [staffRole, setStaffRole] = useState<StaffRole>("admin");
+  const [staffPermissions, setStaffPermissions] = useState<string[]>([]);
   const [view, setView] = useState<AdminView>("dashboard");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -196,9 +200,11 @@ export default function AdminPage() {
   };
   const hasFeature = (f?: string) => !f || featureFlags[f] === true;
   const canAccess = (key: AdminView) => {
-    const roles = ROLE_VIEWS[key];
-    if (!roles) return staffRole === "admin";
-    return roles.includes(staffRole);
+    if (staffRole === "admin") return true;
+    const perm = VIEW_PERMISSIONS[key];
+    if (perm === undefined) return false;
+    if (perm === "") return true;
+    return staffPermissions.includes(perm);
   };
   const visibleNavGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => hasFeature(i.feature) && canAccess(i.key)) })).filter((g) => g.items.length > 0);
   const allVisibleKeys = visibleNavGroups.flatMap((g) => g.items.map((i) => i.key));
@@ -274,6 +280,7 @@ export default function AdminPage() {
       localStorage.setItem("computerStoreToken", data.token);
       localStorage.setItem("staffUserName", data.username || "Staff");
       setStaffRole((data.role as StaffRole) || "admin");
+      setStaffPermissions(Array.isArray(data.permissions) ? data.permissions : []);
       setAuthed(true);
     } catch (err: any) {
       setLoginError(err.message || "Google sign-in failed");
@@ -292,6 +299,7 @@ export default function AdminPage() {
     if (getStaffToken()) {
       setAuthed(true);
       setStaffRole((getStaffRole() as StaffRole) || "admin");
+      setStaffPermissions(getStaffPermissions());
     }
   }, []);
 
@@ -313,6 +321,7 @@ export default function AdminPage() {
       localStorage.setItem("computerStoreToken", data.token);
       localStorage.setItem("staffUserName", data.username || "Staff");
       setStaffRole(data.role || "admin");
+      setStaffPermissions(Array.isArray(data.permissions) ? data.permissions : []);
       setAuthed(true);
     } catch (err: any) { setLoginError(err.message); }
     finally { setLoginLoading(false); }

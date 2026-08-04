@@ -14,6 +14,7 @@ interface JwtPayload {
   name?: string;
   role: string;
   purpose?: string;
+  permissions?: string[];
 }
 
 interface StaffUser {
@@ -39,6 +40,7 @@ interface AuthResult {
   email?: string;
   role?: string;
   totpRequired?: boolean;
+  permissions?: string[];
 }
 
 function getJwtSecret(): string {
@@ -149,8 +151,10 @@ async function loginStaff(login: string, password: string, totpCode?: string): P
 
   const role = user.role || "technician";
   const userEmail = (user as any).email || `${user.username}@gearandglitch.com`;
-  const token = signToken({ sub: user.id, username: user.username, email: userEmail, role });
-  return { ok: true, token, username: user.username, email: userEmail, role };
+  const { getUserPermissions } = require("./permissions");
+  const permissions = await getUserPermissions(user.id);
+  const token = signToken({ sub: user.id, username: user.username, email: userEmail, role, permissions });
+  return { ok: true, token, username: user.username, email: userEmail, role, permissions };
 }
 
 async function registerCustomer({ name, email, password }: { name: string; email: string; password: string }): Promise<AuthResult> {
