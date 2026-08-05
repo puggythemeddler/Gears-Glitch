@@ -3744,30 +3744,36 @@ function AdminImageStorage({ initial }: { initial: any }) {
   );
 }
 
+const NAV_ORDER_STATIC = [
+  { id: "repairs", label: "Repairs" },
+  { id: "cart", label: "Cart" },
+  { id: "wishlist", label: "Wishlist" },
+  { id: "about", label: "About Us" },
+  { id: "contact", label: "Contact" },
+];
+
 function AdminNavOrder() {
   const [items, setItems] = useState<{ id: string; label: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings/nav-order").then(r => r.json()).then(d => {
-      if (d.navOrder) {
-        setItems(d.navOrder);
+    let cancelled = false;
+    Promise.all([
+      fetch("/api/settings/nav-order").then(r => r.json()).catch(() => ({ navOrder: null })),
+      fetch("/api/categories").then(r => r.json()).catch(() => ({ categories: [] })),
+    ]).then(([d, catData]) => {
+      if (cancelled) return;
+      const saved = Array.isArray(d?.navOrder) && d.navOrder.length > 0 ? d.navOrder : null;
+      if (saved) {
+        setItems(saved);
       } else {
-        setItems([
-          { id: "pc", label: "PCs" },
-          { id: "laptops", label: "Laptops" },
-          { id: "graphics-cards", label: "Graphics Cards" },
-          { id: "servers", label: "Servers" },
-          { id: "printers", label: "Printers" },
-          { id: "repairs", label: "Repairs" },
-          { id: "cart", label: "Cart" },
-          { id: "wishlist", label: "Wishlist" },
-          { id: "about", label: "About Us" },
-          { id: "contact", label: "Contact" },
-        ]);
+        const cats = (catData?.categories || []).map((c: any) => ({ id: String(c.id), label: c.label }));
+        setItems([...cats, ...NAV_ORDER_STATIC]);
       }
-    }).catch((e) => console.warn("[admin] Failed to load nav order:", e?.message));
+    }).catch((e) => console.warn("[admin] Failed to load nav order:", e?.message)).finally(() => setLoaded(true));
+    return () => { cancelled = true; };
   }, []);
 
   function handleDragStart(idx: number, e: React.DragEvent) {
@@ -3795,10 +3801,12 @@ function AdminNavOrder() {
     finally { setSaving(false); }
   }
 
+  if (!loaded) return <p>Loading...</p>;
+
   return (
     <div>
       <h3>Navigation Menu Order</h3>
-      <p className="muted" style={{ marginBottom: "0.75rem" }}>Drag and drop to reorder header navigation links.</p>
+      <p className="muted" style={{ marginBottom: "0.75rem" }}>Drag and drop to reorder the links shown in your storefront header navigation. Saving replaces the demo site's default menu with this store's own categories.</p>
       {msg && <p style={{ marginBottom: "0.5rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success)" }}>{msg}</p>}
       <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", maxWidth: 400 }}>
         {items.map((item, idx) => (

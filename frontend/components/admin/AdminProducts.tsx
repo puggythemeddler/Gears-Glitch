@@ -361,9 +361,9 @@ export default function AdminProducts() {
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Products</h1>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           <input type="search" placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search products" style={{ padding: "0.4rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: "0.85rem", minWidth: 180 }} />
           {selectedIds.size > 0 && <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{selectedIds.size} selected</span>}
           {selectedIds.size > 0 && <RippleButton size="small" variant="secondary" onClick={() => setShowBulk(true)}>Bulk Edit</RippleButton>}
