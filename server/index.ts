@@ -5701,35 +5701,41 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
 // Start server
 (async () => {
-  await initDb();
-  // Load persisted M-Pesa config from database
   try {
-    const savedMpesa = await getStoreSetting("mpesa_config");
-    if (savedMpesa) {
-      const parsed = JSON.parse(savedMpesa);
-      if (parsed.consumerKey) updateMpesaConfig(parsed);
-    }
-  } catch { console.warn("[server] Failed to load M-Pesa config from DB"); }
-  const startupSettings = await getSettings();
-  reconfigureCloudinary(startupSettings.cloudinaryCloudName, startupSettings.cloudinaryApiKey, startupSettings.cloudinaryApiSecret, startupSettings.cloudinaryFolder);
+    await initDb();
+    console.log("[boot] initDb completed");
+    // Load persisted M-Pesa config from database
+    try {
+      const savedMpesa = await getStoreSetting("mpesa_config");
+      if (savedMpesa) {
+        const parsed = JSON.parse(savedMpesa);
+        if (parsed.consumerKey) updateMpesaConfig(parsed);
+      }
+    } catch { console.warn("[server] Failed to load M-Pesa config from DB"); }
+    const startupSettings = await getSettings();
+    reconfigureCloudinary(startupSettings.cloudinaryCloudName, startupSettings.cloudinaryApiKey, startupSettings.cloudinaryApiSecret, startupSettings.cloudinaryFolder);
 
-  // Run once on startup: mark overdue invoices
-  try {
-    const overdueCount = await markOverdueInvoices();
-    if (overdueCount > 0) console.log(`[auto-billing] Marked ${overdueCount} overdue invoices on startup.`);
-  } catch { console.warn("[server] Failed to mark overdue invoices on startup"); }
+    // Run once on startup: mark overdue invoices
+    try {
+      const overdueCount = await markOverdueInvoices();
+      if (overdueCount > 0) console.log(`[auto-billing] Marked ${overdueCount} overdue invoices on startup.`);
+    } catch { console.warn("[server] Failed to mark overdue invoices on startup"); }
 
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
 
-    // Auto-billing: check for overdue invoices every 6 hours
-    setInterval(async () => {
-      try {
-        const count = await markOverdueInvoices();
-        if (count > 0) console.log(`[auto-billing] Marked ${count} invoices as overdue.`);
-      } catch (err: any) { console.error("[auto-billing] Error:", err.message); }
-    }, 6 * 60 * 60 * 1000);
-  });
-  process.on("SIGTERM", async () => { await closeBrowser(); process.exit(0); });
-  process.on("SIGINT", async () => { await closeBrowser(); process.exit(0); });
+      // Auto-billing: check for overdue invoices every 6 hours
+      setInterval(async () => {
+        try {
+          const count = await markOverdueInvoices();
+          if (count > 0) console.log(`[auto-billing] Marked ${count} invoices as overdue.`);
+        } catch (err: any) { console.error("[auto-billing] Error:", err.message); }
+      }, 6 * 60 * 60 * 1000);
+    });
+    process.on("SIGTERM", async () => { await closeBrowser(); process.exit(0); });
+    process.on("SIGINT", async () => { await closeBrowser(); process.exit(0); });
+  } catch (err: any) {
+    console.error("[FATAL] Server failed to start:", err?.message || err);
+    process.exit(1);
+  }
 })();

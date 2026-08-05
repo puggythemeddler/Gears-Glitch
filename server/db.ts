@@ -612,6 +612,7 @@ function getDb(): any {
 }
 
 async function initDb(): Promise<void> {
+  console.log("[boot] initDb: loading schema.sql");
   // Create tables from schema.sql if they don't exist yet
   const schemaPath = path.join(__dirname, "..", "..", "server", "schema.sql");
   if (fs.existsSync(schemaPath)) {
@@ -620,7 +621,9 @@ async function initDb(): Promise<void> {
   } else {
     console.warn("[db] schema.sql not found at", schemaPath);
   }
+  console.log("[boot] initDb: schema applied");
   await runMigrations();
+  console.log("[boot] initDb: migrations applied");
   await ensureDefaultSettings();
   await ensureDefaultCategories();
   await ensureAdminUser();
@@ -639,6 +642,7 @@ async function initDb(): Promise<void> {
      ON CONFLICT DO NOTHING`,
     [settings.currency]
   );
+  console.log("[boot] initDb: completed");
 }
 
 async function runMigrations(): Promise<void> {
@@ -1333,21 +1337,29 @@ async function initRolesAsync(): Promise<void> {
     provider: ["repair:list", "repair:view", "repair:update", "product:list", "product:update", "stock:list", "stock:update", "stock:view_low", "calendar:view", "calendar:schedule", "order:view", "customer:view", "messaging:view", "messaging:send", "provider:view"],
     owner: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "quote:update", "order:view", "customer:view", "coupon:view", "giftcard:view", "campaign:view", "cart:view", "provider:view", "spec:view", "supplier:view", "branch:view", "subscription:view", "about:view", "positioning:view", "whatsapp:view", "review:view", "audit:view"],
   };
+  // deleted_roles is created by schema.sql / runMigrations. Guard anyway so a
+  // pre-existing database that somehow lacks it still boots successfully.
+  let hasDeletedRoles = false;
+  try {
+    const t = await queryOne("SELECT to_regclass('deleted_roles') AS name");
+    hasDeletedRoles = !!(t && t.name);
+  } catch { hasDeletedRoles = false; }
+
   await transaction(async (client) => {
+    const skipped = new Set<string>();
     for (const [roleId] of Object.entries(DEFAULT_ROLES)) {
       // Skip roles this client has deleted (deleted_roles tombstone). Deletions
       // are stored in this client's own database only, so other clients are unaffected.
-      await client.query(`INSERT INTO roles (id, name, description, is_custom)
-        SELECT $1, $2, $3, 0
-        WHERE NOT EXISTS (SELECT 1 FROM deleted_roles WHERE id = $1)
-        ON CONFLICT DO NOTHING`, [roleId, roleId.charAt(0).toUpperCase() + roleId.slice(1), `Default ${roleId} role`]);
+      if (hasDeletedRoles) {
+        const t = await client.query("SELECT 1 FROM deleted_roles WHERE id = $1", [roleId]);
+        if ((t.rows || []).length > 0) { skipped.add(roleId); continue; }
+      }
+      await client.query("INSERT INTO roles (id, name, description, is_custom) VALUES ($1, $2, $3, 0) ON CONFLICT DO NOTHING", [roleId, roleId.charAt(0).toUpperCase() + roleId.slice(1), `Default ${roleId} role`]);
     }
     for (const [roleId, permissions] of Object.entries(DEFAULT_ROLES)) {
+      if (skipped.has(roleId)) continue;
       for (const permission of permissions) {
-        await client.query(`INSERT INTO role_permissions (role_id, permission)
-          SELECT $1, $2
-          WHERE EXISTS (SELECT 1 FROM roles WHERE id = $1)
-          ON CONFLICT DO NOTHING`, [roleId, permission]);
+        await client.query("INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING", [roleId, permission]);
       }
     }
   });
