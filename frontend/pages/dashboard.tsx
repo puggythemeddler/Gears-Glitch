@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState, useRef } from "react";
-import { api, getRole, getCustomerToken, getProviderToken, clearAllSessions } from "@/lib/api";
+import { api, getRole, clearAllSessions } from "@/lib/api";
 import type { Order, RepairTicket, WishlistItem, Message, Quote } from "@/lib/types";
 import { useToast } from "@/components/Toast";
 import { useFeature } from "@/lib/features";
@@ -9,10 +9,10 @@ function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
 }
 
-type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "sales" | "invoices" | "profile";
+type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "profile";
 
 export default function DashboardPage() {
-  const [role, setRole] = useState<"customer" | "provider" | null>(null);
+  const [role, setRole] = useState<"customer" | null>(null);
   const [userName, setUserName] = useState("");
   const [activeSection, setActiveSection] = useState<Section>("overview");
   const [orders, setOrders] = useState<Order[]>([]);
@@ -20,20 +20,16 @@ export default function DashboardPage() {
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [sales, setSales] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [msgComposeOpen, setMsgComposeOpen] = useState(false);
   const [repairFormOpen, setRepairFormOpen] = useState(false);
   const [replyBody, setReplyBody] = useState("");
   const [selectedMsgKey, setSelectedMsgKey] = useState<string | null>(null);
   const { toast } = useToast();
-  const [salesFrom, setSalesFrom] = useState(() => new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
-  const [salesTo, setSalesTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
 
   const isCustomer = role === "customer";
-  const isProvider = role === "provider";
   const featureFlags: Record<string, boolean> = {
     "Messaging": useFeature("Messaging"),
     "Repair ticketing": useFeature("Repair ticketing"),
@@ -46,26 +42,21 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const r = getRole();
-    if (!r || r === "staff") {
+    if (r !== "customer") {
       window.location.href = "/login";
       return;
     }
-    setRole(r);
-    const name = localStorage.getItem(r === "customer" ? "customerStoreName" : "providerStoreName") || r;
+    setRole("customer");
+    const name = localStorage.getItem("customerStoreName") || "Customer";
     setUserName(name);
   }, []);
 
   useEffect(() => {
     if (!role) return;
-    if (isCustomer) {
-      loadOrders();
-      loadRepairs();
-      loadWishlist();
-      loadQuotes();
-    }
-    if (isProvider) {
-      loadSales();
-    }
+    loadOrders();
+    loadRepairs();
+    loadWishlist();
+    loadQuotes();
     loadMessages().then((c) => { prevMsgCountRef.current = c; });
     loadProfile();
   }, [role]);
@@ -104,22 +95,16 @@ export default function DashboardPage() {
   }
 
   async function loadMessages() {
-    const endpoint = isCustomer ? "/api/messages" : "/api/provider/messages";
     try {
-      const d = await api<{ messages: any[] }>(endpoint);
+      const d = await api<{ messages: any[] }>("/api/messages");
       const msgs = d.messages || [];
       setMessages(msgs);
       return msgs.length;
     } catch { setMessages([]); return 0; }
   }
 
-  async function loadSales() {
-    try { const d = await api<any>(`/api/provider/sales?from=${encodeURIComponent(salesFrom)}&to=${encodeURIComponent(salesTo)}`); setSales(d); } catch { setSales(null); }
-  }
-
   async function loadProfile() {
-    const endpoint = isCustomer ? "/api/customer/me" : "/api/provider/me";
-    try { const d = await api(endpoint); setProfile(d); } catch { setProfile(null); }
+    try { const d = await api("/api/customer/me"); setProfile(d); } catch { setProfile(null); }
   }
 
   function logout() {
@@ -133,8 +118,6 @@ export default function DashboardPage() {
     { key: "repairs", label: "Repairs", show: isCustomer, feature: "Repair ticketing" },
     { key: "wishlist", label: "Wishlist", show: isCustomer },
     { key: "messages", label: "Messages", show: true, feature: "Messaging" },
-    { key: "sales", label: "Sales Report", show: isProvider, feature: "Order management" },
-    { key: "invoices", label: "Invoices", show: isProvider, feature: "Invoice/quote PDF downloads" },
     { key: "profile", label: "Profile", show: true },
   ];
 
@@ -152,7 +135,6 @@ export default function DashboardPage() {
             {s.label}
           </button>
         ))}
-        {isProvider && <button onClick={() => window.location.href = "/pos"} style={{ color: "var(--primary)" }}>POS</button>}
         <button onClick={logout} style={{ marginTop: "auto", color: "var(--primary)" }}>Sign out</button>
       </nav>
 
@@ -161,21 +143,11 @@ export default function DashboardPage() {
         {activeSection === "overview" && (
           <div className="dash-section active">
             <h1>Welcome, {userName}</h1>
-            <p className="page-intro">{isProvider ? "View your sales report and manage your profile." : "Manage your orders, repairs, and messages."}</p>
+            <p className="page-intro">Manage your orders, repairs, and messages.</p>
             <div className="stat-grid">
-              {isCustomer && (
-                <>
-                  <div className="stat-card"><div className="stat-card__value">{orders.length}</div><div className="stat-card__label">Orders</div></div>
-                  <div className="stat-card"><div className="stat-card__value">{repairs.length}</div><div className="stat-card__label">Repairs</div></div>
-                  <div className="stat-card"><div className="stat-card__value">{wishlist.length}</div><div className="stat-card__label">Wishlist</div></div>
-                </>
-              )}
-              {isProvider && (
-                <>
-                  <div className="stat-card"><div className="stat-card__value">{sales?.totalOrders ?? 0}</div><div className="stat-card__label">Total Orders</div></div>
-                  <div className="stat-card"><div className="stat-card__value">{formatPrice(sales?.totalRevenue ?? 0)}</div><div className="stat-card__label">Revenue</div></div>
-                </>
-              )}
+              <div className="stat-card"><div className="stat-card__value">{orders.length}</div><div className="stat-card__label">Orders</div></div>
+              <div className="stat-card"><div className="stat-card__value">{repairs.length}</div><div className="stat-card__label">Repairs</div></div>
+              <div className="stat-card"><div className="stat-card__value">{wishlist.length}</div><div className="stat-card__label">Wishlist</div></div>
             </div>
           </div>
         )}
@@ -253,14 +225,14 @@ export default function DashboardPage() {
                 {msgComposeOpen ? "Cancel" : "New message"}
               </button>
             </div>
-            {msgComposeOpen && <MessageCompose isCustomer={isCustomer} onSent={() => { setMsgComposeOpen(false); loadMessages(); }} />}
+            {msgComposeOpen && <MessageCompose onSent={() => { setMsgComposeOpen(false); loadMessages(); }} />}
 
             {messages.length === 0 ? <p className="muted">No messages.</p> : (
               (() => {
                 // Group by conversation partner
                 const groups = new Map<string, any[]>();
                 for (const m of messages) {
-                  const key = isCustomer ? `p-${m.provider_id}` : `c-${m.customer_id}`;
+                  const key = `p-${m.provider_id}`;
                   if (!groups.has(key)) groups.set(key, []);
                   groups.get(key)!.push(m);
                 }
@@ -269,8 +241,8 @@ export default function DashboardPage() {
                 const convos = [...groups.entries()].map(([key, msgs]) => {
                   msgs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
                   const latest = msgs[msgs.length - 1];
-                  const partner = isCustomer ? (latest.providerName || "Provider") : (latest.customerName || "Customer");
-                  return { key, msgs, latest, partner, unread: msgs.filter((m) => !m.read_at && (isCustomer ? m.sender_role === "provider" : m.sender_role === "customer")).length };
+                  const partner = latest.providerName || "Provider";
+                  return { key, msgs, latest, partner, unread: msgs.filter((m) => !m.read_at && m.sender_role === "provider").length };
                 });
                 convos.sort((a, b) => new Date(b.latest.created_at).getTime() - new Date(a.latest.created_at).getTime());
 
@@ -334,7 +306,7 @@ export default function DashboardPage() {
                           </div>
                           <div style={{ flex: 1, overflowY: "auto", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                             {activeConvo.msgs.map((m) => {
-                              const isMe = isCustomer ? m.sender_role === "customer" : m.sender_role === "provider";
+                              const isMe = m.sender_role === "customer";
                               return (
                                 <div key={m.id} style={{
                                   alignSelf: isMe ? "flex-end" : "flex-start",
@@ -359,12 +331,9 @@ export default function DashboardPage() {
                             e.preventDefault();
                             if (!replyBody.trim()) return;
                             try {
-                              const endpoint = isCustomer ? "/api/messages" : "/api/provider/messages";
                               const latest = activeConvo.latest;
-                              const payload: any = { subject: latest.subject || "", body: replyBody };
-                              if (isCustomer) payload.providerId = latest.provider_id;
-                              else payload.customerId = latest.customer_id;
-                              await api(endpoint, { method: "POST", body: JSON.stringify(payload) });
+                              const payload: any = { subject: latest.subject || "", body: replyBody, providerId: latest.provider_id };
+                              await api("/api/messages", { method: "POST", body: JSON.stringify(payload) });
                               setReplyBody("");
                               loadMessages();
                             } catch (err: any) { toast("error", err.message); }
@@ -383,78 +352,12 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* SALES REPORT */}
-        {activeSection === "sales" && (
-          <div className="dash-section active">
-            <h2>Sales Report</h2>
-            <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
-              <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={salesFrom} onChange={(e) => setSalesFrom(e.target.value)} /></label></div>
-              <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={salesTo} onChange={(e) => setSalesTo(e.target.value)} /></label></div>
-              <button className="btn" onClick={loadSales}>Generate</button>
-            </div>
-            {sales ? (
-              <>
-                <div className="stat-grid" style={{ marginBottom: "1rem" }}>
-                  <div className="stat-card"><div className="stat-card__value">{sales.totalOrders}</div><div className="stat-card__label">Orders</div></div>
-                  <div className="stat-card"><div className="stat-card__value">{formatPrice(sales.totalRevenue)}</div><div className="stat-card__label">Revenue</div></div>
-                </div>
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
-                    <tbody>
-                      {(sales.orders || []).map((o: any) => (
-                        <tr key={o.id}>
-                          <td>{o.id}</td>
-                          <td>{escapeHtml(o.customer_name || "—")}</td>
-                          <td>{formatPrice((o.subtotal || 0) + (o.shipping_fee || 0))}</td>
-                          <td><span className="plan-status">{o.status}</span></td>
-                          <td style={{ whiteSpace: "nowrap", fontSize: "0.85rem" }}>{new Date(o.created_at).toLocaleDateString("en-GB")}</td>
-                        </tr>
-                      ))}
-                      {(!sales.orders || sales.orders.length === 0) && <tr><td colSpan={5} style={{ textAlign: "center", padding: "2rem", opacity: 0.5 }}>No orders found.</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : <p className="muted">Select a date range and click Generate.</p>}
-          </div>
-        )}
-
-        {/* INVOICES */}
-        {activeSection === "invoices" && (
-          <div className="dash-section active">
-            <h2>Invoices</h2>
-            {sales ? (
-              (sales.orders || []).length === 0 ? <p className="muted">No invoices yet.</p> : (
-                (sales.orders || []).map((o: any) => (
-                  <div key={o.id} className="order-item">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
-                      <div>
-                        <strong>Invoice #ORD-{o.id}</strong> — {escapeHtml(o.customer_name || "—")}
-                        <br /><span className={`plan-status ${o.status}`}>{o.status}</span>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <strong>{formatPrice((o.subtotal || 0) + (o.shipping_fee || 0))}</strong>
-                        <br /><span className="muted" style={{ fontSize: "0.8rem" }}>{new Date(o.created_at).toLocaleDateString("en-GB")}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )
-            ) : <p className="muted">Visit Sales Report first to load data.</p>}
-          </div>
-        )}
-
         {/* PROFILE */}
         {activeSection === "profile" && (
           <div className="dash-section active">
             <h2>Profile</h2>
             {profile ? (
-              isCustomer ? (
-                <CustomerProfileForm profile={profile} onSaved={(p) => setProfile(p)} />
-              ) : (
-                <ProviderProfileForm profile={profile} onSaved={(p) => setProfile(p)} />
-              )
+              <CustomerProfileForm profile={profile} onSaved={(p) => setProfile(p)} />
             ) : <p className="muted">Loading profile...</p>}
           </div>
         )}
@@ -517,39 +420,7 @@ function CustomerProfileForm({ profile, onSaved }: { profile: any; onSaved: (p: 
   );
 }
 
-function ProviderProfileForm({ profile, onSaved }: { profile: any; onSaved: (p: any) => void }) {
-  const [companyName, setCompanyName] = useState(profile.companyName || profile.company_name || "");
-  const [contactName, setContactName] = useState(profile.contactName || profile.contact_name || "");
-  const [phone, setPhone] = useState(profile.phone || "");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(""); setSaved(false); setSaving(true);
-    try {
-      const result = await api("/api/provider/me", { method: "PUT", body: JSON.stringify({ companyName, contactName, phone }) });
-      setSaved(true);
-      onSaved(result.provider);
-    } catch (err: any) { setError(err.message); }
-    finally { setSaving(false); }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="auth-form" style={{ maxWidth: 400 }}>
-      <div className="field"><label>Company name<input value={companyName} onChange={(e) => setCompanyName(e.target.value)} /></label></div>
-      <div className="field"><label>Contact name<input value={contactName} onChange={(e) => setContactName(e.target.value)} /></label></div>
-      <div className="field"><label>Email<input value={profile.email || ""} disabled style={{ opacity: 0.6 }} /></label></div>
-      <div className="field"><label>Phone<input value={phone} onChange={(e) => setPhone(e.target.value)} /></label></div>
-      {error && <p className="error">{error}</p>}
-      {saved && <p style={{ color: "var(--success)" }}>Profile updated.</p>}
-      <button className="btn" disabled={saving}>{saving ? "Saving..." : "Save"}</button>
-    </form>
-  );
-}
-
-function MessageCompose({ isCustomer, onSent }: { isCustomer: boolean; onSent: () => void }) {
+function MessageCompose({ onSent }: { onSent: () => void }) {
   const [recipientId, setRecipientId] = useState("");
   const [recipients, setRecipients] = useState<{ id: number; name: string }[]>([]);
   const [subject, setSubject] = useState("");
@@ -558,16 +429,10 @@ function MessageCompose({ isCustomer, onSent }: { isCustomer: boolean; onSent: (
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    if (isCustomer) {
-      api<{ providers: { id: number; company_name: string; contact_name: string }[] }>("/api/messages/providers")
-        .then((d) => setRecipients((d.providers || []).map((p) => ({ id: p.id, name: p.company_name || p.contact_name || `Provider #${p.id}` }))))
-        .catch(() => {});
-    } else {
-      api<{ customers: { id: number; name: string }[] }>("/api/provider/messages/customers")
-        .then((d) => setRecipients((d.customers || []).map((c) => ({ id: c.id, name: c.name || `Customer #${c.id}` }))))
-        .catch(() => {});
-    }
-  }, [isCustomer]);
+    api<{ providers: { id: number; company_name: string; contact_name: string }[] }>("/api/messages/providers")
+      .then((d) => setRecipients((d.providers || []).map((p) => ({ id: p.id, name: p.company_name || p.contact_name || `Provider #${p.id}` }))))
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -575,11 +440,7 @@ function MessageCompose({ isCustomer, onSent }: { isCustomer: boolean; onSent: (
     setError("");
     setSending(true);
     try {
-      const endpoint = isCustomer ? "/api/messages" : "/api/provider/messages";
-      const payload = isCustomer
-        ? { providerId: Number(recipientId), subject, body }
-        : { customerId: Number(recipientId), subject, body };
-      await api(endpoint, { method: "POST", body: JSON.stringify(payload) });
+      await api("/api/messages", { method: "POST", body: JSON.stringify({ providerId: Number(recipientId), subject, body }) });
       onSent();
     } catch (err: any) { setError(err.message); }
     finally { setSending(false); }
@@ -588,9 +449,9 @@ function MessageCompose({ isCustomer, onSent }: { isCustomer: boolean; onSent: (
   return (
     <form onSubmit={handleSubmit} className="auth-form" style={{ marginTop: "1rem" }}>
       <div className="field">
-        <label>{isCustomer ? "Provider" : "Customer"}</label>
+        <label>Provider</label>
         <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)} required>
-          <option value="">Select {isCustomer ? "a provider" : "a customer"}…</option>
+          <option value="">Select a provider…</option>
           {recipients.map((r) => (
             <option key={r.id} value={r.id}>{r.name}</option>
           ))}

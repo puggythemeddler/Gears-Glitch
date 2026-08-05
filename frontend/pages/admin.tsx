@@ -359,7 +359,7 @@ export default function AdminPage() {
     setLoginLoading(true);
     try {
       const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: loginUsername, password: loginPassword }) });
-      const isStaffLogin = ["admin", "owner", "technician", "manager", "staff"].includes(data.role) || (data.role === "provider" && Array.isArray(data.permissions));
+      const isStaffLogin = ["admin", "owner", "technician", "manager", "staff", "provider"].includes(data.role);
       if (!isStaffLogin) { setLoginError("Staff access required."); return; }
       localStorage.setItem("computerStoreToken", data.token);
       localStorage.setItem("staffUserName", data.username || "Staff");
@@ -483,9 +483,12 @@ export default function AdminPage() {
               <strong style={{ fontSize: "1rem" }}>{settings?.storeName || "Store"}</strong>
               <span style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0.15rem 0.5rem", borderRadius: 999, background: "var(--primary-light)", color: "var(--primary)", fontWeight: 600 }}>{staffRole}</span>
             </div>
-            {featureFlags["Messaging"] && canAccess("messages") && <NotificationBell onClick={() => setView("messages")} />}
-            <button type="button" onClick={() => setView("help")} aria-label="Help" title="Help & keyboard shortcuts (?)" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700 }}>?</button>
-            <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <button type="button" onClick={() => { window.location.href = "/pos"; }} aria-label="Open POS" title="Open point of sale" style={{ background: "var(--primary)", color: "var(--surface)", border: "none", borderRadius: 6, padding: "0.3rem 0.7rem", cursor: "pointer", fontSize: "0.85rem", fontWeight: 700, lineHeight: 1 }}>POS</button>
+              {featureFlags["Messaging"] && canAccess("messages") && <NotificationBell onClick={() => setView("messages")} />}
+              <button type="button" onClick={() => setView("help")} aria-label="Help" title="Help & keyboard shortcuts (?)" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700 }}>?</button>
+              <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
+            </div>
           </div>
           <div className="dash-section active" key={view}>
             {view === "dashboard" && <AdminDashboard staffRole={staffRole} onNavigate={setView} />}

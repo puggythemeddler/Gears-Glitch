@@ -117,16 +117,9 @@ export default function LoginPage() {
         setTotpRequired(false);
         setTotpCode("");
         const role = data.role || "";
-        const isStaffProvider = role === "provider" && Array.isArray(data.permissions);
-        if (role === "provider" && !isStaffProvider) {
-          localStorage.setItem("providerToken", data.token);
-          localStorage.setItem("providerStoreName", data.username || data.email || "Provider");
-          localStorage.removeItem("computerStoreToken");
-        } else {
-          localStorage.setItem("computerStoreToken", data.token);
-          localStorage.setItem("staffUserName", data.username || data.email || "Staff");
-        }
-        if (role === "admin" || role === "owner" || role === "technician" || role === "manager" || role === "staff" || isStaffProvider) router.push("/admin");
+        localStorage.setItem("computerStoreToken", data.token);
+        localStorage.setItem("staffUserName", data.username || data.email || "Staff");
+        if (role === "admin" || role === "owner" || role === "technician" || role === "manager" || role === "staff" || role === "provider") router.push("/admin");
         else router.push("/dashboard");
       }
     } catch (err: any) {
