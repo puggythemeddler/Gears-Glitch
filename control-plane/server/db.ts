@@ -200,6 +200,8 @@ export async function initControlPlaneDb() {
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS next_payment_date TEXT DEFAULT ''`); } catch {}
   // Test-site flag: the client that receives every push first for safe rollout
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS is_test INTEGER DEFAULT 0`); } catch {}
+  // Client-created plans can opt into being synced to all other clients
+  try { await query(`ALTER TABLE custom_plans ADD COLUMN IF NOT EXISTS sync_to_others INTEGER DEFAULT 1`); } catch {}
 
   await query(`
     CREATE TABLE IF NOT EXISTS custom_plans (
@@ -213,6 +215,7 @@ export async function initControlPlaneDb() {
       max_branches INTEGER DEFAULT 1,
       features TEXT DEFAULT '[]',
       is_active BOOLEAN DEFAULT true,
+      sync_to_others INTEGER DEFAULT 1,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);

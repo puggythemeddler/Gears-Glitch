@@ -195,6 +195,7 @@ export interface SubscriptionPlan {
   maxBranches: number;
   features: string;
   isActive?: boolean;
+  syncToOthers?: boolean;
 }
 
 export interface Provider {

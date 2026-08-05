@@ -1299,7 +1299,7 @@ app.get("/api/admin/plans", adminAuthMiddleware, asyncHandler(async (_req: Reque
 
 app.post("/api/admin/plans", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { id, name, description, price, priceAnnual, tierLevel, maxProducts, features } = req.body || {};
+    const { id, name, description, price, priceAnnual, tierLevel, maxProducts, features, syncToOthers } = req.body || {};
     if (!id || !name) { res.status(400).json({ error: "Plan ID and name are required." }); return; }
     if (!isStr(id) || !isStr(name)) { res.status(400).json({ error: "Plan ID and name must be non-empty strings." }); return; }
     if (description !== undefined && !isStr(description, 2000)) { res.status(400).json({ error: "Description must be a valid string." }); return; }
@@ -1309,9 +1309,10 @@ app.post("/api/admin/plans", adminAuthMiddleware, asyncHandler(async (req: Reque
     if (maxProducts !== undefined && !isInt(Number(maxProducts))) { res.status(400).json({ error: "Max products must be an integer." }); return; }
     if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "Features must be an array." }); return; }
     if (await getSubscriptionPlan(id)) { res.status(409).json({ error: "A plan with this ID already exists." }); return; }
-    const plan = await createSubscriptionPlan({ id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches: 1, features, isActive: true });
+    const plan = await createSubscriptionPlan({ id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches: 1, features, isActive: true, syncToOthers: syncToOthers !== false });
     if (!plan) { res.status(500).json({ error: "Failed to create plan." }); return; }
     try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "plan", id, { name }, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
+    await pushPlanToControlPlane(plan);
     res.status(201).json({ plan });
   } catch (err: any) {
     console.error("[plan create]", err?.message || err);
@@ -1329,12 +1330,33 @@ app.put("/api/admin/plans/:id", adminAuthMiddleware, asyncHandler(async (req: Re
     const plan = await updateSubscriptionPlan(String(req.params.id), updates);
     if (!plan) { res.status(404).json({ error: "Plan not found." }); return; }
     try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "plan", String(req.params.id), { changes: Object.keys(req.body || {}) }, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
+    await pushPlanToControlPlane(plan);
     res.json({ plan });
   } catch (err: any) {
     console.error("[plan update]", err?.message || err);
     res.status(500).json({ error: "Failed to update plan." });
   }
 }));
+
+// When a client admin creates/edits a plan marked "sync to other clients",
+// notify the control plane so it can register the plan and distribute it
+// to every other active client.
+async function pushPlanToControlPlane(plan: any): Promise<void> {
+  if (!plan || plan.syncToOthers === false) return;
+  const cpUrl = (process.env.CONTROL_PLANE_URL || "").replace(/\/+$/, "");
+  const cpSecret = process.env.CONTROL_PLANE_SECRET || "";
+  if (!cpUrl || !cpSecret) return;
+  try {
+    const res = await fetch(`${cpUrl}/api/plans/sync-up`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-control-plane-key": cpSecret },
+      body: JSON.stringify({ plan }),
+    });
+    if (!res.ok) console.warn(`[plan-sync] Control plane rejected plan "${plan.id}": ${res.status}`);
+  } catch (e: any) {
+    console.warn("[plan-sync] Failed to notify control plane:", e.message);
+  }
+}
 
 app.delete("/api/admin/plans/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
@@ -1364,6 +1386,7 @@ app.put("/api/plans/sync", controlPlaneAuthMiddleware, asyncHandler(async (req: 
         priceAnnual: p.priceAnnual, tierLevel: p.tierLevel,
         maxProducts: p.maxProducts, maxBranches: p.maxBranches,
         features: p.features, isActive: p.isActive,
+        syncToOthers: p.syncToOthers !== undefined ? p.syncToOthers : true,
       });
     } else {
       await createSubscriptionPlan({
@@ -1371,6 +1394,7 @@ app.put("/api/plans/sync", controlPlaneAuthMiddleware, asyncHandler(async (req: 
         priceAnnual: p.priceAnnual, tierLevel: p.tierLevel,
         maxProducts: p.maxProducts, maxBranches: p.maxBranches,
         features: p.features, isActive: p.isActive,
+        syncToOthers: p.syncToOthers !== undefined ? p.syncToOthers : true,
       });
     }
   }

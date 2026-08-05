@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
   max_branches INTEGER NOT NULL DEFAULT 1,
   features TEXT NOT NULL DEFAULT '[]',
   is_active INTEGER NOT NULL DEFAULT 1,
+  sync_to_others INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 

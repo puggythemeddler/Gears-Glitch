@@ -587,9 +587,9 @@
     </div>
   </div>
 
-  <!-- Plan Modal -->
+  <!-- Plan Modal (full-screen editor) -->
   <div class="modal-overlay" id="plan-modal-overlay">
-    <div class="modal" style="width:640px;max-height:90vh">
+    <div class="modal" style="width:min(96vw,1200px);max-width:96vw;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;padding:1.25rem">
       <h2 id="plan-modal-title">Create Plan</h2>
       <div class="form-grid">
         <div class="field"><label for="plan-id">Plan ID</label><input type="text" id="plan-id" placeholder="e.g. custom-basic"></div>
@@ -599,12 +599,15 @@
         <div class="field"><label for="plan-tier">Tier Level</label><input type="number" id="plan-tier" value="1" min="1"></div>
         <div class="field"><label for="plan-max-products">Max Products</label><input type="number" id="plan-max-products" value="50" min="0"></div>
         <div class="field"><label for="plan-max-branches">Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
-        <div class="field" style="display:flex;align-items:end"><label style="margin:0"><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label></div>
+        <div class="field" style="display:flex;align-items:end;gap:1rem">
+          <label style="margin:0"><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label>
+          <label style="margin:0" title="When on, client admins who create/edit this plan will have it distributed to all other clients"><input type="checkbox" id="plan-sync-others" checked> Sync to other clients</label>
+        </div>
       </div>
       <div class="field"><label for="plan-desc">Description</label><input type="text" id="plan-desc" placeholder="e.g. For small shops"></div>
-      <div class="field">
+      <div class="field" style="flex:1;min-height:0;display:flex;flex-direction:column;margin-bottom:1rem">
         <label id="plan-features-label">Features</label>
-        <div id="feature-groups-container" role="group" aria-labelledby="plan-features-label" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
+        <div id="feature-groups-container" role="group" aria-labelledby="plan-features-label" style="flex:1;min-height:0;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hidePlanModal()">Cancel</button>
@@ -758,15 +761,15 @@
     }
 
     const FEATURE_GROUPS = [
-      { group: "Core Commerce", icon: "💳", features: ["Product listing","Order management","POS integration","Payment method configuration","M-Pesa integration","Discount/coupon management","Returns management","Customer management"] },
+      { group: "Core Commerce", icon: "💳", features: ["Product listing","Order management","POS integration","Payment method configuration","M-Pesa integration","Discount/coupon management","Returns management","Customer management","Gift cards"] },
       { group: "Inventory & Stock", icon: "📦", features: ["Low stock alerts","Stock take / inventory count","Stock transfers","Supplier management","Purchase order management","Barcode scanning","Bulk import/export","Bulk product edit","Inventory forecasting"] },
       { group: "Invoicing & Finance", icon: "🧾", features: ["eTIMS/KRA compliance","Invoice/quote PDF downloads","Credit notes","Quotations","Price history tracking"] },
       { group: "Repairs & Service", icon: "🔧", features: ["Repair ticketing","Technician accounts"] },
       { group: "Customer Engagement", icon: "💬", features: ["Messaging","Admin messaging","Email notifications","SMS notifications","Product reviews & ratings","Customer reviews","Loyalty program"] },
       { group: "WhatsApp & Communication", icon: "📱", features: ["WhatsApp integration"] },
       { group: "Multi-Location", icon: "🏢", features: ["Branch management","Multi-branch support","Client/tenant management"] },
-      { group: "Marketing & Storefront", icon: "🌐", features: ["Product positioning","Hero customization","Theme customization","Custom branding","Shop subscription"] },
-      { group: "Analytics & Security", icon: "📊", features: ["Analytics dashboard","Audit log"] },
+      { group: "Marketing & Storefront", icon: "🌐", features: ["Product positioning","Hero customization","Theme customization","Custom branding","Shop subscription","Campaign pages","Cart recovery"] },
+      { group: "Analytics & Security", icon: "📊", features: ["Analytics dashboard","Audit log","Visitor analytics"] },
       { group: "Support & Account", icon: "🛡", features: ["Google Sign-In","Multiple staff accounts","Spec templates","Priority support","Dedicated account manager"] },
       { group: "Payments & Currency", icon: "💱", features: ["Multi-currency support","API access"] },
     ];
@@ -1691,6 +1694,7 @@
               <div>
                 <strong style="font-size:1rem">${esc(p.name)}</strong>
                 <span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:4px;background:${active ? 'var(--btn-success-bg)' : 'var(--border)'};color:${active ? '#fff' : 'var(--text-secondary)'};margin-left:0.4rem;font-weight:600">${active ? 'Active' : 'Inactive'}</span>
+                ${p.sync_to_others !== 0 ? `<span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--tint-primary);color:var(--primary-strong);margin-left:0.4rem;font-weight:600" title="Client edits to this plan are distributed to all other clients">Syncs to clients</span>` : ''}
               </div>
               ${currentUser && currentUser.role === "admin" ? `<div style="display:flex;gap:0.25rem">
                 <button class="btn btn-ghost btn-sm" onclick="editPlan('${esc(p.id)}')">Edit</button>
@@ -1724,6 +1728,7 @@
       document.getElementById("plan-max-products").value = plan ? (plan.max_products || 0) : 50;
       document.getElementById("plan-max-branches").value = plan ? (plan.max_branches || 1) : 1;
       document.getElementById("plan-active").checked = plan ? plan.is_active : true;
+      document.getElementById("plan-sync-others").checked = plan ? plan.sync_to_others !== 0 : true;
       renderFeatureGroups(editingPlanFeatures);
       openModal(document.getElementById("plan-modal-overlay"));
     }
@@ -1741,14 +1746,15 @@
       const maxBranches = Number(document.getElementById("plan-max-branches").value) || 1;
       const features = editingPlanFeatures;
       const isActive = document.getElementById("plan-active").checked;
+      const syncToOthers = document.getElementById("plan-sync-others").checked;
 
       if (!name) { toast("Name required", "error"); return; }
 
       try {
         if (editingPlanId) {
-          await api("/api/plans/" + editingPlanId, { method: "PUT", body: JSON.stringify({ name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive }) });
+          await api("/api/plans/" + editingPlanId, { method: "PUT", body: JSON.stringify({ name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
         } else {
-          await api("/api/plans", { method: "POST", body: JSON.stringify({ id, name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive }) });
+          await api("/api/plans", { method: "POST", body: JSON.stringify({ id, name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
         }
         toast("Plan saved."); hidePlanModal(); loadPlans();
       } catch (e) { toast("Failed: " + e.message, "error"); }

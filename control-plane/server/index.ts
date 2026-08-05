@@ -86,7 +86,21 @@ function requireAuth(
       return next();
     } catch (e: any) { console.warn("[auth] JWT verification failed:", e?.message); }
   }
-  // 2. Try x-api-key (legacy + per-user)
+  // 2. Try x-control-plane-key (authenticated client services)
+  const cpKey = req.headers["x-control-plane-key"];
+  if (cpKey && typeof cpKey === "string") {
+    queryOne("SELECT id, name FROM clients WHERE cp_secret = $1", [cpKey])
+      .then((client) => {
+        if (client) {
+          (req as any).user = { id: client.id, username: `client:${client.name}`, role: "client" };
+          return next();
+        }
+        res.status(401).json({ error: "Invalid control-plane key" });
+      })
+      .catch(() => res.status(500).json({ error: "Auth error" }));
+    return;
+  }
+  // 3. Try x-api-key (legacy + per-user)
   const key = req.headers["x-api-key"] || req.query.key;
   if (key && typeof key === "string") {
     // First check the global legacy API key
@@ -1201,10 +1215,10 @@ app.post("/api/clients/:id/pull-plans", requireAuth, async (req, res) => {
     let imported = 0;
     for (const p of plans) {
       await query(
-        `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10`,
-        [p.id, p.name, p.description || "", p.price || 0, p.priceAnnual || p.price_annual || null, p.tierLevel || p.tier_level || 1, p.maxProducts || p.max_products || 50, p.maxBranches || p.max_branches || 1, JSON.stringify(p.features || []), p.isActive !== undefined ? p.isActive : (p.is_active !== undefined ? p.is_active : true)]
+        `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10, sync_to_others=$11`,
+        [p.id, p.name, p.description || "", p.price || 0, p.priceAnnual || p.price_annual || null, p.tierLevel || p.tier_level || 1, p.maxProducts || p.max_products || 50, p.maxBranches || p.max_branches || 1, JSON.stringify(p.features || []), p.isActive !== undefined ? p.isActive : (p.is_active !== undefined ? p.is_active : true), p.syncToOthers !== undefined ? (p.syncToOthers ? 1 : 0) : (p.sync_to_others !== undefined ? p.sync_to_others : 1)]
       );
       imported++;
     }
@@ -1232,10 +1246,10 @@ app.post("/api/plans/import-defaults", requireAuth, async (_req, res) => {
 
         for (const p of plans) {
           await query(
-            `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-             ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10`,
-            [p.id, p.name, p.description || "", p.price || 0, p.priceAnnual || p.price_annual || null, p.tierLevel || p.tier_level || 1, p.maxProducts || p.max_products || 50, p.maxBranches || p.max_branches || 1, JSON.stringify(p.features || []), p.isActive !== undefined ? p.isActive : (p.is_active !== undefined ? p.is_active : true)]
+            `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10, sync_to_others=$11`,
+            [p.id, p.name, p.description || "", p.price || 0, p.priceAnnual || p.price_annual || null, p.tierLevel || p.tier_level || 1, p.maxProducts || p.max_products || 50, p.maxBranches || p.max_branches || 1, JSON.stringify(p.features || []), p.isActive !== undefined ? p.isActive : (p.is_active !== undefined ? p.is_active : true), p.syncToOthers !== undefined ? (p.syncToOthers ? 1 : 0) : (p.sync_to_others !== undefined ? p.sync_to_others : 1)]
           );
           imported++;
         }
@@ -1252,14 +1266,14 @@ app.post("/api/plans/import-defaults", requireAuth, async (_req, res) => {
 
 app.post("/api/plans", requireAuth, async (req, res) => {
   try {
-    const { id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features } = req.body || {};
+    const { id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features, isActive, syncToOthers } = req.body || {};
     if (!name) { res.status(400).json({ error: "name required" }); return; }
     const planId = id || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
     await query(
-      `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9`,
-      [planId, name, description || "", price || 0, priceAnnual || null, tierLevel || 1, maxProducts ?? 50, maxBranches ?? 1, JSON.stringify(features || [])]
+      `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10, sync_to_others=$11`,
+      [planId, name, description || "", price || 0, priceAnnual || null, tierLevel || 1, maxProducts ?? 50, maxBranches ?? 1, JSON.stringify(features || []), isActive !== undefined ? isActive : true, syncToOthers !== false ? 1 : 0]
     );
     res.status(201).json({ id: planId, message: `Plan "${name}" saved.` });
   } catch (err: any) {
@@ -1270,7 +1284,7 @@ app.post("/api/plans", requireAuth, async (req, res) => {
 
 app.put("/api/plans/:id", requireAuth, async (req, res) => {
   try {
-    const { name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features, isActive } = req.body || {};
+    const { name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features, isActive, syncToOthers } = req.body || {};
     const fields: string[] = []; const params: any[] = []; let idx = 1;
     if (name !== undefined) { fields.push(`name = $${idx}`); params.push(name); idx++; }
     if (description !== undefined) { fields.push(`description = $${idx}`); params.push(description); idx++; }
@@ -1281,6 +1295,7 @@ app.put("/api/plans/:id", requireAuth, async (req, res) => {
     if (maxBranches !== undefined) { fields.push(`max_branches = $${idx}`); params.push(maxBranches); idx++; }
     if (features !== undefined) { fields.push(`features = $${idx}`); params.push(JSON.stringify(features)); idx++; }
     if (isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(isActive); idx++; }
+    if (syncToOthers !== undefined) { fields.push(`sync_to_others = $${idx}`); params.push(syncToOthers ? 1 : 0); idx++; }
     if (fields.length === 0) { res.json({ message: "No changes" }); return; }
     params.push(req.params.id);
     await query(`UPDATE custom_plans SET ${fields.join(", ")} WHERE id = $${idx}`, params);
@@ -1313,6 +1328,7 @@ app.post("/api/clients/:id/sync-plans", requireAuth, async (req, res) => {
       maxProducts: p.max_products, maxBranches: p.max_branches,
       features: typeof p.features === "string" ? JSON.parse(p.features) : p.features,
       isActive: p.is_active,
+      syncToOthers: p.sync_to_others !== 0,
     }));
 
     const result = await fetch(`${client.render_service_url}/api/plans/sync`, {
@@ -1344,6 +1360,7 @@ app.post("/api/plans/sync-all", requireAuth, async (_req, res) => {
       maxProducts: p.max_products, maxBranches: p.max_branches,
       features: typeof p.features === "string" ? JSON.parse(p.features) : p.features,
       isActive: p.is_active,
+      syncToOthers: p.sync_to_others !== 0,
     }));
 
     const results: { name: string; success: boolean; error?: string }[] = [];
@@ -1362,6 +1379,51 @@ app.post("/api/plans/sync-all", requireAuth, async (_req, res) => {
     res.json({ results });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to sync all" });
+  }
+});
+
+// Receive a plan a client admin opted to share ("sync to other clients") and
+// distribute it to every other active client. The originating client is
+// identified by its control-plane key so it is not re-pushed.
+app.post("/api/plans/sync-up", requireAuth, async (req, res) => {
+  try {
+    const plan = req.body?.plan;
+    if (!plan || !plan.id || !plan.name) { res.status(400).json({ error: "Plan (id, name) required" }); return; }
+    if (plan.syncToOthers === false) { res.json({ message: "Plan is not marked to sync to other clients." }); return; }
+
+    const key = (req.headers["x-control-plane-key"] as string) || "";
+    const origin = await queryOne("SELECT id, name FROM clients WHERE cp_secret = $1", [key]);
+
+    await query(
+      `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10, sync_to_others=$11`,
+      [plan.id, plan.name, plan.description || "", plan.price || 0, plan.priceAnnual || null, plan.tierLevel || 1, plan.maxProducts ?? 50, plan.maxBranches ?? 1, JSON.stringify(plan.features || []), plan.isActive !== undefined ? plan.isActive : true, plan.syncToOthers !== false ? 1 : 0]
+    );
+
+    const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active' AND render_service_url != ''");
+    const payload = [{ ...plan, isActive: plan.isActive !== undefined ? plan.isActive : true }];
+    const results: { name: string; success: boolean; error?: string }[] = [];
+    for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
+      if (origin && origin.id === c.id) continue;
+      try {
+        const r = await fetch(`${c.render_service_url}/api/plans/sync`, {
+          method: "PUT",
+          headers: cpHeaders(c.cp_secret, { "Content-Type": "application/json" }),
+          body: JSON.stringify({ plans: payload }),
+          signal: AbortSignal.timeout(15000),
+        });
+        results.push({ name: c.name, success: r.ok });
+      } catch (e: any) {
+        results.push({ name: c.name, success: false, error: e.message });
+      }
+    }
+    const ok = results.filter((r) => r.success).length;
+    console.log(`[plan-sync] sync-up for "${plan.id}" from ${origin ? origin.name : "unknown client"}: ${ok}/${results.length} client(s) updated`);
+    res.json({ message: `Synced plan to ${ok} other client(s).`, results });
+  } catch (err: any) {
+    console.error("[api] Plan sync-up error:", err.message);
+    res.status(500).json({ error: "Failed to sync plan" });
   }
 });
 

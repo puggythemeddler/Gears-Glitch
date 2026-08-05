@@ -194,6 +194,17 @@ Every client backend carries a `CONTROL_PLANE_SECRET` env var (auto-generated du
 
 Clients without the secret configured reject all control-plane management calls. Suspend does both: sets the app-level suspended flag (storefront returns 403) and pauses the Render service.
 
+The reverse direction works too: every client gets a `CONTROL_PLANE_URL` env var (the control plane's public URL). A client can call the control plane with its own `x-control-plane-key` (its `CONTROL_PLANE_SECRET`), which the control plane matches against `clients.cp_secret` to identify the caller. This powers client-created plan sync-up (`POST /api/plans/sync-up`).
+
+## Client-Created Plan Sync
+
+Client admins can create/edit plans on their own backend. Each plan has a **"Sync to other clients"** checkbox (default on). When an admin saves a synced plan, the client backend calls `POST /api/plans/sync-up` on the control plane, which:
+
+1. Upserts the plan into `custom_plans` (preserving `sync_to_others`, active state, features).
+2. Pushes that plan to every other active client via the existing `PUT /api/plans/sync` path (the originating client is skipped).
+
+Plans that are not marked to sync are still saved locally on the creating client but are never distributed. The control plane's own plan editor has the same checkbox, and plan cards show a **"Syncs to clients"** badge. Control-plane `POST /api/plans/sync-all` still distributes all plans to all active clients regardless of the flag.
+
 ## API Endpoints
 
 All endpoints require authentication via one of:
@@ -253,6 +264,7 @@ All endpoints require authentication via one of:
 | PUT | `/api/plans/:id` | Update plan |
 | DELETE | `/api/plans/:id` | Delete plan |
 | POST | `/api/plans/sync-all` | Push plans to all active clients |
+| POST | `/api/plans/sync-up` | Receive a plan from a client (marked to sync) and distribute it to the other clients |
 
 ### Operations
 | Method | Endpoint | Description |

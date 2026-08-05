@@ -120,6 +120,7 @@ interface SubscriptionPlan {
   maxBranches: number;
   features: string[];
   isActive: boolean;
+  syncToOthers: boolean;
 }
 
 interface Provider {
@@ -570,6 +571,7 @@ function mapPlan(row: any): SubscriptionPlan {
     maxBranches: row.max_branches ?? 1,
     features: JSON.parse(row.features || "[]"),
     isActive: Boolean(row.is_active),
+    syncToOthers: Boolean(row.sync_to_others),
   };
 }
 
@@ -771,6 +773,7 @@ async function runMigrations(): Promise<void> {
   } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_annual DOUBLE PRECISION`); } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`); } catch {}
+  try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS sync_to_others INTEGER DEFAULT 1`); } catch {}
   // Product review indexes and constraints
   try { await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_reviews_unique ON product_reviews (product_id, customer_id)`); } catch {}
   try { await query(`CREATE INDEX IF NOT EXISTS idx_product_reviews_product_id ON product_reviews (product_id)`); } catch {}
@@ -1968,7 +1971,7 @@ async function getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undef
 
 async function createSubscriptionPlan(plan: Omit<SubscriptionPlan, "id"> & { id?: string }): Promise<SubscriptionPlan> {
   const id = plan.id || slugify(plan.name);
-  await query("INSERT INTO subscription_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [id, plan.name, plan.description, plan.price, plan.priceAnnual ?? null, plan.tierLevel, plan.maxProducts, plan.maxBranches, JSON.stringify(plan.features)]);
+  await query("INSERT INTO subscription_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)", [id, plan.name, plan.description, plan.price, plan.priceAnnual ?? null, plan.tierLevel, plan.maxProducts, plan.maxBranches, JSON.stringify(plan.features), plan.isActive !== undefined ? plan.isActive : true, plan.syncToOthers !== undefined ? plan.syncToOthers : true]);
   return (await getSubscriptionPlan(id))!;
 }
 
@@ -1985,6 +1988,7 @@ async function updateSubscriptionPlan(id: string, updates: Partial<SubscriptionP
   if (updates.maxBranches !== undefined) { fields.push(`max_branches = $${idx}`); params.push(updates.maxBranches); idx++; }
   if (updates.features !== undefined) { fields.push(`features = $${idx}`); params.push(JSON.stringify(updates.features)); idx++; }
   if (updates.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.isActive); idx++; }
+  if (updates.syncToOthers !== undefined) { fields.push(`sync_to_others = $${idx}`); params.push(updates.syncToOthers); idx++; }
   if (fields.length === 0) return existing;
   params.push(id);
   await query(`UPDATE subscription_plans SET ${fields.join(", ")} WHERE id = $${idx}`, params);

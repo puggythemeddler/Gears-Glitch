@@ -45,6 +45,10 @@ services:
       # Leave unset to disable remote management entirely.
       - key: CONTROL_PLANE_SECRET
         sync: false
+      # Public URL of the control plane — lets this client push synced plans
+      # (client-created plans marked "sync to other clients") back to it.
+      - key: CONTROL_PLANE_URL
+        sync: false
       - key: WHATSAPP_PHONE_NUMBER_ID
         sync: false
       - key: WHATSAPP_ACCESS_TOKEN

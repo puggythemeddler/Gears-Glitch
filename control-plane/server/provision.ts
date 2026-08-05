@@ -14,6 +14,12 @@ const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID || "";
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || "";
 const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || "";
 const DOMAIN_BASE = process.env.DOMAIN_BASE || "gearglitch.com";
+// Public URL of this control plane, injected into every client so they can
+// call back (plan sync, etc.) with their control-plane secret.
+const CONTROL_PLANE_URL = (process.env.CONTROL_PLANE_URL || "").replace(/\/+$/, "");
+if (!CONTROL_PLANE_URL) {
+  console.warn("[provision] CONTROL_PLANE_URL is not set — client plan sync-up to the control plane will be disabled.");
+}
 const FRONTEND_GIT_REPO = process.env.FRONTEND_GIT_REPO || "puggythemeddler/Gears-Glitch";
 const DEFAULT_GIT_REPO_OWNER = "puggythemeddler";
 
@@ -122,6 +128,9 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
     { key: "PORT", value: "8020" },
     { key: "DB_SSL_REJECT", value: "false" },
     { key: "CONTROL_PLANE_SECRET", value: cpSecret },
+    // Control plane URL — lets the client push synced plans (and future
+    // syncs) back to the control plane with its control-plane secret.
+    { key: "CONTROL_PLANE_URL", value: CONTROL_PLANE_URL },
     // Admin seed credentials — the backend creates this admin user on first boot
     { key: "ADMIN_USERNAME", value: "admin" },
     { key: "ADMIN_EMAIL", value: adminEmail },
@@ -459,10 +468,12 @@ export function generateCpSecret(): string {
 
 // Push (or rotate) the control-plane secret on an existing client's Render service
 export async function pushControlPlaneSecret(renderServiceId: string, cpSecret: string): Promise<void> {
+  const envVars = [{ key: "CONTROL_PLANE_SECRET", value: cpSecret }];
+  if (CONTROL_PLANE_URL) envVars.push({ key: "CONTROL_PLANE_URL", value: CONTROL_PLANE_URL });
   const res = await fetch(`https://api.render.com/v1/services/${renderServiceId}`, {
     method: "PATCH",
     headers: headers(RENDER_API_KEY),
-    body: JSON.stringify({ envVars: [{ key: "CONTROL_PLANE_SECRET", value: cpSecret }] }),
+    body: JSON.stringify({ envVars }),
   });
   if (!res.ok) {
     const err = await res.text();

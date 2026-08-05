@@ -1533,6 +1533,7 @@ const FEATURE_GROUPS = [
       "Product listing", "Order management", "POS integration",
       "Payment method configuration", "M-Pesa integration",
       "Discount/coupon management", "Returns management", "Customer management",
+      "Gift cards",
     ],
   },
   {
@@ -1587,14 +1588,14 @@ const FEATURE_GROUPS = [
     icon: "🌐",
     features: [
       "Product positioning", "Hero customization", "Theme customization",
-      "Custom branding", "Shop subscription",
+      "Custom branding", "Shop subscription", "Campaign pages", "Cart recovery",
     ],
   },
   {
     group: "Analytics & Security",
     icon: "📊",
     features: [
-      "Analytics dashboard", "Audit log",
+      "Analytics dashboard", "Audit log", "Visitor analytics",
     ],
   },
   {
@@ -1618,7 +1619,7 @@ function AdminPlans() {
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ plans: SubscriptionPlan[] }>("/api/admin/plans"), []);
   const [editing, setEditing] = useState<SubscriptionPlan | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, features: [] as string[] });
+  const [form, setForm] = useState({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, syncToOthers: true, features: [] as string[] });
   const [customInput, setCustomInput] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -1635,13 +1636,13 @@ function AdminPlans() {
 
   function openNew() {
     setEditing(null);
-    setForm({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, features: [] });
+    setForm({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, syncToOthers: true, features: [] });
     setShowForm(true);
   }
 
   function openEdit(plan: SubscriptionPlan) {
     setEditing(plan);
-    setForm({ id: plan.id, name: plan.name, price: plan.price, priceAnnual: plan.priceAnnual || 0, maxProducts: plan.maxProducts, features: parseFeatures(plan.features) });
+    setForm({ id: plan.id, name: plan.name, price: plan.price, priceAnnual: plan.priceAnnual || 0, maxProducts: plan.maxProducts, syncToOthers: plan.syncToOthers !== false, features: parseFeatures(plan.features) });
     setShowForm(true);
   }
 
@@ -1668,6 +1669,7 @@ function AdminPlans() {
         price: Number(form.price),
         priceAnnual: Number(form.priceAnnual) || null,
         maxProducts: Number(form.maxProducts),
+        syncToOthers: form.syncToOthers,
         features: form.features,
       };
       if (editing) {
@@ -1711,6 +1713,12 @@ function AdminPlans() {
               <div className="field"><label>Monthly price (KES)<input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} required /></label></div>
               <div className="field"><label>Annual price (KES)<input type="number" value={form.priceAnnual} onChange={(e) => setForm({ ...form, priceAnnual: Number(e.target.value) })} placeholder="0 = no annual" /></label></div>
               <div className="field"><label>Max products<input type="number" value={form.maxProducts} onChange={(e) => setForm({ ...form, maxProducts: Number(e.target.value) })} required /></label></div>
+              <div className="field" style={{ display: "flex", alignItems: "end" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
+                  <input type="checkbox" checked={form.syncToOthers} onChange={(e) => setForm({ ...form, syncToOthers: e.target.checked })} />
+                  Sync to other clients
+                </label>
+              </div>
             </div>
             <div className="field">
               <label>Features</label>
