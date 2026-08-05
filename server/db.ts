@@ -1075,7 +1075,7 @@ async function runMigrations(): Promise<void> {
   }
   const aboutUs = await queryOne("SELECT value FROM settings WHERE key = 'about_us'");
   if (!aboutUs) {
-    await query("INSERT INTO settings (key, value) VALUES ('about_us', $1)", ['{"title":"About Us","content":"We are a leading retailer of computers, laptops, and accessories.","mission":"To provide quality tech products at affordable prices.","vision":"To be the most trusted tech retailer in the region."}']);
+    await query("INSERT INTO settings (key, value) VALUES ('about_us', $1)", ['{"title":"About Us","content":"We are a leading retailer of computers, laptops, and accessories.","mission":"To provide quality tech products at affordable prices.","vision":"To be the most trusted tech retailer in the region.","missionTitle":"Our Mission","visionTitle":"Our Vision","image":"","address":"","hours":"","stats":[]}']);
   }
 
   await initRolesAsync();

@@ -2735,6 +2735,149 @@ a.order-item:hover {
   flex-shrink: 0;
 }
 
+/* ----- About page ----- */
+.about-wrap {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: var(--space-2) 0 var(--space-8);
+}
+
+.about-header { margin-bottom: var(--space-6); }
+
+.about-kicker {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: var(--space-2);
+}
+
+.about-header h1 { margin-bottom: 0; }
+
+.about-banner {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: var(--space-6);
+  border: 1px solid var(--border);
+}
+.about-banner img {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: cover;
+}
+
+.about-prose {
+  font-size: var(--text-base);
+  line-height: 1.7;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  margin-bottom: var(--space-8);
+}
+
+.about-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+.about-stat {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: var(--space-4);
+  text-align: center;
+}
+.about-stat-value {
+  font-size: 1.75rem;
+  font-weight: var(--font-bold);
+  color: var(--primary);
+  line-height: 1.1;
+}
+.about-stat-label {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.about-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-5);
+  margin-bottom: var(--space-8);
+}
+.about-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: var(--space-5);
+}
+.about-card-icon { font-size: 1.5rem; margin-bottom: var(--space-3); }
+.about-card h2 { margin-bottom: var(--space-2); }
+.about-card p { color: var(--text-secondary); margin: 0; }
+
+.about-trust,
+.about-contact {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: var(--space-5);
+  margin-bottom: var(--space-8);
+}
+.about-trust h2,
+.about-contact h2 { margin-bottom: var(--space-4); font-size: var(--text-lg); }
+.about-trust .hero-truststrip { justify-content: space-between; }
+.about-trust .hero-truststrip-item { color: var(--text-secondary); }
+
+.about-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+.about-contact-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  text-decoration: none;
+}
+a.about-contact-card:hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+.about-contact-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  margin-bottom: var(--space-2);
+}
+.about-contact-label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.about-contact-value { font-size: var(--text-sm); color: var(--text-secondary); word-break: break-word; }
+.about-contact-meta { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); margin-top: var(--space-4); font-size: var(--text-sm); color: var(--text-secondary); }
+
+.about-cta { text-align: center; }
+.about-cta p { font-size: var(--text-lg); font-weight: var(--font-semibold); margin-bottom: var(--space-4); }
+.about-cta-row { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3); }
+
+.about-empty { text-align: center; padding: var(--space-8) 0; }
+.about-empty p { color: var(--text-secondary); margin-bottom: var(--space-4); }
+
 @media (prefers-reduced-motion: reduce) {
   .hero-kenburns {
     animation: none;

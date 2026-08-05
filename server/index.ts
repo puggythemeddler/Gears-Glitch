@@ -1006,12 +1006,27 @@ app.get("/api/admin/about-us", adminAuthMiddleware, asyncHandler(async (_req: Re
 }));
 
 app.put("/api/admin/about-us", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const { title, content, mission, vision } = req.body || {};
+  const { title, content, mission, vision, missionTitle, visionTitle, image, address, hours, stats } = req.body || {};
   if (title !== undefined && !okLen(title, 0, 500)) { res.status(400).json({ error: "Title must be ≤500 characters." }); return; }
   if (content !== undefined && !okLen(content, 0, 50000)) { res.status(400).json({ error: "Content must be ≤50000 characters." }); return; }
   if (mission !== undefined && !okLen(mission, 0, 5000)) { res.status(400).json({ error: "Mission must be ≤5000 characters." }); return; }
   if (vision !== undefined && !okLen(vision, 0, 5000)) { res.status(400).json({ error: "Vision must be ≤5000 characters." }); return; }
-  const data = { title: title || "", content: content || "", mission: mission || "", vision: vision || "" };
+  if (missionTitle !== undefined && !okLen(missionTitle, 0, 200)) { res.status(400).json({ error: "Mission heading must be ≤200 characters." }); return; }
+  if (visionTitle !== undefined && !okLen(visionTitle, 0, 200)) { res.status(400).json({ error: "Vision heading must be ≤200 characters." }); return; }
+  if (image !== undefined && !okLen(image, 0, 2000)) { res.status(400).json({ error: "Image URL must be ≤2000 characters." }); return; }
+  if (address !== undefined && !okLen(address, 0, 500)) { res.status(400).json({ error: "Address must be ≤500 characters." }); return; }
+  if (hours !== undefined && !okLen(hours, 0, 500)) { res.status(400).json({ error: "Opening hours must be ≤500 characters." }); return; }
+  if (stats !== undefined && !Array.isArray(stats)) { res.status(400).json({ error: "Stats must be an array." }); return; }
+  if (stats !== undefined && stats.length > 6) { res.status(400).json({ error: "Stats must have at most 6 items." }); return; }
+  if (stats !== undefined && stats.some((s: any) => !okLen(s?.value, 0, 200) || !okLen(s?.label, 0, 200))) { res.status(400).json({ error: "Each stat value and label must be ≤200 characters." }); return; }
+  const data = {
+    title: title || "", content: content || "", mission: mission || "", vision: vision || "",
+    missionTitle: missionTitle || "Our Mission", visionTitle: visionTitle || "Our Vision",
+    image: image || "", address: address || "", hours: hours || "",
+    stats: Array.isArray(stats)
+      ? stats.slice(0, 6).map((s: any) => ({ value: String(s?.value || "").trim(), label: String(s?.label || "").trim() })).filter((s) => s.value || s.label)
+      : [],
+  };
   await setStoreSetting("about_us", JSON.stringify(data));
   res.json(data);
 }));
