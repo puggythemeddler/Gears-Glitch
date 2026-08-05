@@ -1,4 +1,4 @@
-import { query, queryOne, queryAll } from "./db-helpers";
+import { query, queryOne, queryAll, transaction } from "./db-helpers";
 
 interface PermissionMap {
   [key: string]: string;
@@ -227,10 +227,17 @@ async function updateRole(roleId: string, updates: { name?: string; description?
 }
 
 async function deleteRole(roleId: string): Promise<boolean> {
+  if (roleId === "admin") return false;
   const role = await getRole(roleId);
-  if (!role || !role.isCustom) return false;
-  const r = await query("DELETE FROM roles WHERE id = $1", [roleId]);
-  return (r.rowCount ?? 0) > 0;
+  if (!role) return false;
+  // Tombstone the id so default roles the client has deleted are not re-seeded
+  // on restart. The tombstone lives in this client's own database, so other
+  // clients are never affected.
+  await transaction(async (client) => {
+    await client.query("DELETE FROM roles WHERE id = $1", [roleId]);
+    await client.query("INSERT INTO deleted_roles (id) VALUES ($1) ON CONFLICT DO NOTHING", [roleId]);
+  });
+  return true;
 }
 
 async function getUserRoles(userId: number): Promise<UserRole[]> {

@@ -4044,8 +4044,8 @@ app.put("/api/roles/:roleId", adminAuthMiddleware, asyncHandler(async (req: Requ
 }));
 
 app.delete("/api/roles/:roleId", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  if (["admin", "technician", "manager"].includes(String(req.params.roleId))) {
-    res.status(400).json({ error: "Cannot delete default roles." });
+  if (String(req.params.roleId) === "admin") {
+    res.status(400).json({ error: "The admin role cannot be deleted." });
     return;
   }
   const success = await deleteRole(String(req.params.roleId));

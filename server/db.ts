@@ -654,6 +654,7 @@ async function runMigrations(): Promise<void> {
   try { await query(`UPDATE users SET role = 'admin' WHERE role IS NULL OR role = ''`); } catch {}
   try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`); } catch {}
   try { await query(`UPDATE users SET email = username || '@gearandglitch.com' WHERE email IS NULL`); } catch {}
+  try { await query(`CREATE TABLE IF NOT EXISTS deleted_roles (id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL DEFAULT (NOW()::text))`); } catch {}
   try { await query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS pin_hash TEXT NOT NULL DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS show_on_pos INTEGER NOT NULL DEFAULT 1`); } catch {}
   try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS repair_type TEXT`); } catch {}
@@ -1334,11 +1335,19 @@ async function initRolesAsync(): Promise<void> {
   };
   await transaction(async (client) => {
     for (const [roleId] of Object.entries(DEFAULT_ROLES)) {
-      await client.query("INSERT INTO roles (id, name, description, is_custom) VALUES ($1, $2, $3, 0) ON CONFLICT DO NOTHING", [roleId, roleId.charAt(0).toUpperCase() + roleId.slice(1), `Default ${roleId} role`]);
+      // Skip roles this client has deleted (deleted_roles tombstone). Deletions
+      // are stored in this client's own database only, so other clients are unaffected.
+      await client.query(`INSERT INTO roles (id, name, description, is_custom)
+        SELECT $1, $2, $3, 0
+        WHERE NOT EXISTS (SELECT 1 FROM deleted_roles WHERE id = $1)
+        ON CONFLICT DO NOTHING`, [roleId, roleId.charAt(0).toUpperCase() + roleId.slice(1), `Default ${roleId} role`]);
     }
     for (const [roleId, permissions] of Object.entries(DEFAULT_ROLES)) {
       for (const permission of permissions) {
-        await client.query("INSERT INTO role_permissions (role_id, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING", [roleId, permission]);
+        await client.query(`INSERT INTO role_permissions (role_id, permission)
+          SELECT $1, $2
+          WHERE EXISTS (SELECT 1 FROM roles WHERE id = $1)
+          ON CONFLICT DO NOTHING`, [roleId, permission]);
       }
     }
   });

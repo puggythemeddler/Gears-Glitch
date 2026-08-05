@@ -1452,7 +1452,7 @@ function AdminRoles() {
   }
 
   async function deleteRole(id: string) {
-    if (!(await confirmDialog({ message: "Delete this role? Users assigned to it will lose its permissions.", confirmLabel: "Delete", danger: true }))) return;
+    if (!(await confirmDialog({ message: `Delete this role? This only affects this store — other clients are unaffected. Users assigned to it will lose its permissions.`, confirmLabel: "Delete", danger: true }))) return;
     try { await api(`/api/roles/${id}`, { method: "DELETE" }); refetch(); toast("success", "Deleted successfully"); } catch (err: any) { toast("error", err.message); }
   }
 
@@ -1506,7 +1506,7 @@ function AdminRoles() {
               <h3 style={{ margin: 0, fontSize: "1rem" }}>{escapeHtml(r.name)}</h3>
               <div style={{ display: "flex", gap: "0.25rem", flexShrink: 0 }}>
                 <RippleButton size="small" variant="ghost" onClick={() => openEdit(r)}>Edit</RippleButton>
-                {r.isCustom && <RippleButton size="small" variant="danger" onClick={() => deleteRole(r.id)}>Delete</RippleButton>}
+                {r.id !== "admin" && <RippleButton size="small" variant="danger" onClick={() => deleteRole(r.id)}>Delete</RippleButton>}
               </div>
             </div>
             {r.description && <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>{escapeHtml(r.description)}</p>}

@@ -688,6 +688,11 @@ CREATE TABLE IF NOT EXISTS user_permissions (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS deleted_roles (
+  id TEXT PRIMARY KEY,
+  deleted_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+
 CREATE TABLE IF NOT EXISTS stored_images (
   id SERIAL PRIMARY KEY,
   ref_id TEXT NOT NULL,
