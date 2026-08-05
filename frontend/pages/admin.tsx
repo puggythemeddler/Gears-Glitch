@@ -23,6 +23,7 @@ import StockTakeListPage from "@/components/admin/StockTakeListPage";
 import StockOnHandPage from "@/components/admin/StockOnHandPage";
 import CategoryPositioningPage from "@/components/admin/CategoryPositioningPage";
 import AdminRepairs from "@/components/admin/AdminRepairs";
+import HelpPanel from "@/components/admin/HelpPanel";
 
 declare global {
   interface Window {
@@ -30,7 +31,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "help";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff";
 // Which permission unlocks a view in the sidebar. Views absent from this map
@@ -145,6 +146,12 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "shop-subscription", label: "Subscription" },
     ],
   },
+  {
+    label: "Help",
+    items: [
+      { key: "help", label: "Help & Reference" },
+    ],
+  },
 ];
 
 export default function AdminPage() {
@@ -213,6 +220,40 @@ export default function AdminPage() {
   useEffect(() => {
     if (view !== "dashboard" && !allVisibleKeys.includes(view)) setView("dashboard");
   }, [view, allVisibleKeys]);
+
+  const SHORTCUTS_TO_VIEW: Record<string, AdminView> = {
+    d: "dashboard", p: "products", o: "orders", c: "customers", u: "users",
+    r: "repairs", s: "stock-on-hand", i: "invoices", h: "help",
+  };
+  const visibleKeysRef = useRef<AdminView[]>(allVisibleKeys);
+  useEffect(() => { visibleKeysRef.current = allVisibleKeys; });
+
+  useEffect(() => {
+    let buffer: string[] = [];
+    let clearTimer: ReturnType<typeof setTimeout> | null = null;
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "?") { setView("help"); return; }
+      if (e.key === "Escape") { buffer = []; return; }
+      if (e.key.length !== 1) return;
+      const key = e.key.toLowerCase();
+      if (clearTimer) { clearTimeout(clearTimer); clearTimer = null; }
+      buffer.push(key);
+      if (buffer.length >= 2) {
+        const targetView = SHORTCUTS_TO_VIEW[buffer[1]];
+        if (buffer[0] === "g" && targetView && visibleKeysRef.current.includes(targetView)) setView(targetView);
+        buffer = [];
+      } else if (buffer[0] !== "g") {
+        buffer = [];
+      }
+      clearTimer = setTimeout(() => { buffer = []; }, 1600);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     api<{ googleClientId: string }>("/api/public-settings").then((d) => setGoogleClientId(d.googleClientId || "")).catch((e) => console.warn("[admin] Failed to load public settings:", e?.message));
@@ -442,6 +483,7 @@ export default function AdminPage() {
               <span style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0.15rem 0.5rem", borderRadius: 999, background: "var(--primary-light)", color: "var(--primary)", fontWeight: 600 }}>{staffRole}</span>
             </div>
             {featureFlags["Messaging"] && canAccess("messages") && <NotificationBell onClick={() => setView("messages")} />}
+            <button type="button" onClick={() => setView("help")} aria-label="Help" title="Help & keyboard shortcuts (?)" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700 }}>?</button>
             <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
           </div>
           <div className="dash-section active" key={view}>
@@ -489,6 +531,7 @@ export default function AdminPage() {
             {view === "whatsapp-settings" && <WhatsAppSettings />}
             {view === "category-positioning" && <CategoryPositioningPage />}
             {view === "repairs" && <AdminRepairs adminOnly={staffRole === "admin"} />}
+            {view === "help" && <HelpPanel />}
           </div>
       </div>
     </div>
@@ -5554,7 +5597,7 @@ function AdminPurchases() {
       await api(`/api/purchases/${id}`, { method: "DELETE" });
       if (viewing && viewing.id === id) setViewing(null);
       loadOrders();
-      toast("success", "Purchase order moved to trash.");
+      toast("success", "Purchase order moved to trash.", undefined, { label: "Undo", onClick: () => restoreOrder(id) });
     } catch (err: any) { setMsg(err.message); toast("error", err.message); }
   }
 

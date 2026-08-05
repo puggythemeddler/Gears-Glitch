@@ -3977,6 +3977,17 @@ app.post("/api/staff/:id/reset-password", adminAuthMiddleware, asyncHandler(asyn
   res.json({ ok: true, message: "Password reset successfully." });
 }));
 
+app.post("/api/staff/verify-password", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const password = String(req.body?.password || "");
+  if (!password) { res.status(400).json({ error: "Password is required." }); return; }
+  const staff = await findStaffById((req as any).user.sub);
+  if (!staff) { res.status(401).json({ error: "User not found." }); return; }
+  const userWithHash = await queryOne("SELECT password_hash FROM users WHERE id = $1", [(req as any).user.sub]) as any;
+  const match = await bcrypt.compare(password, userWithHash.password_hash);
+  if (!match) { res.status(401).json({ error: "Incorrect password." }); return; }
+  res.json({ ok: true });
+}));
+
 app.delete("/api/staff/:id", adminAuthMiddleware, requirePermission("staff:delete"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (id === (req as any).user.sub) { res.status(400).json({ error: "Cannot delete your own account." }); return; }

@@ -16,16 +16,41 @@ function MediaPreview({ content, logs }: { content: string; logs: any[] }) {
 }
 
 function SecretField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
-  const [show, setShow] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authPw, setAuthPw] = useState("");
+  const [verifying, setVerifying] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  async function unlock() {
+    if (!authPw) return;
+    setVerifying(true);
+    try {
+      await api("/api/staff/verify-password", { method: "POST", body: JSON.stringify({ password: authPw }) });
+      setRevealed(true);
+      setAuthOpen(false);
+      setAuthPw("");
+      toast("success", "Secret revealed.");
+    } catch (e: any) {
+      toast("error", e.message || "Incorrect password.");
+    } finally { setVerifying(false); }
+  }
+
   return (
     <div className="field">
       <label>{label}</label>
       <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
-        <input type={show ? "text" : "password"} autoComplete="new-password" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{ flex: 1 }} />
-        <RippleButton size="small" variant="ghost" onClick={() => setShow(!show)} aria-label={show ? "Hide secret" : "Show secret"}>{show ? "Hide" : "Show"}</RippleButton>
-        <RippleButton size="small" variant="ghost" onClick={async () => { if (!value) return; try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} }} aria-label={`Copy ${label}`} disabled={!value}>{copied ? "Copied" : "Copy"}</RippleButton>
+        <input type={revealed ? "text" : "password"} autoComplete="new-password" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{ flex: 1 }} />
+        {!revealed && <RippleButton size="small" variant="ghost" onClick={() => setAuthOpen(!authOpen)} aria-label={`Reveal ${label}`}>{authOpen ? "Cancel" : "Reveal"}</RippleButton>}
+        {revealed && <RippleButton size="small" variant="ghost" onClick={() => setRevealed(false)} aria-label={`Hide ${label}`}>Hide</RippleButton>}
+        <RippleButton size="small" variant="ghost" onClick={async () => { if (!value) return; try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} }} aria-label={`Copy ${label}`} disabled={!value || !revealed}>{copied ? "Copied" : "Copy"}</RippleButton>
       </div>
+      {authOpen && (
+        <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginTop: "0.4rem" }}>
+          <input type="password" autoComplete="current-password" placeholder="Admin password to reveal" value={authPw} onChange={(e) => setAuthPw(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") unlock(); }} style={{ flex: 1 }} aria-label={`Admin password to reveal ${label}`} />
+          <RippleButton size="small" onClick={unlock} loading={verifying}>Unlock</RippleButton>
+        </div>
+      )}
     </div>
   );
 }

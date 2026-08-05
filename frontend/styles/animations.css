@@ -298,6 +298,24 @@
 
 .toast-close:hover { color: var(--text); }
 
+.toast-action {
+  background: var(--primary-subtle);
+  border: 1px solid var(--border);
+  color: var(--primary);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  flex-shrink: 0;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.toast-action:hover {
+  background: var(--primary);
+  color: var(--surface);
+}
+
 .toast.toast-success { box-shadow: inset 3px 0 0 0 var(--success), var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.15)); }
 .toast.toast-error { box-shadow: inset 3px 0 0 0 var(--danger), var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.15)); }
 .toast.toast-warning { box-shadow: inset 3px 0 0 0 var(--warning), var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.15)); }
