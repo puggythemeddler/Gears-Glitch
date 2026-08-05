@@ -323,9 +323,23 @@
     <div id="tab-deploys" role="tabpanel" aria-labelledby="tab-btn-deploys" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2>Deploy Log</h2>
-        <button class="btn btn-ghost btn-sm" data-admin onclick="deployAll()">Deploy All Clients</button>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" data-admin onclick="deployTest()">Deploy Test Site</button>
+          <button class="btn btn-ghost btn-sm" data-admin onclick="deployAll()">Deploy All Clients</button>
+        </div>
       </div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Deployment history. Deploys are triggered manually or via GitHub Actions on push to main.</p>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Every push to main deploys to the <strong>test site</strong> first (automatic). Production deploys to all clients are deliberate and manual — test the test site before deploying everyone.</p>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+        <input type="search" id="deploy-search" placeholder="Search client, commit, message..." style="flex:1;min-width:220px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:0.45rem 0.7rem;color:var(--text)">
+        <select id="deploy-status-filter" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:0.45rem 0.7rem;color:var(--text)">
+          <option value="">All statuses</option>
+          <option value="deploy_test">Test deploy</option>
+          <option value="deploy">Production deploy</option>
+          <option value="failed">Failed</option>
+          <option value="backup">Backup</option>
+          <option value="backup_failed">Backup failed</option>
+        </select>
+      </div>
       <div id="deploy-log"></div>
     </div>
 
@@ -1106,13 +1120,14 @@
               ${isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="editClient(${c.id})">Edit</button>
               <button class="btn btn-ghost btn-sm" onclick="pushSecret(${c.id}, '${jsStr(c.name)}')" title="Push/rotate the control-plane secret onto the client's Render service">Push Secret</button>
               <button class="btn btn-ghost btn-sm" onclick="redeployClient(${c.id})">Redeploy</button>
+              ${c.is_test ? '<button class="btn btn-ghost btn-sm" onclick="setTestSite(' + c.id + ', false)">Unset Test Site</button>' : '<button class="btn btn-ghost btn-sm" onclick="setTestSite(' + c.id + ', true)">Set as Test Site</button>'}
               ${c.status === 'active' ? '<button class="btn btn-warning btn-sm" onclick="suspendClient(' + c.id + ')">Suspend</button>' : ''}
               ${c.status === 'suspended' ? '<button class="btn btn-success btn-sm" onclick="resumeClient(' + c.id + ')">Resume</button>' : ''}
               <button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${jsStr(c.name)}')">Delete</button>` : ''}
             </div>
           </details>`;
         html += `<tr>
-          <td><strong>${esc(c.name)}</strong><br><span style="color:var(--text-muted);font-size:0.75rem">${esc(c.admin_email)}</span></td>
+          <td><strong>${esc(c.name)}</strong>${c.is_test ? ' <span class="badge" style="background:var(--tint-primary);color:var(--primary-strong)">TEST SITE</span>' : ''}<br><span style="color:var(--text-muted);font-size:0.75rem">${esc(c.admin_email)}</span></td>
           <td>${esc(c.domain)}</td>
           <td><span style="text-transform:capitalize">${esc(c.plan)}</span>${c.usage_over_limit ? ' <span class="badge badge-overlimit" style="font-size:0.7rem">OVER LIMIT</span>' : ''}</td>
           <td>${subBadge}</td>
@@ -1365,6 +1380,34 @@
       } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
     }
 
+    async function deployTest() {
+      confirmDialog({
+        title: "Deploy test site?",
+        message: "Deploy latest code to the test site only? Production clients are NOT affected.",
+        confirmLabel: "Deploy Test",
+        onConfirm: async () => {
+          toast("Deploying test site...");
+          try { const data = await api("/api/deploy-test", { method: "POST" }); if (data.error) { toast(data.error, "error"); return; } const r = data.results || []; toast(`Test site: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`); loadDeploys(); loadClients(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
+        }
+      });
+    }
+
+    async function setTestSite(id, value) {
+      confirmDialog({
+        title: value ? "Set as test site?" : "Unset test site?",
+        message: value ? "This client will receive every push to main first. Only one client can be the test site." : "This client will no longer receive automatic test deploys.",
+        confirmLabel: value ? "Set as Test Site" : "Unset",
+        onConfirm: async () => {
+          toast(value ? "Setting test site..." : "Unsetting test site...");
+          try {
+            const data = await api("/api/clients/" + id, { method: "PUT", body: JSON.stringify({ is_test: value }) });
+            if (data.error) { toast(data.error, "error"); return; }
+            toast("Client updated."); loadClients();
+          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
+        }
+      });
+    }
+
     async function deployAll() {
       confirmDialog({
         title: "Deploy all clients?",
@@ -1519,14 +1562,29 @@
     }
 
     // ─── DEPLOY LOG ───────────────────────────────────────
+    let deployStatusFilter = "";
+    let deploySearch = "";
+    let deploySearchTimer = null;
+
     async function loadDeploys() {
       try {
-        const data = await api("/api/deploys");
+        const params = new URLSearchParams();
+        if (deployStatusFilter) params.set("status", deployStatusFilter);
+        if (deploySearch) params.set("q", deploySearch);
+        const data = await api("/api/deploys" + (params.toString() ? "?" + params.toString() : ""));
         const entries = data.entries || [];
-        if (!entries.length) { document.getElementById("deploy-log").innerHTML = '<div class="empty"><p>No deploys yet. Click "Deploy All Clients" or push to main to trigger auto-deploys via GitHub Actions.</p></div>'; return; }
-        let html = '<table><thead><tr><th>Client</th><th>Status</th><th>Triggered</th><th>Completed</th></tr></thead><tbody>';
+        if (!entries.length) {
+          document.getElementById("deploy-log").innerHTML = '<div class="empty"><p>No deploys match. Deployments are triggered by the "Deploy Test Site" / "Deploy All Clients" buttons or on push to main.</p></div>';
+          return;
+        }
+        let html = '<table><thead><tr><th>Client</th><th>Version</th><th>Status</th><th>Source</th><th>Triggered</th></tr></thead><tbody>';
         for (const e of entries) {
-          html += `<tr><td>${esc(e.client_name)}</td><td><span class="badge badge-${e.status === 'success' ? 'active' : e.status === 'failed' ? 'failed' : 'deploying'}">${e.status}</span></td><td>${new Date(e.triggered_at).toLocaleString()}</td><td>${e.completed_at ? new Date(e.completed_at).toLocaleString() : '—'}</td></tr>`;
+          const shortSha = e.commit_sha ? e.commit_sha.slice(0, 7) : "";
+          const version = e.commit_sha
+            ? `<code style="background:var(--bg);padding:1px 5px;border-radius:3px" title="${esc(e.commit_sha)}">#${esc(shortSha)}</code>${e.commit_message ? '<div style="color:var(--text-muted);font-size:0.75rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(e.commit_message) + '</div>' : ''}`
+            : '<span style="color:var(--text-muted)">—</span>';
+          const source = e.triggered_by === "push" ? '<span class="badge badge-healthy">GitHub push</span>' : '<span class="badge">Manual</span>';
+          html += `<tr><td>${esc(e.client_name)}</td><td>${version}</td><td><span class="badge badge-${e.status === 'deploy' || e.status === 'deploy_test' ? 'active' : e.status === 'failed' || e.status === 'backup_failed' ? 'failed' : 'deploying'}">${esc(e.status)}</span></td><td>${source}</td><td>${new Date(e.triggered_at).toLocaleString()}</td></tr>`;
         }
         html += '</tbody></table>';
         document.getElementById("deploy-log").innerHTML = html;
@@ -1562,6 +1620,15 @@
       searchTimer = setTimeout(() => renderTable(allClients), 120);
     });
     if (statusFilter) statusFilter.addEventListener("change", (e) => { clientStatusFilter = e.target.value; renderTable(allClients); });
+
+    const deploySearchInput = document.getElementById("deploy-search");
+    const deployStatusSelect = document.getElementById("deploy-status-filter");
+    if (deploySearchInput) deploySearchInput.addEventListener("input", (e) => {
+      deploySearch = e.target.value.trim();
+      clearTimeout(deploySearchTimer);
+      deploySearchTimer = setTimeout(loadDeploys, 250);
+    });
+    if (deployStatusSelect) deployStatusSelect.addEventListener("change", (e) => { deployStatusFilter = e.target.value; loadDeploys(); });
 
     const clientFeatureContainer = document.getElementById("client-feature-groups-container");
     if (clientFeatureContainer) clientFeatureContainer.addEventListener("click", (e) => {

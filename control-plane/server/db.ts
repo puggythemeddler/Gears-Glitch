@@ -134,7 +134,8 @@ export async function initControlPlaneDb() {
       failed_checks INTEGER DEFAULT 0,
       subscription_expires TIMESTAMP,
       feature_flags TEXT DEFAULT '{}',
-      notes TEXT DEFAULT ''
+      notes TEXT DEFAULT '',
+      is_test INTEGER DEFAULT 0
     )
   `);
 
@@ -163,9 +164,17 @@ export async function initControlPlaneDb() {
       client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
       status TEXT NOT NULL,
       triggered_at TIMESTAMP DEFAULT NOW(),
-      completed_at TIMESTAMP
+      completed_at TIMESTAMP,
+      commit_sha TEXT DEFAULT '',
+      commit_message TEXT DEFAULT '',
+      triggered_by TEXT DEFAULT 'manual'
     )
   `);
+
+  // Add columns for existing databases
+  try { await query(`ALTER TABLE deploy_log ADD COLUMN IF NOT EXISTS commit_sha TEXT DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE deploy_log ADD COLUMN IF NOT EXISTS commit_message TEXT DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE deploy_log ADD COLUMN IF NOT EXISTS triggered_by TEXT DEFAULT 'manual'`); } catch {}
 
   // Add columns for existing databases
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS uptime_pct DOUBLE PRECISION DEFAULT 100`); } catch {}
@@ -189,6 +198,8 @@ export async function initControlPlaneDb() {
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS last_limit_warning TIMESTAMP`); } catch {}
   // Next expected subscription payment date (drives payment reminders)
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS next_payment_date TEXT DEFAULT ''`); } catch {}
+  // Test-site flag: the client that receives every push first for safe rollout
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS is_test INTEGER DEFAULT 0`); } catch {}
 
   await query(`
     CREATE TABLE IF NOT EXISTS custom_plans (

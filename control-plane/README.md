@@ -78,6 +78,7 @@ The control plane serves a Content Security Policy via Helmet (`control-plane/se
   - **Backend/Frontend** — links to client's live URLs
   - **Edit** — change plan, expiry, notes, phone, address, and per-client feature overrides
   - **Redeploy** — trigger a Render deploy for this client individually
+  - **Set as Test Site / Unset Test Site** — mark this client as the test site (only one at a time; a **TEST SITE** badge shows on its row). Every push to `main` auto-deploys here first.
   - **Suspend/Resume** — pause or unpause the client's Render service
   - **Delete** — removes DB + all cloud resources
 
@@ -126,7 +127,11 @@ Use the **Feature Overrides** picker in the Edit Client modal to fine-tune what 
 - All active clients receive email notifications automatically
 
 ### Deploy Log
-- History of all deployments triggered from the control plane
+- History of all deployments (last 300 entries), each row showing **Client**, **Version** (short git commit ID — full SHA on hover — plus the first line of the commit message), **Status**, **Source** (`GitHub push` vs `Manual`), and **Triggered** timestamp.
+- **Filters** — a status dropdown (Test deploy / Production deploy / Failed / Backup / Backup failed) and a search box that filters by client name, commit SHA, or commit message (`GET /api/deploys?status=...&q=...`).
+- **Deploy Test Site** — deploys only the client marked as the test site (production clients untouched).
+- **Deploy All Clients** — deliberate manual production rollout to every active client.
+- Pushes to `main` land here automatically with their git ID (see *GitHub Actions Auto-Deploy* below).
 
 ### Backups
 - Run `pg_dump` backups for all active client databases
@@ -215,10 +220,11 @@ All endpoints require authentication via one of:
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/api/clients` | List all clients |
+| GET | `/api/clients/test-site` | Get the client marked as the test site (may be `null`) |
 | GET | `/api/clients/:id` | Get single client |
 | POST | `/api/clients` | Provision new client |
 | POST | `/api/clients/existing` | Register existing deployment |
-| PUT | `/api/clients/:id` | Update client (plan, expiry, notes, features) |
+| PUT | `/api/clients/:id` | Update client (plan, expiry, notes, features, `is_test` — only one client can be the test site) |
 | DELETE | `/api/clients/:id` | Delete client and all resources |
 | PUT | `/api/clients/:id/suspend` | Suspend client (app-level 403 + pauses Render service) |
 | PUT | `/api/clients/:id/resume` | Resume client |
@@ -251,7 +257,8 @@ All endpoints require authentication via one of:
 ### Operations
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/deploy-all` | Deploy latest code to all clients |
+| POST | `/api/deploy-all` | Deploy latest code to all clients (manual production rollout) |
+| POST | `/api/deploy-test` | Deploy latest code to the test site only (called by GitHub Actions on every push) |
 | POST | `/api/health-check` | Check health of all clients |
 | GET | `/api/payment-reminders` | Payment reminder windows (7d / 2d / due / overdue) from `next_payment_date` |
 | GET | `/api/notifications` | Unread count + last 60 in-app notifications |
@@ -265,7 +272,7 @@ All endpoints require authentication via one of:
 | GET | `/api/backups/download/:filename` | Download a backup `.sql.gz` file |
 | POST | `/api/changelog` | Publish changelog + notify clients |
 | GET | `/api/changelog` | List changelog entries |
-| GET | `/api/deploys` | List deploy history |
+| GET | `/api/deploys` | List deploy history (last 300; filter by `?status=` and `?q=` search over client/commit) |
 | GET | `/api/audit` | List audit log entries (last 200) |
 
 ### SMTP Configuration
@@ -275,18 +282,21 @@ All endpoints require authentication via one of:
 | POST | `/api/smtp` | Set/update SMTP configuration |
 | POST | `/api/smtp/test` | Send a test email to verify configuration |
 
-## GitHub Actions Auto-Deploy
+## GitHub Actions Auto-Deploy (Test-Site First)
 
-The workflow at `.github/workflows/deploy-all-clients.yml` runs on every push to `main`:
+Deploys are split into two workflows so **clients never receive untested, error-prone updates**:
 
-1. Fetches the client list from the control plane API
-2. Loops through all active clients
-3. Triggers a Render deploy for each one
+### `deploy-test.yml` — automatic, on every push
+Runs on every push to `main` (and via manual dispatch). It calls `POST /api/deploy-test`, which deploys **only the client marked as the test site** (`is_test = 1`). Production clients are never touched. The workflow sends the push's git commit SHA and message, which the control plane records in the deploy log. If no test site is configured — or the deploy fails — the workflow fails (red), and production was still untouched.
 
-**Required GitHub Secrets:**
+### `deploy-all-clients.yml` — manual only
+Production rollout is **deliberate and manual**. This workflow has **no push trigger** — it can only be started from the Actions tab, and it aborts unless you type `DEPLOY` in the `confirm` input. It calls `POST /api/deploy-all`, deploys every active client's Render service, and records the git ID in the deploy log.
+
+### Required GitHub Secrets
 - `CONTROL_PLANE_URL` — your control plane's URL
 - `CONTROL_PLANE_API_KEY` — your control plane API key (legacy global key or any per-user API key)
-- `RENDER_API_KEY` — your Render API key
+
+> `RENDER_API_KEY` is no longer needed in GitHub Actions — deploys are triggered through the control plane's own Render API key.
 
 ## Auto-Health Check
 
@@ -314,10 +324,10 @@ The control plane uses its own PostgreSQL database (not shared with clients):
 
 | Table | Purpose |
 |---|---|
-| `clients` | All client instances with URLs, plans, health, usage, per-client `cp_secret`, phone, address, `next_payment_date` |
+| `clients` | All client instances with URLs, plans, health, usage, per-client `cp_secret`, phone, address, `next_payment_date`, `is_test` (test-site flag) |
 | `health_log` | Health check history per client |
 | `changelog` | Published updates |
-| `deploy_log` | Deployment history (`deploy`, `backup`, `backup_failed`, `failed`) |
+| `deploy_log` | Deployment history (`deploy`, `deploy_test`, `backup`, `backup_failed`, `failed`) with `commit_sha`, `commit_message`, and `triggered_by` (`push` / `manual`) |
 | `custom_plans` | Plans created from the control plane |
 | `upgrade_requests` | Client upgrade requests (pending review) |
 | `cp_users` | Control plane user accounts (username, role, API key, TOTP 2FA) |

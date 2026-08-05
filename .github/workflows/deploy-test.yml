@@ -1,30 +1,17 @@
-name: Deploy to All Clients
+name: Deploy Test Site
 
-# PRODUCTION DEPLOY — MANUAL ONLY.
-# Every push to main auto-deploys to the TEST SITE first (see deploy-test.yml).
-# Test the test site, then trigger this workflow deliberately to roll out to all clients.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'Type "DEPLOY" to confirm deploying to all production clients'
-        required: true
-        default: ''
 
 jobs:
-  deploy-all:
+  deploy-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Require explicit confirmation
-        if: github.event.inputs.confirm != 'DEPLOY'
+      - name: Deploy to test site only
         run: |
-          echo "❌ Aborting: production deploy to all clients requires explicit confirmation."
-          echo "Type DEPLOY in the 'confirm' input to run this workflow."
-          exit 1
-
-      - name: Deploy to all clients via control plane
-        run: |
-          echo "Triggering deploy for all active clients..."
+          echo "Triggering deploy for the test site only..."
 
           # Check that secrets are configured
           if [ -z "${{ secrets.CONTROL_PLANE_URL }}" ] || [ -z "${{ secrets.CONTROL_PLANE_API_KEY }}" ]; then
@@ -37,31 +24,34 @@ jobs:
 
           GIT_SHA="${{ github.sha }}"
           GIT_MSG="${{ github.event.head_commit.message }}"
-          if [ -z "$GIT_MSG" ]; then GIT_MSG="manual production deploy"; fi
+          if [ -z "$GIT_MSG" ]; then GIT_MSG="manual dispatch"; fi
           GIT_MSG=$(echo "$GIT_MSG" | head -n 1)
 
-          PAYLOAD=$(jq -n --arg sha "$GIT_SHA" --arg msg "$GIT_MSG" --arg by "manual" \
+          PAYLOAD=$(jq -n --arg sha "$GIT_SHA" --arg msg "$GIT_MSG" --arg by "push" \
             '{commit: {sha: $sha, message: $msg}, triggered_by: $by}')
 
           RESP=$(curl -s -w "\n%{http_code}" -X POST \
             -H "x-api-key: ${{ secrets.CONTROL_PLANE_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
-            "${{ secrets.CONTROL_PLANE_URL }}/api/deploy-all")
+            "${{ secrets.CONTROL_PLANE_URL }}/api/deploy-test")
 
           BODY=$(echo "$RESP" | sed '$d')
           HTTP_CODE=$(echo "$RESP" | tail -n 1)
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ Deploy to all clients failed (HTTP $HTTP_CODE):"
+            echo "❌ Deploy test failed (HTTP $HTTP_CODE):"
             echo "$BODY"
+            echo ""
+            echo "The test site deploy failed — production was NOT touched."
+            echo "Mark a client as the test site in the control plane (Set as Test Site)."
             exit 1
           fi
 
           SUCCESS=$(echo "$BODY" | jq -r '[.results[] | select(.success == true)] | length' 2>/dev/null || echo "0")
           FAILED=$(echo "$BODY" | jq -r '[.results[] | select(.success == false)] | length' 2>/dev/null || echo "0")
 
-          echo "Deploy complete: $SUCCESS succeeded, $FAILED failed"
+          echo "Test site deploy complete: $SUCCESS succeeded, $FAILED failed"
           if [ "$FAILED" != "0" ]; then
             echo "$BODY" | jq -r '.results[] | select(.success == false) | "  ✗ \(.name): \(.error)"'
             exit 1

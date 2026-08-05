@@ -366,12 +366,27 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/clients", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll(
-      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, admin_password, phone, address, usage_over_limit FROM clients ORDER BY created_at DESC"
+      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, admin_password, phone, address, usage_over_limit, is_test FROM clients ORDER BY created_at DESC"
     );
     res.json({ clients });
   } catch (err: any) {
     console.error("[api] List clients error:", err.message);
     res.status(500).json({ error: "Failed to list clients" });
+  }
+});
+
+// Get single client
+app.get("/api/clients/test-site", requireAuth, async (_req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE is_test = 1 ORDER BY id DESC LIMIT 1");
+    if (client) {
+      delete client.cp_secret;
+      delete client.neon_db_url;
+    }
+    res.json({ client: client || null });
+  } catch (err: any) {
+    console.error("[api] Get test site error:", err.message);
+    res.status(500).json({ error: "Failed to get test site" });
   }
 });
 
@@ -600,17 +615,68 @@ app.delete("/api/clients/:id", requireAuth, async (req, res) => {
 // Deploy all clients
 app.post("/api/deploy-all", requireAuth, async (req, res) => {
   try {
+    const { commit, triggered_by } = req.body || {};
+    const commit_sha = commit?.sha || "";
+    const commit_message = commit?.message || "";
+    const by = triggered_by || "manual";
     const clients = await queryAll(
-      "SELECT name, render_service_id FROM clients WHERE status = 'active'"
+      "SELECT id, name, render_service_id FROM clients WHERE status = 'active'"
     );
     const results = await deployAllClients(
       clients as { name: string; render_service_id: string }[]
     );
-    auditLog(req, "deploy_all", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} clients`);
+    for (const c of clients as { id: number; name: string }[]) {
+      const r = results.find(x => x.name === c.name);
+      await query(
+        "INSERT INTO deploy_log (client_id, status, commit_sha, commit_message, triggered_by) VALUES ($1, $2, $3, $4, $5)",
+        [c.id, r?.success ? "deploy" : "failed", commit_sha, commit_message, by]
+      );
+    }
+    auditLog(req, "deploy_all", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} clients${commit_sha ? ` (${commit_sha.slice(0,7)})` : ""}`);
     res.json({ results });
   } catch (err: any) {
     console.error("[api] Deploy all error:", err.message);
     res.status(500).json({ error: "Failed to deploy" });
+  }
+});
+
+// Deploy the test site only (every push lands here first for safe rollout)
+app.post("/api/deploy-test", requireAuth, async (req, res) => {
+  try {
+    const { commit, triggered_by } = req.body || {};
+    const commit_sha = commit?.sha || "";
+    const commit_message = commit?.message || "";
+    const by = triggered_by || "manual";
+    const clients = await queryAll(
+      "SELECT id, name, render_service_id FROM clients WHERE status = 'active' AND is_test = 1"
+    );
+    if (!clients.length) {
+      res.status(400).json({ error: "No test site configured. Mark a client as the test site first." });
+      return;
+    }
+    const results: { name: string; success: boolean; error?: string }[] = [];
+    for (const client of clients as any[]) {
+      if (!client.render_service_id) {
+        results.push({ name: client.name, success: false, error: "No Render service ID" });
+        continue;
+      }
+      try {
+        const ok = await deployRenderService(client.render_service_id);
+        results.push({ name: client.name, success: ok, error: ok ? undefined : "HTTP error" });
+        await query(
+          "INSERT INTO deploy_log (client_id, status, commit_sha, commit_message, triggered_by) VALUES ($1, $2, $3, $4, $5)",
+          [client.id, ok ? "deploy_test" : "failed", commit_sha, commit_message, by]
+        );
+        if (ok) await query("UPDATE clients SET health_status = 'deploying' WHERE id = $1", [client.id]);
+      } catch (e: any) {
+        results.push({ name: client.name, success: false, error: e.message });
+      }
+    }
+    auditLog(req, "deploy_test", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} test site(s)${commit_sha ? ` (${commit_sha.slice(0,7)})` : ""}`);
+    res.json({ results });
+  } catch (err: any) {
+    console.error("[api] Deploy test error:", err.message);
+    res.status(500).json({ error: "Failed to deploy test site" });
   }
 });
 
@@ -905,10 +971,20 @@ app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
 // ─── UPDATE CLIENT ───────────────────────────────────────
 app.put("/api/clients/:id", requireAuth, async (req, res) => {
   try {
-    const { plan, subscription_expires, notes, feature_flags, render_service_id, phone, address } = req.body || {};
+    const { plan, subscription_expires, notes, feature_flags, render_service_id, phone, address, is_test } = req.body || {};
     const id = Number(req.params.id);
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [id]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+
+    if (is_test !== undefined) {
+      const testValue = is_test ? 1 : 0;
+      if (testValue) {
+        // Only one client may be the test site at a time
+        await query("UPDATE clients SET is_test = 0 WHERE is_test = 1");
+      }
+      await query("UPDATE clients SET is_test = $1 WHERE id = $2", [testValue, id]);
+      auditLog(req, "set_test_site", "client", id, client.name, testValue ? "Marked as test site" : "Unmarked as test site");
+    }
 
     const fields: string[] = [];
     const params: any[] = [];
@@ -922,7 +998,7 @@ app.put("/api/clients/:id", requireAuth, async (req, res) => {
     if (feature_flags !== undefined) { fields.push(`feature_flags = $${idx}`); params.push(JSON.stringify(feature_flags)); idx++; }
     if (render_service_id !== undefined) { fields.push(`render_service_id = $${idx}`); params.push(render_service_id); idx++; }
 
-    if (fields.length === 0) { res.json({ message: "No changes" }); return; }
+    if (fields.length === 0) { res.json({ message: "Client updated." }); return; }
 
     params.push(id);
     await query(`UPDATE clients SET ${fields.join(", ")} WHERE id = $${idx}`, params);
@@ -979,13 +1055,24 @@ app.get("/api/changelog", requireAuth, async (_req, res) => {
 });
 
 // ─── DEPLOY LOG ──────────────────────────────────────────
-app.get("/api/deploys", requireAuth, async (_req, res) => {
+app.get("/api/deploys", requireAuth, async (req, res) => {
   try {
-    const entries = await queryAll(
-      `SELECT d.*, c.name as client_name FROM deploy_log d
+    const status = (req.query.status as string) || "";
+    const q = (req.query.q as string) || "";
+    const where: string[] = [];
+    const params: any[] = [];
+
+    if (status) { params.push(status); where.push(`d.status = $${params.length}`); }
+    if (q) {
+      params.push(`%${q}%`);
+      where.push(`(c.name ILIKE $${params.length} OR d.commit_sha ILIKE $${params.length} OR d.commit_message ILIKE $${params.length})`);
+    }
+
+    const sql = `SELECT d.*, c.name as client_name FROM deploy_log d
        JOIN clients c ON c.id = d.client_id
-       ORDER BY d.triggered_at DESC LIMIT 100`
-    );
+       ${where.length ? "WHERE " + where.join(" AND ") : ""}
+       ORDER BY d.triggered_at DESC LIMIT 300`;
+    const entries = await queryAll(sql, params);
     res.json({ entries });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to get deploy log" });
