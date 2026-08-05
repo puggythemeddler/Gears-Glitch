@@ -1,19 +1,30 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 
-type ToastType = "success" | "error" | "warning" | "info";
+export type ToastType = "success" | "error" | "warning" | "info";
+
+export interface ToastOptions {
+  title?: string;
+}
 
 interface ToastItem {
   id: number;
   type: ToastType;
+  title?: string;
   message: string;
   removing?: boolean;
 }
 
 interface ToastContextType {
-  toast: (type: ToastType, message: string) => void;
+  toast: (type: ToastType, message: string, title?: string) => void;
 }
 
 const ToastContext = createContext<ToastContextType | null>(null);
+
+let pushToast: (type: ToastType, message: string, title?: string) => void = () => {};
+
+export function toast(type: ToastType, message: string, title?: string): void {
+  pushToast(type, message, title);
+}
 
 export function useToast(): ToastContextType {
   const ctx = useContext(ToastContext);
@@ -32,9 +43,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const idRef = useRef(0);
 
-  const addToast = useCallback((type: ToastType, message: string) => {
+  const addToast = useCallback((type: ToastType, message: string, title?: string) => {
     const id = ++idRef.current;
-    setToasts((prev) => [...prev, { id, type, message }]);
+    setToasts((prev) => [...prev, { id, type, title, message }]);
     setTimeout(() => {
       setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, removing: true } : t)));
       setTimeout(() => {
@@ -43,20 +54,34 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }, 4000);
   }, []);
 
+  useEffect(() => {
+    pushToast = addToast;
+    return () => {
+      pushToast = () => {};
+    };
+  }, [addToast]);
+
   return (
     <ToastContext.Provider value={{ toast: addToast }}>
       {children}
       <div className="toast-container" aria-live="polite" aria-label="Notifications">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.type}${t.removing ? " removing" : ""}`} role="alert">
+          <div
+            key={t.id}
+            className={`toast toast-${t.type}${t.removing ? " removing" : ""}`}
+            role={t.type === "error" || t.type === "warning" ? "alert" : "status"}
+          >
             <span className="toast-icon">{ICONS[t.type]}</span>
-            <span className="toast-message">{t.message}</span>
+            <span className="toast-content">
+              {t.title && <span className="toast-title">{t.title}</span>}
+              <span className="toast-message">{t.message}</span>
+            </span>
             <button
               className="toast-close"
               onClick={() => setToasts((prev) => prev.map((x) => (x.id === t.id ? { ...x, removing: true } : x)))}
-              aria-label="Close"
+              aria-label="Dismiss"
             >
-              \u00D7
+              ×
             </button>
           </div>
         ))}

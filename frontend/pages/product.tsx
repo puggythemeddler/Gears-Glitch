@@ -4,6 +4,8 @@ import { api, isCustomerLoggedIn, requireCustomerLogin, addGuestCartItem } from 
 import { useApp } from "@/lib/app-context";
 import type { Product, ProductImage } from "@/lib/types";
 import { escapeHtml } from "@/lib/sanitize";
+import { toast } from "@/components/Toast";
+import { confirmDialog } from "@/components/ConfirmDialog";
 
 function productInitials(name: string) {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
@@ -160,14 +162,15 @@ export default function ProductPage() {
 
   async function deleteReview() {
     if (!userReview || !id) return;
-    if (!confirm("Are you sure you want to delete your review?")) return;
+    if (!(await confirmDialog({ message: "Are you sure you want to delete your review?", confirmLabel: "Delete", danger: true }))) return;
     setDeletingReview(true);
     try {
       await api(`/api/products/${encodeURIComponent(id as string)}/reviews/${userReview.id}`, { method: "DELETE" });
       setUserReviewed(false); setUserReview(null); setEditingReview(false);
       setReviewMsg("Review deleted.");
+      toast("success", "Review deleted.");
       await fetchReviews(1);
-    } catch (e: any) { setReviewMsg(e.message || "Failed to delete review."); }
+    } catch (e: any) { setReviewMsg(e.message || "Failed to delete review."); toast("error", e.message || "Failed to delete review."); }
     finally { setDeletingReview(false); }
   }
 
@@ -256,7 +259,7 @@ export default function ProductPage() {
           )}
 
           <div className={`product-gallery__lightbox ${lbOpen ? "open" : ""}`} onClick={(e) => { if (e.target === e.currentTarget) setLbOpen(false); }}>
-            <button className="product-gallery__lb-close" onClick={() => setLbOpen(false)}>&times;</button>
+            <button className="product-gallery__lb-close" aria-label="Close image viewer" onClick={() => setLbOpen(false)}>&times;</button>
             <img className="product-gallery__lb-img" src={currentImage?.imageUrl || product.imageUrl} alt={alt} />
             <div className="product-gallery__lb-nav">
               <button className="btn btn-ghost" onClick={() => showImage(currentIndex - 1)}>Previous</button>

@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { useFetch, Spinner, ErrorMsg } from "./shared";
+import { toast } from "@/components/Toast";
+import { confirmDialog } from "@/components/ConfirmDialog";
 
 export default function StockTakeListPage() {
   const { data: sessions, loading, error, refetch } = useFetch(() => api<{ sessions: any[] }>("/api/stock-take"), []);
@@ -34,11 +36,12 @@ export default function StockTakeListPage() {
 
   async function handleDelete(session: any, e: React.MouseEvent) {
     e.stopPropagation();
-    if (!confirm("Delete this session? Only possible if no items have been counted.")) return;
+    if (!(await confirmDialog({ message: "Delete this session? Only possible if no items have been counted.", confirmLabel: "Delete", danger: true }))) return;
     try {
       await api(`/api/stock-take/${session.id}`, { method: "DELETE" });
       refetch();
-    } catch (err: any) { setMsg(err.message); }
+      toast("success", "Stock take session deleted.");
+    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
   }
 
   if (loading) return <Spinner />;

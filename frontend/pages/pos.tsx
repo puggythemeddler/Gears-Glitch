@@ -209,7 +209,7 @@ export default function POSPage() {
       <div className="pos-main-column">
         <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <input ref={searchRef} type="text" className="input" placeholder="Search products by name or ID..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, fontSize: "1.1rem" }} autoFocus />
-          <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, whiteSpace: "nowrap" }}>{isDark ? "☀️" : "🌙"}</button>
+          <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, whiteSpace: "nowrap" }}>{isDark ? "☀️" : "🌙"}</button>
         </div>
         <div className="pos-product-grid">
           {filtered.map((p) => (

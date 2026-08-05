@@ -15,7 +15,7 @@ Use this document to create issues or project cards directly on GitHub. Mirrors 
 ## Medium
 
 - [x] Verify owner branch visibility and admin branch/subscription management.
-- [x] Ensure storefront layout controls remain admin-only in the owner panel.
+- [x] Ensure storefront layout controls remain admin-only in the staff portal.
 - [ ] Re-upload previously lost product images (wiped by Render ephemeral filesystem before Cloudinary).
 - [x] Validate the custom storefront layout is fully registered and selectable.
 - [x] Add owner-friendly messaging on storefront for non-admin users.

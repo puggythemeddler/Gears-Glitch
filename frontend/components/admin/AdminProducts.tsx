@@ -4,6 +4,8 @@ import type { Product } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { useFetch, Spinner, ErrorMsg, formatPrice, escapeHtml } from "./shared";
+import { toast } from "@/components/Toast";
+import { confirmDialog } from "@/components/ConfirmDialog";
 
 export default function AdminProducts() {
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
@@ -28,6 +30,7 @@ export default function AdminProducts() {
   const [showBulk, setShowBulk] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkMsg, setBulkMsg] = useState("");
+  const [search, setSearch] = useState("");
 
   function downloadTemplate() {
     const headers = "name,price,category,inStock,isNonStock,hasWarranty,warrantyDuration,taxable,subcategory";
@@ -138,7 +141,7 @@ export default function AdminProducts() {
   async function uploadPrimaryImage(productId: string, file: File) {
     const fd = new FormData();
     fd.append("image", file);
-    try { await api(`/api/products/${encodeURIComponent(productId)}/image`, { method: "POST", body: fd }); refetch(); } catch (err: any) { alert("Primary upload failed: " + err.message); }
+    try { await api(`/api/products/${encodeURIComponent(productId)}/image`, { method: "POST", body: fd }); refetch(); } catch (err: any) { toast("error", "Primary upload failed: " + err.message); }
   }
 
   async function uploadGalleryImages(productId: string) {
@@ -147,19 +150,19 @@ export default function AdminProducts() {
     for (const file of Array.from(files)) {
       const fd = new FormData();
       fd.append("image", file);
-      try { await api(`/api/products/${encodeURIComponent(productId)}/images`, { method: "POST", body: fd }); } catch (err: any) { alert("Upload failed: " + err.message); }
+      try { await api(`/api/products/${encodeURIComponent(productId)}/images`, { method: "POST", body: fd }); } catch (err: any) { toast("error", "Upload failed: " + err.message); }
     }
     if (galleryRef.current) galleryRef.current.value = "";
     await loadGallery(productId);
   }
 
   async function setPrimary(productId: string, imageId: number) {
-    try { await api(`/api/products/${encodeURIComponent(productId)}/images/${imageId}/primary`, { method: "PUT" }); await loadGallery(productId); refetch(); } catch (err: any) { alert("Failed: " + err.message); }
+    try { await api(`/api/products/${encodeURIComponent(productId)}/images/${imageId}/primary`, { method: "PUT" }); await loadGallery(productId); refetch(); } catch (err: any) { toast("error", "Failed: " + err.message); }
   }
 
   async function deleteGalleryImage(productId: string, imageId: number) {
-    if (!confirm("Remove this image?")) return;
-    try { await api(`/api/products/${encodeURIComponent(productId)}/images/${imageId}`, { method: "DELETE" }); await loadGallery(productId); } catch { alert("Delete failed"); }
+    if (!(await confirmDialog({ message: "Remove this image from the gallery?", confirmLabel: "Remove", danger: true }))) return;
+    try { await api(`/api/products/${encodeURIComponent(productId)}/images/${imageId}`, { method: "DELETE" }); await loadGallery(productId); } catch { toast("error", "Delete failed"); }
   }
 
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -178,7 +181,7 @@ export default function AdminProducts() {
     setDropIdx(null);
     try {
       await api(`/api/products/${encodeURIComponent(editing.id)}/images/reorder`, { method: "PUT", body: JSON.stringify({ orderedIds: next.map((i: any) => i.id) }) });
-    } catch (err: any) { alert("Reorder failed: " + err.message); await loadGallery(editing.id); }
+    } catch (err: any) { toast("error", "Reorder failed: " + err.message); await loadGallery(editing.id); }
   }
 
   function buildSpecsArray(): any[] {
@@ -214,13 +217,14 @@ export default function AdminProducts() {
         await uploadGalleryImages(editing.id);
       }
       setEditing(null); setCreating(false); refetch();
-    } catch (err: any) { alert(err.message); }
+      toast("success", creating ? "Product created." : "Product updated.");
+    } catch (err: any) { toast("error", err.message); }
     finally { setSaving(false); }
   }
 
   async function deleteProduct(id: string) {
-    if (!confirm("Delete this product?")) return;
-    try { await api(`/api/products/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); } catch { alert("Delete failed"); }
+    if (!(await confirmDialog({ message: "Delete this product? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/products/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); toast("success", "Product deleted."); } catch { toast("error", "Delete failed"); }
   }
 
   useEffect(() => { if (editing && !creating && editing.id) loadGallery(editing.id); else setGallery([]); }, [editing?.id, creating]);
@@ -228,6 +232,7 @@ export default function AdminProducts() {
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
   const products = pData?.products || [];
+  const filteredProducts = search.trim() ? products.filter((p) => (p.name || "").toLowerCase().includes(search.trim().toLowerCase())) : products;
 
   if (creating || editing) {
     return (
@@ -243,7 +248,7 @@ export default function AdminProducts() {
                 {editing?.imageUrl && <img src={editing.imageUrl} alt="" style={{ maxWidth: 300, maxHeight: 180, borderRadius: 8, objectFit: "cover", marginBottom: "0.5rem" }} />}
                 <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
                   <label style={{ fontSize: "0.85rem", cursor: "pointer" }}>Replace primary image<input type="file" accept="image/*" style={{ display: "block", margin: "0.25rem auto" }} onChange={(e) => { const f = e.target.files?.[0]; if (f && editing) uploadPrimaryImage(editing.id, f); }} /></label>
-                  {editing?.imageUrl && <RippleButton size="small" variant="danger" type="button" onClick={async () => { if (!editing || !confirm("Remove primary image?")) return; try { await api(`/api/products/${encodeURIComponent(editing.id)}/image`, { method: "DELETE" }); refetch(); } catch (err: any) { alert("Failed: " + err.message); } }}>Remove image</RippleButton>}
+                  {editing?.imageUrl && <RippleButton size="small" variant="danger" type="button" onClick={async () => { if (!editing || !(await confirmDialog({ message: "Remove primary image?", confirmLabel: "Remove", danger: true }))) return; try { await api(`/api/products/${encodeURIComponent(editing.id)}/image`, { method: "DELETE" }); refetch(); } catch (err: any) { toast("error", "Failed: " + err.message); } }}>Remove image</RippleButton>}
                 </div>
               </div>
             )}
@@ -359,6 +364,7 @@ export default function AdminProducts() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Products</h1>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <input type="search" placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search products" style={{ padding: "0.4rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: "0.85rem", minWidth: 180 }} />
           {selectedIds.size > 0 && <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{selectedIds.size} selected</span>}
           {selectedIds.size > 0 && <RippleButton size="small" variant="secondary" onClick={() => setShowBulk(true)}>Bulk Edit</RippleButton>}
           <RippleButton size="small" onClick={downloadTemplate}>Download Import Template</RippleButton>
@@ -368,16 +374,16 @@ export default function AdminProducts() {
       </div>
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th><input type="checkbox" checked={products.length > 0 && selectedIds.size === products.length} onChange={toggleSelectAll} /></th><th>Image</th><th>Name</th><th>Price</th><th>Category</th><th>Group</th><th>Stock</th><th></th></tr></thead>
+          <thead><tr><th><input type="checkbox" checked={filteredProducts.length > 0 && selectedIds.size === filteredProducts.length} onChange={toggleSelectAll} /></th><th>Image</th><th>Name</th><th>Price</th><th>Category</th><th>Group</th><th>Stock</th><th></th></tr></thead>
           <tbody>
-            {products.map((p) => (
+            {filteredProducts.map((p) => (
               <tr key={p.id}>
                 <td><input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} /></td>
                 <td>{p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} /> : <span style={{ opacity: 0.3 }}>{'\u200B'}</span>}</td>
                 <td>{escapeHtml(p.name)} {p.isHidden && <span style={{ marginLeft: "0.35rem", fontSize: "0.72rem", fontWeight: 600, color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.35rem", verticalAlign: "middle" }}>Hidden</span>}</td>
                 <td>{p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--danger)", fontWeight: 600 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}</td>
                 <td>{p.category || "—"}</td>
-                <td>{groups.find((g: any) => g.id === p.groupId)?.name || "—"}</td>
+                <td>{escapeHtml(groups.find((g: any) => g.id === p.groupId)?.name || "—")}</td>
                 <td>{p.inStock ? <span style={{ color: "var(--success)" }}>In stock</span> : <span style={{ color: "var(--danger)" }}>Out</span>}</td>
                 <td style={{ display: "flex", gap: "0.35rem" }}>
                   <RippleButton size="small" variant="ghost" onClick={() => { setCreating(false); setEditing(p); }}>Edit</RippleButton>
@@ -385,7 +391,7 @@ export default function AdminProducts() {
                 </td>
               </tr>
             ))}
-            {products.length === 0 && <tr><td colSpan={8}><EmptyState icon="products" title="No products yet" description="Add your first product to start selling." actionLabel="+ Add Product" onAction={() => { setCreating(true); setEditing(empty); }} /></td></tr>}
+            {filteredProducts.length === 0 && <tr><td colSpan={8}><EmptyState icon="products" title={products.length === 0 ? "No products yet" : "No matches"} description={products.length === 0 ? "Add your first product to start selling." : `No products match "${search}".`} actionLabel={products.length === 0 ? "+ Add Product" : "Clear search"} onAction={() => { if (products.length === 0) { setCreating(true); setEditing(empty); } else { setSearch(""); } }} /></td></tr>}
           </tbody>
         </table>
       </div>

@@ -9,7 +9,8 @@ import { getLayoutList, useLayout } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import NotificationBell from "@/components/NotificationBell";
 import { useFeature } from "@/lib/features";
-import { useToast } from "@/components/Toast";
+import { useToast, toast } from "@/components/Toast";
+import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "@/components/admin/shared";
 import AdminProducts from "@/components/admin/AdminProducts";
 import QuotesPage from "./quotes";
@@ -388,11 +389,11 @@ export default function AdminPage() {
           style={{ fontWeight: 700, fontSize: "0.9rem", marginBottom: "0.5rem" }}
         >
           <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-            <span style={{ display: "inline-flex", flexDirection: "column", lineHeight: 1 }}>
-              <span style={{ display: "block", width: 16, height: 3, background: "#000" }} />
-              <span style={{ display: "block", width: 16, height: 3, background: "#BF1A2F" }} />
-              <span style={{ display: "block", width: 16, height: 3, background: "#006600" }} />
-            </span>
+              <span style={{ display: "inline-flex", flexDirection: "column", lineHeight: 1 }}>
+                <span style={{ display: "block", width: 16, height: 3, background: "var(--text)" }} />
+                <span style={{ display: "block", width: 16, height: 3, background: "#ef4444" }} />
+                <span style={{ display: "block", width: 16, height: 3, background: "#22c55e" }} />
+              </span>
             Home
           </span>
         </RippleButton>
@@ -441,7 +442,7 @@ export default function AdminPage() {
               <span style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0.15rem 0.5rem", borderRadius: 999, background: "var(--primary-light)", color: "var(--primary)", fontWeight: 600 }}>{staffRole}</span>
             </div>
             {featureFlags["Messaging"] && canAccess("messages") && <NotificationBell onClick={() => setView("messages")} />}
-            <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
+            <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
           </div>
           <div className="dash-section active" key={view}>
             {view === "dashboard" && <AdminDashboard staffRole={staffRole} onNavigate={setView} />}
@@ -595,8 +596,8 @@ function AdminCategories() {
   }, []);
 
   async function deleteCat(id: string) {
-    if (!confirm(`Delete category "${id}"?`)) return;
-    try { await api(`/api/categories/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); } catch { alert("Delete failed"); }
+    if (!(await confirmDialog({ message: `Delete category "${id}"?`, confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/categories/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); toast("success", "Category deleted."); } catch { toast("error", "Delete failed"); }
   }
 
   async function saveCat() {
@@ -609,7 +610,8 @@ function AdminCategories() {
         await api(`/api/categories/${encodeURIComponent(detail.cat.id)}`, { method: "PUT", body: JSON.stringify({ label: formLabel.trim(), group: formGroup.trim(), showOnPos: formShowOnPos }) });
       }
       setDetail(null); refetch();
-    } catch { alert("Failed to save category"); }
+      toast("success", detail?.mode === "add" ? "Category created." : "Category saved.");
+    } catch { toast("error", "Failed to save category"); }
   }
 
   async function addSub() {
@@ -618,7 +620,8 @@ function AdminCategories() {
     try {
       await api("/api/subcategories", { method: "POST", body: JSON.stringify({ id: newSubId.trim(), name: newSubName.trim(), category_ids: [catId] }) });
       setNewSubId(""); setNewSubName(""); loadSubs();
-    } catch { alert("Failed to add subcategory"); }
+      toast("success", "Subcategory added.");
+    } catch { toast("error", "Failed to add subcategory"); }
   }
 
   async function saveEditSub() {
@@ -630,12 +633,13 @@ function AdminCategories() {
       const updatedCats = currentCats.includes(catId) ? currentCats : [...currentCats, catId];
       await api(`/api/subcategories/${encodeURIComponent(editSubId)}`, { method: "PUT", body: JSON.stringify({ name: editSubName, category_ids: updatedCats }) });
       setEditSubId(""); loadSubs();
-    } catch { alert("Failed to update subcategory"); }
+      toast("success", "Subcategory updated.");
+    } catch { toast("error", "Failed to update subcategory"); }
   }
 
   async function deleteSub(id: string) {
-    if (!confirm(`Delete subcategory "${id}"?`)) return;
-    try { await api(`/api/subcategories/${encodeURIComponent(id)}`, { method: "DELETE" }); loadSubs(); } catch { alert("Delete failed"); }
+    if (!(await confirmDialog({ message: `Delete subcategory "${id}"?`, confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/subcategories/${encodeURIComponent(id)}`, { method: "DELETE" }); loadSubs(); toast("success", "Subcategory deleted."); } catch { toast("error", "Delete failed"); }
   }
 
   function loadSubs() {
@@ -779,27 +783,28 @@ function AdminGroups() {
     try {
       await api("/api/admin/groups", { method: "POST", body: JSON.stringify({ name: newName.trim(), sortOrder: Number(newSort) || 0 }) });
       setNewName(""); setNewSort(nextSort + 1); refetch();
+      toast("success", "Group created.");
     } catch (e: any) { setMsg(e.message || "Failed to create group"); }
     finally { setSaving(false); }
   }
 
   async function toggleActive(g: any) {
     try { await api(`/api/admin/groups/${encodeURIComponent(g.id)}`, { method: "PUT", body: JSON.stringify({ isActive: !g.isActive }) }); refetch(); }
-    catch (e: any) { alert(e.message || "Update failed"); }
+    catch (e: any) { toast("error", e.message || "Update failed"); }
   }
 
   async function saveEdit() {
     if (!editName.trim()) return;
     setSaving(true);
-    try { await api(`/api/admin/groups/${encodeURIComponent(editingId)}`, { method: "PUT", body: JSON.stringify({ name: editName.trim(), sortOrder: Number(editSort) || 0 }) }); setEditingId(""); refetch(); }
+    try { await api(`/api/admin/groups/${encodeURIComponent(editingId)}`, { method: "PUT", body: JSON.stringify({ name: editName.trim(), sortOrder: Number(editSort) || 0 }) }); setEditingId(""); refetch(); toast("success", "Group saved."); }
     catch (e: any) { setMsg(e.message || "Update failed"); }
     finally { setSaving(false); }
   }
 
   async function deleteGroup(g: any) {
-    if (!confirm(`Delete group "${g.name}"? Products assigned to it will keep the value but no longer appear on the storefront.`)) return;
-    try { await api(`/api/admin/groups/${encodeURIComponent(g.id)}`, { method: "DELETE" }); refetch(); }
-    catch (e: any) { alert(e.message || "Delete failed"); }
+    if (!(await confirmDialog({ message: `Delete group "${g.name}"? Products assigned to it will keep the value but no longer appear on the storefront.`, confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/admin/groups/${encodeURIComponent(g.id)}`, { method: "DELETE" }); refetch(); toast("success", "Group deleted."); }
+    catch (e: any) { toast("error", e.message || "Delete failed"); }
   }
 
   if (loading) return <Spinner />;
@@ -893,7 +898,7 @@ function AdminOrders() {
       if (order.customerId) {
         api<any>(`/api/admin/customers/${order.customerId}`).then(setCustomerDetail).catch(() => setCustomerDetail(null));
       } else { setCustomerDetail(null); }
-    } catch { alert("Failed to load order"); }
+    } catch { toast("error", "Failed to load order"); }
   }
 
   async function issueRefund(amount: number, reason: string, orderItemId?: number, productId?: string) {
@@ -907,8 +912,10 @@ function AdminOrders() {
       setSelected(updated);
       api<any>(`/api/admin/orders/${selected.id}/refunds`).then((r) => setRefunds(r.refunds || [])).catch(() => setRefunds([]));
       refetch();
+      toast("success", "Refund issued.");
     } catch (e: any) {
       setRefundMsg(e.message || "Failed to issue refund.");
+      toast("error", e.message || "Failed to issue refund.");
       throw e;
     }
   }
@@ -924,7 +931,7 @@ function AdminOrders() {
       const res = await api<{ token: string }>("/api/admin/invoice-token/" + orderId, { method: "POST" });
       await downloadPdf(`/api/admin/orders/${orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(res.token)}`, `invoice-${orderId}.pdf`);
     } catch (e: any) {
-      alert("Failed to download invoice: " + (e?.message || "Unknown error"));
+      toast("error", "Failed to download invoice: " + (e?.message || "Unknown error"));
     }
   }
 
@@ -1007,7 +1014,7 @@ function AdminOrders() {
               <span className="btn btn-sm" style={{ background: "var(--success-light)", color: "var(--success-text)", cursor: "default" }}>Credit Note Created</span>
             ) : (
               <RippleButton onClick={async () => {
-                const reason = prompt("Reason for credit note (optional):");
+                const reason = await promptDialog({ title: "Create credit note", message: "Reason (optional):", confirmLabel: "Create" });
                 if (reason === null) return;
                 try {
                   await api("/api/admin/credit-notes", {
@@ -1015,17 +1022,17 @@ function AdminOrders() {
                     body: JSON.stringify({ orderId: o.id, reason: reason || "" }),
                   });
                   setCreditedOrders((prev) => ({ ...prev, [o.id]: true }));
-                  alert("Credit note created.");
-                } catch (e: any) { alert(e.message || "Failed to create credit note."); }
+                  toast("success", "Credit note created.");
+                } catch (e: any) { toast("error", e.message || "Failed to create credit note."); }
               }} style={{ background: "var(--primary)", color: "var(--surface)" }}>Credit Note</RippleButton>
             )}
             <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>
-            <RippleButton variant="danger" onClick={() => {
-              const input = prompt("Refund amount:");
-              if (!input) return;
+            <RippleButton variant="danger" onClick={async () => {
+              const input = await promptDialog({ title: "Issue refund", message: "Enter the amount to refund.", placeholder: "Amount" });
+              if (input === null) return;
               const amount = Number(input);
-              if (!amount || amount <= 0) { setRefundMsg("Invalid amount."); return; }
-              const reason = prompt("Reason (optional):") || "";
+              if (!amount || amount <= 0) { setRefundMsg("Invalid amount."); toast("error", "Enter a valid refund amount."); return; }
+              const reason = (await promptDialog({ title: "Issue refund", message: "Reason (optional):", confirmLabel: "Refund" })) || "";
               issueRefund(amount, reason).catch(() => {});
             }} style={{ background: "var(--danger)", color: "var(--surface)" }}>Refund</RippleButton>
           </div>
@@ -1046,7 +1053,7 @@ function AdminOrders() {
                         try {
                           await api(`/api/admin/order-items/${item.id}/warranty`, { method: "PATCH", body: JSON.stringify({ hasWarranty: !item.hasWarranty, warrantyDuration: item.warrantyDuration }) });
                           setSelected({ ...o, items: o.items.map((it: any) => it.id === item.id ? { ...it, hasWarranty: !item.hasWarranty ? 1 : 0 } : it) });
-                        } catch { alert("Failed to update warranty"); }
+                        } catch { toast("error", "Failed to update warranty"); }
                       }} />
                       {item.hasWarranty ? (
                         <input type="number" min="0" style={{ width: 50 }} value={item.warrantyDuration || 0} onChange={async (e) => {
@@ -1054,7 +1061,7 @@ function AdminOrders() {
                           try {
                             await api(`/api/admin/order-items/${item.id}/warranty`, { method: "PATCH", body: JSON.stringify({ hasWarranty: true, warrantyDuration: v }) });
                             setSelected({ ...o, items: o.items.map((it: any) => it.id === item.id ? { ...it, warrantyDuration: v } : it) });
-                          } catch { alert("Failed"); }
+                          } catch { toast("error", "Failed to update warranty"); }
                         }} />
                       ) : null}
                       <span>{item.hasWarranty ? "mo" : ""}</span>
@@ -1062,10 +1069,10 @@ function AdminOrders() {
                   </td>
                   <td>
                     {!item.cancelled && (
-                      <RippleButton size="small" variant="ghost" onClick={() => {
-                        const amount = Number(prompt("Line refund amount:", String(item.lineTotal)));
+                      <RippleButton size="small" variant="ghost" onClick={async () => {
+                        const amount = Number(await promptDialog({ title: "Refund line", message: "Enter the amount to refund.", placeholder: "Amount", defaultValue: String(item.lineTotal) }));
                         if (!amount || amount <= 0) return;
-                        const reason = prompt("Reason (optional):") || "";
+                        const reason = (await promptDialog({ title: "Refund line", message: "Reason (optional):", confirmLabel: "Refund" })) || "";
                         issueRefund(amount, reason, item.id, item.productId).catch(() => {});
                       }}>Refund line</RippleButton>
                     )}
@@ -1161,13 +1168,13 @@ function AdminUsers() {
   async function addStaff(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    try { await api("/api/staff", { method: "POST", body: JSON.stringify(form) }); setShowForm(false); setForm({ username: "", email: "", password: "", role: "technician" }); refetch(); } catch (err: any) { alert(err.message); }
+    try { await api("/api/staff", { method: "POST", body: JSON.stringify(form) }); setShowForm(false); setForm({ username: "", email: "", password: "", role: "technician" }); refetch(); toast("success", "Staff user created."); } catch (err: any) { toast("error", err.message); }
     finally { setSaving(false); }
   }
 
   async function deleteStaff(id: number) {
-    if (!confirm("Remove this user?")) return;
-    try { await api(`/api/staff/${id}`, { method: "DELETE" }); refetch(); if (selectedUser?.id === id) setSelectedUser(null); } catch { alert("Delete failed"); }
+    if (!(await confirmDialog({ message: "Remove this user?", confirmLabel: "Remove", danger: true }))) return;
+    try { await api(`/api/staff/${id}`, { method: "DELETE" }); refetch(); if (selectedUser?.id === id) setSelectedUser(null); toast("success", "User removed."); } catch { toast("error", "Delete failed"); }
   }
 
   async function selectUser(user: any) {
@@ -1189,14 +1196,14 @@ function AdminUsers() {
 
   async function resetPassword(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedUser || pwForm.password.length < 8) { alert("Password must be at least 8 characters."); return; }
-    if (pwForm.password !== pwForm.confirm) { alert("Passwords do not match."); return; }
+    if (!selectedUser || pwForm.password.length < 8) { toast("error", "Password must be at least 8 characters."); return; }
+    if (pwForm.password !== pwForm.confirm) { toast("error", "Passwords do not match."); return; }
     setSavingPw(true);
     try {
       await api(`/api/staff/${selectedUser.id}/reset-password`, { method: "POST", body: JSON.stringify({ password: pwForm.password }) });
       setPwForm({ password: "", confirm: "" });
-      alert("Password reset successfully.");
-    } catch (err: any) { alert(err.message); }
+      toast("success", "Password reset successfully.");
+    } catch (err: any) { toast("error", err.message); }
     finally { setSavingPw(false); }
   }
 
@@ -1210,7 +1217,7 @@ function AdminUsers() {
       ]);
       setUserRoles(rolesRes.roles || []);
       setUserEffectivePerms(permsRes.effective || []);
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { toast("error", err.message); }
   }
 
   function toggleDirectPerm(perm: string) {
@@ -1344,7 +1351,7 @@ function AdminUsers() {
             <thead><tr><th>Username</th><th>Email</th><th>Role</th><th></th></tr></thead>
             <tbody>
               {staff.map((s: any) => (
-                <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => selectUser(s)}>
+                <tr key={s.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => selectUser(s)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectUser(s); } }}>
                   <td>{escapeHtml(s.username)}</td>
                   <td>{s.email ? escapeHtml(s.email) : <span className="muted">—</span>}</td>
                   <td><span className="plan-status">{s.role}</span></td>
@@ -1398,7 +1405,7 @@ function AdminRoles() {
   }
 
   async function deleteRole(id: string) {
-    if (!confirm("Delete this role?")) return;
+    if (!(await confirmDialog({ message: "Delete this role? Users assigned to it will lose its permissions.", confirmLabel: "Delete", danger: true }))) return;
     try { await api(`/api/roles/${id}`, { method: "DELETE" }); refetch(); toast("success", "Deleted successfully"); } catch (err: any) { toast("error", err.message); }
   }
 
@@ -1624,17 +1631,18 @@ function AdminPlans() {
       setShowForm(false);
       setEditing(null);
       refetch();
-    } catch (err: any) { alert(err.message); }
+      toast("success", editing ? "Plan updated." : "Plan created.");
+    } catch (err: any) { toast("error", err.message); }
     finally { setSaving(false); }
   }
 
   async function deletePlan(id: string) {
-    if (!confirm("Delete this plan?")) return;
-    try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); } catch { alert("Delete failed"); }
+    if (!(await confirmDialog({ message: "Delete this plan?", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); toast("success", "Plan deleted."); } catch { toast("error", "Delete failed"); }
   }
 
   async function toggleActive(id: string, current: boolean) {
-    try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ isActive: !current }) }); refetch(); } catch { alert("Failed to update"); }
+    try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ isActive: !current }) }); refetch(); } catch { toast("error", "Failed to update"); }
   }
 
   if (loading) return <Spinner />;
@@ -1665,7 +1673,7 @@ function AdminPlans() {
                   const someOn = grp.features.some((f) => form.features.includes(f)) && !allOn;
                   return (
                     <details key={grp.group} open style={{ border: "1px solid var(--border)", borderRadius: 8 }}>
-                      <summary style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", cursor: "pointer", background: someOn ? "var(--primary-subtle)" : allOn ? "var(--primary-subtle)" : "var(--bg)", fontWeight: 600, fontSize: "0.9rem", listStyle: "none", userSelect: "none" }} onClick={(e) => { e.preventDefault(); const el = (e.currentTarget as HTMLElement).parentElement as HTMLDetailsElement; el.open = !el.open; }}>
+                      <summary style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", cursor: "pointer", background: someOn ? "var(--primary-subtle)" : allOn ? "var(--primary-subtle)" : "var(--bg)", fontWeight: 600, fontSize: "0.9rem", listStyle: "none", userSelect: "none" }}>
                         <span style={{ fontSize: "0.7rem", opacity: 0.5, transition: "transform 0.2s", transform: someOn || allOn ? "rotate(90deg)" : "none" }}>&#9654;</span>
                         <span>{grp.icon}</span>
                         <span style={{ flex: 1 }}>{grp.group}</span>
@@ -1796,7 +1804,8 @@ function AdminClients() {
       setShowNewForm(false);
       setShowEditForm(false);
       refetch();
-    } catch (err: any) { alert(err.message); }
+      toast("success", showEditForm ? "Client updated." : "Client created.");
+    } catch (err: any) { toast("error", err.message); }
     finally { setSaving(false); }
   }
 
@@ -1804,12 +1813,12 @@ function AdminClients() {
     try {
       await api(`/api/admin/clients/${c.id}`, { method: "PUT", body: JSON.stringify({ isActive: !c.isActive }) });
       refetch();
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { toast("error", err.message); }
   }
 
   async function deleteClient(id: number) {
-    if (!confirm("Delete this client and all their data?")) return;
-    try { await api(`/api/admin/clients/${id}`, { method: "DELETE" }); refetch(); } catch (err: any) { alert(err.message); }
+    if (!(await confirmDialog({ message: "Delete this client and all their data? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/admin/clients/${id}`, { method: "DELETE" }); refetch(); toast("success", "Client deleted."); } catch (err: any) { toast("error", err.message); }
   }
 
   // Branch operations
@@ -1839,13 +1848,14 @@ function AdminClients() {
       setShowBranchForm(false);
       setEditingBranch(null);
       refetchBranches();
-    } catch (err: any) { alert(err.message); }
+      toast("success", editingBranch ? "Branch updated." : "Branch added.");
+    } catch (err: any) { toast("error", err.message); }
     finally { setSavingBranch(false); }
   }
 
   async function deleteBranch(branchId: number) {
-    if (!selectedClient || !confirm("Delete this branch?")) return;
-    try { await api(`/api/admin/clients/${selectedClient.id}/branches/${branchId}`, { method: "DELETE" }); refetchBranches(); } catch (err: any) { alert(err.message); }
+    if (!selectedClient || !(await confirmDialog({ message: "Delete this branch?", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/admin/clients/${selectedClient.id}/branches/${branchId}`, { method: "DELETE" }); refetchBranches(); toast("success", "Branch deleted."); } catch (err: any) { toast("error", err.message); }
   }
 
   if (loading) return <Spinner />;
@@ -2024,7 +2034,8 @@ function AdminBranches() {
       setShowForm(false);
       setEditing(null);
       refetch();
-    } catch (err: any) { alert(err.message); }
+      toast("success", editing ? "Branch updated." : "Branch created.");
+    } catch (err: any) { toast("error", err.message); }
     finally { setSaving(false); }
   }
 
@@ -2032,12 +2043,12 @@ function AdminBranches() {
     try {
       await api(`/api/admin/branches/${b.id}`, { method: "PUT", body: JSON.stringify({ isActive: !b.isActive }) });
       refetch();
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { toast("error", err.message); }
   }
 
   async function deleteBranch(id: number) {
-    if (!confirm("Delete this branch?")) return;
-    try { await api(`/api/admin/branches/${id}`, { method: "DELETE" }); refetch(); } catch (err: any) { alert(err.message); }
+    if (!(await confirmDialog({ message: "Delete this branch?", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/admin/branches/${id}`, { method: "DELETE" }); refetch(); toast("success", "Branch deleted."); } catch (err: any) { toast("error", err.message); }
   }
 
   async function changeBranchPlan(branchId: number, planId: string) {
@@ -2174,15 +2185,15 @@ function AdminInvoices() {
   }, [oiData, tab]);
 
   async function markPaid(id: number) {
-    try { await api(`/api/admin/invoices/${id}/pay`, { method: "POST" }); refetch(); } catch { alert("Failed"); }
+    try { await api(`/api/admin/invoices/${id}/pay`, { method: "POST" }); refetch(); toast("success", "Invoice marked as paid."); } catch { toast("error", "Failed to mark invoice as paid"); }
   }
 
   async function markOiPaid(id: number) {
-    try { await api(`/api/admin/order-invoices/${id}/pay`, { method: "POST" }); setOiStatusMsg("Invoice marked as paid."); refetchOi(); } catch { alert("Failed"); }
+    try { await api(`/api/admin/order-invoices/${id}/pay`, { method: "POST" }); setOiStatusMsg("Invoice marked as paid."); refetchOi(); toast("success", "Invoice marked as paid."); } catch { toast("error", "Failed to mark invoice as paid"); }
   }
 
   async function generateInvoice() {
-    try { await api("/api/admin/invoices/generate", { method: "POST" }); refetch(); } catch { alert("Generation failed"); }
+    try { await api("/api/admin/invoices/generate", { method: "POST" }); refetch(); toast("success", "Invoice generated."); } catch { toast("error", "Invoice generation failed"); }
   }
 
   async function viewInvoice(id: number) {
@@ -2194,7 +2205,7 @@ function AdminInvoices() {
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 30000);
-    } catch (e: any) { alert("Failed: " + (e?.message || "Unknown")); }
+    } catch (e: any) { toast("error", "Failed to open invoice: " + (e?.message || "Unknown")); }
   }
 
   async function downloadInvoicePdf(id: number) {
@@ -2206,14 +2217,14 @@ function AdminInvoices() {
       const a = document.createElement("a");
       a.href = url; a.download = `invoice-${id}.pdf`; a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) { alert("Failed: " + (e?.message || "Unknown")); }
+    } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown")); }
   }
 
   async function emailInvoice(id: number) {
     try {
       const data = await api<{ sent: boolean }>(`/api/admin/invoices/${id}/email`, { method: "POST" });
-      alert(data.sent ? "Invoice emailed successfully." : "Failed to send email. Check SMTP settings.");
-    } catch (e: any) { alert("Failed: " + (e?.message || "Unknown")); }
+      toast(data.sent ? "success" : "error", data.sent ? "Invoice emailed successfully." : "Failed to send email. Check SMTP settings.");
+    } catch (e: any) { toast("error", "Failed to send invoice email: " + (e?.message || "Unknown")); }
   }
 
   function exportCsv() {
@@ -2226,7 +2237,7 @@ function AdminInvoices() {
   }
 
   async function createCreditNote(orderId: number) {
-    const reason = window.prompt("Reason for credit note (optional):");
+    const reason = await promptDialog({ title: "Create credit note", message: "Reason (optional):", confirmLabel: "Create" });
     if (reason === null) return;
     try {
       const created = await api<any>("/api/admin/credit-notes", {
@@ -2235,8 +2246,9 @@ function AdminInvoices() {
       });
       setCreditedOrders((prev) => ({ ...prev, [orderId]: true }));
       await downloadPdf(`/api/admin/credit-notes/${created.id}/view`, `credit-note-${created.id}.pdf`);
+      toast("success", "Credit note created and downloaded.");
     } catch (err: any) {
-      alert(err.message || "Failed to create credit note.");
+      toast("error", err.message || "Failed to create credit note.");
     }
   }
 
@@ -2333,7 +2345,7 @@ function AdminInvoices() {
                         <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                         <td>
                           {inv.status !== "paid" && <button className="btn btn-sm" style={{ background: "var(--success)", color: "var(--surface)" }} onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
-                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); const res = await fetch(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, { headers: { Authorization: `Bearer ${r.token}` } }); if (!res.ok) throw new Error(`HTTP ${res.status}`); const html = await res.text(); const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 30000); } catch (e: any) { alert("Failed to open invoice: " + (e?.message || "Unknown error")); } }}>View</button>
+                          <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); const res = await fetch(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, { headers: { Authorization: `Bearer ${r.token}` } }); if (!res.ok) throw new Error(`HTTP ${res.status}`); const html = await res.text(); const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 30000); } catch (e: any) { toast("error", "Failed to open invoice: " + (e?.message || "Unknown error")); } }}>View</button>
                           {creditedOrders[inv.orderId] ? (
                             <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "var(--success-light)", color: "var(--success-text)", cursor: "default" }}>Credited</span>
                           ) : (
@@ -2428,18 +2440,20 @@ function AdminMessages() {
       setReplyBody("");
       await loadMessages();
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-    } catch (e: any) { alert("Failed to send: " + (e?.message || "Unknown error")); }
+      toast("success", "Reply sent.");
+    } catch (e: any) { toast("error", "Failed to send: " + (e?.message || "Unknown error")); }
     setSending(false);
   }
 
   async function sendCompose() {
-    if (!composeBody.trim() || !composeCustomerId || !composeProviderId) { alert("Select customer, provider and enter a message."); return; }
+    if (!composeBody.trim() || !composeCustomerId || !composeProviderId) { toast("error", "Select customer, provider and enter a message."); return; }
     setSending(true);
     try {
       await api("/api/admin/messages", { method: "POST", body: JSON.stringify({ customerId: composeCustomerId, providerId: composeProviderId, body: composeBody.trim(), subject: composeSubject.trim() }) });
       setComposeOpen(false); setComposeBody(""); setComposeSubject(""); setComposeCustomerId(null); setComposeProviderId(null);
       await loadMessages();
-    } catch (e: any) { alert("Failed to send: " + (e?.message || "Unknown error")); }
+      toast("success", "Message sent.");
+    } catch (e: any) { toast("error", "Failed to send: " + (e?.message || "Unknown error")); }
     setSending(false);
   }
 
@@ -2719,7 +2733,7 @@ function AdminStorefront() {
           <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
             <input value={b.title} onChange={(e) => { const copy = [...bannerInputs]; copy[i] = { ...copy[i], title: e.target.value }; setBannerInputs(copy); }} placeholder="Title" style={{ flex: 1 }} />
             <input value={b.subtitle} onChange={(e) => { const copy = [...bannerInputs]; copy[i] = { ...copy[i], subtitle: e.target.value }; setBannerInputs(copy); }} placeholder="Subtitle" style={{ flex: 1 }} />
-            <RippleButton size="small" variant="danger" onClick={() => setBannerInputs(bannerInputs.filter((_, j) => j !== i))}>✕</RippleButton>
+            <RippleButton size="small" variant="danger" aria-label="Remove banner" onClick={() => setBannerInputs(bannerInputs.filter((_, j) => j !== i))}>✕</RippleButton>
           </div>
         ))}
         <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
@@ -2858,7 +2872,7 @@ function AdminStorefront() {
                 <input value={v.headline} onChange={(e) => { const copy = [...heroForm.headlineVariants]; copy[i] = { ...copy[i], headline: e.target.value }; setHeroForm({ ...heroForm, headlineVariants: copy }); }} placeholder="Headline (before accent)" style={{ flex: 1 }} />
                 <input value={v.accent} onChange={(e) => { const copy = [...heroForm.headlineVariants]; copy[i] = { ...copy[i], accent: e.target.value }; setHeroForm({ ...heroForm, headlineVariants: copy }); }} placeholder="Accent" style={{ flex: 1 }} />
                 <input value={v.subtitle} onChange={(e) => { const copy = [...heroForm.headlineVariants]; copy[i] = { ...copy[i], subtitle: e.target.value }; setHeroForm({ ...heroForm, headlineVariants: copy }); }} placeholder="Subtitle (optional)" style={{ flex: 1 }} />
-                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, headlineVariants: heroForm.headlineVariants.filter((_, j) => j !== i) })}>&times;</button>
+                <button className="btn btn-sm btn-ghost" aria-label="Remove headline variant" onClick={() => setHeroForm({ ...heroForm, headlineVariants: heroForm.headlineVariants.filter((_, j) => j !== i) })}>&times;</button>
               </div>
             ))}
             <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, headlineVariants: [...heroForm.headlineVariants, { headline: "", accent: "", subtitle: "" }] })}>+ Add Headline Variant</RippleButton>
@@ -2870,7 +2884,7 @@ function AdminStorefront() {
             {heroForm.highlights.map((h, i) => (
               <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
                 <input value={h} onChange={(e) => { const copy = [...heroForm.highlights]; copy[i] = e.target.value; setHeroForm({ ...heroForm, highlights: copy }); }} style={{ flex: 1 }} />
-                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, highlights: heroForm.highlights.filter((_, j) => j !== i) })}>&times;</button>
+                <button className="btn btn-sm btn-ghost" aria-label="Remove highlight" onClick={() => setHeroForm({ ...heroForm, highlights: heroForm.highlights.filter((_, j) => j !== i) })}>&times;</button>
               </div>
             ))}
             <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, highlights: [...heroForm.highlights, ""] })}>+ Add Highlight</RippleButton>
@@ -2885,13 +2899,13 @@ function AdminStorefront() {
                   <option value="">— pick category —</option>
                   {catList.map((cat) => <option key={cat.id} value={"/" + cat.id}>{cat.label}</option>)}
                 </select>
-                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, catChips: heroForm.catChips.filter((_, j) => j !== i) })}>&times;</button>
+                <button className="btn btn-sm btn-ghost" aria-label="Remove category chip" onClick={() => setHeroForm({ ...heroForm, catChips: heroForm.catChips.filter((_, j) => j !== i) })}>&times;</button>
               </div>
             ))}
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, catChips: [...heroForm.catChips, { label: "", href: "" }] })}>+ Add Chip</RippleButton>
               <RippleButton size="small" variant="ghost" onClick={async () => {
-                try { const d = await api<any>("/api/categories"); const cats = d.categories || []; setHeroForm({ ...heroForm, catChips: cats.map((c: any) => ({ label: c.label, href: "/" + c.id })) }); } catch { alert("Failed to load categories"); }
+                try { const d = await api<any>("/api/categories"); const cats = d.categories || []; setHeroForm({ ...heroForm, catChips: cats.map((c: any) => ({ label: c.label, href: "/" + c.id })) }); } catch { toast("error", "Failed to load categories"); }
               }}>Sync from Categories</RippleButton>
             </div>
           </div>
@@ -2902,13 +2916,13 @@ function AdminStorefront() {
               <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
                 <input value={s.value} onChange={(e) => { const copy = [...heroForm.stats]; copy[i] = { ...copy[i], value: e.target.value }; setHeroForm({ ...heroForm, stats: copy }); }} placeholder="Value" style={{ width: 100 }} />
                 <input value={s.label} onChange={(e) => { const copy = [...heroForm.stats]; copy[i] = { ...copy[i], label: e.target.value }; setHeroForm({ ...heroForm, stats: copy }); }} placeholder="Label" style={{ flex: 1 }} />
-                <button className="btn btn-sm btn-ghost" onClick={() => setHeroForm({ ...heroForm, stats: heroForm.stats.filter((_, j) => j !== i) })}>&times;</button>
+                <button className="btn btn-sm btn-ghost" aria-label="Remove stat" onClick={() => setHeroForm({ ...heroForm, stats: heroForm.stats.filter((_, j) => j !== i) })}>&times;</button>
               </div>
             ))}
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, stats: [...heroForm.stats, { value: "", label: "" }] })}>+ Add Stat</RippleButton>
               <RippleButton size="small" variant="ghost" onClick={async () => {
-                try { const d = await api<any>("/api/storefront-stats"); setHeroForm({ ...heroForm, stats: [{ value: String(d.totalProducts) + "+", label: "Products" }, { value: String(d.totalCustomers) + "+", label: "Customers" }, { value: String(d.totalOrders) + "+", label: "Orders" }] }); } catch { alert("Failed to load stats"); }
+                try { const d = await api<any>("/api/storefront-stats"); setHeroForm({ ...heroForm, stats: [{ value: String(d.totalProducts) + "+", label: "Products" }, { value: String(d.totalCustomers) + "+", label: "Customers" }, { value: String(d.totalOrders) + "+", label: "Orders" }] }); } catch { toast("error", "Failed to load stats"); }
               }}>Populate from Live Data</RippleButton>
             </div>
           </div>
@@ -3098,12 +3112,13 @@ function AdminSplashes() {
       }
       resetForm();
       loadSplashes();
-    } catch (err: any) { alert(err.message); }
+      toast("success", editing ? "Splash updated." : "Splash created.");
+    } catch (err: any) { toast("error", err.message); }
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Delete this splash?")) return;
-    try { await api(`/api/admin/splashes/${id}`, { method: "DELETE" }); loadSplashes(); } catch (err: any) { alert(err.message); }
+    if (!(await confirmDialog({ message: "Delete this splash?", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/admin/splashes/${id}`, { method: "DELETE" }); loadSplashes(); toast("success", "Splash deleted."); } catch (err: any) { toast("error", err.message); }
   }
 
   const presets = [
@@ -3584,8 +3599,8 @@ function AdminCompliance() {
           </> : <>
             <div className="field"><label>Branch ID<input name="etimsBranchId" defaultValue={settings?.etimsBranchId || "00"} placeholder="00" /></label></div>
             <div className="field"><label>OSCU API URL<input name="etimsOscuApiUrl" defaultValue={settings?.etimsOscuApiUrl || "https://etims.kra.go.ke/api"} placeholder="https://etims.kra.go.ke/api" /></label></div>
-            <div className="field"><label>Consumer Key<input name="etimsOscuConsumerKey" defaultValue={settings?.etimsOscuConsumerKey || ""} placeholder="OSCU consumer key" /></label></div>
-            <div className="field"><label>Consumer Secret<input name="etimsOscuConsumerSecret" defaultValue={settings?.etimsOscuConsumerSecret || ""} placeholder="OSCU consumer secret" /></label></div>
+            <div className="field"><label>Consumer Key<input name="etimsOscuConsumerKey" type="password" autoComplete="new-password" defaultValue={settings?.etimsOscuConsumerKey || ""} placeholder="OSCU consumer key" /></label></div>
+            <div className="field"><label>Consumer Secret<input name="etimsOscuConsumerSecret" type="password" autoComplete="new-password" defaultValue={settings?.etimsOscuConsumerSecret || ""} placeholder="OSCU consumer secret" /></label></div>
           </>}
         </div>
         {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", marginBottom: "0.75rem" }}>{msg}</p>}
@@ -3801,7 +3816,7 @@ function AdminFooterConfig() {
             <div key={linkIdx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.35rem", alignItems: "center" }}>
               <input value={link.label} onChange={(e) => updateLink(colIdx, linkIdx, "label", e.target.value)} className="input" style={{ width: 120, fontSize: "0.85rem" }} placeholder="Label" />
               <input value={link.href} onChange={(e) => updateLink(colIdx, linkIdx, "href", e.target.value)} className="input" style={{ flex: 1, fontSize: "0.85rem" }} placeholder="/page" />
-              <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }} onClick={() => removeLink(colIdx, linkIdx)}>&times;</button>
+              <button className="btn btn-sm btn-ghost" aria-label="Remove link" style={{ color: "var(--danger)" }} onClick={() => removeLink(colIdx, linkIdx)}>&times;</button>
             </div>
           ))}
           <button className="btn btn-sm btn-ghost" onClick={() => addLink(colIdx)} style={{ marginTop: "0.25rem" }}>+ Add link</button>
@@ -3829,7 +3844,7 @@ function AdminSystem() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a"); a.href = url; a.download = `store-backup-${new Date().toISOString().slice(0, 10)}.db`; a.click();
             URL.revokeObjectURL(url);
-          } catch (e: any) { alert(e.message); }
+          } catch (e: any) { toast("error", e.message); }
         }}>Download Backup</RippleButton>
       </div>
       <div className="panel" style={{ marginBottom: "1.5rem" }}>
@@ -3854,11 +3869,11 @@ function AdminShopSubscription() {
   async function activatePlan() {
     if (!selectedPlan) return;
     setSaving(true); setMsg("");
-    try { await api("/api/shop/subscription", { method: "PUT", body: JSON.stringify({ planId: selectedPlan }) }); setMsg(`Plan changed to ${selectedPlan}.`); refetch(); } catch (err: any) { setMsg("Error: " + err.message); } finally { setSaving(false); }
+    try { await api("/api/shop/subscription", { method: "PUT", body: JSON.stringify({ planId: selectedPlan }) }); setMsg(`Plan changed to ${selectedPlan}.`); refetch(); toast("success", `Plan changed to ${selectedPlan}.`); } catch (err: any) { setMsg("Error: " + err.message); toast("error", err.message); } finally { setSaving(false); }
   }
 
   async function handleRequest(id: number, status: string) {
-    try { await api(`/api/shop/subscription/requests/${id}`, { method: "PUT", body: JSON.stringify({ status }) }); refetch(); refetchReqs(); } catch (err: any) { alert(err.message); }
+    try { await api(`/api/shop/subscription/requests/${id}`, { method: "PUT", body: JSON.stringify({ status }) }); refetch(); refetchReqs(); toast("success", status === "approved" ? "Subscription request approved." : "Subscription request rejected."); } catch (err: any) { toast("error", err.message); }
   }
 
   if (loading) return <Spinner />;
@@ -3949,12 +3964,13 @@ function AdminSpecTemplates() {
       if (editing) { await api(`/api/spec-templates/${editing.id}`, { method: "PUT", body: JSON.stringify(body) }); }
       else { await api("/api/spec-templates", { method: "POST", body: JSON.stringify(body) }); }
       refetch(); resetForm();
-    } catch (err: any) { alert(err.message); }
+      toast("success", editing ? "Spec field updated." : "Spec field added.");
+    } catch (err: any) { toast("error", err.message); }
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Delete this spec field?")) return;
-    try { await api(`/api/spec-templates/${id}`, { method: "DELETE" }); refetch(); } catch (err: any) { alert(err.message); }
+    if (!(await confirmDialog({ message: "Delete this spec field?", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/spec-templates/${id}`, { method: "DELETE" }); refetch(); toast("success", "Spec field deleted."); } catch (err: any) { toast("error", err.message); }
   }
 
   function startEdit(f: any) {
@@ -4145,7 +4161,7 @@ function exportPdf(report: any, from: string, to: string) {
     for (const o of report.orders) html += `<tr><td>${e(String(o.id))}</td><td>${e(o.customer_name || "—")}</td><td>${((o.subtotal || 0) + (o.shipping_fee || 0)).toLocaleString()}</td><td>${e(o.status)}</td><td>${e(o.created_at)}</td></tr>`;
     html += `</tbody></table>`;
   }
-  html += `<p style="text-align:center;color:#999;font-size:0.8rem;margin-top:2rem">Generated on ${new Date().toLocaleDateString("en-GB")}</p>`;
+  html += `<p style="text-align:center;color:#4b5563;font-size:0.8rem;margin-top:2rem">Generated on ${new Date().toLocaleDateString("en-GB")}</p>`;
   html += `</body></html>`;
   w.document.write(html);
   w.document.close();
@@ -4173,13 +4189,14 @@ function AdminCoupons() {
         await api("/api/admin/coupons", { method: "POST", body: JSON.stringify(body) });
       }
       setShowForm(false); setEditing(null); refetch();
-    } catch (e: any) { setMsg(e.message); }
+      toast("success", editing ? "Coupon updated." : "Coupon created.");
+    } catch (e: any) { setMsg(e.message); toast("error", e.message); }
     finally { setSaving(false); }
   }
 
   async function deleteC(id: number) {
-    if (!confirm("Delete this coupon?")) return;
-    try { await api(`/api/admin/coupons/${id}`, { method: "DELETE" }); refetch(); } catch {}
+    if (!(await confirmDialog({ message: "Delete this coupon?", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/admin/coupons/${id}`, { method: "DELETE" }); refetch(); toast("success", "Coupon deleted."); } catch { toast("error", "Delete failed"); }
   }
 
   return (
@@ -4255,7 +4272,8 @@ function AdminGiftCards() {
     try {
       await api("/api/admin/gift-cards", { method: "POST", body: JSON.stringify(body) });
       setShowForm(false); refetch();
-    } catch (e: any) { setMsg(e.message); }
+      toast("success", "Gift card created.");
+    } catch (e: any) { setMsg(e.message); toast("error", e.message); }
     finally { setSaving(false); }
   }
 
@@ -4263,7 +4281,7 @@ function AdminGiftCards() {
     try {
       await api(`/api/admin/gift-cards/${card.id}`, { method: "PUT", body: JSON.stringify({ is_active: card.is_active !== 1 }) });
       refetch();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast("error", e.message); }
   }
 
   async function showRedemptions(card: any) {
@@ -4379,13 +4397,14 @@ function AdminCampaigns() {
         await api("/api/admin/campaigns", { method: "POST", body: JSON.stringify(body) });
       }
       setShowForm(false); setEditing(null); refetch();
-    } catch (e: any) { setMsg(e.message); }
+      toast("success", editing ? "Campaign updated." : "Campaign created.");
+    } catch (e: any) { setMsg(e.message); toast("error", e.message); }
     finally { setSaving(false); }
   }
 
   async function del(id: number) {
-    if (!confirm("Delete this campaign?")) return;
-    try { await api(`/api/admin/campaigns/${id}`, { method: "DELETE" }); refetch(); } catch {}
+    if (!(await confirmDialog({ message: "Delete this campaign? The campaign page will be removed.", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/admin/campaigns/${id}`, { method: "DELETE" }); refetch(); toast("success", "Campaign deleted."); } catch { toast("error", "Delete failed"); }
   }
 
   return (
@@ -4559,8 +4578,8 @@ function AdminSuppliers() {
   const suppliers = data?.suppliers || [];
 
   async function del(id: number) {
-    if (!confirm("Delete supplier?")) return;
-    try { await api(`/api/admin/suppliers/${id}`, { method: "DELETE" }); refetch(); } catch {}
+    if (!(await confirmDialog({ message: "Delete supplier?", confirmLabel: "Delete", danger: true }))) return;
+    try { await api(`/api/admin/suppliers/${id}`, { method: "DELETE" }); refetch(); toast("success", "Supplier deleted."); } catch { toast("error", "Delete failed"); }
   }
 
   return (
@@ -5301,7 +5320,8 @@ function AdminCustomers() {
       setFormOk("Customer created.");
       setFormName(""); setFormEmail(""); setFormPass(""); setFormPhone(""); setShowForm(false);
       load();
-    } catch (err: any) { setFormErr(err.message); }
+      toast("success", "Customer created.");
+    } catch (err: any) { setFormErr(err.message); toast("error", err.message); }
   }
 
   async function handleToggle(c: any) {
@@ -5312,10 +5332,10 @@ function AdminCustomers() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Delete this customer and all their data?")) return;
+    if (!(await confirmDialog({ message: "Delete this customer and all their data? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
     setDeleting(id);
-    try { await api(`/api/admin/customers/${id}`, { method: "DELETE" }); load(); }
-    catch {}
+    try { await api(`/api/admin/customers/${id}`, { method: "DELETE" }); load(); toast("success", "Customer deleted."); }
+    catch { toast("error", "Delete failed"); }
     finally { setDeleting(null); }
   }
 
@@ -5431,6 +5451,7 @@ function AdminPurchases() {
   const [listMode, setListMode] = useState<"active" | "completed" | "deleted">("active");
   const [receiveInputs, setReceiveInputs] = useState<{ [itemId: number]: number }>({});
   const [receiving, setReceiving] = useState<number | null>(null);
+  const [listSearch, setListSearch] = useState("");
 
   async function loadOrders(mode?: string) {
     setLoading(true);
@@ -5499,7 +5520,21 @@ function AdminPurchases() {
     try {
       await api(`/api/purchases/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
       loadOrder(id); loadOrders();
-    } catch (err: any) { setMsg(err.message); }
+      toast("success", `Purchase order marked as ${status}.`);
+    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
+  }
+
+  async function confirmMarkReceived() {
+    if (!viewing) return;
+    const lineCount = (viewing.items || []).length;
+    const cost = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityOrdered || 0), 0);
+    const ok = await confirmDialog({
+      title: "Mark all received?",
+      message: `This marks all ${lineCount} line${lineCount !== 1 ? "s" : ""} as received and adds ${formatPrice(cost)} to stock. Unreceived quantities can still be adjusted per line afterwards.`,
+      confirmLabel: "Mark All Received",
+      danger: true,
+    });
+    if (ok) updateStatus(viewing.id, "received");
   }
 
   async function receiveItem(itemId: number) {
@@ -5514,12 +5549,13 @@ function AdminPurchases() {
   }
 
   async function deleteOrder(id: number) {
-    if (!confirm("Move this purchase order to trash? You can restore it later.")) return;
+    if (!(await confirmDialog({ message: "Move this purchase order to trash? You can restore it later.", confirmLabel: "Move to Trash", danger: true }))) return;
     try {
       await api(`/api/purchases/${id}`, { method: "DELETE" });
       if (viewing && viewing.id === id) setViewing(null);
       loadOrders();
-    } catch (err: any) { setMsg(err.message); }
+      toast("success", "Purchase order moved to trash.");
+    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
   }
 
   async function restoreOrder(id: number) {
@@ -5571,11 +5607,11 @@ function AdminPurchases() {
             {viewing.status === "pending" && (
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
                 <RippleButton size="small" onClick={() => updateStatus(viewing.id, "ordered")}>Mark Ordered</RippleButton>
-                <RippleButton size="small" variant="danger" onClick={() => updateStatus(viewing.id, "cancelled")}>Cancel</RippleButton>
+                <RippleButton size="small" variant="danger" onClick={async () => { if (await confirmDialog({ message: `Cancel purchase order ${viewing.id}? Ordered stock will not be received.`, confirmLabel: "Cancel Order", danger: true })) updateStatus(viewing.id, "cancelled"); }}>Cancel</RippleButton>
               </div>
             )}
             {viewing.status === "ordered" && (
-              <RippleButton size="small" style={{ marginTop: "0.75rem" }} onClick={() => updateStatus(viewing.id, "received")}>Mark All Received</RippleButton>
+              <RippleButton size="small" style={{ marginTop: "0.75rem" }} onClick={confirmMarkReceived}>Mark All Received</RippleButton>
             )}
             <div style={{ marginTop: "0.75rem" }}>
               <RippleButton size="small" variant="ghost" onClick={() => deleteOrder(viewing.id)}>Delete</RippleButton>
@@ -5673,7 +5709,7 @@ function AdminPurchases() {
                       <td>{escapeHtml(item.productName)}</td>
                       <td><input type="number" min="1" value={item.quantity} onChange={(e) => updateFormItem(idx, "quantity", e.target.value)} style={{ width: 60 }} /></td>
                       <td><input type="number" min="0" step="0.01" value={item.unitCost} onChange={(e) => updateFormItem(idx, "unitCost", e.target.value)} style={{ width: 100 }} /></td>
-                      <td><RippleButton size="small" variant="danger" onClick={() => removeFormItem(idx)}>✕</RippleButton></td>
+                      <td><RippleButton size="small" variant="danger" aria-label="Remove item" onClick={() => removeFormItem(idx)}>✕</RippleButton></td>
                     </tr>
                   ))}
                 </tbody>
@@ -5693,23 +5729,24 @@ function AdminPurchases() {
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <h1 style={{ margin: 0 }}>Purchase Orders</h1>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <button type="button" style={tabStyle(listMode === "active")} onClick={() => { setListMode("active"); loadOrders("active"); }}>Active</button>
-          <button type="button" style={tabStyle(listMode === "completed")} onClick={() => { setListMode("completed"); loadOrders("completed"); }}>Completed</button>
-          <button type="button" style={tabStyle(listMode === "deleted")} onClick={() => { setListMode("deleted"); loadOrders("deleted"); }}>Deleted</button>
-          <RippleButton size="small" onClick={() => { setCreating(true); loadFormDeps(); }}>+ New PO</RippleButton>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
+          <h1 style={{ margin: 0 }}>Purchase Orders</h1>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            <input type="search" placeholder="Search PO # or supplier..." value={listSearch} onChange={(e) => setListSearch(e.target.value)} aria-label="Search purchase orders" style={{ padding: "0.4rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: "0.85rem", minWidth: 160 }} />
+            <button type="button" style={tabStyle(listMode === "active")} aria-pressed={listMode === "active"} onClick={() => { setListMode("active"); loadOrders("active"); }}>Active</button>
+            <button type="button" style={tabStyle(listMode === "completed")} aria-pressed={listMode === "completed"} onClick={() => { setListMode("completed"); loadOrders("completed"); }}>Completed</button>
+            <button type="button" style={tabStyle(listMode === "deleted")} aria-pressed={listMode === "deleted"} onClick={() => { setListMode("deleted"); loadOrders("deleted"); }}>Deleted</button>
+            <RippleButton size="small" onClick={() => { setCreating(true); loadFormDeps(); }}>+ New PO</RippleButton>
+          </div>
         </div>
-      </div>
       {error && <ErrorMsg msg={error} />}
       {msg && <ErrorMsg msg={msg} />}
       <div className="table-wrap">
         <table className="data-table">
           <thead><tr><th>#</th><th>Supplier</th><th>Items</th><th>Status</th><th>Date</th><th></th></tr></thead>
           <tbody>
-            {orders.map((o: any) => (
-              <tr key={o.id} style={{ cursor: "pointer" }} onClick={() => loadOrder(o.id)}>
+            {orders.filter((o: any) => !listSearch.trim() || String(o.id).includes(listSearch.trim().toLowerCase()) || (o.supplierName || "").toLowerCase().includes(listSearch.trim().toLowerCase())).map((o: any) => (
+              <tr key={o.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => loadOrder(o.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); loadOrder(o.id); } }}>
                 <td>{o.id}</td>
                 <td>{escapeHtml(o.supplierName)}</td>
                 <td>{(o.items || []).length}</td>
@@ -5726,6 +5763,7 @@ function AdminPurchases() {
               </tr>
             ))}
             {orders.length === 0 && <tr><td colSpan={6}><EmptyState icon="stock" title={listMode === "deleted" ? "No deleted purchase orders" : listMode === "completed" ? "No completed purchase orders" : "No purchase orders"} description={listMode === "deleted" ? "Deleted purchase orders will appear here." : listMode === "completed" ? "Completed (received) purchase orders will appear here." : "Create a purchase order to start tracking supplier purchases."} /></td></tr>}
+            {orders.length > 0 && !orders.some((o: any) => !listSearch.trim() || String(o.id).includes(listSearch.trim().toLowerCase()) || (o.supplierName || "").toLowerCase().includes(listSearch.trim().toLowerCase())) && <tr><td colSpan={6}><EmptyState icon="stock" title="No matches" description={`No purchase orders match "${listSearch}".`} actionLabel="Clear search" onAction={() => setListSearch("")} /></td></tr>}
           </tbody>
         </table>
       </div>
@@ -5755,12 +5793,13 @@ function AdminReviews() {
   useEffect(() => { loadReviews(1); }, []);
 
   async function deleteReview(id: number, productId: string) {
-    if (!confirm("Delete this review?")) return;
+    if (!(await confirmDialog({ message: "Delete this review?", confirmLabel: "Delete", danger: true }))) return;
     setDeletingId(id);
     try {
       await api(`/api/admin/products/${encodeURIComponent(productId)}/reviews/${id}`, { method: "DELETE" });
       loadReviews(page);
-    } catch (e: any) { alert(e.message || "Failed to delete."); }
+      toast("success", "Review deleted.");
+    } catch (e: any) { toast("error", e.message || "Failed to delete."); }
     finally { setDeletingId(null); }
   }
 
@@ -5827,8 +5866,8 @@ function AdminEmailSettings() {
     try {
       const updated = await api<any>("/api/settings", { method: "PUT", body: JSON.stringify({ emailSender: settings.emailSender, emailSenderName: settings.emailSenderName, emailNotificationsEnabled: settings.emailNotificationsEnabled }) });
       setSettings(updated);
-      alert("Email settings saved.");
-    } catch (e: any) { alert("Failed: " + e.message); }
+      toast("success", "Email settings saved.");
+    } catch (e: any) { toast("error", "Failed: " + e.message); }
     finally { setSaving(false); }
   }
 
@@ -5946,13 +5985,14 @@ function AdminDeliveryFees() {
   }
 
   async function reset() {
-    if (!confirm("Reset all delivery fees to defaults?")) return;
+    if (!(await confirmDialog({ message: "Reset all delivery fees to defaults?", confirmLabel: "Reset", danger: true }))) return;
     setSaving(true); setMsg(null);
     try {
       const data = await api<{ message?: string; counties?: any[] }>("/api/admin/delivery-fees", { method: "DELETE" });
       setFees({}); setMsg({ text: data?.message || "Reset to defaults." });
       if (data?.counties) setCounties(data.counties);
-    } catch (e: any) { setMsg({ text: e.message || "Reset failed", error: true }); }
+      toast("success", data?.message || "Delivery fees reset.");
+    } catch (e: any) { setMsg({ text: e.message || "Reset failed", error: true }); toast("error", e.message || "Reset failed"); }
     finally { setSaving(false); }
   }
 

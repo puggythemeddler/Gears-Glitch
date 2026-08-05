@@ -3,6 +3,7 @@ import { api, getStaffToken } from "@/lib/api";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { escapeHtml } from "@/lib/sanitize";
+import { confirmDialog } from "@/components/ConfirmDialog";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
@@ -93,7 +94,7 @@ export default function StockTakeSessionPage() {
   }
 
   async function deleteSession() {
-    if (!confirm("Delete this session? Only possible if no items have been counted.")) return;
+    if (!(await confirmDialog({ message: "Delete this session? Only possible if no items have been counted.", confirmLabel: "Delete", danger: true }))) return;
     try {
       await api(`/api/stock-take/${id}`, { method: "DELETE" });
       router.push("/admin?view=stock-take");

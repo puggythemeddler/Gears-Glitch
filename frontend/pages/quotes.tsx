@@ -3,6 +3,8 @@ import { api, getRole, getTokenForRole, downloadPdf } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { useApp } from "@/lib/app-context";
 import { escapeHtml } from "@/lib/sanitize";
+import { toast } from "@/components/Toast";
+import { confirmDialog } from "@/components/ConfirmDialog";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
@@ -76,36 +78,38 @@ export default function QuotesPage() {
   const filtered = filter ? quotes.filter((q) => q.status === filter) : quotes;
 
   async function approveQuote(q: Quote) {
-    if (!confirm(`Approve quote ${q.quoteNumber}? This will create an order/invoice.`)) return;
+    if (!(await confirmDialog({ message: `Approve quote ${q.quoteNumber}? This will create an order/invoice.`, confirmLabel: "Approve", danger: true }))) return;
     setActionLoading(true);
     try {
       const d = await api<{ order: any; invoiceNumber: string }>(`/api/admin/quotes/${q.id}/approve`, { method: "POST" });
-      alert(`Quote approved! Order created with invoice: ${d.invoiceNumber}`);
+      toast("success", `Quote approved! Order created with invoice: ${d.invoiceNumber}`);
       setViewQuote(null);
       loadQuotes();
-    } catch (e: any) { alert(e.message || "Failed to approve."); }
+    } catch (e: any) { toast("error", e.message || "Failed to approve."); }
     setActionLoading(false);
   }
 
   async function cancelQuote(q: Quote) {
-    if (!confirm(`Cancel quote ${q.quoteNumber}?`)) return;
+    if (!(await confirmDialog({ message: `Cancel quote ${q.quoteNumber}?`, confirmLabel: "Cancel Quote", danger: true }))) return;
     setActionLoading(true);
     try {
       await api(`/api/admin/quotes/${q.id}/cancel`, { method: "POST" });
+      toast("success", `Quote ${q.quoteNumber} cancelled.`);
       setViewQuote(null);
       loadQuotes();
-    } catch (e: any) { alert(e.message || "Failed to cancel."); }
+    } catch (e: any) { toast("error", e.message || "Failed to cancel."); }
     setActionLoading(false);
   }
 
   async function deleteQuote(q: Quote) {
-    if (!confirm(`Delete quote ${q.quoteNumber}? This cannot be undone.`)) return;
+    if (!(await confirmDialog({ message: `Delete quote ${q.quoteNumber}? This cannot be undone.`, confirmLabel: "Delete", danger: true }))) return;
     setActionLoading(true);
     try {
       await api(`/api/admin/quotes/${q.id}`, { method: "DELETE" });
+      toast("success", `Quote ${q.quoteNumber} deleted.`);
       setViewQuote(null);
       loadQuotes();
-    } catch (e: any) { alert(e.message || "Failed to delete."); }
+    } catch (e: any) { toast("error", e.message || "Failed to delete."); }
     setActionLoading(false);
   }
 
@@ -165,7 +169,7 @@ export default function QuotesPage() {
               {filtered.map((q) => {
                 const cfg = STATUS_CONFIG[q.status] || STATUS_CONFIG.pending;
                 return (
-                  <tr key={q.id} style={{ cursor: "pointer" }} onClick={() => setViewQuote(q)}>
+                  <tr key={q.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => setViewQuote(q)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setViewQuote(q); } }}>
                     <td style={{ fontWeight: 600 }}>{escapeHtml(q.quoteNumber)}</td>
                     <td>{escapeHtml(q.customerName || "—")}</td>
                     <td>{q.items.length}</td>
@@ -242,7 +246,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
   }
 
   async function saveEdits() {
-    if (editItems.length === 0) { alert("Quote must have at least one item."); return; }
+    if (editItems.length === 0) { toast("error", "Quote must have at least one item."); return; }
     setActionLoading(true);
     try {
       const d = await api<{ quote: Quote }>(`/api/admin/quotes/${quote.id}`, {
@@ -251,43 +255,46 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
       });
       setQuote(d.quote);
       setEditing(false);
-    } catch (e: any) { alert(e.message || "Failed to save."); }
+      toast("success", "Quote updated.");
+    } catch (e: any) { toast("error", e.message || "Failed to save."); }
     setActionLoading(false);
   }
 
   async function approve() {
-    if (!confirm(`Approve quote ${quote.quoteNumber}? This will create an order/invoice.`)) return;
+    if (!(await confirmDialog({ message: `Approve quote ${quote.quoteNumber}? This will create an order/invoice.`, confirmLabel: "Approve", danger: true }))) return;
     setActionLoading(true);
     try {
       const d = await api<{ order: any; invoiceNumber: string }>(`/api/admin/quotes/${quote.id}/approve`, { method: "POST" });
-      alert(`Quote approved! Invoice: ${d.invoiceNumber}`);
+      toast("success", `Quote approved! Invoice: ${d.invoiceNumber}`);
       onRefresh();
-    } catch (e: any) { alert(e.message || "Failed."); }
+    } catch (e: any) { toast("error", e.message || "Failed."); }
     setActionLoading(false);
   }
 
   async function cancel() {
-    if (!confirm(`Cancel quote ${quote.quoteNumber}?`)) return;
+    if (!(await confirmDialog({ message: `Cancel quote ${quote.quoteNumber}?`, confirmLabel: "Cancel Quote", danger: true }))) return;
     setActionLoading(true);
     try {
       await api(`/api/admin/quotes/${quote.id}/cancel`, { method: "POST" });
+      toast("success", `Quote ${quote.quoteNumber} cancelled.`);
       onRefresh();
-    } catch (e: any) { alert(e.message || "Failed."); }
+    } catch (e: any) { toast("error", e.message || "Failed."); }
     setActionLoading(false);
   }
 
   async function del() {
-    if (!confirm(`Delete ${quote.quoteNumber}? This cannot be undone.`)) return;
+    if (!(await confirmDialog({ message: `Delete ${quote.quoteNumber}? This cannot be undone.`, confirmLabel: "Delete", danger: true }))) return;
     setActionLoading(true);
     try {
       await api(`/api/admin/quotes/${quote.id}`, { method: "DELETE" });
+      toast("success", `Quote ${quote.quoteNumber} deleted.`);
       onRefresh();
-    } catch (e: any) { alert(e.message || "Failed."); }
+    } catch (e: any) { toast("error", e.message || "Failed."); }
     setActionLoading(false);
   }
 
   function openPdf() {
-    downloadPdf(`/api/admin/quotes/${quote.id}/pdf?allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, `quote-${quote.quoteNumber || quote.id}.pdf`).catch((e: any) => alert("Failed to download quote: " + (e?.message || "Unknown error")));
+    downloadPdf(`/api/admin/quotes/${quote.id}/pdf?allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, `quote-${quote.quoteNumber || quote.id}.pdf`).catch((e: any) => toast("error", "Failed to download quote: " + (e?.message || "Unknown error")));
   }
 
   const editSubtotal = editItems.reduce((s, i) => s + calcEditItemTotal(i), 0);
@@ -332,7 +339,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
               <div key={item.productId} style={{ padding: "0.5rem 0", borderBottom: "1px solid var(--border)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{escapeHtml(item.productName)}</span>
-                  <button className="btn btn-sm btn-ghost" onClick={() => setEditItems((prev) => prev.filter((i) => i.productId !== item.productId))}>&times;</button>
+                  <button className="btn btn-sm btn-ghost" aria-label="Remove item" onClick={() => setEditItems((prev) => prev.filter((i) => i.productId !== item.productId))}>&times;</button>
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.25rem", flexWrap: "wrap" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
@@ -521,8 +528,8 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
   if (grandTotal < 0) grandTotal = 0;
 
   async function submit() {
-    if (!customerName.trim()) { alert("Customer name is required."); return; }
-    if (selectedItems.length === 0) { alert("Add at least one product."); return; }
+    if (!customerName.trim()) { toast("error", "Customer name is required."); return; }
+    if (selectedItems.length === 0) { toast("error", "Add at least one product."); return; }
     setSaving(true);
     try {
       await api("/api/admin/quotes", {
@@ -536,8 +543,9 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
           discountValue: quoteDiscountValue,
         }),
       });
+      toast("success", "Quote created.");
       onCreated();
-    } catch (e: any) { alert(e.message || "Failed to create quote."); }
+    } catch (e: any) { toast("error", e.message || "Failed to create quote."); }
     setSaving(false);
   }
 
@@ -605,7 +613,7 @@ function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: ()
                 <div key={item.productId} style={{ padding: "0.5rem 0", borderBottom: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{escapeHtml(item.productName)}</span>
-                    <button className="btn btn-sm btn-ghost" onClick={() => setSelectedItems((prev) => prev.filter((i) => i.productId !== item.productId))}>&times;</button>
+                    <button className="btn btn-sm btn-ghost" aria-label="Remove item" onClick={() => setSelectedItems((prev) => prev.filter((i) => i.productId !== item.productId))}>&times;</button>
                   </div>
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.25rem", flexWrap: "wrap" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>

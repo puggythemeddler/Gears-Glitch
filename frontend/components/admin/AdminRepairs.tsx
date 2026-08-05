@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
+import EmptyState from "@/components/EmptyState";
 import { formatPrice, escapeHtml, Spinner } from "./shared";
+import { toast } from "@/components/Toast";
 
 type AdminRepairsTab = "tickets" | "calendar" | "content";
 
@@ -184,7 +186,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       });
       await loadDetail(detail.id);
       await loadList();
-    } catch (e: any) { alert(e.message); }
+      toast("success", "Repair updated.");
+    } catch (e: any) { toast("error", e.message); }
     finally { setSaving(false); }
   }
 
@@ -193,7 +196,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
     try {
       await api(`/api/repairs/${detail.id}/send-quote`, { method: "POST" });
       await loadDetail(detail.id);
-    } catch (e: any) { alert(e.message); }
+      toast("success", "Quote sent to customer.");
+    } catch (e: any) { toast("error", e.message); }
   }
 
   async function addPart() {
@@ -209,7 +213,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       });
       setPartForm({ description: "", quantity: 1, unitCost: 0 });
       await loadDetail(detail.id);
-    } catch (e: any) { alert(e.message); }
+      toast("success", "Part added.");
+    } catch (e: any) { toast("error", e.message); }
   }
 
   async function removePart(partId: number) {
@@ -217,7 +222,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
     try {
       await api(`/api/repairs/${detail.id}/parts/${partId}`, { method: "DELETE" });
       await loadDetail(detail.id);
-    } catch (e: any) { alert(e.message); }
+      toast("success", "Part removed.");
+    } catch (e: any) { toast("error", e.message); }
   }
 
   async function addNote() {
@@ -229,7 +235,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       });
       setNoteMsg("");
       await loadDetail(detail.id);
-    } catch (e: any) { alert(e.message); }
+      toast("success", "Update added.");
+    } catch (e: any) { toast("error", e.message); }
   }
 
   const partsTotal = Array.isArray(detail?.parts)
@@ -279,7 +286,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
                 </tr>
               ))}
               {tickets.length === 0 && (
-                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)" }}>No repair tickets match the current filters.</td></tr>
+                <tr><td colSpan={9}><EmptyState icon="repairs" title="No repair tickets" description="No repair tickets match the current filters. Clear the filters to see all tickets." actionLabel="Clear filters" onAction={() => { setStatusFilter(""); setTechFilter(""); }} /></td></tr>
               )}
             </tbody>
           </table>
@@ -319,7 +326,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
             <RippleButton onClick={saveDetail} loading={saving}>Save</RippleButton>
             <RippleButton variant="secondary" onClick={sendQuote} disabled={!!detail.quoteSentAt}>
-              {detail.quoteSentAt ? "Quote sent" : "Send quote to customer"}
+              {detail.quoteSentAt ? "Quote sent ✓" : "Send quote to customer"}
             </RippleButton>
             {detail.totalCost > 0 && <span style={{ fontWeight: 600, fontSize: "1.05rem" }}>Total: {formatPrice(detail.totalCost)}</span>}
             {detail.quoteSentAt && (

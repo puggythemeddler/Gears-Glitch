@@ -2,9 +2,9 @@ import React, { useEffect, useState } from "react";
 import { useApp } from "@/lib/app-context";
 import RippleButton from "@/components/RippleButton";
 import { api } from "@/lib/api";
-import { escapeHtml } from "@/components/admin/shared";
-
-function Spinner() { return <div style={{ textAlign: "center", padding: "2rem" }}><div className="loading-bar" /><p className="muted">Loading...</p></div>; }
+import { escapeHtml, Spinner } from "@/components/admin/shared";
+import { toast } from "@/components/Toast";
+import { confirmDialog } from "@/components/ConfirmDialog";
 
 function MediaPreview({ content, logs }: { content: string; logs: any[] }) {
   const match = content.match(/^\[image:(.*)\]$/);
@@ -13,6 +13,21 @@ function MediaPreview({ content, logs }: { content: string; logs: any[] }) {
   const log = logs.find(l => l.content === content);
   if (!log?.id) return <span>{escapeHtml(content)}</span>;
   return <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", color: "var(--primary)" }}>{"📷"} {escapeHtml(filename || "image")}</span>;
+}
+
+function SecretField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [show, setShow] = useState(false);
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+        <input type={show ? "text" : "password"} autoComplete="new-password" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{ flex: 1 }} />
+        <RippleButton size="small" variant="ghost" onClick={() => setShow(!show)} aria-label={show ? "Hide secret" : "Show secret"}>{show ? "Hide" : "Show"}</RippleButton>
+        <RippleButton size="small" variant="ghost" onClick={async () => { if (!value) return; try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} }} aria-label={`Copy ${label}`} disabled={!value}>{copied ? "Copied" : "Copy"}</RippleButton>
+      </div>
+    </div>
+  );
 }
 
 export default function WhatsAppSettings() {
@@ -101,11 +116,12 @@ export default function WhatsAppSettings() {
   }
 
   async function deleteTemplate(id: number) {
-    if (!confirm("Delete this WhatsApp template?")) return;
+    if (!(await confirmDialog({ message: "Delete this WhatsApp template?", confirmLabel: "Delete", danger: true }))) return;
     try {
       await api<any>(`/api/admin/whatsapp/templates/${id}`, { method: "DELETE" });
       setTemplates(templates.filter(t => t.id !== id));
-    } catch (e: any) { setTmplMsg("Error: " + e.message); }
+      toast("success", "Template deleted.");
+    } catch (e: any) { setTmplMsg("Error: " + e.message); toast("error", e.message); }
   }
 
   async function sendInteractive() {
@@ -157,15 +173,9 @@ export default function WhatsAppSettings() {
         <div className="field"><label>Phone Number ID
           <input value={settings?.whatsappPhoneNumberId || ""} onChange={(e) => setSettings({ ...settings, whatsappPhoneNumberId: e.target.value })} placeholder="e.g. 123456789012345" />
         </label></div>
-        <div className="field"><label>Access Token
-          <input type="password" value={settings?.whatsappAccessToken || ""} onChange={(e) => setSettings({ ...settings, whatsappAccessToken: e.target.value })} placeholder="EAAxxxx..." />
-        </label></div>
-        <div className="field"><label>App Secret
-          <input type="password" value={settings?.whatsappAppSecret || ""} onChange={(e) => setSettings({ ...settings, whatsappAppSecret: e.target.value })} placeholder="32-char hex" />
-        </label></div>
-        <div className="field"><label>Verify Token
-          <input value={settings?.whatsappVerifyToken || ""} onChange={(e) => setSettings({ ...settings, whatsappVerifyToken: e.target.value })} placeholder="your-random-verify-token" />
-        </label></div>
+        <SecretField label="Access Token" value={settings?.whatsappAccessToken || ""} onChange={(v) => setSettings({ ...settings, whatsappAccessToken: v })} placeholder="EAAxxxx..." />
+        <SecretField label="App Secret" value={settings?.whatsappAppSecret || ""} onChange={(v) => setSettings({ ...settings, whatsappAppSecret: v })} placeholder="32-char hex" />
+        <SecretField label="Verify Token" value={settings?.whatsappVerifyToken || ""} onChange={(v) => setSettings({ ...settings, whatsappVerifyToken: v })} placeholder="your-random-verify-token" />
         <div className="field"><label>Business Account ID
           <input value={settings?.whatsappBusinessAccountId || ""} onChange={(e) => setSettings({ ...settings, whatsappBusinessAccountId: e.target.value })} placeholder="WABA ID" />
         </label></div>
@@ -186,9 +196,12 @@ export default function WhatsAppSettings() {
         <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>
           Register this URL in Meta Developer Dashboard → WhatsApp → Configuration → Webhook:
         </p>
-        <code style={{ display: "block", padding: "0.5rem 0.75rem", background: "var(--surface, #f8fafc)", border: "1px solid var(--border)", borderRadius: 6, fontSize: "0.8rem", wordBreak: "break-all" }}>
-          {typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"}
-        </code>
+        <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginBottom: "0.75rem" }}>
+          <code style={{ display: "block", padding: "0.5rem 0.75rem", background: "var(--surface, #f8fafc)", border: "1px solid var(--border)", borderRadius: 6, fontSize: "0.8rem", wordBreak: "break-all", flex: 1 }}>
+            {typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"}
+          </code>
+          <RippleButton size="small" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"); toast("success", "Webhook URL copied."); } catch {} }} aria-label="Copy webhook URL">Copy</RippleButton>
+        </div>
         <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
           Verify Token: <strong>{settings?.whatsappVerifyToken || "gear-glitch-wa-verify"}</strong>
         </p>

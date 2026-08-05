@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import type { Order } from "@/lib/types";
+import { toast } from "@/components/Toast";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
@@ -29,7 +30,7 @@ export default function OrdersPage() {
     try {
       const r = await api<{ token: string }>("/api/orders/invoice-token/" + orderId, { method: "POST" });
       await downloadPdf(`/api/orders/${orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${orderId}.pdf`);
-    } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); }
+    } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown error")); }
   }
 
   return (

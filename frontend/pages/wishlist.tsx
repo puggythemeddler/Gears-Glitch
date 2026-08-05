@@ -2,6 +2,8 @@
 import { api, isCustomerLoggedIn } from "@/lib/api";
 import type { WishlistItem, Quote } from "@/lib/types";
 import { escapeHtml } from "@/lib/sanitize";
+import { toast } from "@/components/Toast";
+import { confirmDialog } from "@/components/ConfirmDialog";
 
 function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
@@ -51,10 +53,10 @@ export default function WishlistPage() {
         method: "POST",
         body: JSON.stringify({ notes: quoteNotes }),
       });
-      alert(`Quote ${result.quoteNumber} created!`);
+      toast("success", `Quote ${result.quoteNumber} created!`);
       setQuoteNotes("");
       loadQuotes();
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { toast("error", err.message); }
   }
 
   async function updateQuoteStatus(quoteId: number, status: string) {
@@ -82,7 +84,7 @@ export default function WishlistPage() {
       <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
         <button className="btn" onClick={requestQuote} disabled={items.length === 0}>Request quote</button>
         <button className="btn btn-secondary" onClick={async () => {
-          if (!confirm("Clear all items?")) return;
+          if (!(await confirmDialog({ message: "Clear all items from your wishlist?", confirmLabel: "Clear", danger: true }))) return;
           for (const item of items) await removeFromWishlist(item.productId);
         }}>Clear wishlist</button>
       </div>
@@ -116,8 +118,8 @@ export default function WishlistPage() {
                 <button className="btn btn-sm" onClick={async () => {
                   try {
                     await api("/api/cart", { method: "POST", body: JSON.stringify({ productId: item.productId, quantity: 1 }) });
-                    alert("Added to cart!");
-                  } catch (err: any) { alert(err.message); }
+                    toast("success", "Added to cart!");
+                  } catch (err: any) { toast("error", err.message); }
                 }}>Add to cart</button>
                 <a href={`/product?id=${encodeURIComponent(item.productId)}`} className="btn btn-sm btn-ghost">View</a>
                 <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }} onClick={() => removeFromWishlist(item.productId)}>Remove</button>

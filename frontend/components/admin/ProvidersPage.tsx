@@ -4,6 +4,7 @@ import type { Provider } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
+import { toast } from "@/components/Toast";
 
 export default function ProvidersPage() {
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ providers: Provider[] }>("/api/admin/providers"), []);
@@ -17,7 +18,8 @@ export default function ProvidersPage() {
     try {
       await api("/api/admin/providers", { method: "POST", body: JSON.stringify(form) });
       setShowForm(false); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch();
-    } catch (err: any) { alert(err.message); } finally { setSaving(false); }
+      toast("success", "Provider added.");
+    } catch (err: any) { toast("error", err.message); } finally { setSaving(false); }
   }
 
   async function saveEdit(e: React.FormEvent) {
@@ -25,7 +27,8 @@ export default function ProvidersPage() {
     try {
       await api(`/api/admin/providers/${editing.id}`, { method: "PUT", body: JSON.stringify(form) });
       setEditing(null); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch();
-    } catch (err: any) { alert(err.message); } finally { setSaving(false); }
+      toast("success", "Provider updated.");
+    } catch (err: any) { toast("error", err.message); } finally { setSaving(false); }
   }
 
   function openEdit(p: any) {

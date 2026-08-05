@@ -15,6 +15,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   const [stockBranchFilter, setStockBranchFilter] = useState<number | null>(null);
   const [branchStockSummary, setBranchStockSummary] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     api<{ branches: any[] }>("/api/admin/branches").then(d => setBranches(d.branches || [])).catch(() => {});
@@ -38,7 +39,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
       setSnapshot(data);
     } catch (err: any) {
       setSnapshot(null);
-      alert("No snapshot for this date.");
+      toast("error", "No snapshot for this date.");
     } finally { setLoadingSnapshot(false); }
   }
 
@@ -50,13 +51,15 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
       const data = await api<any>(`/api/stock-on-hand/${today}`);
       setSnapshot(data);
       api<{ dates: any[] }>("/api/stock-on-hand/history").then(d => setDates(d.dates || [])).catch(() => {});
-    } catch (err: any) { alert(err.message); }
+      toast("success", "Snapshot taken.");
+    } catch (err: any) { toast("error", err.message); }
   }
 
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
   const items = stockBranchFilter ? branchStockSummary : (sData?.items || []);
   const lowStock = items.filter((i: any) => (i.quantityInStock ?? i.quantity_in_stock ?? 0) <= (i.lowStockThreshold ?? i.low_stock_threshold ?? 0));
+  const filteredItems = search.trim() ? items.filter((i: any) => (i.name || "").toLowerCase().includes(search.trim().toLowerCase())) : items;
 
   return (
     <>
@@ -71,11 +74,15 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
               {branches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>
+          <div className="field" style={{ margin: 0, flex: 1, minWidth: 200 }}>
+            <label>Search</label>
+            <input type="search" placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search products" />
+          </div>
         </div>
       </div>
 
       {lowStock.length > 0 && (
-        <div className="panel" style={{ marginBottom: "1rem", background: "#fef3c7", borderColor: "#f59e0b", color: "#92400e" }}>
+        <div className="panel" style={{ marginBottom: "1rem", background: "var(--warning-light)", borderColor: "var(--warning, #d97706)", color: "var(--warning-text)" }}>
           <strong>{lowStock.length}</strong> item(s) at or below low stock threshold.
           {showAutoReorder && (
             <RippleButton size="small" onClick={async () => {
@@ -130,7 +137,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
         <table className="data-table">
           <thead><tr><th>Product</th><th>Category</th><th>In Stock</th><th>Reserved</th><th>Sold</th><th>Threshold</th><th>Status</th></tr></thead>
           <tbody>
-            {items.map((i: any) => {
+            {filteredItems.map((i: any) => {
               const qty = i.quantityInStock ?? i.quantity_in_stock ?? 0;
               const threshold = i.lowStockThreshold ?? i.low_stock_threshold ?? 0;
               const reserved = i.quantityReserved ?? i.quantity_reserved ?? 0;
@@ -143,11 +150,11 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
                   <td>{reserved}</td>
                   <td>{sold}</td>
                   <td>{threshold}</td>
-                  <td>{qty <= threshold ? <span style={{ color: "#dc2626", fontWeight: 600 }}>Low</span> : <span style={{ color: "#16a34a" }}>OK</span>}</td>
+                  <td>{qty <= threshold ? <span style={{ color: "var(--danger)", fontWeight: 600 }}>Low</span> : <span style={{ color: "var(--success)" }}>OK</span>}</td>
                 </tr>
               );
             })}
-            {items.length === 0 && <tr><td colSpan={7}><EmptyState icon="stock" title="No stock data" description="Stock levels will appear here once products are added." /></td></tr>}
+            {filteredItems.length === 0 && <tr><td colSpan={7}><EmptyState icon="stock" title={items.length === 0 ? "No stock data" : "No matches"} description={items.length === 0 ? "Stock levels will appear here once products are added." : `No products match "${search}".`} actionLabel={items.length === 0 ? "" : "Clear search"} onAction={() => setSearch("")} /></td></tr>}
           </tbody>
         </table>
       </div>

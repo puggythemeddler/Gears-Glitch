@@ -4,6 +4,7 @@ import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import type { Order } from "@/lib/types";
 import { escapeHtml } from "@/lib/sanitize";
+import { toast } from "@/components/Toast";
 
 export default function OrderDetailPage() {
   const router = useRouter();
@@ -79,7 +80,7 @@ export default function OrderDetailPage() {
     try {
       const r = await api<{ token: string }>("/api/orders/invoice-token/" + order!.id, { method: "POST" });
       await downloadPdf(`/api/orders/${order!.id}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${order!.id}.pdf`);
-    } catch (e: any) { alert("Failed to download invoice: " + (e?.message || "Unknown error")); }
+    } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown error")); }
   }
 
   if (mounted && !loggedIn) {

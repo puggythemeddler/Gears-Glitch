@@ -4,6 +4,7 @@ import { AppProvider } from "@/lib/app-context";
 import { LayoutProvider, LayoutStyles } from "@/layouts";
 import Layout from "@/components/Layout";
 import { ToastProvider } from "@/components/Toast";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 import OfflinePage from "@/components/OfflinePage";
 import "@/styles/globals.css";
 import "@/styles/animations.css";
@@ -88,14 +89,16 @@ export default function MyApp({ Component, pageProps, router }: AppProps) {
     <AppProvider>
       <ErrorBoundary>
         <ToastProvider>
-          <LayoutProvider>
-            <LayoutStyles />
-            <Layout activeNav={activeNav}>
-              <PageTransition key={router.asPath}>
-                <Component {...pageProps} />
-              </PageTransition>
-            </Layout>
-          </LayoutProvider>
+          <ConfirmProvider>
+            <LayoutProvider>
+              <LayoutStyles />
+              <Layout activeNav={activeNav}>
+                <PageTransition key={router.asPath}>
+                  <Component {...pageProps} />
+                </PageTransition>
+              </Layout>
+            </LayoutProvider>
+          </ConfirmProvider>
         </ToastProvider>
       </ErrorBoundary>
       {offline && <OfflinePage dismissing={offline === "dismissing"} />}

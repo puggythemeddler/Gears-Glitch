@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import { Spinner } from "./shared";
+import { toast } from "@/components/Toast";
 
 export default function AboutUsPage() {
   const [data, setData] = useState({ title: "", content: "", mission: "", vision: "" });
@@ -23,7 +24,8 @@ export default function AboutUsPage() {
     setSaving(true);
     try {
       await api("/api/admin/about-us", { method: "PUT", body: JSON.stringify(data) });
-    } catch (e: any) { alert(e.message); }
+      toast("success", "About Us content saved.");
+    } catch (e: any) { toast("error", e.message); }
     finally { setSaving(false); }
   }
 
