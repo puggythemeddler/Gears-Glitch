@@ -115,6 +115,15 @@ const DEFAULT_ROLES: DefaultRoles = {
     "quote:view", "quote:create",
     "order:view", "customer:view",
   ],
+  provider: [
+    "repair:list", "repair:view", "repair:update",
+    "product:list", "product:update",
+    "stock:list", "stock:update", "stock:view_low",
+    "calendar:view", "calendar:schedule",
+    "order:view", "customer:view",
+    "messaging:view", "messaging:send",
+    "provider:view",
+  ],
   owner: [
     "staff:list", "staff:create", "staff:update", "staff:delete",
     "repair:list", "repair:create", "repair:view", "repair:update",

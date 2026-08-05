@@ -23,7 +23,7 @@ const STATUS_GLOSSARY: { term: string; meaning: string }[] = [
   { term: "Non-stock item", meaning: "A product or service that is sold but not tracked against inventory (for example a service or a drop-shipped item)." },
   { term: "eTIMS / KRA / OSCU", meaning: "Kenya's tax compliance system. OSCU (Offline Sales Control Unit) is the eTIMS offline mode used when the store cannot reach the KRA servers. The compliance settings hold the OSCU URL, consumer key and secret from your KRA dashboard." },
   { term: "Audit log", meaning: "A record of who changed what and when, kept for sensitive entities. It is read-only and used to trace disputes." },
-  { term: "Branches & staff roles", meaning: "Branches let you filter stock by location. Roles bundle permissions that decide which views and actions each staff account can use." },
+  { term: "Branches & staff roles", meaning: "Branches let you filter stock by location. Staff accounts carry a base role (Admin, Owner, Manager, Technician, Provider, Staff) plus assigned roles that bundle permissions deciding which views and actions each account can use. Provider is a staff role for managing products, stock, quotes, orders, repairs and customer messages." },
 ];
 
 function Term({ k }: { k: string }) {

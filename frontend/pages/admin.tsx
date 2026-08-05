@@ -33,7 +33,7 @@ declare global {
 
 export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "help";
 
-type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff";
+type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 // Which permission unlocks a view in the sidebar. Views absent from this map
 // (groups, categories, users, roles, plans, stock-on-hand, stock-transfers,
 // purchases, clients, storefront, settings, delivery-fees, email-settings,
@@ -359,7 +359,8 @@ export default function AdminPage() {
     setLoginLoading(true);
     try {
       const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: loginUsername, password: loginPassword }) });
-      if (!["admin", "owner", "technician", "manager", "staff"].includes(data.role)) { setLoginError("Staff access required."); return; }
+      const isStaffLogin = ["admin", "owner", "technician", "manager", "staff"].includes(data.role) || (data.role === "provider" && Array.isArray(data.permissions));
+      if (!isStaffLogin) { setLoginError("Staff access required."); return; }
       localStorage.setItem("computerStoreToken", data.token);
       localStorage.setItem("staffUserName", data.username || "Staff");
       setStaffRole(data.role || "admin");
@@ -1307,7 +1308,7 @@ function AdminUsers() {
             <div className="field"><label>Username<input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required /></label></div>
             <div className="field"><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label></div>
             <div className="field"><label>Password<input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label></div>
-            <div className="field"><label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="admin">Admin</option><option value="owner">Owner</option><option value="technician">Technician</option><option value="manager">Manager</option><option value="staff">Staff</option></select></label></div>
+            <div className="field"><label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="admin">Admin</option><option value="owner">Owner</option><option value="technician">Technician</option><option value="manager">Manager</option><option value="provider">Provider</option><option value="staff">Staff</option></select></label></div>
             <RippleButton type="submit" loading={saving}>Add user</RippleButton>
           </form>
         </div>

@@ -117,7 +117,8 @@ export default function LoginPage() {
         setTotpRequired(false);
         setTotpCode("");
         const role = data.role || "";
-        if (role === "provider") {
+        const isStaffProvider = role === "provider" && Array.isArray(data.permissions);
+        if (role === "provider" && !isStaffProvider) {
           localStorage.setItem("providerToken", data.token);
           localStorage.setItem("providerStoreName", data.username || data.email || "Provider");
           localStorage.removeItem("computerStoreToken");
@@ -125,7 +126,7 @@ export default function LoginPage() {
           localStorage.setItem("computerStoreToken", data.token);
           localStorage.setItem("staffUserName", data.username || data.email || "Staff");
         }
-        if (role === "admin" || role === "technician" || role === "manager" || role === "owner" || role === "staff") router.push("/admin");
+        if (role === "admin" || role === "owner" || role === "technician" || role === "manager" || role === "staff" || isStaffProvider) router.push("/admin");
         else router.push("/dashboard");
       }
     } catch (err: any) {

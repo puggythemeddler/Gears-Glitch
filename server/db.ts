@@ -1329,6 +1329,7 @@ async function initRolesAsync(): Promise<void> {
     technician: ["repair:list", "repair:view", "repair:update", "calendar:view", "calendar:schedule", "product:list"],
     staff: ["repair:list", "repair:view", "repair:update", "calendar:view", "calendar:schedule", "product:list"],
     manager: ["staff:list", "repair:list", "repair:view", "repair:update", "repair:assign", "product:list", "product:update", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "order:view", "customer:view"],
+    provider: ["repair:list", "repair:view", "repair:update", "product:list", "product:update", "stock:list", "stock:update", "stock:view_low", "calendar:view", "calendar:schedule", "order:view", "customer:view", "messaging:view", "messaging:send", "provider:view"],
     owner: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "quote:update", "order:view", "customer:view", "coupon:view", "giftcard:view", "campaign:view", "cart:view", "provider:view", "spec:view", "supplier:view", "branch:view", "subscription:view", "about:view", "positioning:view", "whatsapp:view", "review:view", "audit:view"],
   };
   await transaction(async (client) => {
@@ -1344,7 +1345,7 @@ async function initRolesAsync(): Promise<void> {
 }
 
 async function assignInitialRoles(): Promise<void> {
-  for (const role of ["admin", "owner", "technician", "manager", "staff"]) {
+  for (const role of ["admin", "owner", "technician", "manager", "staff", "provider"]) {
     const user = await queryOne("SELECT id FROM users WHERE role = $1", [role]) as { id: number } | undefined;
     if (!user) continue;
     // Only seed the base role for users with no roles yet, so admins can

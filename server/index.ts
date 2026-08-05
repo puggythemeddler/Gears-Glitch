@@ -3961,7 +3961,7 @@ app.patch("/api/staff/:id", adminAuthMiddleware, requirePermission("staff:update
 app.patch("/api/staff/:id/role", adminAuthMiddleware, requirePermission("staff:update"), asyncHandler(async (req: Request, res: Response) => {
   const targetId = Number(req.params.id);
   const newRole = req.body?.role;
-  if (!["admin", "owner", "technician", "manager", "staff"].includes(newRole)) { res.status(400).json({ error: "Invalid role." }); return; }
+  if (!["admin", "owner", "technician", "manager", "staff", "provider"].includes(newRole)) { res.status(400).json({ error: "Invalid role." }); return; }
   if (targetId === (req as any).user.sub && newRole !== "admin") {
     res.status(400).json({ error: "Cannot downgrade your own admin role." });
     return;
