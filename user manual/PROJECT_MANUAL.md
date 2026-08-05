@@ -201,6 +201,7 @@ The hero section is fully admin-configurable from the Storefront panel and doubl
 - Category chips that auto-sync with the category list (deleted ones disappear, new ones appear).
 - Live stats that count up on load; logged-in customers see a personalized greeting.
 - Each booster has its own admin toggle (`showSearch`, `showTrustStrip`, `showWhatsApp`, etc.).
+- **Theme-aware background** — the hero background and text palette follow the visitor's device theme automatically: a light hero with dark text in light mode, the dark hero in dark mode. Admins can override either with custom color pickers (**Light theme background** / **Dark theme background**) in the hero form; leave them empty to keep following the device theme, and use "Reset to auto" to clear both. Text contrast is chosen automatically from the selected color (dark color → white text, light color → dark text).
 
 ### Theme
 Dark mode by default with a light/dark toggle, persisted in `localStorage` and applied via `[data-theme]` CSS custom properties. All animations respect `prefers-reduced-motion`.
