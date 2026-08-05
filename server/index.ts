@@ -343,7 +343,7 @@ import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage } from "./whatsapp";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
 import bcrypt from "bcryptjs";
@@ -1029,6 +1029,25 @@ app.put("/api/admin/about-us", adminAuthMiddleware, asyncHandler(async (req: Req
   };
   await setStoreSetting("about_us", JSON.stringify(data));
   res.json(data);
+}));
+
+app.post("/api/admin/about-us/image", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    await runMulter(uploadAboutImage, req, res);
+    if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
+    if (req.file && !validateUploadedFile(req.file)) {
+      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
+      res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
+      return;
+    }
+    const imageUrl = getUploadedUrl(req);
+    if (!imageUrl) { res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
+    if (typeof req.body?.previousUrl === "string" && req.body.previousUrl && req.body.previousUrl !== imageUrl) {
+      deleteCloudinaryImage(req.body.previousUrl);
+    }
+    backupImageToDb("about", imageUrl);
+    res.json({ url: imageUrl });
+  } catch (e: any) { console.error("[About image upload]", e.message || e); res.status(400).json({ error: "Upload failed: " + (e.message || "Unknown error") }); }
 }));
 
 app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {

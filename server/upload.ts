@@ -208,6 +208,12 @@ const uploadRepairImage = multer({
   fileFilter: imageFileFilter,
 }).single("image");
 
+const uploadAboutImage = multer({
+  storage: new DynamicStorage("about", (_req, file) => `about-${Date.now()}${safeExt(file, ".jpg")}`),
+  ...MULTER_OPTS,
+  fileFilter: imageFileFilter,
+}).single("image");
+
 function imageUrlForProduct(productId: string): string {
   if (_cloudinaryConfigured) return "";
   const extensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
@@ -260,4 +266,4 @@ async function deleteCloudinaryImage(imageUrl: string): Promise<void> {
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile };
