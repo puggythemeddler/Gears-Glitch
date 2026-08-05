@@ -6,7 +6,6 @@ Gear&Glitch is a complete multi-branch sales & management system (SaaS) combinin
 - A shopper storefront with product catalog, shopping cart, wishlist, quotes, and two-step checkout.
 - A customer repair portal for booking and tracking repair tickets.
 - A unified, role-aware **staff portal** for repair ticket management, stock control, catalog, team, finance, plans, providers, settings, and business oversight.
-- A provider portal for order management and messaging.
 - A **control plane** operator dashboard that provisions and manages every client instance.
 
 It uses a **Next.js 14 (Pages Router) + TypeScript** frontend, a **Node.js + Express + TypeScript** backend, and **PostgreSQL** for persistence (one database per client, provisioned on Neon). Multi-tenancy is handled by the control plane, which spins up an isolated Neon DB + Render backend + Vercel frontend for each client.
@@ -147,8 +146,8 @@ See `LOCAL_SETUP.md` for the detailed step-by-step guide.
 - What the sidebar shows depends on the user's effective permissions (base role + assigned custom roles + direct per-user permissions): technicians and staff see Dashboard + Repairs; managers additionally get Products, Orders, Customers, Quotations, Invoices, Credit Notes, Reports, Messages, and Stock; owners get business oversight on top.
 
 ### Provider
-- Log in to `/dashboard` (provider portal).
-- View orders, cancel individual items, update order status, view subscription and invoices, message customers.
+- Log in to the unified staff portal at `/admin` (provider role, added by an admin from **Users & Permissions**).
+- What the provider sees is driven by their assigned permissions (e.g. repairs, products, stock, calendar, order viewing, messaging). External provider accounts without staff permissions no longer have a separate portal.
 
 ### Admin
 - Superuser in `/admin`: every section — products, categories, orders, staff, roles, plans, providers, invoices, credit notes, coupons, reports, stock, branches, clients, splashes, reviews, messages, settings, storefront layouts.

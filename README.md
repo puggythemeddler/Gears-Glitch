@@ -303,12 +303,12 @@ Opens **http://localhost:3000** in a browser.
 | **Owner** | `/admin` | same admin credential (role-based access) | — |
 | **Technician** | `/admin` | `technician` or `tech@gearandglitch.com` / `tech123` | `TECH_USERNAME`, `TECH_EMAIL`, `TECH_PASSWORD` |
 | **Customer** | `/dashboard` | `customer@gearandglitch.com` / `customer123` | not seeded in production |
-| **Provider** | `/dashboard` | `provider@gearandglitch.com` / `provider123` | not seeded in production |
+| **Provider** | `/admin` | `provider@gearandglitch.com` / `provider123` | not seeded in production |
 
 - **Demo accounts** (`customer123`, `provider123`) are only seeded when `NODE_ENV !== "production"`.
 - **Admin/Technician** use a fallback dev password if the env var is unset, but **in production the server skips user creation** if the password env var is missing.
 - **Password minimum length** is 8 characters across all endpoints.
-- On first run the database table `actor_role` is auto-migrated for the audit log. All staff roles (admin, owner, manager, technician, staff) sign into the same staff portal at `/admin`; the sidebar and API access are driven by the user's effective permissions.
+- On first run the database table `actor_role` is auto-migrated for the audit log. All staff roles (admin, owner, manager, technician, staff, provider) sign into the same staff portal at `/admin`; the sidebar and API access are driven by the user's effective permissions.
 
 ---
 
@@ -320,7 +320,7 @@ Opens **http://localhost:3000** in a browser.
 | `/product?id=xxx` | Everyone | Product details, specs, image gallery with lightbox |
 | `/pos` | Staff | Point of Sale — product grid, cart, payment method selector (configurable), customer lookup, cash change calculator, thermal receipt & A4 invoice print. Stock deducted from both `stock_on_hand` and `stock_levels` per branch. |
 | `/login` | Everyone | Unified sign-in — customer, staff, provider (Google Sign-In supported) |
-| `/dashboard` | Customers & Providers | Orders, repairs, wishlist, messages (customer) or subscription, invoices (provider) |
+| `/dashboard` | Customers | Orders, repairs, wishlist, messages, profile |
 | `/about` | Everyone | About Us page — content editable from the staff portal |
 | `/cart` | Everyone | Shopping cart — works without an account (guest items are saved on the device and merged at sign-in); manage quantities, then Review order confirms details before placing |
 | `/campaign/[slug]` | Everyone | Public promotional landing pages created in admin → Campaigns (hero banner + curated product grid) |
@@ -333,7 +333,7 @@ Opens **http://localhost:3000** in a browser.
 | `/repair-ticket?id=xxx` | Customers | Single repair ticket detail — device info, cost estimate with Accept/Decline, update timeline, send messages |
 | `/wishlist` | Customers | Saved products with quote generation |
 | `/account` | Customers | Account details |
-| `/admin` | All staff | Unified, role-aware staff portal — products, orders, staff, plans, providers, invoices, settings, stock take, spec templates, repairs, and more. The sidebar shows exactly what the signed-in user's permissions allow (admin/owner/manager/technician/staff) |
+| `/admin` | All staff | Unified, role-aware staff portal — products, orders, staff, plans, providers, invoices, settings, stock take, spec templates, repairs, and more. The sidebar shows exactly what the signed-in user's permissions allow (admin/owner/manager/technician/staff/provider) |
 | `/stock-take/[id]` | Staff portal (admin/owner/manager) | Dedicated stock take session page with table input, stat cards, variance report, auto-apply adjustments |
 
 ---
@@ -791,7 +791,7 @@ Provider registration, login, subscription details, invoices, products at tier, 
 
 1. **Unified login** at `/login` with customer + staff/provider tabs
 2. **Google Sign-In** via Google Identity Services — button appears on Customer tab when `GOOGLE_CLIENT_ID` is configured in `.env`
-3. **Three token types** stored in localStorage: `customerStoreToken`, `computerStoreToken`, `providerToken`
+3. **Two token types** stored in localStorage: `customerStoreToken` and `computerStoreToken` (staff/provider sessions). The former external-provider `providerToken` session is no longer used — providers sign into the unified staff portal.
 4. **JWT tokens**: Signed with `JWT_SECRET` (required — server fails without it). Staff tokens expire in **24 hours**, customer tokens in **7 days**. No query-string token support.
 5. **Rate limiting**: 10 login/register/password-reset attempts per IP per 15 minutes.
 6. **Role-based access** — all staff roles sign into the same staff portal at `/admin`:
@@ -799,6 +799,7 @@ Provider registration, login, subscription details, invoices, products at tier, 
    - **Owner**: everything except Users, Roles, Plans, Settings, Storefront, Purchases
    - **Manager**: Dashboard, Products, Orders, Customers, Quotations, Invoices, Credit Notes, Reports, Messages, Stock Control, Stock Take, Repairs
    - **Technician / Staff**: Dashboard and Repairs
+   - **Provider**: Dashboard, Repairs, Products, Stock, Calendar, Orders (view), Customers (view), Messaging — whatever permissions the admin assigns; external provider accounts that haven't been given staff permissions have no portal access
 7. **Permission system**: `hasPermission()` checks both `role_permissions` and `user_permissions` tables; the effective permission set is the union of the user's assigned roles plus any direct permissions, and is embedded in the staff JWT so the portal can render the right sidebar. Built-in roles (admin, owner, manager, technician, staff) can have their permissions customized, and admins can create custom roles in **Roles** and assign them per-user in **Users & Permissions**. Permissions include `staff:*`, `repair:*`, `product:*`, `stock:*` (list, update, view_low, on_hand, transfer), `settings:*`, `calendar:*`, `reports:*`, `messaging:*` (view, send), `invoice:*` (view, download), `credit_note:*` (view, create), `quote:*` (view, create, update), plus view permissions for the sidebar (`order:view`, `customer:view`, `coupon:view`, `branch:view`, `audit:view`, etc.).
 8. **Audit log permission model**: Admin sees all actions; Owner sees all non-admin actions (filtered by `actor_role != 'admin'`)
 
