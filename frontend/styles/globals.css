@@ -121,6 +121,39 @@
   --brand-btn-shadow: rgba(59, 130, 246, 0.3);
   --brand-placeholder-bg: rgba(59, 130, 246, 0.08);
   --brand-placeholder-border: rgba(59, 130, 246, 0.15);
+
+  /* Hero section — light theme. Follows the visitor's device theme automatically. */
+  --hero-bg-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 45%, #f1f5f9 100%);
+  --hero-text: #0f172a;
+  --hero-text-secondary: #475569;
+  --hero-headline: #0f172a;
+  --hero-badge-color: #1d4ed8;
+  --hero-badge-bg: rgba(37, 99, 235, 0.08);
+  --hero-badge-border: rgba(37, 99, 235, 0.25);
+  --hero-glass-bg: rgba(255, 255, 255, 0.6);
+  --hero-glass-border: rgba(15, 23, 42, 0.1);
+  --hero-glass-hover: rgba(255, 255, 255, 0.9);
+  --hero-glass-hover-border: rgba(15, 23, 42, 0.18);
+  --hero-chip-bg: rgba(255, 255, 255, 0.65);
+  --hero-chip-border: rgba(15, 23, 42, 0.12);
+  --hero-chip-hover-bg: rgba(37, 99, 235, 0.1);
+  --hero-chip-hover-border: rgba(37, 99, 235, 0.35);
+  --hero-chip-hover-text: #1d4ed8;
+  --hero-img-bg: rgba(255, 255, 255, 0.5);
+  --hero-img-border: rgba(15, 23, 42, 0.08);
+  --hero-dot-bg: rgba(15, 23, 42, 0.25);
+  --hero-dot-active: #2563eb;
+  --hero-dot-hover: rgba(15, 23, 42, 0.5);
+  --hero-stat-bg: rgba(255, 255, 255, 0.65);
+  --hero-stat-border: rgba(15, 23, 42, 0.1);
+  --hero-stat-value: #0f172a;
+  --hero-stat-label: #475569;
+  --hero-product-name: #1e293b;
+  --hero-countdown-bg: rgba(220, 38, 38, 0.08);
+  --hero-countdown-border: rgba(220, 38, 38, 0.2);
+  --hero-countdown-label: #dc2626;
+  --hero-countdown-unit: #991b1b;
+  --hero-countdown-unit-em: #dc2626;
 }
 
 [data-theme="dark"] {
@@ -174,6 +207,39 @@
   --brand-btn-shadow: rgba(59, 130, 246, 0.35);
   --brand-placeholder-bg: rgba(59, 130, 246, 0.1);
   --brand-placeholder-border: rgba(59, 130, 246, 0.18);
+
+  /* Hero section — dark theme. */
+  --hero-bg-gradient: linear-gradient(135deg, #0b1120 0%, #111827 40%, #0f172a 100%);
+  --hero-text: #e2e8f0;
+  --hero-text-secondary: #94a3b8;
+  --hero-headline: #f8fafc;
+  --hero-badge-color: #60a5fa;
+  --hero-badge-bg: rgba(59, 130, 246, 0.1);
+  --hero-badge-border: rgba(59, 130, 246, 0.25);
+  --hero-glass-bg: rgba(255, 255, 255, 0.06);
+  --hero-glass-border: rgba(255, 255, 255, 0.12);
+  --hero-glass-hover: rgba(255, 255, 255, 0.12);
+  --hero-glass-hover-border: rgba(255, 255, 255, 0.2);
+  --hero-chip-bg: rgba(255, 255, 255, 0.04);
+  --hero-chip-border: rgba(255, 255, 255, 0.08);
+  --hero-chip-hover-bg: rgba(59, 130, 246, 0.15);
+  --hero-chip-hover-border: rgba(59, 130, 246, 0.3);
+  --hero-chip-hover-text: #60a5fa;
+  --hero-img-bg: rgba(255, 255, 255, 0.03);
+  --hero-img-border: rgba(255, 255, 255, 0.06);
+  --hero-dot-bg: rgba(255, 255, 255, 0.25);
+  --hero-dot-active: #60a5fa;
+  --hero-dot-hover: rgba(255, 255, 255, 0.5);
+  --hero-stat-bg: rgba(255, 255, 255, 0.04);
+  --hero-stat-border: rgba(255, 255, 255, 0.08);
+  --hero-stat-value: #f8fafc;
+  --hero-stat-label: #94a3b8;
+  --hero-product-name: #e2e8f0;
+  --hero-countdown-bg: rgba(239, 68, 68, 0.12);
+  --hero-countdown-border: rgba(239, 68, 68, 0.25);
+  --hero-countdown-label: #fca5a5;
+  --hero-countdown-unit: #fecaca;
+  --hero-countdown-unit-em: #fca5a5;
 }
 
 /* ----- Storefront brand themes -----
@@ -2156,8 +2222,8 @@ a.order-item:hover {
   margin-left: calc(-50vw + 50%);
   min-height: 560px;
   overflow: hidden;
-  background: linear-gradient(135deg, #0b1120 0%, #111827 40%, #0f172a 100%);
-  color: #e2e8f0;
+  background: var(--hero-bg-gradient);
+  color: var(--hero-text);
 }
 
 .hero-bg {
@@ -2228,9 +2294,9 @@ a.order-item:hover {
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  color: #60a5fa;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  color: var(--hero-badge-color);
+  background: var(--hero-badge-bg);
+  border: 1px solid var(--hero-badge-border);
   width: fit-content;
   animation: heroBadgePulse 2s ease-in-out infinite;
   backdrop-filter: blur(8px);
@@ -2250,7 +2316,7 @@ a.order-item:hover {
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.03em;
-  color: #f8fafc;
+  color: var(--hero-headline);
   margin: 0;
 }
 
@@ -2260,7 +2326,7 @@ a.order-item:hover {
 
 .hero-sub {
   font-size: clamp(0.95rem, 1.5vw, 1.125rem);
-  color: #94a3b8;
+  color: var(--hero-text-secondary);
   line-height: 1.7;
   max-width: 520px;
   margin: 0;
@@ -2291,16 +2357,16 @@ a.order-item:hover {
 }
 
 .hero-btn-glass.btn-secondary {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: #e2e8f0;
+  background: var(--hero-glass-bg);
+  border-color: var(--hero-glass-border);
+  color: var(--hero-text);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
 
 .hero-btn-glass.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--hero-glass-hover);
+  border-color: var(--hero-glass-hover-border);
   transform: translateY(-2px);
 }
 
@@ -2315,7 +2381,7 @@ a.order-item:hover {
   align-items: center;
   gap: var(--space-1);
   font-size: var(--text-sm);
-  color: #94a3b8;
+  color: var(--hero-text-secondary);
 }
 
 .hero-highlight svg {
@@ -2334,18 +2400,18 @@ a.order-item:hover {
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
   font-weight: var(--font-medium);
-  color: #94a3b8;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--hero-text-secondary);
+  background: var(--hero-chip-bg);
+  border: 1px solid var(--hero-chip-border);
   text-decoration: none;
   transition: all var(--duration-fast) ease;
   white-space: nowrap;
 }
 
 .hero-chip:hover {
-  background: rgba(59, 130, 246, 0.15);
-  border-color: rgba(59, 130, 246, 0.3);
-  color: #60a5fa;
+  background: var(--hero-chip-hover-bg);
+  border-color: var(--hero-chip-hover-border);
+  color: var(--hero-chip-hover-text);
   text-decoration: none;
 }
 
@@ -2365,8 +2431,8 @@ a.order-item:hover {
   aspect-ratio: 4 / 3;
   border-radius: var(--radius-xl);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--hero-img-bg);
+  border: 1px solid var(--hero-img-border);
   animation: heroFloat 6s ease-in-out infinite;
 }
 
@@ -2437,7 +2503,7 @@ a.order-item:hover {
 .hero-product-name {
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
-  color: #e2e8f0;
+  color: var(--hero-product-name);
   max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2447,7 +2513,7 @@ a.order-item:hover {
 .hero-product-price {
   font-size: var(--text-lg);
   font-weight: var(--font-bold);
-  color: #60a5fa;
+  color: var(--hero-badge-color);
 }
 
 .hero-dots {
@@ -2465,20 +2531,20 @@ a.order-item:hover {
   height: 8px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--hero-dot-bg);
   cursor: pointer;
   transition: all var(--duration-fast) ease;
   padding: 0;
 }
 
 .hero-dot.active {
-  background: #60a5fa;
+  background: var(--hero-dot-active);
   width: 20px;
   border-radius: 4px;
 }
 
 .hero-dot:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--hero-dot-hover);
 }
 
 .hero-stats {
@@ -2501,8 +2567,8 @@ a.order-item:hover {
 }
 
 .hero-stat-glass {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--hero-stat-bg);
+  border: 1px solid var(--hero-stat-border);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
@@ -2510,13 +2576,13 @@ a.order-item:hover {
 .hero-stat-value {
   font-size: var(--text-xl);
   font-weight: var(--font-bold);
-  color: #f8fafc;
+  color: var(--hero-stat-value);
   line-height: 1.2;
 }
 
 .hero-stat-label {
   font-size: var(--text-xs);
-  color: #94a3b8;
+  color: var(--hero-stat-label);
   line-height: 1.3;
 }
 
@@ -2527,13 +2593,13 @@ a.order-item:hover {
   gap: var(--space-2);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  color: #fbbf24;
+  color: var(--warning);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .hero-greeting span {
-  color: #94a3b8;
+  color: var(--hero-text-secondary);
   font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
@@ -2547,14 +2613,14 @@ a.order-item:hover {
   flex-wrap: wrap;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: var(--hero-countdown-bg);
+  border: 1px solid var(--hero-countdown-border);
 }
 
 .hero-countdown-label {
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  color: #fca5a5;
+  color: var(--hero-countdown-label);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -2565,7 +2631,7 @@ a.order-item:hover {
   gap: 0.25rem;
   font-size: var(--text-lg);
   font-weight: 800;
-  color: #fecaca;
+  color: var(--hero-countdown-unit);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2573,7 +2639,7 @@ a.order-item:hover {
   font-style: normal;
   font-size: 0.6rem;
   font-weight: 500;
-  color: #fca5a5;
+  color: var(--hero-countdown-unit-em);
   text-transform: uppercase;
 }
 
@@ -2598,7 +2664,7 @@ a.order-item:hover {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  color: #94a3b8;
+  color: var(--hero-text-secondary);
   font-size: 0.75rem;
 }
 
@@ -2636,6 +2702,18 @@ a.order-item:hover {
   color: #86efac !important;
 }
 
+[data-theme="light"] .hero-wa-btn {
+  background: rgba(22, 163, 74, 0.12) !important;
+  border-color: rgba(22, 163, 74, 0.35) !important;
+  color: #15803d !important;
+}
+
+[data-theme="light"] .hero-wa-btn:hover {
+  background: rgba(22, 163, 74, 0.2) !important;
+  border-color: rgba(22, 163, 74, 0.5) !important;
+  color: #166534 !important;
+}
+
 /* --- Trust strip --- */
 .hero-truststrip {
   display: flex;
@@ -2649,7 +2727,7 @@ a.order-item:hover {
   gap: var(--space-2);
   font-size: var(--text-xs);
   font-weight: var(--font-medium);
-  color: #94a3b8;
+  color: var(--hero-text-secondary);
 }
 
 .hero-truststrip-item svg {
@@ -2681,7 +2759,7 @@ a.order-item:hover {
 
 .hero-trust-text {
   font-size: var(--text-sm);
-  color: #94a3b8;
+  color: var(--hero-text-secondary);
   font-weight: var(--font-medium);
 }
 

@@ -9,6 +9,27 @@ export const LAYOUT_KEY = "original";
 export const LAYOUT_LABEL = "Original";
 export const LAYOUT_DESC = "The classic storefront with hero banner, category links, and product grid";
 
+function hexToRgb(hex: string): [number, number, number] {
+  let h = (hex || "").replace("#", "").trim();
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const n = parseInt(h, 16);
+  if (isNaN(n) || h.length !== 6) return [0, 0, 0];
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function isDarkColor(hex: string): boolean {
+  const [r, g, b] = hexToRgb(hex);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
+}
+
+function shade(hex: string, percent: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const t = percent < 0 ? 0 : 255;
+  const p = Math.abs(percent) / 100;
+  const f = (c: number) => Math.round((t - c) * p + c);
+  return `rgb(${f(r)}, ${f(g)}, ${f(b)})`;
+}
+
 export function LayoutStyles() {
   return <style>{`
     @keyframes heroFadeUp {
@@ -118,7 +139,7 @@ function HeroStarRating({ average }: { average: number }) {
 }
 
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
-  const { isLoggedIn, userName, settings } = useApp();
+  const { isLoggedIn, userName, settings, isDark } = useApp();
   const [activeIdx, setActiveIdx] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [liveStats, setLiveStats] = useState<any>(null);
@@ -126,6 +147,42 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const [variantIdx, setVariantIdx] = useState(0);
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
+
+  const heroBgLight = typeof hero?.heroBgLight === "string" ? hero.heroBgLight.trim() : "";
+  const heroBgDark = typeof hero?.heroBgDark === "string" ? hero.heroBgDark.trim() : "";
+  const customBg = (isDark ? heroBgDark || heroBgLight : heroBgLight || heroBgDark) || "";
+  const bgIsDark = customBg ? isDarkColor(customBg) : isDark;
+  const heroText = bgIsDark ? "#f8fafc" : "#0f172a";
+  const heroTextSec = bgIsDark ? "#94a3b8" : "#475569";
+
+  const heroStyle = customBg ? ({
+    "--hero-bg-gradient": `linear-gradient(135deg, ${customBg} 0%, ${shade(customBg, -14)} 100%)`,
+    "--hero-text": heroText,
+    "--hero-text-secondary": heroTextSec,
+    "--hero-headline": heroText,
+    "--hero-stat-value": heroText,
+    "--hero-stat-label": heroTextSec,
+    "--hero-product-name": heroText,
+    "--hero-badge-color": bgIsDark ? "#60a5fa" : "#1d4ed8",
+    "--hero-badge-bg": bgIsDark ? "rgba(59, 130, 246, 0.1)" : "rgba(37, 99, 235, 0.08)",
+    "--hero-badge-border": bgIsDark ? "rgba(59, 130, 246, 0.25)" : "rgba(37, 99, 235, 0.25)",
+    "--hero-glass-bg": bgIsDark ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.6)",
+    "--hero-glass-border": bgIsDark ? "rgba(255, 255, 255, 0.12)" : "rgba(15, 23, 42, 0.1)",
+    "--hero-glass-hover": bgIsDark ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.9)",
+    "--hero-glass-hover-border": bgIsDark ? "rgba(255, 255, 255, 0.2)" : "rgba(15, 23, 42, 0.18)",
+    "--hero-chip-bg": bgIsDark ? "rgba(255, 255, 255, 0.04)" : "rgba(255, 255, 255, 0.65)",
+    "--hero-chip-border": bgIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.12)",
+    "--hero-chip-hover-bg": bgIsDark ? "rgba(59, 130, 246, 0.15)" : "rgba(37, 99, 235, 0.1)",
+    "--hero-chip-hover-border": bgIsDark ? "rgba(59, 130, 246, 0.3)" : "rgba(37, 99, 235, 0.35)",
+    "--hero-chip-hover-text": bgIsDark ? "#60a5fa" : "#1d4ed8",
+    "--hero-img-bg": bgIsDark ? "rgba(255, 255, 255, 0.03)" : "rgba(255, 255, 255, 0.5)",
+    "--hero-img-border": bgIsDark ? "rgba(255, 255, 255, 0.06)" : "rgba(15, 23, 42, 0.08)",
+    "--hero-dot-bg": bgIsDark ? "rgba(255, 255, 255, 0.25)" : "rgba(15, 23, 42, 0.25)",
+    "--hero-dot-active": bgIsDark ? "#60a5fa" : "#2563eb",
+    "--hero-dot-hover": bgIsDark ? "rgba(255, 255, 255, 0.5)" : "rgba(15, 23, 42, 0.5)",
+    "--hero-stat-bg": bgIsDark ? "rgba(255, 255, 255, 0.04)" : "rgba(255, 255, 255, 0.65)",
+    "--hero-stat-border": bgIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.1)",
+  } as React.CSSProperties) : undefined;
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -236,7 +293,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const trustText = hero?.trustText || "Trusted by 5,000+ customers across Kenya";
 
   return (
-    <section className="hero">
+    <section className="hero" style={heroStyle}>
       <div className="hero-bg">
         <div className="hero-glow hero-glow--1" />
         <div className="hero-glow hero-glow--2" />

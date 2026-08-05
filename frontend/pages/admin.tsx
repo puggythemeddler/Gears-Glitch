@@ -2643,6 +2643,8 @@ function AdminStorefront() {
     shopNowLink: "/pc",
     browseLabel: "Browse Categories",
     browseLink: "/#categories",
+    heroBgLight: "",
+    heroBgDark: "",
     catChips: [
       { label: "Gaming PCs", href: "/pc" },
       { label: "Graphics Cards", href: "/graphics-cards" },
@@ -2711,6 +2713,9 @@ function AdminStorefront() {
         const dt = new Date(payload.countdownEnd);
         payload.countdownEnd = isNaN(dt.getTime()) ? "" : dt.toISOString();
       }
+      const hexOk = (v: string) => /^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(v || "");
+      payload.heroBgLight = hexOk(payload.heroBgLight) ? payload.heroBgLight : "";
+      payload.heroBgDark = hexOk(payload.heroBgDark) ? payload.heroBgDark : "";
       await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ hero: payload }) }); await load();
     }
     catch {}
@@ -2815,6 +2820,30 @@ function AdminStorefront() {
               Show shop &amp; repair band
             </label>
             <p className="muted" style={{ fontSize: "0.8rem", margin: "0.25rem 0 0 1.75rem" }}>The "Shop premium tech" and "Need a repair?" cards under the hero.</p>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 600, marginBottom: "0.25rem" }}>Hero Background Color</label>
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "0 0 0.75rem" }}>Leave both empty to match the visitor's device theme automatically (dark or light). Set one or both to use your own colors.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+              <div className="field" style={{ margin: 0 }}>
+                <label>Light theme background</label>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <input type="color" value={heroForm.heroBgLight || "#f8fafc"} onChange={(e) => setHeroForm({ ...heroForm, heroBgLight: e.target.value })} style={{ width: 48, height: 36, padding: 0, border: "1px solid var(--border)", borderRadius: 6, background: "none", cursor: "pointer" }} />
+                  <input value={heroForm.heroBgLight} onChange={(e) => setHeroForm({ ...heroForm, heroBgLight: e.target.value })} placeholder="Auto (follow device)" style={{ flex: 1 }} />
+                </div>
+              </div>
+              <div className="field" style={{ margin: 0 }}>
+                <label>Dark theme background</label>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <input type="color" value={heroForm.heroBgDark || "#0b1120"} onChange={(e) => setHeroForm({ ...heroForm, heroBgDark: e.target.value })} style={{ width: 48, height: 36, padding: 0, border: "1px solid var(--border)", borderRadius: 6, background: "none", cursor: "pointer" }} />
+                  <input value={heroForm.heroBgDark} onChange={(e) => setHeroForm({ ...heroForm, heroBgDark: e.target.value })} placeholder="Auto (follow device)" style={{ flex: 1 }} />
+                </div>
+              </div>
+            </div>
+            <div style={{ marginTop: "0.5rem" }}>
+              <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, heroBgLight: "", heroBgDark: "" })}>Reset to auto (follow device theme)</RippleButton>
+            </div>
           </div>
 
           <div className="field" style={{ gridColumn: "1 / -1" }}>
