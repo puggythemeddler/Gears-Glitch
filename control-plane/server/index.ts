@@ -985,7 +985,7 @@ app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
 // ─── UPDATE CLIENT ───────────────────────────────────────
 app.put("/api/clients/:id", requireAuth, async (req, res) => {
   try {
-    const { plan, subscription_expires, notes, feature_flags, render_service_id, phone, address, is_test } = req.body || {};
+    const { plan, subscription_expires, notes, feature_flags, render_service_id, vercel_project_id, phone, address, is_test } = req.body || {};
     const id = Number(req.params.id);
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [id]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1011,6 +1011,7 @@ app.put("/api/clients/:id", requireAuth, async (req, res) => {
     if (notes !== undefined) { fields.push(`notes = $${idx}`); params.push(notes); idx++; }
     if (feature_flags !== undefined) { fields.push(`feature_flags = $${idx}`); params.push(JSON.stringify(feature_flags)); idx++; }
     if (render_service_id !== undefined) { fields.push(`render_service_id = $${idx}`); params.push(render_service_id); idx++; }
+    if (vercel_project_id !== undefined) { fields.push(`vercel_project_id = $${idx}`); params.push(vercel_project_id); idx++; }
 
     if (fields.length === 0) { res.json({ message: "Client updated." }); return; }
 

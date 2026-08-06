@@ -523,6 +523,8 @@
         <div class="field"><label for="edit-expires">Subscription Expires</label><input type="date" id="edit-expires"></div>
         <div class="field"><label for="edit-phone">Phone</label><input type="text" id="edit-phone" placeholder="+254 7XX XXX XXX"></div>
         <div class="field"><label for="edit-address">Address</label><input type="text" id="edit-address" placeholder="Nairobi, Kenya"></div>
+        <div class="field"><label for="edit-render-id">Render Service ID</label><input type="text" id="edit-render-id" placeholder="e.g. srv-abc123 — required for Push Secret / deploy"></div>
+        <div class="field"><label for="edit-vercel-id">Vercel Project ID</label><input type="text" id="edit-vercel-id" placeholder="e.g. prj_abc123 — required for redeploy (optional)"></div>
       </div>
       <div class="field"><label for="edit-notes">Notes</label><textarea id="edit-notes" placeholder="Internal notes about this client..." rows="2"></textarea></div>
       <div class="field">
@@ -1351,6 +1353,8 @@
       document.getElementById("edit-phone").value = c.phone || "";
       document.getElementById("edit-address").value = c.address || "";
       document.getElementById("edit-notes").value = c.notes || "";
+      document.getElementById("edit-render-id").value = c.render_service_id || "";
+      document.getElementById("edit-vercel-id").value = c.vercel_project_id || "";
       editingClientOverrides = {};
       try {
         const raw = c.feature_flags;
@@ -1373,10 +1377,12 @@
       const phone = document.getElementById("edit-phone").value;
       const address = document.getElementById("edit-address").value;
       const notes = document.getElementById("edit-notes").value;
+      const renderServiceId = document.getElementById("edit-render-id").value.trim();
+      const vercelProjectId = document.getElementById("edit-vercel-id").value.trim();
       const featureFlags = clientOverridesToObject();
 
       try {
-        await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ plan, subscription_expires: expires, phone, address, notes, feature_flags: featureFlags }) });
+        await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ plan, subscription_expires: expires, phone, address, notes, render_service_id: renderServiceId || undefined, vercel_project_id: vercelProjectId || undefined, feature_flags: featureFlags }) });
         // Push feature overrides to the client backend (empty object clears them)
         await api("/api/clients/" + editingClientId + "/features", { method: "POST", body: JSON.stringify({ overrides: featureFlags }) }).catch(() => {});
         toast("Client updated."); hideEditModal(); loadClients();
