@@ -524,7 +524,9 @@
         <div class="field"><label for="edit-phone">Phone</label><input type="text" id="edit-phone" placeholder="+254 7XX XXX XXX"></div>
         <div class="field"><label for="edit-address">Address</label><input type="text" id="edit-address" placeholder="Nairobi, Kenya"></div>
         <div class="field"><label for="edit-render-id">Render Service ID</label><input type="text" id="edit-render-id" placeholder="e.g. srv-abc123 — required for Push Secret / deploy"></div>
+        <div class="field"><label for="edit-render-url">Backend URL (Render Service URL)</label><input type="text" id="edit-render-url" placeholder="e.g. https://client.onrender.com — required for health / plan pull"></div>
         <div class="field"><label for="edit-vercel-id">Vercel Project ID</label><input type="text" id="edit-vercel-id" placeholder="e.g. prj_abc123 — required for redeploy (optional)"></div>
+        <div class="field"><label for="edit-vercel-url">Frontend URL (Vercel URL)</label><input type="text" id="edit-vercel-url" placeholder="e.g. https://client.vercel.app — shown in client list"></div>
       </div>
       <div class="field"><label for="edit-notes">Notes</label><textarea id="edit-notes" placeholder="Internal notes about this client..." rows="2"></textarea></div>
       <div class="field">
@@ -783,12 +785,12 @@
         const allOn = grp.features.every(f => selectedFeatures.includes(f));
         const count = grp.features.filter(f => selectedFeatures.includes(f)).length;
         html += `<details open style="margin-bottom:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
-          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'var(--tint-primary)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="event.preventDefault();this.parentElement.open=!this.parentElement.open">
+          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'var(--tint-primary)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="if(event.target.closest('button'))return;event.preventDefault();this.parentElement.open=!this.parentElement.open">
             <span style="font-size:0.65rem;opacity:0.5;transition:transform 0.2s;transform:${allOn ? 'rotate(90deg)' : 'none'}">&#9654;</span>
             <span>${grp.icon}</span>
             <span style="flex:1">${grp.group}</span>
             <span style="font-size:0.7rem;font-weight:400;opacity:0.6">${count}/${grp.features.length}</span>
-            <button type="button" class="chip-btn" data-plan-group="${esc(grp.group)}" data-action="${allOn ? 'none' : 'all'}" onclick="event.stopPropagation()">${allOn ? 'All' : 'Select all'}</button>
+            <button type="button" class="chip-btn" data-plan-group="${esc(grp.group)}" data-action="${allOn ? 'none' : 'all'}">${allOn ? 'All' : 'Select all'}</button>
           </summary>
           <div style="display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.5rem 0.75rem 0.75rem">
             ${grp.features.map(f => `<button type="button" class="feature-chip" aria-pressed="${selectedFeatures.includes(f) ? 'true' : 'false'}" data-plan-feature="${esc(f)}">${esc(f)}</button>`).join('')}
@@ -824,13 +826,13 @@
         const offCount = grp.features.filter(f => clientFeatureState(f) === false).length;
         const allOn = onCount === grp.features.length;
         html += `<details style="margin-bottom:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
-          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'var(--tint-primary)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="event.preventDefault();this.parentElement.open=!this.parentElement.open">
+          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'var(--tint-primary)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="if(event.target.closest('button'))return;event.preventDefault();this.parentElement.open=!this.parentElement.open">
             <span style="font-size:0.65rem;opacity:0.5;transition:transform 0.2s;transform:rotate(90deg)">&#9654;</span>
             <span>${grp.icon}</span>
             <span style="flex:1">${grp.group}</span>
             <span style="font-size:0.7rem;font-weight:400;opacity:0.6">${onCount} on / ${offCount} blocked</span>
-            <button type="button" class="chip-btn" data-group="${esc(grp.group)}" data-action="${allOn ? 'none' : 'all'}" onclick="event.stopPropagation()">${allOn ? 'All' : 'Select all'}</button>
-            <button type="button" class="chip-btn" data-group="${esc(grp.group)}" data-action="block" onclick="event.stopPropagation()">Block</button>
+            <button type="button" class="chip-btn" data-group="${esc(grp.group)}" data-action="${allOn ? 'none' : 'all'}">${allOn ? 'All' : 'Select all'}</button>
+            <button type="button" class="chip-btn" data-group="${esc(grp.group)}" data-action="block">Block</button>
           </summary>
           <div style="display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.5rem 0.75rem 0.75rem">
             ${grp.features.map(f => {
@@ -1354,7 +1356,9 @@
       document.getElementById("edit-address").value = c.address || "";
       document.getElementById("edit-notes").value = c.notes || "";
       document.getElementById("edit-render-id").value = c.render_service_id || "";
+      document.getElementById("edit-render-url").value = c.render_service_url || "";
       document.getElementById("edit-vercel-id").value = c.vercel_project_id || "";
+      document.getElementById("edit-vercel-url").value = c.vercel_project_url || "";
       editingClientOverrides = {};
       try {
         const raw = c.feature_flags;
@@ -1378,11 +1382,13 @@
       const address = document.getElementById("edit-address").value;
       const notes = document.getElementById("edit-notes").value;
       const renderServiceId = document.getElementById("edit-render-id").value.trim();
+      const renderServiceUrl = document.getElementById("edit-render-url").value.trim();
       const vercelProjectId = document.getElementById("edit-vercel-id").value.trim();
+      const vercelProjectUrl = document.getElementById("edit-vercel-url").value.trim();
       const featureFlags = clientOverridesToObject();
 
       try {
-        await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ plan, subscription_expires: expires, phone, address, notes, render_service_id: renderServiceId || undefined, vercel_project_id: vercelProjectId || undefined, feature_flags: featureFlags }) });
+        await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ plan, subscription_expires: expires, phone, address, notes, render_service_id: renderServiceId || undefined, render_service_url: renderServiceUrl || undefined, vercel_project_id: vercelProjectId || undefined, vercel_project_url: vercelProjectUrl || undefined, feature_flags: featureFlags }) });
         // Push feature overrides to the client backend (empty object clears them)
         await api("/api/clients/" + editingClientId + "/features", { method: "POST", body: JSON.stringify({ overrides: featureFlags }) }).catch(() => {});
         toast("Client updated."); hideEditModal(); loadClients();
