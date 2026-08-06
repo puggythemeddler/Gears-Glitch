@@ -1378,8 +1378,13 @@ app.put("/api/plans/sync", controlPlaneAuthMiddleware, asyncHandler(async (req: 
   const { plans } = req.body || {};
   if (!Array.isArray(plans)) { res.status(400).json({ error: "plans array required" }); return; }
 
+  let updated = 0;
   for (const p of plans) {
     const existing = await getSubscriptionPlan(p.id);
+    if (existing && plansEqual(existing, p)) {
+      // Already identical — leave the existing plan untouched.
+      continue;
+    }
     if (existing) {
       await updateSubscriptionPlan(p.id, {
         name: p.name, description: p.description, price: p.price,
@@ -1397,10 +1402,28 @@ app.put("/api/plans/sync", controlPlaneAuthMiddleware, asyncHandler(async (req: 
         syncToOthers: p.syncToOthers !== undefined ? p.syncToOthers : true,
       });
     }
+    updated++;
   }
 
-  res.json({ ok: true, synced: plans.length });
+  res.json({ ok: true, synced: updated, skipped: plans.length - updated });
 }));
+
+// True when the incoming synced plan matches the client's existing copy,
+// so pushes that carry no real changes do not overwrite the local plan.
+function plansEqual(a: any, b: any): boolean {
+  const norm = (f: any) => (Array.isArray(f) ? [...f].sort() : []);
+  const num = (v: any) => (v == null || v === "" ? 0 : Number(v));
+  return String(a.name ?? "") === String(b.name ?? "")
+    && String(a.description ?? "") === String(b.description ?? "")
+    && num(a.price) === num(b.price)
+    && num(a.priceAnnual) === num(b.priceAnnual)
+    && num(a.tierLevel) === num(b.tierLevel)
+    && num(a.maxProducts) === num(b.maxProducts)
+    && num(a.maxBranches) === num(b.maxBranches)
+    && JSON.stringify(norm(a.features)) === JSON.stringify(norm(b.features))
+    && Boolean(a.isActive) === Boolean(b.isActive)
+    && (a.syncToOthers === undefined ? true : Boolean(a.syncToOthers)) === Boolean(b.syncToOthers);
+}
 
 // ============ BRANCHES ============
 

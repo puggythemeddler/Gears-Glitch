@@ -626,6 +626,20 @@ app.delete("/api/clients/:id", requireAuth, async (req, res) => {
   }
 });
 
+// Log a deploy the moment it is sent out; call updateDeployLog() when it
+// completes so the log always shows in-flight deploys as "deploying".
+async function insertDeployLog(clientId: number, status: string, commit_sha = "", commit_message = "", triggered_by = "manual"): Promise<number> {
+  const result = await query(
+    "INSERT INTO deploy_log (client_id, status, commit_sha, commit_message, triggered_by) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    [clientId, status, commit_sha, commit_message, triggered_by]
+  );
+  return Number(result.rows?.[0]?.id);
+}
+
+async function updateDeployLog(id: number, status: string): Promise<void> {
+  await query("UPDATE deploy_log SET status = $1, completed_at = NOW() WHERE id = $2", [status, id]);
+}
+
 // Deploy all clients
 app.post("/api/deploy-all", requireAuth, async (req, res) => {
   try {
@@ -636,15 +650,19 @@ app.post("/api/deploy-all", requireAuth, async (req, res) => {
     const clients = await queryAll(
       "SELECT id, name, render_service_id FROM clients WHERE status = 'active'"
     );
+    // Log every deploy the moment it is sent out, then flip to the final
+    // status when it completes (in-flight deploys stay visible as "deploying").
+    const logIds = new Map<number, number>();
+    for (const c of clients as { id: number }[]) {
+      logIds.set(c.id, await insertDeployLog(c.id, "deploying", commit_sha, commit_message, by));
+    }
     const results = await deployAllClients(
       clients as { name: string; render_service_id: string }[]
     );
     for (const c of clients as { id: number; name: string }[]) {
       const r = results.find(x => x.name === c.name);
-      await query(
-        "INSERT INTO deploy_log (client_id, status, commit_sha, commit_message, triggered_by) VALUES ($1, $2, $3, $4, $5)",
-        [c.id, r?.success ? "deploy" : "failed", commit_sha, commit_message, by]
-      );
+      const logId = logIds.get(c.id);
+      if (logId) await updateDeployLog(logId, r?.success ? "deploy" : "failed");
     }
     auditLog(req, "deploy_all", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} clients${commit_sha ? ` (${commit_sha.slice(0,7)})` : ""}`);
     res.json({ results });
@@ -670,19 +688,20 @@ app.post("/api/deploy-test", requireAuth, async (req, res) => {
     }
     const results: { name: string; success: boolean; error?: string }[] = [];
     for (const client of clients as any[]) {
+      // Log the deploy the moment it is sent out so in-flight deploys show up
+      const logId = await insertDeployLog(client.id, "deploying", commit_sha, commit_message, by);
       if (!client.render_service_id) {
+        await updateDeployLog(logId, "failed");
         results.push({ name: client.name, success: false, error: "No Render service ID" });
         continue;
       }
       try {
         const ok = await deployRenderService(client.render_service_id);
+        await updateDeployLog(logId, ok ? "deploy_test" : "failed");
         results.push({ name: client.name, success: ok, error: ok ? undefined : "HTTP error" });
-        await query(
-          "INSERT INTO deploy_log (client_id, status, commit_sha, commit_message, triggered_by) VALUES ($1, $2, $3, $4, $5)",
-          [client.id, ok ? "deploy_test" : "failed", commit_sha, commit_message, by]
-        );
         if (ok) await query("UPDATE clients SET health_status = 'deploying' WHERE id = $1", [client.id]);
       } catch (e: any) {
+        await updateDeployLog(logId, "failed");
         results.push({ name: client.name, success: false, error: e.message });
       }
     }
