@@ -202,6 +202,8 @@ export default function AdminProducts() {
       isHidden: fd.get("isHidden") === "on",
       hasWarranty: fd.get("hasWarranty") === "on",
       warrantyDuration: Number(fd.get("warrantyDuration") || 0),
+      serialTracking: fd.get("serialTracking") === "on",
+      barcode: fd.get("barcode") || "",
       taxable: fd.get("taxable") === "on",
       subcategory: fd.get("subcategory") || "",
       specs: buildSpecsArray(),
@@ -278,10 +280,12 @@ export default function AdminProducts() {
             {subcategories.length > 0 && (
               <div className="field"><label>Subcategory<select name="subcategory" defaultValue={editing?.subcategory || ""}><option value="">None</option>{subcategories.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label></div>
             )}
+            <div className="field"><label>Barcode / SKU (scan to ring up at POS)<input name="barcode" defaultValue={editing?.barcode || ""} placeholder="e.g. 6001234567890" /></label></div>
             <div className="field"><label>In stock<select name="inStock" defaultValue={String(editing?.inStock ?? true)}><option value="true">Yes</option><option value="false">No</option></select></label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="isNonStock" defaultChecked={editing?.isNonStock ?? false} /> Non-stock item</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="isHidden" defaultChecked={editing?.isHidden ?? false} /> Hidden from online store (e.g. services — not shown to customers, not sold on the site)</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="hasWarranty" defaultChecked={editing?.hasWarranty ?? false} /> Has warranty</label></div>
+            <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="serialTracking" defaultChecked={editing?.serialTracking ?? false} /> Track serial numbers (scan serials at sale)</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="taxable" defaultChecked={editing?.taxable !== false} /> Taxable (eTims-compatible)</label></div>
             <div className="field"><label>Warranty duration (months)<input name="warrantyDuration" type="number" min="0" defaultValue={editing?.warrantyDuration || 0} /></label></div>
             <div className="field"><label>Add images (multiple)<input type="file" ref={galleryRef} accept="image/*" multiple /></label></div>

@@ -22,6 +22,8 @@ interface ProductRow {
   subcategory: string;
   has_warranty: number;
   warranty_duration: number;
+  serial_tracking: number;
+  barcode: string;
   taxable: number;
   stock_on_hand: number;
   created_at: string;
@@ -42,6 +44,8 @@ interface Product {
   subcategory: string;
   hasWarranty: boolean;
   warrantyDuration: number;
+  serialTracking: boolean;
+  barcode: string;
   taxable: boolean;
   imageAlt: string;
   imageUrl: string;
@@ -550,6 +554,8 @@ function mapProduct(row: ProductRow | null): Product | null {
     subcategory: row.subcategory || "",
     hasWarranty: Boolean(row.has_warranty),
     warrantyDuration: row.warranty_duration || 0,
+    serialTracking: Boolean(row.serial_tracking),
+    barcode: row.barcode || "",
     taxable: Boolean(row.taxable),
     imageAlt: row.image_alt || "",
     imageUrl,
@@ -721,6 +727,41 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancelled INTEGER NOT NULL DEFAULT 0`); } catch {}
   try { await query(`INSERT INTO settings (key, value) SELECT 'logo_position', 'top-left' WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'logo_position')`); } catch {}
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DOUBLE PRECISION`); } catch {}
+  // Serial number tracking (warranty lookups, PO intake, sale linking)
+  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS serial_tracking INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS serial_number TEXT NOT NULL DEFAULT ''`); } catch {}
+  try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS stock_deducted INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { await query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS serial_numbers TEXT NOT NULL DEFAULT '[]'`); } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS serial_numbers (
+      id SERIAL PRIMARY KEY,
+      serial_number TEXT NOT NULL UNIQUE,
+      product_id TEXT NOT NULL,
+      branch_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'in_stock',
+      purchase_order_item_id INTEGER,
+      order_id INTEGER,
+      order_item_id INTEGER,
+      sold_at TEXT,
+      warranty_expires TEXT,
+      created_by INTEGER,
+      created_at TEXT NOT NULL DEFAULT (NOW()::text),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+      FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL,
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,
+      FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE SET NULL
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_serial_numbers_status ON serial_numbers(status)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_serial_numbers_product ON serial_numbers(product_id)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_serial_numbers_number ON serial_numbers(serial_number)`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS serial_sequences (
+      prefix TEXT PRIMARY KEY,
+      last_number INTEGER NOT NULL DEFAULT 0
+    )`);
+  } catch {}
   try {
     await query(`CREATE TABLE IF NOT EXISTS splashes (
       id SERIAL PRIMARY KEY,
@@ -1723,16 +1764,16 @@ async function generateProductId(category: string): Promise<string> {
   return `${prefix}-${String(num).padStart(3, "0")}`;
 }
 
-async function createProduct(product: { id: string; category: string; groupId?: string; name: string; price: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
+async function createProduct(product: { id: string; category: string; groupId?: string; name: string; price: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; serialTracking?: boolean; barcode?: string; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
   await query(
-    `INSERT INTO products (id, category, group_id, name, price, sale_price, specs, in_stock, is_non_stock, is_hidden, subcategory, has_warranty, warranty_duration, taxable, image_alt, image_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-    [product.id, product.category, product.groupId || "", product.name, product.price, product.salePrice || null, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.isHidden ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
+    `INSERT INTO products (id, category, group_id, name, price, sale_price, specs, in_stock, is_non_stock, is_hidden, subcategory, has_warranty, warranty_duration, serial_tracking, barcode, taxable, image_alt, image_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+    [product.id, product.category, product.groupId || "", product.name, product.price, product.salePrice || null, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.isHidden ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.serialTracking ? 1 : 0, product.barcode || "", product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
   );
   return (await getProduct(product.id))!;
 }
 
-async function updateProduct(id: string, updates: { category?: string; groupId?: string; name?: string; price?: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
+async function updateProduct(id: string, updates: { category?: string; groupId?: string; name?: string; price?: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; serialTracking?: boolean; barcode?: string; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
   const existing = await getProduct(id);
   if (!existing) return undefined;
   const fields: string[] = []; const params: any[] = []; let idx = 1;
@@ -1748,6 +1789,8 @@ async function updateProduct(id: string, updates: { category?: string; groupId?:
   if (updates.subcategory !== undefined) { fields.push(`subcategory = $${idx}`); params.push(updates.subcategory); idx++; }
   if (updates.hasWarranty !== undefined) { fields.push(`has_warranty = $${idx}`); params.push(updates.hasWarranty ? 1 : 0); idx++; }
   if (updates.warrantyDuration !== undefined) { fields.push(`warranty_duration = $${idx}`); params.push(updates.warrantyDuration); idx++; }
+  if (updates.serialTracking !== undefined) { fields.push(`serial_tracking = $${idx}`); params.push(updates.serialTracking ? 1 : 0); idx++; }
+  if (updates.barcode !== undefined) { fields.push(`barcode = $${idx}`); params.push(updates.barcode); idx++; }
   if (updates.taxable !== undefined) { fields.push(`taxable = $${idx}`); params.push(updates.taxable ? 1 : 0); idx++; }
   if (updates.imageAlt !== undefined) { fields.push(`image_alt = $${idx}`); params.push(updates.imageAlt); idx++; }
   if (updates.imageUrl !== undefined) { fields.push(`image_url = $${idx}`); params.push(updates.imageUrl); idx++; }
@@ -2710,7 +2753,7 @@ async function getOrder(id: number): Promise<Order | undefined> {
   const items = await queryAll("SELECT * FROM order_items WHERE order_id = $1", [id]) as any[];
   return {
     id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0,
-    items: items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, cancelled: i.cancelled })),
+    items: items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, serialNumber: i.serial_number || "", cancelled: i.cancelled })),
   };
 }
 
@@ -3054,12 +3097,12 @@ async function getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> 
   const row = await queryOne("SELECT * FROM purchase_orders WHERE id = $1", [id]) as any;
   if (!row) return undefined;
   const items = await queryAll(
-    "SELECT poi.*, p.name AS product_name FROM purchase_order_items poi LEFT JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1", [id]
+    "SELECT poi.*, p.name AS product_name, p.serial_tracking AS serial_tracking FROM purchase_order_items poi LEFT JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1", [id]
   ) as any[];
   const totalCost = items.reduce((sum, i) => sum + i.quantity_ordered * i.unit_cost, 0);
   return {
     id: row.id, supplierName: row.supplier_name, supplierContact: row.supplier_contact, orderDate: row.order_date, status: row.status, notes: row.notes, createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at, totalCost,
-    items: items.map((i) => ({ id: i.id, purchaseOrderId: i.purchase_order_id, productId: i.product_id, productName: i.product_name, quantityOrdered: i.quantity_ordered, quantityReceived: i.quantity_received, unitCost: i.unit_cost })),
+    items: items.map((i) => ({ id: i.id, purchaseOrderId: i.purchase_order_id, productId: i.product_id, productName: i.product_name, quantityOrdered: i.quantity_ordered, quantityReceived: i.quantity_received, unitCost: i.unit_cost, serialTracking: Boolean(i.serial_tracking), serials: (() => { try { return JSON.parse(i.serial_numbers || "[]"); } catch { return []; } })() })),
   };
 }
 
@@ -3104,12 +3147,26 @@ async function updatePurchaseOrderStatus(id: number, status: string): Promise<bo
   return (result.rowCount ?? 0) > 0;
 }
 
-async function receivePurchaseOrderItem(itemId: number, quantityReceived: number): Promise<void> {
+async function receivePurchaseOrderItem(itemId: number, quantityReceived: number, serials?: string[], branchId?: number): Promise<void> {
   const item = await queryOne("SELECT product_id, quantity_received FROM purchase_order_items WHERE id = $1", [itemId]) as any;
   if (!item) return;
   const previousReceived = Number(item.quantity_received) || 0;
   const delta = quantityReceived - previousReceived;
   await query("UPDATE purchase_order_items SET quantity_received = $1 WHERE id = $2", [quantityReceived, itemId]);
+  if (serials && serials.length) {
+    await query("UPDATE purchase_order_items SET serial_numbers = $1 WHERE id = $2", [JSON.stringify(serials), itemId]);
+    const product = await queryOne("SELECT serial_tracking FROM products WHERE id = $1", [item.product_id]) as any;
+    if (product && product.serial_tracking) {
+      for (const sn of serials) {
+        const trimmed = String(sn || "").trim();
+        if (!trimmed) continue;
+        const dup = await queryOne("SELECT id FROM serial_numbers WHERE serial_number = $1", [trimmed]);
+        if (!dup) {
+          await query("INSERT INTO serial_numbers (serial_number, product_id, branch_id, status, purchase_order_item_id) VALUES ($1, $2, $3, 'in_stock', $4)", [trimmed, item.product_id, branchId ?? null, itemId]);
+        }
+      }
+    }
+  }
   if (delta > 0 && item.product_id) {
     const current = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1", [item.product_id]) as any;
     const currentQty = current ? Number(current.quantity_in_stock) : 0;
@@ -3913,6 +3970,144 @@ async function getVisitorStats(from: string, to: string, branchId?: number): Pro
   };
 }
 
+// ============ SERIAL NUMBERS & BARCODE ============
+
+async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
+  if (!barcode || !barcode.trim()) return undefined;
+  const row = await queryOne("SELECT * FROM products WHERE barcode = $1 LIMIT 1", [barcode.trim()]);
+  if (!row) return undefined;
+  return mapProduct(row);
+}
+
+function computeWarrantyExpiry(createdAt: string, durationMonths: number): string {
+  if (!durationMonths || durationMonths <= 0 || !createdAt) return "";
+  const base = new Date(createdAt);
+  if (isNaN(base.getTime())) return "";
+  base.setMonth(base.getMonth() + durationMonths);
+  return base.toISOString().slice(0, 10);
+}
+
+async function listSerials(filters: { search?: string; status?: string; productId?: string }): Promise<any[]> {
+  const where: string[] = []; const params: any[] = []; let idx = 1;
+  if (filters.search) { where.push(`(sn.serial_number ILIKE $${idx} OR p.name ILIKE $${idx} OR p.barcode ILIKE $${idx})`); params.push(`%${filters.search}%`); idx++; }
+  if (filters.status) { where.push(`sn.status = $${idx}`); params.push(filters.status); idx++; }
+  if (filters.productId) { where.push(`sn.product_id = $${idx}`); params.push(filters.productId); idx++; }
+  const sql = `SELECT sn.*, p.name AS product_name, p.category AS product_category, p.barcode AS product_barcode,
+      o.order_number, o.created_at AS order_created_at
+    FROM serial_numbers sn
+    LEFT JOIN products p ON p.id = sn.product_id
+    LEFT JOIN orders o ON o.id = sn.order_id
+    ${where.length ? "WHERE " + where.join(" AND ") : ""}
+    ORDER BY sn.created_at DESC LIMIT 500`;
+  return await queryAll(sql, params) as any[];
+}
+
+async function getSerialByNumber(serialNumber: string): Promise<any | undefined> {
+  if (!serialNumber || !serialNumber.trim()) return undefined;
+  const row = await queryOne(
+    `SELECT sn.*, p.name AS product_name, p.category AS product_category, p.barcode AS product_barcode,
+       p.has_warranty AS product_has_warranty, p.warranty_duration AS product_warranty_duration,
+       o.order_number, o.created_at AS order_created_at, c.name AS customer_name
+     FROM serial_numbers sn
+     LEFT JOIN products p ON p.id = sn.product_id
+     LEFT JOIN orders o ON o.id = sn.order_id
+     LEFT JOIN customers c ON c.id = o.customer_id
+     WHERE sn.serial_number = $1 LIMIT 1`,
+    [serialNumber.trim()]
+  );
+  return row as any | undefined;
+}
+
+async function createSerial(data: { serialNumber: string; productId: string; branchId?: number | null; status?: string; warrantyExpires?: string; createdBy?: number; purchaseOrderItemId?: number }): Promise<{ ok: boolean; error?: string; serial?: any }> {
+  const sn = String(data.serialNumber || "").trim();
+  if (!sn) return { ok: false, error: "Serial number is required" };
+  const dup = await queryOne("SELECT id FROM serial_numbers WHERE serial_number = $1", [sn]);
+  if (dup) return { ok: false, error: "That serial number already exists" };
+  const result = await query(
+    "INSERT INTO serial_numbers (serial_number, product_id, branch_id, status, warranty_expires, created_by, purchase_order_item_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+    [sn, data.productId, data.branchId ?? null, data.status || "in_stock", data.warrantyExpires || null, data.createdBy ?? null, data.purchaseOrderItemId ?? null]
+  );
+  return { ok: true, serial: result.rows[0] };
+}
+
+async function generateSerials(productId: string, count: number, createdBy?: number): Promise<{ ok: boolean; error?: string; serials?: { serialNumber: string }[] }> {
+  const product = await getProduct(productId);
+  if (!product) return { ok: false, error: "Product not found" };
+  const n = Math.max(1, Math.min(Number(count) || 1, 500));
+  const prefix = (product.category || "PRD").replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase() || "PRD";
+  const created: { serialNumber: string }[] = [];
+  try {
+    await transaction(async (client) => {
+      const seq = await client.query("SELECT last_number FROM serial_sequences WHERE prefix = $1 FOR UPDATE", [prefix]);
+      let last = seq.rows[0] ? Number(seq.rows[0].last_number) : 0;
+      for (let i = 0; i < n; i++) {
+        last += 1;
+        const sn = `${prefix}-${String(last).padStart(6, "0")}`;
+        await client.query("INSERT INTO serial_numbers (serial_number, product_id, status, created_by) VALUES ($1, $2, 'in_stock', $3)", [sn, productId, createdBy ?? null]);
+        created.push({ serialNumber: sn });
+      }
+      await client.query("INSERT INTO serial_sequences (prefix, last_number) VALUES ($1, $2) ON CONFLICT (prefix) DO UPDATE SET last_number = $2", [prefix, last]);
+    });
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || "Failed to generate serials") };
+  }
+  return { ok: true, serials: created };
+}
+
+async function voidSerial(id: number): Promise<{ ok: boolean; error?: string }> {
+  const row = await queryOne("SELECT status FROM serial_numbers WHERE id = $1", [id]) as any;
+  if (!row) return { ok: false, error: "Serial not found" };
+  if (row.status !== "in_stock") return { ok: false, error: "Only in-stock serials can be voided" };
+  await query("UPDATE serial_numbers SET status = 'void' WHERE id = $1", [id]);
+  return { ok: true };
+}
+
+async function linkSerialsToOrderItem(orderItemId: number, serialNumbers: string[]): Promise<{ ok: boolean; error?: string }> {
+  const item = await queryOne("SELECT order_id, product_id FROM order_items WHERE id = $1", [orderItemId]) as any;
+  if (!item) return { ok: false, error: "Order item not found" };
+  const warranty = await queryOne("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [item.product_id]) as any;
+  const order = await queryOne("SELECT created_at FROM orders WHERE id = $1", [item.order_id]) as any;
+  const list: string[] = [];
+  for (const raw of serialNumbers || []) {
+    const sn = String(raw || "").trim();
+    if (!sn) continue;
+    const serial = await queryOne("SELECT * FROM serial_numbers WHERE serial_number = $1", [sn]) as any;
+    if (!serial) return { ok: false, error: `Serial ${sn} not found` };
+    if (serial.product_id !== item.product_id) return { ok: false, error: `Serial ${sn} does not belong to this product` };
+    if (serial.status === "sold") return { ok: false, error: `Serial ${sn} is already sold` };
+    if (serial.status === "void") return { ok: false, error: `Serial ${sn} has been voided` };
+    let expires: string | null = null;
+    if (warranty && warranty.has_warranty && warranty.warranty_duration) {
+      expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), warranty.warranty_duration);
+    }
+    await query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serial.id]);
+    list.push(sn);
+  }
+  if (list.length) {
+    await query("UPDATE order_items SET serial_number = $1 WHERE id = $2", [list.join(", "), orderItemId]);
+  }
+  return { ok: true };
+}
+
+async function linkSerialToOrderItem(serialId: number, orderItemId: number): Promise<{ ok: boolean; error?: string }> {
+  const serial = await queryOne("SELECT * FROM serial_numbers WHERE id = $1", [serialId]) as any;
+  if (!serial) return { ok: false, error: "Serial not found" };
+  if (serial.status === "sold") return { ok: false, error: "That serial is already sold" };
+  if (serial.status === "void") return { ok: false, error: "That serial has been voided" };
+  const item = await queryOne("SELECT order_id, product_id FROM order_items WHERE id = $1", [orderItemId]) as any;
+  if (!item) return { ok: false, error: "Order item not found" };
+  if (serial.product_id !== item.product_id) return { ok: false, error: "Serial does not belong to this product" };
+  const warranty = await queryOne("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [serial.product_id]) as any;
+  const order = await queryOne("SELECT created_at FROM orders WHERE id = $1", [item.order_id]) as any;
+  let expires: string | null = null;
+  if (warranty && warranty.has_warranty && warranty.warranty_duration) {
+    expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), warranty.warranty_duration);
+  }
+  await query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serialId]);
+  await query("UPDATE order_items SET serial_number = $1 WHERE id = $2", [serial.serial_number, orderItemId]);
+  return { ok: true };
+}
+
 export {
   initDb, runMigrations, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
   seedDemoProvider, seedDemoCustomer, assignInitialRoles, seedProductsIfEmpty, ensureDefaultSubscriptionPlans,
@@ -3953,6 +4148,7 @@ export {
   createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, autoReorderLowStock,
   getTechPerformanceReport, getSalesReport, getPurchaseReport, getSalesReportWithRange,
   getStockSummary, getStockSummaryByBranch, getEmployeeSalesPerformance, getTechnicianRepairStats,
+  getProductByBarcode, listSerials, getSerialByNumber, createSerial, generateSerials, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,
   createStockTakeSession, getStockTakeSession, listStockTakeSessions, getStockTakeItems, recordStockCount, completeStockTakeSession,
   applyStockTakeAdjustments, getStockTakeVarianceReport, deleteStockTakeSession,
   createStockSnapshot, getStockSnapshot, listStockSnapshotDates, getCurrentStockLevels,

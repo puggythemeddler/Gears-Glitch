@@ -132,6 +132,14 @@ import {
   addPurchaseOrderItem,
   receivePurchaseOrderItem,
   autoReorderLowStock,
+  getProductByBarcode,
+  listSerials,
+  getSerialByNumber,
+  createSerial,
+  generateSerials,
+  voidSerial,
+  linkSerialsToOrderItem,
+  linkSerialToOrderItem,
   getPaymentMethods,
   getLoyaltyPoints,
   redeemLoyaltyPoints,
@@ -1739,6 +1747,17 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       if (!product) { res.status(400).json({ error: `Product ${item.productId} not found.` }); return; }
       const qty = Number(item.quantity);
       if (!Number.isInteger(qty) || qty <= 0) { res.status(400).json({ error: `Invalid quantity for ${product.name}.` }); return; }
+      const serials = Array.isArray(item.serials) ? item.serials.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
+      if (product.serialTracking) {
+        if (serials.length === 0) { res.status(400).json({ error: `${product.name} requires serial number(s). Please scan them.` }); return; }
+        if (serials.length !== qty) { res.status(400).json({ error: `Scan ${qty} serial number(s) for ${product.name} (got ${serials.length}).` }); return; }
+        for (const sn of serials) {
+          const found = await getSerialByNumber(sn);
+          if (!found) { res.status(400).json({ error: `Serial ${sn} not found.` }); return; }
+          if (found.product_id !== product.id) { res.status(400).json({ error: `Serial ${sn} does not belong to ${product.name}.` }); return; }
+          if (found.status === "sold" || found.status === "void") { res.status(400).json({ error: `Serial ${sn} is no longer available.` }); return; }
+        }
+      }
       if (branchId) {
         const branchStock = await getStockLevel(item.productId, Number(branchId));
         const branchQty = branchStock ? Number(branchStock.quantityInStock) : 0;
@@ -1752,7 +1771,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       }
       const lineTotal = product.price * qty;
       subtotal += lineTotal;
-      resolvedItems.push({ ...product, quantity: qty, lineTotal });
+      resolvedItems.push({ ...product, quantity: qty, lineTotal, serials });
     }
     const notes = `POS sale | ${pmt.toUpperCase()} | by ${staffName}`;
     let orderId: number;
@@ -1788,7 +1807,12 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       const hw = item.hasWarranty ? 1 : 0;
       const wd = item.warrantyDuration || 0;
       const tx = (item.taxable !== false) ? 1 : 0;
-      await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [orderId, item.id, item.name, item.price, item.quantity, item.lineTotal, hw, wd, tx]);
+      const inserted = await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id", [orderId, item.id, item.name, item.price, item.quantity, item.lineTotal, hw, wd, tx]);
+      const orderItemId = inserted.rows[0]?.id;
+      if (orderItemId && item.serials && item.serials.length) {
+        const linked = await linkSerialsToOrderItem(orderItemId, item.serials);
+        if (!linked.ok) { res.status(400).json({ error: linked.error || "Failed to link serial numbers." }); return; }
+      }
     }
     // Deduct stock_on_hand AND stock_levels for each product
     for (const item of resolvedItems) {
@@ -1887,7 +1911,8 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
       expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
       warrantyLine = `<div style="font-size:0.65rem;color:#6b7280;">Warranty: ${i.warrantyDuration}mo (exp ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})</div>`;
     }
-    return `<tr><td>${escapeHtml(i.name)}${warrantyLine ? "<br>" + warrantyLine : ""}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A"}</td><td style="font-size:0.7rem;text-align:center">${tt}</td></tr>`;
+    const serialLine = i.serial_number ? `<div style="font-size:0.65rem;color:#374151;">S/N: ${escapeHtml(String(i.serial_number))}</div>` : "";
+    return `<tr><td>${escapeHtml(i.name)}${warrantyLine ? "<br>" + warrantyLine : ""}${serialLine ? "<br>" + serialLine : ""}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A"}</td><td style="font-size:0.7rem;text-align:center">${tt}</td></tr>`;
   }).join("");
   const totalVat = order.items.reduce((s: number, i: any) => {
     return s + (i.taxable !== false ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0);
@@ -1908,7 +1933,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
         expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
         warranty = `Yes (exp: ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})`;
       }
-      return `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
+      return `<tr><td>${escapeHtml(i.name)}${i.serial_number ? `<div style="font-size:0.8rem;color:#374151;">S/N: ${escapeHtml(String(i.serial_number))}</div>` : ""}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
     }).join("");
     const title = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
     const subtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
@@ -1968,7 +1993,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
         expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
         warranty = `Yes (exp: ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})`;
       }
-      return `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
+      return `<tr><td>${escapeHtml(i.name)}${i.serial_number ? `<div style="font-size:0.8rem;color:#374151;">S/N: ${escapeHtml(String(i.serial_number))}</div>` : ""}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
     }).join("");
     const title = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
     const subtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
@@ -3233,6 +3258,12 @@ app.get("/api/products", asyncHandler(async (req: Request, res: Response) => {
   res.json({ products, currency: (await getSettings()).currency });
 }));
 
+app.get("/api/products/by-barcode/:code", asyncHandler(async (req: Request, res: Response) => {
+  const product = await getProductByBarcode(String(req.params.code || ""));
+  if (!product) { res.status(404).json({ error: "No product matches that barcode." }); return; }
+  res.json(product);
+}));
+
 app.get("/api/products/:id", asyncHandler(async (req: Request, res: Response) => {
   try {
     const product = await getProduct(String(req.params.id));
@@ -3273,6 +3304,10 @@ app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create
     inStock: Boolean(body.inStock),
     isNonStock: Boolean(body.isNonStock),
     isHidden: Boolean(body.isHidden),
+    serialTracking: Boolean(body.serialTracking),
+    barcode: String(body.barcode || "").trim(),
+    hasWarranty: Boolean(body.hasWarranty),
+    warrantyDuration: Number(body.warrantyDuration) || 0,
     imageAlt: String(body.imageAlt || "").trim(),
   });
   res.status(201).json(product);
@@ -3407,6 +3442,8 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
   if (body.subcategory !== undefined) updates.subcategory = String(body.subcategory).trim();
   if (body.hasWarranty !== undefined) updates.hasWarranty = Boolean(body.hasWarranty);
   if (body.warrantyDuration !== undefined) updates.warrantyDuration = Number(body.warrantyDuration);
+  if (body.serialTracking !== undefined) updates.serialTracking = Boolean(body.serialTracking);
+  if (body.barcode !== undefined) updates.barcode = String(body.barcode || "").trim();
   if (body.taxable !== undefined) updates.taxable = Boolean(body.taxable);
   if (body.imageAlt !== undefined) updates.imageAlt = String(body.imageAlt).trim();
 
@@ -4561,9 +4598,67 @@ app.post("/api/admin/auto-reorder", adminAuthMiddleware, asyncHandler(async (_re
 }));
 
 app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const { quantityReceived } = req.body || {};
+  const { quantityReceived, serials, branchId } = req.body || {};
   if (!quantityReceived || !isPosInt(Number(quantityReceived))) { res.status(400).json({ error: "quantityReceived must be a positive integer." }); return; }
-  await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived));
+  const serialList = Array.isArray(serials) ? serials.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
+  if (serialList.length > Number(quantityReceived)) { res.status(400).json({ error: "More serials than quantity received." }); return; }
+  await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived), serialList, branchId ? Number(branchId) : undefined);
+  res.json({ ok: true });
+}));
+
+// ============ SERIAL NUMBERS (warranty tracking, PO intake, sale linking) ============
+
+app.get("/api/serials", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const serials = await listSerials({ search: req.query.q as string | undefined, status: req.query.status as string | undefined, productId: req.query.productId as string | undefined });
+  res.json({ serials });
+}));
+
+app.get("/api/serials/lookup/:serialNumber", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const serial = await getSerialByNumber(String(req.params.serialNumber || ""));
+  if (!serial) { res.status(404).json({ error: "Serial number not found." }); return; }
+  res.json(serial);
+}));
+
+app.post("/api/serials", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { serialNumber, productId, branchId, warrantyExpires } = req.body || {};
+  if (!serialNumber || !String(serialNumber).trim()) { res.status(400).json({ error: "Serial number is required." }); return; }
+  if (!productId) { res.status(400).json({ error: "Product is required." }); return; }
+  const staff = (req as any).user;
+  const result = await createSerial({ serialNumber, productId, branchId: branchId ? Number(branchId) : null, warrantyExpires, createdBy: staff.sub });
+  if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+  res.status(201).json(result.serial);
+}));
+
+app.post("/api/serials/generate", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { productId, count } = req.body || {};
+  if (!productId) { res.status(400).json({ error: "Product is required." }); return; }
+  const staff = (req as any).user;
+  const result = await generateSerials(productId, Number(count) || 1, staff.sub);
+  if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+  res.status(201).json({ serials: result.serials });
+}));
+
+app.post("/api/serials/:id/void", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const result = await voidSerial(Number(req.params.id));
+  if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+  res.json({ ok: true });
+}));
+
+app.post("/api/serials/link", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { serialId, orderItemId } = req.body || {};
+  if (!serialId || !orderItemId) { res.status(400).json({ error: "serialId and orderItemId are required." }); return; }
+  const result = await linkSerialToOrderItem(Number(serialId), Number(orderItemId));
+  if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+  res.json({ ok: true });
+}));
+
+app.post("/api/serials/link-by-number", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { serialNumber, orderItemId } = req.body || {};
+  if (!serialNumber || !orderItemId) { res.status(400).json({ error: "serialNumber and orderItemId are required." }); return; }
+  const serial = await getSerialByNumber(String(serialNumber));
+  if (!serial) { res.status(404).json({ error: "Serial number not found." }); return; }
+  const result = await linkSerialToOrderItem(serial.id, Number(orderItemId));
+  if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.json({ ok: true });
 }));
 

@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS products (
   min_tier INTEGER NOT NULL DEFAULT 0,
   has_warranty INTEGER NOT NULL DEFAULT 0,
   warranty_duration INTEGER NOT NULL DEFAULT 0,
+  serial_tracking INTEGER NOT NULL DEFAULT 0,
+  barcode TEXT NOT NULL DEFAULT '',
   taxable INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
@@ -140,6 +142,8 @@ CREATE TABLE IF NOT EXISTS order_items (
   line_total DOUBLE PRECISION NOT NULL DEFAULT 0,
   has_warranty INTEGER NOT NULL DEFAULT 0,
   warranty_duration INTEGER NOT NULL DEFAULT 0,
+  serial_number TEXT NOT NULL DEFAULT '',
+  stock_deducted INTEGER NOT NULL DEFAULT 0,
   taxable INTEGER NOT NULL DEFAULT 1,
   cancelled INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
@@ -404,11 +408,41 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
   quantity_ordered INTEGER NOT NULL DEFAULT 1,
   quantity_received INTEGER NOT NULL DEFAULT 0,
   unit_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+  serial_numbers TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_purchase_items_order ON purchase_order_items(purchase_order_id);
+
+-- Serial number tracking (warranty lookups, PO intake, sale linking)
+CREATE TABLE IF NOT EXISTS serial_numbers (
+  id SERIAL PRIMARY KEY,
+  serial_number TEXT NOT NULL UNIQUE,
+  product_id TEXT NOT NULL,
+  branch_id INTEGER,
+  status TEXT NOT NULL DEFAULT 'in_stock',
+  purchase_order_item_id INTEGER,
+  order_id INTEGER,
+  order_item_id INTEGER,
+  sold_at TEXT,
+  warranty_expires TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text),
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+  FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL,
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,
+  FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_serial_numbers_status ON serial_numbers(status);
+CREATE INDEX IF NOT EXISTS idx_serial_numbers_product ON serial_numbers(product_id);
+CREATE INDEX IF NOT EXISTS idx_serial_numbers_number ON serial_numbers(serial_number);
+
+-- Running counters for auto-generating unique serial numbers per prefix
+CREATE TABLE IF NOT EXISTS serial_sequences (
+  prefix TEXT PRIMARY KEY,
+  last_number INTEGER NOT NULL DEFAULT 0
+);
 
 CREATE TABLE IF NOT EXISTS wishlist (
   id SERIAL PRIMARY KEY,

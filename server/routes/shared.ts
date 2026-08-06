@@ -140,7 +140,7 @@ export function posReceiptButtons(orderId: number, format: string): string {
 
 // ============ INVOICE ITEM ROW HELPER ============
 export function buildInvoiceItemRow(
-  item: { name: string; quantity: number; price: number; lineTotal: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean },
+  item: { name: string; quantity: number; price: number; lineTotal: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; serialNumber?: string },
   orderCreatedAt: string,
   currency: string,
   taxRate: number,
@@ -155,7 +155,7 @@ export function buildInvoiceItemRow(
   const isTx = item.taxable !== false;
   const vat = isTx ? Math.round(item.lineTotal * taxRate / 116 * 100) / 100 : 0;
   const tt = isTx ? taxType : "E";
-  return `<tr><td>${escapeHtml(item.name)}</td><td style="text-align:center">${item.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${item.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${item.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
+  return `<tr><td>${escapeHtml(item.name)}${item.serialNumber ? `<div style="font-size:0.8rem;color:#374151;">S/N: ${escapeHtml(String(item.serialNumber))}</div>` : ""}</td><td style="text-align:center">${item.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${item.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${item.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
 }
 
 // ============ FULL INVOICE HTML GENERATOR ============

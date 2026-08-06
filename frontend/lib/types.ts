@@ -14,6 +14,8 @@ export interface Product {
   isHidden?: boolean;
   hasWarranty?: boolean;
   warrantyDuration?: number;
+  serialTracking?: boolean;
+  barcode?: string;
   taxable?: boolean;
   specs: any[];
   description?: string;
@@ -47,6 +49,7 @@ export interface CartItem {
   imageUrl: string;
   hasWarranty?: boolean;
   warrantyDuration?: number;
+  serials?: string[];
 }
 
 export interface Order {
@@ -83,6 +86,7 @@ export interface OrderItem {
   lineTotal: number;
   hasWarranty?: number;
   warrantyDuration?: number;
+  serialNumber?: string;
   cancelled?: number;
 }
 

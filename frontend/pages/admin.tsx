@@ -23,6 +23,7 @@ import StockTakeListPage from "@/components/admin/StockTakeListPage";
 import StockOnHandPage from "@/components/admin/StockOnHandPage";
 import CategoryPositioningPage from "@/components/admin/CategoryPositioningPage";
 import AdminRepairs from "@/components/admin/AdminRepairs";
+import AdminSerials from "@/components/admin/AdminSerials";
 import HelpPanel from "@/components/admin/HelpPanel";
 
 declare global {
@@ -31,7 +32,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "help";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "help";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 // Which permission unlocks a view in the sidebar. Views absent from this map
@@ -97,6 +98,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "stock-transfers", label: "Stock Transfers", feature: "Stock transfers" },
       { key: "stock-take", label: "Stock Take", feature: "Stock take / inventory count" },
       { key: "stock-control", label: "Stock Control", feature: "Stock take / inventory count" },
+      { key: "serials", label: "Serial Numbers" },
       { key: "purchases", label: "Purchase Orders", feature: "Purchase order management" },
       { key: "suppliers", label: "Suppliers", feature: "Supplier management" },
     ],
@@ -515,6 +517,7 @@ export default function AdminPage() {
             {view === "stock-take" && <AdminStockTake />}
             {view === "stock-control" && <AdminStockControl />}
             {view === "purchases" && <AdminPurchases />}
+            {view === "serials" && <AdminSerials />}
             {view === "clients" && <AdminClients />}
             {view === "branches" && <AdminBranches />}
             {view === "spec-templates" && <AdminSpecTemplates />}
@@ -924,6 +927,25 @@ function AdminOrders() {
   const [creditedOrders, setCreditedOrders] = useState<Record<number, boolean>>({});
   const [refunds, setRefunds] = useState<any[]>([]);
   const [refundMsg, setRefundMsg] = useState("");
+  const [serialInputs, setSerialInputs] = useState<Record<number, string>>({});
+  const [linking, setLinking] = useState<number | null>(null);
+
+  async function linkSerial(itemId: number, serialNumber: string) {
+    const code = String(serialNumber || "").trim();
+    if (!code) return;
+    setLinking(itemId);
+    try {
+      await api("/api/serials/link-by-number", { method: "POST", body: JSON.stringify({ serialNumber: code, orderItemId: itemId }) });
+      const updated = await api<any>(`/api/admin/orders/${selected!.id}`);
+      setSelected(updated);
+      setSerialInputs((prev) => ({ ...prev, [itemId]: "" }));
+      toast("success", "Serial linked.");
+    } catch (e: any) {
+      toast("error", e.message || "Failed to link serial.");
+    } finally {
+      setLinking(null);
+    }
+  }
 
   async function updateStatus(orderId: number, status: string) {
     setStatusMsg("");
@@ -1086,7 +1108,7 @@ function AdminOrders() {
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Warranty</th><th></th></tr></thead>
+            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Warranty</th><th>Serial</th><th></th></tr></thead>
             <tbody>
               {(o.items || []).map((item: any, i: number) => (
                 <tr key={item.id || i}>
@@ -1113,6 +1135,23 @@ function AdminOrders() {
                       ) : null}
                       <span>{item.hasWarranty ? "mo" : ""}</span>
                     </div>
+                  </td>
+                  <td>
+                    {item.serialNumber ? (
+                      <div style={{ fontSize: "0.82rem", fontFamily: "monospace", color: "var(--primary)" }}>{escapeHtml(item.serialNumber)}</div>
+                    ) : (
+                      <div style={{ display: "flex", gap: "0.3rem", alignItems: "center" }}>
+                        <input
+                          type="text"
+                          placeholder="Scan serial"
+                          value={serialInputs[item.id] || ""}
+                          onChange={(e) => setSerialInputs({ ...serialInputs, [item.id]: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); linkSerial(item.id, serialInputs[item.id] || ""); } }}
+                          style={{ width: 130, fontSize: "0.8rem", fontFamily: "monospace" }}
+                        />
+                        <RippleButton size="small" variant="ghost" loading={linking === item.id} onClick={() => linkSerial(item.id, serialInputs[item.id] || "")}>Link</RippleButton>
+                      </div>
+                    )}
                   </td>
                   <td>
                     {!item.cancelled && (
@@ -5543,6 +5582,7 @@ function AdminPurchases() {
   const [msg, setMsg] = useState("");
   const [listMode, setListMode] = useState<"active" | "completed" | "deleted">("active");
   const [receiveInputs, setReceiveInputs] = useState<{ [itemId: number]: number }>({});
+  const [receiveSerials, setReceiveSerials] = useState<{ [itemId: number]: string }>({});
   const [receiving, setReceiving] = useState<number | null>(null);
   const [listSearch, setListSearch] = useState("");
 
@@ -5635,7 +5675,9 @@ function AdminPurchases() {
     if (qty === undefined || qty < 0) return;
     setReceiving(itemId);
     try {
-      await api(`/api/purchases/items/${itemId}/receive`, { method: "POST", body: JSON.stringify({ quantityReceived: qty }) });
+      const serialText = receiveSerials[itemId] || "";
+      const serials = serialText.split(/[\r\n,]+/).map((s: string) => s.trim()).filter(Boolean);
+      await api(`/api/purchases/items/${itemId}/receive`, { method: "POST", body: JSON.stringify({ quantityReceived: qty, serials }) });
       if (viewing) loadOrder(viewing.id);
     } catch (err: any) { setMsg(err.message); }
     setReceiving(null);
@@ -5726,23 +5768,39 @@ function AdminPurchases() {
                     <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost)}</td>
                     <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost * i.quantityReceived)}</td>
                     <td>
+                      {i.serialTracking && i.quantityReceived > 0 && i.serials && i.serials.length > 0 && (
+                        <div style={{ marginBottom: "0.35rem", fontSize: "0.75rem", color: "var(--text-secondary)", fontFamily: "monospace" }}>
+                          {(i.serials || []).join(", ")}
+                        </div>
+                      )}
                       {viewing.status === "ordered" && maxReceive > 0 ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                          <input
-                            type="number"
-                            min={0}
-                            max={maxReceive}
-                            value={inputVal}
-                            onChange={(e) => setReceiveInputs({ ...receiveInputs, [i.id]: Math.min(maxReceive, Math.max(0, Number(e.target.value))) })}
-                            style={{ width: 60, fontSize: "0.85rem", padding: "0.2rem 0.4rem" }}
-                          />
-                          <RippleButton
-                            size="small"
-                            variant="ghost"
-                            loading={receiving === i.id}
-                            disabled={receiving !== null || inputVal <= 0}
-                            onClick={() => receiveItem(i.id)}
-                          >Save</RippleButton>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", alignItems: "flex-start" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                            <input
+                              type="number"
+                              min={0}
+                              max={maxReceive}
+                              value={inputVal}
+                              onChange={(e) => setReceiveInputs({ ...receiveInputs, [i.id]: Math.min(maxReceive, Math.max(0, Number(e.target.value))) })}
+                              style={{ width: 60, fontSize: "0.85rem", padding: "0.2rem 0.4rem" }}
+                            />
+                            <RippleButton
+                              size="small"
+                              variant="ghost"
+                              loading={receiving === i.id}
+                              disabled={receiving !== null || inputVal <= 0}
+                              onClick={() => receiveItem(i.id)}
+                            >Save</RippleButton>
+                          </div>
+                          {i.serialTracking && (
+                            <textarea
+                              placeholder="Scan/type serial numbers, one per line"
+                              value={receiveSerials[i.id] || ""}
+                              onChange={(e) => setReceiveSerials({ ...receiveSerials, [i.id]: e.target.value })}
+                              rows={2}
+                              style={{ width: 200, fontSize: "0.8rem", fontFamily: "monospace" }}
+                            />
+                          )}
                         </div>
                       ) : (
                         <span style={{ color: "var(--text-secondary)", fontSize: "0.8rem" }}>{maxReceive <= 0 ? "Complete" : "—"}</span>
