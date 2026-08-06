@@ -5582,8 +5582,12 @@ function AdminPurchases() {
   const [msg, setMsg] = useState("");
   const [listMode, setListMode] = useState<"active" | "completed" | "deleted">("active");
   const [receiveInputs, setReceiveInputs] = useState<{ [itemId: number]: number }>({});
-  const [receiveSerials, setReceiveSerials] = useState<{ [itemId: number]: string }>({});
+  const [receiveSerials, setReceiveSerials] = useState<{ [itemId: number]: string[] }>({});
   const [receiving, setReceiving] = useState<number | null>(null);
+  const [serialModalItem, setSerialModalItem] = useState<any | null>(null);
+  const [serialInput, setSerialInput] = useState("");
+  const [serialMsg, setSerialMsg] = useState("");
+  const [serialising, setSerialising] = useState<number | "all" | null>(null);
   const [listSearch, setListSearch] = useState("");
 
   async function loadOrders(mode?: string) {
@@ -5675,12 +5679,49 @@ function AdminPurchases() {
     if (qty === undefined || qty < 0) return;
     setReceiving(itemId);
     try {
-      const serialText = receiveSerials[itemId] || "";
-      const serials = serialText.split(/[\r\n,]+/).map((s: string) => s.trim()).filter(Boolean);
+      const serials = receiveSerials[itemId] || [];
       await api(`/api/purchases/items/${itemId}/receive`, { method: "POST", body: JSON.stringify({ quantityReceived: qty, serials }) });
+      setReceiveInputs((p) => { const n = { ...p }; delete n[itemId]; return n; });
+      setReceiveSerials((p) => { const n = { ...p }; delete n[itemId]; return n; });
+      if (serialModalItem?.id === itemId) { setSerialModalItem(null); setSerialInput(""); setSerialMsg(""); }
       if (viewing) loadOrder(viewing.id);
     } catch (err: any) { setMsg(err.message); }
     setReceiving(null);
+  }
+
+  async function serialiseItem(itemId: number, productId: string, count: number) {
+    setSerialising(itemId);
+    setSerialMsg("");
+    try {
+      const d = await api<{ serials: { serialNumber: string }[] }>("/api/serials/generate", { method: "POST", body: JSON.stringify({ productId, count }) });
+      const list = (d.serials || []).map((s) => s.serialNumber);
+      setReceiveSerials((prev) => ({ ...prev, [itemId]: list }));
+      setSerialInput("");
+      toast("success", `Generated ${list.length} serial number${list.length !== 1 ? "s" : ""}.`);
+    } catch (err: any) { setSerialMsg(err.message); toast("error", err.message); }
+    setSerialising(null);
+  }
+
+  async function serialiseAllItems() {
+    if (!viewing) return;
+    const targets = (viewing.items || []).filter((i: any) => i.serialTracking && (i.quantityOrdered - i.quantityReceived) > 0);
+    if (targets.length === 0) return;
+    if (!(await confirmDialog({ message: `Generate serial numbers for ${targets.length} serial-tracked line${targets.length !== 1 ? "s" : ""}?`, confirmLabel: "Serialise Items" }))) return;
+    setSerialising("all");
+    try {
+      let total = 0;
+      const updates: { [itemId: number]: string[] } = {};
+      for (const t of targets) {
+        const count = t.quantityOrdered - t.quantityReceived;
+        const d = await api<{ serials: { serialNumber: string }[] }>("/api/serials/generate", { method: "POST", body: JSON.stringify({ productId: t.productId, count }) });
+        const list = (d.serials || []).map((s) => s.serialNumber);
+        updates[t.id] = list;
+        total += list.length;
+      }
+      setReceiveSerials((prev) => ({ ...prev, ...updates }));
+      toast("success", `Generated ${total} serial number${total !== 1 ? "s" : ""}.`);
+    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
+    setSerialising(null);
   }
 
   async function deleteOrder(id: number) {
@@ -5716,6 +5757,7 @@ function AdminPurchases() {
   if (viewing) {
     const totalCost = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityOrdered || 0), 0);
     const totalReceived = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityReceived || 0), 0);
+    const serialTargets = (viewing.items || []).filter((i: any) => i.serialTracking && (i.quantityOrdered - i.quantityReceived) > 0);
     return (
       <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -5746,7 +5788,12 @@ function AdminPurchases() {
               </div>
             )}
             {viewing.status === "ordered" && (
-              <RippleButton size="small" style={{ marginTop: "0.75rem" }} onClick={confirmMarkReceived}>Mark All Received</RippleButton>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem", flexWrap: "wrap" }}>
+                {serialTargets.length > 0 && (
+                  <RippleButton size="small" loading={serialising === "all"} disabled={serialising !== null && serialising !== "all"} onClick={serialiseAllItems}>Serialise Items</RippleButton>
+                )}
+                <RippleButton size="small" onClick={confirmMarkReceived}>Mark All Received</RippleButton>
+              </div>
             )}
             <div style={{ marginTop: "0.75rem" }}>
               <RippleButton size="small" variant="ghost" onClick={() => deleteOrder(viewing.id)}>Delete</RippleButton>
@@ -5793,13 +5840,24 @@ function AdminPurchases() {
                             >Save</RippleButton>
                           </div>
                           {i.serialTracking && (
-                            <textarea
-                              placeholder="Scan/type serial numbers, one per line"
-                              value={receiveSerials[i.id] || ""}
-                              onChange={(e) => setReceiveSerials({ ...receiveSerials, [i.id]: e.target.value })}
-                              rows={2}
-                              style={{ width: 200, fontSize: "0.8rem", fontFamily: "monospace" }}
-                            />
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", alignItems: "flex-start" }}>
+                              <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+                                <RippleButton size="small" variant="ghost" disabled={serialising !== null} onClick={() => { setSerialModalItem(i); setSerialInput(""); setSerialMsg(""); }}>
+                                  Enter Serials ({(receiveSerials[i.id] || []).length}/{inputVal})
+                                </RippleButton>
+                                <RippleButton size="small" variant="ghost" loading={serialising === i.id} disabled={serialising !== null && serialising !== i.id} onClick={() => serialiseItem(i.id, i.productId, inputVal)}>Serialise</RippleButton>
+                              </div>
+                              {(receiveSerials[i.id] || []).length > 0 && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
+                                  {(receiveSerials[i.id] || []).map((s, idx) => (
+                                    <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "var(--primary-light)", color: "var(--primary)", padding: "0.1rem 0.5rem", borderRadius: 999, fontSize: "0.75rem", fontFamily: "monospace" }}>
+                                      {s}
+                                      <button type="button" onClick={() => setReceiveSerials({ ...receiveSerials, [i.id]: (receiveSerials[i.id] || []).filter((_, i2) => i2 !== idx) })} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, lineHeight: 1 }}>&times;</button>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       ) : (
@@ -5813,6 +5871,57 @@ function AdminPurchases() {
             </tbody>
           </table>
         </div>
+        {serialModalItem && (() => {
+          const need = receiveInputs[serialModalItem.id] !== undefined ? receiveInputs[serialModalItem.id] : (serialModalItem.quantityOrdered - serialModalItem.quantityReceived);
+          const cur = receiveSerials[serialModalItem.id] || [];
+          const closeModal = () => { setSerialModalItem(null); setSerialInput(""); setSerialMsg(""); };
+          return (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200 }} onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
+              <div className="panel" style={{ width: 460, maxWidth: "94vw", maxHeight: "80vh", overflowY: "auto" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.35rem" }}>
+                  <h3 style={{ margin: 0 }}>Serials — {escapeHtml(serialModalItem.productName)}</h3>
+                  <RippleButton size="small" variant="ghost" onClick={closeModal}>&times;</RippleButton>
+                </div>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0 0 0.75rem" }}>
+                  Scan or type each serial number and press Enter. {cur.length} of {need} added.
+                </p>
+                {serialMsg && <ErrorMsg msg={serialMsg} />}
+                <input
+                  autoFocus
+                  placeholder="Scan or type a serial number..."
+                  value={serialInput}
+                  onChange={(e) => setSerialInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    const sn = serialInput.trim();
+                    if (!sn) return;
+                    if (cur.includes(sn)) { setSerialMsg(`Serial ${sn} is already in the list.`); return; }
+                    if (cur.length >= need) { setSerialMsg(`You only need ${need} serial number${need !== 1 ? "s" : ""}.`); return; }
+                    setReceiveSerials({ ...receiveSerials, [serialModalItem.id]: [...cur, sn] });
+                    setSerialInput("");
+                    setSerialMsg("");
+                  }}
+                  style={{ width: "100%", fontFamily: "monospace", fontSize: "0.9rem", padding: "0.4rem 0.5rem", boxSizing: "border-box" }}
+                />
+                {cur.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.6rem" }}>
+                    {cur.map((s, idx) => (
+                      <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "var(--primary-light)", color: "var(--primary)", padding: "0.15rem 0.55rem", borderRadius: 999, fontSize: "0.78rem", fontFamily: "monospace" }}>
+                        {s}
+                        <button type="button" onClick={() => setReceiveSerials({ ...receiveSerials, [serialModalItem.id]: cur.filter((_, i2) => i2 !== idx) })} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, lineHeight: 1 }}>&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.75rem" }}>
+                  <RippleButton size="small" variant="ghost" loading={serialising === serialModalItem.id} disabled={serialising !== null && serialising !== serialModalItem.id} onClick={() => serialiseItem(serialModalItem.id, serialModalItem.productId, need)}>Serialise</RippleButton>
+                  <RippleButton size="small" onClick={closeModal}>Done</RippleButton>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </>
     );
   }

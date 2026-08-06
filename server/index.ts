@@ -4565,7 +4565,7 @@ app.post("/api/purchases", adminAuthMiddleware, asyncHandler(async (req: Request
   const body = req.body || {};
   if (body.supplierId !== undefined && !isPosInt(Number(body.supplierId))) { res.status(400).json({ error: "supplierId must be a positive integer." }); return; }
   if (body.items !== undefined && !isArr(body.items)) { res.status(400).json({ error: "items must be an array." }); return; }
-  if (body.notes !== undefined && !isStr(body.notes, 1000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
+  if (body.notes !== undefined && (typeof body.notes !== "string" || body.notes.length > 1000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
   const po = await createPurchaseOrder({ ...body, createdBy: (req as any).user.sub });
   res.status(201).json(po);
 }));
