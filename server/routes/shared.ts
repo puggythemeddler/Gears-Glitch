@@ -36,9 +36,9 @@ export function renderStoreLogo(logoUrl: string, position: string, storeName: st
   if (!logoUrl) return "";
   const src = escapeHtml(resolveAbsoluteUrl(logoUrl, baseUrl));
   const pos = position || "top-left";
-  if (pos === "top-left") return `<img src="${src}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;margin-bottom:0.5rem;" />`;
-  if (pos === "top-middle") return `<div style="text-align:center;margin-bottom:0.5rem;"><img src="${src}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;" /></div>`;
-  if (pos === "top-right") return `<div style="text-align:right;margin-bottom:0.5rem;"><img src="${src}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;" /></div>`;
+  if (pos === "top-left") return `<div style="width:100%;margin-bottom:0.5rem;text-align:left;"><img src="${src}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;" /></div>`;
+  if (pos === "top-middle") return `<div style="width:100%;margin-bottom:0.5rem;text-align:center;"><img src="${src}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;" /></div>`;
+  if (pos === "top-right") return `<div style="width:100%;margin-bottom:0.5rem;text-align:right;"><img src="${src}" alt="${escapeHtml(storeName)} Logo" style="max-height:64px;max-width:200px;" /></div>`;
   return "";
 }
 
@@ -217,8 +217,9 @@ export function generateInvoiceHtml(data: InvoiceData): string {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store.name}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
+  ${renderStoreLogo(store.logo, store.logoPosition, store.name, store.baseUrl)}
   <div class="header">
-    <div>${renderStoreLogo(store.logo, store.logoPosition, store.name, store.baseUrl)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
+    <div><h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store.name)}</strong><br><span class="meta">${escapeHtml(store.email)}</span></div>
   </div>
   ${etims.enabled ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etims.number)} | <strong>Control Code:</strong> ${escapeHtml(etims.controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(etims.kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -331,8 +332,9 @@ export function generateSubscriptionInvoiceHtml(data: SubscriptionInvoiceData): 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${escapeHtml(invoice.invoiceNumber)} — ${escapeHtml(store.name)}</title>
 <style>${SUBSCRIPTION_INVOICE_CSS}</style></head><body>
 <div class="invoice">
+  ${renderStoreLogo(store.logo, store.logoPosition, store.name, store.baseUrl)}
   <div class="header">
-    <div>${renderStoreLogo(store.logo, store.logoPosition, store.name, store.baseUrl)}<h1>SUBSCRIPTION INVOICE</h1><p class="meta">${escapeHtml(invoice.invoiceNumber)}</p></div>
+    <div><h1>SUBSCRIPTION INVOICE</h1><p class="meta">${escapeHtml(invoice.invoiceNumber)}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store.name)}</strong><br><span class="meta">${escapeHtml(store.email)}</span><br><span class="badge ${statusClass}">${invoice.status.toUpperCase()}</span></div>
   </div>
   <div class="info-grid">

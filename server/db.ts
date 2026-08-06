@@ -3993,7 +3993,7 @@ async function listSerials(filters: { search?: string; status?: string; productI
   if (filters.status) { where.push(`sn.status = $${idx}`); params.push(filters.status); idx++; }
   if (filters.productId) { where.push(`sn.product_id = $${idx}`); params.push(filters.productId); idx++; }
   const sql = `SELECT sn.*, p.name AS product_name, p.category AS product_category, p.barcode AS product_barcode,
-      o.order_number, o.created_at AS order_created_at
+      COALESCE(NULLIF(o.invoice_number, ''), o.id::TEXT) AS order_number, o.created_at AS order_created_at
     FROM serial_numbers sn
     LEFT JOIN products p ON p.id = sn.product_id
     LEFT JOIN orders o ON o.id = sn.order_id
@@ -4007,7 +4007,7 @@ async function getSerialByNumber(serialNumber: string): Promise<any | undefined>
   const row = await queryOne(
     `SELECT sn.*, p.name AS product_name, p.category AS product_category, p.barcode AS product_barcode,
        p.has_warranty AS product_has_warranty, p.warranty_duration AS product_warranty_duration,
-       o.order_number, o.created_at AS order_created_at, c.name AS customer_name
+       COALESCE(NULLIF(o.invoice_number, ''), o.id::TEXT) AS order_number, o.created_at AS order_created_at, c.name AS customer_name
      FROM serial_numbers sn
      LEFT JOIN products p ON p.id = sn.product_id
      LEFT JOIN orders o ON o.id = sn.order_id

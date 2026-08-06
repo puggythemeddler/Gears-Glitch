@@ -5892,6 +5892,7 @@ function AdminPurchases() {
                   value={serialInput}
                   onChange={(e) => setSerialInput(e.target.value)}
                   onKeyDown={(e) => {
+                    if (e.key === "Escape") { closeModal(); return; }
                     if (e.key !== "Enter") return;
                     e.preventDefault();
                     const sn = serialInput.trim();

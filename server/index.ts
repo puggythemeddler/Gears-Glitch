@@ -1940,8 +1940,9 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
+  ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>${title}</h1><p class="meta">${subtitle}</p></div>
+    <div><h1>${title}</h1><p class="meta">${subtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -2000,8 +2001,9 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
+  ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>${title}</h1><p class="meta">${subtitle}</p></div>
+    <div><h1>${title}</h1><p class="meta">${subtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -2418,8 +2420,9 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
+  ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
+    <div><h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -2549,8 +2552,9 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
+  ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
+    <div><h1>${invoiceTitle}</h1><p class="meta">${invoiceSubtitle}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   ${etimsNumber ? `<div class="etims-box"><strong>eTIMS No:</strong> ${escapeHtml(etimsNumber)} | <strong>Control Code:</strong> ${escapeHtml(controlCode)} | <strong>KRA PIN:</strong> ${escapeHtml(kraPin)} | <strong>Mode:</strong> ${modeLabel}</div>` : ""}
@@ -2697,7 +2701,7 @@ app.get("/api/admin/invoices/:id/view", allowControlPlane(ownerAuthMiddleware), 
       notes: invoice.notes || "",
       createdAt: invoice.createdAt,
     },
-    store: { name: settings.storeName, email: settings.emailSender || settings.email || "", logo: settings.storeLogo || "", logoPosition: "top-left", baseUrl },
+    store: { name: settings.storeName, email: settings.emailSender || settings.email || "", logo: settings.storeLogo || "", logoPosition: settings.logoPosition || "top-left", baseUrl },
   });
   if (format === "pdf") {
     const { htmlToPdf } = await import("./pdf");
@@ -2862,8 +2866,9 @@ app.get("/api/admin/credit-notes/:id/view", staffAuthMiddleware, asyncHandler(as
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Credit Note #${cn.id} — ${store}</title>
 <style>${CREDIT_NOTE_CSS}</style></head><body>
 <div class="cn">
+  ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>CREDIT NOTE</h1><p class="meta">Credit Note #${cn.id} | Original Order #${cn.orderId}${etimsNumber ? " | eTIMS Invoice: " + escapeHtml(etimsNumber) : ""}</p></div>
+    <div><h1>CREDIT NOTE</h1><p class="meta">Credit Note #${cn.id} | Original Order #${cn.orderId}${etimsNumber ? " | eTIMS Invoice: " + escapeHtml(etimsNumber) : ""}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span class="meta">${escapeHtml(storeEmail)}</span></div>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
@@ -4708,55 +4713,84 @@ app.get("/api/purchases/:id/pdf", staffAuthMiddleware, asyncHandler(async (req: 
     const items = po.items || [];
     const totalCost = items.reduce((s: number, i: any) => s + (i.quantityOrdered || 0) * (i.unitCost || 0), 0);
     const totalReceived = items.reduce((s: number, i: any) => s + (i.quantityReceived || 0) * (i.unitCost || 0), 0);
+    const docTitle = po.status === "received" ? "GOODS RECEIVED VOUCHER" : "PURCHASE ORDER";
+    const currency = settings.currency || "KES";
+    const fmtDate = (d: any) => { if (!d) return "—"; const t = new Date(d); return isNaN(t.getTime()) ? String(d) : t.toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }); };
+    const num = (n: number) => (Number(n) || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 });
+    const pendingValue = totalCost - totalReceived;
+    const rowsHtml = items.map((i: any) => {
+      const sns = Array.isArray(i.serials) ? i.serials.filter(Boolean) : [];
+      const snHtml = sns.length ? `<div class="sn">${sns.map((s: string) => escapeHtml(String(s))).join("&nbsp;&middot;&nbsp;")}</div>` : "";
+      return `<tr>
+      <td>${escapeHtml(i.productName || i.productId)}${snHtml}</td>
+      <td style="text-align:right">${i.quantityOrdered}</td>
+      <td style="text-align:right">${i.quantityReceived}</td>
+      <td style="text-align:right">${currency} ${num(i.unitCost)}</td>
+      <td style="text-align:right">${currency} ${num((i.quantityOrdered || 0) * (i.unitCost || 0))}</td>
+    </tr>`;
+    }).join("");
+    const storeName = settings.storeName || "Gear&Glitch";
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-  body{font-family:Arial,sans-serif;color:#1a1a2e;margin:0;padding:20px}
-  h1{font-size:22px;margin:0 0 4px;color:#16213e}
-  .header{display:flex;justify-content:space-between;border-bottom:2px solid #16213e;padding-bottom:12px;margin-bottom:16px}
-  .info{font-size:13px;color:#555;line-height:1.8}
-  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}
-  th{background:#16213e;color:#fff;padding:8px 10px;text-align:left}
-  td{padding:7px 10px;border-bottom:1px solid #e5e7eb}
+  body{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif;color:#1a1a2e;margin:0;padding:24px 28px}
+  h1{font-size:24px;margin:0 0 4px;color:#16213e;letter-spacing:0.4px}
+  .meta{font-size:12px;color:#64748b;margin:0}
+  .header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #16213e;padding-bottom:14px;margin-bottom:20px}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:20px 0 4px;font-size:12.5px;line-height:1.7}
+  .info-grid .label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;font-weight:600;margin-bottom:6px}
+  .info-grid strong{color:#16213e}
+  .notes{grid-column:1 / -1}
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-size:12px}
+  th{background:#16213e;color:#fff;padding:9px 10px;text-align:left;font-weight:600}
+  td{padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top}
   tr:nth-child(even){background:#f8fafc}
-  .totals{margin-top:16px;text-align:right;font-size:13px}
-  .totals div{margin-bottom:4px}.totals strong{font-size:15px}
+  .sn{font-size:10.5px;color:#64748b;font-family:Consolas,Monaco,monospace;margin-top:3px}
+  .totals{margin-top:18px;text-align:right;font-size:13px;color:#475569}
+  .totals div{margin-bottom:5px}
+  .totals strong{font-size:15px;color:#16213e}
   .badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;text-transform:uppercase}
   .badge-pending{background:#fef3c7;color:#92400e}.badge-ordered{background:#dbeafe;color:#1e40af}
   .badge-received{background:#d1fae5;color:#065f46}.badge-cancelled{background:#fee2e2;color:#991b1b}
-  .footer{margin-top:30px;border-top:1px solid #e5e7eb;padding-top:10px;font-size:11px;color:#999;text-align:center}
+  .footer{margin-top:32px;border-top:1px solid #e5e7eb;padding-top:12px;font-size:11px;color:#94a3b8;text-align:center}
 </style></head><body>
+  ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", storeName, baseUrl)}
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", settings.storeName || "Gear&Glitch", baseUrl)}
-      <h1>Purchase Order #${po.id}</h1></div>
-    <div style="text-align:right"><span class="badge badge-${po.status}">${po.status}</span></div>
+    <div><h1>${docTitle}</h1><p class="meta">PO Reference: #${po.id} &middot; ${po.status}</p></div>
+    <div style="text-align:right">
+      <div style="font-size:13px;font-weight:600;color:#16213e;margin-bottom:6px">${escapeHtml(storeName)}</div>
+      <span class="badge badge-${po.status}">${po.status}</span>
+    </div>
   </div>
-  <div class="info">
-    <div><strong>Supplier:</strong> ${escapeHtml(po.supplierName)}</div>
-    ${po.supplierContact ? `<div><strong>Contact:</strong> ${escapeHtml(po.supplierContact)}</div>` : ""}
-    <div><strong>Order Date:</strong> ${po.orderDate || "—"}</div>
-    <div><strong>Created:</strong> ${po.createdAt || "—"}</div>
-    ${po.notes ? `<div><strong>Notes:</strong> ${escapeHtml(po.notes)}</div>` : ""}
+  <div class="info-grid">
+    <div>
+      <span class="label">Supplier</span>
+      <div><strong>${escapeHtml(po.supplierName)}</strong></div>
+      ${po.supplierContact ? `<div>${escapeHtml(po.supplierContact)}</div>` : ""}
+    </div>
+    <div>
+      <span class="label">${po.status === "received" ? "Receipt" : "Order"}</span>
+      <div>Order Date: ${fmtDate(po.orderDate)}</div>
+      <div>Created: ${fmtDate(po.createdAt)}</div>
+      ${po.status === "received" ? `<div>Received On: ${fmtDate(po.updatedAt)}</div>` : ""}
+    </div>
+    ${po.notes ? `<div class="notes"><span class="label">Notes</span><div>${escapeHtml(po.notes)}</div></div>` : ""}
   </div>
   <table>
     <thead><tr><th>Product</th><th style="text-align:right">Ordered</th><th style="text-align:right">Received</th><th style="text-align:right">Unit Cost</th><th style="text-align:right">Line Total</th></tr></thead>
-    <tbody>${items.map((i: any) => `<tr>
-      <td>${escapeHtml(i.productName || i.productId)}</td>
-      <td style="text-align:right">${i.quantityOrdered}</td>
-      <td style="text-align:right">${i.quantityReceived}</td>
-      <td style="text-align:right">KES ${(i.unitCost || 0).toLocaleString("en-KE", { minimumFractionDigits: 2 })}</td>
-      <td style="text-align:right">KES ${((i.quantityOrdered || 0) * (i.unitCost || 0)).toLocaleString("en-KE", { minimumFractionDigits: 2 })}</td>
-    </tr>`).join("")}</tbody>
+    <tbody>${rowsHtml}</tbody>
   </table>
   <div class="totals">
-    <div>Total Ordered: <strong>KES ${totalCost.toLocaleString("en-KE", { minimumFractionDigits: 2 })}</strong></div>
-    <div>Total Received: <strong>KES ${totalReceived.toLocaleString("en-KE", { minimumFractionDigits: 2 })}</strong></div>
-    <div>Pending Value: <strong>KES ${(totalCost - totalReceived).toLocaleString("en-KE", { minimumFractionDigits: 2 })}</strong></div>
+    <div>Total Ordered: <strong>${currency} ${num(totalCost)}</strong></div>
+    ${po.status === "received"
+      ? `<div>Total Received: <strong>${currency} ${num(totalReceived)}</strong></div>`
+      : `<div>Total Received: ${currency} ${num(totalReceived)}</div>
+    <div>Pending Value: <strong>${currency} ${num(pendingValue)}</strong></div>`}
   </div>
-  <div class="footer">Generated ${new Date().toLocaleString("en-KE")} &mdash; ${escapeHtml(settings.storeName || "Gear&Glitch")}</div>
+  <div class="footer">Generated ${new Date().toLocaleString("en-KE")} &mdash; ${escapeHtml(storeName)}</div>
 </body></html>`;
     const pdf = await htmlToPdf(html, { format: "A4" });
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="PO-${po.id}-${escapeHtml(po.supplierName)}.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${po.status === "received" ? "GRV" : "PO"}-${po.id}-${escapeHtml(po.supplierName)}.pdf"`);
     res.send(pdf);
   } catch (err: any) {
     console.error("[purchase pdf]", err?.message || err);
@@ -5038,8 +5072,9 @@ app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("rep
   @media print { body { margin: 0; background: none; } .quote { border: none; box-shadow: none; padding: 0; } .btn-group { display: none; } tr { page-break-inside: avoid; } }
 </style></head><body>
 <div class="quote">
+  ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
   <div class="header">
-    <div>${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}<h1>PRICE QUOTATION</h1><p style="font-size:0.9rem;color:#6b7280">Quote #${escapeHtml(quote.quoteNumber)} <span class="status-badge">${quote.status.replace(/_/g," ").toUpperCase()}</span></p></div>
+    <div><h1>PRICE QUOTATION</h1><p style="font-size:0.9rem;color:#6b7280">Quote #${escapeHtml(quote.quoteNumber)} <span class="status-badge">${quote.status.replace(/_/g," ").toUpperCase()}</span></p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store)}</strong><br><span style="font-size:0.85rem;color:#6b7280">${escapeHtml(storeEmail)}</span></div>
   </div>
   <div class="info-grid">
