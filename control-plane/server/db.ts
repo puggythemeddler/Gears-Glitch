@@ -180,6 +180,18 @@ export async function initControlPlaneDb() {
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS uptime_pct DOUBLE PRECISION DEFAULT 100`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_checks INTEGER DEFAULT 0`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS failed_checks INTEGER DEFAULT 0`); } catch {}
+  // Recompute uptime counters from health history under the current semantics
+  // (only healthy/down checks count; sleeping cold-starts are excluded).
+  try {
+    await query(
+      `UPDATE clients SET
+         total_checks = (SELECT COUNT(*) FROM health_log WHERE health_log.client_id = clients.id AND status IN ('healthy','down')),
+         failed_checks = (SELECT COUNT(*) FROM health_log WHERE health_log.client_id = clients.id AND status = 'down')`
+    );
+    await query(
+      `UPDATE clients SET uptime_pct = CASE WHEN total_checks > 0 THEN ((total_checks - failed_checks) * 100.0 / total_checks) ELSE 100 END`
+    );
+  } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS subscription_expires TIMESTAMP`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS feature_flags TEXT DEFAULT '{}'`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`); } catch {}

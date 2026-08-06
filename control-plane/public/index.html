@@ -254,6 +254,7 @@
           <summary class="btn btn-ghost btn-sm" aria-expanded="false">More &#9662;</summary>
           <div class="menu">
             <button class="btn btn-ghost btn-sm" onclick="healthCheckAll()" data-admin>Health Check</button>
+            <button class="btn btn-ghost btn-sm" onclick="disableAutoDeployAll()" data-admin>Disable Auto-Deploy</button>
             <button class="btn btn-ghost btn-sm" onclick="showExistingModal()" data-admin>+ Add Existing</button>
           </div>
         </details>
@@ -1439,6 +1440,23 @@
     async function healthCheckAll() {
       toast("Checking health...");
       try { const data = await api("/api/health-check", { method: "POST" }); const r = data.results || []; toast(`Health: ${r.filter(x=>x.status==="healthy").length} healthy, ${r.filter(x=>x.status==="sleeping").length} sleeping, ${r.filter(x=>x.status==="down").length} down`); loadClients(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
+    }
+
+    async function disableAutoDeployAll() {
+      confirmDialog({
+        title: "Disable auto-deploy on all clients?",
+        message: "Stops Render from deploying every client on every push. After this, pushes only deploy the test site, and production clients deploy when you run Deploy All. The control plane service keeps auto-deploying so this dashboard is always current.",
+        confirmLabel: "Disable Auto-Deploy",
+        onConfirm: async () => {
+          toast("Disabling auto-deploy...");
+          try {
+            const data = await api("/api/deploy/disable-auto-deploy", { method: "POST" });
+            const r = data.results || [];
+            toast(`Auto-deploy disabled on ${r.filter(x=>x.success).length}/${r.length} services`, r.some(x=>!x.success) ? "error" : "");
+            loadClients();
+          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
+        },
+      });
     }
 
     async function syncCloudinary() {

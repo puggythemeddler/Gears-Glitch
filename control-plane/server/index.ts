@@ -15,6 +15,7 @@ import {
   provisionClient,
   deployAllClients,
   deployRenderService,
+  setAutoDeploy,
   checkClientHealth,
   deleteNeonProject,
   deleteRenderService,
@@ -713,6 +714,31 @@ app.post("/api/deploy-test", requireAuth, async (req, res) => {
   }
 });
 
+// Disable native auto-deploy on all client Render services so a push to the
+// repo no longer deploys every client directly. From here on, only the control
+// plane deploys clients (test site on push, then manual deploy-all).
+app.post("/api/deploy/disable-auto-deploy", requireAuth, async (_req, res) => {
+  try {
+    const clients = await queryAll(
+      "SELECT name, render_service_id FROM clients WHERE render_service_id IS NOT NULL AND render_service_id != ''"
+    );
+    const results: { name: string; success: boolean; error?: string }[] = [];
+    for (const c of clients as { name: string; render_service_id: string }[]) {
+      try {
+        const ok = await setAutoDeploy(c.render_service_id, false);
+        results.push({ name: c.name, success: ok, error: ok ? undefined : "HTTP error" });
+      } catch (e: any) {
+        results.push({ name: c.name, success: false, error: e.message });
+      }
+    }
+    auditLog(_req, "disable_auto_deploy", "system", null, undefined, `Disabled auto-deploy on ${results.filter(r=>r.success).length}/${results.length} services`);
+    res.json({ ok: true, results });
+  } catch (err: any) {
+    console.error("[api] Disable auto-deploy error:", err.message);
+    res.status(500).json({ error: "Failed to disable auto-deploy: " + err.message });
+  }
+});
+
 // Redeploy a single client
 app.post("/api/clients/:id/redeploy", requireAuth, async (req, res) => {
   try {
@@ -909,6 +935,29 @@ app.post("/api/smtp/test", requireAuth, async (req, res) => {
   }
 });
 
+// Record a health result for uptime accounting. Render free-tier instances
+// cold-sleep after ~15 min idle, so a "sleeping" result is a cold start, not
+// downtime — it is logged but excluded from the uptime ratio.
+async function recordHealthCheck(clientId: number, status: string) {
+  if (status === "healthy" || status === "down") {
+    await query(
+      "UPDATE clients SET health_status = $1, last_health_check = NOW(), total_checks = total_checks + 1, failed_checks = failed_checks + CASE WHEN $1 = 'down' THEN 1 ELSE 0 END WHERE id = $2",
+      [status, clientId]
+    );
+  } else {
+    await query(
+      "UPDATE clients SET health_status = $1, last_health_check = NOW() WHERE id = $2",
+      [status, clientId]
+    );
+  }
+  await query("INSERT INTO health_log (client_id, status) VALUES ($1, $2)", [clientId, status]);
+  const stats: any = await queryOne("SELECT total_checks, failed_checks FROM clients WHERE id = $1", [clientId]);
+  if (stats && stats.total_checks > 0) {
+    const uptimePct = ((stats.total_checks - stats.failed_checks) / stats.total_checks) * 100;
+    await query("UPDATE clients SET uptime_pct = $1 WHERE id = $2", [uptimePct, clientId]);
+  }
+}
+
 // Health check all clients
 app.post("/api/health-check", requireAuth, async (_req, res) => {
   try {
@@ -929,24 +978,8 @@ app.post("/api/health-check", requireAuth, async (_req, res) => {
         sendSlackAlert(`:large_green_circle: *${c.name}* is back ONLINE`);
       }
 
-      // Track uptime
-      await query(
-        "UPDATE clients SET health_status = $1, last_health_check = NOW(), total_checks = total_checks + 1, failed_checks = failed_checks + CASE WHEN $1 != 'healthy' THEN 1 ELSE 0 END WHERE id = $2",
-        [status, c.id]
-      );
-      await query(
-        "INSERT INTO health_log (client_id, status) VALUES ($1, $2)",
-        [c.id, status]
-      );
-      // Recalculate uptime
-      const stats: any = await queryOne(
-        "SELECT total_checks, failed_checks FROM clients WHERE id = $1",
-        [c.id]
-      );
-      if (stats && stats.total_checks > 0) {
-        const uptimePct = ((stats.total_checks - stats.failed_checks) / stats.total_checks) * 100;
-        await query("UPDATE clients SET uptime_pct = $1 WHERE id = $2", [uptimePct, c.id]);
-      }
+      // Track uptime (sleeping cold-starts do not count as failures)
+      await recordHealthCheck(c.id, status);
 
       // Fetch usage stats from client backend
       const usage = await fetchClientUsage(c.render_service_url, c.cp_secret);
@@ -1980,16 +2013,7 @@ setInterval(async () => {
     const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active'");
     for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
       const status = await checkClientHealth(c.render_service_url, c.cp_secret);
-      await query(
-        "UPDATE clients SET health_status = $1, last_health_check = NOW(), total_checks = total_checks + 1, failed_checks = failed_checks + CASE WHEN $1 != 'healthy' THEN 1 ELSE 0 END WHERE id = $2",
-        [status, c.id]
-      );
-      await query("INSERT INTO health_log (client_id, status) VALUES ($1, $2)", [c.id, status]);
-      const stats: any = await queryOne("SELECT total_checks, failed_checks FROM clients WHERE id = $1", [c.id]);
-      if (stats && stats.total_checks > 0) {
-        const uptimePct = ((stats.total_checks - stats.failed_checks) / stats.total_checks) * 100;
-        await query("UPDATE clients SET uptime_pct = $1 WHERE id = $2", [uptimePct, c.id]);
-      }
+      await recordHealthCheck(c.id, status);
       // Fetch usage
       const usage = await fetchClientUsage(c.render_service_url, c.cp_secret);
       if (usage) {
@@ -2116,16 +2140,7 @@ async function runStartupHealthCheck() {
     for (const c of clients as { id: number; name: string; render_service_url: string }[]) {
       try {
         const status = await checkClientHealth(c.render_service_url);
-        await query(
-          "UPDATE clients SET health_status = $1, last_health_check = NOW(), total_checks = total_checks + 1, failed_checks = failed_checks + CASE WHEN $1 != 'healthy' THEN 1 ELSE 0 END WHERE id = $2",
-          [status, c.id]
-        );
-        await query("INSERT INTO health_log (client_id, status) VALUES ($1, $2)", [c.id, status]);
-        const stats: any = await queryOne("SELECT total_checks, failed_checks FROM clients WHERE id = $1", [c.id]);
-        if (stats && stats.total_checks > 0) {
-          const uptimePct = ((stats.total_checks - stats.failed_checks) / stats.total_checks) * 100;
-          await query("UPDATE clients SET uptime_pct = $1 WHERE id = $2", [uptimePct, c.id]);
-        }
+        await recordHealthCheck(c.id, status);
         const usage = await fetchClientUsage(c.render_service_url);
         if (usage) {
           await query("UPDATE clients SET usage_orders = $1, usage_customers = $2, usage_revenue = $3 WHERE id = $4", [usage.orders || 0, usage.customers || 0, usage.revenue || 0, c.id]);
