@@ -76,7 +76,7 @@ const INDUSTRIES = [
 
 const FEATURES = [
   { icon: "📦", name: "Inventory Management", desc: "Real-time stock tracking per branch, low-stock alerts, branch-filtered stock views, stock-on-hand counts, inter-branch stock transfers, serial number tracking, and purchase-order receipts that update stock on hand." },
-  { icon: "💳", name: "Point of Sale", desc: "Fast, intuitive POS with M-Pesa payment support, receipt generation, customer display, and real-time stock deduction from both product and branch inventory." },
+  { icon: "💳", name: "Point of Sale", desc: "Fast, intuitive POS with a paged product grid (12 per page), barcode and serial scanning, an explicit confirm-before-charge step, M-Pesa payment support with a locked awaiting-payment state (verify / retry prompt / switch to cash), 80mm thermal, A4 and PDF receipt options, customer display, and real-time stock deduction from both product and branch inventory." },
   { icon: "🔧", name: "Repair Management", desc: "End-to-end repair lifecycle from drop-off to delivery with technician assignment, cost tracking, and quote generation." },
   { icon: "🛡", name: "Warranty Tracking", desc: "Serial number tracking with warranty registration on products, barcode scanning at the point of sale, automatic warranty-expiry calculation, warranty status on invoices, and a serial lookup panel." },
   { icon: "👥", name: "Customer Management", desc: "Customer profiles with purchase history, repair records, order history, and communication log." },
@@ -91,7 +91,7 @@ const FEATURES = [
   { icon: "🔔", name: "Email Notifications", desc: "Automated emails for order status updates, quote delivery, credit notes, password resets, and customer messaging. Single unified email engine with configurable SMTP." },
   { icon: "📱", name: "WhatsApp Integration", desc: "Bidirectional WhatsApp messaging via Meta Cloud API. Send/receive messages, 24h window tracking, HMAC webhook verification, Kenyan phone normalization, and full conversation logs." },
   { icon: "💱", name: "Multi-Currency Support", desc: "Display prices in multiple currencies with live exchange rate conversion for international customers." },
-  { icon: "💰", name: "M-Pesa Integration", desc: "Accept M-Pesa payments directly through the POS and online checkout with automatic reconciliation." },
+  { icon: "💰", name: "M-Pesa Integration", desc: "Accept M-Pesa payments directly through the POS and online checkout with automatic reconciliation. Checkout returns the real STK push state — a sale only completes once payment is confirmed, with retry and switch-to-cash options, never a phantom \"sale completed\"." },
   { icon: "📝", name: "Credit Notes", desc: "Issue KRA-compliant credit notes with eTIMS integration for returns and billing adjustments." },
   { icon: "🏷", name: "Coupons & Discounts", desc: "Create percentage or fixed-amount coupons, apply discounts at checkout, and track usage." },
   { icon: "💬", name: "Messaging System", desc: "Built-in messaging between customers, providers, and staff with real-time notifications and WhatsApp delivery." },

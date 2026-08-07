@@ -10,7 +10,7 @@ function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
 }
 
-const PRODUCTS_PER_PAGE = 24;
+const PRODUCTS_PER_PAGE = 12;
 
 type StatusKind = "error" | "success" | "info";
 
