@@ -90,6 +90,8 @@ import {
   updateOrderItemWarranty,
   updateOrderMpesaStatus,
   getOrderByCheckoutRequest,
+  confirmOrderPayment,
+  releaseOrderHeldStock,
   recordProductView,
   getPopularProducts,
   getTotalViews,
@@ -356,7 +358,7 @@ import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
-import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured } from "./mpesa";
+import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus } from "./mpesa";
 import bcrypt from "bcryptjs";
 import { htmlToPdf, closeBrowser } from "./pdf";
 import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml } from "./routes/shared";
@@ -1704,6 +1706,11 @@ app.get("/api/pos/categories", asyncHandler(async (_req: Request, res: Response)
   res.json({ categories: await listPosCategories() });
 }));
 
+app.get("/api/pos/branches", posAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  const branches = await listBranches();
+  res.json({ branches: branches.map((b: any) => ({ id: b.id, name: b.name })) });
+}));
+
 async function pushPosStk(req: Request, orderId: number, amount: number, mpesaPhone: string): Promise<{ status: "pending" | "failed"; checkoutRequestId?: string | null }> {
   const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
   const accountRef = `POS${orderId}`;
@@ -1732,11 +1739,16 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       if (existing) {
         const dup = await getOrder(existing.id);
         if (dup) {
+          const replayChange = dup.tenderedAmount > 0 && dup.tenderedAmount > dup.subtotal ? dup.tenderedAmount - dup.subtotal : 0;
           if (pmt === "mpesa" && mpesaPhone) {
-            const mpesa = await pushPosStk(req, dup.id, dup.subtotal, String(mpesaPhone).trim());
-            res.status(200).json({ order: dup, change: 0, mpesa });
+            if (dup.status === "paid" || dup.status === "delivered") {
+              res.status(200).json({ order: dup, change: replayChange, mpesa: { status: dup.status === "paid" ? "paid" : "completed" } });
+            } else {
+              const mpesa = await pushPosStk(req, dup.id, dup.subtotal, String(mpesaPhone).trim());
+              res.status(200).json({ order: dup, change: replayChange, mpesa });
+            }
           } else {
-            res.status(200).json({ order: dup, change: 0 });
+            res.status(200).json({ order: dup, change: replayChange });
           }
           return;
         }
@@ -1791,14 +1803,15 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       }
       if (branchId) {
         const branchStock = await getStockLevel(item.productId, Number(branchId));
-        const branchQty = branchStock ? Number(branchStock.quantityInStock) : 0;
+        const branchQty = branchStock ? Math.max(0, Number(branchStock.quantityInStock) - (Number(branchStock.quantityReserved) || 0)) : 0;
         if (branchQty < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} at this branch (available: ${branchQty}).` }); return; }
       } else {
         if (product.stockOnHand !== undefined && product.stockOnHand > 0 && product.stockOnHand < qty) {
           res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${product.stockOnHand}).` }); return;
         }
         const stock = await getStockLevel(item.productId);
-        if (stock && stock.quantityInStock < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${stock.quantityInStock}).` }); return; }
+        const available = stock ? Math.max(0, Number(stock.quantityInStock) - (Number(stock.quantityReserved) || 0)) : 0;
+        if (stock && available < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${available}).` }); return; }
       }
       const unitPrice = product.salePrice && Number(product.salePrice) > 0 ? Number(product.salePrice) : Number(product.price);
       const lineTotal = unitPrice * qty;
@@ -1806,19 +1819,21 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       resolvedItems.push({ ...product, quantity: qty, lineTotal, serials, unitPrice });
     }
     const notes = `POS sale | ${pmt.toUpperCase()} | by ${staffName}`;
+    const tendered = Number(tenderedAmount) > 0 ? Number(tenderedAmount) : 0;
+    const holding = pmt === "mpesa";
     let orderId: number;
     try {
       if (idempotencyKey) {
         const r = await queryOne(
-          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key, source, branch_id) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6, 'pos', $7) RETURNING id",
-          [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey, branchId ? Number(branchId) : null]
+          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6, 'pos', $7, $8) RETURNING id",
+          [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey, branchId ? Number(branchId) : null, tendered]
         ) as any;
         if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
         orderId = r.id;
       } else {
         const r = await queryOne(
-          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6) RETURNING id",
-          [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null]
+          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6, $7) RETURNING id",
+          [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null, tendered]
         ) as any;
         if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
         orderId = r.id;
@@ -1828,8 +1843,8 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
         // Duplicate primary key — fix sequence and retry once
         await query("SELECT setval('orders_id_seq', COALESCE((SELECT MAX(id) FROM orders), 1))");
         const r2 = await queryOne(
-          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6) RETURNING id",
-          [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null]
+          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6, $7) RETURNING id",
+          [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null, tendered]
         ) as any;
         if (!r2) { res.status(500).json({ error: "Failed to create order after retry." }); return; }
         orderId = r2.id;
@@ -1846,40 +1861,62 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
         if (!linked.ok) { res.status(400).json({ error: linked.error || "Failed to link serial numbers." }); return; }
       }
     }
-    // Deduct stock_on_hand AND stock_levels for each product
+    // Hold stock for M-Pesa (deduct on payment confirm); deduct immediately for cash
     for (const item of resolvedItems) {
       try {
         await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2`, [item.quantity, item.id]);
       } catch { console.warn("[server] Failed to update stock on hand"); }
       try {
         const bid = branchId ? Number(branchId) : null;
-        const existingLevel = bid
-          ? await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [item.id, bid])
-          : await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [item.id]);
-        const currentQty = existingLevel ? Number(existingLevel.quantity_in_stock) : 0;
-        const newQty = Math.max(0, currentQty - item.quantity);
-        if (bid) {
+        if (holding) {
+          if (bid) {
+            await query(
+              `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+               VALUES ($1, $2, 0, $3, 0, 5)
+               ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_reserved = quantity_reserved + $3, updated_at = NOW()::text`,
+              [item.id, bid, item.quantity]
+            );
+          } else {
+            await query(
+              `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+               VALUES ($1, 0, $2, 0, 5)
+               ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_reserved = quantity_reserved + $2, updated_at = NOW()::text`,
+              [item.id, item.quantity]
+            );
+          }
           await query(
-            `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-             VALUES ($1, $2, $3, 0, 0, 5)
-             ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $3, updated_at = NOW()::text`,
-            [item.id, bid, newQty]
+            "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'reserve', $2, 'order', $3, $4, $5, $6)",
+            [item.id, -item.quantity, String(orderId), `POS reserved #${orderId} (awaiting M-Pesa)`, staff.sub, bid || null]
           );
         } else {
+          const existingLevel = bid
+            ? await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [item.id, bid])
+            : await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [item.id]);
+          const currentQty = existingLevel ? Number(existingLevel.quantity_in_stock) : 0;
+          const newQty = Math.max(0, currentQty - item.quantity);
+          if (bid) {
+            await query(
+              `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+               VALUES ($1, $2, $3, 0, 0, 5)
+               ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $3, updated_at = NOW()::text`,
+              [item.id, bid, newQty]
+            );
+          } else {
+            await query(
+              `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+               VALUES ($1, $2, 0, 0, 5)
+               ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`,
+              [item.id, newQty]
+            );
+          }
           await query(
-            `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-             VALUES ($1, $2, 0, 0, 5)
-             ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`,
-            [item.id, newQty]
+            "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5, $6)",
+            [item.id, -item.quantity, String(orderId), `POS sale #${orderId}`, staff.sub, bid || null]
           );
         }
-        await query(
-          "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5, $6)",
-          [item.id, -item.quantity, String(orderId), `POS sale #${orderId}`, staff.sub, bid || null]
-        );
       } catch (e) { console.error("[POS stock sync]", e); }
     }
-    await updateOrderStatus(orderId, "delivered");
+    await updateOrderStatus(orderId, holding ? "pending_payment" : "delivered");
     // Generate invoice number for the order
     const invNum = await generateInvoiceNumber();
     await query("UPDATE orders SET invoice_number = $1 WHERE id = $2", [invNum, orderId]);
@@ -1905,12 +1942,32 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
   if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid order id." }); return; }
   const row = await queryOne("SELECT status, checkout_request_id, mpesa_receipt FROM orders WHERE id = $1", [id]) as any;
   if (!row) { res.status(404).json({ error: "Order not found." }); return; }
-  res.json({
-    paid: row.status === "paid" && !!row.mpesa_receipt,
-    status: row.status,
-    checkoutRequestId: row.checkout_request_id || null,
-    mpesaReceipt: row.mpesa_receipt || null,
-  });
+  const checkoutRequestId = row.checkout_request_id || null;
+  let paid = row.status === "paid" || row.status === "delivered";
+  let mpesaReceipt = row.mpesa_receipt || null;
+  let status = row.status;
+  if (!paid && checkoutRequestId) {
+    if (String(checkoutRequestId).startsWith("SIM")) {
+      await confirmOrderPayment(id);
+      await query("UPDATE orders SET status = 'paid', mpesa_receipt = COALESCE(mpesa_receipt, $1), updated_at = NOW()::text WHERE id = $2", [`SIM${id}`, id]);
+      paid = true; status = "paid"; mpesaReceipt = mpesaReceipt || `SIM${id}`;
+    } else if (status === "pending_payment" || status === "pending") {
+      try {
+        const q = await queryStatus(checkoutRequestId);
+        const code = Number(q?.ResultCode ?? q?.resultCode);
+        if (code === 0) {
+          await confirmOrderPayment(id);
+          await query("UPDATE orders SET status = 'paid', updated_at = NOW()::text WHERE id = $1", [id]);
+          paid = true; status = "paid";
+        } else if (code > 0) {
+          await releaseOrderHeldStock(id);
+          await updateOrderStatus(id, "cancelled");
+          status = "cancelled";
+        }
+      } catch { /* query failed — keep pending so the till can retry */ }
+    }
+  }
+  res.json({ paid, status, checkoutRequestId, mpesaReceipt });
 }));
 
 app.post("/api/pos/orders/:id/pay-cash", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -1919,9 +1976,25 @@ app.post("/api/pos/orders/:id/pay-cash", posAuthMiddleware, asyncHandler(async (
   const order = await getOrder(id);
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
   const tenderedAmount = Number(req.body?.tenderedAmount) || 0;
-  await query("UPDATE orders SET payment_method = 'cash', updated_at = NOW()::text WHERE id = $1", [order.id]);
+  if (order.status === "pending_payment" || order.status === "pending") {
+    await confirmOrderPayment(id);
+  }
+  await query("UPDATE orders SET payment_method = 'cash', tendered_amount = $1, status = 'delivered', updated_at = NOW()::text WHERE id = $2", [tenderedAmount, order.id]);
   const change = tenderedAmount > order.subtotal ? tenderedAmount - order.subtotal : 0;
-  res.json({ order, change });
+  res.json({ order: { ...order, status: "delivered", paymentMethod: "cash", tenderedAmount }, change });
+}));
+
+app.post("/api/pos/orders/:id/cancel", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid order id." }); return; }
+  const order = await getOrder(id);
+  if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+  if (order.status === "paid" || order.status === "delivered") {
+    res.status(409).json({ error: "This order is already paid and cannot be cancelled." }); return;
+  }
+  await releaseOrderHeldStock(id);
+  await updateOrderStatus(id, "cancelled");
+  res.json({ order: { ...order, status: "cancelled" } });
 }));
 
 app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -1947,6 +2020,10 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
   const taxRate = Number(settings.taxRate || 16);
   const total = order.subtotal + (order.shippingFee || 0);
   const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
+  const payMethod = order.paymentMethod || "cash";
+  const paymentLabel = payMethod === "mpesa" ? "M-Pesa" : payMethod === "multi-currency" ? "Multi-currency" : payMethod.charAt(0).toUpperCase() + payMethod.slice(1);
+  const tenderedAmt = Number(order.tenderedAmount) || 0;
+  const changeAmt = tenderedAmt > total ? tenderedAmt - total : 0;
   const hasEtims = !!(invoice?.etims_invoice_number);
   const thermalItemsHtml = order.items.map((i: any) => {
     const isTx = i.taxable !== false;
@@ -2082,7 +2159,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
   ${internalData ? `<div class="vscu-data"><strong>Internal Data:</strong> ${escapeHtml(internalData)}<br><strong>Signature Data:</strong> ${escapeHtml(signatureData)}</div>` : ""}
   ${order.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(order.notes)}</p>` : ""}
   ${hasEtims ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
-    <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
+    <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment: ${paymentLabel}${tenderedAmt > 0 ? ` | Tendered: ${currency} ${tenderedAmt.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""}${changeAmt > 0 ? ` | Change: ${currency} ${changeAmt.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""} | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
   <div class="btn-group">
@@ -2124,6 +2201,9 @@ ${hasEtims ? `<div>Mode: ${modeLabel}</div>` : ""}
 <hr>
 <div class="total">Total: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+<div>Payment: ${paymentLabel}</div>
+${tenderedAmt > 0 ? `<div>Tendered: ${currency} ${tenderedAmt.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ""}
+${changeAmt > 0 ? `<div>Change: ${currency} ${changeAmt.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ""}
 <hr>
 ${hasEtims ? `<div class="center">${qrUrl ? `<img src="${qrSmall}" alt="eTIMS QR" style="width:80px;height:80px;" /><br>` : ""}Verify at https://itax.kra.go.ke</div>` : ""}
 <div class="btn-group">
@@ -2462,6 +2542,10 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
   const qrData = JSON.stringify({ inv: etimsNumber, dc: controlCode, pin: kraPin, amt: total, dt: order.createdAt, ri: vscuReceiptNo });
   const qrUrl = hasEtims ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}` : "";
   const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
+  const payMethod = order.paymentMethod || "cash";
+  const paymentLabel = payMethod === "mpesa" ? "M-Pesa" : payMethod === "multi-currency" ? "Multi-currency" : payMethod.charAt(0).toUpperCase() + payMethod.slice(1);
+  const tenderedAmt = Number(order.tenderedAmount) || 0;
+  const changeAmt = tenderedAmt > total ? tenderedAmt - total : 0;
   const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
   const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
@@ -2501,7 +2585,7 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
   ${internalData ? `<div class="vscu-data"><strong>Internal Data:</strong> ${escapeHtml(internalData)}<br><strong>Signature Data:</strong> ${escapeHtml(signatureData)}</div>` : ""}
   ${order.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(order.notes)}</p>` : ""}
   ${hasEtims ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
-    <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
+    <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment: ${paymentLabel}${tenderedAmt > 0 ? ` | Tendered: ${currency} ${tenderedAmt.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""}${changeAmt > 0 ? ` | Change: ${currency} ${changeAmt.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""} | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
   <div class="btn-group">
@@ -2594,6 +2678,10 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
   const qrData = JSON.stringify({ inv: etimsNumber, dc: controlCode, pin: kraPin, amt: total, dt: order.createdAt, ri: vscuReceiptNo });
   const qrUrl = hasEtims ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}` : "";
   const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
+  const payMethod = order.paymentMethod || "cash";
+  const paymentLabel = payMethod === "mpesa" ? "M-Pesa" : payMethod === "multi-currency" ? "Multi-currency" : payMethod.charAt(0).toUpperCase() + payMethod.slice(1);
+  const tenderedAmt = Number(order.tenderedAmount) || 0;
+  const changeAmt = tenderedAmt > total ? tenderedAmt - total : 0;
   const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
   const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
@@ -2633,7 +2721,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
   ${internalData ? `<div class="vscu-data"><strong>Internal Data:</strong> ${escapeHtml(internalData)}<br><strong>Signature Data:</strong> ${escapeHtml(signatureData)}</div>` : ""}
   ${order.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(order.notes)}</p>` : ""}
   ${hasEtims ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;">
-    <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment via M-Pesa | ${escapeHtml(storeEmail)}</div>
+    <div style="font-size:0.85rem;color:#6b7280;">${escapeHtml(store)} — Payment: ${paymentLabel}${tenderedAmt > 0 ? ` | Tendered: ${currency} ${tenderedAmt.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""}${changeAmt > 0 ? ` | Change: ${currency} ${changeAmt.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""} | ${escapeHtml(storeEmail)}</div>
     ${qrUrl ? `<img src="${qrUrl}" alt="eTIMS QR Code" style="width:100px;height:100px;" />` : ""}
   </div>
   <div class="btn-group">

@@ -6,10 +6,6 @@ import { useApp } from "@/lib/app-context";
 import { escapeHtml } from "@/lib/sanitize";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 
-function formatPrice(amount: number) {
-  return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
-}
-
 const PRODUCTS_PER_PAGE = 12;
 
 type StatusKind = "error" | "success" | "info";
@@ -45,7 +41,7 @@ interface PaymentMethod {
 }
 
 export default function POSPage() {
-  const { isDark, toggleDark } = useApp();
+  const { formatPrice } = useApp();
   const [products, setProducts] = useState<Product[]>([]);
   const [filtered, setFiltered] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
@@ -60,7 +56,9 @@ export default function POSPage() {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [tenderedAmount, setTenderedAmount] = useState("");
   const [mpesaPhonePos, setMpesaPhonePos] = useState("");
-  const [mpesaPending, setMpesaPending] = useState<{ orderId: number; phone: string } | null>(null);
+  const [mpesaPending, setMpesaPending] = useState<{ orderId: number; phone: string; failed?: boolean } | null>(null);
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -78,7 +76,9 @@ export default function POSPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
   const serialInputRef = useRef<HTMLInputElement>(null);
+  const serialDialogRef = useRef<HTMLDivElement>(null);
   const idempotencyKeyRef = useRef<string>("");
+  const idempotencyCartRef = useRef<string>("");
 
   const pmtConfig = paymentMethods.find((m) => m.id === paymentMethod);
   const needsTender = pmtConfig?.needsTender ?? false;
@@ -102,6 +102,17 @@ export default function POSPage() {
     }).catch(() => {});
     api<{ categories: { id: string; label: string }[] }>("/api/pos/categories").then((d) => {
       setCategories(d.categories || []);
+    }).catch(() => {});
+    api<{ branches: { id: number; name: string }[] }>("/api/pos/branches").then((d) => {
+      const list = d.branches || [];
+      setBranches(list);
+      if (list.length > 1) {
+        const saved = Number(sessionStorage.getItem("posBranch"));
+        const match = list.find((b) => b.id === saved);
+        setSelectedBranchId(match ? match.id : list[0].id);
+      } else {
+        setSelectedBranchId(null);
+      }
     }).catch(() => {});
   }, []);
 
@@ -201,6 +212,11 @@ export default function POSPage() {
   async function submitSerial() {
     const code = String(serialInput || "").trim();
     if (!code || !serialModal) return;
+    const alreadyAdded = cart.find((i) => i.productId === serialModal.id)?.serials?.length || 0;
+    if (typeof serialModal.stockOnHand === "number" && alreadyAdded >= serialModal.stockOnHand) {
+      setSerialMsg({ text: "All available units for this product are already in the cart.", kind: "error" });
+      return;
+    }
     try {
       const serial = await api<any>(`/api/serials/lookup/${encodeURIComponent(code)}`);
       if (!serial || !serial.product_id) { setSerialMsg({ text: "Serial not found.", kind: "error" }); return; }
@@ -245,9 +261,9 @@ export default function POSPage() {
         return `Scan ${item.quantity} serial number(s) for ${item.name}.`;
       }
     }
-    if (needsTender && !tenderedAmount) return "Enter amount tendered.";
-    if (needsTender && Number(tenderedAmount) < subtotal) return "Insufficient amount.";
-    if (paymentMethod === "mpesa" && !mpesaPhonePos.trim()) return "Enter M-Pesa phone number.";
+    if (needsTender && !tenderedAmount) return "Enter the amount tendered.";
+    if (needsTender && Number(tenderedAmount) < subtotal) return "The amount tendered is less than the total.";
+    if (paymentMethod === "mpesa" && !mpesaPhonePos.trim()) return "Enter the customer's M-Pesa phone number.";
     return null;
   }
 
@@ -274,6 +290,7 @@ export default function POSPage() {
         paymentMethod,
         idempotencyKey,
       };
+      if (selectedBranchId) body.branchId = selectedBranchId;
       if (selectedCustomer) body.customerId = selectedCustomer.id;
       if (needsTender) body.tenderedAmount = Number(tenderedAmount);
       if (paymentMethod === "mpesa") body.mpesaPhone = mpesaPhonePos.trim();
@@ -281,14 +298,13 @@ export default function POSPage() {
         method: "POST",
         body: JSON.stringify(body),
       });
-      if (paymentMethod === "mpesa" && res.mpesa?.status === "pending") {
-        setMpesaPending({ orderId: res.order.id, phone: mpesaPhonePos.trim() });
-        setStatus({ text: `M-Pesa prompt sent to ${mpesaPhonePos.trim()} — ask the customer to enter their PIN.`, kind: "info" });
-        return;
-      }
       if (paymentMethod === "mpesa") {
-        setMpesaPending({ orderId: res.order.id, phone: mpesaPhonePos.trim() });
-        setStatus({ text: "M-Pesa prompt failed to send. Retry the push or switch to cash.", kind: "error" });
+        setMpesaPending({ orderId: res.order.id, phone: mpesaPhonePos.trim(), failed: res.mpesa?.status !== "pending" });
+        if (res.mpesa?.status === "pending") {
+          setStatus({ text: `M-Pesa prompt sent to ${mpesaPhonePos.trim()} — ask the customer to enter their PIN.`, kind: "info" });
+        } else {
+          setStatus({ text: "M-Pesa prompt failed to send. Retry the push or switch to cash.", kind: "error" });
+        }
         return;
       }
       completeSale(res.order.id, res.change || 0);
@@ -304,12 +320,17 @@ export default function POSPage() {
     const changePreview = needsTender && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
     const ok = await confirmDialog({
       title: "Confirm sale",
-      message: `Charge ${formatPrice(subtotal)} via ${pmtName}.${changePreview > 0 ? ` Change due: ${formatPrice(changePreview)}.` : ""} This will deduct stock and cannot be undone.`,
+      message: `Charge ${formatPrice(subtotal)} via ${pmtName}.${changePreview > 0 ? ` Change due: ${formatPrice(changePreview)}.` : ""} ${paymentMethod === "mpesa" ? "Stock is held until payment is confirmed." : "This will deduct stock and cannot be undone."}`,
       confirmLabel: "Charge",
     });
     if (!ok) return;
+    const sig = cart.map((i) => `${i.productId}:${i.quantity}`).join("|");
+    if (idempotencyKeyRef.current && idempotencyCartRef.current !== sig) {
+      idempotencyKeyRef.current = "";
+    }
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      idempotencyCartRef.current = sig;
     }
     await checkout(idempotencyKeyRef.current);
   }
@@ -357,8 +378,35 @@ export default function POSPage() {
   }
 
   useEffect(() => {
-    if (cart.length === 0) idempotencyKeyRef.current = "";
+    if (cart.length === 0) {
+      idempotencyKeyRef.current = "";
+      idempotencyCartRef.current = "";
+    }
   }, [cart]);
+
+  useEffect(() => {
+    const pending = mpesaPending;
+    if (!pending || pending.failed) return;
+    const orderId = pending.orderId;
+    let cancelled = false;
+    let timer: number;
+    async function poll() {
+      try {
+        const st = await api<{ paid: boolean; status: string; mpesaReceipt: string | null }>(`/api/pos/orders/${orderId}/payment-status`);
+        if (cancelled) return;
+        if (st.paid) {
+          completeSale(orderId, 0);
+        } else if (st.status === "cancelled") {
+          setMpesaPending((p) => (p ? { ...p, failed: true } : p));
+          setStatus({ text: "M-Pesa payment was not received. The hold was released and stock restored.", kind: "error" });
+        }
+      } catch { /* transient network error — keep polling */ }
+    }
+    poll();
+    timer = window.setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mpesaPending]);
 
   if (!loggedIn) {
     return (
@@ -400,21 +448,20 @@ export default function POSPage() {
 
       <div className="pos-main-column">
         <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <input ref={searchRef} type="text" className="input" placeholder="Search products or scan barcode / serial..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const q = search.trim(); if (!q || mpesaPending) return; if (filtered.length === 1) { addToCart(filtered[0]); setSearch(""); return; } if (filtered.length > 1) { setStatus({ text: "Matches more than one product — scan barcode or refine search.", kind: "info" }); return; } handleScan(q); setSearch(""); } }} style={{ flex: 1, fontSize: "1.1rem" }} autoFocus disabled={!!mpesaPending} />
-          <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, whiteSpace: "nowrap" }}>{isDark ? "☀️" : "🌙"}</button>
+          <input ref={searchRef} type="text" className="input" placeholder="Search products or scan barcode / serial..." aria-label="Search products or scan barcode / serial" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const q = search.trim(); if (!q || mpesaPending) return; if (filtered.length === 1) { addToCart(filtered[0]); setSearch(""); return; } if (filtered.length > 1) { setStatus({ text: "Matches more than one product — scan barcode or refine search.", kind: "info" }); return; } handleScan(q); setSearch(""); } }} style={{ flex: 1, fontSize: "1.1rem" }} autoFocus disabled={!!mpesaPending} />
         </div>
         <div className="pos-product-grid">
           {visibleProducts.map((p) => {
             const outOfStock = typeof p.stockOnHand === "number" && p.stockOnHand <= 0;
             return (
             <button key={p.id} type="button" className="panel" disabled={outOfStock || !!mpesaPending} style={{ cursor: outOfStock ? "not-allowed" : "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", opacity: outOfStock ? 0.5 : 1 }} onClick={() => addToCart(p)} aria-disabled={outOfStock}>
-              {p.imageUrl ? <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 100, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
+              {p.imageUrl ? <img src={p.imageUrl} alt={p.name} loading="lazy" style={{ width: "100%", height: 116, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 116, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
               <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{escapeHtml(p.name)}</div>
-              <div style={{ fontSize: "0.9rem", color: "var(--primary)" }}>
+              <div style={{ fontSize: "1rem", color: "var(--primary)" }}>
                 {p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--success)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}
               </div>
               {typeof p.stockOnHand === "number" && (
-                <div style={{ fontSize: "0.7rem", color: p.stockOnHand <= 0 ? "var(--danger)" : p.stockOnHand <= 5 ? "var(--warning)" : "var(--text-secondary)", marginTop: 2 }}>
+                <div style={{ fontSize: "0.75rem", color: p.stockOnHand <= 0 ? "var(--danger)" : p.stockOnHand <= 5 ? "var(--warning)" : "var(--text-secondary)", marginTop: 2 }}>
                   {p.stockOnHand <= 0 ? "Out of stock" : `Stock: ${p.stockOnHand}`}
                 </div>
               )}
@@ -433,12 +480,18 @@ export default function POSPage() {
       </div>
 
       <div className="pos-cart-panel">
-        <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: "1.1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>Cart ({cart.length})</span>
-          <button onClick={() => { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); setPinUnlocked(false); setSelectedCategory(""); }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline" }}>Change PIN</button>
+        <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
+            <span style={{ fontWeight: 800, fontSize: "1.15rem", letterSpacing: "0.04em" }}>TILL</span>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{cart.length} {cart.length === 1 ? "item" : "items"}</span>
+          </div>
+          <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); sessionStorage.removeItem("posBranch"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline" }}>Lock till</button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "0.5rem" }}>
-          {cart.length === 0 ? <p className="muted" style={{ textAlign: "center", padding: "2rem" }}>Cart is empty</p> : cart.map((item) => (
+          {cart.length === 0 ? <p className="muted" style={{ textAlign: "center", padding: "2rem" }}>Cart is empty</p> : cart.map((item) => {
+            const cartProduct = products.find((x) => x.id === item.productId);
+            const maxQty = cartProduct && typeof cartProduct.stockOnHand === "number" ? cartProduct.stockOnHand : Infinity;
+            return (
             <div key={item.productId} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0", borderBottom: "1px solid var(--border)" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</div>
@@ -460,28 +513,37 @@ export default function POSPage() {
                   <>
                     <button className="btn btn-sm btn-ghost" onClick={() => removeSerial(item.productId, (item.serials || [])[(item.serials || []).length - 1])} disabled={(item.serials || []).length === 0 || !!mpesaPending}>&minus;</button>
                     <span style={{ width: 28, textAlign: "center", fontWeight: 600 }}>{item.quantity}</span>
-                    <button className="btn btn-sm btn-ghost" onClick={() => { const p = products.find((x) => x.id === item.productId); if (p) addToCart(p); }} disabled={!!mpesaPending}>+</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => { const p = products.find((x) => x.id === item.productId); if (p) addToCart(p); }} disabled={!!mpesaPending || (item.serials || []).length >= maxQty} aria-label={`Add ${item.name} serial`}>+</button>
                   </>
                 ) : (
                   <>
-                    <button className="btn btn-sm btn-ghost" onClick={() => updateQty(item.productId, item.quantity - 1)} disabled={!!mpesaPending}>&minus;</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => updateQty(item.productId, item.quantity - 1)} disabled={!!mpesaPending} aria-label={`Decrease ${item.name} quantity`}>&minus;</button>
                     <span style={{ width: 28, textAlign: "center", fontWeight: 600 }}>{item.quantity}</span>
-                    <button className="btn btn-sm btn-ghost" onClick={() => updateQty(item.productId, item.quantity + 1)} disabled={!!mpesaPending}>+</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => updateQty(item.productId, item.quantity + 1)} disabled={!!mpesaPending || item.quantity >= maxQty} aria-label={`Increase ${item.name} quantity`}>+</button>
                   </>
                 )}
               </div>
               <div style={{ fontWeight: 600, fontSize: "0.9rem", minWidth: 80, textAlign: "right" }}>{formatPrice(item.lineTotal)}</div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {!lastOrderId && !mpesaPending && (
           <div style={{ padding: "0.5rem 0.75rem", borderTop: "1px solid var(--border)", fontSize: "0.85rem" }}>
+            {branches.length > 1 && (
+              <div style={{ marginBottom: "0.4rem" }}>
+                <label htmlFor="pos-branch-select" style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, marginBottom: "0.2rem" }}>Branch</label>
+                <select id="pos-branch-select" className="input" value={selectedBranchId ?? ""} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setSelectedBranchId(v); if (v) sessionStorage.setItem("posBranch", String(v)); }} style={{ width: "100%", fontSize: "0.85rem" }}>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+            )}
             <div ref={customerRef} style={{ position: "relative", marginBottom: "0.5rem" }}>
-              <input type="text" className="input" placeholder="Search customer (optional)..." value={customerQuery} onChange={(e) => { setCustomerQuery(e.target.value); setShowCustomerDropdown(true); setSelectedCustomer(null); }} onFocus={() => setShowCustomerDropdown(true)} style={{ width: "100%", fontSize: "0.85rem" }} />
+              <input type="text" className="input" placeholder="Search customer (optional)..." aria-label="Search customer" value={customerQuery} onChange={(e) => { setCustomerQuery(e.target.value); setShowCustomerDropdown(true); setSelectedCustomer(null); }} onFocus={() => setShowCustomerDropdown(true)} style={{ width: "100%", fontSize: "0.85rem" }} />
               {selectedCustomer && <div style={{ fontSize: "0.8rem", color: "var(--primary)", marginTop: 2 }}>{selectedCustomer.name} — {selectedCustomer.phone || selectedCustomer.email}</div>}
               {showCustomerDropdown && customers.length > 0 && (
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, maxHeight: 160, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}>
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, maxHeight: 160, overflowY: "auto", boxShadow: "var(--shadow-lg)" }}>
                   {customers.map((c) => (
                     <button key={c.id} type="button" style={{ display: "block", width: "100%", textAlign: "left", padding: "0.4rem 0.6rem", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.85rem", borderBottom: "1px solid var(--border)" }} onMouseDown={() => { setSelectedCustomer(c); setCustomerQuery(c.name); setShowCustomerDropdown(false); }}>
                       <strong>{c.name}</strong> {c.phone ? `· ${c.phone}` : ""} <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>{c.email}</span>
@@ -490,39 +552,53 @@ export default function POSPage() {
                 </div>
               )}
             </div>
-            <select className="input" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} style={{ width: "100%", fontSize: "0.85rem", marginBottom: "0.4rem" }}>
+            <select className="input" aria-label="Payment method" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} style={{ width: "100%", fontSize: "0.85rem", marginBottom: "0.4rem" }}>
               {paymentMethods.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
             {needsTender && (
-              <input type="number" className="input" placeholder="Amount tendered" value={tenderedAmount} onChange={(e) => setTenderedAmount(e.target.value)} min="0" step="0.01" style={{ width: "100%", fontSize: "0.85rem" }} />
+              <input type="number" className="input" placeholder="Amount tendered" aria-label="Amount tendered" value={tenderedAmount} onChange={(e) => setTenderedAmount(e.target.value)} min="0" step="0.01" style={{ width: "100%", fontSize: "0.85rem" }} />
             )}
             {paymentMethod === "mpesa" && (
               <div style={{ marginBottom: "0.4rem" }}>
-                <input type="tel" className="input" placeholder="M-Pesa phone (e.g. 0712345678)" value={mpesaPhonePos} onChange={(e) => setMpesaPhonePos(e.target.value)} style={{ width: "100%", fontSize: "0.85rem" }} />
+                <input type="tel" className="input" placeholder="M-Pesa phone (e.g. 0712345678)" aria-label="M-Pesa phone number" value={mpesaPhonePos} onChange={(e) => setMpesaPhonePos(e.target.value)} style={{ width: "100%", fontSize: "0.85rem" }} />
               </div>
             )}
           </div>
         )}
 
         <div style={{ padding: "0.75rem", borderTop: "1px solid var(--border)" }}>
+          {needsTender && Number(tenderedAmount) > 0 && !lastOrderId && !mpesaPending && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", marginBottom: "0.25rem" }}>
+              <span>Paid</span>
+              <span>{formatPrice(Number(tenderedAmount))}</span>
+            </div>
+          )}
           {change > 0 && !lastOrderId && !mpesaPending && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 700, marginBottom: "0.5rem", color: "var(--success)" }}>
               <span>Change</span>
               <span>{formatPrice(change)}</span>
             </div>
           )}
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.2rem", fontWeight: 700, marginBottom: "0.75rem" }}>
-            <span>Total</span>
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.6rem", display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "1.9rem", fontWeight: 800, letterSpacing: "-0.02em", marginBottom: "0.75rem" }}>
+            <span style={{ fontSize: "0.95rem", fontWeight: 600, letterSpacing: "normal" }}>Total</span>
             <span>{formatPrice(subtotal)}</span>
           </div>
+          {selectedBranchId && !lastOrderId && !mpesaPending && (
+            <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>Branch: {branches.find((b) => b.id === selectedBranchId)?.name || "—"}</div>
+          )}
           {status && <p role="status" style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: status.kind === "error" ? "var(--danger)" : status.kind === "info" ? "var(--text-secondary)" : "var(--success)" }}>{status.text}</p>}
           {mpesaPending && !lastOrderId && (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.6rem 0.75rem", marginBottom: "0.5rem", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg)" }}>
-              <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>Awaiting M-Pesa payment — Order #{mpesaPending.orderId}</div>
-              <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Prompt sent to {mpesaPending.phone}. Ask the customer to enter their M-Pesa PIN. The cart stays locked until payment is confirmed.</div>
-              <button className="btn btn-sm btn-primary" onClick={confirmMpesaPayment} disabled={processing} style={{ justifyContent: "center" }}>{processing ? "Checking..." : "Payment confirmed"}</button>
+              <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>{mpesaPending.failed ? `M-Pesa push failed — Order #${mpesaPending.orderId}` : `Awaiting M-Pesa payment — Order #${mpesaPending.orderId}`}</div>
+              <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                {mpesaPending.failed
+                  ? "The STK prompt could not be sent. Stock is held until this order is paid or cancelled. Retry the push or switch to cash."
+                  : `Prompt sent to ${mpesaPending.phone}. Ask the customer to enter their M-Pesa PIN. The cart stays locked until payment is confirmed.`}
+              </div>
+              <button className="btn btn-sm btn-primary" onClick={confirmMpesaPayment} disabled={processing} style={{ justifyContent: "center" }}>{processing ? "Checking..." : "Check payment status"}</button>
               <button className="btn btn-sm btn-ghost" onClick={retryMpesaPush} disabled={processing} style={{ justifyContent: "center" }}>Retry M-Pesa prompt</button>
               <button className="btn btn-sm btn-ghost" onClick={switchToCash} disabled={processing} style={{ justifyContent: "center" }}>Switch to cash</button>
+              <button className="btn btn-sm btn-ghost" onClick={async () => { const ok = await confirmDialog({ title: "Cancel order", message: `Cancel order #${mpesaPending.orderId}? Held stock will be restored and the cart cleared.`, confirmLabel: "Cancel order" }); if (!ok) return; setProcessing(true); try { await api(`/api/pos/orders/${mpesaPending.orderId}/cancel`, { method: "POST", body: JSON.stringify({}) }); setStatus({ text: "Order cancelled. Stock restored.", kind: "info" }); setCart([]); setMpesaPending(null); setLastOrderId(null); } catch (e: any) { setStatus({ text: e.message || "Could not cancel order.", kind: "error" }); } finally { setProcessing(false); } }} disabled={processing} style={{ justifyContent: "center" }}>Cancel order</button>
             </div>
           )}
           {lastOrderId ? (
@@ -532,44 +608,46 @@ export default function POSPage() {
               <button
                 className="btn btn-primary btn-block"
                 style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}
-                disabled={downloadingPdf}
-                onClick={async () => {
-                  setDownloadingPdf(true);
-                  try {
-                    await downloadPdf(`/api/pos/receipt/${lastOrderId}`, `invoice-${lastOrderId}.pdf`);
-                  } catch (err: any) {
-                    setStatus({ text: err.message || "Download failed.", kind: "error" });
-                  } finally {
-                    setDownloadingPdf(false);
-                  }
-                }}
-              >
-                {downloadingPdf ? "Saving..." : "Save PDF"}
-              </button>
-              <button
-                className="btn btn-ghost btn-block"
-                style={{ textAlign: "center", fontSize: "0.95rem", padding: "0.5rem" }}
                 onClick={() => {
                   window.open(`/api/pos/receipt/${lastOrderId}?allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
                 }}
               >
                 Print Receipt (80mm)
               </button>
-              <button
-                className="btn btn-ghost btn-block"
-                style={{ textAlign: "center", fontSize: "0.95rem", padding: "0.5rem" }}
-                onClick={() => {
-                  window.open(`/api/pos/receipt/${lastOrderId}?format=a4&allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
-                }}
-              >
-                Print Invoice (A4)
-              </button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ flex: 1, textAlign: "center", fontSize: "0.9rem", padding: "0.5rem" }}
+                  disabled={downloadingPdf}
+                  onClick={async () => {
+                    setDownloadingPdf(true);
+                    try {
+                      await downloadPdf(`/api/pos/receipt/${lastOrderId}`, `invoice-${lastOrderId}.pdf`);
+                    } catch (err: any) {
+                      setStatus({ text: err.message || "Download failed.", kind: "error" });
+                    } finally {
+                      setDownloadingPdf(false);
+                    }
+                  }}
+                >
+                  {downloadingPdf ? "Saving..." : "Save PDF"}
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ flex: 1, textAlign: "center", fontSize: "0.9rem", padding: "0.5rem" }}
+                  onClick={() => {
+                    window.open(`/api/pos/receipt/${lastOrderId}?format=a4&allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
+                  }}
+                >
+                  Print Invoice (A4)
+                </button>
+              </div>
               <button className="btn btn-ghost btn-block" onClick={() => { setLastOrderId(null); setStatus(null); setLastChange(0); }} style={{ fontSize: "0.9rem", padding: "0.4rem" }}>
                 New Sale
               </button>
             </div>
           ) : (
-            <button className="btn btn-primary btn-block" onClick={requestCheckout} disabled={cart.length === 0 || processing || !!mpesaPending} style={{ fontSize: "1.1rem", padding: "0.75rem" }}>
+            <button className="btn btn-primary btn-block" onClick={requestCheckout} disabled={cart.length === 0 || processing || !!mpesaPending} style={{ fontSize: "1.25rem", padding: "1rem", fontWeight: 700 }}>
               {processing ? "Processing..." : `Charge ${formatPrice(subtotal)}`}
             </button>
           )}
@@ -581,9 +659,21 @@ export default function POSPage() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="serial-dialog-title"
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
+          ref={serialDialogRef}
+          tabIndex={-1}
+          style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => setSerialModal(null)}
-          onKeyDown={(e) => { if (e.key === "Escape") setSerialModal(null); }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { e.preventDefault(); setSerialModal(null); return; }
+            if (e.key === "Tab" && serialDialogRef.current) {
+              const focusables = serialDialogRef.current.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])');
+              if (focusables.length === 0) return;
+              const first = focusables[0];
+              const last = focusables[focusables.length - 1];
+              if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+              else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+            }
+          }}
         >
           <div className="panel" style={{ width: "min(420px, 92vw)", padding: "1.25rem" }} onClick={(e) => e.stopPropagation()}>
             <h3 id="serial-dialog-title" style={{ marginTop: 0, marginBottom: "0.25rem" }}>Scan serial number</h3>
@@ -604,7 +694,7 @@ export default function POSPage() {
             />
             {serialMsg && <p role="status" style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: serialMsg.kind === "error" ? "var(--danger)" : serialMsg.kind === "info" ? "var(--text-secondary)" : "var(--success)" }}>{serialMsg.text}</p>}
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={submitSerial}>Add Serial</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={submitSerial}>Add serial</button>
               <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setSerialModal(null)}>Done</button>
             </div>
           </div>

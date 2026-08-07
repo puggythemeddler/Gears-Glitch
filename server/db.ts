@@ -190,6 +190,7 @@ interface Order {
   giftCardId?: number | null;
   giftCardAmount: number;
   amountRefunded: number;
+  tenderedAmount?: number;
 }
 
 interface OrderItem {
@@ -1275,6 +1276,7 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS checkout_request_id TEXT`); } catch {}
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS mpesa_receipt TEXT`); } catch {}
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS mpesa_phone TEXT`); } catch {}
+  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tendered_amount DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
   try { await query(`CREATE INDEX IF NOT EXISTS idx_orders_checkout_request ON orders(checkout_request_id)`); } catch {}
 
   // Seed default static layouts if none exist
@@ -2754,7 +2756,7 @@ async function getOrder(id: number): Promise<Order | undefined> {
   if (!row) return undefined;
   const items = await queryAll("SELECT * FROM order_items WHERE order_id = $1", [id]) as any[];
   return {
-    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0,
+    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0, tenderedAmount: Number(row.tendered_amount) || 0,
     items: items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, serialNumber: i.serial_number || "", cancelled: i.cancelled })),
   };
 }
@@ -2778,13 +2780,52 @@ async function updateOrderStatus(id: number, status: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
+async function confirmOrderPayment(orderId: number): Promise<void> {
+  const order = await queryOne("SELECT id, branch_id, status FROM orders WHERE id = $1", [orderId]) as any;
+  if (!order || (order.status !== "pending_payment" && order.status !== "pending")) return;
+  const items = await queryAll("SELECT product_id, quantity FROM order_items WHERE order_id = $1", [orderId]) as any[];
+  for (const item of items) {
+    const qty = Number(item.quantity);
+    if (order.branch_id != null) {
+      await query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, order.branch_id]);
+    } else {
+      await query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
+    }
+    await query(
+      "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5, $6)",
+      [item.product_id, -qty, String(orderId), `POS sale confirmed #${orderId}`, null, order.branch_id ?? null]
+    );
+  }
+}
+
+async function releaseOrderHeldStock(orderId: number): Promise<void> {
+  const order = await queryOne("SELECT id, branch_id, status FROM orders WHERE id = $1", [orderId]) as any;
+  if (!order || (order.status !== "pending_payment" && order.status !== "pending")) return;
+  const items = await queryAll("SELECT product_id, quantity FROM order_items WHERE order_id = $1", [orderId]) as any[];
+  for (const item of items) {
+    const qty = Number(item.quantity);
+    await query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, item.product_id]);
+    if (order.branch_id != null) {
+      await query("UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, order.branch_id]);
+    } else {
+      await query("UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
+    }
+  }
+  await query(
+    "UPDATE serial_numbers SET status = 'in_stock', order_id = NULL, order_item_id = NULL, sold_at = NULL WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id = $1) AND status = 'sold'",
+    [orderId]
+  );
+}
+
 async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: number, mpesaReceipt?: string): Promise<void> {
   const order = await queryOne("SELECT id FROM orders WHERE checkout_request_id = $1", [checkoutRequestId]) as any;
   if (!order) return;
   if (resultCode === 0 && mpesaReceipt) {
+    await confirmOrderPayment(order.id);
     await query("UPDATE orders SET status = 'paid', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
   } else {
-    await query("UPDATE orders SET mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt || null, order.id]);
+    await releaseOrderHeldStock(order.id);
+    await query("UPDATE orders SET status = 'cancelled', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt || null, order.id]);
   }
 }
 
@@ -4191,7 +4232,7 @@ export {
   createCampaign, listCampaigns, getCampaign, getCampaignBySlug, updateCampaign, deleteCampaign,
   listAbandonedCarts, recordCartRecoveryReminder, listCartRecoveryReminders,
   createRefund, listRefunds, getRefundTotal, cancelOrderItemQuantity,
-  createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, updateOrderMpesaStatus, getOrderByCheckoutRequest, cancelOrderItem,
+  createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, updateOrderMpesaStatus, getOrderByCheckoutRequest, cancelOrderItem, confirmOrderPayment, releaseOrderHeldStock,
   recordProductView, getPopularProducts, getTotalViews,
   createInvoice, getInvoice, listInvoices, markInvoicePaid, generateProviderInvoice, getInvoiceRevenue, searchInvoices, markOverdueInvoices, getOverdueInvoices, getInvoiceStats, exportInvoicesCsv,
   getEtimsMode, generateEtimsInvoiceNumber, createEtimsSalesTransaction,
