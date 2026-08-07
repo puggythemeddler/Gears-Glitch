@@ -10,6 +10,8 @@ function formatPrice(amount: number) {
   return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
 }
 
+const PRODUCTS_PER_PAGE = 24;
+
 type StatusKind = "error" | "success" | "info";
 
 interface StatusMessage {
@@ -69,6 +71,7 @@ export default function POSPage() {
   });
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("");
+  const [page, setPage] = useState(1);
   const [serialModal, setSerialModal] = useState<Product | null>(null);
   const [serialInput, setSerialInput] = useState("");
   const [serialMsg, setSerialMsg] = useState<StatusMessage | null>(null);
@@ -109,6 +112,7 @@ export default function POSPage() {
     if (cat) list = list.filter((p) => p.category === cat);
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q));
     setFiltered(list);
+    setPage(1);
   }, [search, products, selectedCategory]);
 
   useEffect(() => {
@@ -230,6 +234,10 @@ export default function POSPage() {
 
   const subtotal = cart.reduce((s, i) => s + i.lineTotal, 0);
   const change = needsTender && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PRODUCTS_PER_PAGE));
+  const clampedPage = Math.min(page, totalPages);
+  const visibleProducts = filtered.slice((clampedPage - 1) * PRODUCTS_PER_PAGE, clampedPage * PRODUCTS_PER_PAGE);
 
   function validateCheckout(): string | null {
     for (const item of cart) {
@@ -396,7 +404,7 @@ export default function POSPage() {
           <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, whiteSpace: "nowrap" }}>{isDark ? "☀️" : "🌙"}</button>
         </div>
         <div className="pos-product-grid">
-          {filtered.map((p) => {
+          {visibleProducts.map((p) => {
             const outOfStock = typeof p.stockOnHand === "number" && p.stockOnHand <= 0;
             return (
             <button key={p.id} type="button" className="panel" disabled={outOfStock || !!mpesaPending} style={{ cursor: outOfStock ? "not-allowed" : "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", opacity: outOfStock ? 0.5 : 1 }} onClick={() => addToCart(p)} aria-disabled={outOfStock}>
@@ -415,6 +423,13 @@ export default function POSPage() {
           })}
           {filtered.length === 0 && <p className="muted" style={{ gridColumn: "1 / -1", textAlign: "center", padding: "2rem" }}>No products found.</p>}
         </div>
+        {totalPages > 1 && (
+          <div className="pos-pagination">
+            <button type="button" className="btn btn-sm btn-ghost" disabled={clampedPage <= 1} onClick={() => setPage(clampedPage - 1)}>Prev</button>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Page {clampedPage} of {totalPages} · {filtered.length} items</span>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={clampedPage >= totalPages} onClick={() => setPage(clampedPage + 1)}>Next</button>
+          </div>
+        )}
       </div>
 
       <div className="pos-cart-panel">

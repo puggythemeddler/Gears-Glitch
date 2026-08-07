@@ -2205,6 +2205,17 @@ a.order-item:hover {
   min-height: 0;
 }
 
+.pos-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
 .pos-cart-panel {
   width: 380px;
   display: flex;
