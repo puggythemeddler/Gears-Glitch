@@ -62,6 +62,10 @@ function verifyToken(token: string): JwtPayload {
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization || "";
   if (header.startsWith("Bearer ")) return header.slice(7);
+  // Opt-in query token for opening protected pages/receipts in a new tab.
+  if (req.query?.allowQueryToken === "1" && typeof req.query?.token === "string" && req.query.token) {
+    return req.query.token;
+  }
   return null;
 }
 

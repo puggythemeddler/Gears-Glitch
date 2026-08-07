@@ -2173,7 +2173,7 @@ a.order-item:hover {
 /* ----- POS Layout ----- */
 .pos-shell {
   display: flex;
-  height: calc(100vh - var(--nav-height, 60px));
+  height: 100dvh;
   overflow: hidden;
   min-height: 0;
 }
@@ -2951,7 +2951,7 @@ a.about-contact-card:hover {
   .pos-shell {
     flex-direction: column;
     height: auto;
-    min-height: calc(100vh - var(--nav-height, 60px));
+    min-height: 100dvh;
     overflow: auto;
   }
 
@@ -3103,7 +3103,7 @@ a.about-contact-card:hover {
 
   .pos-category-bar { padding-top: 0.25rem; padding-bottom: 0.25rem; }
 
-  .pos-shell { min-height: calc(100vh - 52px); }
+  .pos-shell { min-height: 100dvh; }
 
   .product-gallery__main { height: 250px; }
 

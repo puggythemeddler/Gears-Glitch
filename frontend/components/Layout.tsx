@@ -155,7 +155,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     }).catch(() => {});
   }, []);
 
-  const hideHeader = ["admin", "marketing", "stock-take", "suppliers"].includes(activeNav ?? "");
+  const hideHeader = ["admin", "marketing", "stock-take", "suppliers", "pos"].includes(activeNav ?? "");
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
   const isThemedLayout = isPublicStorefront && !configLoading && layout !== "original";
 

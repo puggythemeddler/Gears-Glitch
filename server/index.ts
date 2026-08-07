@@ -1704,17 +1704,45 @@ app.get("/api/pos/categories", asyncHandler(async (_req: Request, res: Response)
   res.json({ categories: await listPosCategories() });
 }));
 
+async function pushPosStk(req: Request, orderId: number, amount: number, mpesaPhone: string): Promise<{ status: "pending" | "failed"; checkoutRequestId?: string | null }> {
+  const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
+  const accountRef = `POS${orderId}`;
+  try {
+    const stkResult = await stkPush(mpesaPhone, amount, accountRef, callbackUrl);
+    const checkoutRequestId = stkResult?.CheckoutRequestID || stkResult?.checkoutRequestId || null;
+    if (checkoutRequestId) {
+      await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2, updated_at = NOW()::text WHERE id = $3", [checkoutRequestId, mpesaPhone, orderId]);
+      return { status: "pending", checkoutRequestId };
+    }
+    return { status: "failed" };
+  } catch (err: any) {
+    console.warn("[M-Pesa] POS STK push failed (non-blocking):", err.message);
+    return { status: "failed" };
+  }
+}
+
 app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey, branchId, mpesaPhone } = req.body || {};
     if (!items || !Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "Items are required." }); return; }
     if (items.length > 100) { res.status(400).json({ error: "Too many items (max 100)." }); return; }
+    const pmt = paymentMethod || "cash";
     if (idempotencyKey) {
       const existing = await queryOne("SELECT id FROM orders WHERE idempotency_key = $1", [idempotencyKey]) as any;
-      if (existing) { const dup = await getOrder(existing.id); if (dup) { res.status(200).json({ order: dup }); return; } }
+      if (existing) {
+        const dup = await getOrder(existing.id);
+        if (dup) {
+          if (pmt === "mpesa" && mpesaPhone) {
+            const mpesa = await pushPosStk(req, dup.id, dup.subtotal, String(mpesaPhone).trim());
+            res.status(200).json({ order: dup, change: 0, mpesa });
+          } else {
+            res.status(200).json({ order: dup, change: 0 });
+          }
+          return;
+        }
+      }
     }
     const paymentMethods = await getPaymentMethods();
-    const pmt = paymentMethod || "cash";
     const pmtConfig = paymentMethods.find((m: any) => m.id === pmt);
     if (!pmtConfig) { res.status(400).json({ error: "Invalid payment method." }); return; }
     // Branch plan feature enforcement
@@ -1772,9 +1800,10 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
         const stock = await getStockLevel(item.productId);
         if (stock && stock.quantityInStock < qty) { res.status(400).json({ error: `Insufficient stock for ${product.name} (available: ${stock.quantityInStock}).` }); return; }
       }
-      const lineTotal = product.price * qty;
+      const unitPrice = product.salePrice && Number(product.salePrice) > 0 ? Number(product.salePrice) : Number(product.price);
+      const lineTotal = unitPrice * qty;
       subtotal += lineTotal;
-      resolvedItems.push({ ...product, quantity: qty, lineTotal, serials });
+      resolvedItems.push({ ...product, quantity: qty, lineTotal, serials, unitPrice });
     }
     const notes = `POS sale | ${pmt.toUpperCase()} | by ${staffName}`;
     let orderId: number;
@@ -1810,7 +1839,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       const hw = item.hasWarranty ? 1 : 0;
       const wd = item.warrantyDuration || 0;
       const tx = (item.taxable !== false) ? 1 : 0;
-      const inserted = await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id", [orderId, item.id, item.name, item.price, item.quantity, item.lineTotal, hw, wd, tx]);
+      const inserted = await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id", [orderId, item.id, item.name, item.unitPrice, item.quantity, item.lineTotal, hw, wd, tx]);
       const orderItemId = inserted.rows[0]?.id;
       if (orderItemId && item.serials && item.serials.length) {
         const linked = await linkSerialsToOrderItem(orderItemId, item.serials);
@@ -1854,30 +1883,45 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     // Generate invoice number for the order
     const invNum = await generateInvoiceNumber();
     await query("UPDATE orders SET invoice_number = $1 WHERE id = $2", [invNum, orderId]);
-    // M-Pesa STK push for POS (fire-and-forget — don't block checkout)
+    // M-Pesa STK push — report the push state so the till can wait for payment
+    let mpesaState: { status: "pending" | "failed" | "disabled"; checkoutRequestId?: string | null } = { status: "disabled" };
     if (pmt === "mpesa" && mpesaPhone) {
-      try {
-        const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
-        const accountRef = `POS${orderId}`;
-        const stkResult = await stkPush(mpesaPhone, subtotal, accountRef, callbackUrl);
-        const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
-        if (checkoutRequestId) {
-          await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, orderId]);
-        }
-      } catch (err: any) {
-        console.warn("[M-Pesa] POS STK push failed (non-blocking):", err.message);
-      }
+      mpesaState = await pushPosStk(req, orderId, subtotal, String(mpesaPhone).trim());
     }
     const updated = await getOrder(orderId);
     if (!updated) { res.status(500).json({ error: "Order created but could not be retrieved." }); return; }
     const change = pmt === "cash" && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
     // Audit log
     await recordAuditLog(staff.sub, staffName, "pos_sale", "order", String(orderId), JSON.stringify({ invoiceNumber: invNum, total: subtotal, paymentMethod: pmt, items: resolvedItems.length }), staff.role || "staff");
-    res.status(201).json({ order: { ...updated, invoiceNumber: invNum }, change });
+    res.status(201).json({ order: { ...updated, invoiceNumber: invNum }, change, mpesa: mpesaState });
   } catch (err: any) {
     console.error("[POS Checkout Error]", err);
     if (!res.headersSent) res.status(500).json({ error: "Checkout failed. Please try again." });
   }
+}));
+
+app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid order id." }); return; }
+  const row = await queryOne("SELECT status, checkout_request_id, mpesa_receipt FROM orders WHERE id = $1", [id]) as any;
+  if (!row) { res.status(404).json({ error: "Order not found." }); return; }
+  res.json({
+    paid: row.status === "paid" && !!row.mpesa_receipt,
+    status: row.status,
+    checkoutRequestId: row.checkout_request_id || null,
+    mpesaReceipt: row.mpesa_receipt || null,
+  });
+}));
+
+app.post("/api/pos/orders/:id/pay-cash", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid order id." }); return; }
+  const order = await getOrder(id);
+  if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+  const tenderedAmount = Number(req.body?.tenderedAmount) || 0;
+  await query("UPDATE orders SET payment_method = 'cash', updated_at = NOW()::text WHERE id = $1", [order.id]);
+  const change = tenderedAmount > order.subtotal ? tenderedAmount - order.subtotal : 0;
+  res.json({ order, change });
 }));
 
 app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
