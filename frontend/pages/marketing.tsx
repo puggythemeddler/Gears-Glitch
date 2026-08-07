@@ -60,6 +60,7 @@ const SOLUTIONS_BENEFITS = [
   "Product groups with browsable storefront collections",
   "Annual billing with built-in savings over monthly pricing",
   "Plan upgrade requests with admin approval workflow",
+  "Serial-number tracking with barcode scanning for warranties and asset-level stock visibility",
 ];
 
 const INDUSTRIES = [
@@ -74,13 +75,13 @@ const INDUSTRIES = [
 ];
 
 const FEATURES = [
-  { icon: "📦", name: "Inventory Management", desc: "Real-time stock tracking per branch, low-stock alerts, branch-filtered stock views, stock-on-hand counts, and inter-branch stock transfers." },
+  { icon: "📦", name: "Inventory Management", desc: "Real-time stock tracking per branch, low-stock alerts, branch-filtered stock views, stock-on-hand counts, inter-branch stock transfers, serial number tracking, and purchase-order receipts that update stock on hand." },
   { icon: "💳", name: "Point of Sale", desc: "Fast, intuitive POS with M-Pesa payment support, receipt generation, customer display, and real-time stock deduction from both product and branch inventory." },
   { icon: "🔧", name: "Repair Management", desc: "End-to-end repair lifecycle from drop-off to delivery with technician assignment, cost tracking, and quote generation." },
-  { icon: "🛡", name: "Warranty Tracking", desc: "Automated warranty registration on products, duration tracking, and warranty status on invoices." },
+  { icon: "🛡", name: "Warranty Tracking", desc: "Serial number tracking with warranty registration on products, barcode scanning at the point of sale, automatic warranty-expiry calculation, warranty status on invoices, and a serial lookup panel." },
   { icon: "👥", name: "Customer Management", desc: "Customer profiles with purchase history, repair records, order history, and communication log." },
   { icon: "🤝", name: "Supplier Management", desc: "Supplier directory with contact details, linked purchase orders, and stock replenishment tracking." },
-  { icon: "📋", name: "Purchase Orders", desc: "Create purchase orders per supplier, track items ordered vs received with inline quantity inputs, branded PDF downloads, soft-delete with completed and deleted views, and one-click restore." },
+  { icon: "📋", name: "Purchase Orders", desc: "Create purchase orders per supplier, receive items into stock on hand with per-line serial intake (scan/type with a count-guard modal or auto-generate batches), one-click Mark All Received, a Recall button that fully reverses a receipt, branded PO/GRV PDF downloads, soft-delete with completed and deleted views, and one-click restore." },
   { icon: "🔄", name: "Stock Transfers", desc: "Seamless inter-branch transfers with actual stock movement — deducted from source, incremented at destination with dual movement records." },
   { icon: "🏢", name: "Multi-Branch Management", desc: "Unified dashboard across all locations with per-branch subscription plans, per-branch stock tracking, stock transfers that actually move inventory, and consolidated reporting." },
   { icon: "📊", name: "Reports & Analytics", desc: "Sales, employee performance, technician stats, purchase reports, and stock summary with date filtering." },
@@ -103,7 +104,7 @@ const FEATURES = [
   { icon: "📅", name: "Annual Billing Savings", desc: "Subscription plans support both monthly and annual pricing. Owners see both prices side-by-side with the percentage savings for annual billing clearly displayed on the subscription page." },
   { icon: "⬆", name: "Plan Upgrade Requests", desc: "Owners can request a plan upgrade from the subscription page; admins approve or reject requests from the control plane dashboard or the admin panel — full request history is tracked." },
   { icon: "⚙", name: "Organized Settings", desc: "Dedicated Settings tab with 5 focused pages — Store Info, Payments (M-Pesa, methods, exchange rates), Compliance (eTIMS/KRA, Google Sign-In), Content (banners, image storage), and System (backup). Each page handles its own configuration." },
-  { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders — all with your store logo prominently displayed. Separate Print and Save PDF buttons for instant downloads with branded templates." },
+  { icon: "📄", name: "PDF Generation", desc: "Server-side PDF generation for invoices, receipts, quotes, credit notes, and purchase orders — all with your store logo and configurable logo position honored on every template. PO/GRV PDFs title themselves PURCHASE ORDER or GOODS RECEIVED VOUCHER with matching filenames. Separate Print and Save PDF buttons." },
   { icon: "🔒", name: "Feature-Gated Plans", desc: "Subscription plans with grouped feature toggles (11 categories). Disable a feature and it disappears from every panel — staff portal, customer dashboard, and storefront. Pay only for what you use." },
   { icon: "🖥", name: "Full-Width Storefront", desc: "Layouts span edge-to-edge across the screen with no side gutters on wide displays — modern, full-bleed look. Hero, header, footer, and product grids all stretch to fill the viewport. Inner text columns retain max-widths for readability." },
   { icon: "🎁", name: "Gift Cards", desc: "Issue gift cards with unique codes, balance, and optional expiry. Customers redeem them automatically at checkout — the balance is applied before M-Pesa payment, and every redemption is tracked in a full audit trail." },

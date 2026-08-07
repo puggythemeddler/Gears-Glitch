@@ -70,6 +70,9 @@ Today the control plane acts on the client's behalf. A portal lets clients help 
 - CP users, roles, API keys, 2FA (TOTP)
 - CSRF hard-fail on client APIs (403 on missing/mismatched tokens) and CSP on both client server and control plane
 - Storefront layout system: 5 static themes + runtime JSON layout builder, admin-only control
+- Serial number tracking on clients — category-prefix generation (`serial_sequences`), POS barcode scanning/typing and linking at sale, automatic warranty-expiry calculation, and a Serial Numbers admin panel (list, lookup, batch generate, void)
+- Purchase order stock lifecycle — Mark All Received adds stock on hand with `purchase_receive` movement records and auto-generates serials for serial-tracked lines; a Recall button fully reverses a receipt (deducts stock, voids the PO's in-stock serials, resets quantities, returns to `ordered`); deleting a received PO reverses its stock before moving to the Deleted tab
+- Test-site-first deploy workflow (GitHub Actions → control plane `POST /api/deploy-test` → single test site), Deploy Log with commit ID/message, manual "deploy all clients" workflow
 
 ---
 

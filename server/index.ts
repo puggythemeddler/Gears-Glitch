@@ -131,6 +131,9 @@ import {
   updatePurchaseOrderStatus,
   addPurchaseOrderItem,
   receivePurchaseOrderItem,
+  reversePurchaseOrderReceive,
+  recallPurchaseOrder,
+  markPurchaseOrderReceived,
   autoReorderLowStock,
   getProductByBarcode,
   listSerials,
@@ -4635,10 +4638,13 @@ app.post("/api/serials", adminAuthMiddleware, asyncHandler(async (req: Request, 
 }));
 
 app.post("/api/serials/generate", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const { productId, count } = req.body || {};
+  const { productId, count, purchaseOrderItemId, branchId } = req.body || {};
   if (!productId) { res.status(400).json({ error: "Product is required." }); return; }
   const staff = (req as any).user;
-  const result = await generateSerials(productId, Number(count) || 1, staff.sub);
+  const result = await generateSerials(productId, Number(count) || 1, staff.sub, {
+    purchaseOrderItemId: purchaseOrderItemId ? Number(purchaseOrderItemId) : undefined,
+    branchId: branchId ? Number(branchId) : undefined,
+  });
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.status(201).json({ serials: result.serials });
 }));
@@ -4673,11 +4679,47 @@ app.delete("/api/purchases/:id", adminAuthMiddleware, asyncHandler(async (req: R
     if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
     const po = await getPurchaseOrder(id);
     if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
+    const { reversed } = await reversePurchaseOrderReceive(id);
+    if (reversed > 0) await updatePurchaseOrderStatus(id, "ordered");
     await softDeletePurchaseOrder(id);
-    res.json({ ok: true });
+    res.json({ ok: true, reversed });
   } catch (err: any) {
     console.error("[purchase delete]", err?.message || err);
     res.status(500).json({ error: "Failed to delete purchase order." });
+  }
+}));
+
+app.post("/api/purchases/:id/recall", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
+    const result = await recallPurchaseOrder(id);
+    if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[purchase recall]", err?.message || err);
+    res.status(500).json({ error: "Failed to recall purchase order." });
+  }
+}));
+
+app.post("/api/purchases/:id/receive-all", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
+    const body = req.body || {};
+    const serialsByItem: { [itemId: number]: string[] } = {};
+    if (body.serialsByItem && typeof body.serialsByItem === "object") {
+      for (const k of Object.keys(body.serialsByItem)) {
+        const arr = Array.isArray(body.serialsByItem[k]) ? body.serialsByItem[k].map((s: any) => String(s || "").trim()).filter(Boolean) : [];
+        if (arr.length) serialsByItem[Number(k)] = arr;
+      }
+    }
+    const result = await markPurchaseOrderReceived(id, serialsByItem);
+    if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+    res.json({ ok: true, order: result.order });
+  } catch (err: any) {
+    console.error("[purchase receive-all]", err?.message || err);
+    res.status(500).json({ error: "Failed to mark purchase order as received." });
   }
 }));
 

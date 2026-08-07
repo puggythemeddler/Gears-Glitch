@@ -46,7 +46,8 @@ Full regression checklist for confirming the system is 100% functional. Tick eac
 - [ ] Credit notes
 - [ ] Reports — sales, trends, visitors, stock summary, employee sales, technician repairs, purchases
 - [ ] Audit log
-- [ ] Stock control — low items, transfers, stock take sessions, on-hand, purchase orders
+- [ ] Stock control — low items, transfers, stock take sessions, on-hand, purchase orders (receive adds stock, recall reverses a receipt, delete reverses stock, serial intake scan/generate)
+- [ ] Serial numbers — admin panel list/search, scan lookup, batch generate, void; POS serial linking at checkout
 - [ ] Clients (multi-tenant)
 - [ ] Branches — multi-branch stock, subscription
 - [ ] Shop subscription — requests, status

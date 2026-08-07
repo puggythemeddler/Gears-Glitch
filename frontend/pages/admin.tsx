@@ -5583,7 +5583,7 @@ function AdminPurchases() {
   const [listMode, setListMode] = useState<"active" | "completed" | "deleted">("active");
   const [receiveInputs, setReceiveInputs] = useState<{ [itemId: number]: number }>({});
   const [receiveSerials, setReceiveSerials] = useState<{ [itemId: number]: string[] }>({});
-  const [receiving, setReceiving] = useState<number | null>(null);
+  const [receiving, setReceiving] = useState<number | "all" | null>(null);
   const [serialModalItem, setSerialModalItem] = useState<any | null>(null);
   const [serialInput, setSerialInput] = useState("");
   const [serialMsg, setSerialMsg] = useState("");
@@ -5664,14 +5664,30 @@ function AdminPurchases() {
   async function confirmMarkReceived() {
     if (!viewing) return;
     const lineCount = (viewing.items || []).length;
-    const cost = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityOrdered || 0), 0);
+    const remainingLines = (viewing.items || []).filter((i: any) => (i.quantityOrdered - i.quantityReceived) > 0);
+    const cost = remainingLines.reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityOrdered - i.quantityReceived), 0);
+    const serialTracked = remainingLines.some((i: any) => i.serialTracking);
     const ok = await confirmDialog({
       title: "Mark all received?",
-      message: `This marks all ${lineCount} line${lineCount !== 1 ? "s" : ""} as received and adds ${formatPrice(cost)} to stock. Unreceived quantities can still be adjusted per line afterwards.`,
+      message: `This receives all remaining quantities and adds ${formatPrice(cost)} to stock on hand.${serialTracked ? " Serial-tracked lines without serials already entered will be auto-generated." : ""}`,
       confirmLabel: "Mark All Received",
       danger: true,
     });
-    if (ok) updateStatus(viewing.id, "received");
+    if (!ok) return;
+    setReceiving("all");
+    try {
+      const serialsByItem: { [itemId: number]: string[] } = {};
+      remainingLines.forEach((i: any) => {
+        const serials = receiveSerials[i.id] || [];
+        if (serials.length) serialsByItem[i.id] = serials;
+      });
+      await api(`/api/purchases/${viewing.id}/receive-all`, { method: "POST", body: JSON.stringify({ serialsByItem }) });
+      setReceiveInputs({}); setReceiveSerials({});
+      if (viewing) loadOrder(viewing.id);
+      loadOrders();
+      toast("success", "All items received and added to stock.");
+    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
+    setReceiving(null);
   }
 
   async function receiveItem(itemId: number) {
@@ -5693,7 +5709,7 @@ function AdminPurchases() {
     setSerialising(itemId);
     setSerialMsg("");
     try {
-      const d = await api<{ serials: { serialNumber: string }[] }>("/api/serials/generate", { method: "POST", body: JSON.stringify({ productId, count }) });
+      const d = await api<{ serials: { serialNumber: string }[] }>("/api/serials/generate", { method: "POST", body: JSON.stringify({ productId, count, purchaseOrderItemId: itemId }) });
       const list = (d.serials || []).map((s) => s.serialNumber);
       setReceiveSerials((prev) => ({ ...prev, [itemId]: list }));
       setSerialInput("");
@@ -5713,7 +5729,7 @@ function AdminPurchases() {
       const updates: { [itemId: number]: string[] } = {};
       for (const t of targets) {
         const count = t.quantityOrdered - t.quantityReceived;
-        const d = await api<{ serials: { serialNumber: string }[] }>("/api/serials/generate", { method: "POST", body: JSON.stringify({ productId: t.productId, count }) });
+        const d = await api<{ serials: { serialNumber: string }[] }>("/api/serials/generate", { method: "POST", body: JSON.stringify({ productId: t.productId, count, purchaseOrderItemId: t.id }) });
         const list = (d.serials || []).map((s) => s.serialNumber);
         updates[t.id] = list;
         total += list.length;
@@ -5725,7 +5741,7 @@ function AdminPurchases() {
   }
 
   async function deleteOrder(id: number) {
-    if (!(await confirmDialog({ message: "Move this purchase order to trash? You can restore it later.", confirmLabel: "Move to Trash", danger: true }))) return;
+    if (!(await confirmDialog({ message: "Move this purchase order to trash? Any stock it added will be deducted from stock on hand and its serials voided. You can restore it later.", confirmLabel: "Move to Trash", danger: true }))) return;
     try {
       await api(`/api/purchases/${id}`, { method: "DELETE" });
       if (viewing && viewing.id === id) setViewing(null);
@@ -5739,6 +5755,21 @@ function AdminPurchases() {
       await api(`/api/purchases/${id}/restore`, { method: "POST" });
       loadOrders();
     } catch (err: any) { setMsg(err.message); }
+  }
+
+  async function recallOrder(id: number) {
+    if (!(await confirmDialog({
+      title: "Recall this purchase order?",
+      message: "This reverses the receipt: it deducts the received quantities from stock on hand, voids its in-stock serial numbers, resets received quantities to 0, and moves the PO back to 'ordered'.",
+      confirmLabel: "Recall PO",
+      danger: true,
+    }))) return;
+    try {
+      await api(`/api/purchases/${id}/recall`, { method: "POST" });
+      if (viewing && viewing.id === id) loadOrder(id);
+      loadOrders();
+      toast("success", "Purchase order recalled — stock reversed.");
+    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
   }
 
   function downloadPdf(id: number) {
@@ -5757,6 +5788,7 @@ function AdminPurchases() {
   if (viewing) {
     const totalCost = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityOrdered || 0), 0);
     const totalReceived = (viewing.items || []).reduce((s: number, i: any) => s + (i.unitCost || 0) * (i.quantityReceived || 0), 0);
+    const receivedUnits = (viewing.items || []).reduce((s: number, i: any) => s + (i.quantityReceived || 0), 0);
     const serialTargets = (viewing.items || []).filter((i: any) => i.serialTracking && (i.quantityOrdered - i.quantityReceived) > 0);
     return (
       <>
@@ -5792,7 +5824,12 @@ function AdminPurchases() {
                 {serialTargets.length > 0 && (
                   <RippleButton size="small" loading={serialising === "all"} disabled={serialising !== null && serialising !== "all"} onClick={serialiseAllItems}>Serialise Items</RippleButton>
                 )}
-                <RippleButton size="small" onClick={confirmMarkReceived}>Mark All Received</RippleButton>
+                <RippleButton size="small" loading={receiving === "all"} disabled={receiving !== null} onClick={confirmMarkReceived}>Mark All Received</RippleButton>
+              </div>
+            )}
+            {(viewing.status === "received" || receivedUnits > 0) && (
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem", flexWrap: "wrap" }}>
+                <RippleButton size="small" variant="danger" onClick={() => recallOrder(viewing.id)}>Recall</RippleButton>
               </div>
             )}
             <div style={{ marginTop: "0.75rem" }}>

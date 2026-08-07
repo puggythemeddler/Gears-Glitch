@@ -457,6 +457,8 @@ interface PurchaseOrderItem {
   quantityOrdered: number;
   quantityReceived: number;
   unitCost: number;
+  serialTracking?: boolean;
+  serials?: string[];
 }
 
 interface TechPerformanceReport {
@@ -3175,6 +3177,57 @@ async function receivePurchaseOrderItem(itemId: number, quantityReceived: number
   }
 }
 
+async function reversePurchaseOrderReceive(poId: number): Promise<{ reversed: number; itemCount: number }> {
+  const items = await queryAll(
+    "SELECT poi.id, poi.product_id, poi.quantity_received, p.serial_tracking FROM purchase_order_items poi LEFT JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1 AND poi.quantity_received > 0",
+    [poId]
+  ) as any[];
+  let reversed = 0; let itemCount = 0;
+  for (const item of items) {
+    const qty = Number(item.quantity_received) || 0;
+    if (qty <= 0) continue;
+    const current = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1", [item.product_id]) as any;
+    const currentQty = current ? Number(current.quantity_in_stock) : 0;
+    await updateStockLevel(item.product_id, Math.max(0, currentQty - qty));
+    try { await recordStockMovement(item.product_id, "purchase_reverse", -qty, "purchase_order", String(item.id), `Reversed ${qty} units from PO item #${item.id}`); } catch {}
+    if (item.serial_tracking) {
+      await query("UPDATE serial_numbers SET status = 'void' WHERE purchase_order_item_id = $1 AND status = 'in_stock'", [item.id]);
+    }
+    await query("UPDATE purchase_order_items SET quantity_received = 0, serial_numbers = '[]' WHERE id = $1", [item.id]);
+    reversed += qty; itemCount++;
+  }
+  return { reversed, itemCount };
+}
+
+async function recallPurchaseOrder(id: number): Promise<{ ok: boolean; error?: string }> {
+  const po = await queryOne("SELECT id, status, deleted_at FROM purchase_orders WHERE id = $1", [id]) as any;
+  if (!po) return { ok: false, error: "Purchase order not found." };
+  if (po.deleted_at) return { ok: false, error: "Cannot recall a deleted purchase order." };
+  const { reversed } = await reversePurchaseOrderReceive(id);
+  if (reversed <= 0) return { ok: false, error: "No received quantities to recall." };
+  await updatePurchaseOrderStatus(id, "ordered");
+  return { ok: true };
+}
+
+async function markPurchaseOrderReceived(id: number, serialsByItem: { [itemId: number]: string[] } = {}, branchId?: number): Promise<{ ok: boolean; error?: string; order?: PurchaseOrder }> {
+  const po = await getPurchaseOrder(id);
+  if (!po) return { ok: false, error: "Purchase order not found." };
+  if (po.status === "cancelled") return { ok: false, error: "Cannot receive a cancelled purchase order." };
+  for (const item of po.items) {
+    const remaining = (item.quantityOrdered || 0) - (item.quantityReceived || 0);
+    if (remaining <= 0) continue;
+    let serialList: string[] = (serialsByItem[item.id] || []).map((s: any) => String(s || "").trim()).filter(Boolean).slice(0, remaining);
+    if (item.serialTracking && serialList.length < remaining) {
+      const gen = await generateSerials(item.productId, remaining - serialList.length, undefined, { purchaseOrderItemId: item.id, branchId });
+      if (!gen.ok || !gen.serials) return { ok: false, error: gen.error || "Failed to generate serial numbers." };
+      serialList = serialList.concat(gen.serials.map((s) => s.serialNumber));
+    }
+    await receivePurchaseOrderItem(item.id, remaining, serialList, branchId);
+  }
+  await updatePurchaseOrderStatus(id, "received");
+  return { ok: true, order: await getPurchaseOrder(id) };
+}
+
 async function autoReorderLowStock(): Promise<PurchaseOrder | null> {
   const lowItems = await getLowStockItems();
   if (lowItems.length === 0) return null;
@@ -4030,7 +4083,7 @@ async function createSerial(data: { serialNumber: string; productId: string; bra
   return { ok: true, serial: result.rows[0] };
 }
 
-async function generateSerials(productId: string, count: number, createdBy?: number): Promise<{ ok: boolean; error?: string; serials?: { serialNumber: string }[] }> {
+async function generateSerials(productId: string, count: number, createdBy?: number, opts?: { purchaseOrderItemId?: number; branchId?: number }): Promise<{ ok: boolean; error?: string; serials?: { serialNumber: string }[] }> {
   const product = await getProduct(productId);
   if (!product) return { ok: false, error: "Product not found" };
   const n = Math.max(1, Math.min(Number(count) || 1, 500));
@@ -4043,7 +4096,7 @@ async function generateSerials(productId: string, count: number, createdBy?: num
       for (let i = 0; i < n; i++) {
         last += 1;
         const sn = `${prefix}-${String(last).padStart(6, "0")}`;
-        await client.query("INSERT INTO serial_numbers (serial_number, product_id, status, created_by) VALUES ($1, $2, 'in_stock', $3)", [sn, productId, createdBy ?? null]);
+        await client.query("INSERT INTO serial_numbers (serial_number, product_id, status, created_by, purchase_order_item_id, branch_id) VALUES ($1, $2, 'in_stock', $3, $4, $5)", [sn, productId, createdBy ?? null, opts?.purchaseOrderItemId ?? null, opts?.branchId ?? null]);
         created.push({ serialNumber: sn });
       }
       await client.query("INSERT INTO serial_sequences (prefix, last_number) VALUES ($1, $2) ON CONFLICT (prefix) DO UPDATE SET last_number = $2", [prefix, last]);
@@ -4145,7 +4198,7 @@ export {
   createOrderInvoice, listOrderInvoices, markOrderInvoicePaid,
   createCreditNote, submitCreditNoteToEtims, getCreditNote, listCreditNotes,
   getRepairImages, addRepairImage, deleteRepairImage,
-  createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, autoReorderLowStock,
+  createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, reversePurchaseOrderReceive, recallPurchaseOrder, markPurchaseOrderReceived, autoReorderLowStock,
   getTechPerformanceReport, getSalesReport, getPurchaseReport, getSalesReportWithRange,
   getStockSummary, getStockSummaryByBranch, getEmployeeSalesPerformance, getTechnicianRepairStats,
   getProductByBarcode, listSerials, getSerialByNumber, createSerial, generateSerials, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,
