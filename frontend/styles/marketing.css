@@ -24,7 +24,7 @@
   letter-spacing: -0.02em;
 }
 
-.mk-icon { flex-shrink: 0; }
+.icon { flex-shrink: 0; }
 
 /* ----- Skip link / sr-only ----- */
 .mk-skip-link {

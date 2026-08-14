@@ -2,6 +2,7 @@
 import { api, getStaffToken, getStaffRole, getStaffPermissions, downloadPdf } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
+import Icon from "@/components/icons";
 import { SkeletonStats, SkeletonTable } from "@/components/Skeleton";
 import EmptyState from "@/components/EmptyState";
 import AnimatedCounter from "@/components/AnimatedCounter";
@@ -156,6 +157,55 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   },
 ];
 
+// Icon per sidebar view. Falls back to "box" when unmapped.
+const NAV_ICONS: Partial<Record<AdminView, string>> = {
+  products: "box",
+  groups: "folder",
+  categories: "layers",
+  orders: "cart",
+  customers: "users",
+  coupons: "tag",
+  "gift-cards": "gift",
+  campaigns: "megaphone",
+  "abandoned-carts": "returns",
+  quotations: "file",
+  "category-positioning": "move",
+  repairs: "wrench",
+  "stock-on-hand": "boxes",
+  "stock-transfers": "refresh",
+  "stock-take": "clipboard",
+  "stock-control": "sliders",
+  serials: "hash",
+  purchases: "fileText",
+  suppliers: "truck",
+  users: "users",
+  roles: "shield",
+  clients: "building",
+  branches: "store",
+  invoices: "receipt",
+  "credit-notes": "file",
+  providers: "briefcase",
+  reports: "chart",
+  messages: "messageCircle",
+  reviews: "star",
+  audit: "eye",
+  "settings-store-info": "store",
+  "settings-payments": "card",
+  "settings-compliance": "shield",
+  "delivery-fees": "truck",
+  "settings-content": "image",
+  "settings-system": "settings",
+  storefront: "monitor",
+  "product-positioning": "move",
+  "email-settings": "mail",
+  "whatsapp-settings": "message",
+  "about-us": "info",
+  plans: "layers",
+  "spec-templates": "clipboard",
+  "shop-subscription": "calendar",
+  help: "info",
+};
+
 export default function AdminPage() {
   const { isDark, toggleDark, settings, refreshSettings } = useApp();
   const [authed, setAuthed] = useState(false);
@@ -178,6 +228,7 @@ export default function AdminPage() {
   const gisLoadedRef = useRef(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Services", "Team", "Settings"]);
+  const [navQuery, setNavQuery] = useState("");
   const featureFlags: Record<string, boolean> = {
     "Messaging": useFeature("Messaging"),
     "Credit notes": useFeature("Credit notes"),
@@ -218,6 +269,20 @@ export default function AdminPage() {
   };
   const visibleNavGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => hasFeature(i.feature) && canAccess(i.key)) })).filter((g) => g.items.length > 0);
   const allVisibleKeys = visibleNavGroups.flatMap((g) => g.items.map((i) => i.key));
+  const navQueryLower = navQuery.trim().toLowerCase();
+  const navSearching = navQueryLower.length > 0;
+  const filteredNavGroups = navSearching
+    ? visibleNavGroups
+        .map((g) => ({ ...g, items: g.items.filter((i) => i.label.toLowerCase().includes(navQueryLower)) }))
+        .filter((g) => g.items.length > 0)
+    : visibleNavGroups;
+
+  // Keep the group containing the active view expanded so the selection is always visible.
+  useEffect(() => {
+    const g = visibleNavGroups.find((grp) => grp.items.some((i) => i.key === view));
+    if (g) setExpandedGroups((prev) => (prev.includes(g.label) ? prev : [...prev, g.label]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   useEffect(() => {
     if (view !== "dashboard" && !allVisibleKeys.includes(view)) setView("dashboard");
@@ -425,56 +490,76 @@ export default function AdminPage() {
 
   return (
     <div className="dash-layout">
-      <nav className="dash-nav">
+      <nav className="dash-nav" aria-label="Admin navigation">
+        <div className="dash-nav-search">
+          <Icon name="search" size={14} />
+          <input
+            className="input"
+            type="search"
+            value={navQuery}
+            onChange={(e) => setNavQuery(e.target.value)}
+            placeholder="Filter menu…"
+            aria-label="Filter admin menu"
+          />
+          {navSearching && (
+            <button type="button" className="dash-nav-search-clear" onClick={() => setNavQuery("")} aria-label="Clear filter">
+              <Icon name="x" size={12} />
+            </button>
+          )}
+        </div>
+
         <RippleButton
           variant="ghost"
-          className={view === "dashboard" ? "active" : ""}
+          className={`dash-nav-item dash-nav-home${view === "dashboard" ? " active" : ""}`}
           onClick={() => setView("dashboard")}
-          style={{ fontWeight: 700, fontSize: "0.9rem", marginBottom: "0.5rem" }}
         >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-              <span style={{ display: "inline-flex", flexDirection: "column", lineHeight: 1 }}>
-                <span style={{ display: "block", width: 16, height: 3, background: "var(--text)" }} />
-                <span style={{ display: "block", width: 16, height: 3, background: "#ef4444" }} />
-                <span style={{ display: "block", width: 16, height: 3, background: "#22c55e" }} />
-              </span>
-            Home
-          </span>
+          <Icon name="home" size={15} />
+          Home
         </RippleButton>
-        {visibleNavGroups.map((group) => {
-          const isOpen = expandedGroups.includes(group.label);
-          const isChildActive = group.items.some((item) => view === item.key);
-          return (
-            <div key={group.label} style={{ marginBottom: "0.25rem" }}>
-              <div
-                onClick={() => toggleGroup(group.label)}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "0.4rem 0.5rem", cursor: "pointer", fontSize: "0.75rem",
-                  fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em",
-                  color: isChildActive ? "var(--primary)" : "var(--text-secondary)",
-                  borderRadius: 6, userSelect: "none",
-                }}
-              >
-                {group.label}
-                <span style={{ fontSize: "0.6rem", transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
-              </div>
-              {isOpen && group.items.map((item) => (
-                <RippleButton
-                  key={item.key}
-                  variant="ghost"
-                  className={view === item.key ? "active" : ""}
-                  onClick={() => setView(item.key)}
-                  style={{ paddingLeft: "1.25rem", fontSize: "0.85rem" }}
+
+        <div className="dash-nav-groups">
+          {filteredNavGroups.map((group) => {
+            const isOpen = navSearching || expandedGroups.includes(group.label);
+            const isChildActive = group.items.some((item) => view === item.key);
+            return (
+              <div key={group.label} className="dash-nav-group">
+                <button
+                  type="button"
+                  className={`dash-nav-group-label${isChildActive ? " has-active" : ""}`}
+                  onClick={() => toggleGroup(group.label)}
+                  aria-expanded={isOpen}
                 >
-                  {item.label}
-                  {item.key === "shop-subscription" && pendingCount > 0 && <span className="bell-badge"><span className="bell-icon">🔔</span><span className="bell-count">{pendingCount}</span></span>}
-                </RippleButton>
-              ))}
-            </div>
-          );
-        })}
-        <RippleButton variant="ghost" style={{ color: "var(--primary)", marginTop: "0.5rem" }} onClick={() => { localStorage.removeItem("computerStoreToken"); window.location.href = "/"; }}>
+                  {group.label}
+                  <Icon name="chevronDown" size={12} className="dash-nav-chevron" />
+                </button>
+                {isOpen && group.items.map((item) => (
+                  <RippleButton
+                    key={item.key}
+                    variant="ghost"
+                    className={`dash-nav-item${view === item.key ? " active" : ""}`}
+                    onClick={() => setView(item.key)}
+                  >
+                    <Icon name={NAV_ICONS[item.key] || "box"} size={15} />
+                    <span className="dash-nav-item-label">{item.label}</span>
+                    {item.key === "shop-subscription" && pendingCount > 0 && (
+                      <span className="dash-nav-badge">{pendingCount}</span>
+                    )}
+                  </RippleButton>
+                ))}
+              </div>
+            );
+          })}
+          {navSearching && filteredNavGroups.length === 0 && (
+            <p className="dash-nav-empty">No matches for &ldquo;{navQuery.trim()}&rdquo;.</p>
+          )}
+        </div>
+
+        <RippleButton
+          variant="ghost"
+          className="dash-nav-item dash-nav-signout"
+          onClick={() => { localStorage.removeItem("computerStoreToken"); window.location.href = "/"; }}
+        >
+          <Icon name="logOut" size={15} />
           Sign out
         </RippleButton>
       </nav>
