@@ -578,7 +578,7 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="dash-section active" key={view}>
-            {view === "dashboard" && <AdminDashboard staffRole={staffRole} onNavigate={setView} />}
+            {view === "dashboard" && <AdminDashboard staffRole={staffRole} staffPermissions={staffPermissions} onNavigate={setView} />}
             {view === "products" && <AdminProducts />}
             {view === "groups" && <AdminGroups />}
             {view === "categories" && <AdminCategories />}
@@ -675,38 +675,149 @@ function AdminAuditLog() {
   );
 }
 
-function AdminDashboard({ staffRole, onNavigate }: { staffRole: StaffRole; onNavigate: (v: AdminView) => void }) {
+function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole: StaffRole; staffPermissions: string[]; onNavigate: (v: AdminView) => void }) {
   const isAdmin = staffRole === "admin";
+  const hasPerm = (p: string) => isAdmin || staffPermissions.includes(p);
   const { data: stats, loading: statsLoading } = useFetch(() => api<any>("/api/backoffice/stats"), []);
   const { data: products, loading: prodLoading } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
   const { data: subReq, loading: subLoading } = useFetch(() => isAdmin ? api<any>("/api/shop/subscription/requests") : Promise.resolve(null), []);
 
+  // Today's numbers
+  const today = new Date().toISOString().slice(0, 10);
+  const canOrders = hasPerm("order:view");
+  const { data: todayReport } = useFetch(
+    () => canOrders ? api<any>(`/api/reports/sales?from=${today}&to=${today}`) : Promise.resolve(null),
+    [today]
+  );
+
+  // Attention panel data
+  const canStock = hasPerm("stock:list");
+  const canRepairs = hasPerm("repair:list");
+  const canMessages = hasPerm("messaging:view");
+  const { data: lowStock } = useFetch(() => canStock ? api<any>("/api/stock/low-items") : Promise.resolve(null), []);
+  const { data: repairs } = useFetch(() => canRepairs ? api<any>("/api/repairs") : Promise.resolve(null), []);
+  const { data: messages } = useFetch(() => canMessages ? api<any>("/api/admin/messages") : Promise.resolve(null), []);
+
   const pendingReqs = (subReq?.requests || []).filter((r: any) => r.status === "pending").length;
   const loading = statsLoading || prodLoading || subLoading;
 
+  const lowItems: { productId: string; name: string; quantityInStock: number; lowStockThreshold: number }[] = lowStock?.items || [];
+  const outOfStock = lowItems.filter((i) => i.quantityInStock <= 0).length;
+
+  const tickets: any[] = repairs?.tickets || [];
+  const openTickets = tickets.filter((t) => !["collected", "cancelled"].includes(t.status));
+  const readyTickets = openTickets.filter((t) => t.status === "ready").length;
+
+  const unreadMessages = (messages?.messages || []).filter((m: any) => m.sender_role !== "admin" && !m.read_at).length;
+
+  const todayRevenue = todayReport?.totalRevenue ?? 0;
+  const todayOrders = todayReport?.totalOrders ?? 0;
+
+  const attentionItems = [
+    canStock && lowItems.length > 0 ? { label: "Low stock", value: lowItems.length, note: outOfStock > 0 ? `${outOfStock} out of stock` : undefined, view: "stock-on-hand" as AdminView, tone: outOfStock > 0 ? "danger" : "warning" } : null,
+    canRepairs && readyTickets > 0 ? { label: "Repairs ready", value: readyTickets, note: "awaiting collection", view: "repairs" as AdminView, tone: "success" } : null,
+    canMessages && unreadMessages > 0 ? { label: "Unread messages", value: unreadMessages, view: "messages" as AdminView, tone: "warning" } : null,
+    isAdmin && pendingReqs > 0 ? { label: "Subscription requests", value: pendingReqs, view: "shop-subscription" as AdminView, tone: "warning" } : null,
+  ].filter(Boolean) as { label: string; value: number; note?: string; view: AdminView; tone: string }[];
+
+  function nav(v: AdminView) { onNavigate(v); }
+
+  function StatCard({ value, label, onClick, tone }: { value: number; label: string; onClick?: () => void; tone?: string }) {
+    return (
+      <div
+        className={`stat-card card-hover${onClick ? " dash-stat-clickable" : ""}`}
+        role={onClick ? "button" : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onClick={onClick}
+        onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+        style={tone ? { borderColor: `var(--${tone})` } : undefined}
+      >
+        <div className="stat-card__value" style={tone ? { color: `var(--${tone})` } : undefined}><AnimatedCounter value={value} /></div>
+        <div className="stat-card__label">{label}</div>
+      </div>
+    );
+  }
+
   if (loading) return <><h1>Dashboard</h1><SkeletonStats /></>;
+
+  const PIPELINE = [
+    { key: "received", label: "Received" },
+    { key: "diagnosing", label: "Diagnosing" },
+    { key: "waiting_parts", label: "Waiting parts" },
+    { key: "in_progress", label: "In progress" },
+    { key: "ready", label: "Ready" },
+  ];
 
   return (
     <>
       <h1 className="anim-fade-in-down">Dashboard</h1>
+
       <div className="stat-grid">
-        <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("products")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("products"); } }}>
-          <div className="stat-card__value"><AnimatedCounter value={products?.products?.length ?? 0} /></div>
-          <div className="stat-card__label">Total Products</div>
-        </div>
-        {isAdmin && (
-          <div className="stat-card card-hover" style={{ cursor: "pointer" }} role="button" tabIndex={0} onClick={() => onNavigate("users")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("users"); } }}>
-            <div className="stat-card__value"><AnimatedCounter value={stats?.totalStaff ?? 0} /></div>
-            <div className="stat-card__label">Users</div>
-          </div>
-        )}
-        {isAdmin && (
-          <div className="stat-card card-hover" style={{ cursor: "pointer", borderColor: pendingReqs > 0 ? "var(--danger)" : undefined }} role="button" tabIndex={0} onClick={() => onNavigate("shop-subscription")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate("shop-subscription"); } }}>
-            <div className="stat-card__value" style={{ color: pendingReqs > 0 ? "var(--danger)" : undefined }}><AnimatedCounter value={pendingReqs} /></div>
-            <div className="stat-card__label" style={{ color: pendingReqs > 0 ? "var(--danger)" : undefined }}>Pending Sub. Requests</div>
-          </div>
-        )}
+        <StatCard value={products?.products?.length ?? 0} label="Total Products" onClick={() => nav("products")} />
+        {canOrders && <StatCard value={todayOrders} label="Orders Today" onClick={() => nav("orders")} />}
+        {canOrders && <StatCard value={todayRevenue} label="Revenue Today (KES)" onClick={() => nav("reports")} />}
+        {canRepairs && <StatCard value={openTickets.length} label="Open Repairs" onClick={() => nav("repairs")} />}
+        {canStock && <StatCard value={lowItems.length} label="Low-Stock Items" tone={lowItems.length > 0 ? "warning" : undefined} onClick={() => nav("stock-on-hand")} />}
+        {isAdmin && <StatCard value={stats?.totalStaff ?? 0} label="Users" onClick={() => nav("users")} />}
+        {isAdmin && <StatCard value={pendingReqs} label="Pending Sub. Requests" tone={pendingReqs > 0 ? "danger" : undefined} onClick={() => nav("shop-subscription")} />}
       </div>
+
+      {attentionItems.length > 0 && (
+        <div className="dash-attention" role="status">
+          {attentionItems.map((a) => (
+            <button type="button" key={a.label} className={`dash-attention-item tone-${a.tone}`} onClick={() => nav(a.view)}>
+              <span className="dash-attention-value">{a.value}</span>
+              <span className="dash-attention-label">{a.label}{a.note ? <em> — {a.note}</em> : null}</span>
+              <Icon name="arrowRight" size={15} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {(canStock && lowItems.length > 0) || canRepairs ? (
+        <div className="dash-cols">
+          {canStock && lowItems.length > 0 && (
+            <div className="panel dash-lowstock">
+              <h3>Low stock — top 5</h3>
+              <ul>
+                {lowItems.slice(0, 5).map((i) => (
+                  <li key={i.productId}>
+                    <span className="dash-lowstock-name">{i.name}</span>
+                    <span className={`badge ${i.quantityInStock <= 0 ? "badge-danger" : "badge-warning"}`}>
+                      {i.quantityInStock <= 0 ? "Out of stock" : `${i.quantityInStock} left`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {lowItems.length > 5 && (
+                <button type="button" className="btn btn-subtle btn-sm" onClick={() => nav("stock-on-hand")}>
+                  View all {lowItems.length} low-stock items
+                </button>
+              )}
+            </div>
+          )}
+
+          {canRepairs && (
+            <div className="panel dash-repairpipeline">
+              <h3>Repair pipeline</h3>
+              <ul>
+                {PIPELINE.map((s) => {
+                  const count = openTickets.filter((t) => t.status === s.key).length;
+                  return (
+                    <li key={s.key}>
+                      <span className="dash-lowstock-name">{s.label}</span>
+                      <span className="dash-pipeline-count">{count}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <button type="button" className="btn btn-subtle btn-sm" onClick={() => nav("repairs")}>
+                Open repairs
+              </button>
+            </div>
+          )}
+        </div>
+      ) : null}
     </>
   );
 }
