@@ -2048,8 +2048,6 @@ textarea:not(.input)::placeholder {
   position: sticky;
   top: 0;
   height: 100vh;
-  margin-top: calc(-1 * var(--space-8));   /* cancel #main top padding — flush with viewport top */
-  margin-left: calc(-1 * var(--space-5));  /* cancel #main side padding — flush with viewport left */
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--surface);
@@ -2200,7 +2198,10 @@ textarea:not(.input)::placeholder {
   color: var(--primary);
 }
 
-.dash-content { min-width: 0; }
+.dash-content {
+  min-width: 0;
+  padding: var(--space-4) var(--space-5) var(--space-8);
+}
 
 /* ----- Dashboard extras ----- */
 .dash-stat-clickable { cursor: pointer; }
@@ -3255,12 +3256,12 @@ a.about-contact-card:hover {
     flex-direction: column;
     height: auto;
     max-height: 45vh;
-    margin-top: 0;
-    margin-left: 0;
     border-radius: var(--radius-lg);
     overflow-y: auto;
     margin-bottom: var(--space-4);
   }
+
+  .dash-content { padding: var(--space-3) var(--space-4) var(--space-6); }
 
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
 
