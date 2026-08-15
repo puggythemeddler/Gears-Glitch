@@ -1,0 +1,13 @@
+{
+  "name": "manual-capture",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Playwright capture tool for the Gear&Glitch admin module manual",
+  "type": "module",
+  "scripts": {
+    "capture": "node capture-manual.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

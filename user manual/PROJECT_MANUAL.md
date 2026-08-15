@@ -355,3 +355,173 @@ The control plane (`control-plane/`, port 4000, own Neon DB) is the operator hub
 - Move to formal SQL migrations instead of imperative startup migrations.
 - Enforce CSRF hard-fail and a strict CSP.
 - Add end-to-end tests for provisioning, feature overrides, and layout switching.
+
+---
+
+## 17. Visual Module Reference
+
+This chapter-by-chapter walkthrough shows every staff-portal section as it appears to an admin, organized by the sidebar groups. Screenshots were captured from a live session (1440×900) and are stored under `screenshots/` next to this file; the DOCX and PDF generators embed them automatically.
+
+### 17.1 Overview
+
+The landing view after sign-in: key business stats, recent activity, and quick links.
+
+- **Dashboard (Home)**
+
+![Dashboard](screenshots/01-overview/dashboard.png)
+
+### 17.2 Sales
+
+Catalog, orders, and customer-facing commerce tools.
+
+- **Products** — manage the product catalog (name, price, stock, images, groups).
+- **Groups** — create/edit/delete product groups and toggle them active.
+- **Categories** — organize products by category and subcategory.
+- **Category Order** — drag-and-drop display order of the category grid.
+- **Orders** — view and manage customer orders.
+- **Customers** — view, edit, and delete customer accounts.
+- **Coupons** — discount coupons for checkout.
+- **Gift Cards** — gift card products and balances.
+- **Campaigns** — marketing campaign pages.
+- **Abandoned Carts** — carts left before checkout and recovery.
+- **Quotations** — quotes requested by customers.
+
+![Products](screenshots/02-sales/products.png)
+![Groups](screenshots/02-sales/groups.png)
+![Categories](screenshots/02-sales/categories.png)
+![Category Order](screenshots/02-sales/category-order.png)
+![Orders](screenshots/02-sales/orders.png)
+![Customers](screenshots/02-sales/customers.png)
+![Coupons](screenshots/02-sales/coupons.png)
+![Gift Cards](screenshots/02-sales/gift-cards.png)
+![Campaigns](screenshots/02-sales/campaigns.png)
+![Abandoned Carts](screenshots/02-sales/abandoned-carts.png)
+![Quotations](screenshots/02-sales/quotations.png)
+
+### 17.3 Services
+
+Repair ticket workflow with three sub-tabs.
+
+- **Repairs — Tickets** — queue of repair tickets with status, assignment, and notes.
+- **Repairs — Calendar** — schedule of technician work.
+- **Repairs — Page Content** — edit the public `/repairs` page intro and service panels.
+
+![Repairs](screenshots/03-services/repairs.png)
+![Repairs — Tickets](screenshots/03-services/repairs-tickets.png)
+![Repairs — Calendar](screenshots/03-services/repairs-calendar.png)
+![Repairs — Page Content](screenshots/03-services/repairs-page-content.png)
+
+### 17.4 Stock
+
+Inventory across branches.
+
+- **Stock on Hand** — current stock levels per product/branch.
+- **Stock Transfers** — move stock between branches.
+- **Stock Take** — count stock and reconcile.
+- **Stock Control** — stock settings and control parameters.
+- **Serial Numbers** — track individual serialized units.
+- **Purchase Orders** — purchase orders to suppliers.
+- **Suppliers** — supplier records.
+
+![Stock on Hand](screenshots/04-stock/stock-on-hand.png)
+![Stock Transfers](screenshots/04-stock/stock-transfers.png)
+![Stock Take](screenshots/04-stock/stock-take.png)
+![Stock Control](screenshots/04-stock/stock-control.png)
+![Serial Numbers](screenshots/04-stock/serials.png)
+![Purchase Orders](screenshots/04-stock/purchase-orders.png)
+![Suppliers](screenshots/04-stock/suppliers.png)
+
+### 17.5 Team
+
+Staff, roles, and business locations.
+
+- **Users** — staff accounts, role assignment, and direct permissions.
+- **Roles** — custom roles with granular permission toggles.
+- **Clients** — client/customer accounts for the business.
+- **Branches** — multi-branch configuration.
+
+![Users](screenshots/05-team/users.png)
+![Roles](screenshots/05-team/roles.png)
+![Clients](screenshots/05-team/clients.png)
+![Branches](screenshots/05-team/branches.png)
+
+### 17.6 Finance
+
+Invoicing and money movement.
+
+- **Invoices** — generate and view invoices.
+- **Credit Notes** — issue credit notes.
+- **Providers** — provider accounts and payouts.
+
+![Invoices](screenshots/06-finance/invoices.png)
+![Credit Notes](screenshots/06-finance/credit-notes.png)
+![Providers](screenshots/06-finance/providers.png)
+
+### 17.7 Activity
+
+Reporting and business communication.
+
+- **Reports — Sales Report** — revenue and sales analytics.
+- **Reports — Employee Sales** — per-employee sales.
+- **Reports — Technician Performance** — technician work metrics.
+- **Reports — Purchases** — purchasing analytics.
+- **Reports — Stock Summary** — stock totals by group/branch.
+- **Reports — Visitors** — visitor traffic stats.
+- **Messages** — in-app messages.
+- **Reviews** — customer product reviews.
+- **Audit Log** — a log of admin actions.
+
+![Reports](screenshots/07-activity/reports.png)
+![Reports — Sales](screenshots/07-activity/reports-sales.png)
+![Reports — Employee Sales](screenshots/07-activity/reports-employee-sales.png)
+![Reports — Technician Performance](screenshots/07-activity/reports-technician-performance.png)
+![Reports — Purchases](screenshots/07-activity/reports-purchases.png)
+![Reports — Stock Summary](screenshots/07-activity/reports-stock-summary.png)
+![Reports — Visitors](screenshots/07-activity/reports-visitors.png)
+![Messages](screenshots/07-activity/messages.png)
+![Reviews](screenshots/07-activity/reviews.png)
+![Audit Log](screenshots/07-activity/audit-log.png)
+
+### 17.8 Settings
+
+Store configuration and branding.
+
+- **Store Info** — store name, contact, currency, logo.
+- **Payments** — M-Pesa and card payment settings.
+- **Compliance** — KRA/eTIMS and compliance settings.
+- **Delivery Fees** — delivery fee tiers by county.
+- **Content** — storefront content and SEO.
+- **System** — system-level settings.
+- **Storefront** — active layout, hero, and storefront options.
+- **Layout Builder** — runtime JSON layout builder for custom themes.
+- **Product Positioning** — product positioning options.
+- **Email** — email sender and notification settings.
+- **WhatsApp** — WhatsApp communication settings.
+- **About Us** — editable About Us page.
+- **Subscription Plans** — subscription plan management.
+- **Spec Templates** — product spec templates.
+- **Subscription** — current plan and billing.
+
+![Store Info](screenshots/08-settings/store-info.png)
+![Payments](screenshots/08-settings/payments.png)
+![Compliance](screenshots/08-settings/compliance.png)
+![Delivery Fees](screenshots/08-settings/delivery-fees.png)
+![Content](screenshots/08-settings/content.png)
+![System](screenshots/08-settings/system.png)
+![Storefront](screenshots/08-settings/storefront.png)
+![Layout Builder](screenshots/08-settings/layout-builder.png)
+![Product Positioning](screenshots/08-settings/product-positioning.png)
+![Email](screenshots/08-settings/email-settings.png)
+![WhatsApp](screenshots/08-settings/whatsapp-settings.png)
+![About Us](screenshots/08-settings/about-us.png)
+![Subscription Plans](screenshots/08-settings/subscription-plans.png)
+![Spec Templates](screenshots/08-settings/spec-templates.png)
+![Subscription](screenshots/08-settings/subscription.png)
+
+### 17.9 Help
+
+In-app help and reference material.
+
+- **Help & Reference** — usage guide and reference.
+
+![Help & Reference](screenshots/09-help/help.png)

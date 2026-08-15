@@ -1,0 +1,351 @@
+{
+  "baseUrl": "http://localhost:3000",
+  "capturedAt": "2026-08-15T19:51:40.039Z",
+  "chapters": [
+    {
+      "slug": "01-overview",
+      "title": "Overview",
+      "modules": [
+        {
+          "label": "Home",
+          "shots": [
+            "01-overview/dashboard.png"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "02-sales",
+      "title": "Sales",
+      "modules": [
+        {
+          "label": "Products",
+          "shots": [
+            "02-sales/products.png"
+          ]
+        },
+        {
+          "label": "Groups",
+          "shots": [
+            "02-sales/groups.png"
+          ]
+        },
+        {
+          "label": "Categories",
+          "shots": [
+            "02-sales/categories.png"
+          ]
+        },
+        {
+          "label": "Category Order",
+          "shots": [
+            "02-sales/category-order.png"
+          ]
+        },
+        {
+          "label": "Orders",
+          "shots": [
+            "02-sales/orders.png"
+          ]
+        },
+        {
+          "label": "Customers",
+          "shots": [
+            "02-sales/customers.png"
+          ]
+        },
+        {
+          "label": "Coupons",
+          "shots": [
+            "02-sales/coupons.png"
+          ]
+        },
+        {
+          "label": "Gift Cards",
+          "shots": [
+            "02-sales/gift-cards.png"
+          ]
+        },
+        {
+          "label": "Campaigns",
+          "shots": [
+            "02-sales/campaigns.png"
+          ]
+        },
+        {
+          "label": "Abandoned Carts",
+          "shots": [
+            "02-sales/abandoned-carts.png"
+          ]
+        },
+        {
+          "label": "Quotations",
+          "shots": [
+            "02-sales/quotations.png"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "03-services",
+      "title": "Services",
+      "modules": [
+        {
+          "label": "Repairs",
+          "shots": [
+            "03-services/repairs.png",
+            "03-services/repairs-tickets.png",
+            "03-services/repairs-calendar.png",
+            "03-services/repairs-page-content.png"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "04-stock",
+      "title": "Stock",
+      "modules": [
+        {
+          "label": "Stock on Hand",
+          "shots": [
+            "04-stock/stock-on-hand.png"
+          ]
+        },
+        {
+          "label": "Stock Transfers",
+          "shots": [
+            "04-stock/stock-transfers.png"
+          ]
+        },
+        {
+          "label": "Stock Take",
+          "shots": [
+            "04-stock/stock-take.png"
+          ]
+        },
+        {
+          "label": "Stock Control",
+          "shots": [
+            "04-stock/stock-control.png"
+          ]
+        },
+        {
+          "label": "Serial Numbers",
+          "shots": [
+            "04-stock/serials.png"
+          ]
+        },
+        {
+          "label": "Purchase Orders",
+          "shots": [
+            "04-stock/purchase-orders.png"
+          ]
+        },
+        {
+          "label": "Suppliers",
+          "shots": [
+            "04-stock/suppliers.png"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "05-team",
+      "title": "Team",
+      "modules": [
+        {
+          "label": "Users",
+          "shots": [
+            "05-team/users.png"
+          ]
+        },
+        {
+          "label": "Roles",
+          "shots": [
+            "05-team/roles.png"
+          ]
+        },
+        {
+          "label": "Clients",
+          "shots": [
+            "05-team/clients.png"
+          ]
+        },
+        {
+          "label": "Branches",
+          "shots": [
+            "05-team/branches.png"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "06-finance",
+      "title": "Finance",
+      "modules": [
+        {
+          "label": "Invoices",
+          "shots": [
+            "06-finance/invoices.png"
+          ]
+        },
+        {
+          "label": "Credit Notes",
+          "shots": [
+            "06-finance/credit-notes.png"
+          ]
+        },
+        {
+          "label": "Providers",
+          "shots": [
+            "06-finance/providers.png"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "07-activity",
+      "title": "Activity",
+      "modules": [
+        {
+          "label": "Reports",
+          "shots": [
+            "07-activity/reports.png",
+            "07-activity/reports-sales.png",
+            "07-activity/reports-employee-sales.png",
+            "07-activity/reports-technician-performance.png",
+            "07-activity/reports-purchases.png",
+            "07-activity/reports-stock-summary.png",
+            "07-activity/reports-visitors.png"
+          ]
+        },
+        {
+          "label": "Messages",
+          "shots": [
+            "07-activity/messages.png"
+          ]
+        },
+        {
+          "label": "Reviews",
+          "shots": [
+            "07-activity/reviews.png"
+          ]
+        },
+        {
+          "label": "Audit Log",
+          "shots": [
+            "07-activity/audit-log.png"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "08-settings",
+      "title": "Settings",
+      "modules": [
+        {
+          "label": "Store Info",
+          "shots": [
+            "08-settings/store-info.png"
+          ]
+        },
+        {
+          "label": "Payments",
+          "shots": [
+            "08-settings/payments.png"
+          ]
+        },
+        {
+          "label": "Compliance",
+          "shots": [
+            "08-settings/compliance.png"
+          ]
+        },
+        {
+          "label": "Delivery Fees",
+          "shots": [
+            "08-settings/delivery-fees.png"
+          ]
+        },
+        {
+          "label": "Content",
+          "shots": [
+            "08-settings/content.png"
+          ]
+        },
+        {
+          "label": "System",
+          "shots": [
+            "08-settings/system.png"
+          ]
+        },
+        {
+          "label": "Storefront",
+          "shots": [
+            "08-settings/storefront.png"
+          ]
+        },
+        {
+          "label": "Layout Builder",
+          "shots": [
+            "08-settings/layout-builder.png"
+          ]
+        },
+        {
+          "label": "Product Positioning",
+          "shots": [
+            "08-settings/product-positioning.png"
+          ]
+        },
+        {
+          "label": "Email",
+          "shots": [
+            "08-settings/email-settings.png"
+          ]
+        },
+        {
+          "label": "WhatsApp",
+          "shots": [
+            "08-settings/whatsapp-settings.png"
+          ]
+        },
+        {
+          "label": "About Us",
+          "shots": [
+            "08-settings/about-us.png"
+          ]
+        },
+        {
+          "label": "Subscription Plans",
+          "shots": [
+            "08-settings/subscription-plans.png"
+          ]
+        },
+        {
+          "label": "Spec Templates",
+          "shots": [
+            "08-settings/spec-templates.png"
+          ]
+        },
+        {
+          "label": "Subscription",
+          "shots": [
+            "08-settings/subscription.png"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "09-help",
+      "title": "Help",
+      "modules": [
+        {
+          "label": "Help & Reference",
+          "shots": [
+            "09-help/help.png"
+          ]
+        }
+      ]
+    }
+  ]
+}
