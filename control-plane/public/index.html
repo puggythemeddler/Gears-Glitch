@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Gear&Glitch Control Plane — provision, monitor, and bill POS tenants from one dashboard.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E">
   <title>Gear&Glitch — Control Plane</title>
@@ -31,6 +31,15 @@
       --btn-danger-bg: #dc2626;
       --btn-danger-hover: #b91c1c;
       --radius: 8px;
+      --radius-lg: 12px;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --content-max: 1500px;
+      --shadow-menu: 0 8px 24px rgba(0,0,0,0.28);
       --tint-success: rgba(34,197,94,0.15);
       --tint-warning: rgba(245,158,11,0.15);
       --tint-danger: rgba(239,68,68,0.15);
@@ -42,8 +51,18 @@
       color-scheme: dark;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-    .container { max-width: 100%; padding: 1rem 1.5rem; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .container { max-width: var(--content-max); margin: 0 auto; padding: var(--space-4) var(--space-6); }
+    input, select, textarea { font-family: inherit; }
+    ::selection { background: var(--tint-primary); }
+
+    /* Sticky header + tabs region — always reachable while scanning long tables */
+    .app-top { position: sticky; top: 0; z-index: 30; background: var(--bg); border-bottom: 1px solid var(--border); margin-bottom: var(--space-4); }
 
     /* Login screen — centered on page */
     .login-screen {
@@ -58,7 +77,7 @@
       max-width: 360px;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius-lg);
       padding: 2rem;
     }
     .login-title {
@@ -73,7 +92,7 @@
       font-size: 0.85rem;
       margin-bottom: 1.5rem;
     }
-    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4); flex-wrap: wrap; gap: var(--space-3); }
     .brand { display: flex; align-items: center; gap: 0.6rem; }
     .brand-logo { width: 28px; height: 28px; color: var(--primary); flex: none; }
     .brand-wordmark { font-weight: 700; font-size: 1.1rem; letter-spacing: -0.01em; }
@@ -82,6 +101,19 @@
     h1 { font-size: 1.5rem; }
     h1 span { color: var(--primary); }
     .header-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+    /* Page structure primitives — one rhythm for every tab */
+    .page-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4); }
+    .page-head h2 { margin: 0; }
+    .tab-intro { color: var(--text-muted); font-size: 0.85rem; margin-bottom: var(--space-4); }
+    .toolbar { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-4); }
+    .btn-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+    .actions-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-top: var(--space-4); }
+    .input, .select { padding: 0.4rem 0.6rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.82rem; outline: none; }
+    .toolbar .input, .toolbar .select, .toolbar input[type="search"], .toolbar select { padding: 0.4rem 0.6rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.82rem; outline: none; }
+    .toolbar input[type="search"] { flex: 1; min-width: 220px; max-width: 340px; }
+    .input:focus, .select:focus, .toolbar input:focus, .toolbar select:focus { border-color: var(--primary); outline: 2px solid var(--tint-primary); outline-offset: 1px; }
+    #client-count { font-size: 0.85rem; color: var(--text-muted); }
     .btn { padding: 0.5rem 1rem; border-radius: var(--radius); border: none; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: all 0.15s; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; }
     .btn-primary { background: var(--btn-primary-bg); color: #fff; }
     .btn-primary:hover { background: var(--btn-primary-hover); }
@@ -96,19 +128,19 @@
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Tabs */
-    .tabs { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border); }
     .tab { padding: 0.6rem 1.2rem; cursor: pointer; font-size: 0.88rem; font-weight: 600; color: var(--text-muted); border-bottom: 2px solid transparent; transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none; }
     .tab:hover { color: var(--text); }
     .tab.active { color: var(--primary-strong); border-bottom-color: var(--primary); }
 
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: var(--space-4); }
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
     .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
-    .stat-card .value { font-size: 1.8rem; font-weight: 700; }
+    .stat-card .value { font-size: 1.8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
     .stat-card .label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
 
     table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); }
-    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.88rem; font-variant-numeric: tabular-nums; }
     th { background: var(--bg); color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
     thead th:first-child { border-top-left-radius: var(--radius); }
     thead th:last-child { border-top-right-radius: var(--radius); }
@@ -135,7 +167,7 @@
     .actions-menu { position: relative; display: inline-block; }
     .actions-menu summary { list-style: none; cursor: pointer; }
     .actions-menu summary::-webkit-details-marker { display: none; }
-    .actions-menu .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 150px; max-height: min(360px, calc(100vh - 140px)); overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
+    .actions-menu .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem; min-width: 150px; max-height: min(360px, calc(100vh - 140px)); overflow-y: auto; box-shadow: var(--shadow-menu); }
     .actions-menu .menu .btn { width: 100%; text-align: left; white-space: nowrap; }
     .notif-row { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); padding: 0.6rem 0.75rem; cursor: pointer; font: inherit; color: inherit; }
     .notif-row[data-unread="1"] { background: var(--tint-primary-soft); }
@@ -152,13 +184,14 @@
     .chip-btn:hover, .chip-btn:focus-visible { background: var(--btn-primary-bg); color: #fff; }
     .chip-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
     .empty { text-align: center; padding: 4rem 1rem; color: var(--text-muted); }
-    .empty .icon { font-size: 3rem; margin-bottom: 1rem; }
-    .empty p { margin-bottom: 1rem; }
+    .empty .icon { margin-bottom: var(--space-4); color: var(--text-muted); }
+    .empty .icon svg { width: 2.5rem; height: 2.5rem; }
+    .empty p { margin-bottom: var(--space-4); }
 
     /* Modal */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center; }
     .modal-overlay.show { display: flex; }
-    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.5rem; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
     .modal h2 { margin-bottom: 0.5rem; font-size: 1.1rem; }
     .modal .subtitle { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; }
     .field { margin-bottom: 1rem; }
@@ -182,16 +215,20 @@
     .toast.success { border-color: var(--success); }
     .toast.error { border-color: var(--danger); }
     .toast.info { border-color: var(--primary); }
-    .btn:focus-visible, .tab:focus-visible, a:focus-visible, .th-sort:focus-visible, .notif-row:focus-visible, .link-btn:focus-visible, .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .btn:focus-visible, .tab:focus-visible, a:focus-visible, .th-sort:focus-visible, .notif-row:focus-visible, .link-btn:focus-visible, .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible, .input:focus-visible, .select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
     @media (max-width: 768px) {
+      .app-top { position: static; }
+      .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tab { white-space: nowrap; padding: 0.7rem 1rem; }
       .stats { grid-template-columns: repeat(2, 1fr); }
-      .container { padding: 0.75rem; }
+      .container { padding: var(--space-3); }
       .detail-grid { grid-template-columns: 1fr; }
       .form-grid { grid-template-columns: 1fr !important; }
-      #notif-panel { width: min(350px, calc(100vw - 2rem)); }
-      table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+      #notif-panel { position: fixed !important; top: 64px !important; left: var(--space-3) !important; right: var(--space-3) !important; width: auto !important; max-height: calc(100vh - 88px) !important; }
+      table { display: block; overflow-x: auto; white-space: nowrap; min-width: 100%; width: max-content; -webkit-overflow-scrolling: touch; }
       .actions-menu .menu { position: static; width: 100%; min-width: 0; max-height: none; overflow-y: visible; box-shadow: none; }
       .actions-menu { max-width: 100%; }
     }
@@ -204,8 +241,13 @@
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
     }
-    @media (min-width: 1600px) {
-      .stats { grid-template-columns: repeat(6, 1fr); }
+    @media (max-width: 520px) {
+      .brand-sub { display: none; }
+      .stat-card .value { font-size: 1.5rem; }
+      .modal { padding: 1rem; }
+      .detail-panel { padding: 1rem; }
+      .toolbar input[type="search"] { max-width: none; }
+      .header-actions { width: 100%; }
     }
   </style>
 </head>
@@ -236,6 +278,7 @@
 
   <!-- Main App -->
   <div id="main-app" class="container" style="display:none">
+    <div class="app-top">
     <header>
       <div class="brand">
         <svg class="brand-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -245,7 +288,7 @@
       <div class="header-actions">
         <span id="user-display" style="font-size:0.82rem;color:var(--text-muted);align-self:center"></span>
         <div id="notif-wrap" style="position:relative;align-self:center">
-          <button class="btn btn-ghost btn-sm" id="notif-bell" onclick="toggleNotifications()" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notif-panel">&#128276;</button>
+          <button class="btn btn-ghost btn-sm" id="notif-bell" onclick="toggleNotifications()" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notif-panel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></button>
           <span id="notif-badge" role="status" aria-label="Unread notifications" style="display:none;position:absolute;top:-6px;right:-6px;background:var(--btn-danger-bg);color:#fff;font-size:0.62rem;border-radius:50%;min-width:16px;height:16px;align-items:center;justify-content:center;padding:0 3px;font-weight:700"></span>
           <div id="notif-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);width:min(350px, calc(100vw - 2rem));max-height:420px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,0.2);z-index:300"></div>
         </div>
@@ -273,6 +316,7 @@
       <button class="tab" id="tab-btn-settings" role="tab" aria-selected="false" aria-controls="tab-settings" onclick="switchTab('settings', this)">Settings</button>
       <button class="tab" role="tab" aria-selected="false" aria-controls="tab-users" onclick="switchTab('users', this)" id="tab-btn-users" style="display:none">Users</button>
     </div>
+    </div>
 
     <div id="tab-clients" role="tabpanel" aria-labelledby="tab-btn-clients">
       <div class="stats" id="stats">
@@ -281,58 +325,58 @@
         <div class="stat-card"><div class="value" id="stat-revenue" style="color: var(--primary)">—</div><div class="label">Total Revenue</div></div>
         <div class="stat-card"><div class="value" id="stat-orders">—</div><div class="label">Total Orders</div></div>
       </div>
-      <div id="payment-reminders" style="display:none;margin-bottom:1rem"></div>
-      <div id="client-toolbar" style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
-        <input type="search" id="client-search" placeholder="Search name, email, or domain…" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem;min-width:220px;flex:1;max-width:340px" aria-label="Search clients">
-        <select id="client-status-filter" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem" aria-label="Filter by status">
+      <div id="payment-reminders" style="display:none;margin-bottom:var(--space-4)"></div>
+      <div id="client-toolbar" class="toolbar">
+        <input type="search" id="client-search" class="input" placeholder="Search name, email, or domain…" aria-label="Search clients">
+        <select id="client-status-filter" class="select" aria-label="Filter by status">
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="provisioning">Provisioning</option>
           <option value="suspended">Suspended</option>
           <option value="failed">Failed</option>
         </select>
-        <span id="client-count" style="color:var(--text-muted);font-size:0.78rem"></span>
+        <span id="client-count"></span>
       </div>
       <div id="client-list"><div class="empty"><p>Loading clients…</p></div></div>
       <div id="upgrade-requests" style="margin-top:2rem"></div>
     </div>
 
     <div id="tab-plans" role="tabpanel" aria-labelledby="tab-btn-plans" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div class="page-head">
         <h2>Subscription Plans</h2>
-        <div style="display:flex;gap:0.5rem">
-          <select id="pull-plans-client" data-admin style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull from client...</option></select>
+        <div class="btn-row">
+          <select id="pull-plans-client" class="select" data-admin><option value="">Pull from client...</option></select>
           <button class="btn btn-ghost btn-sm" data-admin onclick="pullPlansFromClient()">Pull Plans</button>
           <button class="btn btn-ghost btn-sm" data-admin onclick="importFromGearGlitch()">Import from Gear&Glitch Store</button>
           <button class="btn btn-ghost btn-sm" data-admin onclick="syncAllPlans()">Sync All to Clients</button>
           <button class="btn btn-primary btn-sm" data-admin onclick="showPlanModal()">+ Create Plan</button>
         </div>
       </div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage subscription plans with feature toggles. Toggle features on/off per plan, then sync to push changes to all clients.</p>
+      <p class="tab-intro">Manage subscription plans with feature toggles. Toggle features on/off per plan, then sync to push changes to all clients.</p>
       <div id="plans-list"></div>
     </div>
 
     <div id="tab-changelog" role="tabpanel" aria-labelledby="tab-btn-changelog" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div class="page-head">
         <h2>Changelog</h2>
         <button class="btn btn-primary btn-sm" data-admin onclick="showChangelogModal()">+ New Update</button>
       </div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Publish version updates. All active clients are notified by email automatically.</p>
+      <p class="tab-intro">Publish version updates. All active clients are notified by email automatically.</p>
       <div id="changelog-list"></div>
     </div>
 
     <div id="tab-deploys" role="tabpanel" aria-labelledby="tab-btn-deploys" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div class="page-head">
         <h2>Deploy Log</h2>
-        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <div class="btn-row">
           <button class="btn btn-primary btn-sm" data-admin onclick="deployTest()">Deploy Test Site</button>
           <button class="btn btn-ghost btn-sm" data-admin onclick="deployAll()">Deploy All Clients</button>
         </div>
       </div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Every push to main deploys to the <strong>test site</strong> first (automatic). Production deploys to all clients are deliberate and manual — test the test site before deploying everyone.</p>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
-        <input type="search" id="deploy-search" placeholder="Search client, commit, message..." style="flex:1;min-width:220px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:0.45rem 0.7rem;color:var(--text)">
-        <select id="deploy-status-filter" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:0.45rem 0.7rem;color:var(--text)">
+      <p class="tab-intro">Every push to main deploys to the <strong>test site</strong> first (automatic). Production deploys to all clients are deliberate and manual — test the test site before deploying everyone.</p>
+      <div class="toolbar">
+        <input type="search" id="deploy-search" class="input" placeholder="Search client, commit, message...">
+        <select id="deploy-status-filter" class="select">
           <option value="">All statuses</option>
           <option value="deploying">Deploying</option>
           <option value="deploy_test">Test deploy</option>
@@ -346,35 +390,35 @@
     </div>
 
     <div id="tab-backups" role="tabpanel" aria-labelledby="tab-btn-backups" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div class="page-head">
         <h2>Database Backups</h2>
         <button class="btn btn-primary btn-sm" data-admin onclick="runBackups()">Run Backup Now</button>
       </div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Backups run automatically daily at 3 AM. Uses <code>pg_dump</code> for each client's Neon database. Old backups auto-delete after 7 days. Requires <code>pg_dump</code> CLI on the server (available in Render paid plans).</p>
+      <p class="tab-intro">Backups run automatically daily at 3 AM. Uses <code>pg_dump</code> for each client's Neon database. Old backups auto-delete after 7 days. Requires <code>pg_dump</code> CLI on the server (available in Render paid plans).</p>
       <div id="backup-list"></div>
     </div>
 
     <div id="tab-users" role="tabpanel" aria-labelledby="tab-btn-users" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div class="page-head">
         <h2>Control Plane Users</h2>
         <button class="btn btn-primary btn-sm" data-admin onclick="showCreateUserModal()">+ Add User</button>
       </div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Manage who can access the control plane. Admins can manage users; viewers have read-only access. Each user gets a unique API key for programmatic access.</p>
+      <p class="tab-intro">Manage who can access the control plane. Admins can manage users; viewers have read-only access. Each user gets a unique API key for programmatic access.</p>
       <div id="users-list"></div>
     </div>
 
     <div id="tab-audit" role="tabpanel" aria-labelledby="tab-btn-audit" style="display:none">
-      <h2>Audit Log</h2>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">All actions performed on the control plane are logged here for accountability.</p>
+      <div class="page-head"><h2>Audit Log</h2></div>
+      <p class="tab-intro">All actions performed on the control plane are logged here for accountability.</p>
       <div id="audit-list"></div>
     </div>
 
     <div id="tab-settings" role="tabpanel" aria-labelledby="tab-btn-settings" style="display:none">
       <h2>Settings</h2>
 
-      <div class="detail-panel" style="margin-bottom:1.5rem">
+      <div class="detail-panel">
         <h3>SMTP / Email Configuration</h3>
-        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem">
+        <p class="tab-intro">
           Used to send welcome emails to new clients and changelog notifications.
           For Gmail, enable 2-Step Verification and create an <strong>App Password</strong>.
         </p>
@@ -386,9 +430,9 @@
           <div class="field"><label for="smtp-from-email">From Email</label><input type="text" id="smtp-from-email" placeholder="noreply@gearglitch.com"></div>
           <div class="field"><label for="smtp-from-name">From Name</label><input type="text" id="smtp-from-name" placeholder="Gear&Glitch"></div>
         </div>
-        <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
+        <div class="actions-row">
           <button class="btn btn-primary" data-admin onclick="saveSmtpConfig()">Save SMTP</button>
-          <input type="text" id="smtp-test-to" aria-label="Test email recipient" placeholder="test@email.com" style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem;width:200px">
+          <input type="text" id="smtp-test-to" class="input" aria-label="Test email recipient" placeholder="test@email.com" style="width:200px">
           <button class="btn btn-ghost" data-admin onclick="testSmtpConfig()">Send Test Email</button>
           <span id="smtp-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
         </div>
@@ -396,7 +440,7 @@
 
       <div class="detail-panel">
         <h3>Cloudinary Configuration</h3>
-        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem">
+        <p class="tab-intro">
           Cloudinary is used for image uploads across all client stores.
           Configure once here and sync to all clients.
         </p>
@@ -406,10 +450,10 @@
           <div class="field"><label for="s-cld-secret">API Secret</label><input type="password" id="s-cld-secret" placeholder="Your API secret"></div>
           <div class="field"><label for="s-cld-folder">Folder</label><input type="text" id="s-cld-folder" placeholder="gear-glitch"></div>
         </div>
-        <div style="display:flex;gap:0.5rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
+        <div class="actions-row">
           <button class="btn btn-primary" data-admin onclick="saveSettingsCloudinary()">Save Cloudinary</button>
           <button class="btn btn-ghost" data-admin onclick="syncCloudinary()">Sync to All Clients</button>
-          <select id="pull-cloudinary-client" data-admin style="padding:0.4rem 0.6rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.82rem"><option value="">Pull Cloudinary from...</option></select>
+          <select id="pull-cloudinary-client" class="select" data-admin><option value="">Pull Cloudinary from...</option></select>
           <button class="btn btn-ghost" data-admin onclick="pullCloudinaryFromClient()">Pull Cloudinary</button>
           <span id="cld-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
         </div>
@@ -417,24 +461,24 @@
     </div>
 
     <div id="tab-client-detail" role="region" aria-label="Client details" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:1rem">
+      <div class="page-head">
         <div>
           <button class="btn btn-ghost btn-sm" onclick="closeClientDetails()" style="margin-right:0.5rem">&larr; Back</button>
           <span id="detail-client-name" style="font-size:1.2rem;font-weight:700"></span>
         </div>
-        <div id="detail-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap"></div>
+        <div id="detail-actions" class="btn-row"></div>
       </div>
       <div class="stats" id="detail-stats"></div>
-      <div id="detail-subscription" style="margin-bottom:1.5rem"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div id="detail-subscription" style="margin-bottom:var(--space-5)"></div>
+      <div class="page-head">
         <h2>Invoices</h2>
-        <div style="display:flex;gap:0.5rem">
+        <div class="btn-row">
           <button class="btn btn-primary btn-sm" data-admin onclick="generateClientInvoice()">+ Generate Invoice</button>
           <button class="btn btn-success btn-sm" data-admin onclick="recordClientPayment()">+ Record Payment</button>
         </div>
       </div>
       <div id="detail-invoices"></div>
-      <div id="detail-branches" style="margin-top:1.5rem"></div>
+      <div id="detail-branches" style="margin-top:var(--space-5)"></div>
     </div>
 
     <!-- Confirm Dialog -->
@@ -605,7 +649,7 @@
         <div class="field"><label for="plan-tier">Tier Level</label><input type="number" id="plan-tier" value="1" min="1"></div>
         <div class="field"><label for="plan-max-products">Max Products</label><input type="number" id="plan-max-products" value="50" min="0"></div>
         <div class="field"><label for="plan-max-branches">Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
-        <div class="field" style="display:flex;align-items:end;gap:1rem">
+        <div class="field" style="display:flex;align-items:end;gap:1rem;flex-wrap:wrap">
           <label style="margin:0"><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label>
           <label style="margin:0" title="When on, client admins who create/edit this plan will have it distributed to all other clients"><input type="checkbox" id="plan-sync-others" checked> Sync to other clients</label>
         </div>
@@ -1082,7 +1126,7 @@
     function renderTable(clients) {
       if (!clients.length) {
         const addBtn = currentUser && currentUser.role === "admin" ? '<button class="btn btn-primary" onclick="showModal()">+ Add Your First Client</button>' : "";
-        document.getElementById("client-list").innerHTML = '<div class="empty"><div class="icon">&#128230;</div><p>No clients yet</p>' + addBtn + '</div>';
+        document.getElementById("client-list").innerHTML = '<div class="empty"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div><p>No clients yet</p>' + addBtn + '</div>';
         document.getElementById("client-count").textContent = "0 clients";
         return;
       }
@@ -1578,7 +1622,7 @@
         if (!entries.length) { document.getElementById("changelog-list").innerHTML = '<div class="empty"><p>No updates published yet. Click "+ New Update" to publish your first changelog entry. All active clients will be notified by email.</p></div>'; return; }
         let html = "";
         for (const e of entries) {
-          html += `<div class="detail-panel"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">${esc(e.title)}</h2><span style="font-size:0.8rem;color:var(--text-muted)">${new Date(e.created_at).toLocaleDateString()}</span></div><div style="font-size:0.85rem;color:var(--primary-strong);margin:0.5rem 0">${esc(e.version)}</div><div style="font-size:0.9rem;color:var(--text-secondary);white-space:pre-wrap">${esc(e.body)}</div></div>`;
+          html += `<div class="detail-panel"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem"><h2 style="margin:0">${esc(e.title)}</h2><span style="font-size:0.8rem;color:var(--text-muted)">${new Date(e.created_at).toLocaleDateString()}</span></div><div style="font-size:0.85rem;color:var(--primary-strong);margin:0.5rem 0">${esc(e.version)}</div><div style="font-size:0.9rem;color:var(--text-secondary);white-space:pre-wrap">${esc(e.body)}</div></div>`;
         }
         document.getElementById("changelog-list").innerHTML = html;
       } catch { document.getElementById("changelog-list").innerHTML = '<div class="empty"><p>Failed to load.</p></div>'; }
@@ -2214,7 +2258,7 @@
         }
         let html = '';
         if (stats) {
-          html += `<div style="display:flex;gap:1rem;margin-bottom:1rem;font-size:0.85rem"><span>Total: <strong>${stats.total}</strong></span><span style="color:var(--success-strong)">Paid: <strong>${stats.paid}</strong></span><span style="color:var(--warning-strong)">Pending: <strong>${stats.pending}</strong></span><span style="color:var(--danger-strong)">Overdue: <strong>${stats.overdue}</strong></span></div>`;
+          html += `<div style="display:flex;gap:1rem;margin-bottom:1rem;font-size:0.85rem;flex-wrap:wrap"><span>Total: <strong>${stats.total}</strong></span><span style="color:var(--success-strong)">Paid: <strong>${stats.paid}</strong></span><span style="color:var(--warning-strong)">Pending: <strong>${stats.pending}</strong></span><span style="color:var(--danger-strong)">Overdue: <strong>${stats.overdue}</strong></span></div>`;
         }
         html += '<table><thead><tr><th>Invoice #</th><th>Plan</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
         for (const inv of invoices) {
