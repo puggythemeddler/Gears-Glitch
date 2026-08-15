@@ -242,6 +242,9 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
   const partsTotal = Array.isArray(detail?.parts)
     ? detail.parts.reduce((s: number, p: any) => s + (Number(p.unitCost) || 0) * (Number(p.quantity) || 1), 0)
     : 0;
+  const quoteSent = !!detail?.quoteSentAt;
+  const quoteAccepted = detail?.quoteResponse === "accepted";
+  const quoteDeclined = detail?.quoteResponse === "declined";
 
   return (
     <>
@@ -295,51 +298,88 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
 
       {detail && form && (
         <div className="panel" style={{ marginTop: "1.25rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
-            <h3 style={{ margin: 0 }}>Ticket #{detail.id} — {escapeHtml(detail.deviceType)}</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div style={{ minWidth: 0, maxWidth: "70ch" }}>
+              <h3 style={{ margin: 0 }}>Ticket #{detail.id} — {escapeHtml(detail.deviceType)}</h3>
+              <p className="muted" style={{ margin: "0.5rem 0 0" }}>{escapeHtml(detail.issueDescription)}</p>
+            </div>
             {statusBadge(detail.status)}
           </div>
-          <p className="muted" style={{ marginTop: "0.5rem" }}>{escapeHtml(detail.issueDescription)}</p>
-          <p className="muted">Customer: {escapeHtml(detail.customerName)} ({escapeHtml(detail.customerEmail || "")})</p>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem", margin: "1rem 0" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.5rem 1.5rem", marginTop: "1.25rem", padding: "0.75rem 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <div className="input-label">Customer</div>
+              <div>{escapeHtml(detail.customerName)}</div>
+            </div>
+            <div>
+              <div className="input-label">Email</div>
+              <div>{escapeHtml(detail.customerEmail || "—")}</div>
+            </div>
+            {detail.deviceModel ? (
+              <div>
+                <div className="input-label">Device model</div>
+                <div>{escapeHtml(detail.deviceModel)}</div>
+              </div>
+            ) : null}
+            {detail.repairTypeName ? (
+              <div>
+                <div className="input-label">Repair type</div>
+                <div>{escapeHtml(detail.repairTypeName)}</div>
+              </div>
+            ) : null}
+            <div>
+              <div className="input-label">Reported</div>
+              <div>{detail.createdAt ? fmtDate(detail.createdAt) : "—"}</div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0 0.75rem", marginTop: "1.25rem" }}>
             <div className="field"><label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>{STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}</select></label></div>
             <div className="field"><label>Technician<select value={form.assignedTo} onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}><option value="">Unassigned</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.username}</option>)}</select></label></div>
             <div className="field"><label>ETA date<input type="date" value={form.etaAt} onChange={(e) => setForm({ ...form, etaAt: e.target.value })} /></label></div>
             <div className="field"><label>Schedule (calendar)<input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} /></label></div>
           </div>
 
-          <div className="field" style={{ marginBottom: "1rem" }}><label>Diagnosis<textarea rows={3} value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} /></label></div>
+          <div className="field"><label>Diagnosis<textarea rows={3} value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} /></label></div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0 0.75rem" }}>
             <div className="field"><label>Hardware value (KES)<input type="number" min={0} value={form.hardwareValue} onChange={(e) => setForm({ ...form, hardwareValue: e.target.value })} /></label></div>
-            <div className="field" style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "1.4rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", alignSelf: "end", marginBottom: "1rem", cursor: "pointer" }}>
               <input type="checkbox" checked={form.softwareInstall} onChange={(e) => setForm({ ...form, softwareInstall: e.target.checked })} />
-              <label style={{ fontWeight: "normal", margin: 0 }}>Software install (+KES 800)</label>
-            </div>
-            <div className="field" style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "1.4rem" }}>
+              Software install (+KES 800)
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", alignSelf: "end", marginBottom: "1rem", cursor: "pointer" }}>
               <input type="checkbox" checked={form.softwareLicense} onChange={(e) => setForm({ ...form, softwareLicense: e.target.checked })} />
-              <label style={{ fontWeight: "normal", margin: 0 }}>Software license (+KES 2,500)</label>
-            </div>
+              Software license (+KES 2,500)
+            </label>
           </div>
 
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-            <RippleButton onClick={saveDetail} loading={saving}>Save</RippleButton>
-            <RippleButton variant="secondary" onClick={sendQuote} disabled={!!detail.quoteSentAt}>
-              {detail.quoteSentAt ? "Quote sent ✓" : "Send quote to customer"}
-            </RippleButton>
-            {detail.totalCost > 0 && <span style={{ fontWeight: 600, fontSize: "1.05rem" }}>Total: {formatPrice(detail.totalCost)}</span>}
-            {detail.quoteSentAt && (
-              <span className="plan-status" style={{ background: detail.quoteResponse === "accepted" ? "var(--success-light)" : detail.quoteResponse === "declined" ? "var(--danger-light)" : "var(--warning-light)", color: detail.quoteResponse === "accepted" ? "var(--success-text)" : detail.quoteResponse === "declined" ? "var(--danger-text)" : "var(--warning-text)" }}>
-                {detail.quoteResponse ? `Customer ${detail.quoteResponse}` : "Awaiting customer response"}
-              </span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <RippleButton onClick={saveDetail} loading={saving}>Save</RippleButton>
+              <RippleButton variant="secondary" onClick={sendQuote} disabled={quoteSent}>
+                {quoteSent ? "Quote sent" : "Send quote to customer"}
+              </RippleButton>
+            </div>
+            {detail.totalCost > 0 && (
+              <div style={{ textAlign: "right" }}>
+                <div className="input-label" style={{ marginBottom: 0 }}>Total</div>
+                <div style={{ fontWeight: 600, fontSize: "1.05rem", fontVariantNumeric: "tabular-nums" }}>{formatPrice(detail.totalCost)}</div>
+              </div>
             )}
           </div>
+          {quoteSent && (
+            <div style={{ marginTop: "0.75rem", padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)", background: quoteAccepted ? "var(--success-light)" : quoteDeclined ? "var(--danger-light)" : "var(--warning-light)", color: quoteAccepted ? "var(--success-text)" : quoteDeclined ? "var(--danger-text)" : "var(--warning-text)" }}>
+              {quoteAccepted ? "Customer accepted the quote" : quoteDeclined ? "Customer declined the quote" : "Quote sent to customer — awaiting response"}
+            </div>
+          )}
 
-          <div style={{ marginTop: "1.5rem" }}>
-            <h4 style={{ marginBottom: "0.5rem" }}>Parts used — total {formatPrice(partsTotal)}</h4>
+          <div style={{ marginTop: "1.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
+            <h4 style={{ margin: 0, display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
+              Parts used <span className="muted" style={{ fontWeight: 400, fontVariantNumeric: "tabular-nums" }}>· total {formatPrice(partsTotal)}</span>
+            </h4>
             {Array.isArray(detail.parts) && detail.parts.length > 0 && (
-              <div className="table-wrap" style={{ marginBottom: "0.75rem" }}>
+              <div className="table-wrap" style={{ marginTop: "0.75rem", marginBottom: "0.75rem" }}>
                 <table className="data-table">
                   <thead><tr><th>Description</th><th>Qty</th><th>Unit cost</th><th>Line total</th><th></th></tr></thead>
                   <tbody>
@@ -364,17 +404,15 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
             </div>
           </div>
 
-          <div style={{ marginTop: "1.5rem" }}>
-            <h4 style={{ marginBottom: "0.5rem" }}>Updates &amp; notes</h4>
+          <div style={{ marginTop: "1.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
+            <h4 style={{ margin: "0 0 0.75rem" }}>Updates &amp; notes</h4>
             {Array.isArray(detail.updates) && detail.updates.length > 0 && (
               <div style={{ marginBottom: "0.75rem" }}>
                 {detail.updates.map((u: any) => (
-                  <div key={u.id} className="order-item" style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}>
-                    <div>
-                      <strong>{escapeHtml(u.staffName || "Staff")}</strong> <span className="muted">· {new Date(u.createdAt).toLocaleString("en-GB")}</span>
-                      {!u.customerVisible && <span className="plan-status" style={{ marginLeft: "0.5rem", background: "var(--neutral-light)", color: "var(--neutral-text)" }}>Internal</span>}
-                      <p style={{ margin: "0.25rem 0 0", whiteSpace: "pre-wrap" }}>{escapeHtml(u.message)}</p>
-                    </div>
+                  <div key={u.id} className="order-item">
+                    <strong>{escapeHtml(u.staffName || "Staff")}</strong> <span className="muted">· {new Date(u.createdAt).toLocaleString("en-GB")}</span>
+                    {!u.customerVisible && <span className="plan-status" style={{ marginLeft: "0.5rem", background: "var(--neutral-light)", color: "var(--neutral-text)" }}>Internal</span>}
+                    <p style={{ margin: "0.25rem 0 0", whiteSpace: "pre-wrap" }}>{escapeHtml(u.message)}</p>
                   </div>
                 ))}
               </div>
