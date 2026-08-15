@@ -555,6 +555,7 @@ export async function deployRenderService(renderServiceId: string) {
       method: "POST",
       headers: headers(RENDER_API_KEY),
       body: JSON.stringify({ clear_cache: false }),
+      signal: AbortSignal.timeout(30000),
     }
   );
   return res.ok;
@@ -579,19 +580,25 @@ export async function deployAllClients(
   clients: { render_service_id: string; name: string }[]
 ) {
   console.log(`[deploy] Triggering deploy for ${clients.length} clients...`);
-  const results: { name: string; success: boolean; error?: string }[] = [];
-  for (const client of clients) {
-    if (!client.render_service_id) {
-      results.push({ name: client.name, success: false, error: "No Render service ID" });
-      continue;
+  const results: { name: string; success: boolean; error?: string }[] = new Array(clients.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < clients.length) {
+      const i = cursor++;
+      const client = clients[i];
+      if (!client.render_service_id) {
+        results[i] = { name: client.name, success: false, error: "No Render service ID" };
+        continue;
+      }
+      try {
+        const ok = await deployRenderService(client.render_service_id);
+        results[i] = { name: client.name, success: ok, error: ok ? undefined : `HTTP error` };
+      } catch (e: any) {
+        results[i] = { name: client.name, success: false, error: e.message };
+      }
     }
-    try {
-      const ok = await deployRenderService(client.render_service_id);
-      results.push({ name: client.name, success: ok, error: ok ? undefined : `HTTP error` });
-    } catch (e: any) {
-      results.push({ name: client.name, success: false, error: e.message });
-    }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, clients.length) }, () => worker()));
   return results;
 }
 
