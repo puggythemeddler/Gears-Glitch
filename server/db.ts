@@ -1279,6 +1279,10 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tendered_amount DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
   try { await query(`CREATE INDEX IF NOT EXISTS idx_orders_checkout_request ON orders(checkout_request_id)`); } catch {}
 
+  // Remove retired layouts (mobile, custom) from existing databases; clients using them fall back to Original
+  try { await query(`DELETE FROM storefront_layouts WHERE layout_key IN ('mobile', 'custom')`); } catch {}
+  try { await query(`UPDATE settings SET value = 'original' WHERE key = 'store_layout' AND value IN ('mobile', 'custom')`); } catch {}
+
   // Seed default static layouts if none exist
   try {
     const count = await queryOne("SELECT COUNT(*) AS count FROM storefront_layouts") as { count: number } | undefined;
@@ -1287,8 +1291,6 @@ async function runMigrations(): Promise<void> {
         { key: "original", label: "Original", desc: "Clean default layout with premium hero section, animated glows, floating particles, product carousel, glassmorphism buttons, and wave transition.", sort: 1 },
         { key: "amazon", label: "Amazon Style", desc: "Large search bar, horizontal categories, product recommendations, featured deals.", sort: 2 },
         { key: "jumia", label: "Jumia Style", desc: "Promotional sliders, flash sales, daily deals, category icons.", sort: 3 },
-        { key: "mobile", label: "Mobile", desc: "Premium minimalist, hero banners, brand chips, compare specs.", sort: 4 },
-        { key: "custom", label: "Custom", desc: "Flexible layout for custom hero sections, featured categories, and responsive card panels.", sort: 5 },
       ];
       for (const d of defaults) {
         await query(

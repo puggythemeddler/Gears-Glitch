@@ -4,8 +4,6 @@ import { api } from "@/lib/api";
 import * as original from "./original";
 import * as amazon from "./amazon";
 import * as jumia from "./jumia";
-import * as mobile from "./mobile";
-import * as custom from "./custom";
 import { DynamicHomePage, DynamicLayoutStyles } from "./dynamic-engine";
 
 export interface LayoutModule {
@@ -18,7 +16,7 @@ export interface LayoutModule {
   HomePage: (props: { products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any }) => React.JSX.Element;
 }
 
-const STATIC_LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia, mobile, custom };
+const STATIC_LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia };
 
 export const STORE_THEMES: string[] = ["default", "kenyan", "modern"];
 

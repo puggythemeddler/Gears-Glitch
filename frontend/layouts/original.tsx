@@ -152,8 +152,8 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const heroBgDark = typeof hero?.heroBgDark === "string" ? hero.heroBgDark.trim() : "";
   const customBg = (isDark ? heroBgDark || heroBgLight : heroBgLight || heroBgDark) || "";
   const bgIsDark = customBg ? isDarkColor(customBg) : isDark;
-  const heroText = bgIsDark ? "#f8fafc" : "#0f172a";
-  const heroTextSec = bgIsDark ? "#94a3b8" : "#475569";
+  const heroText = bgIsDark ? "#f4f1ec" : "#1c1917";
+  const heroTextSec = bgIsDark ? "#a8a29b" : "#57534e";
 
   const heroStyle = customBg ? ({
     "--hero-bg-gradient": `linear-gradient(135deg, ${customBg} 0%, ${shade(customBg, -14)} 100%)`,
@@ -163,25 +163,25 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     "--hero-stat-value": heroText,
     "--hero-stat-label": heroTextSec,
     "--hero-product-name": heroText,
-    "--hero-badge-color": bgIsDark ? "#60a5fa" : "#1d4ed8",
-    "--hero-badge-bg": bgIsDark ? "rgba(59, 130, 246, 0.1)" : "rgba(37, 99, 235, 0.08)",
-    "--hero-badge-border": bgIsDark ? "rgba(59, 130, 246, 0.25)" : "rgba(37, 99, 235, 0.25)",
+    "--hero-badge-color": bgIsDark ? "#fb923c" : "#c2410c",
+    "--hero-badge-bg": bgIsDark ? "rgba(249, 115, 22, 0.1)" : "rgba(234, 88, 12, 0.08)",
+    "--hero-badge-border": bgIsDark ? "rgba(249, 115, 22, 0.3)" : "rgba(234, 88, 12, 0.3)",
     "--hero-glass-bg": bgIsDark ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.6)",
-    "--hero-glass-border": bgIsDark ? "rgba(255, 255, 255, 0.12)" : "rgba(15, 23, 42, 0.1)",
+    "--hero-glass-border": bgIsDark ? "rgba(255, 255, 255, 0.12)" : "rgba(28, 25, 23, 0.1)",
     "--hero-glass-hover": bgIsDark ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.9)",
-    "--hero-glass-hover-border": bgIsDark ? "rgba(255, 255, 255, 0.2)" : "rgba(15, 23, 42, 0.18)",
+    "--hero-glass-hover-border": bgIsDark ? "rgba(255, 255, 255, 0.2)" : "rgba(28, 25, 23, 0.18)",
     "--hero-chip-bg": bgIsDark ? "rgba(255, 255, 255, 0.04)" : "rgba(255, 255, 255, 0.65)",
-    "--hero-chip-border": bgIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.12)",
-    "--hero-chip-hover-bg": bgIsDark ? "rgba(59, 130, 246, 0.15)" : "rgba(37, 99, 235, 0.1)",
-    "--hero-chip-hover-border": bgIsDark ? "rgba(59, 130, 246, 0.3)" : "rgba(37, 99, 235, 0.35)",
-    "--hero-chip-hover-text": bgIsDark ? "#60a5fa" : "#1d4ed8",
+    "--hero-chip-border": bgIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(28, 25, 23, 0.12)",
+    "--hero-chip-hover-bg": bgIsDark ? "rgba(249, 115, 22, 0.15)" : "rgba(234, 88, 12, 0.1)",
+    "--hero-chip-hover-border": bgIsDark ? "rgba(249, 115, 22, 0.35)" : "rgba(234, 88, 12, 0.4)",
+    "--hero-chip-hover-text": bgIsDark ? "#fb923c" : "#c2410c",
     "--hero-img-bg": bgIsDark ? "rgba(255, 255, 255, 0.03)" : "rgba(255, 255, 255, 0.5)",
-    "--hero-img-border": bgIsDark ? "rgba(255, 255, 255, 0.06)" : "rgba(15, 23, 42, 0.08)",
-    "--hero-dot-bg": bgIsDark ? "rgba(255, 255, 255, 0.25)" : "rgba(15, 23, 42, 0.25)",
-    "--hero-dot-active": bgIsDark ? "#60a5fa" : "#2563eb",
-    "--hero-dot-hover": bgIsDark ? "rgba(255, 255, 255, 0.5)" : "rgba(15, 23, 42, 0.5)",
+    "--hero-img-border": bgIsDark ? "rgba(255, 255, 255, 0.06)" : "rgba(28, 25, 23, 0.08)",
+    "--hero-dot-bg": bgIsDark ? "rgba(255, 255, 255, 0.25)" : "rgba(28, 25, 23, 0.25)",
+    "--hero-dot-active": bgIsDark ? "#fb923c" : "#ea580c",
+    "--hero-dot-hover": bgIsDark ? "rgba(255, 255, 255, 0.5)" : "rgba(28, 25, 23, 0.5)",
     "--hero-stat-bg": bgIsDark ? "rgba(255, 255, 255, 0.04)" : "rgba(255, 255, 255, 0.65)",
-    "--hero-stat-border": bgIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.1)",
+    "--hero-stat-border": bgIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(28, 25, 23, 0.1)",
   } as React.CSSProperties) : undefined;
 
   useEffect(() => {

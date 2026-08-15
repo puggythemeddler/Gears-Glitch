@@ -33,7 +33,7 @@ A complete multi-branch sales & management system with product catalog, customer
 ## Features at a glance
 
 ### Sales & storefront
-- 5 built-in storefront layouts (Original, Amazon-style, Jumia-style, Mobile, Custom) plus a runtime JSON layout builder for admin-created custom themes
+- 3 built-in storefront layouts (Original, Amazon-style, Jumia-style) plus a runtime JSON layout builder for admin-created custom themes
 - Admin-controllable hero section with badge, headline, rotating headline variants, CTA buttons, category chips, live stats from your data, auto-rotating featured-product carousel, sale countdown timer, WhatsApp chat CTA, payment & delivery trust strip, on/off toggle, and theme-aware background colors (follows the visitor's device dark/light theme automatically, with per-theme custom color pickers)
 - Product catalog with image galleries, primary image management, subcategories with multi-category sharing, sale price (strikethrough pricing), and drag-and-drop product positioning
 - Two-step checkout with delivery details (Kenyan counties), payment method selection, and order tracking (`pending` → `confirmed` → `shipped` → `delivered`)
@@ -106,7 +106,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - About Us page with owner-editable content; custom nav order (auto-synced with the live category list); footer config; company Google Sign-In setup
 
 ### Storefront layout system
-- 5 built-in static layouts — **Original, Amazon, Jumia, Mobile, Custom** — registered as code modules in `frontend/layouts/` and seeded into the `storefront_layouts` table. Admins can also create **dynamic JSON layouts** (product-grid, category-grid, banner, stats, text, spacer sections) rendered by the generic engine in `frontend/layouts/dynamic-engine.tsx`.
+- 3 built-in static layouts — **Original, Amazon, Jumia** — registered as code modules in `frontend/layouts/` and seeded into the `storefront_layouts` table. Admins can also create **dynamic JSON layouts** (product-grid, category-grid, banner, stats, text, spacer sections) rendered by the generic engine in `frontend/layouts/dynamic-engine.tsx`.
 - The active layout is chosen from the **Storefront** panel (Settings group in the staff portal) and synced to the `store_layout` setting. Layouts only change presentation — products, orders, and settings are never touched.
 - **Layout control is admin-only.** The Storefront view is only shown to admin users in the staff portal; the API behind layout changes (`PUT /api/admin/storefront-layout`) requires admin auth server-side.
 

@@ -20,7 +20,7 @@ export function LayoutStyles() {
     .amz-nav a { padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; color: var(--text); text-decoration: none; }
     .amz-nav a:hover { background: var(--primary); color: #fff; }
     .amz-hero { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
-    .amz-hero-main { border-radius: 12px; overflow: hidden; position: relative; background: linear-gradient(135deg, var(--primary), var(--brand-gradient-b, #7c3aed)); color: #fff; padding: 3rem; min-height: 300px; display: flex; flex-direction: column; justify-content: center; }
+    .amz-hero-main { border-radius: 12px; overflow: hidden; position: relative; background: linear-gradient(135deg, var(--primary), var(--brand-gradient-b, #f97316)); color: #fff; padding: 3rem; min-height: 300px; display: flex; flex-direction: column; justify-content: center; }
     .amz-hero-main h2 { font-size: 2rem; margin: 0 0 0.5rem; }
     .amz-hero-main p { font-size: 1.1rem; margin: 0 0 1.5rem; opacity: 0.9; }
     .amz-hero-side { display: flex; flex-direction: column; gap: 1rem; }
@@ -65,7 +65,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
           <CurrencySelector />
-          <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
+           <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "Light" : "Dark"}</button>
           {isLoggedIn ? (
             <>
               <a href="/dashboard" style={{ fontSize: "0.9rem", color: "var(--text)", textDecoration: "none" }}>{userName || "Account"}</a>
@@ -136,7 +136,7 @@ export function HomePage({ products, categories, banners, hero }: {
 
       {deals.length > 0 && (
         <div className="amz-section">
-          <h2>🔥 Featured Deals</h2>
+          <h2>Featured Deals</h2>
           <div className="amz-grid">
             {deals.map((p) => <AmazonCard key={p.id} product={p} />)}
           </div>
@@ -152,7 +152,7 @@ export function HomePage({ products, categories, banners, hero }: {
       )}
 
       <div className="amz-section">
-        <h2>📦 Best Sellers</h2>
+        <h2>Best Sellers</h2>
         <div className="amz-grid">
           {bestsellers.map((p) => <AmazonCard key={p.id} product={p} />)}
         </div>

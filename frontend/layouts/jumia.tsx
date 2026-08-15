@@ -21,7 +21,7 @@ export function LayoutStyles() {
     .jum-cat-icon:hover { background: var(--primary); color: #fff; }
     .jum-cat-icon .icon { font-size: 1.6rem; }
     .jum-slider { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; border-radius: 12px; overflow: hidden; position: relative; }
-    .jum-slide { background: linear-gradient(135deg, var(--primary), var(--brand-gradient-b, #7c3aed)); color: #fff; padding: 3rem 2rem; min-height: 280px; display: flex; flex-direction: column; justify-content: center; border-radius: 12px; }
+    .jum-slide { background: linear-gradient(135deg, var(--primary), var(--brand-gradient-b, #f97316)); color: #fff; padding: 3rem 2rem; min-height: 280px; display: flex; flex-direction: column; justify-content: center; border-radius: 12px; }
     .jum-slide h2 { font-size: 2rem; margin: 0 0 0.5rem; }
     .jum-slide p { font-size: 1.1rem; margin: 0 0 1rem; opacity: 0.9; }
     .jum-dots { display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
@@ -63,7 +63,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
             <CurrencySelector />
-            <button type="button" onClick={toggleDark} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
+            <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "Light" : "Dark"}</button>
             {isLoggedIn ? (
               <>
                 <a href="/dashboard" style={{ fontSize: "0.9rem", color: "var(--text)", textDecoration: "none" }}>{userName || "Account"}</a>
@@ -83,7 +83,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
       <div className="jum-cat-icons">
         {categories.map((cat, i) => (
           <a key={cat.id} href={`/${cat.id}`} className="jum-cat-icon">
-            <span className="icon">{["💻","🖥️","🖨️","📱","⌚","🎧","📷","🔧"][i % 8]}</span>
+             <span className="icon">{["Tech","Electronics","Audio","Mobile","Wearables","Accessories","Cameras","Repairs"][i % 8]}</span>
             <span>{cat.label}</span>
           </a>
         ))}
@@ -152,7 +152,7 @@ export function HomePage({ products, categories, banners, hero }: {
 
       <div className="jum-section">
         <div className="jum-section-header">
-          <h2>⚡ Flash Sales</h2>
+          <h2>Flash Sales</h2>
           <span className="jum-timer">Ends in 23:59:59</span>
         </div>
         <div className="jum-grid">
