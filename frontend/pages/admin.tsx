@@ -489,7 +489,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="dash-layout">
+    <div className="dash-layout dash-layout--bare">
       <nav className="dash-nav" aria-label="Admin navigation">
         <div className="dash-nav-search">
           <Icon name="search" size={14} />

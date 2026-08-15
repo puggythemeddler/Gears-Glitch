@@ -118,7 +118,7 @@ export default function StockTakeSessionPage() {
   if (!session) return <Spinner />;
 
   return (
-    <div className="dash-layout">
+    <div className="dash-layout dash-layout--bare">
       <nav className="dash-nav" style={{ padding: "1rem" }}>
         <Link href="/admin?view=stock-take" style={{ display: "block", marginBottom: "1rem" }}>&larr; Back to Stock Take</Link>
         <p style={{ fontSize: "0.85rem", opacity: 0.6 }}>Session #{session.id}</p>

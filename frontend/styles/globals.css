@@ -2043,20 +2043,29 @@ textarea:not(.input)::placeholder {
   min-height: 60vh;
 }
 
+/* Headerless pages (admin, stock-take, suppliers) opt in via .dash-layout--bare:
+   the nav becomes a full-viewport rail flush to the top-left. Pages that keep
+   the site header (customer dashboard) get the card offset below it instead. */
 .dash-nav {
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: calc(var(--header-height) + var(--space-2));
+  height: calc(100vh - var(--header-height) - var(--space-4) * 2);
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  border-radius: var(--radius-lg);
   padding: var(--space-3);
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+}
+
+.dash-layout--bare .dash-nav {
+  top: 0;
+  height: 100vh;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
 }
 
 .dash-nav::-webkit-scrollbar { width: 4px; }
@@ -2199,8 +2208,9 @@ textarea:not(.input)::placeholder {
   color: var(--primary);
 }
 
-.dash-content {
-  min-width: 0;
+.dash-content { min-width: 0; }
+
+.dash-layout--bare .dash-content {
   padding: var(--space-4) var(--space-5) var(--space-8);
 }
 
@@ -3284,7 +3294,7 @@ a.about-contact-card:hover {
     margin-bottom: var(--space-4);
   }
 
-  .dash-content { padding: var(--space-3) var(--space-4) var(--space-6); }
+  .dash-layout--bare .dash-content { padding: var(--space-3) var(--space-4) var(--space-6); }
 
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
 

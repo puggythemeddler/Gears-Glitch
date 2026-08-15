@@ -131,6 +131,7 @@ export default function DashboardPage() {
             key={s.key}
             className={activeSection === s.key ? "active" : ""}
             onClick={() => setActiveSection(s.key)}
+            aria-current={activeSection === s.key ? "page" : undefined}
           >
             {s.label}
           </button>
@@ -268,7 +269,13 @@ export default function DashboardPage() {
                     {/* Conversation list */}
                     <div style={{ width: 260, borderRight: "1px solid var(--border)", overflowY: "auto", flexShrink: 0 }}>
                       {convos.map((c) => (
-                        <div key={c.key} onClick={() => selectConvo(c.key, c.msgs)} style={{
+                        <button type="button" key={c.key} onClick={() => selectConvo(c.key, c.msgs)} aria-current={selectedMsgKey === c.key ? "true" : undefined} style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          fontFamily: "inherit",
+                          border: "none",
+                          borderTop: "none",
                           padding: "0.75rem 1rem",
                           cursor: "pointer",
                           borderBottom: "1px solid var(--border)",
@@ -289,7 +296,7 @@ export default function DashboardPage() {
                           <div style={{ fontSize: "0.7rem", opacity: 0.5, marginTop: "0.15rem" }}>
                             {new Date(c.latest.created_at).toLocaleString("en-GB")}
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
 

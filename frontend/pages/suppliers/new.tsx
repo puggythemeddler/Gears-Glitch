@@ -45,7 +45,7 @@ export default function NewSupplierPage() {
   }
 
   return (
-    <div className="dash-layout">
+    <div className="dash-layout dash-layout--bare">
       <nav className="dash-nav" style={{ padding: "1rem" }}>
         <Link href="/admin?view=suppliers" style={{ display: "block", marginBottom: "1rem" }}>&larr; Back to Suppliers</Link>
       </nav>
