@@ -167,6 +167,10 @@ One unified, role-aware portal replaces the former separate `/admin`, `/owner`, 
 
 Access is fine-tuned in **Users & Permissions** (assign/remove roles per user, toggle direct permissions) and **Roles** (define custom roles with granular permission toggles — every sidebar view maps to a permission such as `order:view`, `customer:view`, `invoice:view`, `reports:view`, `stock:list`, or `messaging:view`).
 
+### Customer management (Admin → Customers)
+- **Edit a customer** — the **Edit** button on any customer row opens an inline panel to update name, email, and phone, or set a new password (leave blank to keep the current password). A duplicate email is rejected with a clear error.
+- **Delete a customer** — deleting a customer also removes all their dependent records in one transaction: repair tickets (with their parts, updates, and images), messages, product reviews, loyalty points and transactions, coupon usage, credit notes, eTIMS sales records, orders (with items, invoices, gift-card redemptions, refunds), carts, wishlist, quotes, and cart-recovery reminders. Every customer can be deleted regardless of history — but deletion is permanent and cannot be undone.
+
 ### Control Plane Dashboard
 Clients, Plans, Changelog, Deploy Log, Backups, Settings (SMTP/Cloudinary), Audit Log, Users (with 2FA), plus a **notification bell** (unread badge + dropdown) and a **payment-reminders banner** on the Clients tab.
 
