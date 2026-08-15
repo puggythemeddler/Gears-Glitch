@@ -165,7 +165,74 @@ See `LOCAL_SETUP.md` for the detailed step-by-step guide.
 ### Staff Portal (`/admin`)
 One unified, role-aware portal replaces the former separate `/admin`, `/owner`, and `/backoffice` pages. The sidebar shows exactly what the signed-in user's permissions allow; feature gating hides sections the active plan doesn't include. Sections include: Dashboard, Products, **Groups**, Categories, **Category Order**, **Repairs** (Services: Tickets, Calendar, Page Content), Coupons, Gift Cards, Campaigns, Abandoned Carts, Orders, Users & Permissions, Roles, Plans, Providers, Invoices, Credit Notes, Reports (5 sub-tabs), Stock on Hand, Stock Transfers, Stock Take, Purchases, Suppliers, Branches, Clients, Messages, Reviews, Spec Templates, Splashes, About Us, Storefront, Shop Subscription, Settings.
 
+Screenshots of each panel group appear next to their topics below: the panels for Repairs are under §10, the storefront/layout/about-us panels under §7, and the store-identity panel under §12.
+
+![Dashboard](screenshots/01-overview/dashboard.png)
+
 Access is fine-tuned in **Users & Permissions** (assign/remove roles per user, toggle direct permissions) and **Roles** (define custom roles with granular permission toggles — every sidebar view maps to a permission such as `order:view`, `customer:view`, `invoice:view`, `reports:view`, `stock:list`, or `messaging:view`).
+
+### Sales panels
+The catalog, orders, and customer-facing commerce tools.
+
+![Products](screenshots/02-sales/products.png)
+![Groups](screenshots/02-sales/groups.png)
+![Categories](screenshots/02-sales/categories.png)
+![Category Order](screenshots/02-sales/category-order.png)
+![Orders](screenshots/02-sales/orders.png)
+![Customers](screenshots/02-sales/customers.png)
+![Coupons](screenshots/02-sales/coupons.png)
+![Gift Cards](screenshots/02-sales/gift-cards.png)
+![Campaigns](screenshots/02-sales/campaigns.png)
+![Abandoned Carts](screenshots/02-sales/abandoned-carts.png)
+![Quotations](screenshots/02-sales/quotations.png)
+
+### Stock panels
+![Stock on Hand](screenshots/04-stock/stock-on-hand.png)
+![Stock Transfers](screenshots/04-stock/stock-transfers.png)
+![Stock Take](screenshots/04-stock/stock-take.png)
+![Stock Control](screenshots/04-stock/stock-control.png)
+![Serial Numbers](screenshots/04-stock/serials.png)
+![Purchase Orders](screenshots/04-stock/purchase-orders.png)
+![Suppliers](screenshots/04-stock/suppliers.png)
+
+### Team panels
+![Users](screenshots/05-team/users.png)
+![Roles](screenshots/05-team/roles.png)
+![Clients](screenshots/05-team/clients.png)
+![Branches](screenshots/05-team/branches.png)
+
+### Finance panels
+![Invoices](screenshots/06-finance/invoices.png)
+![Credit Notes](screenshots/06-finance/credit-notes.png)
+![Providers](screenshots/06-finance/providers.png)
+
+### Activity panels
+![Reports](screenshots/07-activity/reports.png)
+![Reports — Sales](screenshots/07-activity/reports-sales.png)
+![Reports — Employee Sales](screenshots/07-activity/reports-employee-sales.png)
+![Reports — Technician Performance](screenshots/07-activity/reports-technician-performance.png)
+![Reports — Purchases](screenshots/07-activity/reports-purchases.png)
+![Reports — Stock Summary](screenshots/07-activity/reports-stock-summary.png)
+![Reports — Visitors](screenshots/07-activity/reports-visitors.png)
+![Messages](screenshots/07-activity/messages.png)
+![Reviews](screenshots/07-activity/reviews.png)
+![Audit Log](screenshots/07-activity/audit-log.png)
+
+### Settings panels
+![Payments](screenshots/08-settings/payments.png)
+![Compliance](screenshots/08-settings/compliance.png)
+![Delivery Fees](screenshots/08-settings/delivery-fees.png)
+![Content](screenshots/08-settings/content.png)
+![System](screenshots/08-settings/system.png)
+![Product Positioning](screenshots/08-settings/product-positioning.png)
+![Email](screenshots/08-settings/email-settings.png)
+![WhatsApp](screenshots/08-settings/whatsapp-settings.png)
+![Subscription Plans](screenshots/08-settings/subscription-plans.png)
+![Spec Templates](screenshots/08-settings/spec-templates.png)
+![Subscription](screenshots/08-settings/subscription.png)
+
+### Help panel
+![Help & Reference](screenshots/09-help/help.png)
 
 ### Customer management (Admin → Customers)
 - **Edit a customer** — the **Edit** button on any customer row opens an inline panel to update name, email, and phone, or set a new password (leave blank to keep the current password). A duplicate email is rejected with a clear error.
@@ -181,11 +248,21 @@ Clients, Plans, Changelog, Deploy Log, Backups, Settings (SMTP/Cloudinary), Audi
 ### Layouts
 Five built-in layout themes — Original, Amazon, Jumia, Mobile, Custom — plus a runtime JSON layout builder for admin-created dynamic themes. The active layout is stored in the `storefront_layouts` table and selected from Admin → Settings → Storefront.
 
+![Storefront](screenshots/08-settings/storefront.png)
+![Layout Builder](screenshots/08-settings/layout-builder.png)
+
 ### Product Groups
 Managed collections built from the old free-text category groups (`product_groups` table). Admins create/edit/delete groups and toggle each one **active** from Admin → Groups. Active groups get public `/groups` (index) and `/group/[slug]` (product grid) pages, and appear as filters in the Sales Report and Stock Summary. Products assign to a group via the product form's Group dropdown; category remains optional. Existing category group names were migrated into group rows automatically, and `products.group_id` was backfilled from each product's category.
 
 ### Repairs page content
 The public `/repairs` page is fully editable from **Admin → Services → Repairs → Page Content**: change the intro paragraph and add/remove/edit the service panels (title + description) customers see. Each panel can be hidden without deleting it (untick **Show on the /repairs page**) or turned into a **booking button**: tick **Booking button**, then set a repair type (for automatic base pricing), a device type to pre-fill, a default issue description, and symptoms to pre-check. Clicking that panel on the storefront opens `/repair-book` with those fields already filled — the customer just confirms and submits, and the ticket is created with the linked repair type so a quote is calculated immediately. Content is saved in settings and served to the storefront via `GET /api/repairs-page` (falls back to the default panels if nothing has been saved yet).
+
+![Repairs — Page Content](screenshots/03-services/repairs-page-content.png)
+
+### About Us page
+The store's About Us page is editable from **Admin → Settings → About Us**.
+
+![About Us](screenshots/08-settings/about-us.png)
 
 ### Header navigation & hero chips stay in sync with categories
 The storefront header nav buttons (next to the Sign in button) and the hero's category chips are reconciled against the live category list on every load — no manual "sync" step needed:
@@ -271,6 +348,10 @@ The empty cart page shows an animated SVG scene of the brand's gear-headed chara
 1. Manage tickets in `/admin` → Services → Repairs (assign technician, status, notes, parts, images).
 2. Send cost estimates to customers; the customer's response updates the ticket.
 
+![Repairs](screenshots/03-services/repairs.png)
+![Repairs — Tickets](screenshots/03-services/repairs-tickets.png)
+![Repairs — Calendar](screenshots/03-services/repairs-calendar.png)
+
 ---
 
 ## 11. Feature Flags & Per-Client Overrides
@@ -294,6 +375,8 @@ From the control plane **Edit Client** modal, the operator can override a tenant
 - `frontend/lib/app-context.tsx` sets `document.title` to the real store name once settings load.
 - New clients provisioned by the control plane get `STORE_NAME=<client name>` injected as a Render env var, and the backend seeds that name on first boot.
 - Existing clients that were seeded before this fix should set their store name in **Admin → Settings → Store Info** once.
+
+![Store Info](screenshots/08-settings/store-info.png)
 
 ---
 
@@ -355,173 +438,3 @@ The control plane (`control-plane/`, port 4000, own Neon DB) is the operator hub
 - Move to formal SQL migrations instead of imperative startup migrations.
 - Enforce CSRF hard-fail and a strict CSP.
 - Add end-to-end tests for provisioning, feature overrides, and layout switching.
-
----
-
-## 17. Visual Module Reference
-
-This chapter-by-chapter walkthrough shows every staff-portal section as it appears to an admin, organized by the sidebar groups. Screenshots were captured from a live session (1440×900) and are stored under `screenshots/` next to this file; the DOCX and PDF generators embed them automatically.
-
-### 17.1 Overview
-
-The landing view after sign-in: key business stats, recent activity, and quick links.
-
-- **Dashboard (Home)**
-
-![Dashboard](screenshots/01-overview/dashboard.png)
-
-### 17.2 Sales
-
-Catalog, orders, and customer-facing commerce tools.
-
-- **Products** — manage the product catalog (name, price, stock, images, groups).
-- **Groups** — create/edit/delete product groups and toggle them active.
-- **Categories** — organize products by category and subcategory.
-- **Category Order** — drag-and-drop display order of the category grid.
-- **Orders** — view and manage customer orders.
-- **Customers** — view, edit, and delete customer accounts.
-- **Coupons** — discount coupons for checkout.
-- **Gift Cards** — gift card products and balances.
-- **Campaigns** — marketing campaign pages.
-- **Abandoned Carts** — carts left before checkout and recovery.
-- **Quotations** — quotes requested by customers.
-
-![Products](screenshots/02-sales/products.png)
-![Groups](screenshots/02-sales/groups.png)
-![Categories](screenshots/02-sales/categories.png)
-![Category Order](screenshots/02-sales/category-order.png)
-![Orders](screenshots/02-sales/orders.png)
-![Customers](screenshots/02-sales/customers.png)
-![Coupons](screenshots/02-sales/coupons.png)
-![Gift Cards](screenshots/02-sales/gift-cards.png)
-![Campaigns](screenshots/02-sales/campaigns.png)
-![Abandoned Carts](screenshots/02-sales/abandoned-carts.png)
-![Quotations](screenshots/02-sales/quotations.png)
-
-### 17.3 Services
-
-Repair ticket workflow with three sub-tabs.
-
-- **Repairs — Tickets** — queue of repair tickets with status, assignment, and notes.
-- **Repairs — Calendar** — schedule of technician work.
-- **Repairs — Page Content** — edit the public `/repairs` page intro and service panels.
-
-![Repairs](screenshots/03-services/repairs.png)
-![Repairs — Tickets](screenshots/03-services/repairs-tickets.png)
-![Repairs — Calendar](screenshots/03-services/repairs-calendar.png)
-![Repairs — Page Content](screenshots/03-services/repairs-page-content.png)
-
-### 17.4 Stock
-
-Inventory across branches.
-
-- **Stock on Hand** — current stock levels per product/branch.
-- **Stock Transfers** — move stock between branches.
-- **Stock Take** — count stock and reconcile.
-- **Stock Control** — stock settings and control parameters.
-- **Serial Numbers** — track individual serialized units.
-- **Purchase Orders** — purchase orders to suppliers.
-- **Suppliers** — supplier records.
-
-![Stock on Hand](screenshots/04-stock/stock-on-hand.png)
-![Stock Transfers](screenshots/04-stock/stock-transfers.png)
-![Stock Take](screenshots/04-stock/stock-take.png)
-![Stock Control](screenshots/04-stock/stock-control.png)
-![Serial Numbers](screenshots/04-stock/serials.png)
-![Purchase Orders](screenshots/04-stock/purchase-orders.png)
-![Suppliers](screenshots/04-stock/suppliers.png)
-
-### 17.5 Team
-
-Staff, roles, and business locations.
-
-- **Users** — staff accounts, role assignment, and direct permissions.
-- **Roles** — custom roles with granular permission toggles.
-- **Clients** — client/customer accounts for the business.
-- **Branches** — multi-branch configuration.
-
-![Users](screenshots/05-team/users.png)
-![Roles](screenshots/05-team/roles.png)
-![Clients](screenshots/05-team/clients.png)
-![Branches](screenshots/05-team/branches.png)
-
-### 17.6 Finance
-
-Invoicing and money movement.
-
-- **Invoices** — generate and view invoices.
-- **Credit Notes** — issue credit notes.
-- **Providers** — provider accounts and payouts.
-
-![Invoices](screenshots/06-finance/invoices.png)
-![Credit Notes](screenshots/06-finance/credit-notes.png)
-![Providers](screenshots/06-finance/providers.png)
-
-### 17.7 Activity
-
-Reporting and business communication.
-
-- **Reports — Sales Report** — revenue and sales analytics.
-- **Reports — Employee Sales** — per-employee sales.
-- **Reports — Technician Performance** — technician work metrics.
-- **Reports — Purchases** — purchasing analytics.
-- **Reports — Stock Summary** — stock totals by group/branch.
-- **Reports — Visitors** — visitor traffic stats.
-- **Messages** — in-app messages.
-- **Reviews** — customer product reviews.
-- **Audit Log** — a log of admin actions.
-
-![Reports](screenshots/07-activity/reports.png)
-![Reports — Sales](screenshots/07-activity/reports-sales.png)
-![Reports — Employee Sales](screenshots/07-activity/reports-employee-sales.png)
-![Reports — Technician Performance](screenshots/07-activity/reports-technician-performance.png)
-![Reports — Purchases](screenshots/07-activity/reports-purchases.png)
-![Reports — Stock Summary](screenshots/07-activity/reports-stock-summary.png)
-![Reports — Visitors](screenshots/07-activity/reports-visitors.png)
-![Messages](screenshots/07-activity/messages.png)
-![Reviews](screenshots/07-activity/reviews.png)
-![Audit Log](screenshots/07-activity/audit-log.png)
-
-### 17.8 Settings
-
-Store configuration and branding.
-
-- **Store Info** — store name, contact, currency, logo.
-- **Payments** — M-Pesa and card payment settings.
-- **Compliance** — KRA/eTIMS and compliance settings.
-- **Delivery Fees** — delivery fee tiers by county.
-- **Content** — storefront content and SEO.
-- **System** — system-level settings.
-- **Storefront** — active layout, hero, and storefront options.
-- **Layout Builder** — runtime JSON layout builder for custom themes.
-- **Product Positioning** — product positioning options.
-- **Email** — email sender and notification settings.
-- **WhatsApp** — WhatsApp communication settings.
-- **About Us** — editable About Us page.
-- **Subscription Plans** — subscription plan management.
-- **Spec Templates** — product spec templates.
-- **Subscription** — current plan and billing.
-
-![Store Info](screenshots/08-settings/store-info.png)
-![Payments](screenshots/08-settings/payments.png)
-![Compliance](screenshots/08-settings/compliance.png)
-![Delivery Fees](screenshots/08-settings/delivery-fees.png)
-![Content](screenshots/08-settings/content.png)
-![System](screenshots/08-settings/system.png)
-![Storefront](screenshots/08-settings/storefront.png)
-![Layout Builder](screenshots/08-settings/layout-builder.png)
-![Product Positioning](screenshots/08-settings/product-positioning.png)
-![Email](screenshots/08-settings/email-settings.png)
-![WhatsApp](screenshots/08-settings/whatsapp-settings.png)
-![About Us](screenshots/08-settings/about-us.png)
-![Subscription Plans](screenshots/08-settings/subscription-plans.png)
-![Spec Templates](screenshots/08-settings/spec-templates.png)
-![Subscription](screenshots/08-settings/subscription.png)
-
-### 17.9 Help
-
-In-app help and reference material.
-
-- **Help & Reference** — usage guide and reference.
-
-![Help & Reference](screenshots/09-help/help.png)
