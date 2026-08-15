@@ -19,6 +19,7 @@ const ICON_PATHS: Record<string, React.ReactNode> = {
   message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z" />,
   messageCircle: <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.7-.9L3 21l1.9-5.3A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z" />,
   monitor: <><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8" /><path d="M12 17v4" /></>,
+  layout: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M9 21V9" /></>,
   laptop: <><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10H3V5z" /><path d="M2 19h20" /></>,
   tv: <><rect x="2" y="7" width="20" height="13" rx="2" /><path d="M7 3l5 4 5-4" /></>,
   store: <><path d="M3 9l1.5-6h15L21 9" /><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0" /><path d="M5 12v9h14v-9" /><path d="M9 21v-6h6v6" /></>,

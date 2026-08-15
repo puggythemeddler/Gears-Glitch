@@ -336,6 +336,75 @@
   --brand-placeholder-border: rgba(124, 58, 237, 0.22);
 }
 
+/* ----- Custom brand theme (customer-defined palette) -----
+   Values are set inline on <html> as --brand-* by applyBrandTheme. */
+[data-brand-theme="custom"] {
+  --primary: var(--brand-primary, #c2410c);
+  --primary-hover: var(--brand-primary-hover, #9a3412);
+  --primary-light: #ffedd5;
+  --primary-subtle: color-mix(in srgb, var(--brand-primary, #c2410c) 10%, transparent);
+  --info: var(--brand-primary, #c2410c);
+  --info-light: #ffedd5;
+  --accent: var(--brand-accent, #f59e0b);
+  --accent-subtle: color-mix(in srgb, var(--brand-accent, #f59e0b) 16%, transparent);
+  --bg: var(--brand-bg-light, #fafaf9);
+  --surface: #ffffff;
+  --surface-hover: color-mix(in srgb, var(--brand-bg-light, #fafaf9) 92%, #000);
+  --text: #1c1917;
+  --text-secondary: #57534e;
+  --text-tertiary: #716d68;
+  --border: #e7e5e4;
+  --brand-glow-a: color-mix(in srgb, var(--brand-primary, #c2410c) 18%, transparent);
+  --brand-glow-b: color-mix(in srgb, var(--brand-accent, #f59e0b) 16%, transparent);
+  --brand-particle: color-mix(in srgb, var(--brand-primary, #c2410c) 45%, transparent);
+  --brand-hero-accent: var(--brand-primary, #f97316);
+  --brand-gradient-a: var(--brand-primary, #f97316);
+  --brand-gradient-b: color-mix(in srgb, var(--brand-primary, #f97316) 55%, #fbbf24);
+  --brand-btn-bg: color-mix(in srgb, var(--brand-primary, #c2410c) 92%, #000);
+  --brand-btn-border: color-mix(in srgb, var(--brand-primary, #c2410c) 55%, transparent);
+  --brand-btn-shadow: color-mix(in srgb, var(--brand-primary, #c2410c) 35%, transparent);
+  --brand-placeholder-bg: color-mix(in srgb, var(--brand-primary, #c2410c) 10%, transparent);
+  --brand-placeholder-border: color-mix(in srgb, var(--brand-primary, #c2410c) 20%, transparent);
+  --hero-bg-gradient: linear-gradient(135deg, var(--brand-bg-light, #fafaf9) 0%, color-mix(in srgb, var(--brand-primary, #c2410c) 12%, var(--brand-bg-light, #fafaf9)) 100%);
+  --hero-badge-color: var(--brand-primary, #c2410c);
+  --hero-badge-bg: color-mix(in srgb, var(--brand-primary, #c2410c) 8%, transparent);
+  --hero-badge-border: color-mix(in srgb, var(--brand-primary, #c2410c) 30%, transparent);
+  --hero-chip-hover-bg: color-mix(in srgb, var(--brand-primary, #c2410c) 10%, transparent);
+  --hero-chip-hover-border: color-mix(in srgb, var(--brand-primary, #c2410c) 40%, transparent);
+  --hero-chip-hover-text: var(--brand-primary, #c2410c);
+  --hero-dot-active: var(--brand-primary, #c2410c);
+}
+
+[data-brand-theme="custom"][data-theme="dark"] {
+  --primary: var(--brand-primary, #f97316);
+  --primary-hover: color-mix(in srgb, var(--brand-primary, #f97316) 80%, #fff);
+  --primary-light: color-mix(in srgb, var(--brand-primary, #f97316) 18%, #1c1917);
+  --primary-subtle: color-mix(in srgb, var(--brand-primary, #f97316) 12%, transparent);
+  --info: var(--brand-primary, #f97316);
+  --info-light: color-mix(in srgb, var(--brand-primary, #f97316) 18%, #1c1917);
+  --accent: var(--brand-accent, #f59e0b);
+  --accent-subtle: color-mix(in srgb, var(--brand-accent, #f59e0b) 14%, transparent);
+  --bg: var(--brand-bg-dark, #0c0a09);
+  --surface: color-mix(in srgb, var(--brand-bg-dark, #0c0a09) 90%, #fff);
+  --surface-hover: color-mix(in srgb, var(--brand-bg-dark, #0c0a09) 85%, #fff);
+  --text: #fafaf9;
+  --text-secondary: #a8a29b;
+  --text-tertiary: #8a857e;
+  --border: #292524;
+  --hero-bg-gradient: linear-gradient(135deg, var(--brand-bg-dark, #0c0a09) 0%, color-mix(in srgb, var(--brand-primary, #f97316) 14%, var(--brand-bg-dark, #0c0a09)) 100%);
+  --hero-badge-color: var(--brand-primary, #fb923c);
+  --hero-badge-bg: color-mix(in srgb, var(--brand-primary, #fb923c) 12%, transparent);
+  --hero-badge-border: color-mix(in srgb, var(--brand-primary, #fb923c) 30%, transparent);
+  --hero-chip-hover-bg: color-mix(in srgb, var(--brand-primary, #fb923c) 15%, transparent);
+  --hero-chip-hover-border: color-mix(in srgb, var(--brand-primary, #fb923c) 35%, transparent);
+  --hero-chip-hover-text: var(--brand-primary, #fb923c);
+  --hero-dot-active: var(--brand-primary, #fb923c);
+}
+
+/* Custom theme hero backgrounds (set by the store owner) */
+[data-brand-theme="custom"] .hero { --hero-bg-gradient: linear-gradient(135deg, var(--brand-hero-bg-light, #fafaf9) 0%, color-mix(in srgb, var(--brand-primary, #c2410c) 10%, var(--brand-hero-bg-light, #fafaf9)) 100%); }
+[data-brand-theme="custom"][data-theme="dark"] .hero { --hero-bg-gradient: linear-gradient(135deg, var(--brand-hero-bg-dark, #0c0a09) 0%, color-mix(in srgb, var(--brand-primary, #f97316) 14%, var(--brand-hero-bg-dark, #0c0a09)) 100%); }
+
 /* ----- Base ----- */
 *,
 *::before,

@@ -18,7 +18,15 @@ export interface LayoutModule {
 
 const STATIC_LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia };
 
-export const STORE_THEMES: string[] = ["default", "kenyan", "modern"];
+export const STORE_THEMES: string[] = ["default", "kenyan", "modern", "custom"];
+
+export const DEFAULT_THEME_CUSTOM = {
+  primary: "#c2410c",
+  primaryHover: "#9a3412",
+  accent: "#f59e0b",
+  bgLight: "#fafaf9",
+  bgDark: "#0c0a09",
+};
 
 export function getLayout(layoutKey: string): LayoutModule {
   return STATIC_LAYOUTS[layoutKey] || STATIC_LAYOUTS.original;
@@ -42,6 +50,7 @@ interface LayoutMeta {
 interface StorefrontConfig {
   layout: string;
   theme: string;
+  themeCustom?: any;
   banners: any[];
   features: any[];
   hero: any;
@@ -71,11 +80,32 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
   const [configLoading, setConfigLoading] = useState(true);
   const [allLayouts, setAllLayouts] = useState<LayoutMeta[]>([]);
 
-  function applyBrandTheme(theme: string) {
+  function applyBrandTheme(theme: string, themeCustom?: any) {
     const active = STORE_THEMES.includes(theme) ? theme : "default";
     if (typeof document !== "undefined") {
-      if (active === "default") document.documentElement.removeAttribute("data-brand-theme");
-      else document.documentElement.setAttribute("data-brand-theme", active);
+      const el = document.documentElement;
+      if (active === "default") {
+        el.removeAttribute("data-brand-theme");
+      } else {
+        el.setAttribute("data-brand-theme", active);
+      }
+      if (active === "custom" && themeCustom) {
+        el.style.setProperty("--brand-primary", themeCustom.primary || DEFAULT_THEME_CUSTOM.primary);
+        el.style.setProperty("--brand-primary-hover", themeCustom.primaryHover || DEFAULT_THEME_CUSTOM.primaryHover);
+        el.style.setProperty("--brand-accent", themeCustom.accent || DEFAULT_THEME_CUSTOM.accent);
+        el.style.setProperty("--brand-bg-light", themeCustom.bgLight || DEFAULT_THEME_CUSTOM.bgLight);
+        el.style.setProperty("--brand-bg-dark", themeCustom.bgDark || DEFAULT_THEME_CUSTOM.bgDark);
+        el.style.setProperty("--brand-hero-bg-light", themeCustom.heroBgLight || "");
+        el.style.setProperty("--brand-hero-bg-dark", themeCustom.heroBgDark || "");
+      } else {
+        el.style.removeProperty("--brand-primary");
+        el.style.removeProperty("--brand-primary-hover");
+        el.style.removeProperty("--brand-accent");
+        el.style.removeProperty("--brand-bg-light");
+        el.style.removeProperty("--brand-bg-dark");
+        el.style.removeProperty("--brand-hero-bg-light");
+        el.style.removeProperty("--brand-hero-bg-dark");
+      }
     }
     return active;
   }
@@ -85,7 +115,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
     api<StorefrontConfig>("/api/storefront-config")
       .then((d) => {
         if (d) {
-          setConfig((prev) => ({ ...prev, ...d, theme: applyBrandTheme(d.theme) }));
+          setConfig((prev) => ({ ...prev, ...d, theme: applyBrandTheme(d.theme, d.themeCustom) }));
         }
       })
       .catch(() => {})
@@ -111,8 +141,8 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
     refreshConfig();
   }
 
-  async function setTheme(theme: string) {
-    await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ theme }) });
+  async function setTheme(theme: string, themeCustom?: any) {
+    await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ theme, ...(themeCustom ? { themeCustom } : {}) }) });
     refreshConfig();
   }
 
@@ -124,19 +154,20 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function LayoutEngine({
-  page, products, categories, banners, settings,
+  page, products, categories, banners, settings, allProducts,
 }: {
   page: "home" | "category" | "product";
   products: Product[];
   categories: { id: string; label: string }[];
   banners: any[];
   settings: any;
+  allProducts?: Product[];
 }) {
   const { layout, hero, layoutConfig } = useLayout();
 
   if (page === "home") {
     if (layoutConfig?.type === "dynamic" && layoutConfig.config) {
-      return <DynamicHomePage products={products} categories={categories} banners={banners} config={layoutConfig.config} />;
+      return <DynamicHomePage products={allProducts || products} categories={categories} banners={banners} config={layoutConfig.config} />;
     }
     const mod = getLayout(layout);
     return <mod.HomePage products={products} categories={categories} banners={banners} hero={hero} />;

@@ -1114,7 +1114,7 @@ async function runMigrations(): Promise<void> {
     etims_oscu_consumer_secret: "", kra_pin: "P051234567Z", etims_serial_prefix: "01",
     etims_last_serial: "1", etims_vscu_receipt_counter: "0", loyalty_rate: "10",
     loyalty_redemption_rate: "1", store_layout: "original", store_banners: "[]",
-    store_features: "[]", shop_plan_id: "starter",
+    store_features: "[]", store_theme_custom: "{}", shop_plan_id: "starter",
   };
   for (const [k, v] of Object.entries(settingDefaults)) {
     const ex = await queryOne("SELECT value FROM settings WHERE key = $1", [k]);

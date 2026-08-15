@@ -75,7 +75,7 @@ export default function HomePage() {
   if (error) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "40vh", padding: "2rem", textAlign: "center" }}>
-        <div style={{ fontSize: "3rem", marginBottom: "1rem", opacity: 0.3 }}>⚠️</div>
+        <div style={{ marginBottom: "1rem", opacity: 0.3 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
         <p style={{ color: "var(--danger)", marginBottom: "1rem" }}>{error}</p>
         <button className="btn btn-primary" onClick={() => window.location.reload()}>Retry</button>
       </div>
@@ -105,6 +105,7 @@ export default function HomePage() {
       <LayoutEngine
         page="home"
         products={pageProducts}
+        allProducts={filtered}
         categories={categories}
         banners={banners}
         settings={settings}

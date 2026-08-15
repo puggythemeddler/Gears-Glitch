@@ -157,7 +157,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
 
   const hideHeader = ["admin", "marketing", "stock-take", "suppliers", "pos"].includes(activeNav ?? "");
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
-  const isThemedLayout = isPublicStorefront && !configLoading && layout !== "original";
+  const isThemedLayout = isPublicStorefront && !configLoading && (layout === "amazon" || layout === "jumia");
 
   function closeMobile() { setMobileOpen(false); setSpringboardOpen(false); setOpenSubMenu(null); }
 
@@ -239,7 +239,9 @@ export default function Layout({ children, activeNav }: LayoutProps) {
         </div>
         <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) window.location.href = `/?search=${encodeURIComponent(q)}`; }}>
           <input name="q" type="search" placeholder="Search..." aria-label="Search products" />
-          <button type="submit" aria-label="Search">🔍</button>
+          <button type="submit" aria-label="Search">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
         </form>
         <div className="header-right">
           <div className="header-right-nav">
@@ -370,6 +372,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
 
   return (
     <>
+      <a href="#main" className="skip-link">Skip to main content</a>
       {!hideHeader && <MarqueeBanner />}
       {isThemedLayout ? (
         <LayoutHeader
@@ -414,8 +417,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           </div>
         </footer>
       )}
-      <div style={{ textAlign: "center", padding: "0.5rem", fontSize: "0.75rem", background: "#000", color: "#fff" }}>
-        <span style={{ color: "#000", background: "#fff", padding: "0 4px" }}>Made</span>{" "}
+      <div style={{ textAlign: "center", padding: "0.5rem", fontSize: "0.75rem", background: "var(--text)", color: "var(--bg)" }}>
+        <span style={{ color: "var(--text)", background: "var(--bg)", padding: "0 4px" }}>Made</span>{" "}
         <span style={{ color: "#fff", background: "#d32f2f", padding: "0 4px" }}>in</span>{" "}
         <span style={{ color: "#fff", background: "#388e3c", padding: "0 4px" }}>Kenya</span>
       </div>

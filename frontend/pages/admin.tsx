@@ -26,6 +26,7 @@ import CategoryPositioningPage from "@/components/admin/CategoryPositioningPage"
 import AdminRepairs from "@/components/admin/AdminRepairs";
 import AdminSerials from "@/components/admin/AdminSerials";
 import HelpPanel from "@/components/admin/HelpPanel";
+import StorefrontBuilder from "@/components/admin/StorefrontBuilder";
 
 declare global {
   interface Window {
@@ -33,7 +34,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "help";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "help";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 // Which permission unlocks a view in the sidebar. Views absent from this map
@@ -140,6 +141,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "settings-content", label: "Content" },
       { key: "settings-system", label: "System" },
       { key: "storefront", label: "Storefront" },
+      { key: "layout-builder", label: "Layout Builder", feature: "Drag-and-drop storefront builder" },
       { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
       { key: "email-settings", label: "Email", feature: "Email notifications" },
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
@@ -196,6 +198,7 @@ const NAV_ICONS: Partial<Record<AdminView, string>> = {
   "settings-content": "image",
   "settings-system": "settings",
   storefront: "monitor",
+  "layout-builder": "layout",
   "product-positioning": "move",
   "email-settings": "mail",
   "whatsapp-settings": "message",
@@ -611,7 +614,8 @@ export default function AdminPage() {
             {view === "suppliers" && <AdminSuppliers />}
             {view === "shop-subscription" && <AdminShopSubscription />}
             {view === "about-us" && <AdminAboutUs />}
-            {view === "storefront" && <AdminStorefront />}
+            {view === "storefront" && <AdminStorefront onOpenBuilder={() => setView("layout-builder")} />}
+            {view === "layout-builder" && <StorefrontBuilder />}
             {view === "settings-store-info" && <AdminStoreInfo />}
             {view === "settings-payments" && <AdminPayments />}
             {view === "settings-compliance" && <AdminCompliance />}
@@ -2858,11 +2862,12 @@ function AdminMessages() {
 const AdminAboutUs = AboutUsPage;
 
 // ===================== SETTINGS =====================
-function AdminStorefront() {
+function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
   const [cfg, setCfg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [theme, setTheme] = useState("default");
+  const [themeCustom, setThemeCustom] = useState<any>(null);
   const [catList, setCatList] = useState<{ id: string; label: string }[]>([]);
   const [bannerInputs, setBannerInputs] = useState<{ title: string; subtitle: string }[]>([]);
   const [heroForm, setHeroForm] = useState({
@@ -2907,6 +2912,7 @@ function AdminStorefront() {
       const d = await api<any>("/api/admin/storefront-layout");
       setCfg(d);
       setTheme(d.theme || "default");
+      setThemeCustom(d.themeCustom || null);
       setBannerInputs((d.banners || []).map((b: any) => ({ title: b.title || "", subtitle: b.subtitle || "" })));
       if (d.hero) {
         const h = { ...d.hero };
@@ -2970,10 +2976,41 @@ function AdminStorefront() {
     finally { setSaving(false); }
   }
 
+  function shadeHex(hex: string, percent: number): string {
+    const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+    if (!m) return hex;
+    const num = parseInt(m[1], 16);
+    const amt = Math.round(2.55 * percent);
+    const clamp = (v: number) => Math.max(0, Math.min(255, v));
+    const r = clamp((num >> 16) + amt);
+    const g = clamp(((num >> 8) & 0xff) + amt);
+    const b = clamp((num & 0xff) + amt);
+    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+  }
+
+  async function saveCustomTheme() {
+    const t = themeCustom || {};
+    const primary = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(t.primary || "") ? t.primary : "#c2410c";
+    const payload = {
+      primary,
+      primaryHover: shadeHex(primary, -12),
+      accent: /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(t.accent || "") ? t.accent : "#f59e0b",
+      bgLight: /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(t.bgLight || "") ? t.bgLight : "#fafaf9",
+      bgDark: /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(t.bgDark || "") ? t.bgDark : "#0c0a09",
+      heroBgLight: t.heroBgLight || "",
+      heroBgDark: t.heroBgDark || "",
+    };
+    setSaving(true);
+    try { await api("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ theme: "custom", themeCustom: payload }) }); setThemeCustom(payload); await load(); refreshConfig(); }
+    catch {}
+    finally { setSaving(false); }
+  }
+
   const THEME_CARDS = [
-    { key: "default", label: "Default", desc: "Classic blue", swatches: ["#2563eb", "#60a5fa", "#f59e0b"] },
+    { key: "default", label: "Default", desc: "Till Orange on warm-black", swatches: ["#c2410c", "#f97316", "#f59e0b"] },
     { key: "kenyan", label: "Kenyan", desc: "Green primary with red & black accents — Kenyan flag inspired", swatches: ["#15803d", "#dc2626", "#0f172a"] },
     { key: "modern", label: "Modern", desc: "Violet + cyan — sleek and contemporary", swatches: ["#6d28d9", "#0891b2", "#a78bfa"] },
+    { key: "custom", label: "My Brand", desc: "Use your own brand colors everywhere", swatches: ["#000000", "#ffffff", "#888888"] },
   ];
 
   if (loading) return <Spinner />;
@@ -2982,6 +3019,11 @@ function AdminStorefront() {
     <>
       <h1>Storefront Layout</h1>
       <p className="muted">Choose how your store looks to customers. Layouts only change the presentation — no data is affected.</p>
+      {onOpenBuilder && (
+        <div style={{ marginBottom: "1rem" }}>
+          <RippleButton onClick={onOpenBuilder}>+ Build a Custom Layout</RippleButton>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         {layouts.map((l) => (
@@ -3017,6 +3059,39 @@ function AdminStorefront() {
           ))}
         </div>
       </div>
+
+      {(theme === "custom" || themeCustom) && (
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>My Brand Colors</h3>
+              <p className="muted" style={{ fontSize: "0.85rem", margin: "4px 0 0" }}>These colors are applied across the whole store — header, buttons, links, hero and footer.</p>
+            </div>
+            <RippleButton onClick={saveCustomTheme} loading={saving}>Apply Brand Colors</RippleButton>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+            {[
+              { key: "primary", label: "Primary color" },
+              { key: "accent", label: "Accent color" },
+              { key: "bgLight", label: "Light background" },
+              { key: "bgDark", label: "Dark background" },
+              { key: "heroBgLight", label: "Hero background (light)" },
+              { key: "heroBgDark", label: "Hero background (dark)" },
+            ].map((f) => (
+              <label key={f.key} style={{ display: "block" }}>
+                <span style={{ display: "block", fontSize: "0.78rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>{f.label}</span>
+                <input
+                  type="color"
+                  value={themeCustom?.[f.key] || (f.key === "bgLight" ? "#fafaf9" : f.key === "bgDark" ? "#0c0a09" : f.key === "accent" ? "#f59e0b" : "#c2410c")}
+                  onChange={(e) => setThemeCustom((prev: any) => ({ ...(prev || {}), [f.key]: e.target.value }))}
+                  style={{ width: "100%", height: 40, borderRadius: 6, border: "1px solid var(--border)", background: "none", cursor: "pointer", padding: 2 }}
+                  aria-label={f.label}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
         <h3>Promotional Banners</h3>

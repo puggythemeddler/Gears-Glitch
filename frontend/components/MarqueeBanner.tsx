@@ -289,6 +289,9 @@ export default function MarqueeBanner() {
           0% { transform: translateX(0%); }
           100% { transform: translateX(-50%); }
         }
+        @media (prefers-reduced-motion: reduce) {
+          [style*="marquee"] { animation: none !important; }
+        }
       `}</style>
       {allBanners.map(({ key, splash }) => (
         <SplashBar key={key} splash={splash} />
