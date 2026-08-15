@@ -73,6 +73,8 @@ export default function POSPage() {
   const [serialModal, setSerialModal] = useState<Product | null>(null);
   const [serialInput, setSerialInput] = useState("");
   const [serialMsg, setSerialMsg] = useState<StatusMessage | null>(null);
+  const [showReceiptOptions, setShowReceiptOptions] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
   const serialInputRef = useRef<HTMLInputElement>(null);
@@ -469,7 +471,7 @@ export default function POSPage() {
                 {p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--success-text)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}
               </div>
               {typeof p.stockOnHand === "number" && (
-                <div style={{ fontSize: "0.75rem", color: p.stockOnHand <= 0 ? "var(--danger)" : p.stockOnHand <= 5 ? "var(--warning)" : "var(--text-secondary)", marginTop: 2 }}>
+                <div style={{ fontSize: "var(--text-sm)", color: p.stockOnHand <= 0 ? "var(--danger)" : p.stockOnHand <= 5 ? "var(--warning)" : "var(--text-secondary)", marginTop: 2 }}>
                   {p.stockOnHand <= 0 ? "Out of stock" : `Stock: ${p.stockOnHand}`}
                 </div>
               )}
@@ -493,8 +495,23 @@ export default function POSPage() {
             <span style={{ fontWeight: 800, fontSize: "1.15rem", letterSpacing: "0.04em" }}>TILL</span>
             <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{cart.length} {cart.length === 1 ? "item" : "items"}</span>
           </div>
-          <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); sessionStorage.removeItem("posBranch"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline" }}>Lock till</button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <button onClick={() => setShowHelp(!showHelp)} aria-label="Help and keyboard shortcuts" title="Help & keyboard shortcuts" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700 }}>?</button>
+            <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); sessionStorage.removeItem("posBranch"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline" }}>Lock till</button>
+          </div>
         </div>
+        {showHelp && (
+          <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", fontSize: "0.8rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            <strong style={{ color: "var(--text)", fontSize: "0.85rem" }}>Keyboard shortcuts</strong>
+            <ul style={{ margin: "0.4rem 0 0", paddingLeft: "1rem" }}>
+              <li><strong>Enter</strong> in search — scan barcode / resolve single match</li>
+              <li><strong>Enter</strong> in tendered / M-Pesa phone — charge</li>
+              <li><strong>Esc</strong> — close serial modal, return to search</li>
+              <li><strong>+ / &minus;</strong> — adjust cart quantity</li>
+            </ul>
+            <button onClick={() => setShowHelp(false)} style={{ background: "none", border: "none", color: "var(--primary)", fontSize: "0.75rem", cursor: "pointer", padding: 0, marginTop: "0.3rem" }}>Close help</button>
+          </div>
+        )}
         <div style={{ flex: 1, overflowY: "auto", padding: "0.5rem" }}>
           {cart.length === 0 ? <p className="muted" style={{ textAlign: "center", padding: "2rem" }}>Cart is empty</p> : cart.map((item) => {
             const cartProduct = products.find((x) => x.id === item.productId);
@@ -564,11 +581,11 @@ export default function POSPage() {
               {paymentMethods.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
             {needsTender && (
-              <input type="number" className="input" placeholder="Amount tendered" aria-label="Amount tendered" value={tenderedAmount} onChange={(e) => setTenderedAmount(e.target.value)} min="0" step="0.01" style={{ width: "100%", fontSize: "0.85rem" }} />
+              <input type="number" className="input" placeholder="Amount tendered" aria-label="Amount tendered" value={tenderedAmount} onChange={(e) => setTenderedAmount(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); requestCheckout(); } }} min="0" step="0.01" style={{ width: "100%", fontSize: "0.85rem" }} />
             )}
             {paymentMethod === "mpesa" && (
               <div style={{ marginBottom: "0.4rem" }}>
-                <input type="tel" className="input" placeholder="M-Pesa phone (e.g. 0712345678)" aria-label="M-Pesa phone number" value={mpesaPhonePos} onChange={(e) => setMpesaPhonePos(e.target.value)} style={{ width: "100%", fontSize: "0.85rem" }} />
+                <input type="tel" className="input" placeholder="M-Pesa phone (e.g. 0712345678)" aria-label="M-Pesa phone number" value={mpesaPhonePos} onChange={(e) => setMpesaPhonePos(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); requestCheckout(); } }} style={{ width: "100%", fontSize: "0.85rem" }} />
               </div>
             )}
           </div>
@@ -613,46 +630,51 @@ export default function POSPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               <div style={{ fontSize: "0.9rem", textAlign: "center" }}>Order #{lastOrderId}</div>
               {lastChange > 0 && <div style={{ fontSize: "1rem", textAlign: "center", color: "var(--success)", fontWeight: 700 }}>Change: {formatPrice(lastChange)}</div>}
-              <button
-                className="btn btn-primary btn-block"
-                style={{ textAlign: "center", fontSize: "1rem", padding: "0.6rem" }}
-                onClick={() => {
-                  window.open(`/api/pos/receipt/${lastOrderId}?allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
-                }}
-              >
-                Print Receipt (80mm)
-              </button>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button
-                  className="btn btn-ghost"
-                  style={{ flex: 1, textAlign: "center", fontSize: "0.9rem", padding: "0.5rem" }}
-                  disabled={downloadingPdf}
-                  onClick={async () => {
-                    setDownloadingPdf(true);
-                    try {
-                      await downloadPdf(`/api/pos/receipt/${lastOrderId}`, `invoice-${lastOrderId}.pdf`);
-                    } catch (err: any) {
-                      setStatus({ text: err.message || "Download failed.", kind: "error" });
-                    } finally {
-                      setDownloadingPdf(false);
-                    }
-                  }}
-                >
-                  {downloadingPdf ? "Saving..." : "Save PDF"}
-                </button>
-                <button
-                  className="btn btn-ghost"
-                  style={{ flex: 1, textAlign: "center", fontSize: "0.9rem", padding: "0.5rem" }}
-                  onClick={() => {
-                    window.open(`/api/pos/receipt/${lastOrderId}?format=a4&allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
-                  }}
-                >
-                  Print Invoice (A4)
-                </button>
-              </div>
-              <button ref={newSaleRef} className="btn btn-ghost btn-block" onClick={() => { setLastOrderId(null); setStatus(null); setLastChange(0); }} style={{ fontSize: "0.9rem", padding: "0.4rem" }}>
+              <button ref={newSaleRef} className="btn btn-primary btn-block" onClick={() => { setLastOrderId(null); setStatus(null); setLastChange(0); }} style={{ fontSize: "1rem", padding: "0.6rem", fontWeight: 700 }}>
                 New Sale
               </button>
+              <button className="btn btn-ghost btn-block" onClick={() => setShowReceiptOptions(!showReceiptOptions)} style={{ fontSize: "0.9rem", padding: "0.4rem" }}>
+                {showReceiptOptions ? "Hide receipt options" : "Print receipt"}
+              </button>
+              {showReceiptOptions && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                  <button
+                    className="btn btn-ghost btn-block"
+                    style={{ fontSize: "0.85rem", padding: "0.45rem" }}
+                    onClick={() => {
+                      window.open(`/api/pos/receipt/${lastOrderId}?allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
+                    }}
+                  >
+                    Print Receipt (80mm)
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-block"
+                    style={{ fontSize: "0.85rem", padding: "0.45rem" }}
+                    disabled={downloadingPdf}
+                    onClick={async () => {
+                      setDownloadingPdf(true);
+                      try {
+                        await downloadPdf(`/api/pos/receipt/${lastOrderId}`, `invoice-${lastOrderId}.pdf`);
+                      } catch (err: any) {
+                        setStatus({ text: err.message || "Download failed.", kind: "error" });
+                      } finally {
+                        setDownloadingPdf(false);
+                      }
+                    }}
+                  >
+                    {downloadingPdf ? "Saving..." : "Save PDF"}
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-block"
+                    style={{ fontSize: "0.85rem", padding: "0.45rem" }}
+                    onClick={() => {
+                      window.open(`/api/pos/receipt/${lastOrderId}?format=a4&allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
+                    }}
+                  >
+                    Print Invoice (A4)
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <button className="btn btn-primary btn-block" onClick={requestCheckout} disabled={cart.length === 0 || processing || !!mpesaPending} style={{ fontSize: "1.25rem", padding: "1rem", fontWeight: 700 }}>

@@ -110,7 +110,7 @@ Recording a payment clears that client's outstanding payment notifications. The 
 Use the **Feature Overrides** picker in the Edit Client modal to fine-tune what an individual tenant can use, independent of their subscription plan:
 - All features are listed in the same 11 collapsible groups as the plan editor (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency)
 - Click a feature chip to cycle through three states:
-  - **Enabled** (blue) — force-adds a feature the plan doesn't include (`true` override)
+  - **Enabled** (orange) — force-adds a feature the plan doesn't include (`true` override)
   - **Blocked** (red, struck through) — hides a feature the plan normally includes (`false` override)
   - **Inherit** (neutral dash) — falls back to the plan's defaults (no override)
 - Group-level **Select all** and **Block** buttons, plus a **Clear overrides** button to reset everything to plan defaults

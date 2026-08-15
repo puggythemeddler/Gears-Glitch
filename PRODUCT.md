@@ -39,13 +39,13 @@ The control plane treats each client as a full stack (database + backend + front
 - **Changelog, Deploy Log, Backups** (pg_dump + download), **Settings** (SMTP with test email, Cloudinary credentials), **Audit Log**.
 - **Provisioning** (Add Client) and **Add Existing Client** (register without provisioning).
 - **Notifications bell:** payment due/overdue, client down, over-limit usage, deploy/backup/provisioning failures, upgrade requests — deduplicated, polled every 60s.
-- **Technical constraints:** single-file static HTML/JS dashboard served by the Express server with a strict CSP (`frame-ancestors 'none'`, inline scripts/styles allowed because the UI wires buttons through inline `onclick=` handlers — do not remove `scriptSrcAttr`). Dark slate/blue palette defined in CSS custom properties. The UI must keep working without a build step.
+- **Technical constraints:** single-file static HTML/JS dashboard served by the Express server with a strict CSP (`frame-ancestors 'none'`, inline scripts/styles allowed because the UI wires buttons through inline `onclick=` handlers — do not remove `scriptSrcAttr`). Warm-black/orange palette defined in CSS custom properties (see DESIGN.md). The UI must keep working without a build step.
 - **Undecided:** no roadmap for the dashboard beyond what exists in ROADMAP.md; treat feature plans there as open decisions, not commitments.
 
 ## Brand Commitments
 
 - The product name is **Gear&Glitch**; the control plane is its operations face, branded in the header and login.
-- The incumbent visual world is the code as it stands: dark slate surfaces on a near-black background with blue primary actions and green/amber/red semantic states. The operator confirmed there are no external brand specs or constraints beyond what the code reflects.
+- The incumbent visual world is the code as it stands: warm-black surfaces on a near-black background with Till Orange (#c2410c light / #f97316 dark) primary actions and green/amber/red semantic states. The operator confirmed there are no external brand specs or constraints beyond what the code reflects. See `DESIGN.md` for the full design system ("The Workshop Bench" — warm stone neutrals, Till Orange accent, Archivo display + Sora body).
 - Voice is plain operator language (clear labels, status colors, confirmation dialogs); the README and UI copy are the current tone of record.
 
 ## Evidence on Hand
