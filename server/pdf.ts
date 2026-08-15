@@ -20,6 +20,22 @@ export async function htmlToPdf(html: string, options?: { format?: string; lands
   const page = await browser.newPage();
   try {
     await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.evaluate(() =>
+      Promise.all(
+        Array.from(document.images).map(
+          (img) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise<void>((resolve) => {
+                  let settled = false;
+                  const done = () => { if (!settled) { settled = true; resolve(); } };
+                  img.addEventListener("load", done, { once: true });
+                  img.addEventListener("error", done, { once: true });
+                  setTimeout(done, 10000);
+                })
+        )
+      )
+    );
     const pdf = await page.pdf({
       format: (options?.format as any) || "A4",
       landscape: options?.landscape || false,
