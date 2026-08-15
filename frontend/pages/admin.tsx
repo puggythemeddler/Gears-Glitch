@@ -512,6 +512,7 @@ export default function AdminPage() {
           variant="ghost"
           className={`dash-nav-item dash-nav-home${view === "dashboard" ? " active" : ""}`}
           onClick={() => setView("dashboard")}
+          aria-current={view === "dashboard" ? "page" : undefined}
         >
           <Icon name="home" size={15} />
           Home
@@ -538,6 +539,7 @@ export default function AdminPage() {
                     variant="ghost"
                     className={`dash-nav-item${view === item.key ? " active" : ""}`}
                     onClick={() => setView(item.key)}
+                    aria-current={view === item.key ? "page" : undefined}
                   >
                     <Icon name={NAV_ICONS[item.key] || "box"} size={15} />
                     <span className="dash-nav-item-label">{item.label}</span>

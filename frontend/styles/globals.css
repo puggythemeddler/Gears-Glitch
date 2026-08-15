@@ -1537,6 +1537,7 @@ textarea:not(.input)::placeholder {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border);
   font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .data-table th {
@@ -2260,6 +2261,18 @@ textarea:not(.input)::placeholder {
   margin-top: var(--space-2);
 }
 
+/* Gentle one-time entrance, staggered per panel */
+@keyframes dashPanelIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.dash-cols > .panel { animation: dashPanelIn 0.45s var(--ease-out) both; }
+.dash-cols > .panel:nth-child(2) { animation-delay: 0.08s; }
+.dash-cols > .panel:nth-child(3) { animation-delay: 0.16s; }
+@media (prefers-reduced-motion: reduce) {
+  .dash-cols > .panel { animation: none; }
+}
+
 .dash-lowstock h3,
 .dash-repairpipeline h3 {
   margin: 0 0 var(--space-3);
@@ -2454,6 +2467,16 @@ a.order-item:hover {
   flex-direction: column;
   background: var(--surface);
   min-width: 0;
+}
+
+/* Sale-completed moment: one soft success pulse on the totals panel */
+@keyframes posSalePulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 45%, transparent); }
+  100% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--success) 0%, transparent); }
+}
+.pos-sale-success { animation: posSalePulse 0.7s var(--ease-out) 2; border-radius: var(--radius-md); }
+@media (prefers-reduced-motion: reduce) {
+  .pos-sale-success { animation: none; }
 }
 
 /* ============================================================

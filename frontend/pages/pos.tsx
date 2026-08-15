@@ -77,6 +77,7 @@ export default function POSPage() {
   const customerRef = useRef<HTMLDivElement>(null);
   const serialInputRef = useRef<HTMLInputElement>(null);
   const serialDialogRef = useRef<HTMLDivElement>(null);
+  const newSaleRef = useRef<HTMLButtonElement>(null);
   const idempotencyKeyRef = useRef<string>("");
   const idempotencyCartRef = useRef<string>("");
 
@@ -241,6 +242,11 @@ export default function POSPage() {
   useEffect(() => {
     if (serialModal) setTimeout(() => serialInputRef.current?.focus(), 50);
   }, [serialModal]);
+
+  // After a completed sale, put the operator on "New Sale" — Enter restarts the till flow.
+  useEffect(() => {
+    if (lastOrderId) newSaleRef.current?.focus();
+  }, [lastOrderId]);
 
   function updateQty(productId: string, qty: number) {
     if (mpesaPending) return;
@@ -431,6 +437,7 @@ export default function POSPage() {
       <div className="pos-category-bar">
         <button
           onClick={() => { setSelectedCategory(""); sessionStorage.removeItem("posCategory"); }}
+          aria-pressed={!selectedCategory}
           style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: !selectedCategory ? "var(--primary)" : "transparent", color: !selectedCategory ? "var(--surface)" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: !selectedCategory ? 600 : 400 }}
         >
           All
@@ -439,6 +446,7 @@ export default function POSPage() {
           <button
             key={cat.id}
             onClick={() => { setSelectedCategory(cat.id); sessionStorage.setItem("posCategory", cat.id); }}
+            aria-pressed={selectedCategory === cat.id}
             style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: selectedCategory === cat.id ? "var(--primary)" : "transparent", color: selectedCategory === cat.id ? "var(--surface)" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: selectedCategory === cat.id ? 600 : 400 }}
           >
             {cat.label}
@@ -458,7 +466,7 @@ export default function POSPage() {
               {p.imageUrl ? <img src={p.imageUrl} alt={p.name} loading="lazy" style={{ width: "100%", height: 116, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 116, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
               <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{escapeHtml(p.name)}</div>
               <div style={{ fontSize: "1rem", color: "var(--primary)" }}>
-                {p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--success)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}
+                {p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--success-text)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}
               </div>
               {typeof p.stockOnHand === "number" && (
                 <div style={{ fontSize: "0.75rem", color: p.stockOnHand <= 0 ? "var(--danger)" : p.stockOnHand <= 5 ? "var(--warning)" : "var(--text-secondary)", marginTop: 2 }}>
@@ -501,7 +509,7 @@ export default function POSPage() {
                     {(item.serials || []).map((sn) => (
                       <span key={sn} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.4rem", fontSize: "0.72rem", marginRight: "0.25rem", marginBottom: "0.25rem" }}>
                         {sn}
-                        <button type="button" onClick={() => removeSerial(item.productId, sn)} disabled={!!mpesaPending} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: 700, padding: 0, lineHeight: 1 }} title="Remove serial">&times;</button>
+                        <button type="button" onClick={() => removeSerial(item.productId, sn)} disabled={!!mpesaPending} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: 700, padding: "0.2rem 0.35rem", margin: "-0.2rem -0.15rem", minHeight: 28, minWidth: 28, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1, borderRadius: 4 }} title="Remove serial" aria-label={`Remove serial ${sn}`}>&times;</button>
                       </span>
                     ))}
                     {(item.serials || []).length === 0 && <span style={{ fontSize: "0.75rem", color: "var(--danger)" }}>Scan serial number(s)</span>}
@@ -523,7 +531,7 @@ export default function POSPage() {
                   </>
                 )}
               </div>
-              <div style={{ fontWeight: 600, fontSize: "0.9rem", minWidth: 80, textAlign: "right" }}>{formatPrice(item.lineTotal)}</div>
+              <div style={{ fontWeight: 600, fontSize: "0.9rem", minWidth: 80, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatPrice(item.lineTotal)}</div>
             </div>
             );
           })}
@@ -566,7 +574,7 @@ export default function POSPage() {
           </div>
         )}
 
-        <div style={{ padding: "0.75rem", borderTop: "1px solid var(--border)" }}>
+        <div className={lastOrderId ? "pos-totals pos-sale-success" : "pos-totals"} style={{ padding: "0.75rem", borderTop: "1px solid var(--border)" }}>
           {needsTender && Number(tenderedAmount) > 0 && !lastOrderId && !mpesaPending && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", marginBottom: "0.25rem" }}>
               <span>Paid</span>
@@ -579,7 +587,7 @@ export default function POSPage() {
               <span>{formatPrice(change)}</span>
             </div>
           )}
-          <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.6rem", display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "1.9rem", fontWeight: 800, letterSpacing: "-0.02em", marginBottom: "0.75rem" }}>
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.6rem", display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "1.9rem", fontWeight: 800, letterSpacing: "-0.02em", marginBottom: "0.75rem", fontVariantNumeric: "tabular-nums" }}>
             <span style={{ fontSize: "0.95rem", fontWeight: 600, letterSpacing: "normal" }}>Total</span>
             <span>{formatPrice(subtotal)}</span>
           </div>
@@ -642,7 +650,7 @@ export default function POSPage() {
                   Print Invoice (A4)
                 </button>
               </div>
-              <button className="btn btn-ghost btn-block" onClick={() => { setLastOrderId(null); setStatus(null); setLastChange(0); }} style={{ fontSize: "0.9rem", padding: "0.4rem" }}>
+              <button ref={newSaleRef} className="btn btn-ghost btn-block" onClick={() => { setLastOrderId(null); setStatus(null); setLastChange(0); }} style={{ fontSize: "0.9rem", padding: "0.4rem" }}>
                 New Sale
               </button>
             </div>
@@ -664,7 +672,7 @@ export default function POSPage() {
           style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => setSerialModal(null)}
           onKeyDown={(e) => {
-            if (e.key === "Escape") { e.preventDefault(); setSerialModal(null); return; }
+            if (e.key === "Escape") { e.preventDefault(); setSerialModal(null); searchRef.current?.focus(); return; }
             if (e.key === "Tab" && serialDialogRef.current) {
               const focusables = serialDialogRef.current.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])');
               if (focusables.length === 0) return;
@@ -689,7 +697,7 @@ export default function POSPage() {
               placeholder="Serial number..."
               value={serialInput}
               onChange={(e) => setSerialInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitSerial(); } if (e.key === "Escape") { e.preventDefault(); setSerialModal(null); } }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitSerial(); } if (e.key === "Escape") { e.preventDefault(); setSerialModal(null); searchRef.current?.focus(); } }}
               style={{ width: "100%", fontSize: "1.05rem", marginBottom: "0.5rem" }}
             />
             {serialMsg && <p role="status" style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: serialMsg.kind === "error" ? "var(--danger)" : serialMsg.kind === "info" ? "var(--text-secondary)" : "var(--success)" }}>{serialMsg.text}</p>}
