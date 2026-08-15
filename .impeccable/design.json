@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-15T13:45:00Z",
+  "title": "Design System: Gear&Glitch",
+  "extensions": {
+    "colorMeta": {
+      "till-orange": { "role": "primary", "displayName": "Till Orange", "canonical": "#c2410c", "tonalRamp": ["#fff7ed", "#ffedd5", "#fed7aa", "#fdba74", "#fb923c", "#f97316", "#ea580c", "#c2410c", "#9a3412", "#7c2d12"] },
+      "till-orange-deep": { "role": "primary", "displayName": "Till Orange Deep", "canonical": "#9a3412", "tonalRamp": ["#fef3c7", "#fde68a", "#fcd34d", "#fbbf24", "#f59e0b", "#d97706", "#b45309", "#92400e", "#78350f", "#451a03"] },
+      "warm-paper": { "role": "neutral", "displayName": "Warm Paper", "canonical": "#fafaf9", "tonalRamp": ["#fafaf9", "#f5f5f4", "#e7e5e4", "#d6d3d1", "#a8a29e", "#78716c", "#57534e", "#44403c", "#292524", "#1c1917"] },
+      "warm-paper-surface": { "role": "neutral", "displayName": "Warm Paper Surface", "canonical": "#ffffff", "tonalRamp": ["#ffffff", "#fafaf9", "#f5f5f4", "#e7e5e4", "#d6d3d1", "#a8a29e", "#78716c", "#57534e", "#44403c", "#1c1917"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#1c1917", "tonalRamp": ["#fafaf9", "#f5f5f4", "#e7e5e4", "#d6d3d1", "#a8a29e", "#78716c", "#57534e", "#44403c", "#292524", "#1c1917"] },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "#e7e5e4", "tonalRamp": ["#fafaf9", "#f5f5f4", "#e7e5e4", "#d6d3d1", "#a8a29e", "#78716c", "#57534e", "#44403c", "#292524", "#1c1917"] },
+      "success": { "role": "semantic", "displayName": "Success Green", "canonical": "#16a34a", "tonalRamp": ["#f0fdf4", "#dcfce7", "#bbf7d0", "#86efac", "#4ade80", "#22c55e", "#16a34a", "#15803d", "#166534", "#14532d"] },
+      "warning": { "role": "semantic", "displayName": "Warning Amber", "canonical": "#a16207", "tonalRamp": ["#fefce8", "#fef9c3", "#fef08a", "#fde047", "#facc15", "#eab308", "#ca8a04", "#a16207", "#854d0e", "#713f12"] },
+      "danger": { "role": "semantic", "displayName": "Danger Red", "canonical": "#dc2626", "tonalRamp": ["#fef2f2", "#fee2e2", "#fecaca", "#fca5a5", "#f87171", "#ef4444", "#dc2626", "#b91c1c", "#991b1b", "#7f1d1d"] },
+      "info": { "role": "semantic", "displayName": "Info Blue", "canonical": "#2563eb", "tonalRamp": ["#eff6ff", "#dbeafe", "#bfdbfe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e40af", "#1e3a8a"] },
+      "workbench-amber": { "role": "secondary", "displayName": "Workbench Amber", "canonical": "#f59e0b", "tonalRamp": ["#fffbeb", "#fef3c7", "#fde68a", "#fcd34d", "#fbbf24", "#f59e0b", "#d97706", "#b45309", "#92400e", "#78350f"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero headlines, marketing titles. Archivo." },
+      "headline": { "displayName": "Headline", "purpose": "Section titles, page H1s in Operate. Archivo." },
+      "title": { "displayName": "Title", "purpose": "Card titles, panel headers. Sora semibold." },
+      "body": { "displayName": "Body", "purpose": "Paragraphs, descriptions, table cells. Sora." },
+      "label": { "displayName": "Label", "purpose": "Nav items, badges, table headers. Sora medium." }
+    },
+    "shadows": [
+      { "name": "shadow-sm", "value": "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)", "purpose": "Rest state for cards needing a hint of depth." },
+      { "name": "shadow-lg", "value": "0 10px 15px rgba(0,0,0,0.06), 0 4px 6px rgba(0,0,0,0.04)", "purpose": "Hover lift on cards, stat cards." },
+      { "name": "shadow-xl", "value": "0 20px 25px rgba(0,0,0,0.08), 0 8px 10px rgba(0,0,0,0.04)", "purpose": "Dashboard preview frames, modals." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Default easing for state transitions and reveals." },
+      { "name": "ease-bounce", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Playful entrances, card hovers." },
+      { "name": "duration-fast", "value": "150ms", "purpose": "Hover/color/border transitions." },
+      { "name": "duration-normal", "value": "250ms", "purpose": "Theme switching, panel transitions." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "1024px" },
+      { "name": "mobile", "value": "768px" },
+      { "name": "small", "value": "520px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main action button — Till Orange fill, surface text, 8px radius.",
+      "html": "<button class=\"ds-btn-primary\">Charge KES 4,500</button>",
+      "css": ".ds-btn-primary { background: #c2410c; color: #fff; border: none; border-radius: 8px; padding: 0.5rem 1.25rem; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: background 150ms ease; } .ds-btn-primary:hover { background: #9a3412; } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(234,88,12,0.12); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Transparent fill, ink text, hairline-hover border. Used for cancel/back actions.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { background: transparent; color: #1c1917; border: 1px solid #d6d3d1; border-radius: 8px; padding: 0.5rem 1.25rem; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: background 150ms ease, border-color 150ms ease; } .ds-btn-secondary:hover { background: #f5f5f4; border-color: #a8a29e; } .ds-btn-secondary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(234,88,12,0.12); }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "1px hairline border, warm-paper-surface background, 8px radius, 3px Till Orange focus ring.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search products...\" />",
+      "css": ".ds-input { display: block; width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #e7e5e4; border-radius: 8px; background: #fff; color: #1c1917; font-family: Sora, sans-serif; font-size: 0.8125rem; transition: border-color 150ms ease, box-shadow 150ms ease; } .ds-input:focus { outline: none; border-color: #c2410c; box-shadow: 0 0 0 3px rgba(234,88,12,0.12); } .ds-input::placeholder { color: #716d68; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Warm-paper-surface background, 1px hairline border, 12px radius. Flat at rest, shadow-lg on hover.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">Today's Revenue</h3><p class=\"ds-card-value\">KES 847,200</p></div>",
+      "css": ".ds-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 12px; padding: 1rem 1.25rem; transition: box-shadow 250ms ease, border-color 250ms ease; } .ds-card:hover { box-shadow: 0 10px 15px rgba(0,0,0,0.06), 0 4px 6px rgba(0,0,0,0.04); border-color: #c2410c; } .ds-card-title { margin: 0 0 0.25rem; font-size: 0.8125rem; font-weight: 500; color: #57534e; } .ds-card-value { margin: 0; font-family: Archivo, Sora, sans-serif; font-size: 1.875rem; font-weight: 700; color: #c2410c; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Nav Item",
+      "kind": "nav",
+      "refersTo": "button-ghost",
+      "description": "Sidebar nav item — ghost button, 8px radius. Active: primary-subtle bg + Till Orange text + semibold. aria-current on active.",
+      "html": "<button class=\"ds-nav-item ds-nav-item--active\" aria-current=\"page\">Products</button>",
+      "css": ".ds-nav-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.38rem 0.55rem; border: none; border-radius: 8px; background: transparent; color: #57534e; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 500; text-align: left; cursor: pointer; transition: background 150ms ease, color 150ms ease; } .ds-nav-item:hover { background: #f5f5f4; color: #1c1917; } .ds-nav-item--active { background: rgba(234,88,12,0.08); color: #c2410c; font-weight: 600; }"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "button-primary",
+      "description": "Pill-shaped filter chip. Inactive: hairline border, ink-secondary text. Active: Till Orange fill, surface text.",
+      "html": "<button class=\"ds-chip ds-chip--active\">All features</button>",
+      "css": ".ds-chip { padding: 0.25rem 0.75rem; border: 1px solid #e7e5e4; border-radius: 9999px; background: #fff; color: #57534e; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 500; cursor: pointer; transition: all 150ms ease; } .ds-chip:hover { border-color: #c2410c; color: #c2410c; } .ds-chip--active { background: #c2410c; border-color: #c2410c; color: #fff; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Workshop Bench",
+    "overview": "Gear&Glitch is the operating system for an electronics retail and repair business — and the visual world reflects that duality. The warm-black surfaces and orange tool accents evoke a well-organized workbench: functional, tactile, built for speed. The neutrals are warm stone, not cold gray, because a workshop is a warm place. The primary accent is Till Orange — the color of a tool handle, a safety signal, a sale-complete pulse — used sparingly so it never loses its force.\n\nThe system serves two modes: Operate (the POS till, the admin dashboard, the staff portal) and Persuade (the marketing site, the public storefront). Operate surfaces are dense, scannable, keyboard-first. Persuade surfaces are editorial, spacious, image-led. The same warm palette and tactile component language runs through both, so the brand reads as one product.\n\nDark mode is not a mechanical inversion of light — it is a composed warm-black world with a brighter Till Orange that maintains contrast on dark. Both themes are designed explicitly, not flipped.",
+    "keyCharacteristics": [
+      "Warm neutrals (stone family, not slate) in both themes",
+      "Till Orange as the single primary accent — rare, purposeful, never decorative",
+      "Archivo display + Sora body — industrial grotesque paired with a humanist sans",
+      "Tactile, confident components — hairline borders, solid fills, clear focus rings",
+      "4px-base spacing scale with deliberate tight/generous rhythm",
+      "Semantic colors kept consistent across themes"
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Till Orange is used on ≤10% of any given screen. If everything is orange, nothing is.", "section": "colors" },
+      { "name": "The No-Gray Rule", "body": "Neutral text is always warm-tinted (stone family), never generic gray. A workshop has warm light, not fluorescent.", "section": "colors" },
+      { "name": "The Money Rule", "body": "Monetary values use font-variant-numeric: tabular-nums so digits don't jitter as values change.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Surfaces are flat at rest. Shadows appear only as a response to state (hover, elevation, focus). No shadow on a resting card.", "section": "elevation" },
+      { "name": "The Tactile Rule", "body": "Buttons feel confident — solid fills on primary, hairline borders on secondary, clear focus rings on all. No ghost borders that vanish on dark themes.", "section": "components" }
+    ],
+    "dos": [
+      "Do use Till Orange on ≤10% of any screen — its rarity is its force.",
+      "Do use warm stone neutrals, never generic gray, in both themes.",
+      "Do use tabular-nums on all monetary values so digits don't jitter.",
+      "Do keep touch targets ≥32px on Operate surfaces, ≥44px on customer-facing surfaces.",
+      "Do pair Archivo for display/headlines with Sora for body — never swap them.",
+      "Do design dark mode as a composed warm-black world, not a mechanical inversion."
+    ],
+    "donts": [
+      "Don't use Till Orange for decoration — it's the primary action color, not a background tint.",
+      "Don't use slate or cool-gray neutrals — the workshop is warm.",
+      "Don't add shadows to resting cards — depth is a response to state.",
+      "Don't use emoji as icons — draw SVGs with one stroke and one weight.",
+      "Don't animate every section entrance — one authored moment per page, reduced-motion safe.",
+      "Don't use Sora for display headlines — that's Archivo's role; Sora is the body voice."
+    ]
+  }
+}
