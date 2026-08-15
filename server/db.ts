@@ -818,6 +818,7 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_annual DOUBLE PRECISION`); } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`); } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS sync_to_others INTEGER DEFAULT 1`); } catch {}
+  try { await query(`ALTER TABLE roles ADD COLUMN IF NOT EXISTS features TEXT NOT NULL DEFAULT '[]'`); } catch {}
   // Product review indexes and constraints
   try { await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_reviews_unique ON product_reviews (product_id, customer_id)`); } catch {}
   try { await query(`CREATE INDEX IF NOT EXISTS idx_product_reviews_product_id ON product_reviews (product_id)`); } catch {}
@@ -1018,6 +1019,87 @@ async function runMigrations(): Promise<void> {
       }
     }
   } catch {}
+
+  // One-time curation of the default plans' feature sets from the feature
+  // catalog. Guarded by a settings marker so admin tweaks made afterwards are
+  // never overwritten on subsequent startups.
+  try {
+    const curated = await getStoreSetting("plan_features_curated_v2");
+    if (!curated) {
+      const PLAN_FEATURES: Record<string, string[]> = {
+        starter: [
+          "Up to 50 products", "1 branch", "Basic support",
+          "Product listing", "Order management", "Customer management",
+          "Payment method configuration", "M-Pesa integration",
+          "Discount/coupon management", "Returns management",
+          "Invoice/quote PDF downloads", "Quotations",
+          "Messaging", "Email notifications",
+          "Product reviews & ratings", "Customer reviews",
+          "Product positioning", "Google Sign-In", "Multiple staff accounts", "Spec templates",
+        ],
+        growth: [
+          "Up to 500 products", "3 branches", "Priority support",
+          "Product listing", "Order management", "Customer management",
+          "Payment method configuration", "M-Pesa integration",
+          "Discount/coupon management", "Returns management",
+          "Invoice/quote PDF downloads", "Quotations",
+          "Messaging", "Email notifications",
+          "Product reviews & ratings", "Customer reviews",
+          "Product positioning", "Google Sign-In", "Multiple staff accounts", "Spec templates",
+          "Low stock alerts", "Stock take / inventory count", "Stock transfers",
+          "Supplier management", "Purchase order management",
+          "Credit notes", "WhatsApp integration", "Branch management",
+          "Multi-currency support", "Analytics dashboard",
+        ],
+        pro: [
+          "Unlimited products", "10 branches", "Premium support",
+          "Product listing", "Order management", "Customer management",
+          "Payment method configuration", "M-Pesa integration",
+          "Discount/coupon management", "Returns management",
+          "Invoice/quote PDF downloads", "Quotations",
+          "Messaging", "Email notifications",
+          "Product reviews & ratings", "Customer reviews",
+          "Product positioning", "Google Sign-In", "Multiple staff accounts", "Spec templates",
+          "Low stock alerts", "Stock take / inventory count", "Stock transfers",
+          "Supplier management", "Purchase order management",
+          "Credit notes", "WhatsApp integration", "Branch management",
+          "Multi-currency support", "Analytics dashboard",
+          "POS integration", "Gift cards", "Barcode scanning",
+          "Bulk import/export", "Bulk product edit", "Inventory forecasting",
+          "Repair ticketing", "Technician accounts", "Admin messaging",
+          "Loyalty program", "Campaign pages", "Cart recovery",
+          "Audit log", "Visitor analytics",
+        ],
+        enterprise: [
+          "Unlimited everything", "Dedicated support", "Custom integrations",
+          "Product listing", "Order management", "Customer management",
+          "Payment method configuration", "M-Pesa integration",
+          "Discount/coupon management", "Returns management",
+          "Invoice/quote PDF downloads", "Quotations",
+          "Messaging", "Email notifications",
+          "Product reviews & ratings", "Customer reviews",
+          "Product positioning", "Google Sign-In", "Multiple staff accounts", "Spec templates",
+          "Low stock alerts", "Stock take / inventory count", "Stock transfers",
+          "Supplier management", "Purchase order management",
+          "Credit notes", "WhatsApp integration", "Branch management",
+          "Multi-currency support", "Analytics dashboard",
+          "POS integration", "Gift cards", "Barcode scanning",
+          "Bulk import/export", "Bulk product edit", "Inventory forecasting",
+          "Repair ticketing", "Technician accounts", "Admin messaging",
+          "Loyalty program", "Campaign pages", "Cart recovery",
+          "Audit log", "Visitor analytics",
+          "eTIMS/KRA compliance", "Price history tracking", "SMS notifications",
+          "Multi-branch support", "Client/tenant management",
+          "Hero customization", "Theme customization", "Custom branding",
+          "Shop subscription", "Dedicated account manager", "API access",
+        ],
+      };
+      for (const [planId, features] of Object.entries(PLAN_FEATURES)) {
+        await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(features), planId]);
+      }
+      await setStoreSetting("plan_features_curated_v2", "1");
+    }
+  } catch { console.warn("[db] plan feature curation skipped"); }
 
   // Fix sequences after potential manual deletes or migrations
   for (const seq of ["orders_id_seq", "order_items_id_seq"]) {

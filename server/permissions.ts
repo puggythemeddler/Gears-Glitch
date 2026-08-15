@@ -10,6 +10,7 @@ interface RoleInfo {
   description: string | null;
   isCustom: boolean;
   permissions: string[];
+  features: string[];
 }
 
 interface UserRole {
@@ -163,7 +164,7 @@ function getAllPermissions(): PermissionMap {
 
 async function listRoles(): Promise<RoleInfo[]> {
   const rows: any[] = await queryAll(`
-    SELECT r.id, r.name, r.description, r.is_custom,
+    SELECT r.id, r.name, r.description, r.is_custom, r.features,
            STRING_AGG(rp.permission, ',') AS permissions
     FROM roles r
     LEFT JOIN role_permissions rp ON r.id = rp.role_id
@@ -176,8 +177,18 @@ async function listRoles(): Promise<RoleInfo[]> {
     name: row.name,
     description: row.description,
     isCustom: Boolean(row.is_custom),
-    permissions: (row.permissions || "").split(",").filter(Boolean)
+    permissions: (row.permissions || "").split(",").filter(Boolean),
+    features: parseFeatures(row.features),
   }));
+}
+
+function parseFeatures(raw: any): string[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try { const p = JSON.parse(raw); if (Array.isArray(p)) return p; } catch {}
+    return raw.split(",").map((s: string) => s.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 async function getRole(roleId: string): Promise<RoleInfo | null> {
@@ -190,12 +201,13 @@ async function getRole(roleId: string): Promise<RoleInfo | null> {
     name: role.name,
     description: role.description,
     isCustom: Boolean(role.is_custom),
-    permissions: permissions.map(p => p.permission)
+    permissions: permissions.map(p => p.permission),
+    features: parseFeatures(role.features),
   };
 }
 
-async function createRole(roleId: string, name: string, description: string, permissions: string[]): Promise<RoleInfo | null> {
-  await query("INSERT INTO roles (id, name, description, is_custom) VALUES ($1, $2, $3, 1)", [roleId, name, description || ""]);
+async function createRole(roleId: string, name: string, description: string, permissions: string[], features?: string[]): Promise<RoleInfo | null> {
+  await query("INSERT INTO roles (id, name, description, features, is_custom) VALUES ($1, $2, $3, $4, 1)", [roleId, name, description || "", JSON.stringify(features || [])]);
 
   for (const permission of permissions || []) {
     if (PERMISSIONS[permission]) {
@@ -206,12 +218,16 @@ async function createRole(roleId: string, name: string, description: string, per
   return getRole(roleId);
 }
 
-async function updateRole(roleId: string, updates: { name?: string; description?: string; permissions?: string[] }): Promise<RoleInfo | null> {
+async function updateRole(roleId: string, updates: { name?: string; description?: string; permissions?: string[]; features?: string[] }): Promise<RoleInfo | null> {
   const role = await getRole(roleId);
   if (!role) return null;
 
   if (updates.name || updates.description) {
     await query("UPDATE roles SET name = $1, description = $2 WHERE id = $3", [updates.name || role.name, updates.description || role.description, roleId]);
+  }
+
+  if (updates.features) {
+    await query("UPDATE roles SET features = $1 WHERE id = $2", [JSON.stringify(updates.features), roleId]);
   }
 
   if (updates.permissions) {
@@ -272,6 +288,30 @@ async function getUserDirectPermissions(userId: number): Promise<string[]> {
   return perms.map(p => p.permission);
 }
 
+// Union of features across a user's roles. Roles with an empty feature list
+// are treated as unrestricted, so if ANY of the user's roles has no features
+// configured the user inherits the full plan. Returns null when unrestricted.
+async function getUserRoleFeatures(userId: number): Promise<string[] | null> {
+  const rows: any[] = await queryAll(`
+    SELECT r.features FROM user_roles ur
+    JOIN roles r ON ur.role_id = r.id
+    WHERE ur.user_id = $1
+  `, [userId]);
+  if (!rows.length) return null;
+
+  const merged = new Set<string>();
+  let allRestricted = true;
+  for (const row of rows) {
+    const features = parseFeatures(row.features);
+    if (features.length === 0) {
+      allRestricted = false;
+    } else {
+      for (const f of features) merged.add(f);
+    }
+  }
+  return allRestricted ? [...merged] : null;
+}
+
 async function setUserDirectPermissions(userId: number, permissions: string[]): Promise<void> {
   await query("DELETE FROM user_permissions WHERE user_id = $1", [userId]);
   for (const perm of permissions) {
@@ -324,6 +364,7 @@ export {
   deleteRole,
   getUserRoles,
   getUserPermissions,
+  getUserRoleFeatures,
   getUserDirectPermissions,
   setUserDirectPermissions,
   hasPermission,

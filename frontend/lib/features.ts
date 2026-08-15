@@ -1,21 +1,35 @@
 import { useState, useEffect } from "react";
+import { getStaffToken, getStaffRole } from "./api";
 
-let cache: string[] | null = null;
+let state: { key: string; features: string[] } | null = null;
 let promise: Promise<string[]> | null = null;
+let promiseKey: string | null = null;
+
+function currentKey(): string {
+  if (typeof window === "undefined") return "ssr";
+  return getStaffRole() || "public";
+}
 
 export async function fetchActiveFeatures(): Promise<string[]> {
-  if (cache) return cache;
-  if (promise) return promise;
-  promise = fetch("/api/shop/features")
+  const key = currentKey();
+  if (state && state.key === key) return state.features;
+  if (promise && promiseKey === key) return promise;
+
+  const headers: Record<string, string> = {};
+  const token = typeof window !== "undefined" ? getStaffToken() : null;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  promise = fetch("/api/shop/features", { headers })
     .then((r) => r.json())
     .then((d) => {
-      cache = d.features || [];
-      return cache!;
+      state = { key, features: d.features || [] };
+      return state.features;
     })
     .catch(() => {
-      cache = [];
-      return cache!;
+      state = { key, features: [] };
+      return state.features;
     });
+  promiseKey = key;
   return promise;
 }
 
@@ -26,9 +40,11 @@ export function hasFeature(features: string[], name: string): boolean {
 export function useFeature(featureName: string): boolean {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
+    let cancelled = false;
     fetchActiveFeatures().then((features) => {
-      setEnabled(hasFeature(features, featureName));
+      if (!cancelled) setEnabled(hasFeature(features, featureName));
     });
+    return () => { cancelled = true; };
   }, [featureName]);
   return enabled;
 }

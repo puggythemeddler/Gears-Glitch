@@ -692,6 +692,7 @@ CREATE TABLE IF NOT EXISTS roles (
   name TEXT NOT NULL UNIQUE,
   description TEXT,
   is_custom INTEGER NOT NULL DEFAULT 0,
+  features TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 

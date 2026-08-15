@@ -327,6 +327,7 @@ import {
   deleteRole,
   getUserRoles,
   getUserPermissions,
+  getUserRoleFeatures,
   getUserDirectPermissions,
   setUserDirectPermissions,
   hasPermission,
@@ -4280,7 +4281,7 @@ app.get("/api/roles/:roleId", adminAuthMiddleware, asyncHandler(async (req: Requ
 }));
 
 app.post("/api/roles", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const { roleId, name, description, permissions } = req.body || {};
+  const { roleId, name, description, permissions, features } = req.body || {};
   if (!roleId || !name) {
     res.status(400).json({ error: "Role ID and name are required." });
     return;
@@ -4291,7 +4292,8 @@ app.post("/api/roles", adminAuthMiddleware, asyncHandler(async (req: Request, re
   }
   if (description !== undefined && !isStr(description, 1000)) { res.status(400).json({ error: "Description must be a valid string." }); return; }
   if (permissions !== undefined && !isArr(permissions)) { res.status(400).json({ error: "Permissions must be an array." }); return; }
-  const role = await createRole(roleId, name, description, permissions);
+  if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "Features must be an array." }); return; }
+  const role = await createRole(roleId, name, description, permissions, features);
   res.status(201).json({ role });
 }));
 
@@ -4301,6 +4303,7 @@ app.put("/api/roles/:roleId", adminAuthMiddleware, asyncHandler(async (req: Requ
   if (updates.name !== undefined && !isStr(updates.name)) { res.status(400).json({ error: "Name must be a non-empty string." }); return; }
   if (updates.description !== undefined && !isStr(updates.description, 1000)) { res.status(400).json({ error: "Description must be a valid string." }); return; }
   if (updates.permissions !== undefined && !isArr(updates.permissions)) { res.status(400).json({ error: "Permissions must be an array." }); return; }
+  if (updates.features !== undefined && !isArr(updates.features)) { res.status(400).json({ error: "Features must be an array." }); return; }
   if (roleId === "admin" && updates.permissions && !updates.permissions.includes("admin:access")) {
     res.status(400).json({ error: "Cannot remove admin:access from the admin role." });
     return;
@@ -5373,17 +5376,34 @@ app.put("/api/shop/subscription/requests/:id", allowControlPlane(ownerAuthMiddle
   res.json({ ok: true, plan: typeof result === "string" ? result : null });
 }));
 
-app.get("/api/shop/features", asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/shop/features", asyncHandler(async (req: Request, res: Response) => {
   const plan = await getShopPlan();
   const baseFeatures: string[] = plan?.features || [];
   const overridesRaw = await getStoreSetting("featureOverrides");
   let overrides: Record<string, boolean> = {};
   try { if (overridesRaw) overrides = JSON.parse(overridesRaw); } catch {}
-  const merged = overrides ? baseFeatures.filter(f => overrides[f] !== false) : baseFeatures;
+  let effective = overrides ? baseFeatures.filter(f => overrides[f] !== false) : baseFeatures;
   for (const [key, val] of Object.entries(overrides)) {
-    if (val === true && !merged.includes(key)) merged.push(key);
+    if (val === true && !effective.includes(key)) effective.push(key);
   }
-  res.json({ features: merged });
+
+  // Staff users see only the features their roles allow, intersected with the
+  // plan. Customers and the public always see the plan features. A role with no
+  // features configured is unrestricted (see getUserRoleFeatures).
+  const token = getBearerToken(req);
+  if (token) {
+    try {
+      const user = verifyToken(token);
+      if (user.role === "admin" || user.role === "owner" || user.role === "technician" || user.role === "manager" || user.role === "staff") {
+        const roleFeatures = await getUserRoleFeatures(user.sub);
+        if (roleFeatures) {
+          effective = effective.filter((f) => roleFeatures.includes(f));
+        }
+      }
+    } catch { /* invalid/expired token — fall through to plan features */ }
+  }
+
+  res.json({ features: effective });
 }));
 
 // Set feature overrides (control-plane only)
