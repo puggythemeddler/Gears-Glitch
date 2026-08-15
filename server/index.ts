@@ -157,6 +157,7 @@ import {
   listActiveCustomers,
   deleteCustomer,
   updateCustomerStatus,
+  updateCustomer,
   getCustomerDetails,
   deactivateOldCustomers,
   createCustomer,
@@ -5736,6 +5737,37 @@ app.patch("/api/admin/customers/:id/status", ownerAuthMiddleware, asyncHandler(a
   if (isActive === undefined) { res.status(400).json({ error: "isActive required." }); return; }
   await updateCustomerStatus(Number(req.params.id), Boolean(isActive));
   res.json({ success: true });
+}));
+
+app.patch("/api/admin/customers/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const { name, email, phone, password } = req.body || {};
+  const data: { name?: string; email?: string; phone?: string; password?: string } = {};
+  if (name !== undefined) {
+    if (!isStr(name)) { res.status(400).json({ error: "Name must be a non-empty string." }); return; }
+    data.name = name.trim();
+  }
+  if (email !== undefined) {
+    if (!isEmail(email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
+    data.email = String(email).toLowerCase();
+  }
+  if (phone !== undefined) {
+    data.phone = String(phone);
+  }
+  if (password !== undefined && password !== "") {
+    if (!okLen(password, 8, 128)) { res.status(400).json({ error: "Password must be 8-128 characters." }); return; }
+    data.password = password;
+  }
+  if (Object.keys(data).length === 0) { res.status(400).json({ error: "Nothing to update." }); return; }
+  try {
+    if (data.email) {
+      const existing = await findCustomerByEmail(data.email);
+      if (existing && existing.id !== id) { res.status(409).json({ error: "Email already registered to another customer." }); return; }
+    }
+    const customer = await updateCustomer(id, data);
+    if (!customer) { res.status(404).json({ error: "Customer not found." }); return; }
+    res.json({ customer });
+  } catch (err: any) { res.status(500).json({ error: "Failed to update customer." }); }
 }));
 
 app.get("/api/admin/messages", ownerAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {

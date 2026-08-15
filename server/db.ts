@@ -1939,9 +1939,47 @@ async function updateCustomerStatus(id: number, isActive: boolean): Promise<void
   await query("UPDATE customers SET is_active = $1 WHERE id = $2", [isActive ? 1 : 0, id]);
 }
 
+async function updateCustomer(id: number, data: { name?: string; email?: string; phone?: string; password?: string }): Promise<Customer | undefined> {
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (data.name !== undefined) { params.push(data.name); sets.push(`name = $${params.length}`); }
+  if (data.email !== undefined) { params.push(data.email); sets.push(`email = $${params.length}`); }
+  if (data.phone !== undefined) { params.push(data.phone); sets.push(`phone = $${params.length}`); }
+  if (data.password) { params.push(await bcrypt.hash(data.password, 10)); sets.push(`password_hash = $${params.length}`); }
+  if (!sets.length) return undefined;
+  params.push(id);
+  const result = await query(
+    `UPDATE customers SET ${sets.join(", ")} WHERE id = $${params.length} RETURNING id, name, email, phone, is_active, last_login, created_at`,
+    params
+  );
+  return result.rows[0] as Customer | undefined;
+}
+
 async function deleteCustomer(id: number): Promise<boolean> {
-  const result = await query("DELETE FROM customers WHERE id = $1", [id]);
-  return (result.rowCount ?? 0) > 0;
+  // Customers are referenced without ON DELETE CASCADE by orders, messages,
+  // repair tickets, reviews, loyalty, coupon usage, etc., so a bare DELETE
+  // fails for any customer with related records. Clean up everything in one
+  // transaction before removing the customer row.
+  return await transaction(async (client) => {
+    await client.query("DELETE FROM repair_updates WHERE ticket_id IN (SELECT id FROM repair_tickets WHERE customer_id = $1)", [id]);
+    await client.query("DELETE FROM repair_parts_used WHERE ticket_id IN (SELECT id FROM repair_tickets WHERE customer_id = $1)", [id]);
+    await client.query("DELETE FROM repair_images WHERE ticket_id IN (SELECT id FROM repair_tickets WHERE customer_id = $1)", [id]);
+    await client.query("DELETE FROM repair_tickets WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM messages WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM product_reviews WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM loyalty_transactions WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM loyalty_points WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM coupon_usage WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM credit_notes WHERE order_id IN (SELECT id FROM orders WHERE customer_id = $1)", [id]);
+    await client.query("DELETE FROM etims_sales_transactions WHERE order_id IN (SELECT id FROM orders WHERE customer_id = $1)", [id]);
+    await client.query("DELETE FROM orders WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM cart_items WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM wishlist WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM quotes WHERE customer_id = $1", [id]);
+    await client.query("DELETE FROM cart_recovery_reminders WHERE customer_id = $1", [id]);
+    const result = await client.query("DELETE FROM customers WHERE id = $1", [id]);
+    return (result.rowCount ?? 0) > 0;
+  });
 }
 
 async function deactivateOldCustomers(daysInactive: number = 90): Promise<number> {
@@ -4292,7 +4330,7 @@ export {
   listCategories, listPosCategories, getCategory, createCategory, updateCategory, deleteCategory, isValidCategory,
   listSubcategories, getSubcategory, createSubcategory, updateSubcategory, deleteSubcategory, getSubcategoriesForCategory,
   findStaffByUsername, findStaffByEmail, findStaffById, listStaff, updateStaffDetails, createStaff, updateStaffRole, changeStaffPassword, deleteStaff, findAdminByUsername,
-  findCustomerByEmail, findCustomerById, updateCustomerLastLogin, updateCustomerStatus, deleteCustomer, deactivateOldCustomers, createCustomer, changeCustomerPassword, listAllCustomers, listActiveCustomers, getCustomerDetails,
+  findCustomerByEmail, findCustomerById, updateCustomerLastLogin, updateCustomerStatus, updateCustomer, deleteCustomer, deactivateOldCustomers, createCustomer, changeCustomerPassword, listAllCustomers, listActiveCustomers, getCustomerDetails,
   getSettings, updateSettings, getStoreSetting, setStoreSetting, getPaymentMethods, setPaymentMethods,
   listProducts, getProduct, setProductImageUrl, createProduct, updateProduct, deleteProduct, getPriceHistory,
   getProductImages, addProductImage, deleteProductImage, setProductImageOrder, setPrimaryImage,

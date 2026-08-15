@@ -5597,6 +5597,10 @@ function AdminCustomers() {
   const [formErr, setFormErr] = useState("");
   const [formOk, setFormOk] = useState("");
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [editing, setEditing] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", password: "" });
+  const [editErr, setEditErr] = useState("");
+  const [editOk, setEditOk] = useState("");
 
   function load() {
     setLoading(true); setError("");
@@ -5635,6 +5639,25 @@ function AdminCustomers() {
     finally { setDeleting(null); }
   }
 
+  function startEdit(c: any) {
+    setEditing(c);
+    setEditForm({ name: c.name || "", email: c.email || "", phone: c.phone || "", password: "" });
+    setEditErr(""); setEditOk("");
+  }
+
+  async function handleUpdate(e: React.FormEvent) {
+    e.preventDefault(); setEditErr(""); setEditOk("");
+    const body: any = { name: editForm.name.trim(), email: editForm.email.trim().toLowerCase(), phone: editForm.phone.trim() };
+    if (editForm.password) body.password = editForm.password;
+    try {
+      await api(`/api/admin/customers/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      setEditOk("Customer updated.");
+      setEditing(null);
+      load();
+      toast("success", "Customer updated.");
+    } catch (err: any) { setEditErr(err.message); toast("error", err.message); }
+  }
+
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
   const customers = fetched || [];
@@ -5656,6 +5679,23 @@ function AdminCustomers() {
           </form>
         </div>
       )}
+      {editing && (
+        <div className="panel" style={{ marginBottom: "1rem", maxWidth: 400 }}>
+          <h4 style={{ margin: "0 0 1rem" }}>Edit customer #{editing.id}</h4>
+          <form onSubmit={handleUpdate}>
+            {editErr && <div className="form-error">{editErr}</div>}
+            {editOk && <div className="form-ok">{editOk}</div>}
+            <div className="field"><label>Name<input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required /></label></div>
+            <div className="field"><label>Email<input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} required /></label></div>
+            <div className="field"><label>Phone<input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} /></label></div>
+            <div className="field"><label>New password (optional)<input type="password" value={editForm.password} onChange={(e) => setEditForm({ ...editForm, password: e.target.value })} placeholder="Leave blank to keep current password" /></label></div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <RippleButton type="submit">Save</RippleButton>
+              <RippleButton variant="ghost" onClick={() => setEditing(null)}>Cancel</RippleButton>
+            </div>
+          </form>
+        </div>
+      )}
       <div className="table-wrap">
         <table className="data-table">
           <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Last Login</th><th>Registered</th><th>Actions</th></tr></thead>
@@ -5670,6 +5710,7 @@ function AdminCustomers() {
                 <td style={{ whiteSpace: "nowrap" }}>{c.last_login ? new Date(c.last_login).toLocaleDateString("en-GB") : "-"}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{new Date(c.created_at).toLocaleDateString("en-GB")}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
+                  <RippleButton size="small" variant="ghost" onClick={() => startEdit(c)}>Edit</RippleButton>
                   <RippleButton size="small" variant="ghost" onClick={() => handleToggle(c)}>{c.is_active ? "Deactivate" : "Activate"}</RippleButton>
                   <RippleButton size="small" variant="danger" onClick={() => handleDelete(c.id)} loading={deleting === c.id}>Delete</RippleButton>
                 </td>
