@@ -44,76 +44,82 @@ export function renderStoreLogo(logoUrl: string, position: string, storeName: st
 
 // ============ INVOICE CSS ============
 export const INVOICE_CSS = `
+  @page { size: A4; margin: 14mm; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; background: #f1f5f9; }
-  .invoice { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #1f2937; }
-  .header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+  .invoice { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #c2410c; }
+  .header h1 { margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: #9a3412; }
   .header .meta { font-size: 0.85rem; color: #6b7280; margin: 0.4rem 0 0; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  thead th { background: #f8fafc; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #475569; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #1f2937; white-space: nowrap; }
-  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+  thead th { background: #fff7ed; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #9a3412; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #c2410c; white-space: nowrap; }
+  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #fff7ed; vertical-align: top; }
   tbody tr:last-child td { border-bottom: 0; }
   th, td { font-size: 0.9rem; }
-  .total-row { font-weight: 800; font-size: 1.15rem; color: #111827; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #1f2937; }
+  .total-row { font-weight: 800; font-size: 1.15rem; color: #9a3412; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #c2410c; }
   .totals { text-align: right; }
   .totals > div { padding: 0.22rem 0; font-size: 0.92rem; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin: 1.25rem 0; font-size: 0.9rem; }
   .info-grid .label { display: block; color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 0.35rem; }
-  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
+  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #fed7aa; padding-top: 1rem; }
   .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.75rem auto 0; flex-wrap: wrap; }
-  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
-  .print-btn:hover { background: #374151; }
-  .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
-  .pdf-btn:hover { background: #b91c1c; }
+  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #c2410c; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .print-btn:hover { background: #9a3412; }
+  .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .pdf-btn:hover { background: #374151; }
   .etims-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 0.9rem 1rem; margin: 1.25rem 0; font-size: 0.84rem; line-height: 1.6; }
   .etims-box strong { color: #15803d; }
   .vscu-data { font-size: 0.72rem; word-break: break-all; color: #6b7280; margin-top: 0.75rem; padding: 0.7rem 0.85rem; background: #f8fafc; border: 1px solid #eef2f7; border-radius: 8px; }
   @media print { body { margin: 0; padding: 0; background: none; } .invoice { border: none; box-shadow: none; padding: 0; } .btn-group { display: none; } tr { page-break-inside: avoid; } }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 `;
 
 export const THERMAL_CSS = `
+  @page { size: 80mm auto; margin: 4mm; }
   body { font-family: ui-monospace, "SF Mono", Consolas, monospace; max-width: 380px; margin: 0 auto; padding: 0.75rem; font-size: 0.9rem; color: #1f2937; line-height: 1.6; }
   h1 { font-size: 1.15rem; text-align: center; margin: 0.75rem 0; letter-spacing: -0.01em; }
   table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; }
   th, td { padding: 0.35rem 0; text-align: left; }
-  .total { font-weight: 700; font-size: 1.1rem; border-top: 1px dashed #374151; padding-top: 0.6rem; }
+  .total { font-weight: 700; font-size: 1.1rem; border-top: 1px dashed #9a3412; padding-top: 0.6rem; }
   .center { text-align: center; }
-  hr { border: none; border-top: 1px dashed #374151; margin: 0.75rem 0; }
+  hr { border: none; border-top: 1px dashed #9a3412; margin: 0.75rem 0; }
   .btn-group { display: flex; justify-content: center; gap: 0.5rem; margin: 1rem auto; flex-wrap: wrap; }
-  .print-btn { display: inline-block; padding: 0.5rem 1.5rem; background: #1f2937; color: #fff; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
-  .print-btn:hover { background: #374151; }
-  .pdf-btn { display: inline-block; padding: 0.5rem 1.5rem; background: #dc2626; color: #fff; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
-  .pdf-btn:hover { background: #b91c1c; }
+  .print-btn { display: inline-block; padding: 0.5rem 1.5rem; background: #c2410c; color: #fff; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
+  .print-btn:hover { background: #9a3412; }
+  .pdf-btn { display: inline-block; padding: 0.5rem 1.5rem; background: #1f2937; color: #fff; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
+  .pdf-btn:hover { background: #374151; }
   .footer-note { text-align: center; font-size: 0.7rem; color: #9ca3af; margin-top: 0.75rem; border-top: 1px solid #e5e7eb; padding-top: 0.5rem; }
   @media print { body { margin: 0; } .btn-group { display: none; } }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 `;
 
 export const CREDIT_NOTE_CSS = `
+  @page { size: A4; margin: 14mm; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; background: #f1f5f9; }
-  .cn { background: #ffffff; border: 1px solid #fecaca; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #dc2626; }
-  .header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; color: #dc2626; }
+  .cn { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #c2410c; }
+  .header h1 { margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: #c2410c; }
   .header .meta { font-size: 0.85rem; color: #6b7280; margin: 0.4rem 0 0; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  thead th { background: #fef2f2; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #991b1b; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #dc2626; white-space: nowrap; }
-  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #fef2f2; vertical-align: top; }
+  thead th { background: #fff7ed; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #9a3412; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #c2410c; white-space: nowrap; }
+  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #ffedd5; vertical-align: top; }
   tbody tr:last-child td { border-bottom: 0; }
   th, td { font-size: 0.9rem; }
-  .total-row { font-weight: 800; font-size: 1.15rem; color: #991b1b; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #dc2626; }
+  .total-row { font-weight: 800; font-size: 1.15rem; color: #9a3412; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #c2410c; }
   .totals { text-align: right; }
   .totals > div { padding: 0.22rem 0; font-size: 0.92rem; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin: 1.25rem 0; font-size: 0.9rem; }
   .info-grid .label { display: block; color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 0.35rem; }
-  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #fecaca; padding-top: 1rem; }
+  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #fed7aa; padding-top: 1rem; }
   .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.75rem auto 0; flex-wrap: wrap; }
-  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
-  .print-btn:hover { background: #b91c1c; }
+  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #c2410c; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .print-btn:hover { background: #9a3412; }
   .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
   .pdf-btn:hover { background: #374151; }
-  .badge { display: inline-block; background: #fee2e2; color: #dc2626; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
+  .badge { display: inline-block; background: #ffedd5; color: #c2410c; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
   .etims-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 0.9rem 1rem; margin: 1.25rem 0; font-size: 0.84rem; line-height: 1.6; }
   .etims-box .label { display: block; color: #166534; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
   @media print { body { margin: 0; padding: 0; background: none; } .cn { border: none; box-shadow: none; padding: 0; } .btn-group { display: none; } tr { page-break-inside: avoid; } }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 `;
 
 // ============ BUTTON HTML HELPERS ============
@@ -271,32 +277,34 @@ export function generateInvoiceHtml(data: InvoiceData): string {
 
 // ============ SUBSCRIPTION INVOICE HTML ============
 export const SUBSCRIPTION_INVOICE_CSS = `
+  @page { size: A4; margin: 14mm; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; background: #f1f5f9; }
-  .invoice { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #3b82f6; }
-  .header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; color: #1d4ed8; }
+  .invoice { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #c2410c; }
+  .header h1 { margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: #9a3412; }
   .header .meta { font-size: 0.85rem; color: #6b7280; margin: 0.4rem 0 0; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  thead th { background: #eff6ff; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #1e40af; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #3b82f6; white-space: nowrap; }
-  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #eff6ff; vertical-align: top; }
+  thead th { background: #fff7ed; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #9a3412; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #c2410c; white-space: nowrap; }
+  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #fff7ed; vertical-align: top; }
   tbody tr:last-child td { border-bottom: 0; }
   th, td { font-size: 0.9rem; }
-  .total-row { font-weight: 800; font-size: 1.15rem; color: #1d4ed8; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #3b82f6; }
+  .total-row { font-weight: 800; font-size: 1.15rem; color: #9a3412; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #c2410c; }
   .totals { text-align: right; }
   .totals > div { padding: 0.22rem 0; font-size: 0.92rem; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin: 1.25rem 0; font-size: 0.9rem; }
   .info-grid .label { display: block; color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 0.35rem; }
-  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
+  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #fed7aa; padding-top: 1rem; }
   .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.75rem auto 0; flex-wrap: wrap; }
-  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
-  .print-btn:hover { background: #374151; }
-  .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
-  .pdf-btn:hover { background: #b91c1c; }
+  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #c2410c; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .print-btn:hover { background: #9a3412; }
+  .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .pdf-btn:hover { background: #374151; }
   .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
   .badge-pending { background: #fef3c7; color: #92400e; }
   .badge-paid { background: #d1fae5; color: #065f46; }
   .badge-overdue { background: #fee2e2; color: #991b1b; }
   @media print { body { margin: 0; padding: 0; background: none; } .invoice { border: none; box-shadow: none; padding: 0; } .btn-group { display: none; } tr { page-break-inside: avoid; } }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 `;
 
 export interface SubscriptionInvoiceData {

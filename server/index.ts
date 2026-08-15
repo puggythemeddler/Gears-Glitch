@@ -3020,7 +3020,7 @@ app.get("/api/admin/credit-notes/:id/view", staffAuthMiddleware, asyncHandler(as
     <span class="badge">${cn.status.toUpperCase()}</span>
     <span style="font-size:0.9rem;color:#6b7280;">Issued: ${new Date(cn.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
   </div>
-  ${cn.reason ? `<p style="background:#fef2f2;padding:0.75rem;border-radius:8px;font-size:0.9rem;"><strong>Reason:</strong> ${escapeHtml(cn.reason)}</p>` : ""}
+  ${cn.reason ? `<p style="background:#fff7ed;border-left:3px solid #c2410c;padding:0.75rem;border-radius:8px;font-size:0.9rem;"><strong>Reason:</strong> ${escapeHtml(cn.reason)}</p>` : ""}
   <div class="info-grid">
     <div>
       <div class="label">Original Order</div>
@@ -3088,22 +3088,23 @@ app.get("/api/invoices/example/:id", (req: Request, res: Response) => {
   res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${inv.id} — Example</title>
 <style>
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1f2937; background: #f1f5f9; }
-  .invoice { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #1f2937; }
-  .header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+  .invoice { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #c2410c; }
+  .header h1 { margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: #9a3412; }
   .header .meta { font-size: 0.85rem; color: #6b7280; margin: 0.4rem 0 0; }
   table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-  thead th { background: #f8fafc; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #475569; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #1f2937; white-space: nowrap; }
-  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #eef2f7; }
+  thead th { background: #fff7ed; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #9a3412; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #c2410c; white-space: nowrap; }
+  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #fff7ed; }
   tbody tr:last-child td { border-bottom: 0; }
   th, td { font-size: 0.9rem; }
-  .total { text-align: right; font-size: 1.25rem; font-weight: 800; margin-top: 1rem; }
+  .total { text-align: right; font-size: 1.25rem; font-weight: 800; color: #9a3412; margin-top: 1rem; }
   .status { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; }
   .status.paid { background: #d1fae5; color: #065f46; }
   .status.pending { background: #fef3c7; color: #92400e; }
   .status.overdue { background: #fee2e2; color: #991b1b; }
-  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
+  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #fed7aa; padding-top: 1rem; }
   @media print { body { margin: 0; padding: 0; background: none; } .invoice { border: none; box-shadow: none; padding: 0; } }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 </style></head><body>
 <div class="invoice">
   <div class="header">
@@ -5231,31 +5232,32 @@ app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("rep
   const hasQuoteDiscount = quote.discountType && quote.discountValue > 0;
   const quoteDiscountLabel = hasQuoteDiscount ? (quote.discountType === "percentage" ? `${quote.discountValue}% off` : `${currency} ${quote.discountValue.toLocaleString()} off`) : "";
   const total = quote.total;
-  const statusColors: Record<string, string> = { pending: "#f59e0b", waiting_for_approval: "#3b82f6", cancelled: "#ef4444", approved: "#10b981" };
+  const statusColors: Record<string, string> = { pending: "#f59e0b", waiting_for_approval: "#ea580c", cancelled: "#ef4444", approved: "#10b981" };
   const statusColor = statusColors[quote.status] || "#6b7280";
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Quote #${quote.quoteNumber}</title>
 <style>
-  @page { size: A4; margin: 15mm; }
+  @page { size: A4; margin: 14mm; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 0 auto; padding: 1rem; color: #1f2937; background: #f1f5f9; }
-  .quote { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #1f2937; }
-  .header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+  .quote { background: #ffffff; border: 1px solid #fed7aa; border-radius: 14px; padding: 2.25rem 2.5rem; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap; padding-bottom: 1.25rem; margin-bottom: 1.5rem; border-bottom: 2px solid #c2410c; }
+  .header h1 { margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: #9a3412; }
   .status-badge { display:inline-block;padding:4px 12px;border-radius:999px;font-size:0.75rem;font-weight:600;color:#fff;background:${statusColor}; }
   table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-  thead th { background: #f8fafc; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #475569; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #1f2937; white-space: nowrap; }
-  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+  thead th { background: #fff7ed; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.07em; color: #9a3412; padding: 0.7rem 0.6rem; text-align: left; border-bottom: 2px solid #c2410c; white-space: nowrap; }
+  td { padding: 0.75rem 0.6rem; text-align: left; border-bottom: 1px solid #fff7ed; vertical-align: top; }
   tbody tr:last-child td { border-bottom: 0; }
   th, td { font-size: 0.9rem; }
-  .total-row { font-weight: 800; font-size: 1.15rem; color: #111827; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #1f2937; }
+  .total-row { font-weight: 800; font-size: 1.15rem; color: #9a3412; padding-top: 0.85rem; margin-top: 0.85rem; border-top: 2px solid #c2410c; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin: 1.25rem 0; font-size: 0.9rem; }
   .info-grid .label { display: block; color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 0.35rem; }
-  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
+  .footer { margin-top: 2rem; font-size: 0.82rem; color: #6b7280; text-align: center; border-top: 1px solid #fed7aa; padding-top: 1rem; }
   .btn-group { display: flex; justify-content: center; gap: 0.75rem; margin: 1.75rem auto 0; flex-wrap: wrap; }
-  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
-  .print-btn:hover { background: #374151; }
-  .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
-  .pdf-btn:hover { background: #b91c1c; }
+  .print-btn { display: inline-block; padding: 0.65rem 2rem; background: #c2410c; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .print-btn:hover { background: #9a3412; }
+  .pdf-btn { display: inline-block; padding: 0.65rem 2rem; background: #1f2937; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .pdf-btn:hover { background: #374151; }
   @media print { body { margin: 0; background: none; } .quote { border: none; box-shadow: none; padding: 0; } .btn-group { display: none; } tr { page-break-inside: avoid; } }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 </style></head><body>
 <div class="quote">
   ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}

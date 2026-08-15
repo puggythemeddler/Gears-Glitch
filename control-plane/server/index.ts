@@ -1882,7 +1882,7 @@ app.post("/api/clients/:id/invoices/:invId/email", requireAuth, async (req, res)
     const subject = `Invoice ${invoiceNumber} — ${planName} Plan`;
     const html = `
       <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem;">
-        <h2 style="color:#3b82f6;margin-bottom:0.5rem;">Invoice ${esc(invoiceNumber)}</h2>
+        <h2 style="color:#c2410c;margin-bottom:0.5rem;">Invoice ${esc(invoiceNumber)}</h2>
         <p>Hi ${esc(client.name)},</p>
         <p>Your subscription invoice for <strong>${esc(planName)}</strong> is ready.</p>
         <div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
@@ -1892,7 +1892,7 @@ app.post("/api/clients/:id/invoices/:invId/email", requireAuth, async (req, res)
           ${dueDate ? `<p style="margin:8px 0 0;"><strong>Due Date:</strong> ${esc(dueDate)}</p>` : ""}
         </div>
         <p>Please ensure payment is made by the due date to avoid service interruption.</p>
-        <p><a href="${viewUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Invoice</a></p>
+        <p><a href="${viewUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Invoice</a></p>
       </div>
     `;
 

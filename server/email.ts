@@ -75,7 +75,7 @@ export function messageNotificationEmail(senderName: string, senderRole: string,
 <p>You have a new message from <strong>${esc(senderName)}</strong> (${esc(senderRole)}):</p>
 ${subject ? `<p><strong>Subject:</strong> ${esc(subject)}</p>` : ""}
 <div style="background:#f1f5f9;padding:12px 16px;margin:16px 0;border-radius:6px;white-space:pre-wrap;">${esc(preview)}</div>
-<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View & Reply</a></p>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View & Reply</a></p>
 `);
   return { subject: title, html };
 }
@@ -90,7 +90,7 @@ export function quoteEmail(customerName: string, quoteNumber: string, total: str
 <p style="margin:8px 0 0;"><strong>Total:</strong> ${esc(currency)} ${esc(total)}</p>
 ${notes ? `<p style="margin:8px 0 0;"><strong>Notes:</strong> ${esc(notes)}</p>` : ""}
 </div></div>
-<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Quote</a></p>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Quote</a></p>
 `);
   return { subject: title, html };
 }
@@ -105,7 +105,7 @@ export function creditNoteEmail(customerName: string, creditNoteId: number, reas
 <p style="margin:8px 0 0;"><strong>Amount:</strong> ${esc(currency)} ${esc(amount)}</p>
 ${reason ? `<p style="margin:8px 0 0;"><strong>Reason:</strong> ${esc(reason)}</p>` : ""}
 </div>
-<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Details</a></p>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Details</a></p>
 `);
   return { subject: title, html };
 }
@@ -119,7 +119,7 @@ export function orderStatusEmail(customerName: string, orderNumber: string, stat
 <div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;text-align:center;">
 <p style="margin:0;font-size:16px;font-weight:700;color:${status === "cancelled" ? "#dc2626" : "#16a34a"};">${esc(statusLabels[status] || status)}</p>
 </div>
-<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Order</a></p>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Order</a></p>
 `);
   return { subject: title, html };
 }
@@ -136,7 +136,7 @@ export function subscriptionInvoiceEmail(customerName: string, invoiceNumber: st
 ${dueDate ? `<p style="margin:8px 0 0;"><strong>Due Date:</strong> ${esc(dueDate)}</p>` : ""}
 </div>
 <p>Please ensure payment is made by the due date to avoid service interruption.</p>
-<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Invoice</a></p>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Invoice</a></p>
 `);
   return { subject: title, html };
 }
