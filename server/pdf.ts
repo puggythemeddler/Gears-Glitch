@@ -15,6 +15,19 @@ async function getBrowser(): Promise<any> {
   return browserInstance;
 }
 
+// Warm the headless browser at boot so the first PDF request doesn't pay the
+// (several-second) Chromium launch cost on Render's free tier.
+export async function warmPdf(): Promise<void> {
+  try {
+    const browser = await getBrowser();
+    const page = await browser.newPage();
+    await page.setContent("<!DOCTYPE html><html><body></body></html>", { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.close();
+  } catch (e: any) {
+    console.warn("[pdf] Warm-up failed:", e?.message || e);
+  }
+}
+
 export async function htmlToPdf(html: string, options?: { format?: string; landscape?: boolean }): Promise<Buffer> {
   const browser = await getBrowser();
   const page = await browser.newPage();
@@ -28,10 +41,10 @@ export async function htmlToPdf(html: string, options?: { format?: string; lands
               ? Promise.resolve()
               : new Promise<void>((resolve) => {
                   let settled = false;
-                  const done = () => { if (!settled) { settled = true; resolve(); } };
+                  const timer = setTimeout(() => { settled = true; resolve(); }, 10000);
+                  const done = () => { if (!settled) { settled = true; clearTimeout(timer); resolve(); } };
                   img.addEventListener("load", done, { once: true });
                   img.addEventListener("error", done, { once: true });
-                  setTimeout(done, 10000);
                 })
         )
       )

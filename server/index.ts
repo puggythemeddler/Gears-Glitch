@@ -361,7 +361,7 @@ import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutI
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus } from "./mpesa";
 import bcrypt from "bcryptjs";
-import { htmlToPdf, closeBrowser } from "./pdf";
+import { htmlToPdf, closeBrowser, warmPdf } from "./pdf";
 import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml } from "./routes/shared";
 
 const PORT: number = Number(process.env.PORT) || 8020;
@@ -6139,6 +6139,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
+      warmPdf();
 
       // Auto-billing: check for overdue invoices every 6 hours
       setInterval(async () => {
