@@ -73,3 +73,49 @@ jobs:
             echo "$BODY" | jq -r '.results[] | select(.success == false) | "  ✗ \(.name): \(.error)"'
             exit 1
           fi
+
+      - name: Deploy main storefront frontend to Vercel (production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "⚠️  Skipping frontend deploy — VERCEL_TOKEN secret not configured."
+            echo "Set it in your repo: Settings → Secrets and variables → Actions"
+            exit 0
+          fi
+
+          # Trigger a git-based deploy of the current main branch (mirrors control-plane's deployViaGitApi)
+          BODY=$(jq -n '{name: "gears-glitch", project: "gears-glitch", target: "production", gitSource: {type: "github", org: "puggythemeddler", repo: "Gears-Glitch", ref: "main"}}')
+
+          CODE=$(curl -s -o /tmp/vd.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY" \
+            "https://api.vercel.com/v13/deployments")
+
+          if [ "$CODE" != "200" ]; then
+            echo "❌ Vercel deploy trigger failed (HTTP $CODE):"
+            cat /tmp/vd.json
+            exit 1
+          fi
+
+          DEPLOY_ID=$(jq -r '.id // empty' /tmp/vd.json)
+          DEPLOY_URL=$(jq -r '.url // empty' /tmp/vd.json)
+          echo "Frontend deploy triggered: ${DEPLOY_URL:-$DEPLOY_ID}"
+
+          for i in $(seq 1 60); do
+            sleep 10
+            STATE=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v13/deployments/$DEPLOY_ID" | jq -r '.readyState')
+            echo "  …deploy state: $STATE"
+            if [ "$STATE" = "READY" ]; then
+              echo "✅ Storefront deployed to https://gears-glitch.vercel.app"
+              exit 0
+            fi
+            if [ "$STATE" = "ERROR" ]; then
+              echo "❌ Vercel build failed. Check the deployment in the Vercel dashboard."
+              exit 1
+            fi
+          done
+          echo "❌ Timed out waiting for the Vercel build."
+          exit 1
