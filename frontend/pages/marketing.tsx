@@ -131,6 +131,7 @@ const FAQS = [
   { q: "How long does setup take?", a: "Most businesses are live within a day or two. Import your existing products and customers, configure your branches, and start selling." },
   { q: "Can I import my existing data?", a: "Yes. Import products, customers, and suppliers through the admin panel, including bulk CSV uploads for large catalogs." },
   { q: "How do repairs work?", a: "Create a ticket, assign a technician, generate a quote, and track every stage until collection. Customers get updates by email and WhatsApp, and can track progress themselves." },
+  { q: "How does warranty tracking work?", a: "Coverage is registered at the point of sale against the item's serial number. A dedicated Warranty panel shows every active, expiring, and expired warranty in your store — searchable by customer, product, or serial — so claims are decided in seconds, not an argument." },
   { q: "Is KRA eTIMS compliance built in?", a: "Yes. Every invoice and credit note carries a proper eTIMS control code and serial numbers, so your records are always audit-ready." },
   { q: "Can I try before I buy?", a: "Yes. The Starter plan is free and includes core features. Upgrade to Growth, Pro, or Enterprise whenever you need more." },
 ];
@@ -678,6 +679,9 @@ function MarketingContent() {
             { icon: "store", title: "Counter and online sales", desc: "A barcode-friendly POS, an online storefront, and campaign pages — all reading from the same stock and the same customers." },
             { icon: "card", title: "Payments that reconcile themselves", desc: "M-Pesa pushes straight to the till with a real confirmation before a sale completes. Cash and bank transfers are tracked the same way." },
             { icon: "fileText", title: "eTIMS-ready documents", desc: "Quotes convert to invoices in one click. Every receipt and credit note carries a KRA control code — audit-ready by default." },
+            { icon: "sliders", title: "Listings that sort and filter", desc: "Storefront categories, groups, and campaigns sort by newest, price, or name, filter what you see, and page through results 12 at a time — no endless scroll." },
+            { icon: "monitor", title: "A calm storefront that matches your brand", desc: "A clean, flat hero in your brand colors that follows each visitor's device theme. No flashy countdowns, glow, or effects — just the products, front and centre." },
+            { icon: "briefcase", title: "An admin workspace built for work", desc: "A focused staff portal: operational dashboard with revenue and needs-attention lists, sortable tables, semantic status colors, and keyboard-friendly controls. No gimmicks." },
           ]}
           media={<CommercePanel />}
         />
@@ -703,6 +707,7 @@ function MarketingContent() {
           bullets={[
             { icon: "wrench", title: "Tickets attached to the product", desc: "Every repair links to the original sale and the serial number, so context never lives in a person&apos;s memory." },
             { icon: "clipboard", title: "Quotes that close faster", desc: "Generate a costed quote from the ticket, get approval by WhatsApp or email, and convert to a completed job." },
+            { icon: "clock", title: "A status timeline, not a checklist", desc: "Every ticket walks a visual timeline — Received, Diagnosed, Awaiting parts, In progress, Quality check, Ready, Collected — with timestamps on each move and the device&apos;s serial and warranty right on the ticket." },
             { icon: "messageCircle", title: "Updates that reach everyone", desc: "Status changes notify the customer automatically and land in one conversation thread, not five tabs." },
           ]}
           media={<ServicePanel />}
@@ -717,6 +722,7 @@ function MarketingContent() {
           bullets={[
             { icon: "shield", title: "Warranty starts at the counter", desc: "Register coverage at the point of sale so the expiry date is never a guess and never a sticky note." },
             { icon: "target", title: "Coverage on demand", desc: "One search by serial number shows whether a unit is covered, when it expires, and what work has been done." },
+            { icon: "fileText", title: "A register you can filter in seconds", desc: "The dedicated Warranty panel buckets every serialized sale into active, expiring within 30 days, and expired — searchable by product, customer, or serial, and embedded on the customer&apos;s profile." },
             { icon: "calendar", title: "Claims with a paper trail", desc: "Log every claim against the device with the outcome recorded — honored, part-only, or declined, and why." },
           ]}
           media={<WarrantyPanel />}

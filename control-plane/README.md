@@ -298,11 +298,14 @@ All endpoints require authentication via one of:
 
 Deploys are split into two workflows so **clients never receive untested, error-prone updates**:
 
+### `ci.yml` — typecheck gate on every push/PR
+A separate continuous-integration workflow runs on every push to `main` and every PR. It runs the **server** (`npm run typecheck` + `npm run build` at the repo root) and the **control plane** (typecheck + build in `control-plane/`), plus an **isolation test suite** (`npm run test`) against an ephemeral PostgreSQL 17 service container. Any failure blocks the workflow, so broken code is caught before it reaches the auto-deploy step. Branch protection can require this workflow to pass before a PR merges.
+
 ### `deploy-test.yml` — automatic, on every push
-Runs on every push to `main` (and via manual dispatch). It calls `POST /api/deploy-test`, which deploys **only the client marked as the test site** (`is_test = 1`). Production clients are never touched. The workflow sends the push's git commit SHA and message, which the control plane records in the deploy log. If no test site is configured — or the deploy fails — the workflow fails (red), and production was still untouched.
+Runs on every push to `main` (and via manual dispatch). Its first job (`check`) runs **`npm run typecheck` for the server and the control plane** and aborts the workflow if either fails; only a green build proceeds to the deploy job. It calls `POST /api/deploy-test`, which deploys **only the client marked as the test site** (`is_test = 1`). Production clients are never touched. The workflow sends the push's git commit SHA and message, which the control plane records in the deploy log. If no test site is configured — or the deploy fails — the workflow fails (red), and production was still untouched.
 
 ### `deploy-all-clients.yml` — manual only
-Production rollout is **deliberate and manual**. This workflow has **no push trigger** — it can only be started from the Actions tab, and it aborts unless you type `DEPLOY` in the `confirm` input. It calls `POST /api/deploy-all`, deploys every active client's Render service, and records the git ID in the deploy log.
+Production rollout is **deliberate and manual**. This workflow has **no push trigger** — it can only be started from the Actions tab, and it aborts unless you type `DEPLOY` in the `confirm` input. It runs the same server + control-plane typecheck gate first, then calls `POST /api/deploy-all`, deploys every active client's Render service, and records the git ID in the deploy log.
 
 ### Required GitHub Secrets
 - `CONTROL_PLANE_URL` — your control plane's URL
