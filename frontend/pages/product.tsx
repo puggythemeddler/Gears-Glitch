@@ -6,6 +6,8 @@ import type { Product, ProductImage } from "@/lib/types";
 import { escapeHtml } from "@/lib/sanitize";
 import { toast } from "@/components/Toast";
 import { confirmDialog } from "@/components/ConfirmDialog";
+import { PageHead } from "@/components/ui";
+import Icon from "@/components/icons";
 
 function productInitials(name: string) {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
@@ -178,7 +180,7 @@ export default function ProductPage() {
     if (loadError) {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "40vh", padding: "2rem", textAlign: "center" }}>
-          <div style={{ fontSize: "3rem", marginBottom: "1rem", opacity: 0.3 }}>&#9888;&#65039;</div>
+          <div style={{ opacity: 0.35, marginBottom: "1rem" }}><Icon name="alertCircle" size={40} /></div>
           <p style={{ color: "var(--danger)", marginBottom: "1rem" }}>{loadError}</p>
           <button className="btn btn-primary" onClick={() => window.location.reload()}>Retry</button>
         </div>
@@ -208,6 +210,7 @@ export default function ProductPage() {
 
   return (
     <>
+      <PageHead title={`${product.name} - Gear&Glitch`} description={product.description ? String(product.description).slice(0, 160) : `Buy ${product.name} from Gear&Glitch.`} />
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <ol>
           <li><a href="/">Home</a></li>

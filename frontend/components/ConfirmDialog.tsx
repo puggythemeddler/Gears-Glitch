@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import { useFocusTrap } from "@/components/ui/focusTrap";
 
 export interface ConfirmOptions {
   title?: string;
@@ -96,6 +97,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
   const isPrompt = state?.kind === "prompt";
   const options = state?.options as ConfirmOptions | PromptOptions | undefined;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, !!state, { focusFirst: false });
 
   return (
     <ConfirmContext.Provider value={confirm}>
@@ -104,6 +107,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         <div className="modal-overlay" onClick={() => close(null)}>
           <div
             className="modal modal-sm"
+            ref={dialogRef}
             role={isPrompt ? "dialog" : "alertdialog"}
             aria-modal="true"
             aria-labelledby="confirm-dialog-title"

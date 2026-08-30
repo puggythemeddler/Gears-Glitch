@@ -1,19 +1,24 @@
 ﻿import React from "react";
+import Icon from "@/components/icons";
 
 const ICONS: Record<string, string> = {
-  products: "\uD83D\uDCE6",
-  orders: "\uD83D\uDCCB",
-  staff: "\uD83D\uDC65",
-  categories: "\uD83D\uDCC1",
-  reports: "\uD83D\uDCCA",
-  customers: "\uD83D\uDC64",
-  messages: "\u2709\uFE0F",
-  audit: "\uD83D\uDD0D",
-  stock: "\uD83D\uDCE6",
-  repairs: "\uD83D\uDD27",
-  plans: "\uD83D\uDCCB",
-  invoices: "\uD83E\uDDFE",
-  default: "\uD83D\uDCE6",
+  products: "box",
+  orders: "fileText",
+  staff: "users",
+  categories: "folder",
+  reports: "chart",
+  customers: "users",
+  messages: "message",
+  audit: "search",
+  stock: "boxes",
+  repairs: "wrench",
+  plans: "layers",
+  invoices: "receipt",
+  quotes: "fileText",
+  serials: "hash",
+  warranty: "shieldCheck",
+  inbox: "inbox",
+  default: "inbox",
 };
 
 export default function EmptyState({
@@ -31,11 +36,11 @@ export default function EmptyState({
 }) {
   return (
     <div className="empty-state">
-      <div className="empty-state-icon">{ICONS[icon] || ICONS.default}</div>
+      <div className="empty-state-icon"><Icon name={ICONS[icon] || ICONS.default} size={28} /></div>
       <div className="empty-state-title">{title}</div>
       <div className="empty-state-desc">{description}</div>
       {actionLabel && onAction && (
-        <button className="btn" onClick={onAction}>
+        <button className="btn btn-secondary btn-sm" onClick={onAction}>
           {actionLabel}
         </button>
       )}

@@ -1,5 +1,6 @@
 import React, { Component, useState, useEffect } from "react";
 import type { AppProps } from "next/app";
+import { Sora, Archivo } from "next/font/google";
 import { AppProvider } from "@/lib/app-context";
 import { LayoutProvider, LayoutStyles } from "@/layouts";
 import Layout from "@/components/Layout";
@@ -9,6 +10,20 @@ import OfflinePage from "@/components/OfflinePage";
 import "@/styles/globals.css";
 import "@/styles/animations.css";
 import "@/styles/marketing.css";
+
+const sora = Sora({
+  weight: ["400", "500", "600", "700", "800"],
+  subsets: ["latin"],
+  variable: "--font-sora-next",
+  display: "swap",
+});
+
+const archivo = Archivo({
+  weight: ["500", "600", "700", "800"],
+  subsets: ["latin"],
+  variable: "--font-archivo-next",
+  display: "swap",
+});
 
 function getActiveNav(path: string): string {
   const p = path.split("?")[0].replace(/\/$/, "") || "/";
@@ -35,14 +50,12 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, ErrorBounda
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{
-          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-          minHeight: "60vh", padding: "2rem", textAlign: "center", color: "var(--text)",
-        }}>
-          <div style={{ fontSize: "3rem", marginBottom: "1rem", opacity: 0.3 }}>⚠️</div>
-          <h1 style={{ marginBottom: "0.5rem" }}>Something went wrong</h1>
-          <p style={{ color: "var(--text-secondary)", marginBottom: "1.5rem", maxWidth: 400 }}>
-            An unexpected error occurred. Please try refreshing the page.
+        <div className="error-state" style={{ minHeight: "60vh" }} role="alert">
+          <div className="error-state-icon">!</div>
+          <div className="error-state-title">This page couldn&apos;t load</div>
+          <p className="error-state-desc">
+            An unexpected error occurred while rendering the page. Your data is safe —
+            refreshing usually fixes it. If it keeps happening, contact support.
           </p>
           <button
             className="btn btn-primary"
@@ -86,22 +99,24 @@ export default function MyApp({ Component, pageProps, router }: AppProps) {
   }, [offline]);
 
   return (
-    <AppProvider>
-      <ErrorBoundary>
-        <ToastProvider>
-          <ConfirmProvider>
-            <LayoutProvider>
-              <LayoutStyles />
-              <Layout activeNav={activeNav}>
-                <PageTransition key={router.asPath}>
-                  <Component {...pageProps} />
-                </PageTransition>
-              </Layout>
-            </LayoutProvider>
-          </ConfirmProvider>
-        </ToastProvider>
-      </ErrorBoundary>
-      {offline && <OfflinePage dismissing={offline === "dismissing"} />}
-    </AppProvider>
+    <div className={`${sora.variable} ${archivo.variable}`} style={{ minHeight: "100vh" }}>
+      <AppProvider>
+        <ErrorBoundary>
+          <ToastProvider>
+            <ConfirmProvider>
+              <LayoutProvider>
+                <LayoutStyles />
+                <Layout activeNav={activeNav}>
+                  <PageTransition key={router.asPath}>
+                    <Component {...pageProps} />
+                  </PageTransition>
+                </Layout>
+              </LayoutProvider>
+            </ConfirmProvider>
+          </ToastProvider>
+        </ErrorBoundary>
+        {offline && <OfflinePage dismissing={offline === "dismissing"} />}
+      </AppProvider>
+    </div>
   );
 }

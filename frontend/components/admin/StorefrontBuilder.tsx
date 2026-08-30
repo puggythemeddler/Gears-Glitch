@@ -5,6 +5,7 @@ import { getProducts } from "@/components/ProductCard";
 import { useLayout } from "@/layouts";
 import { HeroSection, DynamicSectionView, DynamicLayoutConfig } from "@/layouts/dynamic-engine";
 import RippleButton from "@/components/RippleButton";
+import Icon from "@/components/icons";
 import { Spinner, ErrorMsg } from "./shared";
 
 type Section = NonNullable<DynamicLayoutConfig["sections"]>[number];
@@ -452,9 +453,9 @@ export default function StorefrontBuilder() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "0.75rem", marginTop: "1rem" }}>
             {dynamicLayouts.map((l) => (
               <div key={l.id} className="panel" role="button" tabIndex={0} style={{ cursor: "pointer", margin: 0, border: l.is_active === 1 ? "2px solid var(--primary)" : "1px solid var(--border)" }} onClick={() => loadSelected(l.id)} onKeyDown={(e) => { if (e.key === "Enter") loadSelected(l.id); }}>
-                <div style={{ height: 80, borderRadius: 8, background: "var(--bg)", marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem" }}>🎨</div>
+                <div style={{ height: 80, borderRadius: 8, background: "var(--bg)", marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-tertiary)" }}><Icon name="layout" size={32} /></div>
                 <strong style={{ fontSize: "0.9rem" }}>{l.label}</strong>
-                {l.is_active === 1 && <span className="badge badge-green" style={{ marginLeft: "0.4rem" }}>Live</span>}
+                {l.is_active === 1 && <span className="badge badge-success" style={{ marginLeft: "0.4rem" }}>Live</span>}
                 <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--text-secondary)" }}>{l.description}</p>
               </div>
             ))}

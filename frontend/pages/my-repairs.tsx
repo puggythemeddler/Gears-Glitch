@@ -2,6 +2,9 @@ import React, { useEffect, useState } from "react";
 import { api, isCustomerLoggedIn } from "@/lib/api";
 import type { RepairTicket } from "@/lib/types";
 import { escapeHtml } from "@/lib/sanitize";
+import Icon from "@/components/icons";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { usePageTitle } from "@/lib/use-page-title";
 
 export default function MyRepairsPage() {
   const [tickets, setTickets] = useState<RepairTicket[]>([]);
@@ -9,6 +12,7 @@ export default function MyRepairsPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState("");
+  usePageTitle("My repair tickets");
 
   useEffect(() => {
     setMounted(true);
@@ -20,7 +24,7 @@ export default function MyRepairsPage() {
   }, []);
 
   if (mounted && !loggedIn) {
-    return <><h1>My repairs</h1><div className="empty-state"><div className="empty-state-icon">🔧</div><div className="empty-state-title">Sign in to view repairs</div><div className="empty-state-desc">Please sign in to see your repair tickets.</div><a href="/login?redirect=/my-repairs" className="btn btn-primary">Sign in</a></div></>;
+    return <><h1>My repairs</h1><div className="empty-state"><div className="empty-state-icon"><Icon name="lock" size={28} /></div><div className="empty-state-title">Sign in to view repairs</div><div className="empty-state-desc">Please sign in to see your repair tickets.</div><a href="/login?redirect=/my-repairs" className="btn btn-primary">Sign in</a></div></>;
   }
 
   return (
@@ -48,7 +52,7 @@ export default function MyRepairsPage() {
         </div>
       ) : tickets.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">🔧</div>
+          <div className="empty-state-icon"><Icon name="wrench" size={28} /></div>
           <div className="empty-state-title">No repair tickets</div>
           <div className="empty-state-desc">You haven't booked any repairs yet.</div>
           <a href="/repair-book" className="btn btn-primary">Book a repair</a>
@@ -60,7 +64,7 @@ export default function MyRepairsPage() {
               <div>
                 <strong>#{t.id}</strong> — {escapeHtml(t.deviceType)}
                 {t.deviceModel ? ` (${escapeHtml(t.deviceModel)})` : ""}
-                <span className="plan-status">{escapeHtml(t.status)}</span>
+                <StatusBadge status={t.status} domain="repairs" />
               </div>
               <span className="muted">{new Date(t.createdAt).toLocaleDateString("en-GB")}</span>
             </div>

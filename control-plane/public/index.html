@@ -954,11 +954,6 @@
 
     function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
     function jsStr(s) { return String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
-    function copyAdminPassword(id) {
-      const c = allClients.find(x => x.id === id);
-      if (!c || !c.admin_password) { toast("No password on record.", "error"); return; }
-      navigator.clipboard.writeText(c.admin_password).then(() => toast("Password copied")).catch(() => toast("Copy failed.", "error"));
-    }
     let toastContainer = null;
     function toast(msg, type = "success", timeout = 4000) {
       if (!toastContainer) { toastContainer = document.createElement("div"); toastContainer.className = "toast-container"; toastContainer.setAttribute("role", "status"); toastContainer.setAttribute("aria-live", "polite"); document.body.appendChild(toastContainer); }
@@ -2176,8 +2171,6 @@
       detailTab.className = "tab active";
 
       document.getElementById("detail-client-name").textContent = c.name;
-      const pwHtml = c.admin_password ? '<span style="font-size:0.82rem;margin-left:1rem;color:var(--text-muted)">PW: <span style="letter-spacing:2px">••••••••</span> <button type="button" class="chip-btn" style="margin-left:0.25rem" onclick="copyAdminPassword(' + c.id + ')">copy</button></span>' : '';
-      document.getElementById("detail-client-name").innerHTML += pwHtml;
       document.getElementById("detail-actions").innerHTML = `
         ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Backend</a>' : ''}
         ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Frontend</a>' : ''}

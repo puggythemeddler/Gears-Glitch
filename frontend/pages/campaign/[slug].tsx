@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { ProductCard } from "@/components/ProductCard";
+import Icon from "@/components/icons";
 import type { Product } from "@/lib/types";
 
 export default function CampaignPage() {
@@ -50,7 +51,7 @@ export default function CampaignPage() {
         </div>
       ) : error ? (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "30vh", gap: "1rem", textAlign: "center" }}>
-          <div style={{ fontSize: "3rem", opacity: 0.3 }}>📢</div>
+          <div className="empty-state-icon"><Icon name="megaphone" size={22} /></div>
           <p style={{ color: "var(--danger)" }}>{error}</p>
           <a href="/" className="btn btn-primary">Back to home</a>
         </div>
@@ -76,7 +77,7 @@ export default function CampaignPage() {
           </div>
           {products.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">📦</div>
+              <div className="empty-state-icon"><Icon name="box" size={22} /></div>
               <div className="empty-state-title">No products in this campaign yet</div>
               <a href="/" className="btn btn-primary">Browse all products</a>
             </div>

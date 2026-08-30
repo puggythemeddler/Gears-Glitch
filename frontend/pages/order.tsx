@@ -5,6 +5,9 @@ import { useApp } from "@/lib/app-context";
 import type { Order } from "@/lib/types";
 import { escapeHtml } from "@/lib/sanitize";
 import { toast } from "@/components/Toast";
+import Icon from "@/components/icons";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { usePageTitle } from "@/lib/use-page-title";
 
 export default function OrderDetailPage() {
   const router = useRouter();
@@ -17,6 +20,7 @@ export default function OrderDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+  usePageTitle(order ? `Order #${order.id}` : "Order");
 
   const [shippingName, setShippingName] = useState("");
   const [shippingAddress, setShippingAddress] = useState("");
@@ -84,7 +88,7 @@ export default function OrderDetailPage() {
   }
 
   if (mounted && !loggedIn) {
-    return <><h1>Order</h1><div className="empty-state"><div className="empty-state-icon">🔒</div><div className="empty-state-title">Sign in to view order</div><div className="empty-state-desc">Please sign in to view this order.</div><a href="/login?redirect=/orders" className="btn btn-primary">Sign in</a></div></>;
+    return <><h1>Order</h1><div className="empty-state"><div className="empty-state-icon"><Icon name="lock" size={28} /></div><div className="empty-state-title">Sign in to view order</div><div className="empty-state-desc">Please sign in to view this order.</div><a href="/login?redirect=/orders" className="btn btn-primary">Sign in</a></div></>;
   }
 
   if (!mounted || !id) {
@@ -97,7 +101,7 @@ export default function OrderDetailPage() {
         <nav className="breadcrumbs"><ol><li><a href="/">Home</a></li><li><a href="/orders">Orders</a></li><li><span aria-current="page">Order</span></li></ol></nav>
         <h1>Order #{id}</h1>
         <div className="empty-state">
-          <div className="empty-state-icon">⚠️</div>
+          <div className="empty-state-icon"><Icon name="alertCircle" size={28} /></div>
           <div className="empty-state-title">Failed to load order</div>
           <div className="empty-state-desc">{error}</div>
           <button className="btn btn-primary" onClick={() => window.location.reload()}>Retry</button>
@@ -130,7 +134,7 @@ export default function OrderDetailPage() {
       <div className="card" style={{ marginBottom: "1.5rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <span className="plan-status">{order.status}</span>
+            <StatusBadge status={order.status} domain="orders" />
             {order.paymentMethod && <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Payment: {escapeHtml(order.paymentMethod)}</span>}
           </div>
           <span className="muted">{new Date(order.createdAt).toLocaleDateString("en-GB")}</span>
@@ -185,7 +189,7 @@ export default function OrderDetailPage() {
             </div>
             {saveMsg && <p style={{ fontSize: "0.85rem", color: saveMsg.error ? "var(--danger)" : "var(--success)" }}>{saveMsg.text}</p>}
             {mpesaMsg && <p style={{ fontSize: "0.85rem", color: "var(--success)" }}>{mpesaMsg}</p>}
-            <button className="btn btn-primary" onClick={saveDetails} disabled={saving} style={{ alignSelf: "flex-start" }}>{saving ? "Saving…" : "Save Details"}</button>
+            <button className="btn btn-primary" onClick={saveDetails} disabled={saving} style={{ alignSelf: "flex-start" }}>{saving ? "Saving…" : "Save details"}</button>
           </div>
         ) : (
           <>

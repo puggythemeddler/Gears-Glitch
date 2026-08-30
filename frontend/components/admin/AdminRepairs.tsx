@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
+import Icon from "@/components/icons";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatPrice, escapeHtml, Spinner } from "./shared";
 import { toast } from "@/components/Toast";
 
@@ -12,6 +14,7 @@ const STATUS_LABELS: Record<string, string> = {
   diagnosing: "Diagnosing",
   waiting_parts: "Waiting for parts",
   in_progress: "In progress",
+  quality_check: "Quality check",
   ready: "Ready for collection",
   collected: "Collected",
   cancelled: "Cancelled",
@@ -27,15 +30,7 @@ function slugify(text: string): string {
 }
 
 function statusBadge(status: string) {
-  const bg: Record<string, string> = {
-    received: "var(--info-light)", diagnosing: "var(--warning-light)", waiting_parts: "var(--violet-light)",
-    in_progress: "var(--success-light)", ready: "var(--indigo-light)", collected: "var(--neutral-light)", cancelled: "var(--danger-light)",
-  };
-  const fg: Record<string, string> = {
-    received: "var(--info-text)", diagnosing: "var(--warning-text)", waiting_parts: "var(--violet-text)",
-    in_progress: "var(--success-text)", ready: "var(--indigo-text)", collected: "var(--neutral-text)", cancelled: "var(--danger-text)",
-  };
-  return <span className="plan-status" style={{ background: bg[status] || "var(--neutral-light)", color: fg[status] || "var(--neutral-text)" }}>{STATUS_LABELS[status] || status}</span>;
+  return <StatusBadge status={status} domain="repairs" />;
 }
 
 function localISODate(d: Date) {
@@ -120,6 +115,9 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
   const [noteMsg, setNoteMsg] = useState("");
   const [noteVisible, setNoteVisible] = useState(true);
   const [partForm, setPartForm] = useState({ description: "", quantity: 1, unitCost: 0 });
+  const [assetSerials, setAssetSerials] = useState<any[]>([]);
+  const [assetWarranties, setAssetWarranties] = useState<any[]>([]);
+  const [assetLoading, setAssetLoading] = useState(false);
 
   async function loadList() {
     setLoading(true);
@@ -144,6 +142,20 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
     try {
       const d = await api<any>(`/api/repairs/${id}`);
       setDetail(d);
+      if (d.customerId) {
+        setAssetLoading(true);
+        const [s, w] = await Promise.all([
+          api<{ serials: any[] }>(`/api/serials?customerId=${d.customerId}`).catch(() => null),
+          api<{ warranties: any[] }>(`/api/admin/warranties?customerId=${d.customerId}`).catch(() => null),
+        ]);
+        setAssetSerials(s?.serials || []);
+        setAssetWarranties(w?.warranties || []);
+        setAssetLoading(false);
+      } else {
+        setAssetSerials([]);
+        setAssetWarranties([]);
+        setAssetLoading(false);
+      }
       setForm({
         status: d.status || "received",
         assignedTo: d.assignedTo != null ? String(d.assignedTo) : "",
@@ -356,7 +368,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <RippleButton onClick={saveDetail} loading={saving}>Save</RippleButton>
+              <RippleButton onClick={saveDetail} loading={saving}>Save changes</RippleButton>
               <RippleButton variant="secondary" onClick={sendQuote} disabled={quoteSent}>
                 {quoteSent ? "Quote sent" : "Send quote to customer"}
               </RippleButton>
@@ -407,15 +419,19 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
           <div style={{ marginTop: "1.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
             <h4 style={{ margin: "0 0 0.75rem" }}>Updates &amp; notes</h4>
             {Array.isArray(detail.updates) && detail.updates.length > 0 && (
-              <div style={{ marginBottom: "0.75rem" }}>
+              <ul className="timeline" style={{ marginBottom: "0.75rem" }}>
                 {detail.updates.map((u: any) => (
-                  <div key={u.id} className="order-item">
-                    <strong>{escapeHtml(u.staffName || "Staff")}</strong> <span className="muted">· {new Date(u.createdAt).toLocaleString("en-GB")}</span>
-                    {!u.customerVisible && <span className="plan-status" style={{ marginLeft: "0.5rem", background: "var(--neutral-light)", color: "var(--neutral-text)" }}>Internal</span>}
-                    <p style={{ margin: "0.25rem 0 0", whiteSpace: "pre-wrap" }}>{escapeHtml(u.message)}</p>
-                  </div>
+                  <li key={u.id} className="timeline-item done">
+                    <span className="timeline-dot" aria-hidden="true" />
+                    <div className="timeline-title">
+                      {escapeHtml(u.staffName || "Staff")}
+                      {!u.customerVisible && <span className="badge badge-default" style={{ marginLeft: "0.5rem" }}>Internal</span>}
+                    </div>
+                    <div className="timeline-meta">{new Date(u.createdAt).toLocaleString("en-GB")}</div>
+                    <div className="timeline-body" style={{ whiteSpace: "pre-wrap" }}>{escapeHtml(u.message)}</div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end", flexWrap: "wrap" }}>
               <div className="field" style={{ flex: "1 1 260px" }}><label>Message<textarea rows={2} value={noteMsg} onChange={(e) => setNoteMsg(e.target.value)} /></label></div>
@@ -426,6 +442,40 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
               <RippleButton size="small" variant="secondary" onClick={addNote} disabled={!noteMsg.trim()}>Add note</RippleButton>
             </div>
           </div>
+
+          {detail.customerId && (
+            <div style={{ marginTop: "1.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
+              <h4 style={{ margin: "0 0 0.75rem" }}>Customer assets</h4>
+              {assetLoading ? (
+                <p className="muted">Loading assets…</p>
+              ) : assetSerials.length > 0 ? (
+                <div className="table-wrap" style={{ marginBottom: "0.75rem" }}>
+                  <table className="data-table">
+                    <thead><tr><th>Serial</th><th>Product</th><th>Sold</th><th>Warranty</th></tr></thead>
+                    <tbody>
+                      {assetSerials.map((s: any) => (
+                        <tr key={s.serial_number}>
+                          <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{escapeHtml(s.serial_number)}</td>
+                          <td>{escapeHtml(s.product_name || "—")}</td>
+                          <td>{s.sold_at ? new Date(s.sold_at).toLocaleDateString("en-GB") : "—"}</td>
+                          <td>{s.warranty_expires ? new Date(s.warranty_expires).toLocaleDateString("en-GB") : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="muted">No serialised assets found for this customer.</p>
+              )}
+              {assetWarranties.length > 0 && (
+                <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                  <strong style={{ color: "var(--text)" }}>{assetWarranties.length}</strong> item(s) under warranty —{" "}
+                  <StatusBadge status="active" domain="warranty" />{" "}
+                  <span className="muted">warranty register</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </>
@@ -491,7 +541,7 @@ function CalendarTab({ onOpenTicket }: { onOpenTicket: (id: string) => void }) {
                     >
                       <strong>{t.id}</strong>
                       <div>{escapeHtml(t.deviceType || "")}{t.deviceModel ? " " + escapeHtml(t.deviceModel) : ""}</div>
-                      {t.assignedName && <div className="muted">👤 {escapeHtml(t.assignedName)}</div>}
+                      {t.assignedName && <div className="muted" style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}><Icon name="user" size={12} /> {escapeHtml(t.assignedName)}</div>}
                       <div>{t.scheduledAt ? new Date(t.scheduledAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""} {statusBadge(t.status)}</div>
                     </button>
                   ))

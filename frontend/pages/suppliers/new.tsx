@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { api, getStaffToken } from "@/lib/api";
+import { usePageTitle } from "@/lib/use-page-title";
 
 function Spinner() { return <p style={{ textAlign: "center", padding: "2rem", opacity: 0.5 }}>Loading...</p>; }
 
 export default function NewSupplierPage() {
+  usePageTitle("New supplier - Gear&Glitch");
   const router = useRouter();
   const [authed, setAuthed] = useState(false);
   const [saving, setSaving] = useState(false);

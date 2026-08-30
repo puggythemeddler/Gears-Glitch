@@ -5,11 +5,7 @@ import { useApp } from "@/lib/app-context";
 import { escapeHtml } from "@/lib/sanitize";
 import { toast } from "@/components/Toast";
 import { confirmDialog } from "@/components/ConfirmDialog";
-
-function formatPrice(amount: number) {
-  return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
-}
-
+import { usePageTitle } from "@/lib/use-page-title";
 interface QuoteItem {
   id: number;
   quoteId: number;
@@ -46,9 +42,10 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
 };
 
 export default function QuotesPage() {
-  const { isDark } = useApp();
+  const { isDark, formatPrice } = useApp();
   const role = getRole();
   const isStaff = role === "staff" || role === "provider";
+  usePageTitle(isStaff ? "Quotes management - Gear&Glitch" : "My quotes - Gear&Glitch");
 
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [stats, setStats] = useState({ pending: 0, waiting_for_approval: 0, cancelled: 0, approved: 0, total: 0 });
@@ -113,9 +110,9 @@ export default function QuotesPage() {
     setActionLoading(false);
   }
 
-  if (creating) return <QuoteCreator onBack={() => setCreating(false)} onCreated={() => { setCreating(false); loadQuotes(); }} />;
+  if (creating) return <QuoteCreator formatPrice={formatPrice} onBack={() => setCreating(false)} onCreated={() => { setCreating(false); loadQuotes(); }} />;
 
-  if (viewQuote) return <QuoteDetail quote={viewQuote} onBack={() => setViewQuote(null)} onRefresh={() => { setViewQuote(null); loadQuotes(); }} />;
+  if (viewQuote) return <QuoteDetail formatPrice={formatPrice} quote={viewQuote} onBack={() => setViewQuote(null)} onRefresh={() => { setViewQuote(null); loadQuotes(); }} />;
 
   return (
     <div>
@@ -196,7 +193,7 @@ export default function QuotesPage() {
   );
 }
 
-function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote; onBack: () => void; onRefresh: () => void }) {
+function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { quote: Quote; onBack: () => void; onRefresh: () => void; formatPrice: (n: number) => string }) {
   const [quote, setQuote] = useState<Quote>(initialQuote);
   const [actionLoading, setActionLoading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -463,7 +460,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         <button className="btn btn-primary" onClick={openPdf} disabled={actionLoading}>Download PDF</button>
         {isPending && (
-          <button className="btn" style={{ background: "var(--violet)", color: "var(--surface)" }} onClick={startEditing} disabled={actionLoading}>Edit Items</button>
+          <button className="btn btn-secondary" onClick={startEditing} disabled={actionLoading}>Edit Items</button>
         )}
         {(quote.status === "pending" || quote.status === "waiting_for_approval") && (
           <>
@@ -477,7 +474,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh }: { quote: Quote;
   );
 }
 
-function QuoteCreator({ onBack, onCreated }: { onBack: () => void; onCreated: () => void }) {
+function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; onCreated: () => void; formatPrice: (n: number) => string }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { useFocusTrap } from "./focusTrap";
 
 interface ModalProps {
   open: boolean;
@@ -11,6 +12,8 @@ interface ModalProps {
 
 export function Modal({ open, onClose, title, children, footer, size = "md" }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, open);
 
   useEffect(() => {
     if (!open) return;
@@ -31,7 +34,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
 
   return (
     <div className="modal-overlay" ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}>
-      <div className={`modal ${sizeClass}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`modal ${sizeClass}`} ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-header">
           {title && <h2 className="modal-title">{title}</h2>}
           <button className="modal-close" onClick={onClose} aria-label="Close">&times;</button>

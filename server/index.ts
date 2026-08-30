@@ -295,7 +295,6 @@ import {
   createRefund,
   listRefunds,
   getRefundTotal,
-  cancelOrderItemQuantity,
 } from "./db";
 import { query, queryOne, queryAll, transaction } from "./db-helpers";
 import {
@@ -765,6 +764,14 @@ app.get("/api/settings", staffAuthMiddleware, requirePermission("settings:view")
   settings.etimsOscuConsumerKey = (await queryOne("SELECT value FROM settings WHERE key = 'etims_oscu_consumer_key'"))?.value || "";
   settings.etimsOscuConsumerSecret = (await queryOne("SELECT value FROM settings WHERE key = 'etims_oscu_consumer_secret'"))?.value || "";
   settings.paymentMethods = await getPaymentMethods();
+  // Secrets are never returned to the browser — they are shared across tenants
+  // (Cloudinary) or credential material (WhatsApp / eTIMs) and staff accounts
+  // hold settings:view. Forms submit blank = keep existing (see updateSettings).
+  settings.cloudinaryApiSecret = "";
+  settings.whatsappAccessToken = "";
+  settings.whatsappAppSecret = "";
+  settings.whatsappVerifyToken = "";
+  settings.etimsOscuConsumerSecret = "";
   res.json(settings);
 }));
 
@@ -1152,6 +1159,10 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
     settings.whatsappVerifyToken = updatedSettings.whatsappVerifyToken;
     settings.whatsappBusinessAccountId = updatedSettings.whatsappBusinessAccountId;
   }
+  settings.cloudinaryApiSecret = "";
+  settings.whatsappAccessToken = "";
+  settings.whatsappAppSecret = "";
+  settings.whatsappVerifyToken = "";
   res.json({ ...settings, paymentMethods: await getPaymentMethods(), mpesa: mpesaCfg, springboardMenu: (await getStoreSetting("springboard_menu")) === "true" });
 }));
 
@@ -1283,7 +1294,7 @@ app.get("/api/provider/sales", providerAuthMiddleware, asyncHandler(async (req: 
   const tier = sub ? ((await getSubscriptionPlan(sub.planId))?.tierLevel ?? 0) : 0;
   const from = String(req.query.from || "1970-01-01");
   const to = String(req.query.to || "2099-12-31");
-  const orders = await queryAll(`
+  const rows = await queryAll(`
     SELECT o.*, c.name AS customer_name FROM orders o
     JOIN customers c ON c.id = o.customer_id
     JOIN order_items oi ON oi.order_id = o.id
@@ -1291,6 +1302,10 @@ app.get("/api/provider/sales", providerAuthMiddleware, asyncHandler(async (req: 
     WHERE o.created_at::timestamp >= $1 AND o.created_at::timestamp <= $2 AND o.status != 'cancelled'
     GROUP BY o.id, c.name ORDER BY o.created_at DESC
   `, [from, to]) as any[];
+  // Scope to orders the provider actually owns. Order items carry the owning
+  // provider's id (providerId); without a match the provider sees nothing —
+  // never the full storefront customer base.
+  const orders = rows.filter((o: any) => providerOwnsOrder(o, providerId));
   const totalRevenue = orders.reduce((s: number, o: any) => s + (o.subtotal || 0) + (o.shipping_fee || 0), 0);
   res.json({ totalOrders: orders.length, totalRevenue, orders });
 }));
@@ -2403,11 +2418,18 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
   }
 }));
 
+// Provider accounts only ever see orders that reference their own products.
+// Order items carry the provider via the product's provider linkage; without a
+// match the provider has no visibility (and cannot act on) the order.
+function providerOwnsOrder(order: any, providerId: number): boolean {
+  return !!order?.items?.some((i: any) => i.providerId === providerId);
+}
+
 app.get("/api/provider/orders", providerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
     const orders = await listOrders();
     const providerId = (req as any).provider?.sub;
-    const filtered = orders.filter((o: any) => o.items?.some((i: any) => i.providerId === providerId));
+    const filtered = orders.filter((o: any) => providerOwnsOrder(o, providerId));
     res.json({ orders: filtered });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to load orders." });
@@ -2418,6 +2440,9 @@ app.get("/api/provider/orders/:id", providerAuthMiddleware, asyncHandler(async (
   try {
     const order = await getOrder(Number(req.params.id));
     if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+    if (!providerOwnsOrder(order, (req as any).provider?.sub)) {
+      res.status(404).json({ error: "Order not found." }); return;
+    }
     res.json(order);
   } catch (err: any) {
     res.status(500).json({ error: "Failed to load order." });
@@ -2426,7 +2451,16 @@ app.get("/api/provider/orders/:id", providerAuthMiddleware, asyncHandler(async (
 
 app.patch("/api/provider/orders/:id/items/:itemId/cancel", providerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const ok = await cancelOrderItem(Number(req.params.itemId));
+    const order = await getOrder(Number(req.params.id));
+    if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+    if (!providerOwnsOrder(order, (req as any).provider?.sub)) {
+      res.status(404).json({ error: "Order not found." }); return;
+    }
+    const itemId = Number(req.params.itemId);
+    if (!order.items.some((i: any) => i.id === itemId)) {
+      res.status(404).json({ error: "Item not found in this order." }); return;
+    }
+    const ok = await cancelOrderItem(itemId);
     if (!ok) { res.status(404).json({ error: "Item not found." }); return; }
     res.json({ ok: true });
   } catch (err: any) {
@@ -2436,6 +2470,11 @@ app.patch("/api/provider/orders/:id/items/:itemId/cancel", providerAuthMiddlewar
 
 app.patch("/api/provider/orders/:id/status", providerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
+    const order = await getOrder(Number(req.params.id));
+    if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+    if (!providerOwnsOrder(order, (req as any).provider?.sub)) {
+      res.status(404).json({ error: "Order not found." }); return;
+    }
     const { status } = req.body || {};
     if (!["confirmed", "shipped", "delivered", "cancelled"].includes(status)) {
       res.status(400).json({ error: "Invalid status." }); return;
@@ -2453,8 +2492,71 @@ app.patch("/api/provider/orders/:id/status", providerAuthMiddleware, asyncHandle
   }
 }));
 
-app.get("/api/admin/orders", ownerAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ orders: await listOrders() });
+app.get("/api/admin/orders", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const customerId = req.query.customerId ? Number(req.query.customerId) : undefined;
+  res.json({ orders: await listOrders(customerId) });
+}));
+
+// Warranty register: order items sold with warranty coverage, joined with the
+// customer and (when available) the serialized unit. Status is computed from
+// sale date + duration, or the serial's explicit warranty_expires.
+app.get("/api/admin/warranties", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const rows = await queryAll(`
+    SELECT oi.id AS order_item_id,
+           oi.order_id,
+           oi.product_id,
+           oi.name AS product_name,
+           oi.serial_number,
+           oi.warranty_duration,
+           o.customer_id,
+           o.customer_name,
+           o.created_at AS order_created_at,
+           s.sold_at,
+           s.warranty_expires
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
+    LEFT JOIN serial_numbers s ON s.order_item_id = oi.id
+    WHERE oi.has_warranty = 1 AND oi.cancelled = 0
+    ORDER BY o.created_at DESC
+    LIMIT 2000
+  `) as any[];
+
+  const parseDate = (v: string | null | undefined): Date | null => {
+    if (!v) return null;
+    const d = new Date(String(v).replace(" ", "T"));
+    return isNaN(d.getTime()) ? null : d;
+  };
+  const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  const now = Date.now();
+  const warranties = rows.map((r: any) => {
+    const start = parseDate(r.sold_at) || parseDate(r.order_created_at);
+    let expiry = parseDate(r.warranty_expires);
+    if (!expiry && start && Number(r.warranty_duration) > 0) {
+      expiry = new Date(start.getTime());
+      expiry.setMonth(expiry.getMonth() + Number(r.warranty_duration));
+    }
+    const daysLeft = expiry ? Math.ceil((expiry.getTime() - now) / 86400000) : null;
+    const status = !expiry || daysLeft == null ? "expired" : daysLeft < 0 ? "expired" : daysLeft <= 30 ? "expiring" : "active";
+    return {
+      orderItemId: Number(r.order_item_id),
+      orderId: Number(r.order_id),
+      productId: String(r.product_id || ""),
+      productName: String(r.product_name || ""),
+      serialNumber: String(r.serial_number || ""),
+      customerId: Number(r.customer_id),
+      customerName: String(r.customer_name || ""),
+      startDate: start ? isoDay(start) : null,
+      expiryDate: expiry ? isoDay(expiry) : null,
+      durationMonths: Number(r.warranty_duration) || 0,
+      daysLeft,
+      status,
+    };
+  });
+
+  const customerId = req.query.customerId ? Number(req.query.customerId) : null;
+  const filtered = customerId ? warranties.filter((w: any) => w.customerId === customerId) : warranties;
+  res.json({ warranties: filtered });
 }));
 
 app.get("/api/admin/orders/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -3407,6 +3509,17 @@ app.get("/api/products", asyncHandler(async (req: Request, res: Response) => {
   const group = req.query.group as string | undefined;
   const includeHidden = req.query.includeHidden === "1";
   const products = await listProducts(category, group, includeHidden);
+  if (req.query.withExtras === "1") {
+    // Batch card extras (rating) — one query instead of one request per card.
+    const ratingRows = await queryAll("SELECT product_id, AVG(rating) AS avg, COUNT(*) AS cnt FROM product_reviews GROUP BY product_id") as any[];
+    const ratingByProduct = new Map<string, { average: number; count: number }>(
+      ratingRows.map((r: any) => [String(r.product_id), { average: Number(r.avg || 0), count: Number(r.cnt || 0) }])
+    );
+    for (const p of products as any[]) {
+      const rating = ratingByProduct.get(String(p.id));
+      p.rating = rating && rating.count > 0 ? rating : null;
+    }
+  }
   res.json({ products, currency: (await getSettings()).currency });
 }));
 
@@ -4614,6 +4727,7 @@ app.get("/api/repairs", staffAuthMiddleware, asyncHandler(async (req: Request, r
   const tickets = await listRepairsForStaff({
     status: req.query.status as string || undefined,
     assignedTo: req.query.assignedTo ? Number(req.query.assignedTo) : undefined,
+    customerId: req.query.customerId ? Number(req.query.customerId) : undefined,
   });
   res.json({ tickets });
 }));
@@ -4763,7 +4877,7 @@ app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandl
 // ============ SERIAL NUMBERS (warranty tracking, PO intake, sale linking) ============
 
 app.get("/api/serials", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const serials = await listSerials({ search: req.query.q as string | undefined, status: req.query.status as string | undefined, productId: req.query.productId as string | undefined });
+  const serials = await listSerials({ search: req.query.q as string | undefined, status: req.query.status as string | undefined, productId: req.query.productId as string | undefined, customerId: req.query.customerId ? Number(req.query.customerId) : undefined });
   res.json({ serials });
 }));
 
@@ -5104,6 +5218,10 @@ app.post("/api/quotes/from-wishlist", customerAuthMiddleware, asyncHandler(async
 app.patch("/api/quotes/:id/status", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { status } = req.body || {};
   if (!["pending", "waiting_for_approval", "cancelled", "approved"].includes(status)) { res.status(400).json({ error: "Invalid status." }); return; }
+  const quote = await getQuote(Number(req.params.id));
+  if (!quote || quote.customerId !== (req as any).customer.sub) {
+    res.status(404).json({ error: "Quote not found." }); return;
+  }
   await updateQuoteStatus(Number(req.params.id), status);
   res.json({ ok: true });
 }));
@@ -5647,8 +5765,9 @@ app.post("/api/admin/orders/:id/refunds", ownerAuthMiddleware, asyncHandler(asyn
       const item = order.items?.find((i: any) => i.id === Number(body.orderItemId));
       if (!item) { res.status(400).json({ error: "Order item not found." }); return; }
       if (amount > item.price * item.quantity) { res.status(400).json({ error: "Line refund cannot exceed the line total." }); return; }
-      await cancelOrderItemQuantity(item.id, 0);
     }
+    // createRefund atomically locks the order, validates the remaining balance,
+    // cancels the linked line (restoring stock + serials) and records the refund.
     const refund = await createRefund({
       orderId,
       orderItemId: body.orderItemId !== undefined ? Number(body.orderItemId) : undefined,

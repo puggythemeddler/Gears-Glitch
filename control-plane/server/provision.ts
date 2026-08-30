@@ -498,7 +498,7 @@ export async function provisionClient(
 ): Promise<ProvisionResult> {
   const subdomain = slugify(clientName);
   const clientDomain = domain || `${subdomain}.${DOMAIN_BASE}`;
-  const adminPassword = "Livid@50";
+  const adminPassword = randomPassword(20);
   const cpSecret = generateCpSecret();
 
   console.log(`\n[provision] ══════════════════════════════════════`);

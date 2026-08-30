@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api, getCustomerToken, getProviderToken, getStaffToken } from "@/lib/api";
+import Icon from "@/components/icons";
 
 function getMsgEndpoint(): string | null {
   if (getStaffToken()) return "/api/admin/messages";
@@ -19,7 +20,6 @@ export default function NotificationBell({ onClick }: { onClick: () => void }) {
   const [count, setCount] = useState(0);
   const [pulse, setPulse] = useState(false);
   const prevRef = useRef(0);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function fetchCount(): Promise<number> {
     const ep = getMsgEndpoint();
@@ -44,23 +44,18 @@ export default function NotificationBell({ onClick }: { onClick: () => void }) {
       }
       prevRef.current = c;
     }, 10000);
-    return () => { clearInterval(interval); if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+    return () => { clearInterval(interval); };
   }, []);
 
   return (
-    <button type="button" onClick={onClick} style={{
-      position: "relative", background: "none", border: "none", cursor: "pointer",
-      fontSize: "1.2rem", lineHeight: 1, padding: "0.55rem 0.6rem", minWidth: 44, minHeight: 44, color: "var(--text)",
-      animation: pulse ? "bellPulse 0.5s ease-in-out 3" : "none",
-    }} aria-label={`Notifications${count > 0 ? ` (${count} unread)` : ""}`}>
-      🔔
-      {count > 0 && <span style={{
-        position: "absolute", top: 0, right: 0, transform: "translate(25%, -25%)",
-        background: "#e53e3e", color: "#fff", borderRadius: 999,
-        fontSize: "0.65rem", fontWeight: 700, padding: "0.1rem 0.35rem",
-        lineHeight: 1.2, minWidth: 16, textAlign: "center",
-      }}>{count > 99 ? "99+" : count}</span>}
-      <style>{`@keyframes bellPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.2); } }`}</style>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`bell-btn${pulse ? " pulse" : ""}`}
+      aria-label={`Notifications${count > 0 ? ` (${count} unread)` : ""}`}
+    >
+      <Icon name="bell" size={18} />
+      {count > 0 && <span className="bell-badge">{count > 99 ? "99+" : count}</span>}
     </button>
   );
 }

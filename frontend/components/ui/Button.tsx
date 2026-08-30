@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+import React from "react";
+import Link from "next/link";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "subtle";
 type Size = "sm" | "md" | "lg";
@@ -31,27 +32,9 @@ export function Button({
   loading = false,
   block = false,
   className = "",
-  onClick,
   disabled,
   ...rest
 }: ButtonProps) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const [ripples, setRipples] = useState<{ x: number; y: number; id: number }[]>([]);
-  const idRef = useRef(0);
-
-  function handleClick(e: React.MouseEvent<HTMLButtonElement>) {
-    const rect = ref.current?.getBoundingClientRect();
-    if (!rect) return;
-    const id = ++idRef.current;
-    setRipples((prev) => [...prev, {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-      id,
-    }]);
-    setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 600);
-    onClick?.(e);
-  }
-
   const classes = [
     "btn",
     VARIANT_MAP[variant],
@@ -63,21 +46,12 @@ export function Button({
 
   return (
     <button
-      ref={ref}
       className={classes}
-      onClick={handleClick}
       disabled={disabled || loading}
       {...rest}
     >
       {loading && <span className="btn-spinner" />}
       <span className={loading ? "btn-text" : ""}>{children}</span>
-      {ripples.map((r) => (
-        <span
-          key={r.id}
-          className="btn-ripple"
-          style={{ left: r.x - 8, top: r.y - 8 }}
-        />
-      ))}
     </button>
   );
 }
@@ -88,7 +62,7 @@ export function ButtonLink({
   size = "md",
   className = "",
   ...rest
-}: Omit<ButtonProps, "loading" | "block"> & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+}: Omit<ButtonProps, "loading" | "block"> & Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & { href: string }) {
   const classes = [
     "btn",
     VARIANT_MAP[variant],
@@ -96,5 +70,5 @@ export function ButtonLink({
     className,
   ].filter(Boolean).join(" ");
 
-  return <a className={classes} {...rest}>{children}</a>;
+  return <Link className={classes} {...rest}>{children}</Link>;
 }

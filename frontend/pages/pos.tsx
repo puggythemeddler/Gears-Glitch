@@ -3,6 +3,7 @@ import { api, getRole, getTokenForRole, downloadPdf } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import PinLock from "@/components/PinLock";
 import { useApp } from "@/lib/app-context";
+import { usePageTitle } from "@/lib/use-page-title";
 import { escapeHtml } from "@/lib/sanitize";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 
@@ -42,6 +43,7 @@ interface PaymentMethod {
 
 export default function POSPage() {
   const { formatPrice } = useApp();
+  usePageTitle("Point of sale - Gear&Glitch");
   const [products, setProducts] = useState<Product[]>([]);
   const [filtered, setFiltered] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
@@ -496,8 +498,8 @@ export default function POSPage() {
             <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{cart.length} {cart.length === 1 ? "item" : "items"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <button onClick={() => setShowHelp(!showHelp)} aria-label="Help and keyboard shortcuts" title="Help & keyboard shortcuts" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700 }}>?</button>
-            <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); sessionStorage.removeItem("posBranch"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline" }}>Lock till</button>
+            <button onClick={() => setShowHelp(!showHelp)} aria-label="Help and keyboard shortcuts" title="Help & keyboard shortcuts" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.45rem 0.75rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700, minHeight: 32 }}>?</button>
+            <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); sessionStorage.removeItem("posBranch"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline", padding: "0.45rem 0.3rem", minHeight: 32 }}>Lock till</button>
           </div>
         </div>
         {showHelp && (
@@ -526,7 +528,7 @@ export default function POSPage() {
                     {(item.serials || []).map((sn) => (
                       <span key={sn} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.4rem", fontSize: "0.72rem", marginRight: "0.25rem", marginBottom: "0.25rem" }}>
                         {sn}
-                        <button type="button" onClick={() => removeSerial(item.productId, sn)} disabled={!!mpesaPending} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: 700, padding: "0.2rem 0.35rem", margin: "-0.2rem -0.15rem", minHeight: 28, minWidth: 28, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1, borderRadius: 4 }} title="Remove serial" aria-label={`Remove serial ${sn}`}>&times;</button>
+                        <button type="button" onClick={() => removeSerial(item.productId, sn)} disabled={!!mpesaPending} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: 700, padding: "0.2rem 0.35rem", margin: "-0.2rem -0.15rem", minHeight: 32, minWidth: 32, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1, borderRadius: 4 }} title="Remove serial" aria-label={`Remove serial ${sn}`}>&times;</button>
                       </span>
                     ))}
                     {(item.serials || []).length === 0 && <span style={{ fontSize: "0.75rem", color: "var(--danger)" }}>Scan serial number(s)</span>}

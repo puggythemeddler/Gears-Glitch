@@ -3,6 +3,15 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import { ProductCard, getProducts } from "@/components/ProductCard";
 import type { Product } from "@/lib/types";
+import { Pagination, EmptyState, ErrorState } from "@/components/ui";
+
+const PAGE_SIZE = 12;
+
+type SortKey = "newest" | "price-asc" | "price-desc" | "name";
+
+function effectivePrice(p: Product): number {
+  return typeof p.salePrice === "number" ? p.salePrice : p.price;
+}
 
 export default function CategoryPage() {
   const router = useRouter();
@@ -12,6 +21,8 @@ export default function CategoryPage() {
   const [subcategories, setSubcategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [sort, setSort] = useState<SortKey>("newest");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (!category) return;
@@ -33,14 +44,28 @@ export default function CategoryPage() {
     return () => { cancelled = true; };
   }, [category]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [category, subcategory, sort]);
+
   const filtered = subcategory
     ? products.filter((p) => (p as any).subcategory === subcategory || (p as any).subcategory_id === subcategory)
     : products;
+
+  const sorted = [...filtered];
+  if (sort === "price-asc") sorted.sort((a, b) => effectivePrice(a) - effectivePrice(b));
+  else if (sort === "price-desc") sorted.sort((a, b) => effectivePrice(b) - effectivePrice(a));
+  else if (sort === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visible = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const title = catName || (category ? String(category) : "Products");
 
   return (
     <>
+      <Head><title>{title}</title></Head>
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <ol>
           <li><a href="/">Home</a></li>
@@ -68,24 +93,41 @@ export default function CategoryPage() {
           ))}
         </div>
       ) : error ? (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "30vh", gap: "1rem", textAlign: "center" }}>
-          <div style={{ fontSize: "3rem", opacity: 0.3 }}>⚠️</div>
-          <p style={{ color: "var(--danger)" }}>{error}</p>
-          <button className="btn btn-primary" onClick={() => window.location.reload()}>Retry</button>
-        </div>
+        <ErrorState title="Something went wrong" message={error} onRetry={() => window.location.reload()} />
       ) : filtered.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-state-icon">📦</div>
-          <div className="empty-state-title">No products found</div>
-          <div className="empty-state-desc">No products in this category{subcategory ? " for selected subcategory" : ""}.</div>
-          <a href="/" className="btn btn-primary">Browse all products</a>
-        </div>
+        <EmptyState
+          icon="products"
+          title="No products found"
+          description={`No products in this category${subcategory ? " for selected subcategory" : ""}.`}
+          actionLabel="Browse all products"
+          onAction={() => { window.location.href = "/"; }}
+        />
       ) : (
-        <div className="product-grid">
-          {filtered.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
+        <>
+          <div className="listing-toolbar">
+            <span className="listing-count">{sorted.length} product{sorted.length === 1 ? "" : "s"}</span>
+            <label className="listing-sort">
+              Sort by
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortKey)}
+                className="filter-select"
+                aria-label="Sort products"
+              >
+                <option value="newest">Newest</option>
+                <option value="price-asc">Price: Low to High</option>
+                <option value="price-desc">Price: High to Low</option>
+                <option value="name">Name A-Z</option>
+              </select>
+            </label>
+          </div>
+          <div className="product-grid">
+            {visible.map((p) => (
+              <ProductCard key={p.id} product={p} />
+            ))}
+          </div>
+          <Pagination page={safePage} totalPages={totalPages} onChange={setPage} label={`${title} pagination`} />
+        </>
       )}
     </>
   );

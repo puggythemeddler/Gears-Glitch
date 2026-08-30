@@ -4,15 +4,15 @@ import type { Order, RepairTicket, WishlistItem, Message, Quote } from "@/lib/ty
 import { useToast } from "@/components/Toast";
 import { useFeature } from "@/lib/features";
 import { escapeHtml } from "@/lib/sanitize";
-
-function formatPrice(amount: number) {
-  return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
-}
+import { usePageTitle } from "@/lib/use-page-title";
+import { useApp } from "@/lib/app-context";
 
 type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "profile";
 
 export default function DashboardPage() {
   const [role, setRole] = useState<"customer" | null>(null);
+  const { formatPrice } = useApp();
+  usePageTitle("My account - Gear&Glitch");
   const [userName, setUserName] = useState("");
   const [activeSection, setActiveSection] = useState<Section>("overview");
   const [orders, setOrders] = useState<Order[]>([]);

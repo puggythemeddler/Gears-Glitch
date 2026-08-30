@@ -333,9 +333,16 @@
 }
 
 .empty-state-icon {
-  font-size: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
   margin-bottom: var(--space-4);
-  opacity: 0.3;
+  border-radius: var(--radius-full);
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  color: var(--text-tertiary);
   line-height: 1;
 }
 

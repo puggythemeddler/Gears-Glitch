@@ -2,6 +2,7 @@
 import { api, isCustomerLoggedIn, getGuestCart, updateGuestCartQuantity, removeGuestCartItem } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import type { CartItem, County, Product } from "@/lib/types";
+import { PageHead } from "@/components/ui";
 import EmptyCartAnimation from "@/components/EmptyCartAnimation";
 import SantaGearAnimation from "@/components/SantaGearAnimation";
 
@@ -186,6 +187,7 @@ export default function CartPage() {
 
   return (
     <>
+      <PageHead title="Your cart - Gear&Glitch" description="Review the items in your cart and complete checkout." />
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <ol>
           <li><a href="/">Home</a></li>

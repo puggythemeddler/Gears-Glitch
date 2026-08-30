@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import Icon from "@/components/icons";
 
 interface Stat { value: string; label: string; }
 interface AboutData {
@@ -110,14 +111,14 @@ export default function AboutPage() {
           <div className="about-cards">
             {data.mission && (
               <div className="about-card">
-                <div className="about-card-icon">🎯</div>
+                <div className="about-card-icon"><Icon name="target" size={24} /></div>
                 <h2>{missionTitle}</h2>
                 <p>{data.mission}</p>
               </div>
             )}
             {data.vision && (
               <div className="about-card">
-                <div className="about-card-icon">🔭</div>
+                <div className="about-card-icon"><Icon name="eye" size={24} /></div>
                 <h2>{visionTitle}</h2>
                 <p>{data.vision}</p>
               </div>
@@ -193,8 +194,8 @@ export default function AboutPage() {
             </div>
             {(data.address || data.hours) && (
               <div className="about-contact-meta">
-                {data.address && <span>📍 {data.address}</span>}
-                {data.hours && <span>🕘 {data.hours}</span>}
+                {data.address && <span><Icon name="mapPin" size={13} /> {data.address}</span>}
+                {data.hours && <span><Icon name="clock" size={13} /> {data.hours}</span>}
               </div>
             )}
           </section>

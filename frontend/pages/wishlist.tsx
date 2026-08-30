@@ -1,29 +1,31 @@
 ﻿import React, { useEffect, useState } from "react";
 import { api, isCustomerLoggedIn } from "@/lib/api";
 import type { WishlistItem, Quote } from "@/lib/types";
+import { useApp } from "@/lib/app-context";
 import { escapeHtml } from "@/lib/sanitize";
 import { toast } from "@/components/Toast";
 import { confirmDialog } from "@/components/ConfirmDialog";
-
-function formatPrice(amount: number) {
-  return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
-}
+import Icon from "@/components/icons";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { usePageTitle } from "@/lib/use-page-title";
 
 export default function WishlistPage() {
+  const { formatPrice } = useApp();
   const [items, setItems] = useState<WishlistItem[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [quoteNotes, setQuoteNotes] = useState("");
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
+  const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
+  usePageTitle("My wishlist");
 
   useEffect(() => {
     setMounted(true);
     const ok = isCustomerLoggedIn();
     setLoggedIn(ok);
     if (!ok) return;
-    loadWishlist();
-    loadQuotes();
+    Promise.all([loadWishlist(), loadQuotes()]).finally(() => setLoading(false));
   }, []);
 
   async function loadWishlist() {
@@ -71,7 +73,12 @@ export default function WishlistPage() {
     return (
       <>
         <h1>Wishlist</h1>
-        <p className="product-error">Please <a href="/login?redirect=/wishlist">sign in</a> to view your wishlist.</p>
+        <div className="empty-state">
+          <div className="empty-state-icon"><Icon name="lock" size={28} /></div>
+          <div className="empty-state-title">Sign in to view wishlist</div>
+          <div className="empty-state-desc">Please sign in to view your wishlist.</div>
+          <a href="/login?redirect=/wishlist" className="btn btn-primary">Sign in</a>
+        </div>
       </>
     );
   }
@@ -95,8 +102,15 @@ export default function WishlistPage() {
       </div>
 
       <div className="wishlist-grid">
-        {items.length === 0 ? (
-          <p className="muted">Your wishlist is empty. <a href="/">Browse products</a>.</p>
+        {loading ? (
+          <p className="muted">Loading wishlist…</p>
+        ) : items.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon"><Icon name="heart" size={28} /></div>
+            <div className="empty-state-title">Your wishlist is empty</div>
+            <div className="empty-state-desc">Browse products and save the ones you're interested in.</div>
+            <a href="/" className="btn btn-primary">Browse products</a>
+          </div>
         ) : (
           items.map((item) => (
             <div key={item.productId} className="wishlist-item">
@@ -142,7 +156,7 @@ export default function WishlistPage() {
                   <tr key={q.id}>
                     <td>{escapeHtml(q.quoteNumber)}</td>
                     <td>{new Date(q.createdAt).toLocaleDateString("en-GB")}</td>
-                    <td><span className={`plan-status ${q.status}`}>{q.status}</span></td>
+                    <td><StatusBadge status={q.status} domain="quotes" /></td>
                     <td>{formatPrice(q.total)}</td>
                     <td><button className="btn btn-sm" onClick={() => setSelectedQuote(q)}>View</button></td>
                   </tr>
@@ -156,7 +170,7 @@ export default function WishlistPage() {
       {selectedQuote && (
         <div className="panel" style={{ marginTop: "1rem" }}>
           <h3>Quote {escapeHtml(selectedQuote.quoteNumber)}</h3>
-          <p>Status: <span className={`plan-status ${selectedQuote.status}`}>{selectedQuote.status}</span></p>
+          <p>Status: <StatusBadge status={selectedQuote.status} domain="quotes" /></p>
           <p>Notes: {selectedQuote.notes || "—"}</p>
           <table className="data-table">
             <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>

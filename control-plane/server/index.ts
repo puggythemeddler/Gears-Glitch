@@ -360,14 +360,17 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
 async function seedDefaultAdmin() {
   const existing = await queryOne("SELECT id FROM cp_users WHERE username = $1", ["admin"]);
   if (existing) return;
-  const defaultPassword = process.env.CP_ADMIN_PASSWORD || "gearglitch2024";
+  const explicitPassword = process.env.CP_ADMIN_PASSWORD;
+  const defaultPassword = explicitPassword || crypto.randomBytes(16).toString("base64url");
   const hash = await bcrypt.hash(defaultPassword, 12);
   const apiKey = generateApiKey();
   await query(
     "INSERT INTO cp_users (username, password_hash, role, api_key) VALUES ($1, $2, $3, $4)",
     ["admin", hash, "admin", apiKey]
   );
-  console.log("[auth] Default admin user created. Username: admin, set CP_ADMIN_PASSWORD env var to configure.");
+  console.log(explicitPassword
+    ? "[auth] Default admin user created. Username: admin (password from CP_ADMIN_PASSWORD)."
+    : `[auth] Default admin user created. Username: admin, temporary password: ${defaultPassword}. Set CP_ADMIN_PASSWORD env var before next fresh boot.`);
 }
 
 // ─── ROUTES ──────────────────────────────────────────────
@@ -381,7 +384,7 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/clients", requireAuth, async (_req, res) => {
   try {
     const clients = await queryAll(
-      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, admin_password, phone, address, usage_over_limit, is_test FROM clients ORDER BY created_at DESC"
+      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, phone, address, usage_over_limit, is_test FROM clients ORDER BY created_at DESC"
     );
     res.json({ clients });
   } catch (err: any) {
@@ -397,6 +400,7 @@ app.get("/api/clients/test-site", requireAuth, async (_req, res) => {
     if (client) {
       delete client.cp_secret;
       delete client.neon_db_url;
+      delete client.admin_password;
     }
     res.json({ client: client || null });
   } catch (err: any) {
@@ -416,6 +420,7 @@ app.get("/api/clients/:id", requireAuth, async (req, res) => {
     // Never expose per-client secrets through the API
     delete client.cp_secret;
     delete client.neon_db_url;
+    delete client.admin_password;
     res.json({ client });
   } catch (err: any) {
     console.error("[api] Get client error:", err.message);
@@ -492,7 +497,7 @@ app.post("/api/clients", requireAuth, async (req, res) => {
             result.vercel.projectId,
             result.vercel.projectUrl,
             result.cpSecret,
-            result.adminPassword,
+            await bcrypt.hash(result.adminPassword, 10),
             clientId,
           ]
         );
@@ -518,7 +523,7 @@ app.post("/api/clients", requireAuth, async (req, res) => {
 });
 
 // Add existing client (no provisioning — just records existing URLs)
-app.post("/api/clients/existing", requireAuth, async (req, res) => {
+app.post("/api/clients/existing", requireAdmin, async (req, res) => {
   try {
     let { name, adminEmail, plan, domain, backendUrl, frontendUrl, renderServiceId, cpSecret } = req.body || {};
     if (!name) {
@@ -594,7 +599,7 @@ app.post("/api/clients/:id/push-secret", requireAuth, requireAdmin, async (req, 
 });
 
 // Delete client
-app.delete("/api/clients/:id", requireAuth, async (req, res) => {
+app.delete("/api/clients/:id", requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [
       Number(req.params.id),
@@ -642,7 +647,7 @@ async function updateDeployLog(id: number, status: string): Promise<void> {
 }
 
 // Deploy all clients
-app.post("/api/deploy-all", requireAuth, async (req, res) => {
+app.post("/api/deploy-all", requireAdmin, async (req, res) => {
   try {
     const { commit, triggered_by } = req.body || {};
     const commit_sha = commit?.sha || "";
@@ -674,7 +679,7 @@ app.post("/api/deploy-all", requireAuth, async (req, res) => {
 });
 
 // Deploy the test site only (every push lands here first for safe rollout)
-app.post("/api/deploy-test", requireAuth, async (req, res) => {
+app.post("/api/deploy-test", requireAdmin, async (req, res) => {
   try {
     const { commit, triggered_by } = req.body || {};
     const commit_sha = commit?.sha || "";
@@ -717,7 +722,7 @@ app.post("/api/deploy-test", requireAuth, async (req, res) => {
 // Disable native auto-deploy on all client Render services so a push to the
 // repo no longer deploys every client directly. From here on, only the control
 // plane deploys clients (test site on push, then manual deploy-all).
-app.post("/api/deploy/disable-auto-deploy", requireAuth, async (_req, res) => {
+app.post("/api/deploy/disable-auto-deploy", requireAdmin, async (_req, res) => {
   try {
     const clients = await queryAll(
       "SELECT name, render_service_id FROM clients WHERE render_service_id IS NOT NULL AND render_service_id != ''"
@@ -740,7 +745,7 @@ app.post("/api/deploy/disable-auto-deploy", requireAuth, async (_req, res) => {
 });
 
 // Redeploy a single client
-app.post("/api/clients/:id/redeploy", requireAuth, async (req, res) => {
+app.post("/api/clients/:id/redeploy", requireAdmin, async (req, res) => {
   try {
     const client: any = await queryOne("SELECT id, name, render_service_id FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -761,7 +766,7 @@ app.post("/api/clients/:id/redeploy", requireAuth, async (req, res) => {
 
 // ─── CLOUDINARY SYNC ────────────────────────────────────
 // Push shared Cloudinary credentials to all active clients
-app.post("/api/sync-cloudinary", requireAuth, async (req, res) => {
+app.post("/api/sync-cloudinary", requireAdmin, async (req, res) => {
   try {
     const cc = await getCloudinaryConfig();
     if (!cc || !cc.cloud_name || !cc.api_key || !cc.api_secret) {
@@ -860,7 +865,7 @@ app.get("/api/cloudinary", requireAuth, async (_req, res) => {
 });
 
 // Set Cloudinary config manually
-app.post("/api/cloudinary", requireAuth, async (req, res) => {
+app.post("/api/cloudinary", requireAdmin, async (req, res) => {
   try {
     const { cloudName, apiKey, apiSecret, folder } = req.body || {};
     if (!cloudName || !apiKey || !apiSecret) {
@@ -900,7 +905,7 @@ app.get("/api/smtp", requireAuth, async (_req, res) => {
 });
 
 // Set SMTP config
-app.post("/api/smtp", requireAuth, async (req, res) => {
+app.post("/api/smtp", requireAdmin, async (req, res) => {
   try {
     const { host, port, user, pass, fromEmail, fromName } = req.body || {};
     if (!host || !user || !pass) {
@@ -1004,7 +1009,7 @@ app.post("/api/health-check", requireAuth, async (_req, res) => {
 });
 
 // ─── SUSPEND / RESUME CLIENT ─────────────────────────────
-app.put("/api/clients/:id/suspend", requireAuth, async (req, res) => {
+app.put("/api/clients/:id/suspend", requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1019,7 +1024,7 @@ app.put("/api/clients/:id/suspend", requireAuth, async (req, res) => {
   }
 });
 
-app.put("/api/clients/:id/resume", requireAuth, async (req, res) => {
+app.put("/api/clients/:id/resume", requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1093,7 +1098,7 @@ app.get("/api/clients/:id/health-history", requireAuth, async (req, res) => {
 });
 
 // ─── CHANGELOG ───────────────────────────────────────────
-app.post("/api/changelog", requireAuth, async (req, res) => {
+app.post("/api/changelog", requireAdmin, async (req, res) => {
   try {
     const { version, title, body } = req.body || {};
     if (!version || !title) { res.status(400).json({ error: "version and title required" }); return; }
@@ -1156,7 +1161,7 @@ import fs from "fs";
 const execAsync = promisify(exec);
 const BACKUP_DIR = path.join(__dirname, "..", "..", "backups");
 
-app.post("/api/backups/run", requireAuth, async (req, res) => {
+app.post("/api/backups/run", requireAdmin, async (req, res) => {
   try {
     if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -1169,7 +1174,7 @@ app.post("/api/backups/run", requireAuth, async (req, res) => {
       const filepath = path.join(BACKUP_DIR, filename);
 
       try {
-        await execAsync(`pg_dump "${c.neon_db_url}" | gzip > "${filepath}"`, { timeout: 120000 });
+        await execAsync(`pg_dump "$NEON_DB_URL" | gzip > "${filepath}"`, { timeout: 120000, env: { ...process.env, NEON_DB_URL: c.neon_db_url } });
         const stats = fs.statSync(filepath);
         const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
 
@@ -1219,7 +1224,7 @@ app.get("/api/backups", requireAuth, async (_req, res) => {
 });
 
 // Download a backup file
-app.get("/api/backups/download/:filename", requireAuth, async (req, res) => {
+app.get("/api/backups/download/:filename", requireAdmin, async (req, res) => {
   try {
     const rawFilename = req.params.filename;
     const filename = path.basename(typeof rawFilename === "string" ? rawFilename : rawFilename[0]);
@@ -1319,7 +1324,7 @@ app.post("/api/plans/import-defaults", requireAuth, async (_req, res) => {
   }
 });
 
-app.post("/api/plans", requireAuth, async (req, res) => {
+app.post("/api/plans", requireAdmin, async (req, res) => {
   try {
     const { id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features, isActive, syncToOthers } = req.body || {};
     if (!name) { res.status(400).json({ error: "name required" }); return; }
@@ -1360,7 +1365,7 @@ app.put("/api/plans/:id", requireAuth, async (req, res) => {
   }
 });
 
-app.delete("/api/plans/:id", requireAuth, async (req, res) => {
+app.delete("/api/plans/:id", requireAdmin, async (req, res) => {
   try {
     await query("DELETE FROM custom_plans WHERE id = $1", [req.params.id]);
     res.json({ message: "Plan deleted." });
@@ -1370,7 +1375,7 @@ app.delete("/api/plans/:id", requireAuth, async (req, res) => {
 });
 
 // Push plans to a specific client (sync control plane plans → client's DB)
-app.post("/api/clients/:id/sync-plans", requireAuth, async (req, res) => {
+app.post("/api/clients/:id/sync-plans", requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1566,7 +1571,7 @@ app.post("/api/clients/:id/invoices/generate", requireAuth, async (req, res) => 
 });
 
 // Record payment — one step: generate invoice, mark paid, record payment, extend subscription
-app.post("/api/clients/:id/invoices/record-payment", requireAuth, async (req, res) => {
+app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -2044,7 +2049,7 @@ function scheduleAutoBackup() {
         const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
         const filepath = path.join(BACKUP_DIR, `${slug}_${new Date().toISOString().split("T")[0]}.sql.gz`);
         try {
-          await execAsync(`pg_dump "${c.neon_db_url}" | gzip > "${filepath}"`, { timeout: 120000 });
+await execAsync(`pg_dump "$NEON_DB_URL" | gzip > "${filepath}"`, { timeout: 120000, env: { ...process.env, NEON_DB_URL: c.neon_db_url } });
           await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup"]);
         } catch (e: any) {
           await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup_failed"]).catch(() => {});

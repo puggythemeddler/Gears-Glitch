@@ -2,6 +2,7 @@
 import { useRouter } from "next/router";
 import { useApp } from "@/lib/app-context";
 import { api } from "@/lib/api";
+import { PageHead } from "@/components/ui";
 
 export default function ContactPage() {
   const router = useRouter();
@@ -39,6 +40,7 @@ export default function ContactPage() {
 
   return (
     <>
+      <PageHead title="Contact us - Gear&Glitch" description="Questions about our products or services? Contact the Gear&Glitch team." />
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <ol>
           <li><a href="/">Home</a></li>

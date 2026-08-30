@@ -4,10 +4,9 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { escapeHtml } from "@/lib/sanitize";
 import { confirmDialog } from "@/components/ConfirmDialog";
-
-function formatPrice(amount: number) {
-  return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
-}
+import { DataTable } from "@/components/ui/DataTable";
+import { usePageTitle } from "@/lib/use-page-title";
+import { formatPrice } from "@/components/admin/shared";
 
 function Spinner() { return <p style={{ textAlign: "center", padding: "2rem", opacity: 0.5 }}>Loading...</p>; }
 
@@ -24,6 +23,7 @@ export default function StockTakeSessionPage() {
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
+  usePageTitle(session ? `Stock Take #${session.id}` : "Stock Take");
 
   useEffect(() => {
     if (getStaffToken()) setAuthed(true);
@@ -181,42 +181,46 @@ export default function StockTakeSessionPage() {
         )}
 
         <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th style={{ width: 80, textAlign: "right" }}>System Qty</th>
-                <th style={{ width: 100, textAlign: "right" }}>Counted</th>
-                <th style={{ width: 80, textAlign: "right" }}>Variance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item: any) => (
-                <tr key={item.productId}>
-                  <td>{escapeHtml(item.productName)}</td>
-                  <td style={{ textAlign: "right" }}>{item.systemQuantity}</td>
-                  <td style={{ textAlign: "right" }}>
-                    <input
-                      type="number"
-                      style={{ width: 80, textAlign: "right" }}
-                      value={counts[item.productId] ?? ""}
-                      onChange={(e) => setCounts({ ...counts, [item.productId]: Number(e.target.value) })}
-                      onBlur={() => saveCount(item.productId)}
-                      disabled={session.status === "completed"}
-                    />
-                  </td>
-                  <td style={{ textAlign: "right", color: item.countedQuantity !== null ? (item.variance > 0 ? "var(--success)" : item.variance < 0 ? "var(--danger)" : "inherit") : "inherit" }}>
-                    {item.countedQuantity !== null && item.countedQuantity > 0 ? (item.variance > 0 ? "+" : "") + item.variance : "\u2014"}
-                  </td>
-                </tr>
-              ))}
-              {items.length === 0 && (
-                <tr><td colSpan={4} style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>
-                  No products added yet. Use the search above to add products to count.
-                </td></tr>
-              )}
-            </tbody>
-          </table>
+          <DataTable<any>
+            ariaLabel="Stock take counting table"
+            columns={[
+              { key: "product", label: "Product", sortable: true, value: (r) => r.productName, render: (r) => escapeHtml(r.productName) },
+              { key: "system", label: "System Qty", sortable: true, align: "right", value: (r) => r.systemQuantity, render: (r) => <span style={{ textAlign: "right" }}>{r.systemQuantity}</span> },
+              {
+                key: "counted",
+                label: "Counted",
+                sortable: true,
+                align: "right",
+                value: (r) => (counts[r.productId] ?? r.countedQuantity ?? 0),
+                render: (r) => (
+                  <input
+                    type="number"
+                    style={{ width: 80, textAlign: "right" }}
+                    value={counts[r.productId] ?? ""}
+                    onChange={(e) => setCounts({ ...counts, [r.productId]: Number(e.target.value) })}
+                    onBlur={() => saveCount(r.productId)}
+                    disabled={session.status === "completed"}
+                    aria-label={`Counted quantity for ${r.productName}`}
+                  />
+                ),
+              },
+              {
+                key: "variance",
+                label: "Variance",
+                sortable: true,
+                align: "right",
+                value: (r) => (r.countedQuantity !== null && r.countedQuantity > 0 ? Math.abs(r.variance) : 0),
+                render: (r) => (
+                  <span style={{ textAlign: "right", color: r.countedQuantity !== null ? (r.variance > 0 ? "var(--success)" : r.variance < 0 ? "var(--danger)" : "inherit") : "inherit" }}>
+                    {r.countedQuantity !== null && r.countedQuantity > 0 ? (r.variance > 0 ? "+" : "") + r.variance : "\u2014"}
+                  </span>
+                ),
+              },
+            ]}
+            rows={items}
+            rowKey={(r) => r.productId}
+            empty={<span style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>No products added yet. Use the search above to add products to count.</span>}
+          />
         </div>
 
         {report && (
@@ -245,30 +249,28 @@ export default function StockTakeSessionPage() {
               </div>
             </div>
             {report.items && report.items.filter((i: any) => i.variance !== 0).length > 0 && (
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Product</th>
-                      <th style={{ textAlign: "right" }}>System</th>
-                      <th style={{ textAlign: "right" }}>Counted</th>
-                      <th style={{ textAlign: "right" }}>Variance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.items.filter((i: any) => i.variance !== 0).map((i: any) => (
-                      <tr key={i.productId}>
-                        <td>{escapeHtml(i.productName)}</td>
-                        <td style={{ textAlign: "right" }}>{i.systemQuantity}</td>
-                        <td style={{ textAlign: "right" }}>{i.countedQuantity}</td>
-                        <td style={{ textAlign: "right", color: i.variance > 0 ? "var(--success)" : "var(--danger)" }}>
-                          {i.variance > 0 ? "+" : ""}{i.variance}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable<any>
+                ariaLabel="Stock take completion report"
+                columns={[
+                  { key: "product", label: "Product", sortable: true, value: (r) => r.productName, render: (r) => escapeHtml(r.productName) },
+                  { key: "system", label: "System", sortable: true, align: "right", value: (r) => r.systemQuantity, render: (r) => <span style={{ textAlign: "right" }}>{r.systemQuantity}</span> },
+                  { key: "counted", label: "Counted", sortable: true, align: "right", value: (r) => r.countedQuantity, render: (r) => <span style={{ textAlign: "right" }}>{r.countedQuantity}</span> },
+                  {
+                    key: "variance",
+                    label: "Variance",
+                    sortable: true,
+                    align: "right",
+                    value: (r) => Math.abs(r.variance),
+                    render: (r) => (
+                      <span style={{ textAlign: "right", color: r.variance > 0 ? "var(--success)" : "var(--danger)" }}>
+                        {r.variance > 0 ? "+" : ""}{r.variance}
+                      </span>
+                    ),
+                  },
+                ]}
+                rows={report.items.filter((i: any) => i.variance !== 0)}
+                rowKey={(r) => r.productId}
+              />
             )}
           </div>
         )}

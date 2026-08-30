@@ -22,6 +22,7 @@ export interface Product {
   minTier: number;
   viewCount?: number;
   stockOnHand?: number;
+  rating?: { average: number; count: number } | null;
 }
 
 export interface ProductImage {

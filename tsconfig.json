@@ -13,6 +13,6 @@
     "forceConsistentCasingInFileNames": true,
     "sourceMap": true
   },
-  "include": ["server/**/*.ts"],
+  "include": ["server/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist", "data", "user manual", "frontend"]
 }

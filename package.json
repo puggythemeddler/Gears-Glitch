@@ -9,6 +9,7 @@
     "dev": "tsx watch server/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
     "dev:all": "node scripts/dev.js"
   },
   "engines": {

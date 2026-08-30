@@ -1,5 +1,4 @@
 import React from "react";
-import AnimatedCounter from "@/components/AnimatedCounter";
 
 export function StatCard({
   value,
@@ -22,11 +21,12 @@ export function StatCard({
   color?: string;
   decimals?: number;
 }) {
+  const formatted = value.toLocaleString("en", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   return (
     <div className="stat-card" style={color ? { borderTopColor: color } : undefined}>
       {icon && <div className="stat-icon">{icon}</div>}
       <div className="stat-value">
-        <AnimatedCounter value={value} prefix={prefix} suffix={suffix} decimals={decimals} />
+        {prefix}{formatted}{suffix}
       </div>
       <div className="stat-label">{label}</div>
       {trend && trendLabel && (

@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { useToast } from "@/components/Toast";
+import { DataTable } from "@/components/ui/DataTable";
 import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
 
 export default function StockOnHandPage({ showAutoReorder = false }: { showAutoReorder?: boolean }) {
@@ -116,47 +117,47 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <h3 style={{ marginTop: 0 }}>Snapshot: {snapshot.date}</h3>
           <div className="table-wrap">
-            <table className="data-table">
-              <thead><tr><th>Product</th><th style={{ textAlign: "right" }}>Quantity</th></tr></thead>
-              <tbody>
-                {snapshot.items.map((i: any) => (
-                  <tr key={i.productId}>
-                    <td>{escapeHtml(i.productName)}</td>
-                    <td style={{ textAlign: "right" }}>{i.quantity}</td>
-                  </tr>
-                ))}
-                {snapshot.items.length === 0 && <tr><td colSpan={2}><EmptyState icon="stock" title="No snapshot data" description="Take a snapshot to record stock levels for this date." /></td></tr>}
-              </tbody>
-            </table>
+            <DataTable<any>
+              ariaLabel="Stock snapshot"
+              columns={[
+                { key: "product", label: "Product", sortable: true, value: (i) => i.productName, render: (i) => escapeHtml(i.productName) },
+                { key: "quantity", label: "Quantity", sortable: true, align: "right", value: (i) => i.quantity, render: (i) => <strong>{i.quantity}</strong> },
+              ]}
+              rows={snapshot.items || []}
+              rowKey={(i) => i.productId}
+              empty={<EmptyState icon="stock" title="No snapshot data" description="Take a snapshot to record stock levels for this date." />}
+            />
           </div>
         </div>
       )}
 
       <h3>Current Stock Levels</h3>
       <div className="table-wrap">
-        <table className="data-table">
-          <thead><tr><th>Product</th><th>Category</th><th>In Stock</th><th>Reserved</th><th>Sold</th><th>Threshold</th><th>Status</th></tr></thead>
-          <tbody>
-            {filteredItems.map((i: any) => {
-              const qty = i.quantityInStock ?? i.quantity_in_stock ?? 0;
-              const threshold = i.lowStockThreshold ?? i.low_stock_threshold ?? 0;
-              const reserved = i.quantityReserved ?? i.quantity_reserved ?? 0;
-              const sold = i.quantitySold ?? i.quantity_sold ?? 0;
-              return (
-                <tr key={i.productId ?? i.id} style={qty <= threshold ? { background: "var(--bg)" } : {}}>
-                  <td>{escapeHtml(i.name)}</td>
-                  <td>{i.category || "—"}</td>
-                  <td><strong>{qty}</strong></td>
-                  <td>{reserved}</td>
-                  <td>{sold}</td>
-                  <td>{threshold}</td>
-                  <td>{qty <= threshold ? <span style={{ color: "var(--danger)", fontWeight: 600 }}>Low</span> : <span style={{ color: "var(--success)" }}>OK</span>}</td>
-                </tr>
-              );
-            })}
-            {filteredItems.length === 0 && <tr><td colSpan={7}><EmptyState icon="stock" title={items.length === 0 ? "No stock data" : "No matches"} description={items.length === 0 ? "Stock levels will appear here once products are added." : `No products match "${search}".`} actionLabel={items.length === 0 ? "" : "Clear search"} onAction={() => setSearch("")} /></td></tr>}
-          </tbody>
-        </table>
+        <DataTable<any>
+          ariaLabel="Current stock levels"
+          columns={[
+            { key: "product", label: "Product", sortable: true, value: (i) => i.name, render: (i) => escapeHtml(i.name) },
+            { key: "category", label: "Category", sortable: true, value: (i) => i.category || "", render: (i) => i.category || "—" },
+            { key: "qty", label: "In Stock", sortable: true, align: "right", value: (i) => i.quantityInStock ?? i.quantity_in_stock ?? 0, render: (i) => <strong>{i.quantityInStock ?? i.quantity_in_stock ?? 0}</strong> },
+            { key: "reserved", label: "Reserved", sortable: true, align: "right", value: (i) => i.quantityReserved ?? i.quantity_reserved ?? 0, render: (i) => i.quantityReserved ?? i.quantity_reserved ?? 0 },
+            { key: "sold", label: "Sold", sortable: true, align: "right", value: (i) => i.quantitySold ?? i.quantity_sold ?? 0, render: (i) => i.quantitySold ?? i.quantity_sold ?? 0 },
+            { key: "threshold", label: "Threshold", sortable: true, align: "right", value: (i) => i.lowStockThreshold ?? i.low_stock_threshold ?? 0, render: (i) => i.lowStockThreshold ?? i.low_stock_threshold ?? 0 },
+            {
+              key: "status",
+              label: "Status",
+              sortable: true,
+              value: (i) => (i.quantityInStock ?? i.quantity_in_stock ?? 0) <= (i.lowStockThreshold ?? i.low_stock_threshold ?? 0) ? "Low" : "OK",
+              render: (i) => {
+                const qty = i.quantityInStock ?? i.quantity_in_stock ?? 0;
+                const threshold = i.lowStockThreshold ?? i.low_stock_threshold ?? 0;
+                return qty <= threshold ? <span style={{ color: "var(--danger)", fontWeight: 600 }}>Low</span> : <span style={{ color: "var(--success)" }}>OK</span>;
+              },
+            },
+          ]}
+          rows={filteredItems}
+          rowKey={(i) => i.productId ?? i.id}
+          empty={<EmptyState icon="stock" title={items.length === 0 ? "No stock data" : "No matches"} description={items.length === 0 ? "Stock levels will appear here once products are added." : `No products match "${search}".`} actionLabel={items.length === 0 ? "" : "Clear search"} onAction={() => setSearch("")} />}
+        />
       </div>
     </>
   );

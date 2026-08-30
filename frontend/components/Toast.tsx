@@ -47,7 +47,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const addToast = useCallback((type: ToastType, message: string, title?: string, action?: ToastOptions["action"]) => {
     const id = ++idRef.current;
-    setToasts((prev) => [...prev, { id, type, title, message, action }]);
+    setToasts((prev) => [...prev, { id, type, title, message, action }].slice(-4));
     setTimeout(() => {
       setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, removing: true } : t)));
       setTimeout(() => {

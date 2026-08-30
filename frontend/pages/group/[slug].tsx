@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import Head from "next/head";
 import { useRouter } from "next/router";
 import { ProductCard, getProducts } from "@/components/ProductCard";
+import Icon from "@/components/icons";
 import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
+import { PageHead } from "@/components/ui";
 
 export default function GroupPage() {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function GroupPage() {
 
   return (
     <>
+      <PageHead title={`${title} - Gear&Glitch`} />
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <ol>
           <li><a href="/">Home</a></li>
@@ -61,7 +63,7 @@ export default function GroupPage() {
         </div>
       ) : products.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">📦</div>
+          <div className="empty-state-icon"><Icon name="box" size={22} /></div>
           <div className="empty-state-title">No products found</div>
           <div className="empty-state-desc">No products in this group.</div>
           <a href="/" className="btn btn-primary">Browse all products</a>

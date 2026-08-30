@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "@/lib/app-context";
 import RippleButton from "@/components/RippleButton";
+import Icon from "@/components/icons";
 import { api } from "@/lib/api";
 import { escapeHtml, Spinner } from "@/components/admin/shared";
 import { toast } from "@/components/Toast";
@@ -12,7 +13,7 @@ function MediaPreview({ content, logs }: { content: string; logs: any[] }) {
   const filename = match[1];
   const log = logs.find(l => l.content === content);
   if (!log?.id) return <span>{escapeHtml(content)}</span>;
-  return <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", color: "var(--primary)" }}>{"📷"} {escapeHtml(filename || "image")}</span>;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", color: "var(--primary)" }}><Icon name="image" size={14} /> {escapeHtml(filename || "image")}</span>;
 }
 
 function SecretField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {

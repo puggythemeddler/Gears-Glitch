@@ -1,29 +1,35 @@
 import React, { useEffect, useState } from "react";
 import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import type { Order } from "@/lib/types";
+import { useApp } from "@/lib/app-context";
 import { toast } from "@/components/Toast";
-
-function formatPrice(amount: number) {
-  return new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(amount);
-}
+import Icon from "@/components/icons";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { usePageTitle } from "@/lib/use-page-title";
 
 function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 
 export default function OrdersPage() {
+  const { formatPrice } = useApp();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
+  usePageTitle("My orders");
 
   useEffect(() => {
     setMounted(true);
     const ok = isCustomerLoggedIn();
     setLoggedIn(ok);
     if (!ok) return;
-    api<{ orders: Order[] }>("/api/orders").then((d) => setOrders(d.orders || [])).catch(() => {});
+    api<{ orders: Order[] }>("/api/orders")
+      .then((d) => setOrders(d.orders || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   if (mounted && !loggedIn) {
-    return <><h1>Orders</h1><p className="product-error">Please <a href="/login?redirect=/orders">sign in</a> to view your orders.</p></>;
+    return <><h1>My orders</h1><div className="empty-state"><div className="empty-state-icon"><Icon name="lock" size={28} /></div><div className="empty-state-title">Sign in to view orders</div><div className="empty-state-desc">Please sign in to see your orders.</div><a href="/login?redirect=/orders" className="btn btn-primary">Sign in</a></div></>;
   }
 
   async function downloadInvoice(orderId: number) {
@@ -42,8 +48,15 @@ export default function OrdersPage() {
         </ol>
       </nav>
       <h1>My orders</h1>
-      {orders.length === 0 ? (
-        <p className="muted">No orders yet. <a href="/">Browse products</a>.</p>
+      {loading ? (
+        <p className="muted" style={{ padding: "1rem 0" }}>Loading orders…</p>
+      ) : orders.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon"><Icon name="inbox" size={28} /></div>
+          <div className="empty-state-title">No orders yet</div>
+          <div className="empty-state-desc">Browse products to place your first order.</div>
+          <a href="/" className="btn btn-primary">Browse products</a>
+        </div>
       ) : (
         orders.map((o) => {
           const total = o.total || o.subtotal + (o.shippingFee || 0);
@@ -55,7 +68,7 @@ export default function OrdersPage() {
                   <a href={`/order?id=${o.id}`} style={{ textDecoration: "none", color: "inherit" }}>
                     <strong>Order #{o.id}</strong>
                   </a>{" "}
-                  <span className="plan-status">{o.status}</span>
+                  <StatusBadge status={o.status} domain="orders" />
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                   <span className="muted">{new Date(o.createdAt).toLocaleDateString("en-GB")}</span>

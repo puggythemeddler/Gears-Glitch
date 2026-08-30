@@ -12,7 +12,24 @@ on:
         default: ''
 
 jobs:
+  check:
+    name: Gate — typecheck both packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm ci
+        working-directory: control-plane
+      - run: npm run typecheck
+        working-directory: control-plane
+
   deploy-all:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - name: Require explicit confirmation

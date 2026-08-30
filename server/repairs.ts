@@ -1,4 +1,4 @@
-import { query, queryOne, queryAll } from "./db-helpers";
+import { query, queryOne, queryAll, transaction } from "./db-helpers";
 
 interface RepairType {
   id: string;
@@ -108,6 +108,7 @@ interface PagedResult {
 interface StaffFilter {
   status?: string;
   assignedTo?: number;
+  customerId?: number;
 }
 
 interface CustomerPagedFilter {
@@ -142,7 +143,7 @@ interface TicketUpdates {
 
 const STATUSES: string[] = [
   "received", "diagnosing", "waiting_parts",
-  "in_progress", "ready", "collected", "cancelled",
+  "in_progress", "quality_check", "ready", "collected", "cancelled",
 ];
 
 const STATUS_LABELS: { [key: string]: string } = {
@@ -150,6 +151,7 @@ const STATUS_LABELS: { [key: string]: string } = {
   diagnosing: "Diagnosing",
   waiting_parts: "Waiting for parts",
   in_progress: "In progress",
+  quality_check: "Quality check",
   ready: "Ready for collection",
   collected: "Collected",
   cancelled: "Cancelled",
@@ -398,7 +400,7 @@ async function listRepairsForCustomerPaged(customerId: number, options: Customer
 }
 
 async function listRepairsForStaff(options: StaffFilter = {}): Promise<Ticket[]> {
-  const { status, assignedTo } = options;
+  const { status, assignedTo, customerId } = options;
   let sql = `
     SELECT t.*, c.name AS customer_name, c.email AS customer_email,
            u.username AS assigned_name
@@ -418,6 +420,11 @@ async function listRepairsForStaff(options: StaffFilter = {}): Promise<Ticket[]>
   if (assignedTo) {
     sql += ` AND t.assigned_to = $${idx}`;
     params.push(assignedTo);
+    idx++;
+  }
+  if (customerId) {
+    sql += ` AND t.customer_id = $${idx}`;
+    params.push(customerId);
     idx++;
   }
 
@@ -597,11 +604,39 @@ async function addRepairPart(ticketId: string, data: any): Promise<TicketResult>
 
   const qty = Math.max(1, Number(data.quantity) || 1);
   const cost = Number(data.unitCost) || 0;
+  const productId = data.productId ? String(data.productId) : null;
+
+  // A part drawn from store inventory must leave stock. Mirrors POS semantics:
+  // reject only when a stock record shows there is not enough available, and
+  // forbid negative stock. FOR UPDATE serialises concurrent part issues so two
+  // repairs can never both take the last unit.
+  if (productId) {
+    try {
+      const outcome = await transaction(async (client) => {
+        const prod = (await client.query("SELECT stock_on_hand FROM products WHERE id = $1 FOR UPDATE", [productId])).rows?.[0] as any;
+        const level = (await client.query("SELECT quantity_in_stock, quantity_reserved FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL FOR UPDATE", [productId])).rows?.[0] as any;
+        if (prod && Number(prod.stock_on_hand) > 0 && Number(prod.stock_on_hand) < qty) return "insufficient";
+        if (level && Math.max(0, Number(level.quantity_in_stock) - (Number(level.quantity_reserved) || 0)) < qty) return "insufficient";
+        await client.query("UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2", [qty, productId]);
+        if (level) {
+          await client.query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, productId]);
+        }
+        await client.query(
+          "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'repair_part', $2, 'repair', $3, $4)",
+          [productId, -qty, ticketId, `Repair part used #${ticketId}`]
+        );
+        return "ok";
+      });
+      if (outcome === "insufficient") return { ok: false, error: `Insufficient stock for ${desc}.` };
+    } catch (e: any) {
+      console.warn("[repairs] Failed to deduct part stock:", e?.message);
+    }
+  }
 
   const result = await query(
     `INSERT INTO repair_parts_used (ticket_id, description, product_id, quantity, unit_cost)
      VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [ticketId, desc, data.productId || null, qty, cost]
+    [ticketId, desc, productId, qty, cost]
   );
   const newId = result.rows[0]?.id;
 
@@ -612,8 +647,26 @@ async function addRepairPart(ticketId: string, data: any): Promise<TicketResult>
 }
 
 async function removeRepairPart(ticketId: string, partId: number): Promise<boolean> {
+  const part = await queryOne("SELECT product_id, quantity FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]) as any;
   const r = await query("DELETE FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]);
-  if ((r.rowCount ?? 0) > 0) await recalculateTicketCost(ticketId);
+  if ((r.rowCount ?? 0) > 0) {
+    await recalculateTicketCost(ticketId);
+    if (part?.product_id) {
+      const qty = Number(part.quantity) || 1;
+      try {
+        await transaction(async (client) => {
+          await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, part.product_id]);
+          await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, part.product_id]);
+          await client.query(
+            "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'restock', $2, 'repair', $3, $4)",
+            [part.product_id, qty, ticketId, `Repair part removed #${ticketId}`]
+          );
+        });
+      } catch (e: any) {
+        console.warn("[repairs] Failed to restore part stock:", e?.message);
+      }
+    }
+  }
   return (r.rowCount ?? 0) > 0;
 }
 

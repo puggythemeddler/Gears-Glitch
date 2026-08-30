@@ -4,6 +4,13 @@ import type { Product } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { formatPrice } from "./shared";
+import { Pagination } from "@/components/ui";
+
+type SortKey = "newest" | "price-asc" | "price-desc" | "name";
+
+function effectivePrice(p: Product): number {
+  return typeof p.salePrice === "number" ? p.salePrice : p.price;
+}
 
 export const LAYOUT_KEY = "original";
 export const LAYOUT_LABEL = "Original";
@@ -22,112 +29,13 @@ function isDarkColor(hex: string): boolean {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
 }
 
-function shade(hex: string, percent: number): string {
-  const [r, g, b] = hexToRgb(hex);
-  const t = percent < 0 ? 0 : 255;
-  const p = Math.abs(percent) / 100;
-  const f = (c: number) => Math.round((t - c) * p + c);
-  return `rgb(${f(r)}, ${f(g)}, ${f(b)})`;
-}
-
 export function LayoutStyles() {
   return <style>{`
     @keyframes heroFadeUp {
       from { opacity: 0; transform: translateY(24px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes heroFloat {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-12px); }
-    }
-    @keyframes heroGlow {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 0.8; }
-    }
-    @keyframes heroParticle {
-      0% { transform: translateY(0) translateX(0); opacity: 0; }
-      10% { opacity: 1; }
-      90% { opacity: 1; }
-      100% { transform: translateY(-600px) translateX(40px); opacity: 0; }
-    }
-    @keyframes heroStatFloat {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-6px); }
-    }
-    @keyframes heroBadgePulse {
-      0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand-hero-accent, #60a5fa) 30%, transparent); }
-      50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--brand-hero-accent, #60a5fa) 0%, transparent); }
-    }
   `}</style>;
-}
-
-function HeroParticle({ delay, left, size }: { delay: number; left: number; size: number }) {
-  return (
-    <div
-      className="hero-particle"
-      style={{
-        left: `${left}%`,
-        width: size,
-        height: size,
-        animationDelay: `${delay}s`,
-        animationDuration: `${6 + delay * 2}s`,
-      }}
-    />
-  );
-}
-
-function HeroCountdown({ endTime, label }: { endTime: number; label: string }) {
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  const diff = Math.max(0, endTime - now);
-  if (diff <= 0) return null;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor(diff / 3600000) % 24;
-  const m = Math.floor(diff / 60000) % 60;
-  const s = Math.floor(diff / 1000) % 60;
-  return (
-    <div className="hero-countdown" role="timer" aria-label="Countdown to sale end">
-      <span className="hero-countdown-label">{label}</span>
-      <span className="hero-countdown-unit">{d}<em>days</em></span>
-      <span className="hero-countdown-unit">{pad(h)}<em>hrs</em></span>
-      <span className="hero-countdown-unit">{pad(m)}<em>min</em></span>
-      <span className="hero-countdown-unit">{pad(s)}<em>sec</em></span>
-    </div>
-  );
-}
-
-function useCountUp(target: string): string {
-  const [val, setVal] = useState(target);
-
-  useEffect(() => {
-    const m = target.match(/^(\d+)(.*)$/);
-    if (!m) { setVal(target); return; }
-    const end = parseInt(m[1], 10);
-    const suffix = m[2] || "";
-    const dur = 1200;
-    const t0 = performance.now();
-    let raf = 0;
-    const step = (t: number) => {
-      const p = Math.min(1, (t - t0) / dur);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setVal(Math.round(end * eased).toLocaleString() + suffix);
-      if (p < 1) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [target]);
-
-  return val;
-}
-
-function HeroStatValue({ value }: { value: string }) {
-  return <span className="hero-stat-value">{useCountUp(value)}</span>;
 }
 
 function HeroStarRating({ average }: { average: number }) {
@@ -144,7 +52,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [liveStats, setLiveStats] = useState<any>(null);
   const [ratings, setRatings] = useState<Record<string, { average: number; count: number }>>({});
-  const [variantIdx, setVariantIdx] = useState(0);
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
 
@@ -156,7 +63,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const heroTextSec = bgIsDark ? "#a8a29b" : "#57534e";
 
   const heroStyle = customBg ? ({
-    "--hero-bg-gradient": `linear-gradient(135deg, ${customBg} 0%, ${shade(customBg, -14)} 100%)`,
+    "--hero-bg": customBg,
     "--hero-text": heroText,
     "--hero-text-secondary": heroTextSec,
     "--hero-headline": heroText,
@@ -166,10 +73,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     "--hero-badge-color": bgIsDark ? "#fb923c" : "#c2410c",
     "--hero-badge-bg": bgIsDark ? "rgba(249, 115, 22, 0.1)" : "rgba(234, 88, 12, 0.08)",
     "--hero-badge-border": bgIsDark ? "rgba(249, 115, 22, 0.3)" : "rgba(234, 88, 12, 0.3)",
-    "--hero-glass-bg": bgIsDark ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.6)",
-    "--hero-glass-border": bgIsDark ? "rgba(255, 255, 255, 0.12)" : "rgba(28, 25, 23, 0.1)",
-    "--hero-glass-hover": bgIsDark ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.9)",
-    "--hero-glass-hover-border": bgIsDark ? "rgba(255, 255, 255, 0.2)" : "rgba(28, 25, 23, 0.18)",
     "--hero-chip-bg": bgIsDark ? "rgba(255, 255, 255, 0.04)" : "rgba(255, 255, 255, 0.65)",
     "--hero-chip-border": bgIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(28, 25, 23, 0.12)",
     "--hero-chip-hover-bg": bgIsDark ? "rgba(249, 115, 22, 0.15)" : "rgba(234, 88, 12, 0.1)",
@@ -197,14 +100,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   }, []);
 
   useEffect(() => {
-    if (featured.length <= 1 || prefersReducedMotion) return;
-    const timer = setInterval(() => {
-      setActiveIdx((i) => (i + 1) % featured.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [featured.length, prefersReducedMotion]);
-
-  useEffect(() => {
     let cancelled = false;
     products.filter((p) => p.imageUrl).slice(0, 6).forEach((p) => {
       api<{ rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(p.id)}/reviews`)
@@ -215,15 +110,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   }, [products]);
 
   const variants = hero?.headlineVariants?.length > 0 ? hero.headlineVariants : [];
-  useEffect(() => {
-    if (variants.length <= 1 || prefersReducedMotion) return;
-    const timer = setInterval(() => {
-      setVariantIdx((i) => (i + 1) % variants.length);
-    }, 6000);
-    return () => clearInterval(timer);
-  }, [variants.length, prefersReducedMotion]);
-
-  const variant = variants.length > 0 ? variants[variantIdx % variants.length] : null;
+  const variant = variants.length > 0 ? variants[0] : null;
   const headline = variant?.headline || hero?.headline || "Power Your";
   const headlineAccent = variant?.accent || hero?.headlineAccent || "Next Build";
   const subtitle = variant?.subtitle || hero?.subtitle || "Discover premium gaming PCs, laptops, graphics cards, servers, and accessories at unbeatable prices. Kenya\u2019s trusted all-in-one tech platform.";
@@ -237,8 +124,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const browseLabel = hero?.browseLabel || "Browse Categories";
   const browseLink = hero?.browseLink || "/#categories";
 
-  const countdownEnd = hero?.countdownEnd ? new Date(hero.countdownEnd).getTime() : 0;
-  const countdownLabel = hero?.countdownLabel || "Offer ends in";
   const showTrustStrip = hero?.showTrustStrip !== false;
   const showWhatsApp = hero?.showWhatsApp !== false;
   const waPhone = settings?.storePhone ? settings.storePhone.replace(/[^0-9]/g, "") : "";
@@ -294,14 +179,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
   return (
     <section className="hero" style={heroStyle}>
-      <div className="hero-bg">
-        <div className="hero-glow hero-glow--1" />
-        <div className="hero-glow hero-glow--2" />
-        {Array.from({ length: 12 }).map((_, i) => (
-          <HeroParticle key={i} delay={i * 0.7} left={8 + i * 7.5} size={3 + (i % 3)} />
-        ))}
-      </div>
-
       <div className="hero-inner">
         <div className="hero-content">
           {isLoggedIn && userName && (
@@ -325,7 +202,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
             )
           )}
 
-          <h1 className="hero-headline" key={variant ? variantIdx : "static"}>
+          <h1 className="hero-headline">
             {headline} <span className="hero-headline-accent">{headlineAccent}</span>
           </h1>
 
@@ -334,11 +211,11 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
           </p>
 
           <div className="hero-actions">
-            <Link href={shopNowLink} className="btn btn-primary btn-lg hero-btn-glass">
+            <Link href={shopNowLink} className="btn btn-primary btn-lg">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
               {shopNowLabel}
             </Link>
-            <Link href={browseLink} className="btn btn-secondary btn-lg hero-btn-glass">
+            <Link href={browseLink} className="btn btn-secondary btn-lg">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
               {browseLabel}
             </Link>
@@ -347,15 +224,13 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
                 href={`https://wa.me/${waPhone}?text=${encodeURIComponent("Hello! I'm interested in your products.")}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn btn-secondary btn-lg hero-btn-glass hero-wa-btn"
+                className="btn btn-secondary btn-lg hero-wa-btn"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
                 Chat on WhatsApp
               </a>
             )}
           </div>
-
-          {countdownEnd > 0 && <HeroCountdown endTime={countdownEnd} label={countdownLabel} />}
 
           <div className="hero-highlights">
             {highlights.map((h: string) => (
@@ -396,7 +271,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
         <div className="hero-visual">
           <div className="hero-image-wrap">
-            <div className="hero-image-glow" />
             {featured.length > 0 ? (
               featured.map((p, i) => (
                 <div
@@ -459,7 +333,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
                 className="hero-stat hero-stat-glass"
                 style={{ animationDelay: `${i * 0.3}s` }}
               >
-                <HeroStatValue value={s.value} />
+                <span className="hero-stat-value">{s.value}</span>
                 <span className="hero-stat-label">{s.label}</span>
               </div>
             ))}
@@ -475,12 +349,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
         </div>
         <span className="hero-trust-text">{trustText}</span>
       </div>
-
-      <div className="hero-wave">
-        <svg viewBox="0 0 1440 120" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-          <path d="M0 60C240 120 480 0 720 60C960 120 1200 0 1440 60V120H0V60Z" fill="var(--bg)"/>
-        </svg>
-      </div>
     </section>
   );
 }
@@ -491,6 +359,23 @@ export function Footer() { return null; }
 export function HomePage({ products, categories, hero }: {
   products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any;
 }) {
+  const [homeSort, setHomeSort] = useState<SortKey>("newest");
+  const [homePage, setHomePage] = useState(1);
+
+  useEffect(() => {
+    setHomePage(1);
+  }, [homeSort]);
+
+  const HOME_PAGE_SIZE = 12;
+  const sortedProducts = [...products];
+  if (homeSort === "price-asc") sortedProducts.sort((a, b) => effectivePrice(a) - effectivePrice(b));
+  else if (homeSort === "price-desc") sortedProducts.sort((a, b) => effectivePrice(b) - effectivePrice(a));
+  else if (homeSort === "name") sortedProducts.sort((a, b) => a.name.localeCompare(b.name));
+
+  const homeTotalPages = Math.max(1, Math.ceil(sortedProducts.length / HOME_PAGE_SIZE));
+  const safeHomePage = Math.min(homePage, homeTotalPages);
+  const homeVisible = sortedProducts.slice((safeHomePage - 1) * HOME_PAGE_SIZE, safeHomePage * HOME_PAGE_SIZE);
+
   return (
     <>
       {hero?.heroActive !== false && <HeroSection products={products} hero={hero} />}
@@ -533,37 +418,57 @@ export function HomePage({ products, categories, hero }: {
         {products.length === 0 ? (
           <p style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>No products found.</p>
         ) : (
-          <div className="product-grid">
-            {products.map((p) => {
-              const initials = p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
-              return (
-                <Link key={p.id} href={`/product?id=${encodeURIComponent(p.id)}`} className="product-card">
-                  {p.imageUrl ? (
-                    <img src={p.imageUrl} alt={p.imageAlt || p.name} loading="lazy" />
-                  ) : (
-                    <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: 10, fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>
-                      {initials}
-                    </div>
-                  )}
-                  <h3>{p.name}</h3>
-                  <div className="price" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                    {p.salePrice ? (
-                      <>
-                        <span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.8em" }}>{formatPrice(p.price)}</span>
-                        <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span>
-                        <span style={{ display: "inline-block", background: "var(--danger)", color: "#fff", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
-                      </>
+          <>
+            <div className="listing-toolbar">
+              <span className="listing-count">{sortedProducts.length} product{sortedProducts.length === 1 ? "" : "s"}</span>
+              <label className="listing-sort">
+                Sort by
+                <select
+                  value={homeSort}
+                  onChange={(e) => setHomeSort(e.target.value as SortKey)}
+                  className="filter-select"
+                  aria-label="Sort products"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="price-asc">Price: Low to High</option>
+                  <option value="price-desc">Price: High to Low</option>
+                  <option value="name">Name A-Z</option>
+                </select>
+              </label>
+            </div>
+            <div className="product-grid">
+              {homeVisible.map((p) => {
+                const initials = p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
+                return (
+                  <Link key={p.id} href={`/product?id=${encodeURIComponent(p.id)}`} className="product-card">
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt={p.imageAlt || p.name} loading="lazy" />
                     ) : (
-                      formatPrice(p.price)
+                      <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: 10, fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>
+                        {initials}
+                      </div>
                     )}
-                  </div>
-                  <div className={`stock-badge ${p.inStock ? "in-stock" : "out-of-stock"}`}>
-                    {p.inStock ? "In stock" : "Enquire for availability"}
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+                    <h3>{p.name}</h3>
+                    <div className="price" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                      {p.salePrice ? (
+                        <>
+                          <span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.8em" }}>{formatPrice(p.price)}</span>
+                          <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span>
+                          <span style={{ display: "inline-block", background: "var(--danger)", color: "#fff", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
+                        </>
+                      ) : (
+                        formatPrice(p.price)
+                      )}
+                    </div>
+                    <div className={`stock-badge ${p.inStock ? "in-stock" : "out-of-stock"}`}>
+                      {p.inStock ? "In stock" : "Enquire for availability"}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+            <Pagination page={safeHomePage} totalPages={homeTotalPages} onChange={setHomePage} label="All products pagination" />
+          </>
         )}
       </div>
     </>

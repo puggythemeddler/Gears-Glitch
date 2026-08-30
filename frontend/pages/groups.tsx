@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
-import Head from "next/head";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import Icon from "@/components/icons";
 import type { ProductGroup } from "@/lib/types";
+import { usePageTitle } from "@/lib/use-page-title";
 
 export default function GroupsIndexPage() {
   const [groups, setGroups] = useState<ProductGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  usePageTitle("Product groups - Gear&Glitch");
 
   useEffect(() => {
     api<{ groups: ProductGroup[] }>("/api/groups")
@@ -36,7 +38,7 @@ export default function GroupsIndexPage() {
         </div>
       ) : groups.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">🗂️</div>
+          <div className="empty-state-icon"><Icon name="folder" size={28} /></div>
           <div className="empty-state-title">No groups yet</div>
           <div className="empty-state-desc">No product groups are available right now.</div>
           <a href="/" className="btn btn-primary">Browse all products</a>
@@ -45,7 +47,7 @@ export default function GroupsIndexPage() {
         <div className="product-grid">
           {groups.map((g) => (
             <Link key={g.id} href={`/group/${encodeURIComponent(g.id)}`} className="product-card">
-              <div style={{ fontSize: "2.5rem", padding: "1.5rem", textAlign: "center", opacity: 0.8 }}>🗂️</div>
+              <div style={{ padding: "1.5rem 0", textAlign: "center", color: "var(--text-tertiary)" }}><Icon name="folder" size={40} /></div>
               <div style={{ fontWeight: 600 }}>{g.name}</div>
               <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
                 {g.productCount} product{g.productCount === 1 ? "" : "s"}

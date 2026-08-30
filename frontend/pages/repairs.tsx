@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { PageHead } from "@/components/ui";
 
 const DEFAULT_PANELS = [
   { title: "Laptop & PC repairs", description: "Screen replacement, keyboard repair, battery replacement, motherboard diagnostics, and more." },
@@ -21,6 +22,7 @@ export default function RepairsPage() {
 
   return (
     <>
+      <PageHead title="Repair services - Gear&Glitch" description={intro} />
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <ol>
           <li><a href="/">Home</a></li>

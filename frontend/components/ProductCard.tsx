@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from "react";
+import React from "react";
 import Link from "next/link";
-import type { Product, ProductImage } from "@/lib/types";
+import type { Product } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 
@@ -8,54 +8,20 @@ interface ProductCardProps {
   product: Product;
 }
 
+/**
+ * Static storefront card. Ratings arrive pre-attached from the products
+ * list endpoint (withExtras=1) — no per-card request loop.
+ */
 export function ProductCard({ product }: ProductCardProps) {
   const { formatPrice } = useApp();
   const initials = product.name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
-  const [gallery, setGallery] = useState<ProductImage[]>([]);
-  const [hoverIdx, setHoverIdx] = useState(0);
-  const [rating, setRating] = useState<{ average: number; count: number } | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    api<{ images: ProductImage[]; rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(product.id)}/extras`).then((d) => {
-      if (d.images && d.images.length > 1) setGallery(d.images);
-      if (d.rating && d.rating.count > 0) setRating(d.rating);
-    }).catch(() => {});
-  }, [product.id]);
-
-  function startScroll() {
-    if (gallery.length <= 1) return;
-    setHoverIdx(0);
-    intervalRef.current = setInterval(() => {
-      setHoverIdx((prev) => (prev + 1) % gallery.length);
-    }, 800);
-  }
-
-  function stopScroll() {
-    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-    setHoverIdx(0);
-  }
-
-  const images = gallery.length > 1 ? gallery : [];
-  const displayImage = images.length > 0 ? images[hoverIdx]?.imageUrl : product.imageUrl;
+  const rating = product.rating || null;
 
   return (
-    <Link
-      href={`/product?id=${encodeURIComponent(product.id)}`}
-      className="product-card"
-      onMouseEnter={startScroll}
-      onMouseLeave={stopScroll}
-    >
-      {displayImage ? (
+    <Link href={`/product?id=${encodeURIComponent(product.id)}`} className="product-card">
+      {product.imageUrl ? (
         <div className="product-card__img-wrap">
-          <img src={displayImage} alt={product.imageAlt || product.name} loading="lazy" />
-          {images.length > 1 && (
-            <div className="product-card__dots">
-              {images.map((_, i) => (
-                <span key={i} className={`product-card__dot ${i === hoverIdx ? "active" : ""}`} />
-              ))}
-            </div>
-          )}
+          <img src={product.imageUrl} alt={product.imageAlt || product.name} loading="lazy" />
         </div>
       ) : (
         <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: 10, fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>
@@ -63,7 +29,7 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
       )}
       <h3>{product.name}</h3>
-      {rating && (
+      {rating && rating.count > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginBottom: "0.25rem" }}>
           <span style={{ fontSize: "0.8rem", color: "var(--accent)" }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating.average) ? "★" : "☆").join("")}</span>
           <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>({rating.count})</span>
@@ -91,10 +57,11 @@ export function ProductCard({ product }: ProductCardProps) {
   );
 }
 
-export async function getProducts(category?: string, group?: string): Promise<Product[]> {
+export async function getProducts(category?: string, group?: string, extras = true): Promise<Product[]> {
   const params = new URLSearchParams();
   if (category) params.set("category", category);
   if (group) params.set("group", group);
+  if (extras) params.set("withExtras", "1");
   const qs = params.toString();
   const url = qs ? `/api/products?${qs}` : "/api/products";
   const data = await api<{ products: Product[] }>(url);

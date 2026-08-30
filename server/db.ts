@@ -1737,12 +1737,16 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
   const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled", "whatsappEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId"];
+  // Secrets are never returned to the browser by GET /api/settings, so the
+  // settings forms submit them as empty strings. Treat an empty value as "keep
+  // the currently stored secret" instead of wiping it.
+  const secretKeys = ["cloudinaryApiSecret", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken"];
   if (updates.paymentMethods) await setPaymentMethods(updates.paymentMethods);
   await transaction(async (client) => {
     for (const key of allowed) {
-      if (updates[key] !== undefined) {
-        await client.query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [key, String(updates[key])]);
-      }
+      if (updates[key] === undefined) continue;
+      if (secretKeys.includes(key) && updates[key] === "") continue;
+      await client.query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [key, String(updates[key])]);
     }
   });
   return await getSettings();
@@ -2725,13 +2729,26 @@ async function validateGiftCard(code: string, amount: number): Promise<{ valid: 
 }
 
 async function redeemGiftCard(giftCardId: number, orderId: number, customerId: number, amount: number): Promise<boolean> {
-  const card = await getGiftCard(giftCardId);
-  if (!card) return false;
-  const balance = Number(card.balance) || 0;
-  if (balance < amount) return false;
-  await query("UPDATE gift_cards SET balance = balance - $1, updated_at = NOW()::text WHERE id = $2", [amount, giftCardId]);
-  await query("INSERT INTO gift_card_redemptions (gift_card_id, order_id, customer_id, amount) VALUES ($1, $2, $3, $4)", [giftCardId, orderId, customerId || null, amount]);
-  return true;
+  // FOR UPDATE on the card row serialises concurrent checkouts so the same
+  // balance can never be spent twice; balance check + debit + redemption log
+  // all commit or roll back together.
+  try {
+    const ok = await transaction(async (client) => {
+      const cardRes = await client.query("SELECT id, balance, is_active, expires_at FROM gift_cards WHERE id = $1 FOR UPDATE", [giftCardId]);
+      const card = cardRes.rows?.[0] as any;
+      if (!card) return false;
+      if (card.is_active !== 1) return false;
+      if (card.expires_at && new Date(card.expires_at) < new Date()) return false;
+      if (Number(card.balance) < amount) return false;
+      await client.query("UPDATE gift_cards SET balance = balance - $1, updated_at = NOW()::text WHERE id = $2", [amount, giftCardId]);
+      await client.query("INSERT INTO gift_card_redemptions (gift_card_id, order_id, customer_id, amount) VALUES ($1, $2, $3, $4)", [giftCardId, orderId, customerId || null, amount]);
+      return true;
+    });
+    return ok === true;
+  } catch (e: any) {
+    console.warn("[gift card redeem]", e?.message);
+    return false;
+  }
 }
 
 async function listGiftCardRedemptions(giftCardId?: number): Promise<any[]> {
@@ -2832,12 +2849,55 @@ async function listCartRecoveryReminders(): Promise<any[]> {
 // ============ REFUNDS ============
 
 async function createRefund(data: { orderId: number; orderItemId?: number; productId?: string; amount: number; reason: string; createdBy?: number }): Promise<any> {
-  const result = await query(
-    "INSERT INTO refunds (order_id, order_item_id, product_id, amount, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-    [data.orderId, data.orderItemId || null, data.productId || null, data.amount, data.reason, data.createdBy || null]
-  );
-  await query("UPDATE orders SET amount_refunded = amount_refunded + $1 WHERE id = $2", [data.amount, data.orderId]);
-  return result.rows[0];
+  return await transaction(async (client) => {
+    // Lock the order row: concurrent refunds serialise and can never both use
+    // the same remaining balance, and the refund+stock restore below are atomic.
+    const orderRow = (await client.query(
+      "SELECT id, subtotal, shipping_fee, discount_amount, gift_card_amount, amount_refunded FROM orders WHERE id = $1 FOR UPDATE",
+      [data.orderId]
+    )).rows?.[0] as any;
+    if (!orderRow) throw new Error("Order not found.");
+    const paid = (Number(orderRow.subtotal) + Number(orderRow.shipping_fee) - (Number(orderRow.discount_amount) || 0) - (Number(orderRow.gift_card_amount) || 0)) || 0;
+    const remaining = Math.max(0, paid - (Number(orderRow.amount_refunded) || 0));
+    if (Number(data.amount) > remaining) throw new Error(`Refund exceeds remaining balance (${remaining}).`);
+    if (data.orderItemId != null) {
+      const item = (await client.query(
+        "SELECT id, order_id, product_id, price, quantity, cancelled FROM order_items WHERE id = $1 FOR UPDATE",
+        [data.orderItemId]
+      )).rows?.[0] as any;
+      if (!item) throw new Error("Order item not found.");
+      if (Number(item.order_id) !== Number(data.orderId)) throw new Error("Order item belongs to a different order.");
+      if (Number(data.amount) > Number(item.price) * Number(item.quantity)) throw new Error("Line refund cannot exceed the line total.");
+      if (!item.cancelled) {
+        // Full-line refund: cancel the line and return stock + serials in the
+        // same transaction as the refund so we can never "cancel but lose the
+        // refund" or "refund but keep inventory deducted".
+        const qty = Number(item.quantity);
+        const branchRow = (await client.query("SELECT branch_id FROM orders WHERE id = $1", [data.orderId])).rows?.[0] as any;
+        await client.query("UPDATE order_items SET cancelled = 1 WHERE id = $1", [data.orderItemId]);
+        await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, item.product_id]);
+        if (branchRow?.branch_id != null) {
+          await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, branchRow.branch_id]);
+        } else {
+          await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
+        }
+        await client.query(
+          "UPDATE serial_numbers SET status = 'in_stock', order_id = NULL, order_item_id = NULL, sold_at = NULL WHERE order_item_id = $1 AND status = 'sold'",
+          [data.orderItemId]
+        );
+        await client.query(
+          "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'restock', $2, 'refund', $3, $4, $5)",
+          [item.product_id, qty, String(data.orderId), `Stock returned after refund #${data.orderId}`, branchRow?.branch_id ?? null]
+        );
+      }
+    }
+    const result = await client.query(
+      "INSERT INTO refunds (order_id, order_item_id, product_id, amount, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+      [data.orderId, data.orderItemId || null, data.productId || null, data.amount, data.reason, data.createdBy || null]
+    );
+    await client.query("UPDATE orders SET amount_refunded = amount_refunded + $1 WHERE id = $2", [Number(data.amount), data.orderId]);
+    return result.rows[0];
+  });
 }
 
 async function listRefunds(orderId?: number): Promise<any[]> {
@@ -2853,10 +2913,35 @@ async function getRefundTotal(orderId: number): Promise<number> {
 }
 
 async function cancelOrderItemQuantity(orderItemId: number, quantity: number): Promise<boolean> {
-  const item = await queryOne("SELECT cancelled FROM order_items WHERE id = $1", [orderItemId]) as any;
-  if (!item) return false;
-  const result = await query("UPDATE order_items SET cancelled = 1 WHERE id = $1", [orderItemId]);
-  return (result.rowCount ?? 0) > 0;
+  return await transaction(async (client) => {
+    const res = await client.query("SELECT id, order_id, product_id, quantity, cancelled FROM order_items WHERE id = $1 FOR UPDATE", [orderItemId]);
+    const row = res.rows?.[0] as any;
+    if (!row) return false;
+    const fullLineCancel = quantity <= 0 || Number(quantity) >= Number(row.quantity);
+    if (!row.cancelled) {
+      await client.query("UPDATE order_items SET cancelled = 1 WHERE id = $1", [orderItemId]);
+    } else {
+      return true; // already cancelled — avoid double stock/serial restore
+    }
+    if (!fullLineCancel) return true; // partial cancel: no stock or serial restore
+    const order = (await client.query("SELECT branch_id FROM orders WHERE id = $1", [row.order_id])).rows?.[0] as any;
+    const qty = Number(row.quantity);
+    await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, row.product_id]);
+    if (order?.branch_id != null) {
+      await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, row.product_id, order.branch_id]);
+    } else {
+      await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, row.product_id]);
+    }
+    await client.query(
+      "UPDATE serial_numbers SET status = 'in_stock', order_id = NULL, order_item_id = NULL, sold_at = NULL WHERE order_item_id = $1 AND status = 'sold'",
+      [orderItemId]
+    );
+    await client.query(
+      "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'restock', $2, 'cancel', $3, $4, $5)",
+      [row.product_id, qty, String(row.order_id), `Line cancelled/refunded #${row.order_id}`, order?.branch_id ?? null]
+    );
+    return true;
+  });
 }
 
 async function createOrder(data: { customerId: number; customerName: string; customerEmail: string; shippingName: string; shippingAddress: string; shippingCity: string; shippingCounty: string; shippingPostcode: string; shippingPhone: string; shippingFee: number; notes?: string; items: { productId: string; name: string; price: number; quantity: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean }[]; couponId?: number; discountAmount?: number; staffId?: number; branchId?: number; processedBy?: string; idempotencyKey?: string; source?: string; giftCardId?: number; giftCardAmount?: number }): Promise<Order> {
@@ -2898,57 +2983,122 @@ async function listOrders(customerId?: number): Promise<Order[]> {
 }
 
 async function updateOrderStatus(id: number, status: string): Promise<boolean> {
+  if (status === "cancelled") {
+    // Cancelling an order must return its stock and free its serials exactly
+    // once, atomically. FOR UPDATE + the status guard make a duplicate cancel
+    // (e.g. poll failure followed by releaseOrderHeldStock then this call) a
+    // no-op instead of a double restock.
+    return await transaction(async (client) => {
+      const order = (await client.query("SELECT id, branch_id, status FROM orders WHERE id = $1 FOR UPDATE", [id])).rows?.[0] as any;
+      if (!order) return false;
+      if (order.status !== "cancelled") {
+        const items = (await client.query("SELECT id, product_id, quantity FROM order_items WHERE order_id = $1 AND cancelled = 0", [id])).rows || [];
+        const lineIds: number[] = [];
+        for (const it of items) {
+          const qty = Number(it.quantity);
+          await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, it.product_id]);
+          if (order.branch_id != null) {
+            await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, it.product_id, order.branch_id]);
+          } else {
+            await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, it.product_id]);
+          }
+          await client.query(
+            "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'restock', $2, 'cancel', $3, $4, $5)",
+            [it.product_id, qty, String(id), `Order cancelled #${id}`, order.branch_id ?? null]
+          );
+          lineIds.push(it.id);
+        }
+        if (lineIds.length) {
+          await client.query(
+            "UPDATE serial_numbers SET status = 'in_stock', order_id = NULL, order_item_id = NULL, sold_at = NULL WHERE order_item_id = ANY($1) AND status = 'sold'",
+            [lineIds]
+          );
+        }
+      }
+      await client.query("UPDATE orders SET status = $2, updated_at = NOW()::text WHERE id = $1", [id, status]);
+      return true;
+    });
+  }
   const result = await query("UPDATE orders SET status = $1, updated_at = NOW()::text WHERE id = $2", [status, id]);
   return (result.rowCount ?? 0) > 0;
 }
 
-async function confirmOrderPayment(orderId: number): Promise<void> {
-  const order = await queryOne("SELECT id, branch_id, status FROM orders WHERE id = $1", [orderId]) as any;
-  if (!order || (order.status !== "pending_payment" && order.status !== "pending")) return;
-  const items = await queryAll("SELECT product_id, quantity FROM order_items WHERE order_id = $1", [orderId]) as any[];
-  for (const item of items) {
+async function deductReservedStockForOrder(client: { query(text: string, params?: any[]): Promise<any> }, order: any): Promise<void> {
+  const items = (await client.query("SELECT product_id, quantity FROM order_items WHERE order_id = $1", [order.id])) as any;
+  for (const item of items.rows || []) {
     const qty = Number(item.quantity);
     if (order.branch_id != null) {
-      await query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, order.branch_id]);
+      await client.query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, order.branch_id]);
     } else {
-      await query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
+      await client.query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
     }
-    await query(
+    await client.query(
       "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5, $6)",
-      [item.product_id, -qty, String(orderId), `POS sale confirmed #${orderId}`, null, order.branch_id ?? null]
+      [item.product_id, -qty, String(order.id), `POS sale confirmed #${order.id}`, null, order.branch_id ?? null]
     );
   }
 }
 
-async function releaseOrderHeldStock(orderId: number): Promise<void> {
-  const order = await queryOne("SELECT id, branch_id, status FROM orders WHERE id = $1", [orderId]) as any;
-  if (!order || (order.status !== "pending_payment" && order.status !== "pending")) return;
-  const items = await queryAll("SELECT product_id, quantity FROM order_items WHERE order_id = $1", [orderId]) as any[];
-  for (const item of items) {
+async function releaseReservedStockForOrder(client: { query(text: string, params?: any[]): Promise<any> }, order: any): Promise<void> {
+  const items = (await client.query("SELECT product_id, quantity FROM order_items WHERE order_id = $1", [order.id])) as any;
+  for (const item of items.rows || []) {
     const qty = Number(item.quantity);
-    await query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, item.product_id]);
+    await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, item.product_id]);
     if (order.branch_id != null) {
-      await query("UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, order.branch_id]);
+      await client.query("UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, order.branch_id]);
     } else {
-      await query("UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
+      await client.query("UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
     }
   }
-  await query(
+  await client.query(
     "UPDATE serial_numbers SET status = 'in_stock', order_id = NULL, order_item_id = NULL, sold_at = NULL WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id = $1) AND status = 'sold'",
-    [orderId]
+    [order.id]
   );
 }
 
+async function confirmOrderPayment(orderId: number): Promise<void> {
+  await transaction(async (client) => {
+    const order = (await client.query("SELECT id, branch_id, status FROM orders WHERE id = $1 FOR UPDATE", [orderId])).rows?.[0] as any;
+    if (!order || (order.status !== "pending_payment" && order.status !== "pending")) return;
+    await deductReservedStockForOrder(client, order);
+    await client.query("UPDATE orders SET status = 'paid', updated_at = NOW()::text WHERE id = $1", [orderId]);
+  });
+}
+
+async function releaseOrderHeldStock(orderId: number): Promise<void> {
+  await transaction(async (client) => {
+    const order = (await client.query("SELECT id, branch_id, status FROM orders WHERE id = $1 FOR UPDATE", [orderId])).rows?.[0] as any;
+    if (!order || (order.status !== "pending_payment" && order.status !== "pending")) return;
+    await releaseReservedStockForOrder(client, order);
+    await client.query("UPDATE orders SET status = 'cancelled', updated_at = NOW()::text WHERE id = $1", [orderId]);
+  });
+}
+
 async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: number, mpesaReceipt?: string): Promise<void> {
-  const order = await queryOne("SELECT id FROM orders WHERE checkout_request_id = $1", [checkoutRequestId]) as any;
-  if (!order) return;
-  if (resultCode === 0 && mpesaReceipt) {
-    await confirmOrderPayment(order.id);
-    await query("UPDATE orders SET status = 'paid', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
-  } else {
-    await releaseOrderHeldStock(order.id);
-    await query("UPDATE orders SET status = 'cancelled', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt || null, order.id]);
-  }
+  await transaction(async (client) => {
+    // FOR UPDATE serialises concurrent callbacks/polls for the same checkout,
+    // so a duplicate success callback cannot deduct stock twice, and a late
+    // failure callback cannot undo an already-paid order.
+    const order = (await client.query("SELECT id, branch_id, status FROM orders WHERE checkout_request_id = $1 FOR UPDATE", [checkoutRequestId])).rows?.[0] as any;
+    if (!order) return;
+    const alreadyPaid = order.status === "paid" || order.status === "delivered";
+    if (resultCode === 0 && mpesaReceipt) {
+      if (alreadyPaid) {
+        // Duplicate success callback — refresh the receipt, never re-deduct.
+        await client.query("UPDATE orders SET mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
+      } else if (order.status === "pending" || order.status === "pending_payment") {
+        await deductReservedStockForOrder(client, order);
+        await client.query("UPDATE orders SET status = 'paid', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
+      }
+      // 'cancelled' orders are left untouched — their stock was already released.
+    } else {
+      if (alreadyPaid) return;
+      if (order.status !== "cancelled") {
+        await releaseReservedStockForOrder(client, order);
+        await client.query("UPDATE orders SET status = 'cancelled', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt || null, order.id]);
+      }
+    }
+  });
 }
 
 async function getOrderByCheckoutRequest(checkoutRequestId: string): Promise<Order | undefined> {
@@ -4203,11 +4353,12 @@ function computeWarrantyExpiry(createdAt: string, durationMonths: number): strin
   return base.toISOString().slice(0, 10);
 }
 
-async function listSerials(filters: { search?: string; status?: string; productId?: string }): Promise<any[]> {
+async function listSerials(filters: { search?: string; status?: string; productId?: string; customerId?: number }): Promise<any[]> {
   const where: string[] = []; const params: any[] = []; let idx = 1;
   if (filters.search) { where.push(`(sn.serial_number ILIKE $${idx} OR p.name ILIKE $${idx} OR p.barcode ILIKE $${idx})`); params.push(`%${filters.search}%`); idx++; }
   if (filters.status) { where.push(`sn.status = $${idx}`); params.push(filters.status); idx++; }
   if (filters.productId) { where.push(`sn.product_id = $${idx}`); params.push(filters.productId); idx++; }
+  if (filters.customerId) { where.push(`o.customer_id = $${idx}`); params.push(filters.customerId); idx++; }
   const sql = `SELECT sn.*, p.name AS product_name, p.category AS product_category, p.barcode AS product_barcode,
       COALESCE(NULLIF(o.invoice_number, ''), o.id::TEXT) AS order_number, o.created_at AS order_created_at
     FROM serial_numbers sn
@@ -4279,49 +4430,71 @@ async function voidSerial(id: number): Promise<{ ok: boolean; error?: string }> 
 }
 
 async function linkSerialsToOrderItem(orderItemId: number, serialNumbers: string[]): Promise<{ ok: boolean; error?: string }> {
-  const item = await queryOne("SELECT order_id, product_id FROM order_items WHERE id = $1", [orderItemId]) as any;
-  if (!item) return { ok: false, error: "Order item not found" };
-  const warranty = await queryOne("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [item.product_id]) as any;
-  const order = await queryOne("SELECT created_at FROM orders WHERE id = $1", [item.order_id]) as any;
-  const list: string[] = [];
-  for (const raw of serialNumbers || []) {
-    const sn = String(raw || "").trim();
-    if (!sn) continue;
-    const serial = await queryOne("SELECT * FROM serial_numbers WHERE serial_number = $1", [sn]) as any;
-    if (!serial) return { ok: false, error: `Serial ${sn} not found` };
-    if (serial.product_id !== item.product_id) return { ok: false, error: `Serial ${sn} does not belong to this product` };
-    if (serial.status === "sold") return { ok: false, error: `Serial ${sn} is already sold` };
-    if (serial.status === "void") return { ok: false, error: `Serial ${sn} has been voided` };
-    let expires: string | null = null;
-    if (warranty && warranty.has_warranty && warranty.warranty_duration) {
-      expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), warranty.warranty_duration);
-    }
-    await query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serial.id]);
-    list.push(sn);
+  try {
+    return await transaction(async (client) => {
+      const itemRes = await client.query("SELECT order_id, product_id FROM order_items WHERE id = $1", [orderItemId]);
+      const item = itemRes.rows?.[0] as any;
+      if (!item) return { ok: false, error: "Order item not found" };
+      const warranty = await client.query("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [item.product_id]);
+      const w = warranty.rows?.[0] as any;
+      const orderRes = await client.query("SELECT created_at FROM orders WHERE id = $1", [item.order_id]);
+      const order = orderRes.rows?.[0] as any;
+      const list: string[] = [];
+      for (const raw of serialNumbers || []) {
+        const sn = String(raw || "").trim();
+        if (!sn) continue;
+        // FOR UPDATE serialises concurrent claims so the same serial can never
+        // be attached to two order lines.
+        const serialRes = await client.query("SELECT * FROM serial_numbers WHERE serial_number = $1 FOR UPDATE", [sn]);
+        const serial = serialRes.rows?.[0] as any;
+        if (!serial) return { ok: false, error: `Serial ${sn} not found` };
+        if (serial.product_id !== item.product_id) return { ok: false, error: `Serial ${sn} does not belong to this product` };
+        if (serial.status === "sold") return { ok: false, error: `Serial ${sn} is already sold` };
+        if (serial.status === "void") return { ok: false, error: `Serial ${sn} has been voided` };
+        let expires: string | null = null;
+        if (w && w.has_warranty && w.warranty_duration) {
+          expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), w.warranty_duration);
+        }
+        await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serial.id]);
+        list.push(sn);
+      }
+      if (list.length) {
+        await client.query("UPDATE order_items SET serial_number = $1 WHERE id = $2", [list.join(", "), orderItemId]);
+      }
+      return { ok: true };
+    });
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || "Failed to link serial numbers") };
   }
-  if (list.length) {
-    await query("UPDATE order_items SET serial_number = $1 WHERE id = $2", [list.join(", "), orderItemId]);
-  }
-  return { ok: true };
 }
 
 async function linkSerialToOrderItem(serialId: number, orderItemId: number): Promise<{ ok: boolean; error?: string }> {
-  const serial = await queryOne("SELECT * FROM serial_numbers WHERE id = $1", [serialId]) as any;
-  if (!serial) return { ok: false, error: "Serial not found" };
-  if (serial.status === "sold") return { ok: false, error: "That serial is already sold" };
-  if (serial.status === "void") return { ok: false, error: "That serial has been voided" };
-  const item = await queryOne("SELECT order_id, product_id FROM order_items WHERE id = $1", [orderItemId]) as any;
-  if (!item) return { ok: false, error: "Order item not found" };
-  if (serial.product_id !== item.product_id) return { ok: false, error: "Serial does not belong to this product" };
-  const warranty = await queryOne("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [serial.product_id]) as any;
-  const order = await queryOne("SELECT created_at FROM orders WHERE id = $1", [item.order_id]) as any;
-  let expires: string | null = null;
-  if (warranty && warranty.has_warranty && warranty.warranty_duration) {
-    expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), warranty.warranty_duration);
+  try {
+    return await transaction(async (client) => {
+      const serialRes = await client.query("SELECT * FROM serial_numbers WHERE id = $1 FOR UPDATE", [serialId]);
+      const serial = serialRes.rows?.[0] as any;
+      if (!serial) return { ok: false, error: "Serial not found" };
+      if (serial.status === "sold") return { ok: false, error: "That serial is already sold" };
+      if (serial.status === "void") return { ok: false, error: "That serial has been voided" };
+      const itemRes = await client.query("SELECT order_id, product_id FROM order_items WHERE id = $1", [orderItemId]);
+      const item = itemRes.rows?.[0] as any;
+      if (!item) return { ok: false, error: "Order item not found" };
+      if (serial.product_id !== item.product_id) return { ok: false, error: "Serial does not belong to this product" };
+      const warranty = await client.query("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [serial.product_id]);
+      const w = warranty.rows?.[0] as any;
+      const orderRes = await client.query("SELECT created_at FROM orders WHERE id = $1", [item.order_id]);
+      const order = orderRes.rows?.[0] as any;
+      let expires: string | null = null;
+      if (w && w.has_warranty && w.warranty_duration) {
+        expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), w.warranty_duration);
+      }
+      await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serialId]);
+      await client.query("UPDATE order_items SET serial_number = $1 WHERE id = $2", [serial.serial_number, orderItemId]);
+      return { ok: true };
+    });
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || "Failed to link serial number") };
   }
-  await query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serialId]);
-  await query("UPDATE order_items SET serial_number = $1 WHERE id = $2", [serial.serial_number, orderItemId]);
-  return { ok: true };
 }
 
 export {

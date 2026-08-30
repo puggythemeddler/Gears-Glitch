@@ -7,6 +7,7 @@ import { getStaffToken, api } from "@/lib/api";
 
 import CurrencySelector from "./CurrencySelector";
 import MarqueeBanner from "./MarqueeBanner";
+import Icon from "./icons";
 import { useFeature } from "@/lib/features";
 
 interface LayoutProps {
@@ -182,9 +183,9 @@ export default function Layout({ children, activeNav }: LayoutProps) {
               aria-haspopup="true"
               aria-label="Browse categories"
             >
-              <span className="springboard-icon">☰</span>
+              <span className="springboard-icon"><Icon name="menu" size={14} /></span>
               <span className="springboard-label">Categories</span>
-              <span className={`springboard-arrow${springboardOpen ? " open" : ""}`}>▾</span>
+              <span className={`springboard-arrow${springboardOpen ? " open" : ""}`}><Icon name="chevronDown" size={12} /></span>
             </button>
             {springboardOpen && (
               <div className="springboard-dropdown">
@@ -213,7 +214,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                           aria-label={`${cat.label} subcategories`}
                           aria-expanded={isOpen}
                         >
-                          ›
+                          <Icon name="chevronRight" size={12} />
                         </button>
                       )}
                       {subs.length > 0 && isOpen && (
@@ -237,7 +238,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             )}
           </div>
         </div>
-        <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) window.location.href = `/?search=${encodeURIComponent(q)}`; }}>
+        <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) router.push(`/?search=${encodeURIComponent(q)}`); }}>
           <input name="q" type="search" placeholder="Search..." aria-label="Search products" />
           <button type="submit" aria-label="Search">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -273,7 +274,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
               aria-label="Display settings"
               title="Theme & currency"
             >
-              ⚙
+              <Icon name="settings" size={16} />
             </button>
             {settingsOpen && (
               <div className="header-settings-popover" role="menu">
@@ -317,7 +318,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileOpen}
           >
-            {mobileOpen ? "\u2715" : "\u2630"}
+            <Icon name={mobileOpen ? "x" : "menu"} size={18} />
           </button>
         </div>
       </div>

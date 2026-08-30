@@ -17,9 +17,6 @@ export default class MyDocument extends Document {
           <link rel="icon" type="image/png" sizes="32x32" href="/default-favicon.png" />
           <link rel="apple-touch-icon" href="/default-favicon.png" />
           <link rel="manifest" href="/manifest.webmanifest" />
-          <link rel="preconnect" href="https://fonts.googleapis.com" />
-          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-          <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Archivo:wght@500;600;700;800&display=swap" rel="stylesheet" />
           <script dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem("siteTheme");if(!t){t=window.matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light"}document.documentElement.setAttribute("data-theme",t);var m=document.getElementById("themeColorMeta");if(m)m.content=t==="dark"?"#0b0a09":"#fafaf9"}catch(e){}})()`
           }} />

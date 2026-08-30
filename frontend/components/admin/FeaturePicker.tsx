@@ -1,10 +1,12 @@
 import React from "react";
+import Icon from "@/components/icons";
 
 // Master catalog of storefront/admin features, grouped for plan and role editors.
+// `icon` is a name from components/icons.tsx.
 export const FEATURE_GROUPS = [
   {
     group: "Core Commerce",
-    icon: "💳",
+    icon: "creditCard",
     features: [
       "Product listing", "Order management", "POS integration",
       "Payment method configuration", "M-Pesa integration",
@@ -14,7 +16,7 @@ export const FEATURE_GROUPS = [
   },
   {
     group: "Inventory & Stock",
-    icon: "📦",
+    icon: "boxes",
     features: [
       "Low stock alerts", "Stock take / inventory count", "Stock transfers",
       "Supplier management", "Purchase order management", "Barcode scanning",
@@ -23,7 +25,7 @@ export const FEATURE_GROUPS = [
   },
   {
     group: "Invoicing & Finance",
-    icon: "🧾",
+    icon: "receipt",
     features: [
       "eTIMS/KRA compliance", "Invoice/quote PDF downloads", "Credit notes",
       "Quotations", "Price history tracking",
@@ -31,14 +33,14 @@ export const FEATURE_GROUPS = [
   },
   {
     group: "Repairs & Service",
-    icon: "🔧",
+    icon: "wrench",
     features: [
       "Repair ticketing", "Technician accounts",
     ],
   },
   {
     group: "Customer Engagement",
-    icon: "💬",
+    icon: "message",
     features: [
       "Messaging", "Admin messaging", "Email notifications",
       "SMS notifications", "Product reviews & ratings",
@@ -47,21 +49,21 @@ export const FEATURE_GROUPS = [
   },
   {
     group: "WhatsApp & Communication",
-    icon: "📱",
+    icon: "smartphone",
     features: [
       "WhatsApp integration",
     ],
   },
   {
     group: "Multi-Location",
-    icon: "🏢",
+    icon: "building",
     features: [
       "Branch management", "Multi-branch support", "Client/tenant management",
     ],
   },
   {
     group: "Marketing & Storefront",
-    icon: "🌐",
+    icon: "globe",
     features: [
       "Product positioning", "Hero customization", "Theme customization",
       "Custom branding", "Shop subscription", "Campaign pages", "Cart recovery",
@@ -69,14 +71,14 @@ export const FEATURE_GROUPS = [
   },
   {
     group: "Analytics & Security",
-    icon: "📊",
+    icon: "chart",
     features: [
       "Analytics dashboard", "Audit log", "Visitor analytics",
     ],
   },
   {
     group: "Support & Account",
-    icon: "🛡",
+    icon: "shield",
     features: [
       "Google Sign-In", "Multiple staff accounts", "Spec templates",
       "Priority support", "Dedicated account manager",
@@ -84,7 +86,7 @@ export const FEATURE_GROUPS = [
   },
   {
     group: "Payments & Currency",
-    icon: "💱",
+    icon: "card",
     features: [
       "Multi-currency support", "API access",
     ],
@@ -118,7 +120,7 @@ export default function FeaturePicker({ selected, onChange }: FeaturePickerProps
           <details key={grp.group} open style={{ border: "1px solid var(--border)", borderRadius: 8 }}>
             <summary style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", cursor: "pointer", background: someOn || allOn ? "var(--primary-subtle)" : "var(--bg)", fontWeight: 600, fontSize: "0.9rem", listStyle: "none", userSelect: "none" }}>
               <span style={{ fontSize: "0.7rem", opacity: 0.5, transition: "transform 0.2s", transform: someOn || allOn ? "rotate(90deg)" : "none" }}>&#9654;</span>
-              <span>{grp.icon}</span>
+              <span style={{ display: "inline-flex", color: "var(--primary)" }}><Icon name={grp.icon} size={16} /></span>
               <span style={{ flex: 1 }}>{grp.group}</span>
               <span style={{ fontSize: "0.75rem", fontWeight: 400, opacity: 0.6 }}>{grp.features.filter((f) => selected.includes(f)).length}/{grp.features.length}</span>
               <label style={{ fontSize: "0.75rem", fontWeight: 400, padding: "0.1rem 0.4rem", borderRadius: 4, background: allOn ? "var(--primary)" : "var(--border)", color: allOn ? "var(--surface)" : "var(--text)", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); }}>

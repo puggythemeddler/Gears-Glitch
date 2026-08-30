@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from "react";
 import { api, isCustomerLoggedIn, requireCustomerLogin } from "@/lib/api";
+import { PageHead } from "@/components/ui";
 
 const SYMPTOMS = ["Won't turn on", "Slow performance", "Overheating", "Screen cracked", "Battery drains fast", "No display", "Keyboard not working", "Wi-Fi issues", "Software crash", "Virus / malware", "Data recovery", "Liquid damage", "Fan noise", "Other"];
 
@@ -98,6 +99,7 @@ export default function RepairBookPage() {
 
   return (
     <>
+      <PageHead title="Book a repair - Gear&Glitch" description="Tell us about your device and the issue. Default turnaround is 48 hours from receipt." />
       <nav className="breadcrumbs">
         <ol>
           <li><a href="/">Home</a></li>

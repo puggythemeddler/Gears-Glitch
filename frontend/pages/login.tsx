@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import { api, setCustomerSession, clearCustomerSession, clearStaffSession, clearProviderSession, migrateGuestCartToServer } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import { PageHead } from "@/components/ui";
 
 declare global {
   interface Window {
@@ -131,6 +132,7 @@ export default function LoginPage() {
 
   return (
     <div className="auth-page">
+      <PageHead title="Sign in - Gear&Glitch" description="Sign in to your Gear&Glitch account to shop, track repairs and manage orders." />
       <h1>Sign in</h1>
       <div className="auth-tabs">
         <button className={`auth-tab ${tab === "customer" ? "active" : ""}`} onClick={() => setTab("customer")}>

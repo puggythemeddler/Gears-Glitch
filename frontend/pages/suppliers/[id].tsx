@@ -2,8 +2,10 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { api, getStaffToken } from "@/lib/api";
+import { usePageTitle } from "@/lib/use-page-title";
 
 export default function EditSupplierPage() {
+  usePageTitle("Edit supplier - Gear&Glitch");
   const router = useRouter();
   const { id } = router.query;
   const [authed, setAuthed] = useState(false);
@@ -94,7 +96,7 @@ export default function EditSupplierPage() {
             </label>
           </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Save Changes"}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Save changes"}</button>
             <Link href="/admin?view=suppliers" className="btn btn-ghost">Cancel</Link>
           </div>
         </form>

@@ -2,6 +2,9 @@
 import { useRouter } from "next/router";
 import { api, isCustomerLoggedIn } from "@/lib/api";
 import { escapeHtml } from "@/lib/sanitize";
+import Icon from "@/components/icons";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { usePageTitle } from "@/lib/use-page-title";
 
 function formatDate(d: string) {
   return new Date(d).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -17,6 +20,7 @@ export default function RepairTicketPage() {
   const [msg, setMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [quoteResp, setQuoteResp] = useState<string | null>(null);
+  usePageTitle(ticket ? `Repair ticket #${ticket.id}` : "Repair ticket");
 
   useEffect(() => {
     setMounted(true);
@@ -49,7 +53,7 @@ export default function RepairTicketPage() {
   }
 
   if (mounted && !loggedIn) {
-    return <><h1>Repair ticket</h1><div className="empty-state"><div className="empty-state-icon">🔒</div><div className="empty-state-title">Sign in to view ticket</div><div className="empty-state-desc">Please sign in to view this repair ticket.</div><a href={`/login?redirect=/repair-ticket?id=${id}`} className="btn btn-primary">Sign in</a></div></>;
+    return <><h1>Repair ticket</h1><div className="empty-state"><div className="empty-state-icon"><Icon name="lock" size={28} /></div><div className="empty-state-title">Sign in to view ticket</div><div className="empty-state-desc">Please sign in to view this repair ticket.</div><a href={`/login?redirect=/repair-ticket?id=${id}`} className="btn btn-primary">Sign in</a></div></>;
   }
 
   if (!mounted || !id || (!ticket && !error)) {
@@ -62,7 +66,7 @@ export default function RepairTicketPage() {
         <nav className="breadcrumbs"><ol><li><a href="/">Home</a></li><li><a href="/repairs">Repairs</a></li><li><span aria-current="page">Ticket</span></li></ol></nav>
         <h1>Repair ticket</h1>
         <div className="empty-state">
-          <div className="empty-state-icon">⚠️</div>
+          <div className="empty-state-icon"><Icon name="alertCircle" size={28} /></div>
           <div className="empty-state-title">Failed to load ticket</div>
           <div className="empty-state-desc">{error}</div>
           <button className="btn btn-primary" onClick={() => window.location.reload()}>Retry</button>
@@ -85,7 +89,7 @@ export default function RepairTicketPage() {
 
       <div className="card" style={{ marginBottom: "1.5rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
-          <span className="plan-status">{ticket.status}</span>
+          <StatusBadge status={ticket.status} domain="repairs" />
           <span className="muted">{formatDate(ticket.createdAt)}</span>
         </div>
         <table className="data-table">
@@ -130,15 +134,16 @@ export default function RepairTicketPage() {
       {(ticket.updates || []).length === 0 ? (
         <p className="muted">No updates yet.</p>
       ) : (
-        (ticket.updates || []).map((u: any) => (
-          <div key={u.id} style={{ padding: "0.75rem", boxShadow: "inset 3px 0 0 0 var(--primary)", marginBottom: "0.75rem", background: "var(--surface)", borderRadius: "0 8px 8px 0" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.25rem" }}>
-              <strong style={{ fontSize: "0.85rem" }}>{u.updateType === "customer_note" ? "You" : u.staffName || "Staff"}</strong>
-              <span className="muted" style={{ fontSize: "0.8rem" }}>{formatDate(u.createdAt)}</span>
-            </div>
-            <p style={{ margin: 0, fontSize: "0.9rem" }}>{escapeHtml(u.message)}</p>
-          </div>
-        ))
+        <ul className="timeline">
+          {(ticket.updates || []).map((u: any) => (
+            <li key={u.id} className="timeline-item done">
+              <span className="timeline-dot" aria-hidden="true" />
+              <div className="timeline-title">{u.updateType === "customer_note" ? "You" : u.staffName || "Staff"}</div>
+              <div className="timeline-meta">{formatDate(u.createdAt)}</div>
+              <div className="timeline-body">{escapeHtml(u.message)}</div>
+            </li>
+          ))}
+        </ul>
       )}
 
       <div style={{ marginTop: "1.5rem" }}>

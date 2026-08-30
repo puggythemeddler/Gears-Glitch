@@ -1,11 +1,11 @@
 ﻿import React, { useEffect, useMemo, useState, useRef } from "react";
+import { useRouter } from "next/router";
 import { api, getStaffToken, getStaffRole, getStaffPermissions, downloadPdf } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
 import { SkeletonStats, SkeletonTable } from "@/components/Skeleton";
 import EmptyState from "@/components/EmptyState";
-import AnimatedCounter from "@/components/AnimatedCounter";
 import { getLayoutList, useLayout } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import NotificationBell from "@/components/NotificationBell";
@@ -28,6 +28,8 @@ import AdminSerials from "@/components/admin/AdminSerials";
 import HelpPanel from "@/components/admin/HelpPanel";
 import StorefrontBuilder from "@/components/admin/StorefrontBuilder";
 import FeaturePicker from "@/components/admin/FeaturePicker";
+import AdminWarranties from "@/components/admin/AdminWarranties";
+import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
 
 declare global {
   interface Window {
@@ -35,7 +37,7 @@ declare global {
   }
 }
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "help";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 // Which permission unlocks a view in the sidebar. Views absent from this map
@@ -44,11 +46,13 @@ type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provi
 // category-positioning) are admin-only.
 const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   dashboard: "",
+  pos: "",
   products: "product:update",
   orders: "order:view",
   customers: "customer:view",
   quotations: "quote:view",
   repairs: "repair:list",
+  warranties: "order:view",
   coupons: "coupon:view",
   "gift-cards": "giftcard:view",
   campaigns: "campaign:view",
@@ -75,27 +79,29 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   {
     label: "Sales",
     items: [
-      { key: "products", label: "Products" },
-      { key: "groups", label: "Groups" },
-      { key: "categories", label: "Categories" },
       { key: "orders", label: "Orders" },
-      { key: "customers", label: "Customers" },
+      { key: "pos", label: "POS", feature: "POS integration" },
+      { key: "quotations", label: "Quotations", feature: "Quotations" },
+      { key: "invoices", label: "Invoices", feature: "Invoice/quote PDF downloads" },
+      { key: "credit-notes", label: "Credit Notes", feature: "Credit notes" },
       { key: "coupons", label: "Coupons", feature: "Discount/coupon management" },
       { key: "gift-cards", label: "Gift Cards", feature: "Gift cards" },
       { key: "campaigns", label: "Campaigns", feature: "Campaign pages" },
       { key: "abandoned-carts", label: "Abandoned Carts", feature: "Cart recovery" },
-      { key: "quotations", label: "Quotations", feature: "Quotations" },
-      { key: "category-positioning", label: "Category Order" },
     ],
   },
   {
-    label: "Services",
+    label: "Catalog",
     items: [
-      { key: "repairs", label: "Repairs", feature: "Repair ticketing" },
+      { key: "products", label: "Products" },
+      { key: "groups", label: "Groups" },
+      { key: "categories", label: "Categories" },
+      { key: "category-positioning", label: "Category Order" },
+      { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
     ],
   },
   {
-    label: "Stock",
+    label: "Inventory",
     items: [
       { key: "stock-on-hand", label: "Stock on Hand", feature: "Low stock alerts" },
       { key: "stock-transfers", label: "Stock Transfers", feature: "Stock transfers" },
@@ -104,6 +110,19 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "serials", label: "Serial Numbers" },
       { key: "purchases", label: "Purchase Orders", feature: "Purchase order management" },
       { key: "suppliers", label: "Suppliers", feature: "Supplier management" },
+    ],
+  },
+  {
+    label: "Customers",
+    items: [
+      { key: "customers", label: "Customers" },
+    ],
+  },
+  {
+    label: "Services",
+    items: [
+      { key: "repairs", label: "Repairs", feature: "Repair ticketing" },
+      { key: "warranties", label: "Warranty", feature: "Invoice/quote PDF downloads" },
     ],
   },
   {
@@ -118,9 +137,9 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   {
     label: "Finance",
     items: [
-      { key: "invoices", label: "Invoices", feature: "Invoice/quote PDF downloads" },
-      { key: "credit-notes", label: "Credit Notes", feature: "Credit notes" },
       { key: "providers", label: "Providers" },
+      { key: "shop-subscription", label: "Subscription" },
+      { key: "plans", label: "Subscription Plans" },
     ],
   },
   {
@@ -143,13 +162,10 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "settings-system", label: "System" },
       { key: "storefront", label: "Storefront" },
       { key: "layout-builder", label: "Layout Builder", feature: "Drag-and-drop storefront builder" },
-      { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
       { key: "email-settings", label: "Email", feature: "Email notifications" },
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
       { key: "about-us", label: "About Us" },
-      { key: "plans", label: "Subscription Plans" },
       { key: "spec-templates", label: "Spec Templates" },
-      { key: "shop-subscription", label: "Subscription" },
     ],
   },
   {
@@ -166,7 +182,9 @@ const NAV_ICONS: Partial<Record<AdminView, string>> = {
   groups: "folder",
   categories: "layers",
   orders: "cart",
+  pos: "monitor",
   customers: "users",
+  warranties: "shieldCheck",
   coupons: "tag",
   "gift-cards": "gift",
   campaigns: "megaphone",
@@ -231,8 +249,9 @@ export default function AdminPage() {
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const gisLoadedRef = useRef(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Services", "Team", "Settings"]);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Inventory", "Customers", "Services", "Team"]);
   const [navQuery, setNavQuery] = useState("");
+  const router = useRouter();
   const featureFlags: Record<string, boolean> = {
     "Messaging": useFeature("Messaging"),
     "Credit notes": useFeature("Credit notes"),
@@ -291,6 +310,34 @@ export default function AdminPage() {
   useEffect(() => {
     if (view !== "dashboard" && !allVisibleKeys.includes(view)) setView("dashboard");
   }, [view, allVisibleKeys]);
+
+  // ---- URL sync: deep-linkable views (?view=repairs) with working Back ----
+  const ALL_VIEW_KEYS = useMemo(() => new Set<string>(["dashboard", ...NAV_GROUPS.flatMap((g) => g.items.map((i) => i.key))]), []);
+
+  useEffect(() => {
+    const q = router.query.view;
+    if (typeof q !== "string") return;
+    if (q === "pos") { window.location.assign("/pos"); return; }
+    if (ALL_VIEW_KEYS.has(q) && q !== view) setView(q as AdminView);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.query.view]);
+
+  useEffect(() => {
+    const current = typeof router.query.view === "string" ? router.query.view : "";
+    if (current !== view) {
+      router.replace({ pathname: "/admin", query: view === "dashboard" ? {} : { view } }, undefined, { shallow: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
+  const viewLabel = useMemo(() => {
+    if (view === "dashboard") return "Dashboard";
+    for (const g of NAV_GROUPS) {
+      const item = g.items.find((i) => i.key === view);
+      if (item) return item.label;
+    }
+    return "Admin";
+  }, [view]);
 
   const SHORTCUTS_TO_VIEW: Record<string, AdminView> = {
     d: "dashboard", p: "products", o: "orders", c: "customers", u: "users",
@@ -444,6 +491,7 @@ export default function AdminPage() {
   if (!authed) {
     return (
       <div className="auth-page" style={{ marginTop: "3rem" }}>
+        <PageHead title={`Staff sign in — ${settings?.storeName || "Store"}`} />
         <h1>Staff Portal</h1>
         <form onSubmit={handleLogin} className="auth-form">
           <div className="field"><label>Username or email<input value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} required /></label></div>
@@ -494,6 +542,7 @@ export default function AdminPage() {
 
   return (
     <div className="dash-layout dash-layout--bare">
+      <PageHead title={`${viewLabel} — ${settings?.storeName || "Store"} admin`} />
       <nav className="dash-nav" aria-label="Admin navigation">
         <div className="dash-nav-search">
           <Icon name="search" size={14} />
@@ -542,7 +591,7 @@ export default function AdminPage() {
                     key={item.key}
                     variant="ghost"
                     className={`dash-nav-item${view === item.key ? " active" : ""}`}
-                    onClick={() => setView(item.key)}
+                    onClick={() => { if (item.key === "pos") { window.location.assign("/pos"); return; } setView(item.key); }}
                     aria-current={view === item.key ? "page" : undefined}
                   >
                     <Icon name={NAV_ICONS[item.key] || "box"} size={15} />
@@ -570,17 +619,19 @@ export default function AdminPage() {
         </RippleButton>
       </nav>
         <div className="dash-content">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              {settings?.storeLogo && <img src={settings.storeLogo} alt="" style={{ height: 28, width: 28, objectFit: "contain", borderRadius: 4 }} />}
-              <strong style={{ fontSize: "1rem" }}>{settings?.storeName || "Store"}</strong>
-              <span style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0.15rem 0.5rem", borderRadius: 999, background: "var(--primary-light)", color: "var(--primary)", fontWeight: 600 }}>{staffRole}</span>
+          <div className="admin-topbar">
+            <div className="admin-topbar-left">
+              {settings?.storeLogo && <img src={settings.storeLogo} alt="" className="admin-topbar-logo" />}
+              <span className="admin-topbar-store">{settings?.storeName || "Store"}</span>
+              <span className="admin-topbar-role">{staffRole}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <button type="button" onClick={() => { window.location.href = "/pos"; }} aria-label="Open POS" title="Open point of sale" style={{ background: "var(--primary)", color: "var(--surface)", border: "none", borderRadius: 6, padding: "0.3rem 0.7rem", cursor: "pointer", fontSize: "0.85rem", fontWeight: 700, lineHeight: 1 }}>POS</button>
+            <div className="admin-topbar-actions">
+              <button type="button" className="admin-topbar-btn primary" onClick={() => { window.location.href = "/pos"; }} aria-label="Open POS" title="Open point of sale">POS</button>
               {featureFlags["Messaging"] && canAccess("messages") && <NotificationBell onClick={() => setView("messages")} />}
-              <button type="button" onClick={() => setView("help")} aria-label="Help" title="Help & keyboard shortcuts (?)" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700 }}>?</button>
-              <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.6rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "☀️" : "🌙"}</button>
+              <button type="button" className="admin-topbar-btn" onClick={() => setView("help")} aria-label="Help" title="Help &amp; keyboard shortcuts (?)">?</button>
+              <button type="button" className="admin-topbar-btn" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} title={isDark ? "Switch to light theme" : "Switch to dark theme"}>
+                <Icon name={isDark ? "sun" : "moon"} size={16} />
+              </button>
             </div>
           </div>
           <div className="dash-section active" key={view}>
@@ -630,6 +681,7 @@ export default function AdminPage() {
             {view === "whatsapp-settings" && <WhatsAppSettings />}
             {view === "category-positioning" && <CategoryPositioningPage />}
             {view === "repairs" && <AdminRepairs adminOnly={staffRole === "admin"} />}
+            {view === "warranties" && <AdminWarranties />}
             {view === "help" && <HelpPanel />}
           </div>
       </div>
@@ -739,7 +791,7 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
         onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
         style={tone ? { borderColor: `var(--${tone})` } : undefined}
       >
-        <div className="stat-card__value" style={tone ? { color: `var(--${tone})` } : undefined}><AnimatedCounter value={value} /></div>
+        <div className="stat-card__value" style={tone ? { color: `var(--${tone})` } : undefined}>{value.toLocaleString()}</div>
         <div className="stat-card__label">{label}</div>
       </div>
     );
@@ -957,7 +1009,7 @@ function AdminCategories() {
                       <td><input value={editSubName} onChange={(e) => setEditSubName(e.target.value)} style={{ width: 140 }} /></td>
                       <td style={{ fontSize: "0.85rem" }}>{otherCats.join(", ") || "—"}</td>
                       <td>
-                        <RippleButton size="small" onClick={saveEditSub}>Save</RippleButton>
+                        <RippleButton size="small" onClick={saveEditSub}>Save changes</RippleButton>
                         <RippleButton size="small" variant="ghost" onClick={() => setEditSubId("")}>Cancel</RippleButton>
                       </td>
                     </tr>
@@ -1101,7 +1153,7 @@ function AdminGroups() {
                 <td>
                   {editingId === g.id ? (
                     <>
-                      <RippleButton size="small" onClick={saveEdit} loading={saving}>Save</RippleButton>
+                      <RippleButton size="small" onClick={saveEdit} loading={saving}>Save changes</RippleButton>
                       <RippleButton size="small" variant="ghost" onClick={() => setEditingId("")}>Cancel</RippleButton>
                     </>
                   ) : (
@@ -1632,7 +1684,7 @@ function AdminUsers() {
             </div>
           </div>
 
-          <RippleButton onClick={saveAll} loading={saving}>Save Changes</RippleButton>
+          <RippleButton onClick={saveAll} loading={saving}>Save changes</RippleButton>
         </>
       ) : (
         <div className="table-wrap">
@@ -2919,8 +2971,8 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         {layouts.map((l) => (
           <div key={l.key} className="panel" role="button" tabIndex={0} style={{ border: cfg?.layout === l.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer" }} onClick={() => switchLayout(l.key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchLayout(l.key); } }}>
-            <div style={{ height: 120, borderRadius: 8, background: "var(--bg)", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.5rem" }}>
-              {l.key === "original" ? "🏠" : l.key === "amazon" ? "📦" : l.key === "jumia" ? "🛒" : l.type === "dynamic" ? "🎨" : "📱"}
+            <div style={{ height: 120, borderRadius: 8, background: "var(--bg)", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-tertiary)" }}>
+              <Icon name={l.key === "original" ? "monitor" : l.key === "amazon" ? "box" : l.key === "jumia" ? "store" : l.type === "dynamic" ? "layout" : "monitor"} size={40} />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <h2 style={{ margin: "0 0 0.25rem", fontSize: "var(--text-lg)" }}>{l.label}</h2>
@@ -4887,25 +4939,29 @@ function AdminSuppliers() {
       {loading && <Spinner />}
       {error && <ErrorMsg msg={error} />}
       <div className="table-wrap">
-        <table className="data-table">
-          <thead><tr><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Active</th><th></th></tr></thead>
-          <tbody>
-            {suppliers.map((s) => (
-              <tr key={s.id}>
-                <td>{escapeHtml(s.name)}</td>
-                <td>{escapeHtml(s.contact_name || "—")}</td>
-                <td>{escapeHtml(s.email || "—")}</td>
-                <td>{escapeHtml(s.phone || "—")}</td>
-                <td>{s.is_active ? "Yes" : "No"}</td>
-                <td style={{ display: "flex", gap: "0.35rem" }}>
+        <DataTable
+          ariaLabel="Suppliers"
+          columns={[
+            { key: "name", label: "Name", sortable: true, value: (s) => s.name, render: (s) => escapeHtml(s.name) },
+            { key: "contact", label: "Contact", value: (s) => s.contact_name || "", render: (s) => escapeHtml(s.contact_name || "—") },
+            { key: "email", label: "Email", value: (s) => s.email || "", render: (s) => escapeHtml(s.email || "—") },
+            { key: "phone", label: "Phone", value: (s) => s.phone || "", render: (s) => escapeHtml(s.phone || "—") },
+            { key: "active", label: "Active", value: (s) => (s.is_active ? "Yes" : "No"), render: (s) => (s.is_active ? "Yes" : "No") },
+            {
+              key: "actions",
+              label: "",
+              render: (s) => (
+                <span style={{ display: "flex", gap: "0.35rem" }}>
                   <a href={`/suppliers/${s.id}`} className="btn btn-sm btn-ghost">Edit</a>
                   <RippleButton size="small" variant="danger" onClick={() => del(s.id)}>Delete</RippleButton>
-                </td>
-              </tr>
-            ))}
-            {suppliers.length === 0 && <tr><td colSpan={6}><EmptyState icon="products" title="No suppliers yet" /></td></tr>}
-          </tbody>
-        </table>
+                </span>
+              ),
+            },
+          ]}
+          rows={suppliers}
+          rowKey={(s) => s.id}
+          empty={<EmptyState icon="products" title="No suppliers yet" />}
+        />
       </div>
     </>
   );
@@ -5420,24 +5476,19 @@ function AdminStockSummary() {
         <div className="stat-card"><div className="stat-card__value" style={{ color: outOfStock > 0 ? "var(--danger)" : "inherit" }}>{outOfStock}</div><div className="stat-card__label">Out of Stock</div></div>
       </div>
       <div className="table-wrap">
-        <table className="data-table">
-          <thead><tr><th>Product</th><th>Category</th><th>Qty</th><th>Price</th><th>Value</th></tr></thead>
-          <tbody>
-            {items.map((i: any) => {
-              const qty = i.quantityInStock ?? i.quantity_in_stock ?? 0;
-              return (
-                <tr key={i.id}>
-                  <td>{escapeHtml(i.name)}</td>
-                  <td>{i.category || "—"}</td>
-                  <td>{qty}</td>
-                  <td>{formatPrice(i.price)}</td>
-                  <td>{formatPrice(qty * (i.price || 0))}</td>
-                </tr>
-              );
-            })}
-            {items.length === 0 && <tr><td colSpan={5}><EmptyState icon="stock" title="No stock data" description="No products with stock information." /></td></tr>}
-          </tbody>
-        </table>
+        <DataTable<any>
+          ariaLabel="Stock summary"
+          columns={[
+            { key: "product", label: "Product", sortable: true, value: (i) => i.name, render: (i) => escapeHtml(i.name) },
+            { key: "category", label: "Category", sortable: true, value: (i) => i.category || "", render: (i) => i.category || "—" },
+            { key: "qty", label: "Qty", sortable: true, align: "right", value: (i) => i.quantityInStock ?? i.quantity_in_stock ?? 0, render: (i) => i.quantityInStock ?? i.quantity_in_stock ?? 0 },
+            { key: "price", label: "Price", sortable: true, align: "right", value: (i) => i.price, render: (i) => formatPrice(i.price) },
+            { key: "value", label: "Value", sortable: true, align: "right", value: (i) => (i.quantityInStock ?? i.quantity_in_stock ?? 0) * (i.price || 0), render: (i) => formatPrice((i.quantityInStock ?? i.quantity_in_stock ?? 0) * (i.price || 0)) },
+          ]}
+          rows={items}
+          rowKey={(i) => i.id}
+          empty={<EmptyState icon="stock" title="No stock data" description="No products with stock information." />}
+        />
       </div>
     </>
   );
@@ -5553,29 +5604,41 @@ function AdminStockTransfers() {
       )}
 
       <div className="table-wrap">
-        <table className="data-table">
-          <thead><tr><th>ID</th><th>From</th><th>To</th><th>Product</th><th>Qty</th><th>Status</th><th>Created</th><th></th></tr></thead>
-          <tbody>
-            {transfers.map((t: any) => {
-              const fromName = branchList.find((b: any) => b.id === t.fromBranchId)?.name || `#${t.fromBranchId}`;
-              const toName = branchList.find((b: any) => b.id === t.toBranchId)?.name || `#${t.toBranchId}`;
-              const pName = productList.find((p: any) => p.id === t.productId)?.name || t.productId;
-              return (
-                <tr key={t.id}>
-                  <td>#{t.id}</td>
-                  <td>{escapeHtml(fromName)}</td>
-                  <td>{escapeHtml(toName)}</td>
-                  <td>{escapeHtml(pName)}</td>
-                  <td>{t.quantity}</td>
-                  <td><span className="plan-status" style={{ background: t.status === "completed" ? "var(--success-light)" : t.status === "rejected" ? "var(--danger-light)" : "var(--warning-light)", color: t.status === "completed" ? "var(--success-text)" : t.status === "rejected" ? "var(--danger-text)" : "var(--warning-text)" }}>{t.status}</span></td>
-                  <td style={{ whiteSpace: "nowrap" }}>{new Date(t.createdAt).toLocaleDateString("en-GB")}</td>
-                  <td>{t.status === "pending" && <div style={{ display: "flex", gap: "0.25rem" }}><RippleButton size="small" onClick={() => completeTransfer(t.id)}>Complete</RippleButton><RippleButton size="small" variant="danger" onClick={() => rejectTransfer(t.id)}>Reject</RippleButton></div>}</td>
-                </tr>
-              );
-            })}
-            {transfers.length === 0 && <tr><td colSpan={8}><EmptyState icon="stock" title="No transfers" description="Create a stock transfer between branches." /></td></tr>}
-          </tbody>
-        </table>
+        <DataTable<any>
+          ariaLabel="Stock transfers"
+          columns={[
+            { key: "id", label: "ID", value: (t) => `#${t.id}`, render: (t) => <span>#{t.id}</span> },
+            { key: "from", label: "From", sortable: true, value: (t) => branchList.find((b: any) => b.id === t.fromBranchId)?.name || `#${t.fromBranchId}`, render: (t) => escapeHtml(branchList.find((b: any) => b.id === t.fromBranchId)?.name || `#${t.fromBranchId}`) },
+            { key: "to", label: "To", sortable: true, value: (t) => branchList.find((b: any) => b.id === t.toBranchId)?.name || `#${t.toBranchId}`, render: (t) => escapeHtml(branchList.find((b: any) => b.id === t.toBranchId)?.name || `#${t.toBranchId}`) },
+            { key: "product", label: "Product", sortable: true, value: (t) => productList.find((p: any) => p.id === t.productId)?.name || t.productId, render: (t) => escapeHtml(productList.find((p: any) => p.id === t.productId)?.name || t.productId) },
+            { key: "qty", label: "Qty", sortable: true, align: "right", value: (t) => t.quantity, render: (t) => <span style={{ textAlign: "right" }}>{t.quantity}</span> },
+            {
+              key: "status",
+              label: "Status",
+              sortable: true,
+              value: (t) => t.status,
+              render: (t) => (
+                <span className="plan-status" style={{ background: t.status === "completed" ? "var(--success-light)" : t.status === "rejected" ? "var(--danger-light)" : "var(--warning-light)", color: t.status === "completed" ? "var(--success-text)" : t.status === "rejected" ? "var(--danger-text)" : "var(--warning-text)" }}>{t.status}</span>
+              ),
+            },
+            { key: "created", label: "Created", value: (t) => new Date(t.createdAt).toISOString(), render: (t) => <span style={{ whiteSpace: "nowrap" }}>{new Date(t.createdAt).toLocaleDateString("en-GB")}</span> },
+            {
+              key: "actions",
+              label: "",
+              render: (t) => (
+                t.status === "pending" ? (
+                  <div style={{ display: "flex", gap: "0.25rem" }}>
+                    <RippleButton size="small" onClick={() => completeTransfer(t.id)}>Complete</RippleButton>
+                    <RippleButton size="small" variant="danger" onClick={() => rejectTransfer(t.id)}>Reject</RippleButton>
+                  </div>
+                ) : null
+              ),
+            },
+          ]}
+          rows={transfers}
+          rowKey={(t) => t.id}
+          empty={<EmptyState icon="stock" title="No transfers" description="Create a stock transfer between branches." />}
+        />
       </div>
     </>
   );
@@ -5601,6 +5664,7 @@ function AdminCustomers() {
   const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", password: "" });
   const [editErr, setEditErr] = useState("");
   const [editOk, setEditOk] = useState("");
+  const [selected, setSelected] = useState<any>(null);
 
   function load() {
     setLoading(true); setError("");
@@ -5697,30 +5761,174 @@ function AdminCustomers() {
         </div>
       )}
       <div className="table-wrap">
-        <table className="data-table">
-          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Last Login</th><th>Registered</th><th>Actions</th></tr></thead>
-          <tbody>
-            {customers.map((c: any) => (
-              <tr key={c.id} style={!c.is_active ? { opacity: 0.6 } : {}}>
-                <td>{c.id}</td>
-                <td>{escapeHtml(c.name)}</td>
-                <td>{escapeHtml(c.email)}</td>
-                <td>{escapeHtml(c.phone || "-")}</td>
-                <td><span className={`badge ${c.is_active ? "badge-green" : "badge-red"}`}>{c.is_active ? "Active" : "Inactive"}</span></td>
-                <td style={{ whiteSpace: "nowrap" }}>{c.last_login ? new Date(c.last_login).toLocaleDateString("en-GB") : "-"}</td>
-                <td style={{ whiteSpace: "nowrap" }}>{new Date(c.created_at).toLocaleDateString("en-GB")}</td>
-                <td style={{ whiteSpace: "nowrap" }}>
-                  <RippleButton size="small" variant="ghost" onClick={() => startEdit(c)}>Edit</RippleButton>
-                  <RippleButton size="small" variant="ghost" onClick={() => handleToggle(c)}>{c.is_active ? "Deactivate" : "Activate"}</RippleButton>
-                  <RippleButton size="small" variant="danger" onClick={() => handleDelete(c.id)} loading={deleting === c.id}>Delete</RippleButton>
-                </td>
-              </tr>
-            ))}
-            {customers.length === 0 && <tr><td colSpan={8}><EmptyState icon="customers" title="No customers" description="Customers will appear here after placing orders." /></td></tr>}
-          </tbody>
-        </table>
+        <DataTable<any>
+          ariaLabel="Customer accounts"
+          columns={[
+            { key: "id", label: "#", value: (c) => c.id, render: (c) => <span>{c.id}</span> },
+            { key: "name", label: "Name", sortable: true, value: (c) => c.name, render: (c) => escapeHtml(c.name) },
+            { key: "email", label: "Email", sortable: true, value: (c) => c.email, render: (c) => escapeHtml(c.email) },
+            { key: "phone", label: "Phone", value: (c) => c.phone || "", render: (c) => escapeHtml(c.phone || "-") },
+            {
+              key: "status",
+              label: "Status",
+              sortable: true,
+              value: (c) => (c.is_active ? "Active" : "Inactive"),
+              render: (c) => <span className={`badge ${c.is_active ? "badge-green" : "badge-red"}`}>{c.is_active ? "Active" : "Inactive"}</span>,
+            },
+            { key: "lastlogin", label: "Last Login", value: (c) => c.last_login ? new Date(c.last_login).toISOString() : "", render: (c) => <span style={{ whiteSpace: "nowrap" }}>{c.last_login ? new Date(c.last_login).toLocaleDateString("en-GB") : "-"}</span> },
+            { key: "registered", label: "Registered", value: (c) => new Date(c.created_at).toISOString(), render: (c) => <span style={{ whiteSpace: "nowrap" }}>{new Date(c.created_at).toLocaleDateString("en-GB")}</span> },
+            {
+              key: "actions",
+              label: "Actions",
+              render: (c) => (
+                <span style={{ whiteSpace: "nowrap" }}>
+                  <RippleButton size="small" variant="ghost" onClick={(e) => { e.stopPropagation(); startEdit(c); }}>Edit</RippleButton>{" "}
+                  <RippleButton size="small" variant="ghost" onClick={(e) => { e.stopPropagation(); handleToggle(c); }}>{c.is_active ? "Deactivate" : "Activate"}</RippleButton>{" "}
+                  <RippleButton size="small" variant="danger" onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }} loading={deleting === c.id}>Delete</RippleButton>
+                </span>
+              ),
+            },
+          ]}
+          rows={customers}
+          rowKey={(c) => c.id}
+          onRowClick={(c) => setSelected(c)}
+          empty={<EmptyState icon="customers" title="No customers" description="Customers will appear here after placing orders." />}
+        />
       </div>
+      {selected && <CustomerDetailPanel customer={selected} onClose={() => setSelected(null)} />}
     </>
+  );
+}
+
+// ===================== CUSTOMER 360 =====================
+function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: () => void }) {
+  const [tab, setTab] = useState("overview");
+  const [orders, setOrders] = useState<any[] | null>(null);
+  const [repairs, setRepairs] = useState<any[] | null>(null);
+  const [serials, setSerials] = useState<any[] | null>(null);
+  const [warranties, setWarranties] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setOrders(null); setRepairs(null); setSerials(null); setWarranties(null); setTab("overview"); setLoading(true);
+    let cancelled = false;
+    const guard = <T,>(p: Promise<T | null>): Promise<T | null> => p.catch(() => null);
+    Promise.all([
+      guard(api<{ orders: any[] }>(`/api/admin/orders?customerId=${customer.id}`)),
+      guard(api<{ tickets: any[] }>(`/api/repairs?customerId=${customer.id}`)),
+      guard(api<{ serials: any[] }>(`/api/serials?customerId=${customer.id}`)),
+      guard(api<{ warranties: any[] }>(`/api/admin/warranties?customerId=${customer.id}`)),
+    ]).then(([o, r, s, w]) => {
+      if (cancelled) return;
+      setOrders(o?.orders || []); setRepairs(r?.tickets || []); setSerials(s?.serials || []); setWarranties(w?.warranties || []);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [customer.id]);
+
+  const lifetimeValue = (orders || []).reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  const activeWarranties = (warranties || []).filter((w) => w.status === "active" || w.status === "expiring");
+  const openRepairs = (repairs || []).filter((r) => !["collected", "cancelled"].includes(r.status));
+
+  const tabs: { key: string; label: string }[] = [
+    { key: "overview", label: "Overview" },
+    ...(orders && orders.length > 0 ? [{ key: "orders", label: `Orders (${orders.length})` }] : []),
+    ...(serials && serials.length > 0 ? [{ key: "assets", label: `Assets (${serials.length})` }] : []),
+    ...(repairs && repairs.length > 0 ? [{ key: "repairs", label: `Repairs (${repairs.length})` }] : []),
+    ...(warranties && warranties.length > 0 ? [{ key: "warranty", label: `Warranty (${warranties.length})` }] : []),
+  ];
+
+  return (
+    <div className="panel" style={{ marginTop: "1.25rem", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Customer #{customer.id} — {escapeHtml(customer.name)}</h3>
+          <p className="muted" style={{ margin: "0.25rem 0 0" }}>
+            {escapeHtml(customer.email || "")}{customer.phone ? ` · ${escapeHtml(customer.phone)}` : ""}
+          </p>
+        </div>
+        <RippleButton variant="ghost" size="small" onClick={onClose}>Close</RippleButton>
+      </div>
+
+      {loading ? (
+        <Spinner />
+      ) : (
+        <>
+          <Tabs tabs={tabs} active={tab} onChange={setTab} ariaLabel={`Customer ${customer.id} detail`} />
+          {tab === "overview" && (
+            <div className="stat-grid" style={{ marginTop: "1rem" }}>
+              <div className="stat-card"><div className="stat-card__value">{orders?.length || 0}</div><div className="stat-card__label">Orders</div></div>
+              <div className="stat-card"><div className="stat-card__value">{formatPrice(lifetimeValue)}</div><div className="stat-card__label">Lifetime value</div></div>
+              <div className="stat-card"><div className="stat-card__value">{serials?.length || 0}</div><div className="stat-card__label">Serialised assets</div></div>
+              <div className="stat-card"><div className="stat-card__value">{activeWarranties.length}</div><div className="stat-card__label">Active warranties</div></div>
+              <div className="stat-card"><div className="stat-card__value">{openRepairs.length}</div><div className="stat-card__label">Open repairs</div></div>
+            </div>
+          )}
+          {tab === "orders" && (
+            <div className="table-wrap" style={{ marginTop: "1rem" }}>
+              <DataTable<any>
+                ariaLabel="Customer orders"
+                columns={[
+                  { key: "id", label: "#", value: (o) => o.id, render: (o) => <a href={`/admin?view=orders&order=${o.id}`}>#{o.id}</a> },
+                  { key: "date", label: "Date", value: (o) => new Date(o.createdAt).toISOString(), render: (o) => <span style={{ whiteSpace: "nowrap" }}>{new Date(o.createdAt).toLocaleDateString("en-GB")}</span> },
+                  { key: "status", label: "Status", value: (o) => o.status, render: (o) => <StatusBadge status={o.status} domain="orders" /> },
+                  { key: "items", label: "Items", align: "right", value: (o) => o.items?.length || 0, render: (o) => <span style={{ textAlign: "right" }}>{o.items?.length || 0}</span> },
+                  { key: "total", label: "Total", align: "right", value: (o) => Number(o.total) || 0, render: (o) => <strong>{formatPrice(Number(o.total) || 0)}</strong> },
+                ]}
+                rows={orders || []}
+                rowKey={(o) => o.id}
+              />
+            </div>
+          )}
+          {tab === "assets" && (
+            <div className="table-wrap" style={{ marginTop: "1rem" }}>
+              <DataTable<any>
+                ariaLabel="Customer serialised assets"
+                columns={[
+                  { key: "sn", label: "Serial", value: (s) => s.serial_number, render: (s) => <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{escapeHtml(s.serial_number)}</span> },
+                  { key: "product", label: "Product", value: (s) => s.product_name || "", render: (s) => escapeHtml(s.product_name || "—") },
+                  { key: "sold", label: "Sold", value: (s) => s.sold_at ? new Date(s.sold_at).toISOString() : "", render: (s) => <span style={{ whiteSpace: "nowrap" }}>{s.sold_at ? new Date(s.sold_at).toLocaleDateString("en-GB") : "—"}</span> },
+                  { key: "warranty", label: "Warranty", value: (s) => s.warranty_expires ? new Date(s.warranty_expires).toISOString() : "", render: (s) => <span style={{ whiteSpace: "nowrap" }}>{s.warranty_expires ? new Date(s.warranty_expires).toLocaleDateString("en-GB") : "—"}</span> },
+                ]}
+                rows={serials || []}
+                rowKey={(s) => s.serial_number}
+              />
+            </div>
+          )}
+          {tab === "repairs" && (
+            <div className="table-wrap" style={{ marginTop: "1rem" }}>
+              <DataTable<any>
+                ariaLabel="Customer repairs"
+                columns={[
+                  { key: "id", label: "#", value: (r) => r.id, render: (r) => <span>#{r.id}</span> },
+                  { key: "device", label: "Device", value: (r) => `${r.deviceType || ""} ${r.deviceModel || ""}`.trim(), render: (r) => escapeHtml(`${r.deviceType || ""}${r.deviceModel ? " " + r.deviceModel : ""}`.trim() || "—") },
+                  { key: "date", label: "Created", value: (r) => new Date(r.createdAt).toISOString(), render: (r) => <span style={{ whiteSpace: "nowrap" }}>{new Date(r.createdAt).toLocaleDateString("en-GB")}</span> },
+                  { key: "status", label: "Status", value: (r) => r.status, render: (r) => <StatusBadge status={r.status} domain="repairs" /> },
+                ]}
+                rows={repairs || []}
+                rowKey={(r) => r.id}
+              />
+            </div>
+          )}
+          {tab === "warranty" && (
+            <div className="table-wrap" style={{ marginTop: "1rem" }}>
+              <DataTable<any>
+                ariaLabel="Customer warranties"
+                columns={[
+                  { key: "product", label: "Product", value: (w) => w.productName, render: (w) => escapeHtml(w.productName) },
+                  { key: "serial", label: "Serial", value: (w) => w.serialNumber || "", render: (w) => w.serialNumber ? <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{escapeHtml(w.serialNumber)}</span> : "—" },
+                  { key: "start", label: "Start", value: (w) => w.startDate || "", render: (w) => <span style={{ whiteSpace: "nowrap" }}>{w.startDate || "—"}</span> },
+                  { key: "expiry", label: "Expires", value: (w) => w.expiryDate || "", render: (w) => <span style={{ whiteSpace: "nowrap" }}>{w.expiryDate || "—"}</span> },
+                  { key: "status", label: "Status", value: (w) => w.status, render: (w) => <StatusBadge status={w.status} domain="warranty" /> },
+                ]}
+                rows={warranties || []}
+                rowKey={(w) => w.orderItemId}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
