@@ -132,12 +132,14 @@ function requireAdmin(
   res: express.Response,
   next: express.NextFunction
 ) {
-  const user = (req as any).user as AuthUser;
-  if (user?.role !== "admin") {
-    res.status(403).json({ error: "Admin access required" });
-    return;
-  }
-  next();
+  requireAuth(req, res, () => {
+    const user = (req as any).user as AuthUser;
+    if (user?.role !== "admin") {
+      res.status(403).json({ error: "Admin access required" });
+      return;
+    }
+    next();
+  });
 }
 
 function auditLog(req: any, action: string, targetType: string, targetId?: number | null, targetName?: string, details?: string) {
