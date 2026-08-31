@@ -2919,7 +2919,7 @@ a.order-item:hover {
   position: relative;
   width: 100vw;
   margin-left: calc(-50vw + 50%);
-  min-height: 560px;
+  min-height: 600px;
   overflow: hidden;
   background: var(--hero-bg, var(--hero-bg-gradient));
   color: var(--hero-text);
@@ -2930,19 +2930,19 @@ a.order-item:hover {
   z-index: 1;
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: var(--space-16) var(--space-5) var(--space-10);
+  padding: var(--space-16) var(--space-5) var(--space-12);
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-10);
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 3.5rem;
   align-items: center;
-  min-height: 560px;
+  min-height: 600px;
 }
 
 /* --- Left column --- */
 .hero-content {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
   animation: heroFadeUp 0.8s var(--ease-out) both;
 }
 
@@ -3293,6 +3293,7 @@ a.order-item:hover {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4) var(--space-6);
+  margin-top: var(--space-1);
 }
 
 .hero-truststrip-item {
