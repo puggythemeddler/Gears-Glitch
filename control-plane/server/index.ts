@@ -307,10 +307,18 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
   res.json({ user: { ...full, totpEnabled: !!full?.totp_enabled }, operatorEmail });
 });
 
-app.get("/api/users", requireAuth, requireAdmin, async (_req, res) => {
+app.get("/api/users", requireAuth, requireAdmin, async (req, res) => {
   try {
+    const selfId = ((req as any).user as AuthUser)?.id;
     const users = await queryAll("SELECT id, username, role, api_key, created_at, last_login FROM cp_users ORDER BY created_at DESC");
-    res.json({ users });
+    const masked = (users as any[]).map((u) => {
+      const key: string = u.api_key || "";
+      const isSelf = selfId != null && Number(u.id) === Number(selfId);
+      // Reveal the full key only to the account that owns it; mask everyone else's.
+      const api_key = isSelf ? key : (key ? `${key.slice(0, 8)}...${key.slice(-4)}` : "");
+      return { ...u, api_key, masked: !!api_key && !isSelf };
+    });
+    res.json({ users: masked });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to list users" });
   }

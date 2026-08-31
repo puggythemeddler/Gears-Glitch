@@ -29,12 +29,17 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "DATABASE_URL not set 
     );
     const cust = await queryOne("SELECT id FROM customers WHERE email = 'test@example.com'") as any;
     const productId = "prod-isolation-1";
+    // Reset the fixture product's stock deterministically on every seed: the
+    // transactional tables are truncated in clear(), but products/stock_levels
+    // persist across tests, so prior tests' mutations would otherwise leak in.
     await query(
-      `INSERT INTO products (id, category, name, price, in_stock, stock_on_hand) VALUES ($1, 'test', 'Test Product', 100, 0, 10) ON CONFLICT (id) DO NOTHING`,
+      `INSERT INTO products (id, category, name, price, in_stock, stock_on_hand) VALUES ($1, 'test', 'Test Product', 100, 0, 10)
+       ON CONFLICT (id) DO UPDATE SET stock_on_hand = 10, in_stock = 0`,
       [productId]
     );
     await query(
-      `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold) VALUES ($1, 100, 0, 0) ON CONFLICT (product_id) DO NOTHING`,
+      `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold) VALUES ($1, 100, 0, 0)
+       ON CONFLICT (product_id) DO UPDATE SET quantity_in_stock = 100, quantity_reserved = 0, quantity_sold = 0`,
       [productId]
     );
     return { customerId: cust.id, productId };
