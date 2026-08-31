@@ -5,7 +5,7 @@ import { ProductCard, getProducts } from "@/components/ProductCard";
 import type { Product } from "@/lib/types";
 import { Pagination, EmptyState, ErrorState } from "@/components/ui";
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 20;
 
 type SortKey = "newest" | "price-asc" | "price-desc" | "name";
 

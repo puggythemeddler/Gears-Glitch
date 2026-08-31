@@ -366,7 +366,7 @@ export function HomePage({ products, categories, hero }: {
     setHomePage(1);
   }, [homeSort]);
 
-  const HOME_PAGE_SIZE = 12;
+  const HOME_PAGE_SIZE = 20;
   const sortedProducts = [...products];
   if (homeSort === "price-asc") sortedProducts.sort((a, b) => effectivePrice(a) - effectivePrice(b));
   else if (homeSort === "price-desc") sortedProducts.sort((a, b) => effectivePrice(b) - effectivePrice(a));
