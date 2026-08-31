@@ -95,6 +95,7 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "DATABASE_URL not set 
     await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS checkout_request_id TEXT");
     await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS mpesa_receipt TEXT");
     await query("ALTER TABLE stock_levels ADD COLUMN IF NOT EXISTS branch_id INTEGER");
+    await query("ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS branch_id INTEGER");
   });
 
   it("gift card cannot be double-redeemed concurrently", async () => {
