@@ -61,8 +61,8 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 | C-5 | P2 | **RESOLVED** | `cp/index.ts:43` — missing `JWT_SECRET` throws in production |
 | C-6 | P2 | **STILL-OPEN** | CSP allows `'unsafe-inline'` in `scriptSrc` (dashboard inline handlers) |
 | C-7 | P2 | **RESOLVED** | `cp/index.ts:152` — `auditLog()` now returns the promise and is awaited on destructive paths (push-secret, delete-client) |
-| C-8 | P3 | **STILL-OPEN** | `render.yaml` `plan: free` |
-| C-9 | P3 | **STILL-OPEN** | Hardcoded `VERCEL_TEAM_ID`, `DOMAIN_BASE`, repo owner in `render.yaml` |
+| C-8 | P3 | **STILL-OPEN (owner action)** | `render.yaml` `plan: free` — upgrade to a paid plan from the Render dashboard (cannot be changed safely in code) |
+| C-9 | P3 | **RESOLVED** | Hardcoded `VERCEL_TEAM_ID`, `DOMAIN_BASE`, repo owner moved to `sync: false` dashboard secrets; `provision.ts` falls back gracefully when unset |
 
 ### Database
 | ID | Sev | Status | Evidence |
@@ -143,11 +143,11 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 
 ### Summary: Items by Status
 
-**RESOLVED (51):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, DB-1..DB-5, DB-7, M-1, M-2, M-3, I-1/I-4, I-2, I-3, I-5, I-6, I-7, O-1, O-2, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2, W-3, W-4, SU-1, SU-2
+**RESOLVED (52):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, C-9, DB-1..DB-5, DB-7, M-1, M-2, M-3, I-1/I-4, I-2, I-3, I-5, I-6, I-7, O-1, O-2, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2, W-3, W-4, SU-1, SU-2
 
 **PARTIAL (7):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (27/79 done), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), §8 (NUMERIC in migration, not schema)
 
-**STILL-OPEN (6):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier), C-9 (hardcoded config), R-6 (hardcoded rates)
+**STILL-OPEN (5):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier), R-6 (hardcoded rates)
 
 ---
 
@@ -251,8 +251,8 @@ See Multi-Tenancy §2 (T-1 cross-tenant escalation is the headline control-plane
 | C-5 | **P2** | `control-plane/server/index.ts:40` | `JWT_SECRET` falls back to a random value each boot → all CP sessions invalidated on restart; hidden reliance on process-lifetime secret. | Always set a stable env `JWT_SECRET`; fail fast if missing. |
 | C-6 | **P2** | helmet config | CP UI allows `'unsafe-inline'` in `scriptSrc` → weakens CSP; XSS in the admin panel escalates to full platform compromise. | Move inline scripts to external files; use nonces/hashes. |
 | C-7 | **P2** | `control-plane/server/index.ts:145-148` | Audit-log writes are fire-and-forget (`.then/.catch`), not awaited → loss of accountability trail. | Make audit logs synchronous/buffered and awaited for destructive actions. |
-| C-8 | **P3** | `render.yaml` | Control plane runs on Render **free** tier (spin-down, cold starts, transient deploys) while managing production tenants. | Move to a paid/starter plan. |
-| C-9 | **P3** | `control-plane/render.yaml`, `provision.ts:102` | Hardcoded `VERCEL_TEAM_ID`, `DOMAIN_BASE`, repo owner in source; default `CONTROL_PLANE_URL`. | Move to CP secrets/env. |
+| C-8 | **P3** | `render.yaml` | Control plane runs on Render **free** tier (spin-down, cold starts, transient deploys) while managing production tenants. | **OWNER ACTION:** upgrade to a paid/starter plan from the Render dashboard (documented in render.yaml; not safely changeable in code). |
+| C-9 | **P3** | `control-plane/render.yaml` | Hardcoded `VERCEL_TEAM_ID`, `DOMAIN_BASE`, repo owner in source; default `CONTROL_PLANE_URL`. | **RESOLVED:** moved to `sync: false` dashboard secrets; `provision.ts` already reads env with graceful fallbacks. |
 
 ---
 

@@ -3,6 +3,9 @@ services:
     name: gear-glitch-control-plane
     runtime: node
     region: oregon
+    # C-8: this is on Render's *free* tier (spin-down / cold starts) while it manages
+    # production tenants. Upgrade to a paid/starter plan from the Render dashboard —
+    # do NOT pick a plan name here blindly; it must match an active plan on the account.
     plan: free
     buildCommand: cd control-plane && npm ci && npx tsc && cp -r public dist/public
     startCommand: cd control-plane && node dist/server/index.js
@@ -21,20 +24,25 @@ services:
         sync: false
       - key: VERCEL_TOKEN
         sync: false
+      # C-9: account-specific identifiers moved to dashboard secrets (not committed).
+      # Must be set in the Render dashboard; provision.ts falls back gracefully when empty.
       - key: VERCEL_TEAM_ID
-        value: team_BoJsvNRaS2WAfBRsLIp1ycZS
+        sync: false
       - key: CLOUDFLARE_API_TOKEN
         sync: false
       - key: CLOUDFLARE_ZONE_ID
         sync: false
+      # C-9: deployment defaults moved to dashboard secrets. provision.ts falls back
+      # to gearglitch.com / puggythemeddler/Gears-Glitch if unset, so provisioning
+      # still works until the operator configures them.
       - key: DOMAIN_BASE
-        value: gearglitch.com
+        sync: false
       # Public URL of this control plane — injected into every client so they
       # can push synced plans back here with their control-plane secret.
       - key: CONTROL_PLANE_URL
         sync: false
       - key: FRONTEND_GIT_REPO
-        value: puggythemeddler/Gears-Glitch
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
