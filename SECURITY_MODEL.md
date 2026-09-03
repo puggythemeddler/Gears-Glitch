@@ -9,6 +9,8 @@
 - **Per-tenant isolation is architectural:** each client = own Neon PostgreSQL DB + Render backend + Vercel frontend. The tenant `server` is single-tenant-per-DB, so there is no `tenant_id` column on its tables (correct for this model).
 - **The multi-tenant security boundary lives in the control plane.** The control plane orchestrates provisioning, deploys, deletion, plans, features, invoices, and stores each client's `cp_secret`, DB URL, and Cloudinary/SMTP secrets. **This is the highest-value security boundary in the platform.**
 
+> **Tenancy model (T-4):** one database per tenant is the deliberate, hard constraint. Do **not** add row-level tenancy to the tenant server, and do **not** reuse it as a shared backend. The `clients` table's legacy `db_path`/`schema_name` columns on the control plane are unused placeholders and must never be interpreted as support for a shared-schema/shared-database multi-tenant deployment — doing so would collapse all tenant data into one scope.
+
 ### Trust model
 ```
 Tenant backend ──cp_secret──▶ Control plane (holds ALL tenants' secrets + can deploy/delete)

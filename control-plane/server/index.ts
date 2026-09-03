@@ -149,9 +149,9 @@ function requireAdmin(
   });
 }
 
-function auditLog(req: any, action: string, targetType: string, targetId?: number | null, targetName?: string, details?: string) {
+function auditLog(req: any, action: string, targetType: string, targetId?: number | null, targetName?: string, details?: string): Promise<void> {
   const user = (req as any).user || { id: 0, username: "system" };
-  logAudit(user.id, user.username, action, targetType, targetId, targetName, details);
+  return logAudit(user.id, user.username, action, targetType, targetId, targetName, details);
 }
 
 function esc(value: any): string {
@@ -608,7 +608,7 @@ app.post("/api/clients/:id/push-secret", requireAuth, requireAdmin, async (req, 
     await pushControlPlaneSecret(client.render_service_id, secret);
     await query("UPDATE clients SET cp_secret = $1 WHERE id = $2", [secret, client.id]);
 
-    auditLog(req, "push_secret", "client", client.id, client.name, rotate ? "rotated" : "pushed");
+    await auditLog(req, "push_secret", "client", client.id, client.name, rotate ? "rotated" : "pushed");
     res.json({ message: `Control-plane secret ${rotate ? "rotated" : "pushed"} to "${client.name}". The service is redeploying.` });
   } catch (err: any) {
     console.error("[api] Push secret error:", err.message);
@@ -639,7 +639,7 @@ app.delete("/api/clients/:id", destructiveLimiter, requireAdmin, async (req, res
 
     // Record the confirmed deletion intent in the audit log before destroying
     // anything, so there is a recoverable trail of who/what/when/why.
-    auditLog(req, "delete_client", "client", client.id, client.name, `confirmed deletion — reason: ${reason}`);
+    await auditLog(req, "delete_client", "client", client.id, client.name, `confirmed deletion — reason: ${reason}`);
 
     // Best-effort cleanup of cloud resources
     const cleanupErrors: string[] = [];

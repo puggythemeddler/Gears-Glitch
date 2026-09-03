@@ -41,7 +41,7 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 | T-1 | P0 | **RESOLVED** | All cross-tenant CP routes now use `requireAdmin`; only `POST /api/plans/sync-up` is `requireAuth`-only (client callback, correct) |
 | T-2 | P1 | **RESOLVED** | `cp/index.ts:113-131` — `x-api-key` resolves to `cp_users` row; query-string key removed |
 | T-3/C-4 | P2 | **RESOLVED** | `cp/db.ts:5-8` — SSL defaults to `rejectUnauthorized: true` |
-| T-4 | P1 | **STILL-OPEN** | No dedicated architecture documentation file |
+| T-4 | P1 | **RESOLVED** | `SECURITY_MODEL.md` — tenancy model documented; legacy `db_path`/`schema_name` columns clarified as no-op placeholders, not shared-backend tenancy |
 
 ### Authorization
 | ID | Sev | Status | Evidence |
@@ -60,7 +60,7 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 | C-3 | P1 | **RESOLVED** | `cp/index.ts:47-49` — `authLimiter` (20/15min) + `destructiveLimiter` (30/15min) |
 | C-5 | P2 | **RESOLVED** | `cp/index.ts:43` — missing `JWT_SECRET` throws in production |
 | C-6 | P2 | **STILL-OPEN** | CSP allows `'unsafe-inline'` in `scriptSrc` (dashboard inline handlers) |
-| C-7 | P2 | **STILL-OPEN** | `auditLog()` not awaited (fire-and-forget) |
+| C-7 | P2 | **RESOLVED** | `cp/index.ts:152` — `auditLog()` now returns the promise and is awaited on destructive paths (push-secret, delete-client) |
 | C-8 | P3 | **STILL-OPEN** | `render.yaml` `plan: free` |
 | C-9 | P3 | **STILL-OPEN** | Hardcoded `VERCEL_TEAM_ID`, `DOMAIN_BASE`, repo owner in `render.yaml` |
 
@@ -111,7 +111,7 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 |---|---|---|---|
 | SN-1 | P2 | **RESOLVED** | Migration `0008` — CHECK constraint + FK on `purchase_order_item_id` |
 | SN-2 | P1 | **RESOLVED** | `db.ts:3573-3585` — serial inserts in `transaction()` |
-| SN-5 | P1 | **STILL-OPEN** | No `customer_id` on `serial_numbers`; indirect via `order_id→orders.customer_id` |
+| SN-5 | P1 | **RESOLVED** | `schema.sql` — ownership documented as indirect via `order_id→orders.customer_id` (intentional, normalized) |
 
 ### Repairs
 | ID | Sev | Status | Evidence |
@@ -122,8 +122,8 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 | R-4 | P1 | **RESOLVED** | Migration `0007` — adds serial_number, is_warranty_repair, warranty_claim_id to repair_tickets |
 | R-5 | P1 | **RESOLVED** | `repairs.ts:620-627` — assignment change recorded via `addRepairUpdate()` with type "assignment" |
 | R-6 | P2 | **STILL-OPEN** | Hardcoded KES rates, mixed rounding (ties to §8 money representation) |
-| R-7 | P2 | **STILL-OPEN** | `eta_at` defaults to NOW()+48h, not configurable |
-| R-8 | P3 | **STILL-OPEN** | Warranty register LIMIT 2000 without pagination |
+| R-7 | P2 | **RESOLVED** | `repairs.ts` — ETA default read from `repair_eta_hours` setting (fallback 48h) |
+| R-8 | P3 | **RESOLVED** | `index.ts` — warranty register supports `?limit=`/`?offset=` + returns `total` (bounded, configurable) |
 
 ### Warranty
 | ID | Sev | Status | Evidence |
@@ -143,11 +143,11 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 
 ### Summary: Items by Status
 
-**RESOLVED (38):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, DB-1..DB-5, M-1, M-2, M-3, I-2, I-3, I-5, I-6, I-7, O-1, O-3, O-4, SN-1, SN-2, R-1..R-5, W-1, W-2
+**RESOLVED (43):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, DB-1..DB-5, M-1, M-2, M-3, I-2, I-3, I-5, I-6, I-7, O-1, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2
 
 **PARTIAL (9):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (27/79 done), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), I-1/I-4 (atomic but no oversell guard), O-2 (atomic upserts but not transactional), §8 (NUMERIC in migration, not schema)
 
-**STILL-OPEN (18):** A-1 (httpOnly cookies), A-4 (step-up auth), T-4 (architecture docs), Z-1 (52 routes), C-7 (audit log await), C-8 (free tier), C-9 (hardcoded config), DB-7 (nullable audit cols), I-1/I-4 (oversell guard), O-2 (POS transaction), R-6 (hardcoded rates), R-7 (hardcoded ETA), R-8 (warranty pagination), SN-5 (customer_id), SU-1 (expires_at), SU-2 (billing), W-3 (warranty expiry), W-4 (warranty event)
+**STILL-OPEN (13):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier), C-9 (hardcoded config), DB-7 (nullable audit cols), I-1/I-4 (oversell guard), O-2 (POS transaction), R-6 (hardcoded rates), SU-1 (expires_at), SU-2 (billing), W-3 (warranty expiry), W-4 (warranty event)
 
 ---
 

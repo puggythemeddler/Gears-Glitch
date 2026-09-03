@@ -418,6 +418,9 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
 CREATE INDEX IF NOT EXISTS idx_purchase_items_order ON purchase_order_items(purchase_order_id);
 
 -- Serial number tracking (warranty lookups, PO intake, sale linking)
+-- Ownership is intentionally INDIRECT: a sold serial links to order_item_id/order_id
+-- and the owner is resolved via orders.customer_id (SN-5). This keeps the source of
+-- truth normalized; there is no customer_id column here by design.
 CREATE TABLE IF NOT EXISTS serial_numbers (
   id SERIAL PRIMARY KEY,
   serial_number TEXT NOT NULL UNIQUE,

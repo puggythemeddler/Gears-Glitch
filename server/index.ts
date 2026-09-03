@@ -2547,6 +2547,16 @@ app.get("/api/admin/orders", ownerAuthMiddleware, asyncHandler(async (req: Reque
 // customer and (when available) the serialized unit. Status is computed from
 // sale date + duration, or the serial's explicit warranty_expires.
 app.get("/api/admin/warranties", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  // Pagination (R-8): keep the register query bounded/configurable instead of a
+  // hard-capped LIMIT 2000. Defaults stay generous (1000) so the existing
+  // client-side register/filter view keeps working; callers may pass ?limit= & ?offset=.
+  const limit = Math.min(Math.max(Number(req.query.limit) || 1000, 1), 5000);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const totalRes = await queryOne(`
+    SELECT COUNT(*) AS c FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
+    WHERE oi.has_warranty = 1 AND oi.cancelled = 0
+  `) as any;
   const rows = await queryAll(`
     SELECT oi.id AS order_item_id,
            oi.order_id,
@@ -2564,8 +2574,8 @@ app.get("/api/admin/warranties", ownerAuthMiddleware, asyncHandler(async (req: R
     LEFT JOIN serial_numbers s ON s.order_item_id = oi.id
     WHERE oi.has_warranty = 1 AND oi.cancelled = 0
     ORDER BY o.created_at DESC
-    LIMIT 2000
-  `) as any[];
+    LIMIT $1 OFFSET $2
+  `, [limit, offset]) as any[];
 
   const parseDate = (v: string | null | undefined): Date | null => {
     if (!v) return null;
@@ -2606,7 +2616,7 @@ app.get("/api/admin/warranties", ownerAuthMiddleware, asyncHandler(async (req: R
 
   const customerId = req.query.customerId ? Number(req.query.customerId) : null;
   const filtered = customerId ? warranties.filter((w: any) => w.customerId === customerId) : warranties;
-  res.json({ warranties: filtered });
+  res.json({ warranties: filtered, total: Number(totalRes?.c || filtered.length), limit, offset });
 }));
 
 app.get("/api/admin/orders/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {

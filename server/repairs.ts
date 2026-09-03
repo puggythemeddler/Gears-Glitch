@@ -1,4 +1,5 @@
 import { query, queryOne, queryAll, transaction } from "./db-helpers";
+import { getStoreSetting } from "./db";
 
 interface RepairType {
   id: string;
@@ -336,15 +337,19 @@ async function createRepairTicket(customerId: number, data: any): Promise<Ticket
     ? `${issueDescription}\n\nSymptoms: ${symptoms.join(", ")}`
     : issueDescription;
 
+  // R-7: ETA default is configurable via the `repair_eta_hours` setting (hours),
+  // falling back to 48 when unset.
+  const etaHours = Math.max(1, Number(await getStoreSetting("repair_eta_hours")) || 48);
+
   await query(
     `INSERT INTO repair_tickets (id, customer_id, device_type, device_model, issue_description, repair_type, status, eta_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, 'received', (NOW() + interval '48 hours')::text, NOW()::text, NOW()::text)`,
-    [id, customerId, deviceType, String(data.deviceModel || "").trim(), fullDescription, repairType]
+     VALUES ($1, $2, $3, $4, $5, $6, 'received', (NOW() + make_interval(hours => $7))::text, NOW()::text, NOW()::text)`,
+    [id, customerId, deviceType, String(data.deviceModel || "").trim(), fullDescription, repairType, etaHours]
   );
 
   await recalculateTicketCost(id);
 
-  await addRepairUpdate(id, null, "status", "Ticket created. Estimated completion within 48 hours.", true);
+  await addRepairUpdate(id, null, "status", `Ticket created. Estimated completion within ${etaHours} hours.`, true);
 
   const ticket = await loadTicketDetails(id);
   return { ok: true, ticket: ticket! };
