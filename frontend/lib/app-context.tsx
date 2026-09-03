@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { isCustomerLoggedIn, getCustomerToken, setCustomerSession, clearAllSessions, api, initCsrf, getGuestCartCount } from "./api";
+import { isCustomerLoggedIn, getCustomerToken, setCustomerSession, clearAllSessions, api, initCsrf, getGuestCartCount, bootstrapSession, logoutServer } from "./api";
 import type { Settings } from "./types";
 import { setFormatConfig } from "@/layouts/shared";
 
@@ -130,6 +130,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshSettings();
     refreshCartCount();
     refreshRates();
+    // A-1: re-establish the session from the httpOnly cookie (or legacy header
+    // fallback) and then recompute the logged-in state + cart count.
+    bootstrapSession().then(() => {
+      setState((s) => ({
+        ...s,
+        isLoggedIn: isCustomerLoggedIn(),
+        userName: localStorage.getItem("customerStoreName") || "",
+      }));
+      refreshCartCount();
+    });
 
     return () => mq.removeEventListener("change", handler);
   }, []);
@@ -194,6 +204,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   function logout() {
     clearAllSessions();
     setState((s) => ({ ...s, isLoggedIn: false, userName: "", cartCount: 0 }));
+    logoutServer();
     if (typeof window !== "undefined") window.location.href = "/";
   }
 

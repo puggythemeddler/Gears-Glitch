@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
-import { api, setCustomerSession, clearCustomerSession, clearStaffSession, clearProviderSession, migrateGuestCartToServer } from "@/lib/api";
+import { api, setCustomerSession, setStaffSession, setProviderSession, clearCustomerSession, clearStaffSession, clearProviderSession, migrateGuestCartToServer } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { PageHead } from "@/components/ui";
 
@@ -118,8 +118,12 @@ export default function LoginPage() {
         setTotpRequired(false);
         setTotpCode("");
         const role = data.role || "";
-        localStorage.setItem("computerStoreToken", data.token);
-        localStorage.setItem("staffUserName", data.username || data.email || "Staff");
+        const displayName = data.username || data.email || "Staff";
+        if (role === "provider") {
+          setProviderSession(data.token, displayName);
+        } else {
+          setStaffSession(data.token, displayName, role, data.permissions || []);
+        }
         if (role === "admin" || role === "owner" || role === "technician" || role === "manager" || role === "staff" || role === "provider") router.push("/admin");
         else router.push("/dashboard");
       }

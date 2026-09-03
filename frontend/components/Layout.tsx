@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useApp } from "@/lib/app-context";
 import { useLayout, LayoutHeader, LayoutFooter } from "@/layouts";
-import { getStaffToken, api } from "@/lib/api";
+import { hasStaffSession, api } from "@/lib/api";
 
 import CurrencySelector from "./CurrencySelector";
 import MarqueeBanner from "./MarqueeBanner";
@@ -74,7 +74,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     return () => clearTimeout(timer);
   }, [router.asPath]);
 
-  useEffect(() => { setIsStaff(!!getStaffToken()); }, []);
+  useEffect(() => { setIsStaff(hasStaffSession()); }, []);
 
   useEffect(() => {
     fetch("/api/categories").then((r) => r.json()).then((d) => {

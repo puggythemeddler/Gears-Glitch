@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/router";
-import { api, getStaffToken, getStaffRole, getStaffPermissions, downloadPdf, obtainStepUpToken } from "@/lib/api";
+import { api, getStaffToken, getStaffRole, getStaffPermissions, hasStaffSession, downloadPdf, obtainStepUpToken } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
@@ -477,7 +477,7 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    if (getStaffToken()) {
+    if (hasStaffSession()) {
       setAuthed(true);
       setStaffRole((getStaffRole() as StaffRole) || "admin");
       setStaffPermissions(getStaffPermissions());
@@ -2445,7 +2445,8 @@ function SubscriptionInvoices() {
 
   async function viewInvoice(id: number) {
     try {
-      const res = await fetch(`/api/admin/invoices/${id}/view`, { headers: { Authorization: `Bearer ${getStaffToken() || ""}` } });
+      const token = getStaffToken();
+      const res = await fetch(`/api/admin/invoices/${id}/view`, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const html = await res.text();
       const blob = new Blob([html], { type: "text/html" });
@@ -2457,7 +2458,8 @@ function SubscriptionInvoices() {
 
   async function downloadInvoicePdf(id: number) {
     try {
-      const res = await fetch(`/api/admin/invoices/${id}/view?format=pdf`, { headers: { Authorization: `Bearer ${getStaffToken() || ""}` } });
+      const token = getStaffToken();
+      const res = await fetch(`/api/admin/invoices/${id}/view?format=pdf`, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -4203,7 +4205,8 @@ function AdminSystem() {
         <p className="muted" style={{ fontSize: "0.85rem" }}>Download a full backup of the store database.</p>
         <RippleButton onClick={async () => {
           try {
-            const res = await fetch("/api/admin/backup", { headers: { Authorization: "Bearer " + (getStaffToken() || "") } });
+            const token = getStaffToken();
+            const res = await fetch("/api/admin/backup", { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
             if (!res.ok) throw new Error("Backup failed");
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
@@ -6692,8 +6695,8 @@ function AdminDeliveryFees() {
   useEffect(() => {
     (async () => {
       try {
-        const token = getStaffToken() || "";
-        const res = await fetch("/api/admin/delivery-fees", { headers: { Authorization: "Bearer " + token } });
+        const token = getStaffToken();
+        const res = await fetch("/api/admin/delivery-fees", { headers: { ...(token ? { Authorization: "Bearer " + token } : {}) } });
         if (!res.ok) throw new Error("Failed to load");
         const data = await res.json();
         setCounties(data.counties || []);

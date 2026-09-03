@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { api, getStaffToken } from "@/lib/api";
+import { api, hasStaffSession } from "@/lib/api";
 import { usePageTitle } from "@/lib/use-page-title";
 
 function Spinner() { return <p style={{ textAlign: "center", padding: "2rem", opacity: 0.5 }}>Loading...</p>; }
@@ -14,7 +14,7 @@ export default function NewSupplierPage() {
   const [msg, setMsg] = useState("");
 
   React.useEffect(() => {
-    if (getStaffToken()) setAuthed(true);
+    if (hasStaffSession()) setAuthed(true);
   }, []);
 
   async function save(e: React.FormEvent) {

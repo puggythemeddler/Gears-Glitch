@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { api, getStaffToken } from "@/lib/api";
+import { api, hasStaffSession } from "@/lib/api";
 import { usePageTitle } from "@/lib/use-page-title";
 
 export default function EditSupplierPage() {
@@ -13,7 +13,7 @@ export default function EditSupplierPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
-  useEffect(() => { if (getStaffToken()) setAuthed(true); }, []);
+  useEffect(() => { if (hasStaffSession()) setAuthed(true); }, []);
 
   useEffect(() => {
     if (!authed || !id) return;

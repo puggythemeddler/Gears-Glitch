@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, getStaffToken } from "@/lib/api";
+import { api, hasStaffSession } from "@/lib/api";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { escapeHtml } from "@/lib/sanitize";
@@ -26,7 +26,7 @@ export default function StockTakeSessionPage() {
   usePageTitle(session ? `Stock Take #${session.id}` : "Stock Take");
 
   useEffect(() => {
-    if (getStaffToken()) setAuthed(true);
+    if (hasStaffSession()) setAuthed(true);
   }, []);
 
   useEffect(() => {

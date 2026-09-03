@@ -318,6 +318,9 @@ import {
   signToken,
   verifyToken,
   getBearerToken,
+  SESSION_COOKIE,
+  setSessionCookie,
+  clearSessionCookie,
   generateTotpSecret,
   verifyTotp,
 } from "./auth";
@@ -1306,6 +1309,7 @@ app.post("/api/provider/register", asyncHandler(async (req: Request, res: Respon
   if (!provider) { res.status(500).json({ error: "Failed to create provider account." }); return; }
   await assignPlanToProvider(provider.id, "starter");
   const token = signToken({ sub: provider.id, email: provider.email, name: provider.contactName, companyName: provider.companyName, role: "provider" });
+  setSessionCookie(res, token);
   res.status(201).json({ token, name: provider.contactName, email: provider.email, companyName: provider.companyName });
 }));
 
@@ -1315,6 +1319,7 @@ app.post("/api/provider/login", asyncHandler(async (req: Request, res: Response)
   if (!isEmail(email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
   const result = await loginProvider(email, password);
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
+  setSessionCookie(res, result.token);
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
@@ -4190,14 +4195,46 @@ app.post("/api/auth/login", asyncHandler(async (req: Request, res: Response) => 
     }
     const provResult = await loginProvider(login, password);
     if (provResult.ok) {
+      setSessionCookie(res, provResult.token);
       res.json({ token: provResult.token, username: provResult.name, email: provResult.email, role: "provider" });
       return;
     }
     res.status(401).json({ error: result.error });
     return;
   }
+  setSessionCookie(res, result.token);
   res.json({ token: result.token, username: result.username, email: result.email, role: result.role, permissions: result.permissions || [] });
 }));
+
+// A-1: lightweight session introspection. Lets the SPA bootstrap its login state
+// (role, name, permissions) from the httpOnly cookie without any JS-readable
+// token. Returns { role: null } when unauthenticated.
+app.get("/api/auth/session", asyncHandler(async (req: Request, res: Response) => {
+  const token = getBearerToken(req);
+  if (!token) { res.json({ role: null }); return; }
+  try {
+    const user = verifyToken(token);
+    const base = { role: (user as any).role || null, sub: (user as any).sub };
+    if (user.role === "customer" || user.role === "provider") {
+      res.json({ role: user.role, name: (user as any).name || (user as any).email, email: (user as any).email });
+      return;
+    }
+    const staff: any = await queryOne("SELECT username FROM users WHERE id = $1", [(user as any).sub]);
+    res.json({
+      role: user.role,
+      username: staff?.username || (user as any).username,
+      email: (user as any).email,
+      permissions: Array.isArray((user as any).permissions) ? (user as any).permissions : [],
+    });
+  } catch {
+    res.json({ role: null });
+  }
+}));
+
+app.post("/api/auth/logout", (req: Request, res: Response) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
 
 app.post("/api/customer/register", asyncHandler(async (req: Request, res: Response) => {
   const body = req.body || {};
@@ -4207,6 +4244,7 @@ app.post("/api/customer/register", asyncHandler(async (req: Request, res: Respon
   if (!okLen(body.password, 8, 128)) { res.status(400).json({ error: "Password must be 8-128 characters." }); return; }
   const result = await registerCustomer({ name: body.name, email: body.email, password: body.password });
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+  setSessionCookie(res, result.token, 7 * 24 * 3600);
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
@@ -4216,6 +4254,7 @@ app.post("/api/customer/login", asyncHandler(async (req: Request, res: Response)
   if (!isEmail(body.email)) { res.status(400).json({ error: "A valid email address is required." }); return; }
   const result = await loginCustomer(body.email, body.password);
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
+  setSessionCookie(res, result.token, 7 * 24 * 3600);
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
@@ -4224,6 +4263,7 @@ app.post("/api/customer/google-login", asyncHandler(async (req: Request, res: Re
   if (!googleToken) { res.status(400).json({ error: "Google credential is required." }); return; }
   const result = await googleLogin(googleToken);
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
+  setSessionCookie(res, result.token, 7 * 24 * 3600);
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 

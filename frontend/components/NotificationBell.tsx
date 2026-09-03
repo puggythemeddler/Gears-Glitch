@@ -1,18 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api, getCustomerToken, getProviderToken, getStaffToken } from "@/lib/api";
+import { api, hasStaffSession, hasCustomerSession, hasProviderSession } from "@/lib/api";
 import Icon from "@/components/icons";
 
 function getMsgEndpoint(): string | null {
-  if (getStaffToken()) return "/api/admin/messages";
-  if (getCustomerToken()) return "/api/messages";
-  if (getProviderToken()) return "/api/provider/messages";
+  if (hasStaffSession()) return "/api/admin/messages";
+  if (hasCustomerSession()) return "/api/messages";
+  if (hasProviderSession()) return "/api/provider/messages";
   return null;
 }
 
 function countUnread(msgs: any[]): number {
-  if (getStaffToken()) return msgs.filter((m) => m.sender_role !== "admin" && !m.read_at).length;
-  if (getCustomerToken()) return msgs.filter((m) => m.sender_role !== "customer" && !m.read_at).length;
-  if (getProviderToken()) return msgs.filter((m) => m.sender_role !== "provider" && !m.read_at).length;
+  if (hasStaffSession()) return msgs.filter((m) => m.sender_role !== "admin" && !m.read_at).length;
+  if (hasCustomerSession()) return msgs.filter((m) => m.sender_role !== "customer" && !m.read_at).length;
+  if (hasProviderSession()) return msgs.filter((m) => m.sender_role !== "provider" && !m.read_at).length;
   return 0;
 }
 

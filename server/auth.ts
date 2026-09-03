@@ -117,9 +117,32 @@ async function verifySessionToken(token: string): Promise<JwtPayload> {
   return payload;
 }
 
+// A-1: session token lives in an httpOnly, same-site cookie so it is never
+// readable by JavaScript (XSS cannot exfiltrate it). We still accept the legacy
+// Authorization: Bearer header (and opt-in query token) so existing clients,
+// receipts, and the control-plane flow keep working during rollout.
+export const SESSION_COOKIE = "gg_session";
+
+function setSessionCookie(res: Response, token: string, maxAgeSec = 7 * 24 * 3600): void {
+  res.cookie(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: maxAgeSec * 1000,
+  });
+}
+
+function clearSessionCookie(res: Response): void {
+  res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/" });
+}
+
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization || "";
   if (header.startsWith("Bearer ")) return header.slice(7);
+  // A-1: fall back to the httpOnly session cookie when no Authorization header.
+  const fromCookie = typeof req.cookies?.[SESSION_COOKIE] === "string" ? req.cookies[SESSION_COOKIE] : null;
+  if (fromCookie) return fromCookie;
   // Opt-in query token for opening protected pages/receipts in a new tab.
   if (req.query?.allowQueryToken === "1" && typeof req.query?.token === "string" && req.query.token) {
     return req.query.token;
@@ -465,6 +488,8 @@ export {
   signToken,
   verifyToken,
   getBearerToken,
+  setSessionCookie,
+  clearSessionCookie,
   generateTotpSecret,
   verifyTotp,
 };

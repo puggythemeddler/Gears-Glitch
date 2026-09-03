@@ -115,6 +115,31 @@ export async function obtainStepUpToken(password: string): Promise<boolean> {
   }
 }
 
+// A-1: the session JWT is held in an httpOnly, same-site cookie set by the server,
+// so it is never readable by JavaScript. Below, the legacy Authorization-header
+// (localStorage JWT) path is retained ONLY as a backwards-compatible fallback for
+// sessions created before this change, so nobody is logged out mid-rollout. New
+// logins no longer persist the token to localStorage — we store just non-sensitive
+// role/permission metadata for UI gating while the server enforces real auth via
+// the httpOnly cookie.
+
+const ROLE_KEY = "ggRole";          // "customer" | "staff" | "provider"
+const STAFF_ROLE_KEY = "ggStaffRole"; // admin|owner|manager|technician|staff|provider
+const PERMS_KEY = "ggPerms";         // JSON array of permission strings (UI gating only)
+
+// In-memory session captured from /api/auth/session (server is the source of truth).
+let sessionRole: "customer" | "staff" | "provider" | null = null;
+let sessionStaffRole: string | null = null;
+let sessionStaffPerms: string[] = [];
+
+function decodeJwtPayload(token: string): any | null {
+  try {
+    return JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return null;
+  }
+}
+
 export function getCustomerToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(CUSTOMER_TOKEN_KEY);
@@ -125,31 +150,33 @@ export function getStaffToken(): string | null {
   return localStorage.getItem(STAFF_TOKEN_KEY);
 }
 
-export function getStaffRole(): string | null {
-  const token = getStaffToken();
-  if (!token) return null;
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-    return typeof payload?.role === "string" ? payload.role : null;
-  } catch {
-    return null;
-  }
-}
-
-export function getStaffPermissions(): string[] {
-  const token = getStaffToken();
-  if (!token) return [];
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-    return Array.isArray(payload?.permissions) ? payload.permissions : [];
-  } catch {
-    return [];
-  }
-}
-
 export function getProviderToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(PROVIDER_TOKEN_KEY);
+}
+
+export function getStaffRole(): string | null {
+  if (sessionStaffRole) return sessionStaffRole;
+  if (typeof window !== "undefined") {
+    const m = localStorage.getItem(STAFF_ROLE_KEY);
+    if (m) return m;
+    const legacy = getStaffToken();
+    if (legacy) { const p = decodeJwtPayload(legacy); if (p?.role) return p.role; }
+  }
+  return null;
+}
+
+export function getStaffPermissions(): string[] {
+  if (sessionStaffPerms.length) return sessionStaffPerms;
+  if (typeof window !== "undefined") {
+    try {
+      const m = localStorage.getItem(PERMS_KEY);
+      if (m) { const arr = JSON.parse(m); if (Array.isArray(arr)) return arr; }
+    } catch {}
+    const legacy = getStaffToken();
+    if (legacy) { const p = decodeJwtPayload(legacy); if (Array.isArray(p?.permissions)) return p.permissions; }
+  }
+  return [];
 }
 
 export function getTokenForRole(role?: string): string | null {
@@ -161,36 +188,141 @@ export function getTokenForRole(role?: string): string | null {
 }
 
 export function getRole(): "customer" | "staff" | "provider" | null {
-  if (getStaffToken()) return "staff";
-  if (getCustomerToken()) return "customer";
-  if (getProviderToken()) return "provider";
+  if (sessionRole) return sessionRole;
+  if (typeof window !== "undefined") {
+    const m = localStorage.getItem(ROLE_KEY);
+    if (m === "customer" || m === "staff" || m === "provider") return m;
+    if (getStaffToken()) return "staff";
+    if (getCustomerToken()) return "customer";
+    if (getProviderToken()) return "provider";
+  }
   return null;
 }
 
+// A-1: boolean "is this role authenticated" checks. These must stay true for
+// cookie sessions (where no JS token exists), unlike getStaffToken()/etc. which
+// only return a legacy JS token for the Authorization header.
+export function hasStaffSession(): boolean {
+  return !!getStaffToken() || getRole() === "staff";
+}
+
+export function hasCustomerSession(): boolean {
+  return !!getCustomerToken() || getRole() === "customer";
+}
+
+export function hasProviderSession(): boolean {
+  return !!getProviderToken() || getRole() === "provider";
+}
+
+function writeSessionMeta(role: "customer" | "staff" | "provider", staffRole: string | null, perms: string[]): void {
+  sessionRole = role;
+  sessionStaffRole = staffRole;
+  sessionStaffPerms = perms;
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ROLE_KEY, role);
+  if (staffRole) localStorage.setItem(STAFF_ROLE_KEY, staffRole); else localStorage.removeItem(STAFF_ROLE_KEY);
+  if (perms.length) localStorage.setItem(PERMS_KEY, JSON.stringify(perms)); else localStorage.removeItem(PERMS_KEY);
+}
+
+function clearSessionMeta(): void {
+  sessionRole = null;
+  sessionStaffRole = null;
+  sessionStaffPerms = [];
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(ROLE_KEY);
+  localStorage.removeItem(STAFF_ROLE_KEY);
+  localStorage.removeItem(PERMS_KEY);
+}
+
+// Move a session token from the API response / legacy storage into the A-1
+// httpOnly cookie flow: clear the JS-readable token, record UI-gating metadata
+// (the server already set an httpOnly cookie on the auth-success response).
+function adoptSession(role: "customer" | "staff" | "provider", staffRole: string | null, perms: string[], name: string): void {
+  writeSessionMeta(role, staffRole, perms);
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(CUSTOMER_TOKEN_KEY);
+  localStorage.removeItem(STAFF_TOKEN_KEY);
+  localStorage.removeItem(PROVIDER_TOKEN_KEY);
+  if (role === "customer") localStorage.setItem("customerStoreName", name);
+  if (role === "staff") localStorage.setItem("staffUserName", name);
+  if (role === "provider") localStorage.setItem("providerStoreName", name);
+}
+
+// A-1: bootstrap the session from the httpOnly cookie (server-side truth). Call on
+// app mount. Falls back to legacy localStorage JWT so existing sessions survive
+// the rollout; once a cookie session is confirmed we purge the legacy token.
+export async function bootstrapSession(): Promise<void> {
+  try {
+    const data = await api<{ role?: string | null; staffRole?: string; roleName?: string; username?: string; email?: string; name?: string; permissions?: string[] }>("/api/auth/session");
+    if (data?.role) {
+      const role = data.role === "customer" || data.role === "provider" ? data.role : "staff";
+      const staffRole = role === "staff" ? data.role : null;
+      const perms = Array.isArray(data.permissions) ? data.permissions : [];
+      const name = data.name || data.username || data.email || "";
+      writeSessionMeta(role, staffRole, perms);
+      if (typeof window !== "undefined") {
+        if (role === "customer" && name) localStorage.setItem("customerStoreName", name);
+        if (role === "staff" && name) localStorage.setItem("staffUserName", name);
+        if (role === "provider" && name) localStorage.setItem("providerStoreName", name);
+        // Cookie is authoritative now — drop any legacy JS-readable token.
+        localStorage.removeItem(CUSTOMER_TOKEN_KEY);
+        localStorage.removeItem(STAFF_TOKEN_KEY);
+        localStorage.removeItem(PROVIDER_TOKEN_KEY);
+      }
+      return;
+    }
+  } catch {}
+  // No cookie session: keep a legacy localStorage JWT session (header path) until re-login.
+  if (typeof window !== "undefined" && getTokenForRole()) {
+    const role = getRole();
+    if (role) {
+      const legacy = role === "staff" ? getStaffToken() : role === "customer" ? getCustomerToken() : getProviderToken();
+      const p = legacy ? decodeJwtPayload(legacy) : null;
+      writeSessionMeta(role, role === "staff" ? (p?.role || null) : null, role === "staff" ? (Array.isArray(p?.permissions) ? p.permissions : []) : []);
+    }
+  }
+}
+
+export async function logoutServer(): Promise<void> {
+  try { await api("/api/auth/logout", { method: "POST" }); } catch {}
+}
+
 export function setCustomerSession(token: string, name: string) {
-  localStorage.setItem(CUSTOMER_TOKEN_KEY, token);
-  localStorage.setItem("customerStoreName", name);
+  // A-1: server sets httpOnly cookie; here we just record UI gating metadata.
+  adoptSession("customer", null, [], name);
+}
+
+export function setStaffSession(token: string, name: string, role: string, permissions: string[] = []) {
+  adoptSession("staff", role, permissions, name);
+}
+
+export function setProviderSession(token: string, name: string) {
+  adoptSession("provider", null, [], name);
 }
 
 export function clearCustomerSession() {
-  localStorage.removeItem(CUSTOMER_TOKEN_KEY);
-  localStorage.removeItem("customerStoreName");
+  if (typeof window !== "undefined") localStorage.removeItem("customerStoreName");
+  if (getRole() === "customer") clearSessionMeta();
+  if (typeof window !== "undefined") localStorage.removeItem(CUSTOMER_TOKEN_KEY);
 }
 
 export function clearStaffSession() {
-  localStorage.removeItem(STAFF_TOKEN_KEY);
-  localStorage.removeItem("staffUserName");
+  if (typeof window !== "undefined") localStorage.removeItem("staffUserName");
+  if (getRole() === "staff") clearSessionMeta();
+  if (typeof window !== "undefined") localStorage.removeItem(STAFF_TOKEN_KEY);
 }
 
 export function clearProviderSession() {
-  localStorage.removeItem(PROVIDER_TOKEN_KEY);
-  localStorage.removeItem("providerStoreName");
+  if (typeof window !== "undefined") localStorage.removeItem("providerStoreName");
+  if (getRole() === "provider") clearSessionMeta();
+  if (typeof window !== "undefined") localStorage.removeItem(PROVIDER_TOKEN_KEY);
 }
 
 export function clearAllSessions() {
   clearCustomerSession();
   clearStaffSession();
   clearProviderSession();
+  clearSessionMeta();
 }
 
 export async function api<T = any>(
@@ -212,7 +344,7 @@ export async function api<T = any>(
   if (mutating && !csrfToken) await initCsrf();
   if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
 
-  let res = await fetch(path, { ...options, headers });
+  let res = await fetch(path, { ...options, headers, credentials: "include" });
 
   // Self-heal a stale/missing CSRF token (e.g. another tab refreshed it):
   // re-fetch a token matching the current cookie and retry the request once.
@@ -226,7 +358,7 @@ export async function api<T = any>(
       csrfToken = null;
       await initCsrf();
       if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
-      res = await fetch(path, { ...options, headers });
+      res = await fetch(path, { ...options, headers, credentials: "include" });
     }
   }
   let text = "";
@@ -250,7 +382,7 @@ export async function api<T = any>(
 }
 
 export function isCustomerLoggedIn(): boolean {
-  return !!getCustomerToken();
+  return getRole() === "customer";
 }
 
 export async function downloadPdf(url: string, filename: string): Promise<void> {
@@ -258,7 +390,7 @@ export async function downloadPdf(url: string, filename: string): Promise<void> 
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const separator = url.includes("?") ? "&" : "?";
-  const res = await fetch(`${url}${separator}format=pdf`, { headers });
+  const res = await fetch(`${url}${separator}format=pdf`, { headers, credentials: "include" });
   if (!res.ok) {
     let errMsg = `Failed (${res.status})`;
     try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
