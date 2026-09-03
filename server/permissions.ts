@@ -332,7 +332,21 @@ async function hasPermission(userId: number, permission: string): Promise<boolea
   const directResult: any = await queryOne(`
     SELECT COUNT(*) as count FROM user_permissions WHERE user_id = $1 AND permission = $2
   `, [userId, permission]);
-  return Number(directResult?.count) > 0;
+  if (Number(directResult?.count) > 0) return true;
+
+  // Z-1 safety fallback: a user's base role (users.role) also grants its permissions.
+  // createStaff/updateStaffRole set users.role directly without touching user_roles,
+  // so without this fallback a staff member could be locked out of their own role's
+  // actions. Explicit user_roles/user_permissions still take precedence (checked above).
+  const base: any = await queryOne("SELECT role FROM users WHERE id = $1", [userId]);
+  if (base?.role) {
+    const baseRole: any = await queryOne(
+      "SELECT COUNT(*) as count FROM role_permissions WHERE role_id = $1 AND permission = $2",
+      [base.role, permission]
+    );
+    if (Number(baseRole?.count) > 0) return true;
+  }
+  return false;
 }
 
 async function assignRoleToUser(userId: number, roleId: string): Promise<boolean> {
