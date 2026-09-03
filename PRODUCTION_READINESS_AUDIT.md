@@ -3,9 +3,151 @@
 **Repository:** `https://github.com/puggythemeddler/Gears-Glitch`
 **Phase:** 0 (AUDIT ONLY — no source code modified)
 **Date:** 2026-08-31
-**Status:** Audit complete. Findings classified P0/P1/P2/P3. **No implementation performed.**
+**Status:** Audit complete. Findings classified P0/P1/P2/P3. Implementation pass in progress.
 
-> This document is the Phase 0 deliverable. It captures the current state of the platform across all audit categories, classifies every finding by severity, and documents risk, fix, migration impact, regression risk, and testing required. It is intentionally read-only. No change-safety protocol actions were executed.
+> This document is the Phase 0 deliverable. It captures the current state of the platform across all audit categories, classifies every finding by severity, and documents risk, fix, migration impact, regression risk, and testing required.
+
+---
+
+## Implementation Status (verified 2026-09-02)
+
+Each finding classified against current code. **RESOLVED** = fix present and verified. **PARTIAL** = some mitigation in place but not full fix. **STILL-OPEN** = fix absent.
+
+### Security
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| S-1 | P0 | **RESOLVED** | `index.ts:1997` — SIM auto-confirm gated behind `NODE_ENV !== "production"` |
+| S-2 | P1 | **RESOLVED** | `index.ts:6346` — WhatsApp media now has `adminAuthMiddleware` |
+| S-3 | P1 | **RESOLVED** | `index.ts:575-584` — path-confinement asserts `localPath.startsWith(dataDir + path.sep)` |
+| S-4/A-3 | P1/P3 | **RESOLVED** | `index.ts:4289-4385` — single-use `jti` + `consumeAuthToken()` on all magic/reset flows |
+| S-5 | P2 | **RESOLVED** | `index.ts:2047-2069` — `requirePdfAuth` accepts purpose tokens via header only; session JWTs via query string rejected |
+| S-6/P-4 | P2 | **RESOLVED** | `index.ts:767-768` — `consumerSecret`/`passkey` redacted in `GET /api/mpesa/config` |
+| S-7 | P2 | **PARTIAL** | `index.ts:406` — `trust proxy: 1` kept (Render-recommended single hop); no broader scoping |
+| S-8 | P2 | **RESOLVED** | `index.ts:3398-3420` — message read scoped to customer/provider ownership |
+| S-9 | P3 | **RESOLVED** | `index.ts:4471` — `requirePermission("staff:update")` on staff reset; plans/all filters inactive |
+| S-10 | P3 | **RESOLVED** | `index.ts:481` — nosniff on `/uploads`; `upload.ts:106-123` — SVG not in magic-byte list |
+
+### Authentication
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| A-1 | P2 | **PARTIAL** | Rotation on password change: RESOLVED (`auth.ts:110-118`). httpOnly cookies: STILL-OPEN (localStorage) |
+| A-2 | P2 | **RESOLVED** | `auth.ts:10-50` — per-account lockout with exponential backoff; wired to all 3 login paths |
+| A-3 | P3 | **RESOLVED** | See S-4 above |
+| A-4 | P3 | **STILL-OPEN** | No step-up/re-auth middleware for high-risk admin actions |
+
+### Multi-Tenancy
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| T-1 | P0 | **RESOLVED** | All cross-tenant CP routes now use `requireAdmin`; only `POST /api/plans/sync-up` is `requireAuth`-only (client callback, correct) |
+| T-2 | P1 | **RESOLVED** | `cp/index.ts:113-131` — `x-api-key` resolves to `cp_users` row; query-string key removed |
+| T-3/C-4 | P2 | **RESOLVED** | `cp/db.ts:5-8` — SSL defaults to `rejectUnauthorized: true` |
+| T-4 | P1 | **STILL-OPEN** | No dedicated architecture documentation file |
+
+### Authorization
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| Z-1 | P0 | **PARTIAL** | 27 routes upgraded with `requirePermission`; 52 still use `adminAuthMiddleware` only (role-check, not granular RBAC) |
+| Z-2 | P1 | **RESOLVED** | `index.ts:2647-2651` — purpose-bound invoice token, 5m expiry |
+| Z-3/R-1 | P1 | **RESOLVED** | `repairs.ts:172-191` — `VALID_TRANSITIONS` map + `isValidTransition()` enforced at L511 |
+| Z-4 | P2 | **RESOLVED** | `index.ts:5646-5656` — `requireShopFeature("Repair ticketing")` on all 19 repair routes |
+| Z-5 | P2 | **PARTIAL** | Binary admin/non-admin check sufficient for current roles |
+
+### Control Plane
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| C-1 | P0 | **RESOLVED** | `cp/index.ts:620-666` — two-step delete requiring `{ confirm, reason }` |
+| C-2 | P0 | **RESOLVED** | `cp/index.ts:1200-1219` — `pg_dump` via `spawn` with argv, no shell interpolation |
+| C-3 | P1 | **RESOLVED** | `cp/index.ts:47-49` — `authLimiter` (20/15min) + `destructiveLimiter` (30/15min) |
+| C-5 | P2 | **RESOLVED** | `cp/index.ts:43` — missing `JWT_SECRET` throws in production |
+| C-6 | P2 | **STILL-OPEN** | CSP allows `'unsafe-inline'` in `scriptSrc` (dashboard inline handlers) |
+| C-7 | P2 | **STILL-OPEN** | `auditLog()` not awaited (fire-and-forget) |
+| C-8 | P3 | **STILL-OPEN** | `render.yaml` `plan: free` |
+| C-9 | P3 | **STILL-OPEN** | Hardcoded `VERCEL_TEAM_ID`, `DOMAIN_BASE`, repo owner in `render.yaml` |
+
+### Database
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| DB-1 | P1 | **RESOLVED** | Migration `0006` — partial unique indexes `(product_id) WHERE branch_id IS NULL` + `(product_id, branch_id) WHERE branch_id IS NOT NULL` |
+| DB-2 | P1 | **RESOLVED** | Migration `0005` — indexes on orders.status, branch_id, created_at, serial_numbers, stock_movements |
+| DB-3 | P1 | **RESOLVED** | Migration `0008` — FKs on orders.coupon_id, orders.gift_card_id, serial_numbers, repair_parts_used, credit_notes (NOT VALID) |
+| DB-4 | P1 | **RESOLVED** | Migration `0008` — `order_items.product_id`, `stock_levels.product_id`, `repair_updates.ticket_id` changed to `ON DELETE RESTRICT` |
+| DB-5 | P2 | **RESOLVED** | Migration `0008` — unique constraint on `cart_recovery_reminders(customer_id, order_id)` |
+| DB-6 | P2 | **PARTIAL** | `idempotency_key` unique index exists; POS accepts optional key but doesn't require it |
+| DB-7 | P3 | **STILL-OPEN** | `stock_movements.created_by` nullable; `orders.processed_by` free-text |
+
+### Migrations
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| M-1 | P1 | **RESOLVED** | `db.ts:629-653` — `runVersionedMigrations()` with `schema_migrations` table, transactional, throws on failure |
+| M-2 | P3 | **RESOLVED** | `server/migrations/0001-0009` all wired to runner |
+| M-3 | P1 | **RESOLVED** | `db.ts:655-669` — `initDb()` runs schema + migrations + versioned migrations in order |
+
+### Financial / Money (§8)
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| §8 | P0 | **PARTIAL** | Migration `0002` converts all monetary columns to `NUMERIC(12,2)` at runtime. `schema.sql` still declares `DOUBLE PRECISION` (alter runs on every fresh DB) |
+
+### Inventory
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| I-1 | P0 | **PARTIAL** | POS uses atomic `GREATEST(x - qty, 0)` upsert; no `WHERE qty >=` fail-fast guard (silent clamping) |
+| I-2 | P0 | **RESOLVED** | `db.ts:2653-2695` — `convertQuoteToOrder` now wrapped in `transaction()` (order + items + stock atomic) |
+| I-3 | P0 | **RESOLVED** | `db.ts:2143-2198` — `completeStockTransfer` in `transaction()` with `FOR UPDATE` locks |
+| I-4 | P0 | **PARTIAL** | `index.ts:1911` guarded (`AND stock_on_hand >= $1`); `stock_levels` path uses `GREATEST` without guard |
+| I-5 | P1 | **RESOLVED** | `db.ts:3554-3609` — `receivePurchaseOrderItem` in `transaction()` with `FOR UPDATE` |
+| I-6 | P1 | **RESOLVED** | `repairs.ts:641-684` — `addRepairPart` in `transaction()`; stock + parts roll back together |
+| I-7 | P2 | **RESOLVED** | `db.ts:2087-2106` — `updateStockLevel` atomic upsert |
+
+### Orders
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| O-1 | P0 | **RESOLVED** | `db.ts:3035-3046` — `createOrder` in `transaction()` |
+| O-2 | P0 | **PARTIAL** | POS checkout order/stock as separate queries; individual upserts are atomic but not transactional together |
+| O-3 | P1 | **RESOLVED** | `db.ts:2653-2695` — `convertQuoteToOrder` now in `transaction()` |
+| O-4 | P2 | **RESOLVED** | `db.ts:2755-2765` — `recordCouponUsage` conditional increment: `used_count < max_uses` |
+
+### Serial Numbers
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| SN-1 | P2 | **RESOLVED** | Migration `0008` — CHECK constraint + FK on `purchase_order_item_id` |
+| SN-2 | P1 | **RESOLVED** | `db.ts:3573-3585` — serial inserts in `transaction()` |
+| SN-5 | P1 | **STILL-OPEN** | No `customer_id` on `serial_numbers`; indirect via `order_id→orders.customer_id` |
+
+### Repairs
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| R-1/Z-3 | P0 | **RESOLVED** | See Z-3 above |
+| R-2/I-6 | P0 | **RESOLVED** | See I-6 above |
+| R-3 | P1 | **RESOLVED** | `repairs.ts:172-185` — VALID_TRANSITIONS includes awaiting_approval, approved, rejected, unrepairable |
+| R-4 | P1 | **RESOLVED** | Migration `0007` — adds serial_number, is_warranty_repair, warranty_claim_id to repair_tickets |
+| R-5 | P1 | **RESOLVED** | `repairs.ts:620-627` — assignment change recorded via `addRepairUpdate()` with type "assignment" |
+| R-6 | P2 | **STILL-OPEN** | Hardcoded KES rates, mixed rounding (ties to §8 money representation) |
+| R-7 | P2 | **STILL-OPEN** | `eta_at` defaults to NOW()+48h, not configurable |
+| R-8 | P3 | **STILL-OPEN** | Warranty register LIMIT 2000 without pagination |
+
+### Warranty
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| W-1 | P0 | **RESOLVED** | Migration `0003` creates `warranty_claims` table; `server/warranty.ts` implements full CRUD with status transitions |
+| W-2 | P1 | **RESOLVED** | Migration `0009` adds `coverage_terms`, `exclusions` + CHECK on status |
+| W-3 | P1 | **STILL-OPEN** | Warranty start/expiry month-edge-case computation unchanged |
+| W-4 | P2 | **STILL-OPEN** | Warranty not a first-class event on sale |
+
+### Subscriptions
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| SU-1 | P1 | **STILL-OPEN** | `branch_subscriptions.expires_at` never populated |
+| SU-2 | P1 | **STILL-OPEN** | No recurring billing or expiry enforcement |
+
+---
+
+### Summary: Items by Status
+
+**RESOLVED (38):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, DB-1..DB-5, M-1, M-2, M-3, I-2, I-3, I-5, I-6, I-7, O-1, O-3, O-4, SN-1, SN-2, R-1..R-5, W-1, W-2
+
+**PARTIAL (9):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (27/79 done), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), I-1/I-4 (atomic but no oversell guard), O-2 (atomic upserts but not transactional), §8 (NUMERIC in migration, not schema)
+
+**STILL-OPEN (18):** A-1 (httpOnly cookies), A-4 (step-up auth), T-4 (architecture docs), Z-1 (52 routes), C-7 (audit log await), C-8 (free tier), C-9 (hardcoded config), DB-7 (nullable audit cols), I-1/I-4 (oversell guard), O-2 (POS transaction), R-6 (hardcoded rates), R-7 (hardcoded ETA), R-8 (warranty pagination), SN-5 (customer_id), SU-1 (expires_at), SU-2 (billing), W-3 (warranty expiry), W-4 (warranty event)
 
 ---
 

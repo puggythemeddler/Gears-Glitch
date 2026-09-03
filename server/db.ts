@@ -2658,34 +2658,36 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
   const customer = await findCustomerById(quote.customerId);
   const customerName = quote.customerName || customer?.name || "Quote Customer";
   const customerEmail = customer?.email || "";
-  const result = await query(
-    `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, invoice_number, source) VALUES ($1, $2, $3, 'delivered', $4, 'Quote Conversion', '0', 0, $5, $6, $7, $8, 'quote') RETURNING id`,
-    [quote.customerId, customerName, customerEmail, customerName, `Converted from quote ${quote.quoteNumber}`, subtotal, staffName, invoiceNumber]
-  );
-  const orderId = result.rows[0].id;
-  for (const item of quote.items) {
-    await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 1)", [orderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal]);
-  }
-  for (const item of quote.items) {
-    try {
-      await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.productId]);
-    } catch { console.warn("[quote convert] Failed to update stock on hand"); }
-    try {
+  // Order + line items + stock decrement commit atomically so a mid-loop failure
+  // can never leave an order/items without a corresponding stock movement (or
+  // deduct stock without an order). Mirrors createOrder/receivePurchaseOrderItem.
+  const orderId = await transaction(async (client) => {
+    const result = await client.query(
+      `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, invoice_number, source) VALUES ($1, $2, $3, 'delivered', $4, 'Quote Conversion', '0', 0, $5, $6, $7, $8, 'quote') RETURNING id`,
+      [quote.customerId, customerName, customerEmail, customerName, `Converted from quote ${quote.quoteNumber}`, subtotal, staffName, invoiceNumber]
+    );
+    const insertOrderId = result.rows[0].id;
+    for (const item of quote.items) {
+      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 1)", [insertOrderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal]);
+    }
+    for (const item of quote.items) {
+      await client.query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.productId]);
       // Atomic decrement — no read-then-write race. Insert preserves an empty
       // stock_levels row if absent; on conflict the current value is decremented
       // atomically with a GREATEST floor so it can never go negative.
-      await query(
+      await client.query(
         `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
          VALUES ($1, 0, 0, 0, 5)
          ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text`,
         [item.productId, item.quantity]
       );
-      await query(
+      await client.query(
         "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'sale', $2, 'order', $3, $4)",
-        [item.productId, -item.quantity, String(orderId), `Converted quote #${quote.quoteNumber}`]
+        [item.productId, -item.quantity, String(insertOrderId), `Converted quote #${quote.quoteNumber}`]
       );
-    } catch { console.warn("[quote convert] Failed to sync stock levels"); }
-  }
+    }
+    return insertOrderId;
+  });
   const order = (await getOrder(orderId))!;
   await updateQuoteStatus(quoteId, "approved");
   return { order, invoiceNumber };
@@ -2750,8 +2752,16 @@ async function deleteCoupon(id: number): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
-async function recordCouponUsage(couponId: number, orderId: number): Promise<void> {
-  await query("UPDATE coupons SET used_count = used_count + 1 WHERE id = $1", [couponId]);
+async function recordCouponUsage(couponId: number, orderId: number): Promise<boolean> {
+  // Guard-gated atomic increment: never exceed max_uses even when several
+  // concurrent orders passed validateCoupon at the same used_count. The row
+  // lock taken by this UPDATE makes check-then-increment race-free. Returns
+  // false if the coupon is exhausted/deactivated so a caller can report it.
+  const result = await query(
+    "UPDATE coupons SET used_count = used_count + 1 WHERE id = $1 AND is_active = 1 AND (max_uses IS NULL OR max_uses = 0 OR used_count < max_uses)",
+    [couponId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 // ============ GIFT CARDS ============
