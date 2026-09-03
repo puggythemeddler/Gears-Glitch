@@ -2671,14 +2671,21 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
       await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 1)", [insertOrderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal]);
     }
     for (const item of quote.items) {
-      await client.query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.productId]);
+      // I-1/I-4: guarded atomic decrement — if stock_on_hand is insufficient the
+      // UPDATE matches no row (rowCount 0) and we fail the whole conversion loudly
+      // instead of silently clamping/overselling. Throwing rolls back the order+items.
+      const productRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.productId]);
+      if ((productRes.rowCount ?? 0) === 0) {
+        throw new Error(`Insufficient stock to convert quote: ${item.productName || item.productId}`);
+      }
       // Atomic decrement — no read-then-write race. Insert preserves an empty
       // stock_levels row if absent; on conflict the current value is decremented
-      // atomically with a GREATEST floor so it can never go negative.
+      // only while it can cover the quantity (guarded, no oversell).
       await client.query(
         `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
          VALUES ($1, 0, 0, 0, 5)
-         ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text`,
+         ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text
+         WHERE stock_levels.quantity_in_stock >= $2`,
         [item.productId, item.quantity]
       );
       await client.query(
@@ -4601,40 +4608,44 @@ async function voidSerial(id: number): Promise<{ ok: boolean; error?: string }> 
   return { ok: true };
 }
 
-async function linkSerialsToOrderItem(orderItemId: number, serialNumbers: string[]): Promise<{ ok: boolean; error?: string }> {
+async function linkSerialsToOrderItem(orderItemId: number, serialNumbers: string[], txClient?: any): Promise<{ ok: boolean; error?: string }> {
+  const run = async (client: any) => {
+    const itemRes = await client.query("SELECT order_id, product_id FROM order_items WHERE id = $1", [orderItemId]);
+    const item = itemRes.rows?.[0] as any;
+    if (!item) return { ok: false, error: "Order item not found" };
+    const warranty = await client.query("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [item.product_id]);
+    const w = warranty.rows?.[0] as any;
+    const orderRes = await client.query("SELECT created_at FROM orders WHERE id = $1", [item.order_id]);
+    const order = orderRes.rows?.[0] as any;
+    const list: string[] = [];
+    for (const raw of serialNumbers || []) {
+      const sn = String(raw || "").trim();
+      if (!sn) continue;
+      // FOR UPDATE serialises concurrent claims so the same serial can never
+      // be attached to two order lines.
+      const serialRes = await client.query("SELECT * FROM serial_numbers WHERE serial_number = $1 FOR UPDATE", [sn]);
+      const serial = serialRes.rows?.[0] as any;
+      if (!serial) return { ok: false, error: `Serial ${sn} not found` };
+      if (serial.product_id !== item.product_id) return { ok: false, error: `Serial ${sn} does not belong to this product` };
+      if (serial.status === "sold") return { ok: false, error: `Serial ${sn} is already sold` };
+      if (serial.status === "void") return { ok: false, error: `Serial ${sn} has been voided` };
+      let expires: string | null = null;
+      if (w && w.has_warranty && w.warranty_duration) {
+        expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), w.warranty_duration);
+      }
+      await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serial.id]);
+      list.push(sn);
+    }
+    if (list.length) {
+      await client.query("UPDATE order_items SET serial_number = $1 WHERE id = $2", [list.join(", "), orderItemId]);
+    }
+    return { ok: true };
+  };
   try {
-    return await transaction(async (client) => {
-      const itemRes = await client.query("SELECT order_id, product_id FROM order_items WHERE id = $1", [orderItemId]);
-      const item = itemRes.rows?.[0] as any;
-      if (!item) return { ok: false, error: "Order item not found" };
-      const warranty = await client.query("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [item.product_id]);
-      const w = warranty.rows?.[0] as any;
-      const orderRes = await client.query("SELECT created_at FROM orders WHERE id = $1", [item.order_id]);
-      const order = orderRes.rows?.[0] as any;
-      const list: string[] = [];
-      for (const raw of serialNumbers || []) {
-        const sn = String(raw || "").trim();
-        if (!sn) continue;
-        // FOR UPDATE serialises concurrent claims so the same serial can never
-        // be attached to two order lines.
-        const serialRes = await client.query("SELECT * FROM serial_numbers WHERE serial_number = $1 FOR UPDATE", [sn]);
-        const serial = serialRes.rows?.[0] as any;
-        if (!serial) return { ok: false, error: `Serial ${sn} not found` };
-        if (serial.product_id !== item.product_id) return { ok: false, error: `Serial ${sn} does not belong to this product` };
-        if (serial.status === "sold") return { ok: false, error: `Serial ${sn} is already sold` };
-        if (serial.status === "void") return { ok: false, error: `Serial ${sn} has been voided` };
-        let expires: string | null = null;
-        if (w && w.has_warranty && w.warranty_duration) {
-          expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), w.warranty_duration);
-        }
-        await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serial.id]);
-        list.push(sn);
-      }
-      if (list.length) {
-        await client.query("UPDATE order_items SET serial_number = $1 WHERE id = $2", [list.join(", "), orderItemId]);
-      }
-      return { ok: true };
-    });
+    // When a transaction client is provided (O-2: POS checkout), run within the
+    // outer transaction so a failed serial link rolls back the whole order.
+    if (txClient) return await run(txClient);
+    return await transaction(run);
   } catch (e: any) {
     return { ok: false, error: String(e?.message || "Failed to link serial numbers") };
   }

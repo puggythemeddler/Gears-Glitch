@@ -1866,103 +1866,109 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     const tendered = Number(tenderedAmount) > 0 ? Number(tenderedAmount) : 0;
     const holding = pmt === "mpesa";
     let orderId: number;
-    try {
-      if (idempotencyKey) {
-        const r = await queryOne(
-          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6, 'pos', $7, $8) RETURNING id",
-          [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey, branchId ? Number(branchId) : null, tendered]
-        ) as any;
-        if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
-        orderId = r.id;
-      } else {
-        const r = await queryOne(
-          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6, $7) RETURNING id",
-          [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null, tendered]
-        ) as any;
-        if (!r) { res.status(500).json({ error: "Failed to create order." }); return; }
-        orderId = r.id;
-      }
-    } catch (insertErr: any) {
-      if (insertErr?.code === "23505") {
-        // Duplicate primary key — fix sequence and retry once
-        await query("SELECT setval('orders_id_seq', COALESCE((SELECT MAX(id) FROM orders), 1))");
-        const r2 = await queryOne(
-          "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6, $7) RETURNING id",
-          [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null, tendered]
-        ) as any;
-        if (!r2) { res.status(500).json({ error: "Failed to create order after retry." }); return; }
-        orderId = r2.id;
-      } else { throw insertErr; }
-    }
-    for (const item of resolvedItems) {
-      const hw = item.hasWarranty ? 1 : 0;
-      const wd = item.warrantyDuration || 0;
-      const tx = (item.taxable !== false) ? 1 : 0;
-      // W-4: snapshot warranty expiry at sale (first-class event). Clamped month-end.
-      let wExp: string | null = null;
-      if (hw && wd) {
-        const expiry = addCalendarMonthsClamped(new Date(), wd);
-        wExp = `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, "0")}-${String(expiry.getDate()).padStart(2, "0")}`;
-      }
-      const inserted = await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id", [orderId, item.id, item.name, item.unitPrice, item.quantity, item.lineTotal, hw, wd, wExp, tx]);
-      const orderItemId = inserted.rows[0]?.id;
-      if (orderItemId && item.serials && item.serials.length) {
-        const linked = await linkSerialsToOrderItem(orderItemId, item.serials);
-        if (!linked.ok) { res.status(400).json({ error: linked.error || "Failed to link serial numbers." }); return; }
-      }
-    }
-    // Hold stock for M-Pesa (deduct on payment confirm); deduct immediately for cash
-    for (const item of resolvedItems) {
-      try {
-        await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.id]);
-      } catch { console.warn("[server] Failed to update stock on hand"); }
-      try {
-        const bid = branchId ? Number(branchId) : null;
-        if (holding) {
-          if (bid) {
-            await query(
-              `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-               VALUES ($1, $2, 0, $3, 0, 5)
-               ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_reserved = quantity_reserved + $3, updated_at = NOW()::text`,
-              [item.id, bid, item.quantity]
-            );
-          } else {
-            await query(
-              `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-               VALUES ($1, 0, $2, 0, 5)
-               ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_reserved = quantity_reserved + $2, updated_at = NOW()::text`,
-              [item.id, item.quantity]
-            );
-          }
-          await query(
-            "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'reserve', $2, 'order', $3, $4, $5, $6)",
-            [item.id, -item.quantity, String(orderId), `POS reserved #${orderId} (awaiting M-Pesa)`, staff.sub, bid || null]
+    // O-2: create the order, its line items, serial links, and stock movements in
+    // a single transaction so a mid-checkout failure rolls everything back — never
+    // an orphaned order, and never stock deducted without an order (or vice versa).
+    // Stock failures now abort the sale (fail loudly) instead of being swallowed.
+    const runCheckout = async (): Promise<number> => {
+      return await transaction(async (client) => {
+        let r: any;
+        if (idempotencyKey) {
+          r = await client.query(
+            "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6, 'pos', $7, $8) RETURNING id",
+            [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey, branchId ? Number(branchId) : null, tendered]
           );
         } else {
-          // Atomic decrement (single statement, no read-then-write) so concurrent
-          // checkouts can never lose an update / double-count stock. The row-level
-          // lock taken by this UPDATE serialises per product; GREATEST floors at 0.
-          if (bid) {
-            await query(
-              `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-               VALUES ($1, $2, 0, 0, 0, 5)
-               ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $3, 0), updated_at = NOW()::text`,
-              [item.id, bid, item.quantity]
-            );
-          } else {
-            await query(
-              `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-               VALUES ($1, 0, 0, 0, 5)
-               ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text`,
-              [item.id, item.quantity]
-            );
-          }
-          await query(
-            "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5, $6)",
-            [item.id, -item.quantity, String(orderId), `POS sale #${orderId}`, staff.sub, bid || null]
+          r = await client.query(
+            "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6, $7) RETURNING id",
+            [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null, tendered]
           );
         }
-      } catch (e) { console.error("[POS stock sync]", e); }
+        const newOrderId = r.rows[0].id;
+        for (const item of resolvedItems) {
+          const hw = item.hasWarranty ? 1 : 0;
+          const wd = item.warrantyDuration || 0;
+          const tx = (item.taxable !== false) ? 1 : 0;
+          // W-4: snapshot warranty expiry at sale (first-class event). Clamped month-end.
+          let wExp: string | null = null;
+          if (hw && wd) {
+            const expiry = addCalendarMonthsClamped(new Date(), wd);
+            wExp = `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, "0")}-${String(expiry.getDate()).padStart(2, "0")}`;
+          }
+          const inserted = await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id", [newOrderId, item.id, item.name, item.unitPrice, item.quantity, item.lineTotal, hw, wd, wExp, tx]);
+          const orderItemId = inserted.rows[0]?.id;
+          if (orderItemId && item.serials && item.serials.length) {
+            const linked = await linkSerialsToOrderItem(orderItemId, item.serials, client);
+            if (!linked.ok) throw new Error(linked.error || "Failed to link serial numbers.");
+          }
+        }
+        // Hold stock for M-Pesa (deduct on payment confirm); deduct immediately for cash
+        for (const item of resolvedItems) {
+          const bid = branchId ? Number(branchId) : null;
+          if (holding) {
+            const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.id]);
+            if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
+            if (bid) {
+              await client.query(
+                `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+                 VALUES ($1, $2, 0, $3, 0, 5)
+                 ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_reserved = quantity_reserved + $3, updated_at = NOW()::text`,
+                [item.id, bid, item.quantity]
+              );
+            } else {
+              await client.query(
+                `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+                 VALUES ($1, 0, $2, 0, 5)
+                 ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_reserved = quantity_reserved + $2, updated_at = NOW()::text`,
+                [item.id, item.quantity]
+              );
+            }
+            await client.query(
+              "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'reserve', $2, 'order', $3, $4, $5, $6)",
+              [item.id, -item.quantity, String(newOrderId), `POS reserved #${newOrderId} (awaiting M-Pesa)`, staff.sub, bid || null]
+            );
+          } else {
+            // Guarded atomic decrement (no read-then-write) so concurrent checkouts
+            // can never lose an update / double-count stock; fails loudly if stock
+            // is insufficient rather than silently overselling (I-1/I-4).
+            const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.id]);
+            if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
+            if (bid) {
+              await client.query(
+                `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+                 VALUES ($1, $2, 0, 0, 0, 5)
+                 ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $3, 0), updated_at = NOW()::text
+                 WHERE stock_levels.quantity_in_stock >= $3`,
+                [item.id, bid, item.quantity]
+              );
+            } else {
+              await client.query(
+                `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+                 VALUES ($1, 0, 0, 0, 5)
+                 ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text
+                 WHERE stock_levels.quantity_in_stock >= $2`,
+                [item.id, item.quantity]
+              );
+            }
+            await client.query(
+              "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5, $6)",
+              [item.id, -item.quantity, String(newOrderId), `POS sale #${newOrderId}`, staff.sub, bid || null]
+            );
+          }
+        }
+        return newOrderId;
+      });
+    };
+    try {
+      orderId = await runCheckout();
+    } catch (checkoutErr: any) {
+      if (checkoutErr?.code === "23505") {
+        // Duplicate primary key — fix sequence and retry once
+        await query("SELECT setval('orders_id_seq', COALESCE((SELECT MAX(id) FROM orders), 1))");
+        orderId = await runCheckout();
+      } else {
+        throw checkoutErr;
+      }
     }
     await updateOrderStatus(orderId, holding ? "pending_payment" : "delivered");
     // Generate invoice number for the order
