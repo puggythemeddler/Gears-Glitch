@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   line_total DOUBLE PRECISION NOT NULL DEFAULT 0,
   has_warranty INTEGER NOT NULL DEFAULT 0,
   warranty_duration INTEGER NOT NULL DEFAULT 0,
+  warranty_expires TEXT,
   serial_number TEXT NOT NULL DEFAULT '',
   stock_deducted INTEGER NOT NULL DEFAULT 0,
   taxable INTEGER NOT NULL DEFAULT 1,
@@ -657,7 +658,7 @@ CREATE TABLE IF NOT EXISTS credit_notes (
   reason TEXT NOT NULL DEFAULT '',
   reason_code TEXT NOT NULL DEFAULT '13',
   status TEXT NOT NULL DEFAULT 'issued',
-  created_by INTEGER NOT NULL,
+  created_by INTEGER,
   etims_cn_number TEXT,
   etims_control_code TEXT,
   etims_serial_number INTEGER,
@@ -665,7 +666,8 @@ CREATE TABLE IF NOT EXISTS credit_notes (
   etims_signature_data TEXT,
   etims_submitted_at TEXT,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
-  FOREIGN KEY (order_id) REFERENCES orders(id)
+  FOREIGN KEY (order_id) REFERENCES orders(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS credit_note_items (

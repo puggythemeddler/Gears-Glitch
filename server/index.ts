@@ -1898,7 +1898,13 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       const hw = item.hasWarranty ? 1 : 0;
       const wd = item.warrantyDuration || 0;
       const tx = (item.taxable !== false) ? 1 : 0;
-      const inserted = await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id", [orderId, item.id, item.name, item.unitPrice, item.quantity, item.lineTotal, hw, wd, tx]);
+      // W-4: snapshot warranty expiry at sale (first-class event). Clamped month-end.
+      let wExp: string | null = null;
+      if (hw && wd) {
+        const expiry = addCalendarMonthsClamped(new Date(), wd);
+        wExp = `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, "0")}-${String(expiry.getDate()).padStart(2, "0")}`;
+      }
+      const inserted = await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id", [orderId, item.id, item.name, item.unitPrice, item.quantity, item.lineTotal, hw, wd, wExp, tx]);
       const orderItemId = inserted.rows[0]?.id;
       if (orderItemId && item.serials && item.serials.length) {
         const linked = await linkSerialsToOrderItem(orderItemId, item.serials);
@@ -2568,7 +2574,8 @@ app.get("/api/admin/warranties", ownerAuthMiddleware, asyncHandler(async (req: R
            o.customer_name,
            o.created_at AS order_created_at,
            s.sold_at,
-           s.warranty_expires
+           s.warranty_expires,
+           oi.warranty_expires AS order_item_expires
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id
     LEFT JOIN serial_numbers s ON s.order_item_id = oi.id
@@ -2587,7 +2594,9 @@ app.get("/api/admin/warranties", ownerAuthMiddleware, asyncHandler(async (req: R
   const now = Date.now();
   const warranties = rows.map((r: any) => {
     const start = parseDate(r.sold_at) || parseDate(r.order_created_at);
-    let expiry = parseDate(r.warranty_expires);
+    // W-4: prefer the first-class expiries snapshotted at sale (order item, then
+    // serial), falling back to deriving from the sale date when absent.
+    let expiry = parseDate(r.order_item_expires) || parseDate(r.warranty_expires);
     if (!expiry && start && Number(r.warranty_duration) > 0) {
       // Whole-calendar-month addition with month-end clamping (Jan 31 + 1mo -> Feb 28).
       const m = start.getMonth() + Number(r.warranty_duration);

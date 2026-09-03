@@ -73,7 +73,7 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 | DB-4 | P1 | **RESOLVED** | Migration `0008` — `order_items.product_id`, `stock_levels.product_id`, `repair_updates.ticket_id` changed to `ON DELETE RESTRICT` |
 | DB-5 | P2 | **RESOLVED** | Migration `0008` — unique constraint on `cart_recovery_reminders(customer_id, order_id)` |
 | DB-6 | P2 | **PARTIAL** | `idempotency_key` unique index exists; POS accepts optional key but doesn't require it |
-| DB-7 | P3 | **STILL-OPEN** | `stock_movements.created_by` nullable; `orders.processed_by` free-text |
+| DB-7 | P3 | **RESOLVED** | `0011_audit_traceability.sql` — FK added on `credit_notes.created_by`; `stock_movements.created_by` already FK'd; `orders.staff_id` is the traceable FK (free-text `processed_by` retained as display name) |
 
 ### Migrations
 | ID | Sev | Status | Evidence |
@@ -130,8 +130,8 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 |---|---|---|---|
 | W-1 | P0 | **RESOLVED** | Migration `0003` creates `warranty_claims` table; `server/warranty.ts` implements full CRUD with status transitions |
 | W-2 | P1 | **RESOLVED** | Migration `0009` adds `coverage_terms`, `exclusions` + CHECK on status |
-| W-3 | P1 | **STILL-OPEN** | Warranty start/expiry month-edge-case computation unchanged |
-| W-4 | P2 | **STILL-OPEN** | Warranty not a first-class event on sale |
+| W-3 | P1 | **RESOLVED** | Both `computeWarrantyExpiry` (db.ts) and `addCalendarMonthsClamped` (index.ts register read-path) use robust month-end clamping (Jan 31 + 1mo -> Feb 28); audit line ref was stale |
+| W-4 | P2 | **RESOLVED** | `0010_order_items_warranty_expires.sql` — warranty expiry snapshotted on `order_items` at sale (`createOrder`, POS); register prefers snapshotted value |
 
 ### Subscriptions
 | ID | Sev | Status | Evidence |
@@ -143,11 +143,11 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 
 ### Summary: Items by Status
 
-**RESOLVED (43):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, DB-1..DB-5, M-1, M-2, M-3, I-2, I-3, I-5, I-6, I-7, O-1, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2
+**RESOLVED (46):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, DB-1..DB-5, DB-7, M-1, M-2, M-3, I-2, I-3, I-5, I-6, I-7, O-1, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2, W-3, W-4
 
 **PARTIAL (9):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (27/79 done), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), I-1/I-4 (atomic but no oversell guard), O-2 (atomic upserts but not transactional), §8 (NUMERIC in migration, not schema)
 
-**STILL-OPEN (13):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier), C-9 (hardcoded config), DB-7 (nullable audit cols), I-1/I-4 (oversell guard), O-2 (POS transaction), R-6 (hardcoded rates), SU-1 (expires_at), SU-2 (billing), W-3 (warranty expiry), W-4 (warranty event)
+**STILL-OPEN (10):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier), C-9 (hardcoded config), I-1/I-4 (oversell guard), O-2 (POS transaction), R-6 (hardcoded rates), SU-1 (expires_at), SU-2 (billing)
 
 ---
 

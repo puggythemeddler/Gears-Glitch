@@ -3050,7 +3050,10 @@ async function createOrder(data: { customerId: number; customerName: string; cus
     );
     const oid = result.rows[0].id;
     for (const item of data.items) {
-      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [oid, item.productId, item.name, Math.round(item.price * 100) / 100, item.quantity, item.hasWarranty ? 1 : 0, item.warrantyDuration || 0, item.taxable !== false ? 1 : 0]);
+      // W-4: snapshot the warranty expiry at sale time (first-class event) rather
+      // than deriving it later. computeWarrantyExpiry clamps to month-end (Jan 31 + 1mo -> Feb 28).
+      const wExp = item.hasWarranty && item.warrantyDuration ? computeWarrantyExpiry(new Date().toISOString(), item.warrantyDuration) : null;
+      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, has_warranty, warranty_duration, warranty_expires, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [oid, item.productId, item.name, Math.round(item.price * 100) / 100, item.quantity, item.hasWarranty ? 1 : 0, item.warrantyDuration || 0, wExp, item.taxable !== false ? 1 : 0]);
     }
     return oid;
   });
@@ -3063,7 +3066,7 @@ async function getOrder(id: number): Promise<Order | undefined> {
   const items = await queryAll("SELECT * FROM order_items WHERE order_id = $1", [id]) as any[];
   return {
     id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0, tenderedAmount: Number(row.tendered_amount) || 0,
-    items: items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, serialNumber: i.serial_number || "", cancelled: i.cancelled })),
+    items: items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, warrantyExpires: i.warranty_expires || null, serialNumber: i.serial_number || "", cancelled: i.cancelled })),
   };
 }
 
