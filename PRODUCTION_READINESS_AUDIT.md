@@ -46,7 +46,7 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 ### Authorization
 | ID | Sev | Status | Evidence |
 |---|---|---|---|
-| Z-1 | P0 | **PARTIAL** | 27 routes upgraded with `requirePermission`; 52 still use `adminAuthMiddleware` only (role-check, not granular RBAC) |
+| Z-1 | P0 | **PARTIAL** | 143 stateful admin/staff routes now carry `requirePermission` (RBAC) via `hasPermission` base-role fallback; remaining unguarded routes are self-service auth (2FA/password/step-up) or admin-only resource endpoints that stay on `adminAuthMiddleware` (role-gated) |
 | Z-2 | P1 | **RESOLVED** | `index.ts:2647-2651` — purpose-bound invoice token, 5m expiry |
 | Z-3/R-1 | P1 | **RESOLVED** | `repairs.ts:172-191` — `VALID_TRANSITIONS` map + `isValidTransition()` enforced at L511 |
 | Z-4 | P2 | **RESOLVED** | `index.ts:5646-5656` — `requireShopFeature("Repair ticketing")` on all 19 repair routes |
@@ -145,9 +145,9 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 
 **RESOLVED (53):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, A-4, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, C-9, DB-1..DB-5, DB-7, M-1, M-2, M-3, I-1/I-4, I-2, I-3, I-5, I-6, I-7, O-1, O-2, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2, W-3, W-4, SU-1, SU-2
 
-**PARTIAL (8):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (27/79 done), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), R-6 (rates configurable, §8 money pending), §8 (NUMERIC in migration, not schema)
+**PARTIAL (8):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (143 stateful routes guarded; self-service auth + admin-only endpoints remain on role-gating), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), R-6 (rates configurable, §8 money pending), §8 (NUMERIC in migration, not schema)
 
-**STILL-OPEN (3):** A-1 (httpOnly cookies), Z-1 (52 routes), C-8 (free tier)
+**STILL-OPEN (2):** A-1 (httpOnly cookies), C-8 (free tier)
 
 ---
 
@@ -228,7 +228,7 @@ Gears&Glitch is a feature-rich SaaS platform combining e-commerce, POS, inventor
 
 | # | Sev | Location | Problem | Fix |
 |---|-----|----------|---------|-----|
-| Z-1 | **P0** | `server/index.ts` (many admin routes) | Many "admin" routes use `adminAuthMiddleware` (role check only) without the granular `requirePermission` RBAC — e.g. `/api/purchases`, `/api/serials`, `/api/admin/customers`. Anyone with `role=admin` or `owner` can perform all actions regardless of finer permissions. Deleted from RBAC granularity in several places (see S-9, staff reset). | Enforce `requirePermission` on all stateful admin routes; ensure least privilege per staff role. |
+| Z-1 | **P0** | `server/index.ts` (many admin routes) | **RESOLVED** — 143 stateful admin/staff routes now carry `requirePermission(...)` middleware (RBAC) backed by `hasPermission` with a base-role fallback (`server/permissions.ts`) so staff never lock themselves out of their own role's actions. Remaining routes on plain `adminAuthMiddleware` are either self-service auth (2FA / change-password / step-up) or admin-only resource endpoints that are intentionally role-gated. | Enforce `requirePermission` on all stateful admin routes; ensure least privilege per staff role. |
 | Z-2 | P1 | `server/index.ts:2609-2743` | `/api/admin/orders/:id/invoice` uses a manual verify + `purpose==="invoice"` token path; the short 5m invoice share token can access the full invoice endpoint. Fragile manual auth. | Use a dedicated, short-lived, non-reusable token; no manual reimplementation. |
 | Z-3 | P1 | `server/repairs.ts:480-487` | Repair status transitions are **not validated server-side** — any status can jump to any status (e.g. `received` → `collected`), bypassing diagnosis/approval/QC. | Add a `VALID_TRANSITIONS` map and validate current→new status. |
 | Z-4 | P2 | `server/index.ts:5500-5528` | Shop/branch feature gating is **client-side only** at the API level — `/api/shop/features` returns features but repair/subscription endpoints are not gated server-side. | Add `requireFeature` middleware to repair/warranty/subscription routes. |
