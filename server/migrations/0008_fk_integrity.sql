@@ -10,6 +10,9 @@
 -- DB-5: unique (customer_id, order_id) on cart_recovery_reminders.
 -- SN-1: status CHECK on serial_numbers + FK on purchase_order_item_id.
 --
+-- NOTE: PostgreSQL does NOT support `ADD CONSTRAINT IF NOT EXISTS`, so each FK is
+-- guarded via a DO block checking pg_constraint directly.
+--
 -- Each statement is idempotent / guarded. Applied by the versioned runner in order
 -- (after 0007) and recorded in schema_migrations.
 
@@ -24,13 +27,54 @@ ALTER TABLE repair_updates DROP CONSTRAINT IF EXISTS repair_updates_ticket_id_fk
 ALTER TABLE repair_updates ADD CONSTRAINT repair_updates_ticket_id_fkey FOREIGN KEY (ticket_id) REFERENCES repair_tickets(id) ON DELETE RESTRICT;
 
 -- ---- DB-3: missing foreign keys (NOT VALID) ----
-ALTER TABLE orders ADD CONSTRAINT IF NOT EXISTS orders_coupon_id_fkey FOREIGN KEY (coupon_id) REFERENCES coupons(id) NOT VALID;
-ALTER TABLE orders ADD CONSTRAINT IF NOT EXISTS orders_gift_card_id_fkey FOREIGN KEY (gift_card_id) REFERENCES gift_cards(id) NOT VALID;
-ALTER TABLE serial_numbers ADD CONSTRAINT IF NOT EXISTS serial_numbers_purchase_order_item_id_fkey FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id) NOT VALID;
-ALTER TABLE repair_parts_used ADD CONSTRAINT IF NOT EXISTS repair_parts_used_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) NOT VALID;
-ALTER TABLE credit_notes ADD CONSTRAINT IF NOT EXISTS credit_notes_created_by_fkey FOREIGN KEY (created_by) REFERENCES users(id) NOT VALID;
-ALTER TABLE credit_note_items ADD CONSTRAINT IF NOT EXISTS credit_note_items_order_item_id_fkey FOREIGN KEY (order_item_id) REFERENCES order_items(id) NOT VALID;
-ALTER TABLE credit_note_items ADD CONSTRAINT IF NOT EXISTS credit_note_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_coupon_id_fkey') THEN
+    ALTER TABLE orders ADD CONSTRAINT orders_coupon_id_fkey FOREIGN KEY (coupon_id) REFERENCES coupons(id) NOT VALID;
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_gift_card_id_fkey') THEN
+    ALTER TABLE orders ADD CONSTRAINT orders_gift_card_id_fkey FOREIGN KEY (gift_card_id) REFERENCES gift_cards(id) NOT VALID;
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'serial_numbers_purchase_order_item_id_fkey') THEN
+    ALTER TABLE serial_numbers ADD CONSTRAINT serial_numbers_purchase_order_item_id_fkey FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id) NOT VALID;
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'repair_parts_used_product_id_fkey') THEN
+    ALTER TABLE repair_parts_used ADD CONSTRAINT repair_parts_used_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) NOT VALID;
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'credit_notes_created_by_fkey') THEN
+    ALTER TABLE credit_notes ADD CONSTRAINT credit_notes_created_by_fkey FOREIGN KEY (created_by) REFERENCES users(id) NOT VALID;
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'credit_note_items_order_item_id_fkey') THEN
+    ALTER TABLE credit_note_items ADD CONSTRAINT credit_note_items_order_item_id_fkey FOREIGN KEY (order_item_id) REFERENCES order_items(id) NOT VALID;
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'credit_note_items_product_id_fkey') THEN
+    ALTER TABLE credit_note_items ADD CONSTRAINT credit_note_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) NOT VALID;
+  END IF;
+END$$;
 
 -- ---- DB-5: unique reminder per (customer, order) ----
 CREATE UNIQUE INDEX IF NOT EXISTS uq_cart_recovery_customer_order ON cart_recovery_reminders(customer_id, order_id) WHERE order_id IS NOT NULL;
