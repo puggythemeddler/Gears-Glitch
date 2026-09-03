@@ -10,6 +10,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { generateSecret, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
+import rateLimit from "express-rate-limit";
 import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
 import {
   provisionClient,
@@ -36,8 +37,16 @@ import {
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
-const API_KEY = process.env.CONTROL_PLANE_API_KEY || "";
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString("hex");
+// Stable JWT secret is REQUIRED in production: a randomly generated fallback would
+// invalidate every session on restart and break pending auth tokens. Fail fast here
+// rather than silently rotating the signing key.
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? (() => { throw new Error("JWT_SECRET must be set in production (control plane). Set a stable secret in the environment."); })() : crypto.randomBytes(32).toString("hex"));
+
+// ─── RATE LIMITING ───────────────────────────────────────
+// Strict limit on credential/2FA entry points to blunt brute-force.
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: "Too many auth attempts. Try again later." } });
+// Low limit on destructive / provisioning endpoints to slow abuse and fat-finger.
+const destructiveLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "Too many requests. Try again later." } });
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -101,15 +110,13 @@ function requireAuth(
       .catch(() => res.status(500).json({ error: "Auth error" }));
     return;
   }
-  // 3. Try x-api-key (legacy + per-user)
-  const key = req.headers["x-api-key"] || req.query.key;
+  // 3. Try x-api-key (per-user scoped keys only). The query-string key path is
+  //    intentionally removed — keys in the URL leak via logs, referrers, and
+  //    history. A shared global key no longer grants unaudited admin access;
+  //    every key must resolve to a cp_users row with its own role/api_key.
+  const key = req.headers["x-api-key"];
   if (key && typeof key === "string") {
-    // First check the global legacy API key
-    if (API_KEY && key === API_KEY) {
-      (req as any).user = { id: 0, username: "system", role: "admin" };
-      return next();
-    }
-    // Then check per-user API keys
+    // Look up the per-user API key (role is enforced by route middleware).
     queryOne("SELECT id, username, role FROM cp_users WHERE api_key = $1", [key])
       .then((user) => {
         if (user) {
@@ -168,7 +175,7 @@ function verifyTotp(secret: string, token: string): boolean {
 }
 
 // ─── USER MANAGEMENT ─────────────────────────────────────
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", authLimiter, async (req, res) => {
   try {
     const { username, password, totpCode } = req.body || {};
     if (!username || !password) { res.status(400).json({ error: "Username and password required" }); return; }
@@ -179,8 +186,9 @@ app.post("/api/auth/login", async (req, res) => {
 
     // Step 2: 2FA verification
     if (user.totp_enabled) {
-      // Allow API-key login to bypass 2FA (programmatic access)
-      const isApiKeyLogin = req.headers["x-api-key"] && (req.headers["x-api-key"] === API_KEY || req.headers["x-api-key"] === user.api_key);
+      // Allow API-key login to bypass 2FA (programmatic access) only when the
+      // caller presents THIS user's own per-user api_key — never a shared key.
+      const isApiKeyLogin = req.headers["x-api-key"] && (req.headers["x-api-key"] === user.api_key);
       if (!isApiKeyLogin) {
         if (!totpCode) {
           res.json({ totpRequired: true });
@@ -211,7 +219,7 @@ app.post("/api/auth/login", async (req, res) => {
 
 // ─── 2FA MANAGEMENT ──────────────────────────────────────
 // Step 1: Generate a new TOTP secret (returns secret + QR URL). User must verify with a code to enable.
-app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
+app.post("/api/auth/2fa/setup", authLimiter, requireAuth, async (req, res) => {
   try {
     const user = (req as any).user as AuthUser;
     const { secret, otpauthUrl } = makeTotpSecret(user.username);
@@ -225,7 +233,7 @@ app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
 });
 
 // Step 2: Verify the code and enable 2FA
-app.post("/api/auth/2fa/enable", requireAuth, async (req, res) => {
+app.post("/api/auth/2fa/enable", authLimiter, requireAuth, async (req, res) => {
   try {
     const user = (req as any).user as AuthUser;
     const { totpCode } = req.body || {};
@@ -245,7 +253,7 @@ app.post("/api/auth/2fa/enable", requireAuth, async (req, res) => {
 });
 
 // Disable 2FA (requires password confirmation)
-app.post("/api/auth/2fa/disable", requireAuth, async (req, res) => {
+app.post("/api/auth/2fa/disable", authLimiter, requireAuth, async (req, res) => {
   try {
     const user = (req as any).user as AuthUser;
     const { password } = req.body || {};
@@ -273,7 +281,7 @@ app.get("/api/auth/2fa/status", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/auth/register", requireAuth, requireAdmin, async (req, res) => {
+app.post("/api/auth/register", authLimiter, requireAuth, requireAdmin, async (req, res) => {
   try {
     const { username, password, role } = req.body || {};
     if (!username || !password) { res.status(400).json({ error: "Username and password required" }); return; }
@@ -391,7 +399,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 // List all clients
-app.get("/api/clients", requireAuth, async (_req, res) => {
+app.get("/api/clients", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const clients = await queryAll(
       "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, phone, address, usage_over_limit, is_test FROM clients ORDER BY created_at DESC"
@@ -404,7 +412,7 @@ app.get("/api/clients", requireAuth, async (_req, res) => {
 });
 
 // Get single client
-app.get("/api/clients/test-site", requireAuth, async (_req, res) => {
+app.get("/api/clients/test-site", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE is_test = 1 ORDER BY id DESC LIMIT 1");
     if (client) {
@@ -420,7 +428,7 @@ app.get("/api/clients/test-site", requireAuth, async (_req, res) => {
 });
 
 // Get single client
-app.get("/api/clients/:id", requireAuth, async (req, res) => {
+app.get("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne(
       "SELECT * FROM clients WHERE id = $1",
@@ -439,7 +447,7 @@ app.get("/api/clients/:id", requireAuth, async (req, res) => {
 });
 
 // Add client — starts provisioning
-app.post("/api/clients", requireAuth, async (req, res) => {
+app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
   try {
     let { name, adminEmail, plan, domain } = req.body || {};
     if (!name) {
@@ -609,12 +617,29 @@ app.post("/api/clients/:id/push-secret", requireAuth, requireAdmin, async (req, 
 });
 
 // Delete client
-app.delete("/api/clients/:id", requireAdmin, async (req, res) => {
+app.delete("/api/clients/:id", destructiveLimiter, requireAdmin, async (req, res) => {
   try {
+    // Two-step guard: this permanently destroys the tenant's Neon DB, Render
+    // service and Vercel project with no undo. Refuse unless the operator
+    // explicitly confirms and provides a reason, so an accidental request can
+    // never wipe a tenant.
+    const confirm = req.body?.confirm === true || req.body?.confirm === "true";
+    const reason = String(req.body?.reason || "").trim();
+    if (!confirm || reason.length < 3) {
+      res.status(400).json({
+        error: "Deletion is irreversible and destroys the tenant's Neon database, Render service and Vercel project. Send body { confirm: true, reason: '<why>' } to proceed.",
+      });
+      return;
+    }
+
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [
       Number(req.params.id),
     ]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+
+    // Record the confirmed deletion intent in the audit log before destroying
+    // anything, so there is a recoverable trail of who/what/when/why.
+    auditLog(req, "delete_client", "client", client.id, client.name, `confirmed deletion — reason: ${reason}`);
 
     // Best-effort cleanup of cloud resources
     const cleanupErrors: string[] = [];
@@ -631,7 +656,6 @@ app.delete("/api/clients/:id", requireAdmin, async (req, res) => {
 
     await query("DELETE FROM clients WHERE id = $1", [Number(req.params.id)]);
 
-    auditLog(req, "delete_client", "client", client.id, client.name, cleanupErrors.join("; "));
     res.json({
       message: `Client "${client.name}" deleted.`,
       cleanupErrors: cleanupErrors.length > 0 ? cleanupErrors : undefined,
@@ -657,7 +681,7 @@ async function updateDeployLog(id: number, status: string): Promise<void> {
 }
 
 // Deploy all clients
-app.post("/api/deploy-all", requireAdmin, async (req, res) => {
+app.post("/api/deploy-all", destructiveLimiter, requireAdmin, async (req, res) => {
   try {
     const { commit, triggered_by } = req.body || {};
     const commit_sha = commit?.sha || "";
@@ -689,7 +713,7 @@ app.post("/api/deploy-all", requireAdmin, async (req, res) => {
 });
 
 // Deploy the test site only (every push lands here first for safe rollout)
-app.post("/api/deploy-test", requireAdmin, async (req, res) => {
+app.post("/api/deploy-test", destructiveLimiter, requireAdmin, async (req, res) => {
   try {
     const { commit, triggered_by } = req.body || {};
     const commit_sha = commit?.sha || "";
@@ -755,7 +779,7 @@ app.post("/api/deploy/disable-auto-deploy", requireAdmin, async (_req, res) => {
 });
 
 // Redeploy a single client
-app.post("/api/clients/:id/redeploy", requireAdmin, async (req, res) => {
+app.post("/api/clients/:id/redeploy", destructiveLimiter, requireAdmin, async (req, res) => {
   try {
     const client: any = await queryOne("SELECT id, name, render_service_id FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -837,7 +861,7 @@ app.post("/api/sync-cloudinary", requireAdmin, async (req, res) => {
 });
 
 // Pull Cloudinary config from a live client
-app.post("/api/pull-cloudinary/:id", requireAuth, async (req, res) => {
+app.post("/api/pull-cloudinary/:id", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -861,7 +885,7 @@ app.post("/api/pull-cloudinary/:id", requireAuth, async (req, res) => {
 });
 
 // Get stored Cloudinary config status
-app.get("/api/cloudinary", requireAuth, async (_req, res) => {
+app.get("/api/cloudinary", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const cc = await getCloudinaryConfig();
     if (!cc || !cc.cloud_name) {
@@ -891,7 +915,7 @@ app.post("/api/cloudinary", requireAdmin, async (req, res) => {
 });
 
 // Get SMTP config status
-app.get("/api/smtp", requireAuth, async (_req, res) => {
+app.get("/api/smtp", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const sc = await getSmtpConfig();
     if (!sc || !sc.host || !sc.user || !sc.pass) {
@@ -931,7 +955,7 @@ app.post("/api/smtp", requireAdmin, async (req, res) => {
 });
 
 // Send test email
-app.post("/api/smtp/test", requireAuth, async (req, res) => {
+app.post("/api/smtp/test", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { to } = req.body || {};
     if (!to) { res.status(400).json({ error: "Recipient email (to) is required" }); return; }
@@ -974,7 +998,7 @@ async function recordHealthCheck(clientId: number, status: string) {
 }
 
 // Health check all clients
-app.post("/api/health-check", requireAuth, async (_req, res) => {
+app.post("/api/health-check", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const clients = await queryAll(
       "SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active'"
@@ -1019,7 +1043,7 @@ app.post("/api/health-check", requireAuth, async (_req, res) => {
 });
 
 // ─── SUSPEND / RESUME CLIENT ─────────────────────────────
-app.put("/api/clients/:id/suspend", requireAdmin, async (req, res) => {
+app.put("/api/clients/:id/suspend", destructiveLimiter, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1034,7 +1058,7 @@ app.put("/api/clients/:id/suspend", requireAdmin, async (req, res) => {
   }
 });
 
-app.put("/api/clients/:id/resume", requireAdmin, async (req, res) => {
+app.put("/api/clients/:id/resume", destructiveLimiter, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1050,7 +1074,7 @@ app.put("/api/clients/:id/resume", requireAdmin, async (req, res) => {
 });
 
 // ─── UPDATE CLIENT ───────────────────────────────────────
-app.put("/api/clients/:id", requireAuth, async (req, res) => {
+app.put("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { plan, subscription_expires, notes, feature_flags, render_service_id, render_service_url, vercel_project_id, vercel_project_url, phone, address, is_test } = req.body || {};
     const id = Number(req.params.id);
@@ -1095,7 +1119,7 @@ app.put("/api/clients/:id", requireAuth, async (req, res) => {
 });
 
 // ─── HEALTH HISTORY ──────────────────────────────────────
-app.get("/api/clients/:id/health-history", requireAuth, async (req, res) => {
+app.get("/api/clients/:id/health-history", requireAuth, requireAdmin, async (req, res) => {
   try {
     const rows = await queryAll(
       "SELECT status, checked_at FROM health_log WHERE client_id = $1 ORDER BY checked_at DESC LIMIT 100",
@@ -1129,7 +1153,7 @@ app.post("/api/changelog", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/changelog", requireAuth, async (_req, res) => {
+app.get("/api/changelog", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const entries = await queryAll("SELECT * FROM changelog ORDER BY created_at DESC LIMIT 50");
     res.json({ entries });
@@ -1139,7 +1163,7 @@ app.get("/api/changelog", requireAuth, async (_req, res) => {
 });
 
 // ─── DEPLOY LOG ──────────────────────────────────────────
-app.get("/api/deploys", requireAuth, async (req, res) => {
+app.get("/api/deploys", requireAuth, requireAdmin, async (req, res) => {
   try {
     const status = (req.query.status as string) || "";
     const q = (req.query.q as string) || "";
@@ -1164,14 +1188,37 @@ app.get("/api/deploys", requireAuth, async (req, res) => {
 });
 
 // ─── BACKUPS ─────────────────────────────────────────────
-import { exec } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 import fs from "fs";
 
-const execAsync = promisify(exec);
 const BACKUP_DIR = path.join(__dirname, "..", "..", "backups");
 
-app.post("/api/backups/run", requireAdmin, async (req, res) => {
+// Safe pg_dump: runs pg_dump and gzip as separate child processes with an
+// argument array (NO shell), so a DB URL can never inject shell commands.
+// The DB URL is passed as a single argv element, never interpolated into a
+// shell string. Returns a promise that rejects if either process fails.
+function runPgDump(dbUrl: string, filepath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      const outStream = fs.createWriteStream(filepath);
+      const gzip = spawn("gzip", [], { stdio: ["pipe", outStream, "ignore"] });
+      const dump = spawn("pg_dump", [dbUrl], { stdio: ["ignore", "pipe", "pipe"] });
+      dump.stdout.pipe(gzip.stdin);
+      dump.on("error", (e) => { try { gzip.kill(); } catch {} reject(e as Error); });
+      gzip.on("error", (e) => reject(e as Error));
+      gzip.on("close", (code) => {
+        outStream.end();
+        if (code !== 0) { reject(new Error(`gzip exited with code ${code}`)); return; }
+        resolve();
+      });
+      dump.on("close", (code) => {
+        if (code !== 0) { try { gzip.kill(); } catch {} reject(new Error(`pg_dump exited with code ${code}`)); }
+      });
+    } catch (e) { reject(e as Error); }
+  });
+}
+
+app.post("/api/backups/run", destructiveLimiter, requireAdmin, async (req, res) => {
   try {
     if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -1184,7 +1231,7 @@ app.post("/api/backups/run", requireAdmin, async (req, res) => {
       const filepath = path.join(BACKUP_DIR, filename);
 
       try {
-        await execAsync(`pg_dump "$NEON_DB_URL" | gzip > "${filepath}"`, { timeout: 120000, env: { ...process.env, NEON_DB_URL: c.neon_db_url } });
+        await runPgDump(c.neon_db_url, filepath);
         const stats = fs.statSync(filepath);
         const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
 
@@ -1219,7 +1266,7 @@ app.post("/api/backups/run", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/backups", requireAuth, async (_req, res) => {
+app.get("/api/backups", requireAuth, requireAdmin, async (_req, res) => {
   try {
     if (!fs.existsSync(BACKUP_DIR)) { res.json({ files: [] }); return; }
     const files = fs.readdirSync(BACKUP_DIR).map(f => ({
@@ -1252,7 +1299,7 @@ app.get("/api/backups/download/:filename", requireAdmin, async (req, res) => {
 });
 
 // ─── AUDIT LOG ─────────────────────────────────────────────
-app.get("/api/audit", requireAuth, async (_req, res) => {
+app.get("/api/audit", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const entries = await queryAll("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 200");
     res.json({ entries });
@@ -1262,7 +1309,7 @@ app.get("/api/audit", requireAuth, async (_req, res) => {
 });
 
 // ─── CUSTOM PLANS (Control Plane) ──────────────────────────
-app.get("/api/plans", requireAuth, async (_req, res) => {
+app.get("/api/plans", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const plans = await queryAll("SELECT * FROM custom_plans ORDER BY tier_level");
     res.json({ plans });
@@ -1272,7 +1319,7 @@ app.get("/api/plans", requireAuth, async (_req, res) => {
 });
 
 // Pull plans from a live client backend
-app.post("/api/clients/:id/pull-plans", requireAuth, async (req, res) => {
+app.post("/api/clients/:id/pull-plans", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1300,7 +1347,7 @@ app.post("/api/clients/:id/pull-plans", requireAuth, async (req, res) => {
 });
 
 // Import plans from the Gear&Glitch Store (first active client)
-app.post("/api/plans/import-defaults", requireAuth, async (_req, res) => {
+app.post("/api/plans/import-defaults", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active' AND render_service_url != ''");
     if (!clients.length) { res.status(400).json({ error: "No active clients found" }); return; }
@@ -1352,7 +1399,7 @@ app.post("/api/plans", requireAdmin, async (req, res) => {
   }
 });
 
-app.put("/api/plans/:id", requireAuth, async (req, res) => {
+app.put("/api/plans/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features, isActive, syncToOthers } = req.body || {};
     const fields: string[] = []; const params: any[] = []; let idx = 1;
@@ -1420,7 +1467,7 @@ app.post("/api/clients/:id/sync-plans", requireAdmin, async (req, res) => {
 });
 
 // Push plans to ALL active clients
-app.post("/api/plans/sync-all", requireAuth, async (_req, res) => {
+app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, async (_req, res) => {
   try {
     const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active' AND render_service_url != ''");
     const plans = await queryAll("SELECT * FROM custom_plans ORDER BY tier_level");
@@ -1499,7 +1546,7 @@ app.post("/api/plans/sync-up", requireAuth, async (req, res) => {
 
 // ─── UPGRADE REQUESTS ────────────────────────────────────
 // Fetch upgrade requests from a specific client
-app.get("/api/clients/:id/upgrade-requests", requireAuth, async (req, res) => {
+app.get("/api/clients/:id/upgrade-requests", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1515,7 +1562,7 @@ app.get("/api/clients/:id/upgrade-requests", requireAuth, async (req, res) => {
 });
 
 // Approve/reject an upgrade request on a client
-app.put("/api/clients/:id/upgrade-requests/:reqId", requireAuth, async (req, res) => {
+app.put("/api/clients/:id/upgrade-requests/:reqId", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1546,7 +1593,7 @@ app.put("/api/clients/:id/upgrade-requests/:reqId", requireAuth, async (req, res
 });
 
 // ─── CLIENT INVOICES (proxy to client backends) ──────────────
-app.get("/api/clients/:id/invoices", requireAuth, async (req, res) => {
+app.get("/api/clients/:id/invoices", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1561,7 +1608,7 @@ app.get("/api/clients/:id/invoices", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/clients/:id/invoices/generate", requireAuth, async (req, res) => {
+app.post("/api/clients/:id/invoices/generate", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1786,7 +1833,7 @@ async function refreshNotifications() {
   }
 }
 
-app.get("/api/payment-reminders", requireAuth, async (_req, res) => {
+app.get("/api/payment-reminders", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const { reminders, newReminders } = await computePaymentReminders();
     res.json({ reminders, newReminders });
@@ -1797,7 +1844,7 @@ app.get("/api/payment-reminders", requireAuth, async (_req, res) => {
 });
 
 // ─── NOTIFICATIONS ──────────────────────────────────────
-app.get("/api/notifications", requireAuth, async (_req, res) => {
+app.get("/api/notifications", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const unread = await queryOne("SELECT COUNT(*) AS count FROM cp_notifications WHERE read = false") as any;
     const notifications = await queryAll("SELECT * FROM cp_notifications ORDER BY created_at DESC LIMIT 60");
@@ -1808,7 +1855,7 @@ app.get("/api/notifications", requireAuth, async (_req, res) => {
   }
 });
 
-app.post("/api/notifications/read", requireAuth, async (req, res) => {
+app.post("/api/notifications/read", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id, all } = req.body || {};
     if (all === true) {
@@ -1826,7 +1873,7 @@ app.post("/api/notifications/read", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/clients/:id/invoices/:invId/pay", requireAuth, async (req, res) => {
+app.post("/api/clients/:id/invoices/:invId/pay", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1841,7 +1888,7 @@ app.post("/api/clients/:id/invoices/:invId/pay", requireAuth, async (req, res) =
   }
 });
 
-app.get("/api/clients/:id/invoices/:invId/view", requireAuth, async (req, res) => {
+app.get("/api/clients/:id/invoices/:invId/view", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1870,7 +1917,7 @@ app.get("/api/clients/:id/invoices/:invId/view", requireAuth, async (req, res) =
   }
 });
 
-app.post("/api/clients/:id/invoices/:invId/email", requireAuth, async (req, res) => {
+app.post("/api/clients/:id/invoices/:invId/email", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1926,7 +1973,7 @@ app.post("/api/clients/:id/invoices/:invId/email", requireAuth, async (req, res)
 });
 
 // Get subscription status from a client
-app.get("/api/clients/:id/subscription", requireAuth, async (req, res) => {
+app.get("/api/clients/:id/subscription", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1942,7 +1989,7 @@ app.get("/api/clients/:id/subscription", requireAuth, async (req, res) => {
 });
 
 // Get/set feature overrides for a client
-app.get("/api/clients/:id/features", requireAuth, async (req, res) => {
+app.get("/api/clients/:id/features", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1953,7 +2000,7 @@ app.get("/api/clients/:id/features", requireAuth, async (req, res) => {
   } catch { res.status(500).json({ error: "Failed to get feature overrides" }); }
 });
 
-app.post("/api/clients/:id/features", requireAuth, async (req, res) => {
+app.post("/api/clients/:id/features", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1972,7 +2019,7 @@ app.post("/api/clients/:id/features", requireAuth, async (req, res) => {
 
 // ─── CLIENT BRANCHES ─────────────────────────────────────
 // Get branches from a client
-app.get("/api/clients/:id/branches", requireAuth, async (req, res) => {
+app.get("/api/clients/:id/branches", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1988,7 +2035,7 @@ app.get("/api/clients/:id/branches", requireAuth, async (req, res) => {
 });
 
 // Get branch subscription from client
-app.get("/api/clients/:id/branches/:branchId/subscription", requireAuth, async (req, res) => {
+app.get("/api/clients/:id/branches/:branchId/subscription", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -2003,7 +2050,7 @@ app.get("/api/clients/:id/branches/:branchId/subscription", requireAuth, async (
 });
 
 // Set branch plan on client
-app.put("/api/clients/:id/branches/:branchId/plan", requireAuth, async (req, res) => {
+app.put("/api/clients/:id/branches/:branchId/plan", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -2059,7 +2106,7 @@ function scheduleAutoBackup() {
         const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
         const filepath = path.join(BACKUP_DIR, `${slug}_${new Date().toISOString().split("T")[0]}.sql.gz`);
         try {
-await execAsync(`pg_dump "$NEON_DB_URL" | gzip > "${filepath}"`, { timeout: 120000, env: { ...process.env, NEON_DB_URL: c.neon_db_url } });
+          await runPgDump(c.neon_db_url, filepath);
           await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup"]);
         } catch (e: any) {
           await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup_failed"]).catch(() => {});

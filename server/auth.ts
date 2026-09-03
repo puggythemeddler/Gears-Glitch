@@ -3,9 +3,51 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { generateSecret, generateSync, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
-import { findStaffByUsername, findStaffByEmail, findCustomerByEmail, findCustomerById, findProviderByEmail, updateCustomerLastLogin, getStoreSetting, getUserTotp } from "./db";
+import { findStaffByUsername, findStaffByEmail, findCustomerByEmail, findCustomerById, findProviderByEmail, updateCustomerLastLogin, getStoreSetting, getUserTotp, getPasswordChangedAt } from "./db";
 import { Request, Response, NextFunction } from "express";
 import { OAuth2Client } from "google-auth-library";
+
+// Per-account lockout with exponential backoff (A-2). In-memory, keyed by the
+// normalized login identifier, so it resets on process restart (acceptable given
+// the complementary per-IP auth rate limit). Throttles brute-force attempts that
+// target one account from anywhere, without locking out unrelated users.
+const MAX_ATTEMPTS = 5;
+const BASE_LOCK_MS = 60 * 1000; // 1 minute, doubling each escalation
+const FAILURE_WINDOW_MS = 15 * 60 * 1000; // failures older than 15min don't count
+const loginFailures = new Map<string, { count: number; firstAt: number }>();
+
+function clearLoginFailures(login: string): void { loginFailures.delete(normalizeLogin(login)); }
+
+export function normalizeLogin(login: string): string { return String(login || "").trim().toLowerCase(); }
+
+/** Returns remaining lockout ms if locked out (0 = not locked out). */
+function accountLockoutMs(login: string): number {
+  const key = normalizeLogin(login);
+  const rec = loginFailures.get(key);
+  if (!rec) return 0;
+  const windowStart = Date.now() - FAILURE_WINDOW_MS;
+  if (rec.firstAt < windowStart) { loginFailures.delete(key); return 0; }
+  if (rec.count < MAX_ATTEMPTS) return 0;
+  // Lock duration doubles per attempt past the threshold (capped at 30 min).
+  const extra = Math.max(0, rec.count - MAX_ATTEMPTS);
+  const lockMs = Math.min(BASE_LOCK_MS * Math.pow(2, extra), 30 * 60 * 1000);
+  return lockMs;
+}
+
+function recordFailedLogin(login: string): number {
+  const key = normalizeLogin(login);
+  const now = Date.now();
+  const windowStart = now - FAILURE_WINDOW_MS;
+  let rec = loginFailures.get(key);
+  if (!rec || rec.firstAt < windowStart) rec = { count: 0, firstAt: now };
+  rec.count += 1;
+  loginFailures.set(key, rec);
+  return rec.count;
+}
+
+function isAccountLocked(login: string): boolean {
+  return accountLockoutMs(login) > 0;
+}
 
 interface JwtPayload {
   sub: number;
@@ -15,6 +57,8 @@ interface JwtPayload {
   role: string;
   purpose?: string;
   permissions?: string[];
+  jti?: string;
+  iat?: number;
 }
 
 interface StaffUser {
@@ -59,6 +103,20 @@ function verifyToken(token: string): JwtPayload {
   return jwt.verify(token, getJwtSecret()) as unknown as JwtPayload;
 }
 
+// A-1: reject any session token issued before the account's last password
+// rotation. Reuses the existing password_changed_at infrastructure (users and
+// customers); providers have no such column so they are unaffected. iat is epoch
+// seconds, changedAt is a PG timestamp string.
+async function verifySessionToken(token: string): Promise<JwtPayload> {
+  const payload = verifyToken(token);
+  const changedAt = await getPasswordChangedAt(payload.role, payload.sub);
+  if (changedAt && payload.iat) {
+    const changedSec = Math.floor(Date.parse(String(changedAt)) / 1000);
+    if (payload.iat < changedSec) throw new Error("session rotated");
+  }
+  return payload;
+}
+
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization || "";
   if (header.startsWith("Bearer ")) return header.slice(7);
@@ -69,14 +127,14 @@ function getBearerToken(req: Request): string | null {
   return null;
 }
 
-function staffAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+async function staffAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = getBearerToken(req);
   if (!token) {
     res.status(401).json({ error: "Staff login required." });
     return;
   }
   try {
-    const user = verifyToken(token);
+    const user = await verifySessionToken(token);
     const isStaff = user.role === "admin" || user.role === "owner" || user.role === "technician" || user.role === "manager" || user.role === "staff" || (user.role === "provider" && Array.isArray(user.permissions));
     if (!isStaff) {
       res.status(403).json({ error: "Staff access only." });
@@ -89,14 +147,14 @@ function staffAuthMiddleware(req: Request, res: Response, next: NextFunction): v
   }
 }
 
-function adminAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+async function adminAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = getBearerToken(req);
   if (!token) {
     res.status(401).json({ error: "Admin login required." });
     return;
   }
   try {
-    const user = verifyToken(token);
+    const user = await verifySessionToken(token);
     if (user.role !== "admin") {
       res.status(403).json({ error: "Admin access only." });
       return;
@@ -108,14 +166,14 @@ function adminAuthMiddleware(req: Request, res: Response, next: NextFunction): v
   }
 }
 
-function customerAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+async function customerAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = getBearerToken(req);
   if (!token) {
     res.status(401).json({ error: "Please sign in to continue." });
     return;
   }
   try {
-    const user = verifyToken(token);
+    const user = await verifySessionToken(token);
     if (user.role !== "customer") {
       res.status(403).json({ error: "Customer account required." });
       return;
@@ -128,6 +186,7 @@ function customerAuthMiddleware(req: Request, res: Response, next: NextFunction)
 }
 
 async function loginStaff(login: string, password: string, totpCode?: string): Promise<AuthResult> {
+  if (isAccountLocked(login)) return { ok: false, error: "Too many failed attempts. Try again later." };
   const isEmail = login.includes("@");
   let user = isEmail ? await findStaffByEmail(login) as StaffUser | undefined : await findStaffByUsername(login) as StaffUser | undefined;
   if (!user) {
@@ -135,11 +194,13 @@ async function loginStaff(login: string, password: string, totpCode?: string): P
   }
   if (!user) {
     await bcrypt.compare(password, "$2a$10$xJwAL3vGpAe8xK9mPqRs7uKj2LmN4OpQ5RtY6UiO8AsD9FgH1JkLz");
+    recordFailedLogin(login);
     return { ok: false, error: "Invalid username/email or password." };
   }
 
   const match = await bcrypt.compare(password, user.password_hash);
   if (!match) {
+    recordFailedLogin(login);
     return { ok: false, error: "Invalid username/email or password." };
   }
 
@@ -150,10 +211,12 @@ async function loginStaff(login: string, password: string, totpCode?: string): P
       return { ok: false, error: "2FA required", totpRequired: true };
     }
     if (!verifyTotp(totp.totpSecret, totpCode)) {
+      recordFailedLogin(login);
       return { ok: false, error: "Invalid 2FA code." };
     }
   }
 
+  clearLoginFailures(login);
   const role = user.role || "technician";
   const userEmail = (user as any).email || `${user.username}@gearandglitch.com`;
   const { getUserPermissions } = require("./permissions");
@@ -188,17 +251,21 @@ async function registerCustomer({ name, email, password }: { name: string; email
 }
 
 async function loginCustomer(email: string, password: string): Promise<AuthResult> {
+  if (isAccountLocked(email)) return { ok: false, error: "Too many failed attempts. Try again later." };
   const customer = await findCustomerByEmail(String(email || "").trim().toLowerCase()) as CustomerUser | undefined;
   if (!customer) {
     await bcrypt.compare(password, "$2a$10$xJwAL3vGpAe8xK9mPqRs7uKj2LmN4OpQ5RtY6UiO8AsD9FgH1JkLz");
+    recordFailedLogin(email);
     return { ok: false, error: "Invalid email or password." };
   }
 
   const match = await bcrypt.compare(password, customer.password_hash);
   if (!match) {
+    recordFailedLogin(email);
     return { ok: false, error: "Invalid email or password." };
   }
 
+  clearLoginFailures(email);
   const token = signToken({
     sub: customer.id,
     email: customer.email,
@@ -208,14 +275,14 @@ async function loginCustomer(email: string, password: string): Promise<AuthResul
   return { ok: true, token, name: customer.name, email: customer.email, role: "customer" };
 }
 
-function providerAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+async function providerAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = getBearerToken(req);
   if (!token) {
     res.status(401).json({ error: "Provider login required." });
     return;
   }
   try {
-    const user = verifyToken(token);
+    const user = await verifySessionToken(token);
     if (user.role !== "provider") {
       res.status(403).json({ error: "Provider access only." });
       return;
@@ -228,15 +295,19 @@ function providerAuthMiddleware(req: Request, res: Response, next: NextFunction)
 }
 
 async function loginProvider(email: string, password: string): Promise<AuthResult> {
+  if (isAccountLocked(email)) return { ok: false, error: "Too many failed attempts. Try again later." };
   const provider = await findProviderByEmail(String(email || "").trim().toLowerCase()) as any;
   if (!provider) {
     await bcrypt.compare(password, "$2a$10$xJwAL3vGpAe8xK9mPqRs7uKj2LmN4OpQ5RtY6UiO8AsD9FgH1JkLz");
+    recordFailedLogin(email);
     return { ok: false, error: "Invalid email or password." };
   }
   const match = await bcrypt.compare(password, provider.password_hash);
   if (!match) {
+    recordFailedLogin(email);
     return { ok: false, error: "Invalid email or password." };
   }
+  clearLoginFailures(email);
   const token = signToken({
     sub: provider.id,
     email: provider.email,
@@ -286,11 +357,11 @@ async function googleLogin(googleToken: string): Promise<AuthResult> {
   }
 }
 
-function ownerAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+async function ownerAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = getBearerToken(req);
   if (!token) { res.status(401).json({ error: "Login required." }); return; }
   try {
-    const user = verifyToken(token);
+    const user = await verifySessionToken(token);
     const isOwnerRole = user.role === "admin" || user.role === "owner" || user.role === "manager" || (user.role === "provider" && Array.isArray(user.permissions));
     if (!isOwnerRole) { res.status(403).json({ error: "Access restricted to admin, owner, or manager." }); return; }
     (req as any).user = user;
@@ -298,11 +369,11 @@ function ownerAuthMiddleware(req: Request, res: Response, next: NextFunction): v
   } catch { res.status(401).json({ error: "Session expired. Please log in again." }); }
 }
 
-function posAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+async function posAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = getBearerToken(req);
   if (!token) { res.status(401).json({ error: "Login required." }); return; }
   try {
-    const user = verifyToken(token);
+    const user = await verifySessionToken(token);
     if (user.role !== "admin" && user.role !== "owner" && user.role !== "technician" && user.role !== "manager" && user.role !== "provider" && user.role !== "staff") {
       res.status(403).json({ error: "Access restricted." }); return;
     }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { api, getRole, getTokenForRole, downloadPdf } from "@/lib/api";
+import { api, getRole, downloadPdf } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import PinLock from "@/components/PinLock";
 import { useApp } from "@/lib/app-context";
@@ -643,8 +643,13 @@ export default function POSPage() {
                   <button
                     className="btn btn-ghost btn-block"
                     style={{ fontSize: "0.85rem", padding: "0.45rem" }}
-                    onClick={() => {
-                      window.open(`/api/pos/receipt/${lastOrderId}?allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
+                    onClick={async () => {
+                      try {
+                        const r = await api<{ token: string }>(`/api/admin/pos-receipt-token/${lastOrderId}`, { method: "POST" });
+                        window.open(`/api/pos/receipt/${lastOrderId}?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, "_blank");
+                      } catch (err: any) {
+                        setStatus({ text: err?.message || "Failed to open receipt.", kind: "error" });
+                      }
                     }}
                   >
                     Print Receipt (80mm)
@@ -669,8 +674,13 @@ export default function POSPage() {
                   <button
                     className="btn btn-ghost btn-block"
                     style={{ fontSize: "0.85rem", padding: "0.45rem" }}
-                    onClick={() => {
-                      window.open(`/api/pos/receipt/${lastOrderId}?format=a4&allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, "_blank");
+                    onClick={async () => {
+                      try {
+                        const r = await api<{ token: string }>(`/api/admin/pos-receipt-token/${lastOrderId}`, { method: "POST" });
+                        window.open(`/api/pos/receipt/${lastOrderId}?format=a4&allowQueryToken=1&token=${encodeURIComponent(r.token)}`, "_blank");
+                      } catch (err: any) {
+                        setStatus({ text: err?.message || "Failed to open receipt.", kind: "error" });
+                      }
                     }}
                   >
                     Print Invoice (A4)

@@ -6185,9 +6185,11 @@ function AdminPurchases() {
     } catch (err: any) { setMsg(err.message); toast("error", err.message); }
   }
 
-  function downloadPdf(id: number) {
-    const token = getStaffToken() || "";
-    window.open(`/api/purchases/${id}/pdf?allowQueryToken=1&token=${encodeURIComponent(token)}`, "_blank");
+  async function downloadPdf(id: number) {
+    try {
+      const r = await api<{ token: string }>(`/api/admin/purchase-pdf-token/${id}`, { method: "POST" });
+      window.open(`/api/purchases/${id}/pdf?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, "_blank");
+    } catch (err: any) { toast("error", err.message); }
   }
 
   useEffect(() => { loadOrders(); }, []);

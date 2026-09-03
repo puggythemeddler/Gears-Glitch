@@ -1,8 +1,11 @@
 import { Pool } from "pg";
 
+// SSL is enforced with CA verification by default. Set
+// CONTROL_PLANE_SSL_VERIFY=false only for local dev against a self-signed DB.
+const sslVerify = process.env.CONTROL_PLANE_SSL_VERIFY !== "false";
 const pool = new Pool({
   connectionString: process.env.CONTROL_PLANE_DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslVerify ? { rejectUnauthorized: true } : false,
 });
 
 export async function query(text: string, params?: any[]) {

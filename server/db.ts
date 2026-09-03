@@ -622,6 +622,36 @@ function getDb(): any {
   return getPool();
 }
 
+// Versioned migration runner. Tracks applied files in `schema_migrations` so
+// each migration runs exactly once, inside its own transaction, and fails
+// loudly (no silent catch{}) if a migration errors — leaving the DB unchanged.
+// Migration files are `NNNN_name.sql` in server/migrations/, applied in order.
+async function runVersionedMigrations(): Promise<void> {
+  const migrationsDir = path.join(__dirname, "..", "..", "server", "migrations");
+  if (!fs.existsSync(migrationsDir)) { console.log("[migrations] directory not found, skipping"); return; }
+  await query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    version TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (NOW()::text)
+  )`);
+  const files = fs.readdirSync(migrationsDir).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();
+  for (const file of files) {
+    const version = file.replace(/\.sql$/, "");
+    const existing = await queryOne(`SELECT version FROM schema_migrations WHERE version = $1`, [version]);
+    if (existing) { console.log(`[migrations] ${version} already applied, skipping`); continue; }
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    try {
+      await transaction(async (client) => {
+        await client.query(sql);
+        await client.query(`INSERT INTO schema_migrations (version) VALUES ($1)`, [version]);
+      });
+      console.log(`[migrations] applied ${version}`);
+    } catch (e: any) {
+      console.error(`[migrations] FAILED ${version}:`, e?.message);
+      throw new Error(`Migration ${version} failed: ${e?.message}`);
+    }
+  }
+}
+
 async function initDb(): Promise<void> {
   console.log("[boot] initDb: loading schema.sql");
   // Create tables from schema.sql if they don't exist yet
@@ -635,6 +665,8 @@ async function initDb(): Promise<void> {
   console.log("[boot] initDb: schema applied");
   await runMigrations();
   console.log("[boot] initDb: migrations applied");
+  await runVersionedMigrations();
+  console.log("[boot] initDb: versioned migrations applied");
   await ensureDefaultSettings();
   await ensureDefaultCategories();
   await ensureAdminUser();
@@ -669,6 +701,9 @@ async function runMigrations(): Promise<void> {
   try { await query(`UPDATE users SET role = 'admin' WHERE role IS NULL OR role = ''`); } catch {}
   try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`); } catch {}
   try { await query(`UPDATE users SET email = username || '@gearandglitch.com' WHERE email IS NULL`); } catch {}
+  try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TEXT`); } catch {}
+  try { await query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS password_changed_at TEXT`); } catch {}
+  try { await query(`CREATE TABLE IF NOT EXISTS token_nonces (jti TEXT PRIMARY KEY, user_role TEXT NOT NULL, user_id INTEGER NOT NULL, used_at TEXT NOT NULL DEFAULT (NOW()::text))`); } catch {}
   try { await query(`CREATE TABLE IF NOT EXISTS deleted_roles (id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL DEFAULT (NOW()::text))`); } catch {}
   try { await query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS pin_hash TEXT NOT NULL DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS show_on_pos INTEGER NOT NULL DEFAULT 1`); } catch {}
@@ -1895,8 +1930,14 @@ async function updateProduct(id: string, updates: { category?: string; groupId?:
 
 async function deleteProduct(id: string): Promise<boolean> {
   try { deleteProductImages(id); } catch {}
-  const result = await query("DELETE FROM products WHERE id = $1", [id]);
-  return (result.rowCount ?? 0) > 0;
+  try {
+    // RESTRICT foreign keys (order_items, stock_levels, serials, etc.) make a
+    // product with history or stock undeletable on purpose — deactivate instead.
+    const result = await query("DELETE FROM products WHERE id = $1", [id]);
+    return (result.rowCount ?? 0) > 0;
+  } catch {
+    return false;
+  }
 }
 
 async function getPriceHistory(_productId: string): Promise<any[]> {
@@ -1915,7 +1956,9 @@ async function updateStaffRole(id: number, role: string): Promise<void> {
 
 async function changeStaffPassword(id: number, newPassword: string): Promise<void> {
   const hash = await bcrypt.hash(newPassword, 10);
-  await query("UPDATE users SET password_hash = $1 WHERE id = $2", [hash, id]);
+  // Bump password_changed_at so any auth tokens issued before this change
+  // (reset/magic links) are immediately invalidated (token rotation).
+  await query("UPDATE users SET password_hash = $1, password_changed_at = NOW()::text WHERE id = $2", [hash, id]);
 }
 
 async function deleteStaff(id: number): Promise<boolean> {
@@ -2042,20 +2085,23 @@ async function getStockLevel(productId: string, branchId?: number): Promise<Stoc
 }
 
 async function updateStockLevel(productId: string, quantityInStock: number, branchId?: number): Promise<void> {
+  // Atomic upsert — single statement, no read-then-write race. Conflict targets
+  // match the partial unique indexes on stock_levels (branch_id IS NULL = global,
+  // branch_id IS NOT NULL = per-branch).
   if (branchId !== undefined) {
-    const exist = await queryOne("SELECT 1 FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [productId, branchId]);
-    if (exist) {
-      await query("UPDATE stock_levels SET quantity_in_stock = $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [quantityInStock, productId, branchId]);
-    } else {
-      await query("INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, $3, 0, 0, 5)", [productId, branchId, quantityInStock]);
-    }
+    await query(
+      `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+       VALUES ($1, $2, $3, 0, 0, 5)
+       ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_in_stock = $3, updated_at = NOW()::text`,
+      [productId, branchId, quantityInStock]
+    );
   } else {
-    const exist = await queryOne("SELECT 1 FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [productId]);
-    if (exist) {
-      await query("UPDATE stock_levels SET quantity_in_stock = $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [quantityInStock, productId]);
-    } else {
-      await query("INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, 0, 0, 5)", [productId, quantityInStock]);
-    }
+    await query(
+      `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+       VALUES ($1, $2, 0, 0, 5)
+       ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`,
+      [productId, quantityInStock]
+    );
   }
 }
 
@@ -2095,22 +2141,60 @@ async function listStockTransfers(): Promise<StockTransfer[]> {
 }
 
 async function completeStockTransfer(id: number): Promise<boolean> {
-  const transfer = await getStockTransfer(id);
-  if (!transfer || transfer.status !== 'pending') return false;
-  
-  const sourceLevel = await getStockLevel(transfer.productId, transfer.fromBranchId);
-  const sourceQty = sourceLevel ? Number(sourceLevel.quantityInStock) : 0;
-  if (sourceQty < transfer.quantity) return false;
-  await updateStockLevel(transfer.productId, sourceQty - transfer.quantity, transfer.fromBranchId);
-  await recordStockMovement(transfer.productId, "transfer_out", -transfer.quantity, "stock_transfer", String(id), `Transfer #${id} out`, undefined, transfer.fromBranchId);
-  
-  const destLevel = await getStockLevel(transfer.productId, transfer.toBranchId);
-  const destQty = destLevel ? Number(destLevel.quantityInStock) : 0;
-  await updateStockLevel(transfer.productId, destQty + transfer.quantity, transfer.toBranchId);
-  await recordStockMovement(transfer.productId, "transfer_in", transfer.quantity, "stock_transfer", String(id), `Transfer #${id} in`, undefined, transfer.toBranchId);
-  
-  const result = await query("UPDATE stock_transfers SET status = 'completed', completed_at = NOW()::text WHERE id = $1 AND status = 'pending'", [id]);
-  return (result.rowCount ?? 0) > 0;
+  return await transaction(async (client) => {
+    // Serialize concurrent completions of the same transfer and read the current
+    // status inside the transaction so a duplicate complete is a no-op.
+    const transferRes = await client.query(
+      "SELECT from_branch_id, to_branch_id, product_id, quantity, status FROM stock_transfers WHERE id = $1 FOR UPDATE",
+      [id]
+    );
+    const transfer = transferRes.rows?.[0] as any;
+    if (!transfer || transfer.status !== 'pending') return false;
+
+    // Lock the source row so concurrent transfers can never double-spend.
+    const sourceRes = await client.query(
+      "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE",
+      [transfer.product_id, transfer.from_branch_id]
+    );
+    const sourceLevel = sourceRes.rows?.[0] as any;
+    const sourceQty = sourceLevel ? Number(sourceLevel.quantity_in_stock) : 0;
+    if (sourceQty < Number(transfer.quantity)) return false;
+
+    const qty = Number(transfer.quantity);
+    await client.query(
+      "UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3",
+      [qty, transfer.product_id, transfer.from_branch_id]
+    );
+    await client.query(
+      "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+      [transfer.product_id, "transfer_out", -qty, "stock_transfer", String(id), `Transfer #${id} out`, null, transfer.from_branch_id]
+    );
+
+    // Lock the destination row; insert it if it does not yet exist.
+    const destRes = await client.query(
+      "SELECT id FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE",
+      [transfer.product_id, transfer.to_branch_id]
+    );
+    const destLevel = destRes.rows?.[0] as any;
+    if (destLevel) {
+      await client.query(
+        "UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3",
+        [qty, transfer.product_id, transfer.to_branch_id]
+      );
+    } else {
+      await client.query(
+        "INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, $3, 0, 0, 5)",
+        [transfer.product_id, transfer.to_branch_id, qty]
+      );
+    }
+    await client.query(
+      "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+      [transfer.product_id, "transfer_in", qty, "stock_transfer", String(id), `Transfer #${id} in`, null, transfer.to_branch_id]
+    );
+
+    const result = await client.query("UPDATE stock_transfers SET status = 'completed', completed_at = NOW()::text WHERE id = $1 AND status = 'pending'", [id]);
+    return (result.rowCount ?? 0) > 0;
+  });
 }
 
 async function rejectStockTransfer(id: number): Promise<boolean> {
@@ -2584,17 +2668,17 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
   }
   for (const item of quote.items) {
     try {
-      await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2`, [item.quantity, item.productId]);
+      await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.productId]);
     } catch { console.warn("[quote convert] Failed to update stock on hand"); }
     try {
-      const existingLevel = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [item.productId]) as any;
-      const currentQty = existingLevel ? Number(existingLevel.quantity_in_stock) : 0;
-      const newQty = Math.max(0, currentQty - item.quantity);
+      // Atomic decrement — no read-then-write race. Insert preserves an empty
+      // stock_levels row if absent; on conflict the current value is decremented
+      // atomically with a GREATEST floor so it can never go negative.
       await query(
         `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-         VALUES ($1, $2, 0, 0, 5)
-         ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`,
-        [item.productId, newQty]
+         VALUES ($1, 0, 0, 0, 5)
+         ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text`,
+        [item.productId, item.quantity]
       );
       await query(
         "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'sale', $2, 'order', $3, $4)",
@@ -2945,16 +3029,21 @@ async function cancelOrderItemQuantity(orderItemId: number, quantity: number): P
 }
 
 async function createOrder(data: { customerId: number; customerName: string; customerEmail: string; shippingName: string; shippingAddress: string; shippingCity: string; shippingCounty: string; shippingPostcode: string; shippingPhone: string; shippingFee: number; notes?: string; items: { productId: string; name: string; price: number; quantity: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean }[]; couponId?: number; discountAmount?: number; staffId?: number; branchId?: number; processedBy?: string; idempotencyKey?: string; source?: string; giftCardId?: number; giftCardAmount?: number }): Promise<Order> {
-  const subtotal = data.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const result = await query(
-    `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_city, shipping_county, shipping_postcode, shipping_phone, shipping_fee, notes, subtotal, coupon_id, discount_amount, staff_id, branch_id, processed_by, idempotency_key, source, gift_card_id, gift_card_amount)
-     VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id`,
-    [data.customerId, data.customerName, data.customerEmail, data.shippingName, data.shippingAddress, data.shippingCity, data.shippingCounty, data.shippingPostcode, data.shippingPhone, data.shippingFee, data.notes || "", subtotal, data.couponId || null, data.discountAmount || 0, data.staffId || null, data.branchId || null, data.processedBy || null, data.idempotencyKey || null, data.source || "storefront", data.giftCardId || null, data.giftCardAmount || 0]
-  );
-  const orderId = result.rows[0].id;
-  for (const item of data.items) {
-    await query("INSERT INTO order_items (order_id, product_id, name, price, quantity, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [orderId, item.productId, item.name, item.price, item.quantity, item.hasWarranty ? 1 : 0, item.warrantyDuration || 0, item.taxable !== false ? 1 : 0]);
-  }
+  const subtotal = Math.round(data.items.reduce((sum, i) => sum + i.price * i.quantity, 0) * 100) / 100;
+  // Order + its line items commit atomically so a mid-loop failure can never
+  // leave an orphaned order or a partial item set.
+  const orderId = await transaction(async (client) => {
+    const result = await client.query(
+      `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_city, shipping_county, shipping_postcode, shipping_phone, shipping_fee, notes, subtotal, coupon_id, discount_amount, staff_id, branch_id, processed_by, idempotency_key, source, gift_card_id, gift_card_amount)
+       VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id`,
+      [data.customerId, data.customerName, data.customerEmail, data.shippingName, data.shippingAddress, data.shippingCity, data.shippingCounty, data.shippingPostcode, data.shippingPhone, data.shippingFee, data.notes || "", subtotal, data.couponId || null, data.discountAmount || 0, data.staffId || null, data.branchId || null, data.processedBy || null, data.idempotencyKey || null, data.source || "storefront", data.giftCardId || null, data.giftCardAmount || 0]
+    );
+    const oid = result.rows[0].id;
+    for (const item of data.items) {
+      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [oid, item.productId, item.name, Math.round(item.price * 100) / 100, item.quantity, item.hasWarranty ? 1 : 0, item.warrantyDuration || 0, item.taxable !== false ? 1 : 0]);
+    }
+    return oid;
+  });
   return (await getOrder(orderId))!;
 }
 
@@ -3463,52 +3552,93 @@ async function updatePurchaseOrderStatus(id: number, status: string): Promise<bo
 }
 
 async function receivePurchaseOrderItem(itemId: number, quantityReceived: number, serials?: string[], branchId?: number): Promise<void> {
-  const item = await queryOne("SELECT product_id, quantity_received FROM purchase_order_items WHERE id = $1", [itemId]) as any;
-  if (!item) return;
-  const previousReceived = Number(item.quantity_received) || 0;
-  const delta = quantityReceived - previousReceived;
-  await query("UPDATE purchase_order_items SET quantity_received = $1 WHERE id = $2", [quantityReceived, itemId]);
-  if (serials && serials.length) {
-    await query("UPDATE purchase_order_items SET serial_numbers = $1 WHERE id = $2", [JSON.stringify(serials), itemId]);
-    const product = await queryOne("SELECT serial_tracking FROM products WHERE id = $1", [item.product_id]) as any;
-    if (product && product.serial_tracking) {
-      for (const sn of serials) {
-        const trimmed = String(sn || "").trim();
-        if (!trimmed) continue;
-        const dup = await queryOne("SELECT id FROM serial_numbers WHERE serial_number = $1", [trimmed]);
-        if (!dup) {
-          await query("INSERT INTO serial_numbers (serial_number, product_id, branch_id, status, purchase_order_item_id) VALUES ($1, $2, $3, 'in_stock', $4)", [trimmed, item.product_id, branchId ?? null, itemId]);
+  // Single transaction: PO item update + serial inserts + atomic stock upsert and
+  // movement commit (or roll back) together. Locks the PO item row and uses
+  // relative (+delta) atomic stock updates so concurrent receives cannot lose stock.
+  await transaction(async (client) => {
+    const itemRes = await client.query(
+      "SELECT product_id, quantity_received, serial_numbers FROM purchase_order_items WHERE id = $1 FOR UPDATE",
+      [itemId]
+    );
+    const item = itemRes.rows?.[0] as any;
+    if (!item) return;
+    const previousReceived = Number(item.quantity_received) || 0;
+    const delta = quantityReceived - previousReceived;
+
+    await client.query(
+      "UPDATE purchase_order_items SET quantity_received = $1, serial_numbers = $2 WHERE id = $3",
+      [quantityReceived, serials && serials.length ? JSON.stringify(serials) : item.serial_numbers || "[]", itemId]
+    );
+
+    if (serials && serials.length) {
+      const productRes = await client.query("SELECT serial_tracking FROM products WHERE id = $1", [item.product_id]);
+      const product = productRes.rows?.[0] as any;
+      if (product && product.serial_tracking) {
+        for (const sn of serials) {
+          const trimmed = String(sn || "").trim();
+          if (!trimmed) continue;
+          await client.query(
+            "INSERT INTO serial_numbers (serial_number, product_id, branch_id, status, purchase_order_item_id) VALUES ($1, $2, $3, 'in_stock', $4) ON CONFLICT (serial_number) DO NOTHING",
+            [trimmed, item.product_id, branchId ?? null, itemId]
+          );
         }
       }
     }
-  }
-  if (delta > 0 && item.product_id) {
-    const current = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1", [item.product_id]) as any;
-    const currentQty = current ? Number(current.quantity_in_stock) : 0;
-    await updateStockLevel(item.product_id, currentQty + delta);
-    try { await recordStockMovement(item.product_id, "purchase_receive", delta, "purchase_order", String(itemId), `Received ${delta} units from PO item #${itemId}`); } catch {}
-  }
+
+    if (delta > 0 && item.product_id) {
+      if (branchId !== undefined) {
+        await client.query(
+          `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+           VALUES ($1, $2, $3, 0, 0, 5)
+           ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL
+           DO UPDATE SET quantity_in_stock = stock_levels.quantity_in_stock + $3, updated_at = NOW()::text`,
+          [item.product_id, branchId, delta]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+           VALUES ($1, $2, 0, 0, 5)
+           ON CONFLICT (product_id) WHERE branch_id IS NULL
+           DO UPDATE SET quantity_in_stock = stock_levels.quantity_in_stock + $2, updated_at = NOW()::text`,
+          [item.product_id, delta]
+        );
+      }
+      await client.query(
+        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [item.product_id, "purchase_receive", delta, "purchase_order", String(itemId), `Received ${delta} units from PO item #${itemId}`, null, branchId ?? null]
+      );
+    }
+  });
 }
 
 async function reversePurchaseOrderReceive(poId: number): Promise<{ reversed: number; itemCount: number }> {
-  const items = await queryAll(
-    "SELECT poi.id, poi.product_id, poi.quantity_received, p.serial_tracking FROM purchase_order_items poi LEFT JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1 AND poi.quantity_received > 0",
-    [poId]
-  ) as any[];
+  // Transaction: reverse each item's stock (atomic relative decrement), void its
+  // serials, and reset the PO item atomically so a mid-loop failure rolls back.
   let reversed = 0; let itemCount = 0;
-  for (const item of items) {
-    const qty = Number(item.quantity_received) || 0;
-    if (qty <= 0) continue;
-    const current = await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1", [item.product_id]) as any;
-    const currentQty = current ? Number(current.quantity_in_stock) : 0;
-    await updateStockLevel(item.product_id, Math.max(0, currentQty - qty));
-    try { await recordStockMovement(item.product_id, "purchase_reverse", -qty, "purchase_order", String(item.id), `Reversed ${qty} units from PO item #${item.id}`); } catch {}
-    if (item.serial_tracking) {
-      await query("UPDATE serial_numbers SET status = 'void' WHERE purchase_order_item_id = $1 AND status = 'in_stock'", [item.id]);
+  await transaction(async (client) => {
+    const itemsRes = await client.query(
+      "SELECT poi.id, poi.product_id, poi.quantity_received, p.serial_tracking FROM purchase_order_items poi LEFT JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1 AND poi.quantity_received > 0",
+      [poId]
+    );
+    const items = itemsRes.rows as any[];
+    for (const item of items) {
+      const qty = Number(item.quantity_received) || 0;
+      if (qty <= 0) continue;
+      await client.query(
+        "UPDATE stock_levels SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL",
+        [qty, item.product_id]
+      );
+      await client.query(
+        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [item.product_id, "purchase_reverse", -qty, "purchase_order", String(item.id), `Reversed ${qty} units from PO item #${item.id}`, null, null]
+      );
+      if (item.serial_tracking) {
+        await client.query("UPDATE serial_numbers SET status = 'void' WHERE purchase_order_item_id = $1 AND status = 'in_stock'", [item.id]);
+      }
+      await client.query("UPDATE purchase_order_items SET quantity_received = 0, serial_numbers = '[]' WHERE id = $1", [item.id]);
+      reversed += qty; itemCount++;
     }
-    await query("UPDATE purchase_order_items SET quantity_received = 0, serial_numbers = '[]' WHERE id = $1", [item.id]);
-    reversed += qty; itemCount++;
-  }
+  });
   return { reversed, itemCount };
 }
 
@@ -3842,7 +3972,30 @@ async function listAllMessages(): Promise<Message[]> {
 
 async function changeCustomerPassword(customerId: number, newPassword: string): Promise<void> {
   const hash = await bcrypt.hash(newPassword, 10);
-  await query("UPDATE customers SET password_hash = $1 WHERE id = $2", [hash, customerId]);
+  await query("UPDATE customers SET password_hash = $1, password_changed_at = NOW()::text WHERE id = $2", [hash, customerId]);
+}
+
+// Atomically consume a single-use auth token `jti`. Returns true only the first
+// time; any subsequent use of the same jti returns false (prevents link replay).
+async function consumeAuthToken(jti: string, userRole: string, userId: number): Promise<boolean> {
+  try {
+    const result = await query(
+      "INSERT INTO token_nonces (jti, user_role, user_id) VALUES ($1, $2, $3) ON CONFLICT (jti) DO NOTHING",
+      [jti, userRole, userId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  } catch { return false; }
+}
+
+// Return the password_changed_at timestamp for a user, used to reject tokens
+// issued before a password rotation.
+async function getPasswordChangedAt(userRole: string, userId: number): Promise<string | null | undefined> {
+  if (userRole === "customer") {
+    const row = await queryOne("SELECT password_changed_at FROM customers WHERE id = $1", [userId]) as any;
+    return row?.password_changed_at ?? null;
+  }
+  const row = await queryOne("SELECT password_changed_at FROM users WHERE id = $1", [userId]) as any;
+  return row?.password_changed_at ?? null;
 }
 
 async function logAudit(userId: number | null, userName: string, action: string, entityType: string, entityId: string | null, details: any = {}, actorRole: string = ""): Promise<void> {
@@ -4349,8 +4502,14 @@ function computeWarrantyExpiry(createdAt: string, durationMonths: number): strin
   if (!durationMonths || durationMonths <= 0 || !createdAt) return "";
   const base = new Date(createdAt);
   if (isNaN(base.getTime())) return "";
-  base.setMonth(base.getMonth() + durationMonths);
-  return base.toISOString().slice(0, 10);
+  // Whole-calendar-month addition with month-end clamping: adding 1 month to
+  // Jan 31 yields Feb 28 (not Mar 3), matching real warranty terms.
+  const targetYear = base.getFullYear() + Math.floor((base.getMonth() + durationMonths) / 12);
+  const targetMonth = ((base.getMonth() + durationMonths) % 12 + 12) % 12;
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const day = Math.min(base.getDate(), lastDay);
+  const result = new Date(targetYear, targetMonth, day);
+  return result.toISOString().slice(0, 10);
 }
 
 async function listSerials(filters: { search?: string; status?: string; productId?: string; customerId?: number }): Promise<any[]> {
@@ -4503,6 +4662,7 @@ export {
   listCategories, listPosCategories, getCategory, createCategory, updateCategory, deleteCategory, isValidCategory,
   listSubcategories, getSubcategory, createSubcategory, updateSubcategory, deleteSubcategory, getSubcategoriesForCategory,
   findStaffByUsername, findStaffByEmail, findStaffById, listStaff, updateStaffDetails, createStaff, updateStaffRole, changeStaffPassword, deleteStaff, findAdminByUsername,
+  consumeAuthToken, getPasswordChangedAt,
   findCustomerByEmail, findCustomerById, updateCustomerLastLogin, updateCustomerStatus, updateCustomer, deleteCustomer, deactivateOldCustomers, createCustomer, changeCustomerPassword, listAllCustomers, listActiveCustomers, getCustomerDetails,
   getSettings, updateSettings, getStoreSetting, setStoreSetting, getPaymentMethods, setPaymentMethods,
   listProducts, getProduct, setProductImageUrl, createProduct, updateProduct, deleteProduct, getPriceHistory,

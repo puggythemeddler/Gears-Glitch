@@ -147,6 +147,13 @@ Use the **Feature Overrides** picker in the Edit Client modal to fine-tune what 
 - Filterable table showing action type, user, timestamp, target entity, and details
 - Accessible from the **Audit Log** tab in the dashboard
 
+## Security & Audit Notes
+
+- **Command injection hardening** — The backup `pg_dump` path runs via `spawn` with an argument array (no shell) piped to gzip (`control-plane/server/index.ts`), so the client DB URL can never be interpreted as a shell command.
+- **Secret handling** — `GET /api/clients/:id` never returns `cp_secret`/`neon_db_url` to viewer-role users, `GET /api/smtp` returns a masked password, and `GET /api/users` masks other users' API keys. The main dashboard admin password is never rendered into the DOM.
+- **API keys** — Mutual auth between the control plane and each client uses per-client `CONTROL_PLANE_SECRET` compared with `timingSafeEqual`. Programmatic access uses per-user API keys (or the legacy global `CONTROL_PLANE_API_KEY`); the legacy global key remains backward compatible. Deploy actions recommend using a per-user admin key rather than the shared legacy global key.
+- **Content Security Policy** — See the dedicated CSP section above (keep `scriptSrcAttr` set).
+
 ## Two-Factor Authentication (2FA)
 
 Administrators can protect their control-plane accounts with TOTP two-factor authentication (Time-based One-Time Password), in addition to the standard username + password.

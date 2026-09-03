@@ -1,4 +1,10 @@
-import { Pool, PoolClient, QueryResult } from "pg";
+import { Pool, PoolClient, QueryResult, types } from "pg";
+
+// Money columns are stored as exact NUMERIC(12,2) (see migration 0002).
+// node-postgres returns NUMERIC/float8/oid-1700 as strings by default; register
+// a parser so these values keep coming back as JS numbers (matching the previous
+// DOUBLE PRECISION behaviour) and no API contract changes.
+types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
 
 let pool: Pool | null = null;
 

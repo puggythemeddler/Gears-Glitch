@@ -145,6 +145,17 @@ export function posReceiptButtons(orderId: number, format: string): string {
 }
 
 // ============ INVOICE ITEM ROW HELPER ============
+// Whole-calendar-month addition with month-end clamping: adding 1 month to
+// Jan 31 yields Feb 28 (not Mar 3). Mutates and returns the given Date.
+export function addCalendarMonthsClamped(d: Date, months: number): Date {
+  const m = d.getMonth() + months;
+  const y = d.getFullYear() + Math.floor(m / 12);
+  const mo = ((m % 12) + 12) % 12;
+  const lastDay = new Date(y, mo + 1, 0).getDate();
+  d.setFullYear(y, mo, Math.min(d.getDate(), lastDay));
+  return d;
+}
+
 export function buildInvoiceItemRow(
   item: { name: string; quantity: number; price: number; lineTotal: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean; serialNumber?: string },
   orderCreatedAt: string,
@@ -154,8 +165,14 @@ export function buildInvoiceItemRow(
 ): string {
   let warranty = "\u2014";
   if (item.hasWarranty) {
-    const expiry = new Date(orderCreatedAt);
-    expiry.setMonth(expiry.getMonth() + (item.warrantyDuration || 0));
+    // Whole-calendar-month addition with month-end clamping (Jan 31 + 1mo -> Feb 28).
+    const start = new Date(orderCreatedAt);
+    const dm = item.warrantyDuration || 0;
+    const m = start.getMonth() + dm;
+    const y = start.getFullYear() + Math.floor(m / 12);
+    const mo = ((m % 12) + 12) % 12;
+    const lastDay = new Date(y, mo + 1, 0).getDate();
+    const expiry = new Date(y, mo, Math.min(start.getDate(), lastDay));
     warranty = `Yes (exp: ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})`;
   }
   const isTx = item.taxable !== false;

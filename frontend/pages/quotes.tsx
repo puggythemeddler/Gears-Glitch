@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { api, getRole, getTokenForRole, downloadPdf } from "@/lib/api";
+import { api, getRole } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { useApp } from "@/lib/app-context";
 import { escapeHtml } from "@/lib/sanitize";
@@ -290,8 +290,11 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
     setActionLoading(false);
   }
 
-  function openPdf() {
-    downloadPdf(`/api/admin/quotes/${quote.id}/pdf?allowQueryToken=1&token=${encodeURIComponent(getTokenForRole() || "")}`, `quote-${quote.quoteNumber || quote.id}.pdf`).catch((e: any) => toast("error", "Failed to download quote: " + (e?.message || "Unknown error")));
+  async function openPdf() {
+    try {
+      const r = await api<{ token: string }>(`/api/admin/quote-pdf-token/${quote.id}`, { method: "POST" });
+      window.open(`/api/admin/quotes/${quote.id}/pdf?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, "_blank");
+    } catch (e: any) { toast("error", "Failed to open quote: " + (e?.message || "Unknown error")); }
   }
 
   const editSubtotal = editItems.reduce((s, i) => s + calcEditItemTotal(i), 0);

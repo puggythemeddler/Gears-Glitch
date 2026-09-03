@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL UNIQUE,
   email TEXT,
   password_hash TEXT NOT NULL,
+  password_changed_at TEXT,
   role TEXT NOT NULL DEFAULT 'admin',
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS customers (
   password_hash TEXT NOT NULL,
   phone TEXT NOT NULL DEFAULT '',
   last_login TEXT,
+  password_changed_at TEXT,
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
@@ -871,3 +873,11 @@ CREATE TABLE IF NOT EXISTS refunds (
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds(order_id);
+
+CREATE TABLE IF NOT EXISTS token_nonces (
+  jti TEXT PRIMARY KEY,
+  user_role TEXT NOT NULL,
+  user_id INTEGER NOT NULL,
+  used_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_token_nonces_user ON token_nonces(user_role, user_id);

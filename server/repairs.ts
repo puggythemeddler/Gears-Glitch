@@ -142,23 +142,52 @@ interface TicketUpdates {
 }
 
 const STATUSES: string[] = [
-  "received", "diagnosing", "waiting_parts",
-  "in_progress", "quality_check", "ready", "collected", "cancelled",
+  "received", "diagnosing", "waiting_parts", "awaiting_approval", "approved",
+  "in_progress", "quality_check", "ready", "unrepairable", "collected", "cancelled", "rejected",
 ];
 
 const STATUS_LABELS: { [key: string]: string } = {
   received: "Received",
   diagnosing: "Diagnosing",
   waiting_parts: "Waiting for parts",
+  awaiting_approval: "Awaiting approval",
+  approved: "Approved",
   in_progress: "In progress",
   quality_check: "Quality check",
   ready: "Ready for collection",
+  unrepairable: "Unrepairable",
   collected: "Collected",
   cancelled: "Cancelled",
+  rejected: "Rejected",
 };
 
 function isValidStatus(status: string): boolean {
   return STATUSES.includes(status);
+}
+
+// Enforced repair lifecycle: a ticket may only move through these transitions,
+// so statuses like received->collected or bypassing diagnostic/approval/QC are
+// rejected server-side. A ticket may always stay on its current status (idempotent
+// saves), and 'cancelled'/'collected' are terminal once reached.
+const VALID_TRANSITIONS: { [from: string]: string[] } = {
+  received: ["received", "diagnosing", "awaiting_approval", "cancelled"],
+  diagnosing: ["diagnosing", "waiting_parts", "awaiting_approval", "in_progress", "quality_check", "ready", "rejected", "unrepairable", "cancelled"],
+  waiting_parts: ["waiting_parts", "diagnosing", "awaiting_approval", "approved", "in_progress", "cancelled"],
+  awaiting_approval: ["awaiting_approval", "approved", "rejected", "diagnosing", "in_progress", "waiting_parts", "cancelled"],
+  approved: ["approved", "in_progress", "waiting_parts", "diagnosing", "quality_check", "ready", "unrepairable", "cancelled"],
+  in_progress: ["in_progress", "quality_check", "waiting_parts", "awaiting_approval", "approved", "ready", "cancelled"],
+  quality_check: ["quality_check", "in_progress", "ready", "unrepairable", "cancelled"],
+  ready: ["ready", "quality_check", "collected", "unrepairable", "cancelled"],
+  unrepairable: ["unrepairable", "collected", "cancelled"],
+  collected: ["collected"],
+  cancelled: ["cancelled"],
+  rejected: ["rejected", "collected", "diagnosing", "cancelled"],
+};
+
+function isValidTransition(from: string | undefined, to: string): boolean {
+  if (!from) return true;
+  const allowed = VALID_TRANSITIONS[from];
+  return !!allowed && allowed.includes(to);
 }
 
 async function generateTicketId(): Promise<string> {
@@ -479,6 +508,7 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
 
   if (updates.status !== undefined) {
     if (!isValidStatus(updates.status)) return { error: "Invalid status." };
+    if (!isValidTransition(existing?.status, updates.status)) return { error: "Invalid status transition." };
     fields.push(`status = $${idx}`);
     params.push(updates.status);
     idx++;
@@ -587,6 +617,16 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
     );
   }
 
+  if (updates.assignedTo !== undefined && Number(updates.assignedTo || 0) !== Number(existing.assignedTo || 0)) {
+    await addRepairUpdate(
+      ticketId,
+      staffId || null,
+      "assignment",
+      `Technician reassigned (${existing.assignedTo || "unassigned"} -> ${updates.assignedTo || "unassigned"}).`,
+      false
+    );
+  }
+
   return await loadTicketDetails(ticketId);
 }
 
@@ -606,18 +646,23 @@ async function addRepairPart(ticketId: string, data: any): Promise<TicketResult>
   const cost = Number(data.unitCost) || 0;
   const productId = data.productId ? String(data.productId) : null;
 
-  // A part drawn from store inventory must leave stock. Mirrors POS semantics:
-  // reject only when a stock record shows there is not enough available, and
-  // forbid negative stock. FOR UPDATE serialises concurrent part issues so two
-  // repairs can never both take the last unit.
-  if (productId) {
-    try {
-      const outcome = await transaction(async (client) => {
-        const prod = (await client.query("SELECT stock_on_hand FROM products WHERE id = $1 FOR UPDATE", [productId])).rows?.[0] as any;
+  // A part drawn from store inventory must leave stock, and the stock deduction
+  // must be atomic with the repair_parts_used insert: if the guarded deduction
+  // finds insufficient stock we throw, rolling back the whole transaction so a
+  // part is never recorded without an accompanying deduction.
+  let partId: number;
+  try {
+    partId = await transaction(async (client) => {
+      if (productId) {
         const level = (await client.query("SELECT quantity_in_stock, quantity_reserved FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL FOR UPDATE", [productId])).rows?.[0] as any;
-        if (prod && Number(prod.stock_on_hand) > 0 && Number(prod.stock_on_hand) < qty) return "insufficient";
-        if (level && Math.max(0, Number(level.quantity_in_stock) - (Number(level.quantity_reserved) || 0)) < qty) return "insufficient";
-        await client.query("UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2", [qty, productId]);
+        // Guarded atomic deduction — rowCount 0 means insufficient stock on hand.
+        const prodRes = await client.query(
+          "UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2 AND stock_on_hand >= $1",
+          [qty, productId]
+        );
+        if ((prodRes.rowCount ?? 0) === 0) {
+          throw new Error(`Insufficient stock for ${desc}.`);
+        }
         if (level) {
           await client.query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, productId]);
         }
@@ -625,24 +670,22 @@ async function addRepairPart(ticketId: string, data: any): Promise<TicketResult>
           "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'repair_part', $2, 'repair', $3, $4)",
           [productId, -qty, ticketId, `Repair part used #${ticketId}`]
         );
-        return "ok";
-      });
-      if (outcome === "insufficient") return { ok: false, error: `Insufficient stock for ${desc}.` };
-    } catch (e: any) {
-      console.warn("[repairs] Failed to deduct part stock:", e?.message);
-    }
+      }
+      const result = await client.query(
+        `INSERT INTO repair_parts_used (ticket_id, description, product_id, quantity, unit_cost)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [ticketId, desc, productId, qty, cost]
+      );
+      return Number(result.rows[0]?.id);
+    });
+  } catch (e: any) {
+    // Caller surfaces the error via result.error (HTTP 400) in index.ts:4780.
+    return { ok: false, error: String(e?.message || "Insufficient stock.") };
   }
-
-  const result = await query(
-    `INSERT INTO repair_parts_used (ticket_id, description, product_id, quantity, unit_cost)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [ticketId, desc, productId, qty, cost]
-  );
-  const newId = result.rows[0]?.id;
 
   await recalculateTicketCost(ticketId);
 
-  const partRow = await queryOne("SELECT * FROM repair_parts_used WHERE id = $1", [newId]) as any;
+  const partRow = await queryOne("SELECT * FROM repair_parts_used WHERE id = $1", [partId]) as any;
   return { ok: true, part: mapPart(partRow) };
 }
 

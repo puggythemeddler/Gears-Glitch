@@ -43,6 +43,8 @@ import {
   updateStaffDetails,
   changeStaffPassword,
   changeCustomerPassword,
+  consumeAuthToken,
+  getPasswordChangedAt,
   deleteStaff,
   getStockLevel,
   updateStockLevel,
@@ -353,6 +355,7 @@ import {
   sendRepairQuote,
   respondToRepairQuote,
 } from "./repairs";
+import warrantyRouter from "./warranty";
 import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage } from "./whatsapp";
@@ -362,7 +365,7 @@ import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shippin
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus } from "./mpesa";
 import bcrypt from "bcryptjs";
 import { htmlToPdf, closeBrowser, warmPdf } from "./pdf";
-import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml } from "./routes/shared";
+import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml, addCalendarMonthsClamped } from "./routes/shared";
 
 const PORT: number = Number(process.env.PORT) || 8020;
 const ROOT: string = path.join(__dirname, "..");
@@ -475,6 +478,7 @@ app.use("/uploads", express.static(path.join(ROOT, "data", "uploads"), {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.set("Pragma", "no-cache");
     res.set("Expires", "0");
+    res.set("X-Content-Type-Options", "nosniff");
   }
 }));
 
@@ -524,6 +528,8 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   res.status(403).json({ error: "This store is currently suspended. Please contact support." });
 });
 
+app.use("/api/warranty", warrantyRouter);
+
 app.post("/api/control-plane/suspend", controlPlaneAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   await setStoreSetting("store_suspended", "true");
   storeSuspended = true;
@@ -566,7 +572,16 @@ async function backupImageToDb(refId: string, imageUrl: string): Promise<void> {
       contentType = resp.headers.get("content-type") || "image/jpeg";
       buffer = Buffer.from(await resp.arrayBuffer());
     } else {
-      const localPath = path.join(__dirname, "..", "data", imageUrl.replace(/^\//, ""));
+      // Path-confinement: only allow an in-upload relative filename. Resolve and
+      // verify the target stays inside the data directory, so "../../etc/passwd"
+      // or absolute paths cannot read arbitrary local files.
+      const dataDir = path.resolve(__dirname, "..", "data");
+      const cleanName = imageUrl.replace(/^[/\\]+/, "");
+      const localPath = path.resolve(dataDir, cleanName);
+      if (localPath !== dataDir && !localPath.startsWith(dataDir + path.sep)) {
+        console.warn("[Image Backup] Blocked path outside data dir:", imageUrl);
+        return;
+      }
       if (!fs.existsSync(localPath)) return;
       buffer = fs.readFileSync(localPath);
       const ext = path.extname(localPath).toLowerCase();
@@ -748,7 +763,9 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
 
 // M-Pesa status query
 app.get("/api/mpesa/config", adminAuthMiddleware, (_req: Request, res: Response) => {
-  res.json(getMpesaConfig());
+  const cfg = getMpesaConfig();
+  // Redact credential material (S-6/P-4) — forms submit blank = keep existing.
+  res.json({ ...cfg, consumerSecret: "", passkey: "" });
 });
 
 app.get("/api/settings", staffAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
@@ -818,7 +835,7 @@ app.get("/api/storefront-stats", asyncHandler(async (_req: Request, res: Respons
       categories: (categories || []).map((c: any) => ({ id: c.id, label: c.label })),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to load storefront stats" });
+    res.status(500).json({ error: "Failed to load storefront stats." });
   }
 }));
 
@@ -1078,7 +1095,7 @@ app.post("/api/admin/about-us/image", adminAuthMiddleware, asyncHandler(async (r
     }
     backupImageToDb("about", imageUrl);
     res.json({ url: imageUrl });
-  } catch (e: any) { console.error("[About image upload]", e.message || e); res.status(400).json({ error: "Upload failed: " + (e.message || "Unknown error") }); }
+  } catch (e: any) { console.error("[About image upload]", e.message || e); res.status(400).json({ error: "Upload failed. Please try again." }); }
 }));
 
 app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
@@ -1119,8 +1136,9 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
   }
   const mpesaUpdates: any = {};
   if (mpesaConsumerKey !== undefined) mpesaUpdates.consumerKey = mpesaConsumerKey;
-  if (mpesaConsumerSecret !== undefined) mpesaUpdates.consumerSecret = mpesaConsumerSecret;
-  if (mpesaPasskey !== undefined) mpesaUpdates.passkey = mpesaPasskey;
+  // Blank secret submission = keep existing (never wipe saved credentials).
+  if (mpesaConsumerSecret !== undefined && mpesaConsumerSecret !== "") mpesaUpdates.consumerSecret = mpesaConsumerSecret;
+  if (mpesaPasskey !== undefined && mpesaPasskey !== "") mpesaUpdates.passkey = mpesaPasskey;
   if (mpesaShortcode !== undefined) mpesaUpdates.shortcode = mpesaShortcode;
   if (mpesaTillNumber !== undefined) mpesaUpdates.tillNumber = mpesaTillNumber;
   if (mpesaEnv !== undefined) mpesaUpdates.env = mpesaEnv;
@@ -1179,7 +1197,7 @@ app.post("/api/settings/logo", adminAuthMiddleware, asyncHandler(async (req: Req
     await updateSettings({ storeLogo: logoUrl });
     backupImageToDb("logo", logoUrl);
     res.json({ logoUrl });
-  } catch (e: any) { console.error("[Logo upload]", e.message || e); res.status(400).json({ error: "Upload failed: " + (e.message || "Unknown error") }); }
+  } catch (e: any) { console.error("[Logo upload]", e.message || e); res.status(400).json({ error: "Upload failed. Please try again." }); }
 }));
 
 app.get("/api/admin/email-logs", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -1218,7 +1236,7 @@ app.post("/api/settings/favicon", adminAuthMiddleware, asyncHandler(async (req: 
     await updateSettings({ storeFavicon: faviconUrl });
     backupImageToDb("favicon", faviconUrl);
     res.json({ faviconUrl });
-  } catch (e: any) { console.error("[Favicon upload]", e.message || e); res.status(400).json({ error: "Upload failed: " + (e.message || "Unknown error") }); }
+  } catch (e: any) { console.error("[Favicon upload]", e.message || e); res.status(400).json({ error: "Upload failed. Please try again." }); }
 }));
 
 app.get("/api/settings/nav-order", asyncHandler(async (_req: Request, res: Response) => {
@@ -1329,7 +1347,7 @@ app.get("/api/plans", asyncHandler(async (_req: Request, res: Response) => {
 
 app.get("/api/plans/all", asyncHandler(async (_req: Request, res: Response) => {
   const all = await listSubscriptionPlans();
-  res.json({ plans: all });
+  res.json({ plans: all.filter((p: any) => p.active !== false) });
 }));
 
 app.get("/api/admin/plans", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
@@ -1890,7 +1908,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     // Hold stock for M-Pesa (deduct on payment confirm); deduct immediately for cash
     for (const item of resolvedItems) {
       try {
-        await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2`, [item.quantity, item.id]);
+        await query(`UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.id]);
       } catch { console.warn("[server] Failed to update stock on hand"); }
       try {
         const bid = branchId ? Number(branchId) : null;
@@ -1899,14 +1917,14 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
             await query(
               `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
                VALUES ($1, $2, 0, $3, 0, 5)
-               ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_reserved = quantity_reserved + $3, updated_at = NOW()::text`,
+               ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_reserved = quantity_reserved + $3, updated_at = NOW()::text`,
               [item.id, bid, item.quantity]
             );
           } else {
             await query(
               `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
                VALUES ($1, 0, $2, 0, 5)
-               ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_reserved = quantity_reserved + $2, updated_at = NOW()::text`,
+               ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_reserved = quantity_reserved + $2, updated_at = NOW()::text`,
               [item.id, item.quantity]
             );
           }
@@ -1915,24 +1933,22 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
             [item.id, -item.quantity, String(orderId), `POS reserved #${orderId} (awaiting M-Pesa)`, staff.sub, bid || null]
           );
         } else {
-          const existingLevel = bid
-            ? await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [item.id, bid])
-            : await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [item.id]);
-          const currentQty = existingLevel ? Number(existingLevel.quantity_in_stock) : 0;
-          const newQty = Math.max(0, currentQty - item.quantity);
+          // Atomic decrement (single statement, no read-then-write) so concurrent
+          // checkouts can never lose an update / double-count stock. The row-level
+          // lock taken by this UPDATE serialises per product; GREATEST floors at 0.
           if (bid) {
             await query(
               `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-               VALUES ($1, $2, $3, 0, 0, 5)
-               ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $3, updated_at = NOW()::text`,
-              [item.id, bid, newQty]
+               VALUES ($1, $2, 0, 0, 0, 5)
+               ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $3, 0), updated_at = NOW()::text`,
+              [item.id, bid, item.quantity]
             );
           } else {
             await query(
               `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-               VALUES ($1, $2, 0, 0, 5)
-               ON CONFLICT (product_id, branch_id) DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`,
-              [item.id, newQty]
+               VALUES ($1, 0, 0, 0, 5)
+               ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text`,
+              [item.id, item.quantity]
             );
           }
           await query(
@@ -1973,7 +1989,12 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
   let mpesaReceipt = row.mpesa_receipt || null;
   let status = row.status;
   if (!paid && checkoutRequestId) {
-    if (String(checkoutRequestId).startsWith("SIM")) {
+    // Simulation guard: a SIM-prefixed checkout ID is the dev/sandbox fallback
+    // emitted by stkPush when M-Pesa is not configured. It must ONLY auto-confirm
+    // outside production (where it represents the test harness). In production a
+    // SIM ID means no real money moved, so we never confirm; we fall through to
+    // the reconciliation branch below so the order stays pending/cancelled.
+    if (String(checkoutRequestId).startsWith("SIM") && process.env.NODE_ENV !== "production") {
       await confirmOrderPayment(id);
       await query("UPDATE orders SET status = 'paid', mpesa_receipt = COALESCE(mpesa_receipt, $1), updated_at = NOW()::text WHERE id = $2", [`SIM${id}`, id]);
       paid = true; status = "paid"; mpesaReceipt = mpesaReceipt || `SIM${id}`;
@@ -2023,7 +2044,32 @@ app.post("/api/pos/orders/:id/cancel", posAuthMiddleware, asyncHandler(async (re
   res.json({ order: { ...order, status: "cancelled" } });
 }));
 
-app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+// S-5: authorize "open link" PDF/receipt routes. Accepts a short-lived purpose
+// token (via query or header) that is bound to the specific resource, OR a full
+// session token but ONLY when presented via the Authorization header (never via
+// query, which prevents the session JWT leaking in URLs/logs/Referer).
+function requirePdfAuth(purpose: string, idParam: string, prop: string, allowedRoles: string[]) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const token = getBearerToken(req);
+    if (!token) { res.status(401).json({ error: "Login required." }); return; }
+    let payload: any;
+    try { payload = verifyToken(token) as any; } catch { res.status(401).json({ error: "Session expired." }); return; }
+    const idActual = Number(req.params[idParam]);
+    if (payload.purpose === purpose && Number(payload[prop]) === idActual) {
+      (req as any).user = payload;
+      next();
+      return;
+    }
+    const fromHeader = typeof req.headers.authorization === "string" && req.headers.authorization.startsWith("Bearer ");
+    if (!fromHeader || !allowedRoles.includes(payload.role)) {
+      res.status(403).json({ error: "Access denied." }); return;
+    }
+    (req as any).user = payload;
+    next();
+  };
+}
+
+app.get("/api/pos/receipt/:orderId", requirePdfAuth("pos-receipt", "orderId", "orderId", ["admin", "owner", "technician", "manager", "provider", "staff"]), asyncHandler(async (req: Request, res: Response) => {
   try {
   const order = await getOrder(Number(req.params.orderId));
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
@@ -2058,7 +2104,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
     let warrantyLine = "";
     if (i.hasWarranty) {
       const expiry = new Date(order.createdAt);
-      expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
+      addCalendarMonthsClamped(expiry, i.warrantyDuration || 0);
       warrantyLine = `<div style="font-size:0.65rem;color:#6b7280;">Warranty: ${i.warrantyDuration}mo (exp ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})</div>`;
     }
     const serialLine = i.serial_number ? `<div style="font-size:0.65rem;color:#374151;">S/N: ${escapeHtml(String(i.serial_number))}</div>` : "";
@@ -2080,7 +2126,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
       let warranty = "\u2014";
       if (i.hasWarranty) {
         const expiry = new Date(order.createdAt);
-        expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
+        addCalendarMonthsClamped(expiry, i.warrantyDuration || 0);
         warranty = `Yes (exp: ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})`;
       }
       return `<tr><td>${escapeHtml(i.name)}${i.serial_number ? `<div style="font-size:0.8rem;color:#374151;">S/N: ${escapeHtml(String(i.serial_number))}</div>` : ""}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
@@ -2141,7 +2187,7 @@ app.get("/api/pos/receipt/:orderId", posAuthMiddleware, asyncHandler(async (req:
       let warranty = "\u2014";
       if (i.hasWarranty) {
         const expiry = new Date(order.createdAt);
-        expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
+        addCalendarMonthsClamped(expiry, i.warrantyDuration || 0);
         warranty = `Yes (exp: ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})`;
       }
       return `<tr><td>${escapeHtml(i.name)}${i.serial_number ? `<div style="font-size:0.8rem;color:#374151;">S/N: ${escapeHtml(String(i.serial_number))}</div>` : ""}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
@@ -2533,8 +2579,12 @@ app.get("/api/admin/warranties", ownerAuthMiddleware, asyncHandler(async (req: R
     const start = parseDate(r.sold_at) || parseDate(r.order_created_at);
     let expiry = parseDate(r.warranty_expires);
     if (!expiry && start && Number(r.warranty_duration) > 0) {
-      expiry = new Date(start.getTime());
-      expiry.setMonth(expiry.getMonth() + Number(r.warranty_duration));
+      // Whole-calendar-month addition with month-end clamping (Jan 31 + 1mo -> Feb 28).
+      const m = start.getMonth() + Number(r.warranty_duration);
+      const y = start.getFullYear() + Math.floor(m / 12);
+      const mo = ((m % 12) + 12) % 12;
+      const lastDay = new Date(y, mo + 1, 0).getDate();
+      expiry = new Date(y, mo, Math.min(start.getDate(), lastDay));
     }
     const daysLeft = expiry ? Math.ceil((expiry.getTime() - now) / 86400000) : null;
     const status = !expiry || daysLeft == null ? "expired" : daysLeft < 0 ? "expired" : daysLeft <= 30 ? "expiring" : "active";
@@ -2606,6 +2656,44 @@ app.post("/api/admin/invoice-token/:orderId", staffAuthMiddleware, asyncHandler(
   }
 }));
 
+// S-5: mint short-lived, single-purpose "open link" tokens so the full session
+// JWT is never placed in a URL (see requirePdfAuth above).
+app.post("/api/admin/pos-receipt-token/:orderId", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const order = await getOrder(Number(req.params.orderId));
+    if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+    const token = signToken({ sub: (req as any).user.sub, role: (req as any).user.role, orderId: Number(req.params.orderId), purpose: "pos-receipt" }, "5m");
+    res.json({ token });
+  } catch (err: any) {
+    console.error("[pos-receipt-token] error:", err?.message || err);
+    res.status(500).json({ error: "Failed to generate receipt token." });
+  }
+}));
+
+app.post("/api/admin/purchase-pdf-token/:id", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const po = await getPurchaseOrder(Number(req.params.id));
+    if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
+    const token = signToken({ sub: (req as any).user.sub, role: (req as any).user.role, purchaseId: Number(req.params.id), purpose: "po-pdf" }, "5m");
+    res.json({ token });
+  } catch (err: any) {
+    console.error("[purchase-pdf-token] error:", err?.message || err);
+    res.status(500).json({ error: "Failed to generate purchase PDF token." });
+  }
+}));
+
+app.post("/api/admin/quote-pdf-token/:id", staffAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const quote = await getQuote(Number(req.params.id));
+    if (!quote) { res.status(404).json({ error: "Quote not found." }); return; }
+    const token = signToken({ sub: (req as any).user.sub, role: (req as any).user.role, quoteId: Number(req.params.id), purpose: "quote-pdf" }, "5m");
+    res.json({ token });
+  } catch (err: any) {
+    console.error("[quote-pdf-token] error:", err?.message || err);
+    res.status(500).json({ error: "Failed to generate quote PDF token." });
+  }
+}));
+
 app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: Response) => {
   const token = getBearerToken(req);
   if (!token) { res.status(401).json({ error: "Login required." }); return; }
@@ -2640,7 +2728,7 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
     let warranty = "\u2014";
     if (i.hasWarranty) {
       const expiry = new Date(order.createdAt);
-      expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
+      addCalendarMonthsClamped(expiry, i.warrantyDuration || 0);
       warranty = `Yes (exp: ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})`;
     }
     const isTx = i.taxable !== false;
@@ -2776,7 +2864,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
     let warranty = "\u2014";
     if (i.hasWarranty) {
       const expiry = new Date(order.createdAt);
-      expiry.setMonth(expiry.getMonth() + (i.warrantyDuration || 0));
+      addCalendarMonthsClamped(expiry, i.warrantyDuration || 0);
       warranty = `Yes (exp: ${expiry.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })})`;
     }
     const isTx = i.taxable !== false;
@@ -3311,7 +3399,18 @@ app.patch("/api/messages/:id/read", asyncHandler(async (req: Request, res: Respo
   try {
     const token = getBearerToken(req);
     if (!token) { res.status(401).json({ error: "Login required." }); return; }
-    try { verifyToken(token); } catch { res.status(401).json({ error: "Session expired." }); return; }
+    let payload: any;
+    try { payload = verifyToken(token); } catch { res.status(401).json({ error: "Session expired." }); return; }
+    const role = String(payload.role || "");
+    const sub = Number(payload.sub || 0);
+    // Staff/admin roles may read any message; customers and providers may only
+    // read messages in their own thread (S-8 ownership scoping).
+    if (role === "customer" || role === "provider") {
+      const msg = await queryOne("SELECT customer_id, provider_id FROM messages WHERE id = $1", [Number(req.params.id)]) as any;
+      if (!msg) { res.status(404).json({ error: "Message not found." }); return; }
+      if (role === "customer" && Number(msg.customer_id) !== sub) { res.status(403).json({ error: "You can only read your own messages." }); return; }
+      if (role === "provider" && Number(msg.provider_id) !== sub) { res.status(403).json({ error: "You can only read your own messages." }); return; }
+    }
     await markMessageRead(Number(req.params.id));
     res.json({ ok: true });
   } catch (err: any) {
@@ -3411,7 +3510,7 @@ app.post("/api/admin/groups", ownerAuthMiddleware, asyncHandler(async (req: Requ
   try {
     group = await createProductGroup({ name: String(name).trim(), isActive: isActive !== false, sortOrder: Number(sortOrder) || 0 });
   } catch (err: any) {
-    if (err?.message && String(err.message).toLowerCase().includes("already exists")) { res.status(409).json({ error: err.message }); return; }
+    if (err?.message && String(err.message).toLowerCase().includes("already exists")) { res.status(409).json({ error: "That record already exists." }); return; }
     throw err;
   }
   res.status(201).json({ group });
@@ -3741,7 +3840,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
     res.json(updated);
   } catch (e: any) {
     console.error("[Upload primary]", e.message || e);
-    res.status(500).json({ error: "Upload failed: " + (e.message || "Please try again.") });
+    res.status(500).json({ error: "Upload failed. Please try again." });
   }
 }));
 
@@ -3941,7 +4040,7 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
     res.json(img);
   } catch (e: any) {
     console.error("[Upload gallery]", e.message || e);
-    res.status(500).json({ error: "Upload failed: " + (e.message || "Please try again.") });
+    res.status(500).json({ error: "Upload failed. Please try again." });
   }
 }));
 
@@ -4012,7 +4111,14 @@ app.delete("/api/products/:id", ownerAuthMiddleware, requirePermission("product:
   const allImages = await getProductImages(productId);
   const urls = [product.imageUrl, ...allImages.map(i => i.imageUrl)].filter(Boolean);
   const removed = await deleteProduct(productId);
-  if (!removed) { res.status(404).json({ error: "Product not found." }); return; }
+  if (!removed) {
+    if (product) {
+      res.status(409).json({ error: "Cannot delete this product because it has sales, returns, serial, or stock history. Deactivate it instead (toggle active off) to hide it while preserving records." });
+      return;
+    }
+    res.status(404).json({ error: "Product not found." });
+    return;
+  }
   for (const url of urls) deleteCloudinaryImage(url);
   res.status(204).end();
 }));
@@ -4134,8 +4240,7 @@ app.post("/api/customer/change-password", customerAuthMiddleware, asyncHandler(a
   if (!row) { res.status(404).json({ error: "Customer not found." }); return; }
   const match = await bcrypt.compare(currentPassword, row.password_hash);
   if (!match) { res.status(403).json({ error: "Current password is incorrect." }); return; }
-  const success = changeCustomerPassword(customerId, newPassword);
-  if (!success) { res.status(500).json({ error: "Failed to change password." }); return; }
+  await changeCustomerPassword(customerId, newPassword);
   res.json({ ok: true });
 }));
 
@@ -4166,7 +4271,8 @@ app.post("/api/auth/magic-request", asyncHandler(async (req: Request, res: Respo
   if (!email || !isEmail(email)) { res.status(400).json({ error: "Valid email address is required." }); return; }
   const customer = await findCustomerByEmail(email);
   if (!customer) { res.json({ ok: true }); return; }
-  const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "magic" }, "1h");
+  const jti = crypto.randomUUID();
+  const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "magic", jti }, "1h");
   const link = `${process.env.BASE_URL || ""}/account.html?magic=${token}`;
   try {
     await notifier.sendMagicLinkEmail(customer, link);
@@ -4180,6 +4286,11 @@ app.post("/api/auth/magic-login", asyncHandler(async (req: Request, res: Respons
   try {
     const payload = verifyToken(token);
     if (payload.purpose !== "magic" || payload.role !== "customer") { res.status(400).json({ error: "Invalid token." }); return; }
+    if (!payload.jti || !(await consumeAuthToken(payload.jti, "customer", payload.sub))) { res.status(400).json({ error: "Token already used." }); return; }
+    const changedAt = await getPasswordChangedAt("customer", payload.sub);
+    // Reject tokens issued before the last password change (rotation). iat is
+    // epoch seconds; changedAt is a PG timestamp string.
+    if (changedAt && payload.iat && payload.iat < Math.floor(Date.parse(String(changedAt)) / 1000)) { res.status(400).json({ error: "Token no longer valid." }); return; }
     const sessionToken = signToken({ sub: payload.sub, email: payload.email, name: payload.name, role: "customer" });
     res.json({ token: sessionToken, name: payload.name });
   } catch (_err) {
@@ -4192,7 +4303,8 @@ app.post("/api/auth/request-admin-password-reset", asyncHandler(async (req: Requ
   if (!email || !isEmail(email)) { res.status(400).json({ error: "Valid email address is required." }); return; }
   const staff = await findStaffByEmail(email);
   if (staff) {
-    const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: "admin", purpose: "reset" }, "2h");
+    const jti = crypto.randomUUID();
+    const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: "admin", purpose: "reset", jti }, "2h");
     const link = `${process.env.BASE_URL || ""}/admin-password-reset?token=${token}`;
     try {
       await notifier.sendPasswordResetEmail({ email: staff.email, name: staff.username }, link);
@@ -4213,6 +4325,7 @@ app.post("/api/auth/admin-password-reset", asyncHandler(async (req: Request, res
     }
     const staff = await findStaffById(payload.sub);
     if (!staff) { res.status(404).json({ error: "User not found." }); return; }
+    if (!payload.jti || !(await consumeAuthToken(payload.jti, payload.role, payload.sub))) { res.status(400).json({ error: "Token already used." }); return; }
     await changeStaffPassword(payload.sub, newPassword);
     res.json({ ok: true });
   } catch (_err) {
@@ -4247,7 +4360,8 @@ app.post("/api/auth/request-password-reset", asyncHandler(async (req: Request, r
   if (!email || !isEmail(email)) { res.status(400).json({ error: "Valid email address is required." }); return; }
   const customer = await findCustomerByEmail(email);
   if (!customer) { res.json({ ok: true }); return; }
-  const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "reset" }, "2h");
+  const jti = crypto.randomUUID();
+  const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "reset", jti }, "2h");
   const link = `${process.env.BASE_URL || ""}/account.html?reset=${token}`;
   try {
     await notifier.sendPasswordResetEmail(customer, link);
@@ -4263,6 +4377,7 @@ app.post("/api/auth/password-reset", asyncHandler(async (req: Request, res: Resp
   try {
     const payload = verifyToken(token);
     if (payload.purpose !== "reset" || payload.role !== "customer") { res.status(400).json({ error: "Invalid token." }); return; }
+    if (!payload.jti || !(await consumeAuthToken(payload.jti, "customer", payload.sub))) { res.status(400).json({ error: "Token already used." }); return; }
     const success = changeCustomerPassword(payload.sub, newPassword);
     if (!success) { res.status(404).json({ error: "User not found." }); return; }
     res.json({ ok: true });
@@ -4289,7 +4404,7 @@ app.post("/api/auth/change-password", staffAuthMiddleware, asyncHandler(async (r
   const match = await bcrypt.compare(currentPassword, userWithHash.password_hash);
   if (!match) { res.status(401).json({ error: "Current password is incorrect." }); return; }
 
-  changeStaffPassword((req as any).user.sub, newPassword);
+  await changeStaffPassword((req as any).user.sub, newPassword);
   res.json({ ok: true, message: "Password changed successfully." });
 }));
 
@@ -4353,7 +4468,7 @@ app.patch("/api/staff/:id/role", adminAuthMiddleware, requirePermission("staff:u
   res.json({ ok: true });
 }));
 
-app.post("/api/staff/:id/reset-password", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/staff/:id/reset-password", adminAuthMiddleware, requirePermission("staff:update"), asyncHandler(async (req: Request, res: Response) => {
   const newPassword = String(req.body?.password || "");
   if (!newPassword || newPassword.length < 8) { res.status(400).json({ error: "Password must be at least 8 characters." }); return; }
   await changeStaffPassword(Number(req.params.id), newPassword);
@@ -4565,7 +4680,7 @@ app.post("/api/cart", customerAuthMiddleware, asyncHandler(async (req: Request, 
     await addToCart((req as any).customer.sub, productId, qty);
     res.json({ ok: true });
   } catch (e: any) {
-    res.status(400).json({ error: e.message || "Failed to add to cart." });
+    res.status(400).json({ error: "Failed to add to cart." });
   }
 }));
 
@@ -4604,7 +4719,7 @@ app.get("/api/backoffice/stats", staffAuthMiddleware, asyncHandler(async (_req: 
   res.json(await getDashboardStats());
 }));
 
-app.get("/api/repairs/types", asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/repairs/types", requireShopFeature("Repair ticketing"), asyncHandler(async (_req: Request, res: Response) => {
   res.json({ types: await listRepairTypes() });
 }));
 
@@ -4631,7 +4746,7 @@ async function loadRepairsPage(): Promise<any> {
   }
 }
 
-app.get("/api/repairs-page", asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/repairs-page", requireShopFeature("Repair ticketing"), asyncHandler(async (_req: Request, res: Response) => {
   res.json(await loadRepairsPage());
 }));
 
@@ -4682,18 +4797,18 @@ app.put("/api/admin/repairs-page", adminAuthMiddleware, asyncHandler(async (req:
   res.json(cleaned);
 }));
 
-app.get("/api/repairs/statuses", (_req: Request, res: Response) => {
+app.get("/api/repairs/statuses", requireShopFeature("Repair ticketing"), (_req: Request, res: Response) => {
   res.json({ statuses: STATUS_LABELS });
 });
 
-app.post("/api/repairs", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/repairs", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const result = await createRepairTicket((req as any).customer.sub, req.body || {});
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   try { notifier.sendNewRepairEmail(result.ticket!).catch(() => {}); } catch (_e) { /* ignore */ }
   res.status(201).json(result.ticket);
 }));
 
-app.get("/api/repairs/mine", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/repairs/mine", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const page = req.query.page ? Number(req.query.page) : undefined;
   const pageSize = req.query.pageSize ? Number(req.query.pageSize) : undefined;
   const status = req.query.status as string | undefined;
@@ -4707,14 +4822,14 @@ app.get("/api/repairs/mine", customerAuthMiddleware, asyncHandler(async (req: Re
   res.json({ tickets: await listRepairsForCustomer((req as any).customer.sub) });
 }));
 
-app.get("/api/repairs/mine/:id", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/repairs/mine/:id", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const ticket = await loadTicketDetails(String(req.params.id));
   if (!ticket || ticket.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Ticket not found." }); return; }
   const visibleUpdates = ticket.updates.filter((u) => u.customerVisible);
   res.json({ ...ticket, updates: visibleUpdates, workNotes: undefined });
 }));
 
-app.post("/api/repairs/mine/:id/message", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/repairs/mine/:id/message", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const ticket = await loadTicketDetails(String(req.params.id));
   if (!ticket || ticket.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Ticket not found." }); return; }
   const { message } = req.body || {};
@@ -4723,7 +4838,7 @@ app.post("/api/repairs/mine/:id/message", customerAuthMiddleware, asyncHandler(a
   res.status(201).json({ ok: true });
 }));
 
-app.get("/api/repairs", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/repairs", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const tickets = await listRepairsForStaff({
     status: req.query.status as string || undefined,
     assignedTo: req.query.assignedTo ? Number(req.query.assignedTo) : undefined,
@@ -4732,7 +4847,7 @@ app.get("/api/repairs", staffAuthMiddleware, asyncHandler(async (req: Request, r
   res.json({ tickets });
 }));
 
-app.get("/api/repairs/calendar", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/repairs/calendar", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const from = (req.query.from as string) || new Date().toISOString().slice(0, 10);
   const to = req.query.to as string;
   if (!to) { res.status(400).json({ error: "Query param 'to' is required (ISO date)." }); return; }
@@ -4740,32 +4855,32 @@ app.get("/api/repairs/calendar", staffAuthMiddleware, asyncHandler(async (req: R
   res.json({ tickets: cal });
 }));
 
-app.get("/api/repairs/:id", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/repairs/:id", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const ticket = await loadTicketDetails(String(req.params.id));
   if (!ticket) { res.status(404).json({ error: "Ticket not found." }); return; }
   res.json(ticket);
 }));
 
-app.patch("/api/repairs/:id", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.patch("/api/repairs/:id", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const result = await updateRepairTicket(String(req.params.id), req.body || {}, (req as any).user.sub);
   if (!result) { res.status(404).json({ error: "Ticket not found." }); return; }
   if ((result as any).error) { res.status(400).json({ error: (result as any).error }); return; }
   res.json(result);
 }));
 
-app.post("/api/repairs/:id/parts", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/repairs/:id/parts", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const result = await addRepairPart(String(req.params.id), req.body || {});
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.status(201).json(result.part);
 }));
 
-app.delete("/api/repairs/:id/parts/:partId", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/repairs/:id/parts/:partId", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const removed = await removeRepairPart(String(req.params.id), Number(req.params.partId));
   if (!removed) { res.status(404).json({ error: "Part not found." }); return; }
   res.status(204).end();
 }));
 
-app.post("/api/repairs/:id/updates", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/repairs/:id/updates", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const { message, customerVisible } = req.body || {};
   if (!message || !String(message).trim()) {
     res.status(400).json({ error: "Message is required." });
@@ -4776,11 +4891,11 @@ app.post("/api/repairs/:id/updates", staffAuthMiddleware, asyncHandler(async (re
 }));
 
 // ============ REPAIR IMAGES ============
-app.get("/api/repairs/:id/images", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/repairs/:id/images", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   res.json({ images: await getRepairImages(String(req.params.id)) });
 }));
 
-app.post("/api/repairs/:id/images", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/repairs/:id/images", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   try {
     await runMulter(uploadRepairImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image uploaded." }); return; }
@@ -4795,22 +4910,22 @@ app.post("/api/repairs/:id/images", staffAuthMiddleware, asyncHandler(async (req
     const image = await addRepairImage(String(req.params.id), imageUrl, imageType as "before" | "after", (req as any).user.sub);
     backupImageToDb(`repair:${req.params.id}:${imageType}:${image.id}`, imageUrl);
     res.status(201).json(image);
-  } catch (e: any) { console.error("[Repair image upload]", e.message || e); res.status(400).json({ error: "Upload failed: " + (e.message || "Unknown error") }); }
+  } catch (e: any) { console.error("[Repair image upload]", e.message || e); res.status(400).json({ error: "Upload failed. Please try again." }); }
 }));
 
-app.delete("/api/repairs/:id/images/:imageId", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/repairs/:id/images/:imageId", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const removed = await deleteRepairImage(Number(req.params.imageId));
   if (!removed) { res.status(404).json({ error: "Image not found." }); return; }
   res.status(204).end();
 }));
 
-app.post("/api/repairs/:id/send-quote", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/repairs/:id/send-quote", staffAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const ok = await sendRepairQuote(String(req.params.id));
   if (!ok) { res.status(404).json({ error: "Ticket not found." }); return; }
   res.json({ ok: true });
 }));
 
-app.post("/api/repairs/:id/quote-response", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/repairs/:id/quote-response", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const { response } = req.body || {};
   if (response !== "accepted" && response !== "declined") {
     res.status(400).json({ error: "Response must be 'accepted' or 'declined'." }); return;
@@ -5004,7 +5119,7 @@ app.post("/api/purchases/:id/restore", adminAuthMiddleware, asyncHandler(async (
   }
 }));
 
-app.get("/api/purchases/:id/pdf", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/purchases/:id/pdf", requirePdfAuth("po-pdf", "id", "purchaseId", ["admin", "owner", "technician", "manager", "staff", "provider"]), asyncHandler(async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID." }); return; }
@@ -5335,7 +5450,7 @@ app.post("/api/admin/quotes/:id/cancel", staffAuthMiddleware, requirePermission(
   res.json({ ok: true });
 }));
 
-app.get("/api/admin/quotes/:id/pdf", staffAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/quotes/:id/pdf", requirePdfAuth("quote-pdf", "id", "quoteId", ["admin", "owner", "technician", "manager", "staff", "provider"]), asyncHandler(async (req: Request, res: Response) => {
   const quote = await getQuote(Number(req.params.id));
   if (!quote) { res.status(404).json({ error: "Quote not found." }); return; }
   const settings = await getSettings();
@@ -5497,7 +5612,11 @@ app.put("/api/shop/subscription/requests/:id", allowControlPlane(ownerAuthMiddle
   res.json({ ok: true, plan: typeof result === "string" ? result : null });
 }));
 
-app.get("/api/shop/features", asyncHandler(async (req: Request, res: Response) => {
+// Resolve the effective feature set for the current request: plan features,
+// intersected with featureOverrides, then intersected with the caller's role
+// features (staff). Customers and the public always see plan features; a role
+// with no features configured is unrestricted (see getUserRoleFeatures).
+async function getEffectiveFeatures(req: Request): Promise<string[]> {
   const plan = await getShopPlan();
   const baseFeatures: string[] = plan?.features || [];
   const overridesRaw = await getStoreSetting("featureOverrides");
@@ -5507,10 +5626,6 @@ app.get("/api/shop/features", asyncHandler(async (req: Request, res: Response) =
   for (const [key, val] of Object.entries(overrides)) {
     if (val === true && !effective.includes(key)) effective.push(key);
   }
-
-  // Staff users see only the features their roles allow, intersected with the
-  // plan. Customers and the public always see the plan features. A role with no
-  // features configured is unrestricted (see getUserRoleFeatures).
   const token = getBearerToken(req);
   if (token) {
     try {
@@ -5523,7 +5638,25 @@ app.get("/api/shop/features", asyncHandler(async (req: Request, res: Response) =
       }
     } catch { /* invalid/expired token — fall through to plan features */ }
   }
+  return effective;
+}
 
+// Server-side feature gate (Z-4). Rejects the request when the tenant's plan
+// (as resolved for the caller) does not include the named feature.
+function requireShopFeature(feature: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const features = await getEffectiveFeatures(req);
+    const name = feature.toLowerCase().trim();
+    if (!features.some((f) => String(f).toLowerCase().trim() === name)) {
+      res.status(403).json({ error: "This feature is not included in your plan." });
+      return;
+    }
+    next();
+  };
+}
+
+app.get("/api/shop/features", asyncHandler(async (req: Request, res: Response) => {
+  const effective = await getEffectiveFeatures(req);
   res.json({ features: effective });
 }));
 
@@ -6210,7 +6343,7 @@ app.get("/api/admin/whatsapp/stats", adminAuthMiddleware, asyncHandler(async (_r
 }));
 
 // Serve stored WhatsApp media (public for displaying in admin)
-app.get("/api/whatsapp/media/:id", asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/whatsapp/media/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid media ID" });
   const media = await getWhatsAppMediaById(id);
@@ -6236,7 +6369,7 @@ app.post("/api/admin/whatsapp/templates", adminAuthMiddleware, asyncHandler(asyn
     res.json({ ok: true, template });
   } catch (err: any) {
     if (err?.code === "23505") return res.status(409).json({ error: "Template name already exists" });
-    res.status(500).json({ error: err?.message || "Failed to create template" });
+    res.status(500).json({ error: "Failed to create template." });
   }
 }));
 
@@ -6299,6 +6432,25 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
           if (count > 0) console.log(`[auto-billing] Marked ${count} invoices as overdue.`);
         } catch (err: any) { console.error("[auto-billing] Error:", err.message); }
       }, 6 * 60 * 60 * 1000);
+
+      // M-Pesa held-stock timeout: any pending_payment order that never received
+      // a payment callback releases its held stock after 15 minutes so inventory
+      // is never silently stranded (prevents the lost/invisible stock of P-3).
+      const releaseTimedOut = async () => {
+        try {
+          const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+          const drained = (await queryAll(
+            "SELECT id FROM orders WHERE status = 'pending_payment' AND created_at IS NOT NULL AND created_at < $1",
+            [cutoff]
+          )) as any[];
+          for (const o of drained) {
+            await releaseOrderHeldStock(Number(o.id));
+            console.log(`[mpesa-timeout] Released held stock for timed-out order ${o.id}`);
+          }
+        } catch (err: any) { console.error("[mpesa-timeout] Error:", err.message); }
+      };
+      releaseTimedOut();
+      setInterval(releaseTimedOut, 5 * 60 * 1000);
     });
     process.on("SIGTERM", async () => { await closeBrowser(); process.exit(0); });
     process.on("SIGINT", async () => { await closeBrowser(); process.exit(0); });

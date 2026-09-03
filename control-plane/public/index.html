@@ -487,6 +487,7 @@
         <h2 id="confirm-title">Confirm</h2>
         <p id="confirm-msg" style="color:var(--text-muted);font-size:0.9rem;line-height:1.5"></p>
         <div id="confirm-detail" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.6rem 0.75rem;font-size:0.82rem;color:var(--text-secondary);margin-top:0.5rem"></div>
+        <div class="field" id="confirm-reason-field" style="display:none;margin-top:0.75rem"><label for="confirm-reason">Reason (required)</label><input type="text" id="confirm-reason" placeholder="Why is this being done?"></div>
         <div class="modal-actions">
           <button class="btn btn-ghost" id="confirm-secondary-btn" style="display:none"></button>
           <button class="btn btn-ghost" id="cancel-confirm-btn" onclick="closeConfirmDialog()">Cancel</button>
@@ -1034,23 +1035,33 @@
     }, true);
 
     // ─── CONFIRM DIALOG ─────────────────────────────────────
-    let confirmState = { action: null, secondary: null };
+    let confirmState = { action: null, secondary: null, requireReason: false };
     function confirmDialog(opts) {
-      confirmState = { action: opts.onConfirm || null, secondary: opts.onSecondary || null };
+      confirmState = { action: opts.onConfirm || null, secondary: opts.onSecondary || null, requireReason: !!opts.requireReason };
       document.getElementById("confirm-title").textContent = opts.title || "Confirm";
       document.getElementById("confirm-msg").textContent = opts.message || "";
       const detail = document.getElementById("confirm-detail");
       if (opts.detail) { detail.style.display = ""; detail.textContent = opts.detail; } else { detail.style.display = "none"; }
+      const reasonField = document.getElementById("confirm-reason-field");
+      const reasonInput = document.getElementById("confirm-reason");
+      if (opts.requireReason) { reasonField.style.display = ""; reasonInput.value = ""; } else { reasonField.style.display = "none"; reasonInput.value = ""; }
       const secBtn = document.getElementById("confirm-secondary-btn");
       if (opts.secondaryLabel) { secBtn.style.display = ""; secBtn.textContent = opts.secondaryLabel; secBtn.onclick = runConfirmSecondary; } else { secBtn.style.display = "none"; secBtn.onclick = null; }
       const primaryBtn = document.getElementById("confirm-btn");
       primaryBtn.textContent = opts.confirmLabel || "Confirm";
       primaryBtn.className = "btn " + (opts.danger ? "btn-danger" : "btn-primary");
-      openModal(document.getElementById("confirm-overlay"), { focus: document.getElementById("cancel-confirm-btn") });
+      openModal(document.getElementById("confirm-overlay"), { focus: opts.requireReason ? document.getElementById("confirm-reason") : document.getElementById("cancel-confirm-btn") });
     }
-    function runConfirm() { const a = confirmState.action; closeModal(document.getElementById("confirm-overlay")); confirmState = { action: null, secondary: null }; if (a) a(); }
-    function runConfirmSecondary() { const a = confirmState.secondary; closeModal(document.getElementById("confirm-overlay")); confirmState = { action: null, secondary: null }; if (a) a(); }
-    function closeConfirmDialog() { closeModal(document.getElementById("confirm-overlay")); confirmState = { action: null, secondary: null }; }
+    function runConfirm() {
+      const a = confirmState.action; const reqReason = confirmState.requireReason;
+      const reasonInput = document.getElementById("confirm-reason");
+      const reason = reasonInput ? reasonInput.value.trim() : "";
+      if (reqReason && reason.length < 3) { alert("A reason (at least 3 characters) is required to confirm."); if (reasonInput) reasonInput.focus(); return; }
+      closeModal(document.getElementById("confirm-overlay")); confirmState = { action: null, secondary: null, requireReason: false };
+      if (a) a(reason);
+    }
+    function runConfirmSecondary() { const a = confirmState.secondary; closeModal(document.getElementById("confirm-overlay")); confirmState = { action: null, secondary: null, requireReason: false }; if (a) a(); }
+    function closeConfirmDialog() { closeModal(document.getElementById("confirm-overlay")); confirmState = { action: null, secondary: null, requireReason: false }; }
 
     // ─── CLIENTS ──────────────────────────────────────────
     async function loadClients() {
@@ -1319,11 +1330,13 @@
     async function deleteClient(id, name) {
       confirmDialog({
         title: "Delete client?",
-        message: 'Delete "' + name + '"? This removes their database and all deployments. This cannot be undone.',
-        confirmLabel: "Delete",
+        message: 'Delete "' + name + '"? This permanently removes their Neon database, Render service and Vercel project. This CANNOT be undone and there is no restore.',
+        detail: "Type a short reason (required) to confirm permanent deletion.",
+        confirmLabel: "Permanently delete",
         danger: true,
-        onConfirm: async () => {
-          try { const data = await api("/api/clients/" + id, { method: "DELETE" }); toast(data.message || "Deleted"); loadClients(); } catch (e) { toast("Failed: " + e.message, "error"); }
+        requireReason: true,
+        onConfirm: async (reason) => {
+          try { const data = await api("/api/clients/" + id, { method: "DELETE", body: JSON.stringify({ confirm: true, reason: reason || "operator confirmed deletion" }) }); toast(data.message || "Deleted"); loadClients(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });
     }
