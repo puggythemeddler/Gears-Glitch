@@ -4,6 +4,10 @@ const PROVIDER_TOKEN_KEY = "providerToken";
 const GUEST_CART_KEY = "guestCart";
 
 let csrfToken: string | null = null;
+// A-4: short-lived step-up token held only in memory (never persisted). Populated by
+// obtainStepUpToken() after password re-verification and sent as X-Step-Up-Token on
+// the high-risk actions that require re-auth (role change, staff delete, branch delete).
+let stepUpToken: string | null = null;
 
 export interface GuestCartItem {
   productId: string;
@@ -86,6 +90,29 @@ export function initCsrf(): Promise<void> {
 
 export function getCsrfToken(): string | null {
   return csrfToken;
+}
+
+// A-4: Re-authenticate the current staff member with their password to obtain a
+// short-lived step-up token required by high-risk actions (role change, staff delete,
+// branch delete). Returns true on success; the token is stored in memory only.
+export async function obtainStepUpToken(password: string): Promise<boolean> {
+  try {
+    if (!csrfToken) await initCsrf();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+    const res = await fetch("/api/auth/staff/step-up", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data?.stepUpToken) return false;
+    stepUpToken = data.stepUpToken;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function getCustomerToken(): string | null {
@@ -179,6 +206,7 @@ export async function api<T = any>(
   }
   const token = getTokenForRole(role);
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (stepUpToken) headers["X-Step-Up-Token"] = stepUpToken;
   const method = (options.method || "GET").toUpperCase();
   const mutating = ["POST", "PUT", "DELETE", "PATCH"].includes(method);
   if (mutating && !csrfToken) await initCsrf();

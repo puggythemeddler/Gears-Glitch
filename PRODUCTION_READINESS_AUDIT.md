@@ -33,7 +33,7 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 | A-1 | P2 | **PARTIAL** | Rotation on password change: RESOLVED (`auth.ts:110-118`). httpOnly cookies: STILL-OPEN (localStorage) |
 | A-2 | P2 | **RESOLVED** | `auth.ts:10-50` — per-account lockout with exponential backoff; wired to all 3 login paths |
 | A-3 | P3 | **RESOLVED** | See S-4 above |
-| A-4 | P3 | **STILL-OPEN** | No step-up/re-auth middleware for high-risk admin actions |
+| A-4 | P3 | **RESOLVED** | Step-up re-auth middleware (`requireStepUp`) on high-risk admin routes (role change, staff delete, branch delete) + `POST /api/auth/staff/step-up` + frontend password prompt wiring |
 
 ### Multi-Tenancy
 | ID | Sev | Status | Evidence |
@@ -143,11 +143,11 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 
 ### Summary: Items by Status
 
-**RESOLVED (52):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, C-9, DB-1..DB-5, DB-7, M-1, M-2, M-3, I-1/I-4, I-2, I-3, I-5, I-6, I-7, O-1, O-2, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2, W-3, W-4, SU-1, SU-2
+**RESOLVED (53):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, A-4, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, C-9, DB-1..DB-5, DB-7, M-1, M-2, M-3, I-1/I-4, I-2, I-3, I-5, I-6, I-7, O-1, O-2, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2, W-3, W-4, SU-1, SU-2
 
 **PARTIAL (8):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (27/79 done), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), R-6 (rates configurable, §8 money pending), §8 (NUMERIC in migration, not schema)
 
-**STILL-OPEN (4):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier)
+**STILL-OPEN (3):** A-1 (httpOnly cookies), Z-1 (52 routes), C-8 (free tier)
 
 ---
 
@@ -209,7 +209,7 @@ Gears&Glitch is a feature-rich SaaS platform combining e-commerce, POS, inventor
 | A-1 | P2 | Long-lived JWTs stored in **localStorage** (staff 24h, customer/provider 7d); no revocation/`jti`; no session rotation on password change. Any XSS = session theft. | Prefer httpOnly Secure SameSite cookies, or short-lived access + refresh tokens; add `jti` revocation; rotate on password change. |
 | A-2 | P2 | No account lockout beyond a global 20/15min auth rate limit; no progressive delay. | Per-account lockout with exponential backoff. |
 | A-3 | P3 | Magic/reset links use plain JWTs (see S-4). | Single-use tokens. |
-| A-4 | P3 | No forced re-auth for high-risk actions; sensitive ops rely on a simple password verify endpoint absent strong eventing. | Consider step-up auth for irreversible actions. |
+| A-4 | P3 | No forced re-auth for high-risk actions; sensitive ops rely on a simple password verify endpoint absent strong eventing. | **RESOLVED:** `requireStepUp` middleware (5-min JWT, purpose:"step-up") on role change / staff delete / branch delete; `POST /api/auth/staff/step-up` verifies password and issues token; frontend prompts for password and sends `X-Step-Up-Token`. |
 
 **A-3 status (implemented):** all three magic/reset flows now use single-use tokens — each link is signed with a random `jti` (`crypto.randomUUID()`) and consumed exactly once via `consumeAuthToken` on first use (`/api/auth/magic-login`, `/api/auth/admin-password-reset`, `/api/auth/password-reset`); replay returns "Token already used." Magic-login additionally rejects tokens issued before the account's last password change (rotation), and all reset tokens expire in 2h. The only remaining caveat is that reset links are still delivered in the URL query string (`?token=`), which is inherent to email-link delivery but is now mitigated by single-use + short expiry + rotation. Verified: root typecheck + build + control-plane typecheck pass.
 

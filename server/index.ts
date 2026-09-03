@@ -629,6 +629,33 @@ app.get("/api/images/:refId", asyncHandler(async (req: Request, res: Response) =
 // Permission guard helper
 const requirePermission = requirePermissionShared;
 
+// A-4: Step-up re-auth middleware. Requires a short-lived step-up JWT (purpose:"step-up")
+// issued by POST /api/auth/staff/step-up after password verification. The client sends
+// it as the `X-Step-Up-Token` header on high-risk actions.
+const STEP_UP_TTL = "5m";
+async function requireStepUp(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const stepUpToken = req.headers["x-step-up-token"];
+  if (!stepUpToken || typeof stepUpToken !== "string") {
+    res.status(401).json({ error: "Step-up authentication required. Re-authenticate to perform this action." });
+    return;
+  }
+  try {
+    const payload = verifyToken(stepUpToken);
+    if (payload.purpose !== "step-up") {
+      res.status(401).json({ error: "Invalid step-up token." });
+      return;
+    }
+    const currentUserId = (req as any).user?.sub;
+    if (!currentUserId || payload.sub !== currentUserId) {
+      res.status(401).json({ error: "Step-up token does not match the authenticated user." });
+      return;
+    }
+    next();
+  } catch {
+    res.status(401).json({ error: "Step-up token expired or invalid. Re-authenticate to perform this action." });
+  }
+}
+
 // Shipping
 // ─── Delivery fees (per-county, admin-configurable) ────────────────────
 // Admin-configured fees are stored as a JSON Record<countyId, fee> in the
@@ -1519,7 +1546,7 @@ app.put("/api/admin/branches/:id", ownerAuthMiddleware, asyncHandler(async (req:
   res.json({ branch });
 }));
 
-app.delete("/api/admin/branches/:id", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/admin/branches/:id", ownerAuthMiddleware, requireStepUp, asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid branch ID." }); return; }
   const ok = await deleteBranch(id);
@@ -4242,6 +4269,21 @@ app.get("/api/auth/2fa/status", staffAuthMiddleware, asyncHandler(async (req: Re
   res.json({ enabled: totp.totpEnabled });
 }));
 
+// A-4: Step-up re-auth endpoint. Verifies the staff member's current password and
+// returns a short-lived JWT (purpose:"step-up") that must be sent as X-Step-Up-Token
+// on high-risk actions (role changes, account deletion, branch deletion).
+app.post("/api/auth/staff/step-up", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req as any).user.sub;
+  const { password } = req.body || {};
+  if (!password) { res.status(400).json({ error: "Password required for step-up re-authentication." }); return; }
+  const row = await queryOne("SELECT password_hash FROM users WHERE id = $1", [userId]) as any;
+  if (!row || !(await bcrypt.compare(password, row.password_hash))) {
+    res.status(401).json({ error: "Incorrect password." }); return;
+  }
+  const stepUpToken = signToken({ sub: userId, purpose: "step-up" }, STEP_UP_TTL);
+  res.json({ stepUpToken, expiresIn: STEP_UP_TTL });
+}));
+
 app.get("/api/customer/me", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const customer = await findCustomerById((req as any).customer.sub);
   if (!customer) { res.status(404).json({ error: "Customer not found." }); return; }
@@ -4482,7 +4524,7 @@ app.patch("/api/staff/:id", adminAuthMiddleware, requirePermission("staff:update
   res.json(staff);
 }));
 
-app.patch("/api/staff/:id/role", adminAuthMiddleware, requirePermission("staff:update"), asyncHandler(async (req: Request, res: Response) => {
+app.patch("/api/staff/:id/role", adminAuthMiddleware, requirePermission("staff:update"), requireStepUp, asyncHandler(async (req: Request, res: Response) => {
   const targetId = Number(req.params.id);
   const newRole = req.body?.role;
   if (!["admin", "owner", "technician", "manager", "staff", "provider"].includes(newRole)) { res.status(400).json({ error: "Invalid role." }); return; }
@@ -4512,7 +4554,7 @@ app.post("/api/staff/verify-password", staffAuthMiddleware, asyncHandler(async (
   res.json({ ok: true });
 }));
 
-app.delete("/api/staff/:id", adminAuthMiddleware, requirePermission("staff:delete"), asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/staff/:id", adminAuthMiddleware, requirePermission("staff:delete"), requireStepUp, asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (id === (req as any).user.sub) { res.status(400).json({ error: "Cannot delete your own account." }); return; }
   const success = await deleteStaff(id);

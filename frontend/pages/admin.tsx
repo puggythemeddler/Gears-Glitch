@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/router";
-import { api, getStaffToken, getStaffRole, getStaffPermissions, downloadPdf } from "@/lib/api";
+import { api, getStaffToken, getStaffRole, getStaffPermissions, downloadPdf, obtainStepUpToken } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
@@ -40,6 +40,27 @@ declare global {
 export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
+
+// A-4: Re-authenticate before a high-risk action. Prompts for the current password,
+// obtains a short-lived step-up token, and returns true on success. Returns false if
+// the user cancels or the password is wrong.
+async function stepUpForHighRiskAction(action: string): Promise<boolean> {
+  const password = await promptDialog({
+    title: `Confirm your password to ${action}`,
+    message: "This is a sensitive action. Re-enter your password to continue.",
+    label: "Password",
+    placeholder: "Enter your password",
+    confirmLabel: "Continue",
+    danger: true,
+  });
+  if (password === null) return false;
+  const ok = await obtainStepUpToken(password);
+  if (!ok) {
+    toast("error", "Incorrect password. Please try again.");
+    return false;
+  }
+  return true;
+}
 // Which permission unlocks a view in the sidebar. Views absent from this map
 // (groups, categories, users, roles, plans, stock-on-hand, stock-transfers,
 // purchases, clients, storefront, settings, delivery-fees, email-settings,
@@ -1515,6 +1536,7 @@ function AdminUsers() {
 
   async function deleteStaff(id: number) {
     if (!(await confirmDialog({ message: "Remove this user?", confirmLabel: "Remove", danger: true }))) return;
+    if (!(await stepUpForHighRiskAction("remove this user"))) return;
     try { await api(`/api/staff/${id}`, { method: "DELETE" }); refetch(); if (selectedUser?.id === id) setSelectedUser(null); toast("success", "User removed."); } catch { toast("error", "Delete failed"); }
   }
 
@@ -2287,6 +2309,7 @@ function AdminBranches() {
 
   async function deleteBranch(id: number) {
     if (!(await confirmDialog({ message: "Delete this branch?", confirmLabel: "Delete", danger: true }))) return;
+    if (!(await stepUpForHighRiskAction("delete this branch"))) return;
     try { await api(`/api/admin/branches/${id}`, { method: "DELETE" }); refetch(); toast("success", "Branch deleted."); } catch (err: any) { toast("error", err.message); }
   }
 
