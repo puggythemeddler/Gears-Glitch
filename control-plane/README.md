@@ -184,6 +184,8 @@ When you add a new client via the **Add Client** modal, the control plane automa
 
 Provisioning runs synchronously — the UI shows progress as each step completes. If any step fails, previously created resources are cleaned up.
 
+> **Testing client provisioning** — a full step-by-step acceptance checklist (pre-checks, adding a client, verifying Neon/Render/Vercel/DNS are actually created, setting up a reseller hardware shop, multi-tenant isolation, and cleanup) lives in `TEST_PLAN.md` section **D2**. Use it to validate that provisioning a new client (e.g. adding yourself to resell computer hardware) works end to end.
+
 ### Add Existing Client
 Register an already-deployed instance without provisioning new resources. Just provide the name, email, backend URL, and frontend URL. Optionally provide the Render service ID and the client's `CONTROL_PLANE_SECRET`; if no secret is given, one is generated — push it to the client with `POST /api/clients/:id/push-secret`.
 

@@ -73,6 +73,51 @@ Full regression checklist for confirming the system is 100% functional. Tick eac
 - [ ] Control plane — client provisioning, deployments, platform subscriptions
 - [ ] Cross-cutting — dark/light theme, responsive/mobile, layout switching (Original/Amazon/Jumia/Mobile/Custom), CSRF/auth, audit events
 
+## D2. Control-plane: provision a new client to resell hardware (end-to-end)
+
+Goal: **add yourself as a new client via the control plane and confirm a working, isolated shop for reselling computer hardware.** Run only after sections A–C are green. Each step provisions only that resource, so a failure is easy to isolate (cleanup is automatic on failure).
+
+### 0. Pre-checks (env, before touching the UI)
+- [ ] Control plane is deployed and reachable; log in successfully (with 2FA if enabled)
+- [ ] Env vars configured: `NEON_API_KEY`, `RENDER_API_KEY`, `VERCEL_TOKEN` (required), plus `NEON_ORG_ID` / `RENDER_OWNER_ID` / `VERCEL_TEAM_ID` / `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` / `SMTP_*` (as needed)
+- [ ] A client is marked **Set as Test Site** so any push goes to the test site first (not production)
+- [ ] Confirm you have enough Render free-instance capacity for one more service (each new client = its own free Render service)
+
+### 1. Add the client
+- [ ] Control plane → **Add Client**; name = your reseller shop (e.g. `MyHardwareShop`), admin email = yours, plan selected
+- [ ] UI shows each provisioning step completing in order: **Neon DB** → **Render service** → **Vercel project** → **Cloudflare DNS** (optional) → **welcome email**
+- [ ] No step fails / no `provisioning failed` notification; row appears with a healthy status
+
+### 2. Verify resources were actually created
+- [ ] **Neon** — a new database exists for the client
+- [ ] **Render** — a `<slug>-backend` web service is listed (plan `free`), build succeeded, and the service URL responds
+- [ ] **Vercel** — a `<slug>-frontend` project is listed and a production deploy is green; the storefront URL loads
+- [ ] **DNS** — `<subdomain>.gearglitch.com` resolves to the Vercel URL (if Cloudflare configured)
+- [ ] Client row shows Backend/Frontend links that open the live site / API health
+- [ ] Welcome email received with admin + technician credentials and URLs
+
+### 3. For reselling computer hardware — set up the new shop
+- [ ] Log in as the client admin (from the welcome email)
+- [ ] Admin → Settings → Store Info: confirm `STORE_NAME` seeded to your shop name (tab title / og tags), set currency + tax
+- [ ] Products — add hardware (e.g. laptops, CPUs, RAM, GPUs, storage); use **serial tracking** for serialized items so warranty lookup / POS barcode works
+- [ ] Categories / groups / spec templates for the hardware catalog
+- [ ] Add a branch, then stock — receive a purchase order (or add stock) from a supplier to get inventory on hand
+- [ ] Payments — configure M-Pesa / payment methods (reuse existing M-Pesa till config or add a new one)
+- [ ] Place a test order and a test POS sale; verify stock decrements, receipt/invoice PDF, warranty entry
+- [ ] (Optional) enable Google Sign-In, WhatsApp, eTIMS compliance as needed for your shop
+
+### 4. Multi-tenant / isolation checks
+- [ ] The new client's storefront does NOT leak another tenant's products/orders/settings
+- [ ] Logging in as this client admin shows only this client's data
+- [ ] Control plane → health check on this client returns healthy; usage stats (orders/customers/revenue) populate
+- [ ] Plan sync to this client works (plans appear in its admin)
+
+### 5. Cleanup / notes
+- [ ] If testing is temporary, **Delete** the client (removes Neon DB + Render + Vercel) — or keep it as your live reseller shop
+- [ ] Record here which client name / URLs you created and the test date
+
+> **Free-tier caveat:** each new client gets its own **free** Render instance (sleeps after ~15 min idle, cold-start latency, no persistent disk). Fine for testing/reselling at small volume, but plan for a paid tier before scaling.
+
 ## E. Integrations (test LAST)
 
 - [ ] M-Pesa — till config, STK push, callback, payment status, refunds, POS payment
