@@ -121,7 +121,7 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 | R-3 | P1 | **RESOLVED** | `repairs.ts:172-185` — VALID_TRANSITIONS includes awaiting_approval, approved, rejected, unrepairable |
 | R-4 | P1 | **RESOLVED** | Migration `0007` — adds serial_number, is_warranty_repair, warranty_claim_id to repair_tickets |
 | R-5 | P1 | **RESOLVED** | `repairs.ts:620-627` — assignment change recorded via `addRepairUpdate()` with type "assignment" |
-| R-6 | P2 | **STILL-OPEN** | Hardcoded KES rates, mixed rounding (ties to §8 money representation) |
+| R-6 | P2 | **PARTIAL** | Repair labor rates now configurable via settings (`repair_software_install_fee`/`repair_software_license_fee`, defaults 800/2500); fixed-precision money (ties to §8) still outstanding |
 | R-7 | P2 | **RESOLVED** | `repairs.ts` — ETA default read from `repair_eta_hours` setting (fallback 48h) |
 | R-8 | P3 | **RESOLVED** | `index.ts` — warranty register supports `?limit=`/`?offset=` + returns `total` (bounded, configurable) |
 
@@ -145,9 +145,9 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 
 **RESOLVED (52):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, C-9, DB-1..DB-5, DB-7, M-1, M-2, M-3, I-1/I-4, I-2, I-3, I-5, I-6, I-7, O-1, O-2, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2, W-3, W-4, SU-1, SU-2
 
-**PARTIAL (7):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (27/79 done), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), §8 (NUMERIC in migration, not schema)
+**PARTIAL (8):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (27/79 done), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), R-6 (rates configurable, §8 money pending), §8 (NUMERIC in migration, not schema)
 
-**STILL-OPEN (5):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier), R-6 (hardcoded rates)
+**STILL-OPEN (4):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier)
 
 ---
 
@@ -359,7 +359,7 @@ See dedicated §13 in audit; summarized P0/P1:
 | R-3 | P1 | `server/repairs.ts:144-147` | Missing statuses vs conceptual lifecycle: `awaiting_approval`, `approved`, `unrepairable` (and no `rejected`) are absent from the 8 implemented (`received, diagnosing, waiting_parts, in_progress, quality_check, ready, collected, cancelled`). | Add statuses + UI/API. |
 | R-4 | P1 | `server/schema.sql:324-355` | No `warranty_id`/`serial_number` FK on `repair_tickets` → repairs not linked to warranty or serialized device; warranty vs paid repairs **not distinguishable**. | Add `serial_number`, `warranty_claim_id`, `is_warranty_repair` columns when building warranty claims. |
 | R-5 | P1 | `server/repairs.ts:489-492` | Technician assignment history lost (overwrite of `assigned_to`). | Log assignment changes as `repair_updates`. |
-| R-6 | P2 | `server/repairs.ts:207-220` | Repair cost uses hardcoded KES (800/2500) and residual labor (total−parts); mixed rounding. | Move rates to settings; make labor explicit; fixed-precision money (ties into §8). |
+| R-6 | P2 | `server/repairs.ts:237` | Repair cost uses hardcoded KES (800/2500) and residual labor (total−parts); mixed rounding. | **PARTIAL:** rates moved to settings (`repair_software_install_fee`/`repair_software_license_fee`, default 800/2500); fixed-precision money tied to §8 still pending. |
 | R-7 | P2 | `server/repairs.ts:312` | `eta_at` hardcoded NOW()+48h. | Configurable default. |
 | R-8 | P3 | `server/index.ts:2500-2560` | Warranty register `LIMIT 2000` no pagination. | Add pagination. |
 

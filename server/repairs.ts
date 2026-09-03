@@ -244,8 +244,12 @@ async function calculateRepairCost(typeId: string | null, hardwareValue: number,
     }
   }
   total += partsCost;
-  if (softwareInstall && !softwareLicense) total += 800;
-  if (softwareLicense) total += 2500;
+  // R-6: software labor fees are store-configurable via settings, falling back to
+  // the historical KES defaults (800 install / 2500 license) when unset.
+  const installFee = Number(await getStoreSetting("repair_software_install_fee")) || 800;
+  const licenseFee = Number(await getStoreSetting("repair_software_license_fee")) || 2500;
+  if (softwareInstall && !softwareLicense) total += installFee;
+  if (softwareLicense) total += licenseFee;
   return total;
 }
 
