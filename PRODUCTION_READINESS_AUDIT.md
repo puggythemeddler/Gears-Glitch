@@ -136,18 +136,18 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 ### Subscriptions
 | ID | Sev | Status | Evidence |
 |---|---|---|---|
-| SU-1 | P1 | **STILL-OPEN** | `branch_subscriptions.expires_at` never populated |
-| SU-2 | P1 | **STILL-OPEN** | No recurring billing or expiry enforcement |
+| SU-1 | P1 | **RESOLVED** | `branch_subscriptions.expires_at` now populated on plan assign/change (30-day cycle by default, `SUBSCRIPTION_PERIOD_DAYS`-overridable) |
+| SU-2 | P1 | **RESOLVED** | Expiry enforcement: expired subs grant no paid features (`getBranchFeatures`) + periodic sweep marks them `expired`; NULL expiry stays active for back-compat |
 
 ---
 
 ### Summary: Items by Status
 
-**RESOLVED (49):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, DB-1..DB-5, DB-7, M-1, M-2, M-3, I-1/I-4, I-2, I-3, I-5, I-6, I-7, O-1, O-2, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2, W-3, W-4
+**RESOLVED (51):** S-1, S-2, S-3, S-4/A-3, S-5, S-6/P-4, S-8, S-9, S-10, A-2, T-1, T-2, T-3/C-4, T-4, Z-2, Z-3/R-1, Z-4, C-1, C-2, C-3, C-5, C-7, DB-1..DB-5, DB-7, M-1, M-2, M-3, I-1/I-4, I-2, I-3, I-5, I-6, I-7, O-1, O-2, O-3, O-4, SN-1, SN-2, SN-5, R-1..R-5, R-7, R-8, W-1, W-2, W-3, W-4, SU-1, SU-2
 
 **PARTIAL (7):** A-1 (rotation done, httpOnly pending), S-7 (deliberate), Z-1 (27/79 done), Z-5 (sufficient for current roles), C-6 (inherent to dashboard), DB-6 (POS idempotency optional), §8 (NUMERIC in migration, not schema)
 
-**STILL-OPEN (8):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier), C-9 (hardcoded config), R-6 (hardcoded rates), SU-1 (expires_at), SU-2 (billing)
+**STILL-OPEN (6):** A-1 (httpOnly cookies), A-4 (step-up auth), Z-1 (52 routes), C-8 (free tier), C-9 (hardcoded config), R-6 (hardcoded rates)
 
 ---
 
@@ -384,8 +384,8 @@ See dedicated §13 in audit; summarized P0/P1:
 
 | # | Sev | Location | Problem | Fix |
 |---|-----|----------|---------|-----|
-| SU-1 | **P1** | `server/db.ts:1332` | `branch_subscriptions.expires_at` is **never populated** (`setBranchPlan` sets only `activated_at`) → expiry never enforced; branches keep features indefinitely. | Set `expires_at` from billing period; add expiry check job. |
-| SU-2 | **P1** | shop-level | **No recurring billing / auto-renewal / expiry enforcement** at shop/branch level; only provider-level invoices exist. Plan changes are immediate with no invoice/collection. | Implement billing cycle: invoice on change, renewal reminders, enforce payment before feature access. |
+| SU-1 | **P1** | `server/db.ts` | `branch_subscriptions.expires_at` is **never populated** (`setBranchPlan` sets only `activated_at`) → expiry never enforced; branches keep features indefinitely. | **RESOLVED:** `expires_at` now set on plan assign/change via `SUBSCRIPTION_PERIOD_DAYS` (default 30, env-overridable). |
+| SU-2 | **P1** | shop-level | **No recurring billing / auto-renewal / expiry enforcement** at shop/branch level; only provider-level invoices exist. Plan changes are immediate with no invoice/collection. | **RESOLVED (enforcement):** expired subs grant no paid features (`getBranchFeatures`) + periodic sweep marks them `expired`; full billing/auto-renewal remains roadmap. |
 | SU-3 | P2 | `server/schema.sql:198-211` | `subscription_plans.features` is a JSON text column with no validation → typos silently break gating. | Feature lookup table + plan-feature join. |
 | SU-4 | P1 | `marketeting`/assembly | **No `customer_assets` table** (Phase 18) — no asset register beyond ad-hoc serial/warranty cross-reference in `AdminRepairs.tsx:446-478`. | Add `customer_assets` table. |
 | SU-5 | **P0** | — | **No `service_history` table** and no link from repairs to serials/warranty → cannot show a customer's lifetime service history (marketing copy at `marketing.tsx:741` is unbacked). | Add `service_history` (join repairs/claims/serials per customer) when Phase 18 is implemented. |

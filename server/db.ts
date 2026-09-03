@@ -127,6 +127,19 @@ interface SubscriptionPlan {
   syncToOthers: boolean;
 }
 
+// SU-1/SU-2: billing period for branch subscriptions (days). Overridable via env;
+// defaults to a 30-day monthly cycle. A NULL expires_at is treated as never-expiring
+// (keeps existing installs working); new/updated subscriptions get a real expiry.
+const SUBSCRIPTION_PERIOD_DAYS = Math.max(1, Number(process.env.SUBSCRIPTION_PERIOD_DAYS) || 30);
+
+// True only when the subscription has an explicit expiry that has already passed.
+// NULL expiry -> active (backwards compatible with pre-SU-1 data).
+function isSubscriptionExpired(expiresAt: string | null): boolean {
+  if (!expiresAt) return false;
+  const expiry = new Date(String(expiresAt));
+  return !isNaN(expiry.getTime()) && expiry.getTime() <= Date.now();
+}
+
 interface Provider {
   id: number;
   companyName: string;
@@ -2272,7 +2285,8 @@ async function createBranch(data: { name: string; address?: string; phone?: stri
   const branchId = result.rows[0].id;
   if (data.planId) {
     try {
-      await query("INSERT INTO branch_subscriptions (branch_id, plan_id, activated_at, status) VALUES ($1, $2, NOW(), 'active') ON CONFLICT (branch_id) DO UPDATE SET plan_id = $2, status = 'active'", [branchId, data.planId]);
+      const exp = new Date(Date.now() + SUBSCRIPTION_PERIOD_DAYS * 86400000).toISOString();
+      await query("INSERT INTO branch_subscriptions (branch_id, plan_id, activated_at, expires_at, status) VALUES ($1, $2, NOW(), $3, 'active') ON CONFLICT (branch_id) DO UPDATE SET plan_id = $2, expires_at = $3, status = 'active'", [branchId, data.planId, exp]);
     } catch {}
   }
   return (await getBranch(branchId))!;
@@ -2291,7 +2305,8 @@ async function updateBranch(id: number, updates: Partial<{ name: string; address
   if (updates.planId !== undefined) {
     fields.push(`plan_id = $${idx}`); params.push(updates.planId); idx++;
     try {
-      await query("INSERT INTO branch_subscriptions (branch_id, plan_id, activated_at, status) VALUES ($1, $2, NOW(), 'active') ON CONFLICT (branch_id) DO UPDATE SET plan_id = $2, activated_at = NOW(), status = 'active'", [id, updates.planId]);
+      const exp = new Date(Date.now() + SUBSCRIPTION_PERIOD_DAYS * 86400000).toISOString();
+      await query("INSERT INTO branch_subscriptions (branch_id, plan_id, activated_at, expires_at, status) VALUES ($1, $2, NOW(), $3, 'active') ON CONFLICT (branch_id) DO UPDATE SET plan_id = $2, activated_at = NOW(), expires_at = $3, status = 'active'", [id, updates.planId, exp]);
     } catch {}
   }
   if (fields.length === 0) return existing;
@@ -2340,14 +2355,27 @@ async function setBranchPlan(branchId: number, planId: string): Promise<boolean>
   const plan = await getSubscriptionPlan(planId);
   if (!plan) return false;
   await query("UPDATE branches SET plan_id = $1 WHERE id = $2", [planId, branchId]);
-  await query("INSERT INTO branch_subscriptions (branch_id, plan_id, activated_at, status) VALUES ($1, $2, NOW(), 'active') ON CONFLICT (branch_id) DO UPDATE SET plan_id = $2, activated_at = NOW(), status = 'active'", [branchId, planId]);
+  const exp = new Date(Date.now() + SUBSCRIPTION_PERIOD_DAYS * 86400000).toISOString();
+  await query("INSERT INTO branch_subscriptions (branch_id, plan_id, activated_at, expires_at, status) VALUES ($1, $2, NOW(), $3, 'active') ON CONFLICT (branch_id) DO UPDATE SET plan_id = $2, activated_at = NOW(), expires_at = $3, status = 'active'", [branchId, planId, exp]);
   return true;
 }
 
 async function getBranchFeatures(branchId: number): Promise<string[]> {
   const sub = await getBranchSubscription(branchId);
   if (!sub || !sub.plan) return [];
+  // SU-2: an expired subscription grants no paid features (only an explicitly set
+  // expiry is enforced; NULL expiry remains active for backwards compatibility).
+  if (isSubscriptionExpired(sub.expiresAt)) return [];
   return sub.plan.features || [];
+}
+
+// SU-2: sweep job — mark any subscription with an explicit, already-passed expiry
+// as 'expired'. Returns the number of rows transitioned. NULL expiries are untouched.
+async function markExpiredSubscriptions(): Promise<number> {
+  const res = await query(
+    "UPDATE branch_subscriptions SET status = 'expired' WHERE status <> 'expired' AND expires_at IS NOT NULL AND expires_at <= NOW()::timestamp"
+  );
+  return res.rowCount ?? 0;
 }
 
 async function listClients(): Promise<Client[]> {
@@ -4697,7 +4725,7 @@ export {
   createStockTransfer, getStockTransfer, listStockTransfers, completeStockTransfer, rejectStockTransfer,
   listSubscriptionPlans, getSubscriptionPlan, createSubscriptionPlan, updateSubscriptionPlan, deleteSubscriptionPlan,
   listBranches, getBranch, createBranch, updateBranch, deleteBranch, getBranchCount, getMaxBranchesForShop, canCreateBranch,
-  getBranchSubscription, setBranchPlan, getBranchFeatures,
+  getBranchSubscription, setBranchPlan, getBranchFeatures, isSubscriptionExpired, markExpiredSubscriptions,
   listClients, getClient, createClient, updateClient, deleteClient,
   listClientBranches, getClientBranch, createClientBranch, updateClientBranch, deleteClientBranch,
   findProviderByEmail, findProviderById, listProviders, createProvider, verifyProviderPin, updateProviderStatus, updateProvider,

@@ -221,6 +221,7 @@ import {
   getBranchSubscription,
   setBranchPlan,
   getBranchFeatures,
+  markExpiredSubscriptions,
   createStockTransfer,
   getStockTransfer,
   listStockTransfers,
@@ -6457,6 +6458,17 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
           if (count > 0) console.log(`[auto-billing] Marked ${count} invoices as overdue.`);
         } catch (err: any) { console.error("[auto-billing] Error:", err.message); }
       }, 6 * 60 * 60 * 1000);
+
+      // SU-2: periodic subscription-expiry sweep — mark branch subscriptions whose
+      // explicit expiry has passed as 'expired' so feature access is revoked.
+      const sweepSubscriptions = async () => {
+        try {
+          const count = await markExpiredSubscriptions();
+          if (count > 0) console.log(`[subscriptions] Marked ${count} subscription(s) expired.`);
+        } catch (err: any) { console.error("[subscriptions] Sweep error:", err.message); }
+      };
+      sweepSubscriptions();
+      setInterval(sweepSubscriptions, 6 * 60 * 60 * 1000);
 
       // M-Pesa held-stock timeout: any pending_payment order that never received
       // a payment callback releases its held stock after 15 minutes so inventory
