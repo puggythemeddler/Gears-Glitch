@@ -973,27 +973,6 @@
   height: auto;
 }
 
-.ct-bg {
-  position: fixed;
-  right: 3%;
-  bottom: 6%;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.25;
-}
-.ct-bg .ct-scene {
-  margin-bottom: 0;
-}
-.ct-bg .ct-scene svg {
-  max-width: 420px;
-  width: 42vw;
-}
-
-.form-grid .panel {
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
-  backdrop-filter: blur(2px);
-}
-
 @keyframes ctMascotBob {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-2.5px); }

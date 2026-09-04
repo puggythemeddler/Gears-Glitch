@@ -49,9 +49,10 @@ export default function ContactPage() {
         </ol>
       </nav>
       <h1>Contact us</h1>
+      <ContactMascotAnimation />
       <p className="page-intro">Have a question about our products or services? Reach out and we&apos;ll get back to you as soon as possible.</p>
 
-      <div className="form-grid" style={{ gap: "2rem", position: "relative", zIndex: 1 }}>
+      <div className="form-grid" style={{ gap: "2rem" }}>
         <div className="panel">
           <h2>Get in touch</h2>
           {settings ? (
@@ -96,9 +97,6 @@ export default function ContactPage() {
             </form>
           )}
         </div>
-      </div>
-      <div className="ct-bg" aria-hidden="true">
-        <ContactMascotAnimation />
       </div>
     </>
   );
