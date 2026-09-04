@@ -5784,10 +5784,16 @@ app.get("/api/admin/features/overrides", allowControlPlane(adminAuthMiddleware),
 }));
 
 app.get("/api/audit-log", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const limit = Number(req.query.limit) || 200;
+  const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
   const entityType = req.query.entityType as string | undefined;
+  const userName = req.query.user as string | undefined;
+  const action = req.query.action as string | undefined;
+  const from = req.query.from as string | undefined;
+  const to = req.query.to as string | undefined;
   const isOwner = (req as any).user.role === "owner";
-  res.json({ entries: await getAuditLog(limit, entityType, isOwner ? "admin" : undefined) });
+  const result = await getAuditLog({ limit, offset, entityType, userName, action, from, to, excludeRole: isOwner ? "admin" : undefined });
+  res.json({ entries: result.entries, total: result.total, limit, offset });
 }));
 
 // ============ OWNER DASHBOARD ============

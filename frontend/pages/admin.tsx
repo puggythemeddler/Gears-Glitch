@@ -723,41 +723,78 @@ function AdminAuditLog() {
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState("");
-  useEffect(() => { fetchLog(); }, []);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const pageSize = 100;
+  const [user, setUser] = useState("");
+  const [action, setAction] = useState("");
+  const [entityType, setEntityType] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  useEffect(() => { fetchLog(); }, [page]);
 
   async function fetchLog() {
     setLoading(true); setError("");
-    try { const d = await api<any>(`/api/audit-log${filter ? "?entityType=" + encodeURIComponent(filter) : ""}`); setEntries(d.entries || []); }
+    const q = new URLSearchParams();
+    q.set("limit", String(pageSize));
+    q.set("offset", String(page * pageSize));
+    if (user) q.set("user", user);
+    if (action) q.set("action", action);
+    if (entityType) q.set("entityType", entityType);
+    if (from) q.set("from", from);
+    if (to) q.set("to", to);
+    try { const d = await api<any>(`/api/audit-log?${q.toString()}`); setEntries(d.entries || []); setTotal(d.total || 0); }
     catch (e: any) { setError(e.message); } finally { setLoading(false); }
   }
+
+  function applyFilters() { setPage(0); fetchLog(); }
+
+  const distinctUsers = Array.from(new Set(entries.map((e: any) => e.userName).filter(Boolean))).sort() as string[];
+  const distinctActions = Array.from(new Set(entries.map((e: any) => e.action).filter(Boolean))).sort() as string[];
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <>
       <h1>Audit Log</h1>
+      <div className="field-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
+        <div className="field" style={{ margin: 0 }}><label>User<input value={user} onChange={(e) => setUser(e.target.value)} placeholder="Any user" list="audit-users" style={{ fontSize: "0.85rem" }} /><datalist id="audit-users">{distinctUsers.map((u) => <option key={u} value={u} />)}</datalist></label></div>
+        <div className="field" style={{ margin: 0 }}><label>Action<input value={action} onChange={(e) => setAction(e.target.value)} placeholder="Any action" list="audit-actions" style={{ fontSize: "0.85rem" }} /><datalist id="audit-actions">{distinctActions.map((a) => <option key={a} value={a} />)}</datalist></label></div>
+        <div className="field" style={{ margin: 0 }}><label>Entity type<input value={entityType} onChange={(e) => setEntityType(e.target.value)} placeholder="e.g. plan, order" style={{ fontSize: "0.85rem" }} /></label></div>
+        <div className="field" style={{ margin: 0 }}><label>From date<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ fontSize: "0.85rem" }} /></label></div>
+        <div className="field" style={{ margin: 0 }}><label>To date<input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ fontSize: "0.85rem" }} /></label></div>
+      </div>
       <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginBottom: "1rem" }}>
-        <div className="field" style={{ margin: 0 }}><label>Filter by entity type<input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="e.g. plan, shop_subscription" style={{ fontSize: "0.85rem" }} /></label></div>
-        <RippleButton size="small" onClick={fetchLog} loading={loading}>Filter</RippleButton>
-        <span style={{ fontSize: "0.85rem", opacity: 0.5 }}>{entries.length} entries</span>
+        <RippleButton size="small" onClick={applyFilters} loading={loading}>Apply filters</RippleButton>
+        <RippleButton size="small" variant="ghost" onClick={() => { setUser(""); setAction(""); setEntityType(""); setFrom(""); setTo(""); setPage(0); fetchLog(); }}>Reset</RippleButton>
+        <span style={{ fontSize: "0.85rem", opacity: 0.5 }}>{total} entries</span>
       </div>
       {error && <ErrorMsg msg={error} />}
       {loading ? <Spinner /> : (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
+            <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
             <tbody>
               {entries.map((e: any) => (
                 <tr key={e.id}>
                   <td style={{ whiteSpace: "nowrap", fontSize: "0.8rem" }}>{new Date(e.createdAt).toLocaleString()}</td>
                   <td>{escapeHtml(e.userName || "?")}</td>
+                  <td style={{ fontSize: "0.85rem" }}>{e.actorRole || "-"}</td>
                   <td><span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{e.action}</span></td>
                   <td style={{ fontSize: "0.85rem" }}>{e.entityType}:{e.entityId}</td>
                   <td style={{ fontSize: "0.8rem", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis" }}>{e.details ? JSON.stringify(e.details) : "-"}</td>
                 </tr>
               ))}
-              {entries.length === 0 && <tr><td colSpan={5}><EmptyState icon="audit" title="No log entries" description="Audit trail entries will appear here as actions are performed." /></td></tr>}
+              {entries.length === 0 && <tr><td colSpan={6}><EmptyState icon="audit" title="No log entries" description="No audit trail entries match the current filters." /></td></tr>}
             </tbody>
           </table>
+        </div>
+      )}
+      {totalPages > 1 && (
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center", marginTop: "1rem" }}>
+          <RippleButton size="small" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>Prev</RippleButton>
+          <span style={{ fontSize: "0.85rem", opacity: 0.6 }}>Page {page + 1} of {totalPages}</span>
+          <RippleButton size="small" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Next</RippleButton>
         </div>
       )}
     </>

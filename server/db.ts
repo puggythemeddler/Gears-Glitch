@@ -4050,14 +4050,29 @@ async function logAudit(userId: number | null, userName: string, action: string,
   await query("INSERT INTO audit_log (user_id, user_name, action, entity_type, entity_id, details, actor_role) VALUES ($1, $2, $3, $4, $5, $6, $7)", [userId, userName, action, entityType, entityId, JSON.stringify(details), actorRole]);
 }
 
-async function getAuditLog(limit: number = 200, entityType?: string, excludeRole?: string): Promise<AuditEntry[]> {
-  let sql = "SELECT * FROM audit_log WHERE 1=1";
+async function getAuditLog(opts: {
+  limit?: number;
+  offset?: number;
+  entityType?: string;
+  excludeRole?: string;
+  userName?: string;
+  action?: string;
+  from?: string;
+  to?: string;
+} = {}): Promise<{ entries: AuditEntry[]; total: number }> {
+  const { limit = 200, offset = 0, entityType, excludeRole, userName, action, from, to } = opts;
+  let where = " WHERE 1=1";
   const params: any[] = [];
-  if (entityType) { sql += " AND entity_type = $1"; params.push(entityType); }
-  if (excludeRole) { sql += ` AND actor_role != $${params.length + 1}`; params.push(excludeRole); }
-  sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
-  params.push(limit);
-  return await queryAll(sql, params) as AuditEntry[];
+  const push = (v: any) => { params.push(v); return `$${params.length}`; };
+  if (entityType) { where += ` AND entity_type = ${push(entityType)}`; }
+  if (excludeRole) { where += ` AND actor_role != ${push(excludeRole)}`; }
+  if (userName) { where += ` AND user_name ILIKE ${push(`%${userName}%`)}`; }
+  if (action) { where += ` AND action = ${push(action)}`; }
+  if (from) { where += ` AND created_at >= ${push(from)}`; }
+  if (to) { where += ` AND created_at <= ${push(to)}`; }
+  const totalRow = await queryOne(`SELECT COUNT(*)::int AS n FROM audit_log${where}`, params) as any;
+  const rows = await queryAll(`SELECT * FROM audit_log${where} ORDER BY created_at DESC LIMIT ${push(limit)} OFFSET ${push(offset)}`, params) as any[];
+  return { entries: rows as AuditEntry[], total: totalRow?.n ?? 0 };
 }
 
 async function providerHasFeature(providerId: number, feature: string): Promise<boolean> {
