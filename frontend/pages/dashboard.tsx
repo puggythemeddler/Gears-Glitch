@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState, useRef } from "react";
-import { api, getRole, clearAllSessions } from "@/lib/api";
+import { api, getRole, clearAllSessions, downloadPdf } from "@/lib/api";
 import type { Order, RepairTicket, WishlistItem, Message, Quote } from "@/lib/types";
 import { useToast } from "@/components/Toast";
 import { useFeature } from "@/lib/features";
@@ -7,6 +7,7 @@ import { escapeHtml } from "@/lib/sanitize";
 import { usePageTitle } from "@/lib/use-page-title";
 import { useApp } from "@/lib/app-context";
 import Icon from "@/components/icons";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 
 type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "profile";
 
@@ -22,6 +23,7 @@ export default function DashboardPage() {
   const [messages, setMessages] = useState<any[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [profile, setProfile] = useState<any>(null);
+  const [productImages, setProductImages] = useState<Record<string, string>>({});
   const [msgComposeOpen, setMsgComposeOpen] = useState(false);
   const [repairFormOpen, setRepairFormOpen] = useState(false);
   const [replyBody, setReplyBody] = useState("");
@@ -80,7 +82,18 @@ export default function DashboardPage() {
   }, [role]);
 
   async function loadOrders() {
-    try { const d = await api<{ orders: Order[] }>("/api/orders"); setOrders(d.orders || []); } catch { setOrders([]); }
+    try {
+      const d = await api<{ orders: Order[] }>("/api/orders");
+      const ords = d.orders || [];
+      setOrders(ords);
+      const allIds = ords.flatMap((o) => (o.items || []).map((i) => i.productId)).filter(Boolean);
+      const unique = [...new Set(allIds)];
+      if (unique.length > 0) {
+        api<{ images: Record<string, string> }>(`/api/products/batch-images?ids=${unique.join(",")}`)
+          .then((img) => setProductImages(img.images || {}))
+          .catch(() => {});
+      }
+    } catch { setOrders([]); }
   }
 
   async function loadRepairs() {
@@ -106,6 +119,13 @@ export default function DashboardPage() {
 
   async function loadProfile() {
     try { const d = await api("/api/customer/me"); setProfile(d); } catch { setProfile(null); }
+  }
+
+  async function downloadDashInvoice(orderId: number) {
+    try {
+      const r = await api<{ token: string }>("/api/orders/invoice-token/" + orderId, { method: "POST" });
+      await downloadPdf(`/api/orders/${orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${orderId}.pdf`);
+    } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown error")); }
   }
 
   function logout() {
@@ -164,19 +184,50 @@ export default function DashboardPage() {
         {/* ORDERS */}
         {activeSection === "orders" && (
           <div className="dash-section active">
-            <h2>My orders</h2>
-            {orders.length === 0 ? <p className="muted">No orders yet.</p> : (
-              orders.map((o) => (
-                <a key={o.id} href={`/order?id=${o.id}`} className="order-item" style={{ display: "block", textDecoration: "none", color: "inherit", cursor: "pointer" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
-                    <div>
-                      <strong>Order #{o.id}</strong> <span className="plan-status">{o.status}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h2 style={{ margin: 0 }}>My orders</h2>
+              <a href="/orders" className="btn btn-sm btn-ghost" style={{ fontSize: "0.8rem" }}>View all</a>
+            </div>
+            {orders.length === 0 ? <p className="muted">No orders yet. <a href="/">Browse products</a>.</p> : (
+              orders.slice(0, 10).map((o) => {
+                const total = o.total || o.subtotal + (o.shippingFee || 0);
+                const canInvoice = o.status !== "cancelled";
+                const items = (o.items || []).filter((i: any) => !i.cancelled).slice(0, 3);
+                return (
+                  <a key={o.id} href={`/order?id=${o.id}`} className="order-item" style={{ display: "block", textDecoration: "none", color: "inherit", cursor: "pointer" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <strong>Order #{o.id}</strong>
+                        <StatusBadge status={o.status} domain="orders" />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span className="muted" style={{ fontSize: "0.85rem" }}>{new Date(o.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                        {canInvoice && (
+                          <button className="btn btn-sm btn-ghost" onClick={(e) => { e.preventDefault(); e.stopPropagation(); downloadDashInvoice(o.id); }} style={{ fontSize: "0.75rem" }}>
+                            <Icon name="fileText" size={12} /> Invoice
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <span className="muted">{new Date(o.createdAt).toLocaleDateString("en-GB")}</span>
-                  </div>
-                  <p className="muted" style={{ fontSize: "0.9rem" }}>{formatPrice(o.total || o.subtotal + (o.shippingFee || 0))} — {o.items?.length || 0} item(s)</p>
-                </a>
-              ))
+                    <p className="muted" style={{ fontSize: "0.85rem", margin: "0.35rem 0" }}>
+                      {formatPrice(total)} — {o.items?.length || 0} item(s)
+                    </p>
+                    {items.length > 0 && (
+                      <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
+                        {items.map((i: any) => {
+                          const img = productImages[i.productId];
+                          return (
+                            <div key={i.id} style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.2rem 0.4rem", background: "var(--surface-hover)", borderRadius: "var(--radius-md)", fontSize: "0.75rem" }}>
+                              {img && <img src={img} alt="" style={{ width: 18, height: 18, objectFit: "cover", borderRadius: 3 }} />}
+                              <span>{escapeHtml(i.name)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </a>
+                );
+              })
             )}
           </div>
         )}

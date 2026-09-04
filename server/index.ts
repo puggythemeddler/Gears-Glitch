@@ -2667,6 +2667,33 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
   }
 }));
 
+// Reorder: add all non-cancelled items from a past order into the customer's cart
+app.post("/api/orders/:id/reorder", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const orderId = Number(req.params.id);
+    const customerId = (req as any).customer.sub;
+    const order = await getOrder(orderId);
+    if (!order || order.customerId !== customerId) { res.status(404).json({ error: "Order not found." }); return; }
+    const activeItems = (order.items || []).filter((i: any) => !i.cancelled);
+    if (activeItems.length === 0) { res.status(400).json({ error: "No active items to reorder." }); return; }
+    let added = 0;
+    for (const item of activeItems) {
+      try {
+        const p = await getProduct(String(item.productId));
+        if (p && !p.isHidden) {
+          await addToCart(customerId, String(item.productId), item.quantity);
+          added++;
+        }
+      } catch {}
+    }
+    if (added === 0) { res.status(400).json({ error: "None of the items are currently available." }); return; }
+    res.json({ ok: true, added, total: activeItems.length });
+  } catch (err: any) {
+    console.error("[reorder]", err?.message || err);
+    res.status(500).json({ error: "Failed to reorder." });
+  }
+}));
+
 // Provider accounts only ever see orders that reference their own products.
 // Order items carry the provider via the product's provider linkage; without a
 // match the provider has no visibility (and cannot act on) the order.
@@ -4096,6 +4123,25 @@ app.get("/api/products/:id/images", asyncHandler(async (req: Request, res: Respo
     res.json({ images: combined });
   } catch (err: any) {
     console.error("[product images]", err?.message || err);
+    res.status(500).json({ error: "Failed to load images." });
+  }
+}));
+
+// Batch primary images for order-item thumbnails
+app.get("/api/products/batch-images", asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const ids = String(req.query.ids || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 50);
+    if (ids.length === 0) { res.json({ images: {} }); return; }
+    const images: Record<string, string> = {};
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const p = await getProduct(id);
+        if (p?.imageUrl) images[id] = p.imageUrl;
+      } catch {}
+    }));
+    res.json({ images });
+  } catch (err: any) {
+    console.error("[batch-images]", err?.message || err);
     res.status(500).json({ error: "Failed to load images." });
   }
 }));

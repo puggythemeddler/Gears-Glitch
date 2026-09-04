@@ -13,7 +13,7 @@ import OrderCelebrationAnimation from "@/components/OrderCelebrationAnimation";
 export default function OrderDetailPage() {
   const router = useRouter();
   const { id } = router.query;
-  const { formatPrice } = useApp();
+  const { formatPrice, refreshCartCount } = useApp();
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState("");
   const [mounted, setMounted] = useState(false);
@@ -21,6 +21,9 @@ export default function OrderDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+  const [productImages, setProductImages] = useState<Record<string, string>>({});
+  const [reordering, setReordering] = useState(false);
+  const [reorderMsg, setReorderMsg] = useState<string | null>(null);
   usePageTitle(order ? `Order #${order.id}` : "Order");
 
   const [shippingName, setShippingName] = useState("");
@@ -52,6 +55,12 @@ export default function OrderDetailPage() {
       setShippingPhone(o.shippingPhone || "");
       setPaymentMethod(o.paymentMethod || "");
       setNotes(o.notes || "");
+      const productIds = (o.items || []).map((i) => i.productId).filter(Boolean);
+      if (productIds.length > 0) {
+        api<{ images: Record<string, string> }>(`/api/products/batch-images?ids=${productIds.join(",")}`)
+          .then((d) => setProductImages(d.images || {}))
+          .catch(() => {});
+      }
     }).catch((e) => setError(e.message));
     api<any>("/api/public-settings").then((s) => {
       if (s.paymentMethods) setPaymentMethods(s.paymentMethods);
@@ -94,6 +103,20 @@ export default function OrderDetailPage() {
     } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown error")); }
   }
 
+  async function reorder() {
+    if (!order) return;
+    setReordering(true);
+    setReorderMsg(null);
+    try {
+      const d = await api<{ added: number; total: number }>(`/api/orders/${order.id}/reorder`, { method: "POST" });
+      refreshCartCount();
+      setReorderMsg(`Added ${d.added} of ${d.total} item(s) to your cart.`);
+      toast("success", "Items added to cart!");
+    } catch (e: any) {
+      setReorderMsg(e.message || "Failed to reorder.");
+    } finally { setReordering(false); }
+  }
+
   if (mounted && !loggedIn) {
     return <><h1>Order</h1><div className="empty-state"><div className="empty-state-icon"><Icon name="lock" size={28} /></div><div className="empty-state-title">Sign in to view order</div><div className="empty-state-desc">Please sign in to view this order.</div><a href="/login?redirect=/orders" className="btn btn-primary">Sign in</a></div></>;
   }
@@ -122,10 +145,18 @@ export default function OrderDetailPage() {
   }
 
   const isPending = order.status === "pending";
-  const canInvoice = order.status === "shipped" || order.status === "delivered";
+  const canInvoice = order.status !== "cancelled";
   const total = order.total || order.subtotal + (order.shippingFee || 0);
   const activeItems = (order.items || []).filter((i) => !i.cancelled);
   const cancelledItems = (order.items || []).filter((i) => i.cancelled);
+
+  const createdDate = new Date(order.createdAt);
+  const daysSince = Math.floor((Date.now() - createdDate.getTime()) / 86400000);
+  let estimatedDelivery = "";
+  if (order.status === "pending") estimatedDelivery = "After confirmation";
+  else if (order.status === "processing") estimatedDelivery = "1-2 business days";
+  else if (order.status === "shipped") estimatedDelivery = daysSince <= 3 ? `${3 - daysSince} day(s) remaining` : "Arriving soon";
+  else if (order.status === "delivered") estimatedDelivery = "Delivered";
 
   return (
     <>
@@ -145,14 +176,29 @@ export default function OrderDetailPage() {
             <StatusBadge status={order.status} domain="orders" />
             {order.paymentMethod && <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Payment: {escapeHtml(order.paymentMethod)}</span>}
           </div>
-          <span className="muted">{new Date(order.createdAt).toLocaleDateString("en-GB")}</span>
+          <span className="muted">{createdDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
         </div>
 
-        {canInvoice && (
-          <div style={{ marginBottom: "1rem" }}>
-            <button className="btn btn-primary" onClick={downloadInvoice}>Download Invoice</button>
+        {estimatedDelivery && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem", padding: "0.6rem 0.9rem", background: "var(--primary-subtle)", borderRadius: "var(--radius-md)", fontSize: "0.9rem", color: "var(--primary)" }}>
+            <Icon name="truck" size={16} />
+            <span><strong>Estimated delivery:</strong> {estimatedDelivery}</span>
           </div>
         )}
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+          {canInvoice && (
+            <button className="btn btn-secondary" onClick={downloadInvoice}>
+              <Icon name="fileText" size={15} /> Download Invoice
+            </button>
+          )}
+          {activeItems.length > 0 && order.status !== "pending" && (
+            <button className="btn btn-ghost" onClick={reorder} disabled={reordering}>
+              <Icon name="refresh" size={15} /> {reordering ? "Adding..." : "Reorder"}
+            </button>
+          )}
+        </div>
+        {reorderMsg && <p style={{ fontSize: "0.85rem", color: "var(--success)", marginBottom: "1rem" }}>{reorderMsg}</p>}
 
         {isPending ? (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxWidth: 500 }}>
@@ -232,9 +278,17 @@ export default function OrderDetailPage() {
         </thead>
         <tbody>
           {activeItems.map((i) => {
+            const img = productImages[i.productId];
             return (
               <tr key={i.id}>
-                <td>{escapeHtml(i.name)}</td>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                    {img && <img src={img} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />}
+                    <a href={`/product?id=${encodeURIComponent(i.productId)}`} style={{ color: "var(--text)", textDecoration: "none" }}>
+                      <span style={{ fontWeight: 500 }}>{escapeHtml(i.name)}</span>
+                    </a>
+                  </div>
+                </td>
                 <td>{i.quantity}</td>
                 <td>{formatPrice(i.price)}</td>
                 <td>{formatPrice(i.lineTotal)}</td>
@@ -242,15 +296,23 @@ export default function OrderDetailPage() {
               </tr>
             );
           })}
-          {cancelledItems.map((i) => (
-            <tr key={i.id} style={{ opacity: 0.5, textDecoration: "line-through" }}>
-              <td>{escapeHtml(i.name)}</td>
-              <td>{i.quantity}</td>
-              <td>{formatPrice(i.price)}</td>
-              <td>{formatPrice(i.lineTotal)}</td>
-              <td style={{ fontSize: "0.85rem", color: "var(--danger)" }}>Cancelled</td>
-            </tr>
-          ))}
+          {cancelledItems.map((i) => {
+            const img = productImages[i.productId];
+            return (
+              <tr key={i.id} style={{ opacity: 0.5, textDecoration: "line-through" }}>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                    {img && <img src={img} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />}
+                    <span>{escapeHtml(i.name)}</span>
+                  </div>
+                </td>
+                <td>{i.quantity}</td>
+                <td>{formatPrice(i.price)}</td>
+                <td>{formatPrice(i.lineTotal)}</td>
+                <td style={{ fontSize: "0.85rem", color: "var(--danger)" }}>Cancelled</td>
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr><td colSpan={3} style={{ textAlign: "right" }}>Subtotal</td><td>{formatPrice(order.subtotal)}</td><td /></tr>

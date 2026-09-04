@@ -15,6 +15,7 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [productImages, setProductImages] = useState<Record<string, string>>({});
   usePageTitle("My orders");
 
   useEffect(() => {
@@ -23,7 +24,17 @@ export default function OrdersPage() {
     setLoggedIn(ok);
     if (!ok) return;
     api<{ orders: Order[] }>("/api/orders")
-      .then((d) => setOrders(d.orders || []))
+      .then((d) => {
+        const ords = d.orders || [];
+        setOrders(ords);
+        const allIds = ords.flatMap((o) => (o.items || []).map((i) => i.productId)).filter(Boolean);
+        const unique = [...new Set(allIds)];
+        if (unique.length > 0) {
+          api<{ images: Record<string, string> }>(`/api/products/batch-images?ids=${unique.join(",")}`)
+            .then((img) => setProductImages(img.images || {}))
+            .catch(() => {});
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -60,7 +71,8 @@ export default function OrdersPage() {
       ) : (
         orders.map((o) => {
           const total = o.total || o.subtotal + (o.shippingFee || 0);
-          const canInvoice = o.status === "shipped" || o.status === "delivered";
+          const canInvoice = o.status !== "cancelled";
+          const items = (o.items || []).filter((i) => !i.cancelled).slice(0, 3);
           return (
             <div key={o.id} className="order-item" style={{ marginBottom: "0.75rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -71,10 +83,10 @@ export default function OrdersPage() {
                   <StatusBadge status={o.status} domain="orders" />
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <span className="muted">{new Date(o.createdAt).toLocaleDateString("en-GB")}</span>
+                  <span className="muted">{new Date(o.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
                   {canInvoice && (
                     <button className="btn btn-sm btn-ghost" onClick={(e) => { e.preventDefault(); downloadInvoice(o.id); }} style={{ fontSize: "0.8rem" }}>
-                      Invoice
+                      <Icon name="fileText" size={13} /> Invoice
                     </button>
                   )}
                 </div>
@@ -82,7 +94,21 @@ export default function OrdersPage() {
               <p className="muted" style={{ fontSize: "0.9rem", margin: "0.5rem 0" }}>
                 {formatPrice(total)} — {o.items?.length || 0} item(s)
               </p>
-              {o.shippingName && <p style={{ fontSize: "0.85rem" }}>{escapeHtml(o.shippingName)}{o.shippingCounty ? ` — ${escapeHtml(o.shippingCounty)}` : ""}</p>}
+              {items.length > 0 && (
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                  {items.map((i) => {
+                    const img = productImages[i.productId];
+                    return (
+                      <div key={i.id} style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.25rem 0.5rem", background: "var(--surface-hover)", borderRadius: "var(--radius-md)", fontSize: "0.8rem" }}>
+                        {img && <img src={img} alt="" style={{ width: 22, height: 22, objectFit: "cover", borderRadius: 4 }} />}
+                        <span>{escapeHtml(i.name)}</span>
+                      </div>
+                    );
+                  })}
+                  {(o.items?.length || 0) > 3 && <span className="muted" style={{ fontSize: "0.8rem", alignSelf: "center" }}>+{(o.items?.length || 0) - 3} more</span>}
+                </div>
+              )}
+              {o.shippingName && <p style={{ fontSize: "0.85rem", marginTop: "0.4rem" }}>{escapeHtml(o.shippingName)}{o.shippingCounty ? ` — ${escapeHtml(o.shippingCounty)}` : ""}</p>}
             </div>
           );
         })
