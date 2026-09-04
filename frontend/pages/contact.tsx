@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { useApp } from "@/lib/app-context";
 import { api } from "@/lib/api";
 import { PageHead } from "@/components/ui";
+import ContactMascotAnimation from "@/components/ContactMascotAnimation";
 
 export default function ContactPage() {
   const router = useRouter();
@@ -48,6 +49,7 @@ export default function ContactPage() {
         </ol>
       </nav>
       <h1>Contact us</h1>
+      <ContactMascotAnimation />
       <p className="page-intro">Have a question about our products or services? Reach out and we&apos;ll get back to you as soon as possible.</p>
 
       <div className="form-grid" style={{ gap: "2rem" }}>

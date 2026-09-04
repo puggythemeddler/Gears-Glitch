@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { PageHead } from "@/components/ui";
+import RepairsSceneAnimation from "@/components/RepairsSceneAnimation";
 
 const DEFAULT_PANELS = [
   { title: "Laptop & PC repairs", description: "Screen replacement, keyboard repair, battery replacement, motherboard diagnostics, and more." },
@@ -30,6 +31,7 @@ export default function RepairsPage() {
         </ol>
       </nav>
       <h1>Repair services</h1>
+      <RepairsSceneAnimation />
       <p className="page-intro">{intro}</p>
       <div className="product-grid">
         {panels.filter((p) => p.active !== false).map((p, i) => {

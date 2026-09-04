@@ -921,3 +921,92 @@
 .ec-santa-q {
   animation: ecSantaQ 2.2s ease-in-out infinite;
 }
+
+/* ----- Repairs scene (screwdriver, screws, hovering monitor) ----- */
+.rp-scene {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-4);
+}
+.rp-scene svg {
+  display: block;
+  max-width: 340px;
+  width: 100%;
+  height: auto;
+}
+
+@keyframes rpMonitorBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@keyframes rpDriverBob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(2deg); }
+}
+@keyframes rpScrewSpin {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(14deg); }
+}
+
+.rp-monitor {
+  animation: rpMonitorBob 3.5s ease-in-out infinite;
+  transform-origin: 180px 48px;
+}
+.rp-screwdriver {
+  animation: rpDriverBob 4.2s ease-in-out infinite;
+  transform-origin: 100px 50px;
+}
+.rp-screw { animation: rpScrewSpin 5s ease-in-out infinite; }
+.rp-screw.s1 { transform-origin: 286px 116px; }
+.rp-screw.s2 { transform-origin: 318px 132px; animation-delay: 0.6s; }
+
+/* ----- Contact mascot (gear-head picks up and puts down phone) ----- */
+.ct-scene {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-4);
+}
+.ct-scene svg {
+  display: block;
+  max-width: 300px;
+  width: 100%;
+  height: auto;
+}
+
+@keyframes ctMascotBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2.5px); }
+}
+@keyframes ctHeadTilt {
+  0%, 100% { transform: rotate(1.5deg); }
+  50% { transform: rotate(-1.5deg); }
+}
+@keyframes ctPhoneAnswer {
+  0%, 12% { transform: translateY(0) rotate(0deg); }
+  24% { transform: translateY(-30px) rotate(-4deg); }
+  52% { transform: translateY(-30px) rotate(-4deg); }
+  66% { transform: translateY(0) rotate(0deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+@keyframes ctRing {
+  0% { opacity: 0.8; transform: scale(0.85) translateY(0); }
+  60% { opacity: 0; transform: scale(1.5) translateY(-4px); }
+  100% { opacity: 0; transform: scale(1.5) translateY(-4px); }
+}
+
+.ct-mascot {
+  animation: ctMascotBob 3s ease-in-out infinite;
+  transform-origin: 161px 190px;
+}
+.ct-head {
+  animation: ctHeadTilt 3.6s ease-in-out infinite;
+  transform-origin: 161px 116px;
+}
+.ct-armhand {
+  animation: ctPhoneAnswer 5s ease-in-out infinite;
+  transform-origin: 196px 112px;
+}
+.ct-ring {
+  animation: ctRing 2.4s ease-out infinite;
+}
+.ct-ring.r2 { animation-delay: 1.2s; }
