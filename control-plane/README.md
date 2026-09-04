@@ -184,6 +184,8 @@ When you add a new client via the **Add Client** modal, the control plane automa
 
 Provisioning runs synchronously — the UI shows progress as each step completes. If any step fails, previously created resources are cleaned up.
 
+> **Provisioning readiness guard** — Provisioning fails fast if any of the three required keys is missing. `POST /api/clients` returns `400 {error, missing}` (listing the absent keys) **before** inserting a placeholder client row, so a new client can never silently land in `status='failed'`. `GET /api/provisioning/status` reports the same readiness (used by the Add Client modal to show a `#provision-warning` banner on open). A startup log line on the control plane confirms provisioning is enabled or lists the missing keys. The three required keys are `NEON_API_KEY`, `RENDER_API_KEY`, and `VERCEL_TOKEN`; the optional keys (`VERCEL_TEAM_ID`, `RENDER_OWNER_ID`, `NEON_ORG_ID`, `CLOUDFLARE_*`, `SMTP_*`) degrade gracefully when absent.
+
 > **Testing client provisioning** — a full step-by-step acceptance checklist (pre-checks, adding a client, verifying Neon/Render/Vercel/DNS are actually created, setting up a reseller hardware shop, multi-tenant isolation, and cleanup) lives in `TEST_PLAN.md` section **D2**. Use it to validate that provisioning a new client (e.g. adding yourself to resell computer hardware) works end to end.
 
 ### Add Existing Client
@@ -242,7 +244,8 @@ All endpoints require authentication via one of:
 | GET | `/api/clients` | List all clients |
 | GET | `/api/clients/test-site` | Get the client marked as the test site (may be `null`) |
 | GET | `/api/clients/:id` | Get single client |
-| POST | `/api/clients` | Provision new client |
+| POST | `/api/clients` | Provision new client (rejects with `400 {error, missing}` if required provisioning keys are unset) |
+| GET | `/api/provisioning/status` | Report whether provisioning is ready (`ok`, `missing` keys) |
 | POST | `/api/clients/existing` | Register existing deployment |
 | PUT | `/api/clients/:id` | Update client (plan, expiry, notes, features, `is_test` — only one client can be the test site) |
 | DELETE | `/api/clients/:id` | Delete client and all resources |
