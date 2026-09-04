@@ -134,7 +134,15 @@ function setSessionCookie(res: Response, token: string, maxAgeSec = 7 * 24 * 360
 }
 
 function clearSessionCookie(res: Response): void {
-  res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/" });
+  // Use res.cookie with maxAge:0 instead of res.clearCookie — more reliable
+  // for clearing SameSite cookies across browsers.
+  res.cookie(SESSION_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
 }
 
 function getBearerToken(req: Request): string | null {

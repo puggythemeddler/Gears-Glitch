@@ -4424,6 +4424,9 @@ app.post("/api/auth/login", asyncHandler(async (req: Request, res: Response) => 
 // (role, name, permissions) from the httpOnly cookie without any JS-readable
 // token. Returns { role: null } when unauthenticated.
 app.get("/api/auth/session", asyncHandler(async (req: Request, res: Response) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   const token = getBearerToken(req);
   if (!token) { res.json({ role: null }); return; }
   try {
@@ -4458,6 +4461,8 @@ app.post("/api/auth/logout", (req: Request, res: Response) => {
     }
   } catch { console.warn("[audit] Failed to write audit log"); }
   clearSessionCookie(res);
+  // Also clear the CSRF cookie so the next session starts fresh
+  res.cookie("csrf_token", "", { httpOnly: false, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: 0 });
   res.json({ ok: true });
 });
 
