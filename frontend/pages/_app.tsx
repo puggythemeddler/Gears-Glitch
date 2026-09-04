@@ -107,7 +107,7 @@ export default function MyApp({ Component, pageProps, router }: AppProps) {
               <LayoutProvider>
                 <LayoutStyles />
                 <Layout activeNav={activeNav}>
-                  <PageTransition key={router.asPath}>
+                  <PageTransition key={router.pathname}>
                     <Component {...pageProps} />
                   </PageTransition>
                 </Layout>
