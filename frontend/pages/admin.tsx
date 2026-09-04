@@ -1332,7 +1332,8 @@ function AdminOrders() {
 
   if (selected) {
     const o = selected;
-    const total = o.subtotal + (o.shippingFee || 0);
+    const activeSubtotal = (o.items || []).filter((i: any) => !i.cancelled).reduce((s: number, i: any) => s + i.lineTotal, 0);
+    const total = activeSubtotal + (o.shippingFee || 0);
     return (
       <>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
@@ -1382,7 +1383,7 @@ function AdminOrders() {
             <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>Order Info</h3>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Date: {new Date(o.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Channel: <span style={{ textTransform: "capitalize" }}>{escapeHtml(o.source || "storefront")}</span></p>
-            <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Subtotal: {formatPrice(o.subtotal)}</p>
+            <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Subtotal: {formatPrice(activeSubtotal)}</p>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Shipping: {formatPrice(o.shippingFee || 0)}</p>
             {o.discountAmount > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "var(--success)" }}>Coupon: -{formatPrice(o.discountAmount)}</p>}
             {o.giftCardAmount > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "var(--success)" }}>Gift card: -{formatPrice(o.giftCardAmount)}</p>}
