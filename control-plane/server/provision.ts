@@ -23,6 +23,20 @@ if (!CONTROL_PLANE_URL) {
 const FRONTEND_GIT_REPO = process.env.FRONTEND_GIT_REPO || "puggythemeddler/Gears-Glitch";
 const DEFAULT_GIT_REPO_OWNER = "puggythemeddler";
 
+// The three API credentials that are mandatory for provisioning a new client.
+// Missing any of these makes the background provisioning fail hard (the client
+// row ends up status='failed'). Expose this so the API/UI can warn the owner
+// upfront instead of discovering the failed row after the batch runs.
+export const REQUIRED_PROVISIONING_KEYS = ["NEON_API_KEY", "RENDER_API_KEY", "VERCEL_TOKEN"] as const;
+
+export function getMissingProvisioningEnv(): string[] {
+  const missing: string[] = [];
+  for (const key of REQUIRED_PROVISIONING_KEYS) {
+    if (!process.env[key] || process.env[key]!.trim() === "") missing.push(key);
+  }
+  return missing;
+}
+
 function parseGitRepo(repo: string): { owner: string; name: string; full: string } {
   const trimmed = repo.trim();
   const slash = trimmed.indexOf("/");

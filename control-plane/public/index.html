@@ -528,6 +528,7 @@
       <h2>Add New Client</h2>
       <p class="subtitle">Provisions a new database, backend, and frontend automatically.</p>
       <div id="modal-form">
+        <div id="provision-warning" style="display:none;background:var(--danger-bg, #fdecec);color:var(--danger-strong, #b3261e);border:1px solid var(--danger-border, #f5c2c0);border-radius:8px;padding:0.6rem 0.75rem;font-size:0.82rem;margin-bottom:0.75rem;line-height:1.5"></div>
         <div class="field"><label for="inp-name">Business Name</label><input type="text" id="inp-name" placeholder="e.g. John's Electronics"></div>
         <div class="field"><label for="inp-email">Admin Email <span style="font-size:0.72rem;color:var(--text-muted)">(optional — defaults to your operator email)</span></label><input type="email" id="inp-email" placeholder="defaults to OPERATOR_ADMIN_EMAIL"></div>
         <div class="field"><label for="inp-domain">Domain (optional)</label><input type="text" id="inp-domain" placeholder="e.g. johns.gearglitch.com"></div>
@@ -1208,7 +1209,19 @@
     }
 
     // ─── MODALS ───────────────────────────────────────────
-    function showModal() { openModal(document.getElementById("modal-overlay")); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = operatorEmail || ""; document.getElementById("inp-domain").value = ""; const p = document.getElementById("inp-plan"); if (p.options.length) p.selectedIndex = 0; }
+    function showModal() { openModal(document.getElementById("modal-overlay")); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = operatorEmail || ""; document.getElementById("inp-domain").value = ""; const p = document.getElementById("inp-plan"); if (p.options.length) p.selectedIndex = 0;
+      // Show the owner upfront whether new-client provisioning can actually run.
+      const warn = document.getElementById("provision-warning");
+      try {
+        api("/api/provisioning/status").then((s) => {
+          if (s && s.ready === false && Array.isArray(s.missing) && warn) {
+            warn.style.display = "";
+            warn.innerHTML = '⚠️ Provisioning is not configured. Missing required env vars on the control plane: <b>' + esc(s.missing.join(", ")) + '</b>. Adding a client will fail until these are set.';
+          } else if (warn) { warn.style.display = "none"; }
+        }).catch(() => { if (warn) warn.style.display = "none"; });
+      } catch { if (warn) warn.style.display = "none"; }
+      document.getElementById("btn-create").disabled = false;
+    }
     function hideModal() { closeModal(document.getElementById("modal-overlay")); }
     function showExistingModal() { openModal(document.getElementById("existing-modal-overlay")); document.getElementById("inp-ex-name").value = ""; document.getElementById("inp-ex-email").value = operatorEmail || ""; document.getElementById("inp-ex-backend").value = ""; document.getElementById("inp-ex-frontend").value = ""; document.getElementById("inp-ex-domain").value = ""; document.getElementById("inp-ex-render-id").value = ""; document.getElementById("inp-ex-cp-secret").value = ""; }
     function hideExistingModal() { closeModal(document.getElementById("existing-modal-overlay")); }

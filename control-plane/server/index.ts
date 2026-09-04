@@ -32,11 +32,24 @@ import {
   suspendClientRecord,
   resumeClientRecord,
   getSmtpTransport,
+  getMissingProvisioningEnv,
   type ProvisionResult,
 } from "./provision";
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
+
+// Warn the owner at startup if provisioning can't work (missing required keys).
+// This is non-fatal (an already-running platform should still boot) but loud so
+// the missing key is fixed before any new client provisioning is attempted.
+{
+  const missing = getMissingProvisioningEnv();
+  if (missing.length > 0) {
+    console.warn(`[startup] WARNING: provisioning is DISABLED until these env vars are set: ${missing.join(", ")}. New clients cannot be provisioned.`);
+  } else {
+    console.log("[startup] Provisioning env OK: NEON_API_KEY, RENDER_API_KEY, VERCEL_TOKEN present.");
+  }
+}
 // Stable JWT secret is REQUIRED in production: a randomly generated fallback would
 // invalidate every session on restart and break pending auth tokens. Fail fast here
 // rather than silently rotating the signing key.
@@ -469,6 +482,18 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
       return;
     }
 
+    // Guard: refuse to start provisioning (and refuse to insert a placeholder
+    // row) when required API credentials are missing, instead of letting the
+    // background batch fail and leave a status='failed' client.
+    const missingKeys = getMissingProvisioningEnv();
+    if (missingKeys.length > 0) {
+      res.status(400).json({
+        error: "Provisioning is not configured. Missing required env vars on the control plane: " + missingKeys.join(", ") + ". Set them and try again.",
+        missing: missingKeys,
+      });
+      return;
+    }
+
     const DOMAIN_BASE = process.env.DOMAIN_BASE || "gearglitch.com";
 
     // Derive a unique domain if not provided — the column is UNIQUE NOT NULL,
@@ -537,6 +562,18 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
   } catch (err: any) {
     console.error("[api] Create client error:", err.message);
     res.status(500).json({ error: err.message || "Failed to create client" });
+  }
+});
+
+// Provisioning configuration status — lets the owner/UI see whether new-client
+// provisioning can run, and which required API keys are missing, before clicking
+// Add Client (avoids repeatedly landing on status='failed').
+app.get("/api/provisioning/status", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const missing = getMissingProvisioningEnv();
+    res.json({ ready: missing.length === 0, missing, required: ["NEON_API_KEY", "RENDER_API_KEY", "VERCEL_TOKEN"] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to read provisioning status" });
   }
 });
 
