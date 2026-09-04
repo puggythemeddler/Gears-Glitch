@@ -50,6 +50,22 @@ export default function SantaGearAnimation() {
         </g>
         <text className="ec-santa-q" x="254" y="150" fontSize="22" fontWeight="800" fill="var(--warning)">?</text>
 
+        {/* Dust balls tumbling out of the empty sack */}
+        <g transform="translate(186, 260)">
+          <g className="ec-dust d1" fill="#cdbd9f">
+            <circle cx="0" cy="0" r="4.5" />
+            <circle cx="5" cy="-3" r="3.4" />
+            <circle cx="-5" cy="-2" r="3" />
+          </g>
+        </g>
+        <g transform="translate(234, 262)">
+          <g className="ec-dust d2" fill="#cdbd9f">
+            <circle cx="0" cy="0" r="4" />
+            <circle cx="4" cy="-2.5" r="3" />
+            <circle cx="-4" cy="-2" r="2.8" />
+          </g>
+        </g>
+
         {/* Gearhead Santa */}
         <g className="ec-santa">
           <rect x="118" y="158" width="64" height="62" rx="14" fill="var(--danger)" />
