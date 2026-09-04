@@ -689,6 +689,15 @@ code, pre {
   margin-left: 2px;
   vertical-align: super;
 }
+.cart-badge--bounce {
+  animation: cartBadgeBounce 0.5s cubic-bezier(0.17, 0.89, 0.32, 1.28);
+}
+@keyframes cartBadgeBounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.4); }
+  70% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
 
 .site-logo {
   max-height: 56px;

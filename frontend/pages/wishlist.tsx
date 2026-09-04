@@ -8,6 +8,7 @@ import { confirmDialog } from "@/components/ConfirmDialog";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
+import EmptyWishlistAnimation from "@/components/EmptyWishlistAnimation";
 
 export default function WishlistPage() {
   const { formatPrice } = useApp();
@@ -109,6 +110,7 @@ export default function WishlistPage() {
             <div className="empty-state-icon"><Icon name="heart" size={28} /></div>
             <div className="empty-state-title">Your wishlist is empty</div>
             <div className="empty-state-desc">Browse products and save the ones you're interested in.</div>
+            <EmptyWishlistAnimation />
             <a href="/" className="btn btn-primary">Browse products</a>
           </div>
         ) : (

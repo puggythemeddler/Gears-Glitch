@@ -179,6 +179,7 @@ export default function CartPage() {
       if (order.mpesaRequested) {
         setStatusMsg({ text: "M-Pesa STK push sent to your phone. Complete payment to confirm order.", error: false });
       }
+      localStorage.setItem("gg_order_just_placed", String(order.id));
       window.location.href = `/order?id=${order.id}`;
     } catch (err: any) {
       setStatusMsg({ text: err.message, error: true });

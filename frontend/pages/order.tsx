@@ -8,6 +8,7 @@ import { toast } from "@/components/Toast";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
+import OrderCelebrationAnimation from "@/components/OrderCelebrationAnimation";
 
 export default function OrderDetailPage() {
   const router = useRouter();
@@ -30,6 +31,7 @@ export default function OrderDetailPage() {
   const [mpesaPhone, setMpesaPhone] = useState("");
   const [mpesaMsg, setMpesaMsg] = useState("");
   const [notes, setNotes] = useState("");
+  const [showCelebration, setShowCelebration] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -37,6 +39,11 @@ export default function OrderDetailPage() {
     setLoggedIn(ok);
     if (!ok) return;
     if (!id) return;
+    const justPlaced = localStorage.getItem("gg_order_just_placed");
+    if (justPlaced && String(justPlaced) === String(id)) {
+      setShowCelebration(true);
+      localStorage.removeItem("gg_order_just_placed");
+    }
     api<Order>(`/api/orders/${id}`).then((o) => {
       setOrder(o);
       setShippingName(o.shippingName || "");
@@ -122,6 +129,7 @@ export default function OrderDetailPage() {
 
   return (
     <>
+      {showCelebration && <OrderCelebrationAnimation onDone={() => setShowCelebration(false)} />}
       <nav className="breadcrumbs">
         <ol>
           <li><a href="/">Home</a></li>

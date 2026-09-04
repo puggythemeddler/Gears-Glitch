@@ -1010,3 +1010,155 @@
   animation: ctRing 2.4s ease-out infinite;
 }
 .ct-ring.r2 { animation-delay: 1.2s; }
+
+/* ----- Order celebration (confetti + mascot thumbs-up) ----- */
+.oc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  animation: ocFadeOut 0.6s ease-in 3.6s forwards;
+}
+.oc-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  animation: ocPopIn 0.5s cubic-bezier(0.17, 0.89, 0.32, 1.28) both;
+}
+.oc-badge {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--surface);
+  background: var(--primary);
+  padding: 0.5rem 1.6rem;
+  border-radius: 999px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+.oc-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.confetti-piece {
+  position: absolute;
+  top: -12px;
+  animation: ocConfettiFall 3.2s ease-in forwards;
+  will-change: transform, opacity;
+}
+.oc-mascot {
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
+}
+.oc-head {
+  animation: ocMascotBounce 0.8s ease-in-out 0.3s 3 both;
+  transform-origin: 100px 82px;
+}
+.oc-thumbs {
+  animation: ocThumbsUp 0.6s ease-out 0.5s both;
+  transform-origin: 158px 90px;
+}
+
+@keyframes ocFadeOut {
+  to { opacity: 0; pointer-events: none; }
+}
+@keyframes ocPopIn {
+  0% { opacity: 0; transform: scale(0.6) translateY(30px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes ocConfettiFall {
+  0% { opacity: 1; transform: translateY(0) rotate(0deg) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(100vh) rotate(720deg) scale(0.5); }
+}
+@keyframes ocMascotBounce {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(2deg); }
+}
+@keyframes ocThumbsUp {
+  0% { transform: rotate(20deg) scale(0.8); opacity: 0; }
+  100% { transform: rotate(0deg) scale(1); opacity: 1; }
+}
+
+/* ----- Scroll-triggered reveal (fade-in from below) ----- */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal.revealed:nth-child(2) { transition-delay: 80ms; }
+.reveal.revealed:nth-child(3) { transition-delay: 160ms; }
+.reveal.revealed:nth-child(4) { transition-delay: 240ms; }
+.reveal.revealed:nth-child(5) { transition-delay: 320ms; }
+.reveal.revealed:nth-child(6) { transition-delay: 400ms; }
+
+/* ----- Empty wishlist (deflated heart + shrugging mascot) ----- */
+.ew-scene {
+  display: flex;
+  justify-content: center;
+  margin: 0.75rem 0 1rem;
+}
+.ew-scene svg {
+  display: block;
+  max-width: 260px;
+  width: 100%;
+  height: auto;
+}
+
+@keyframes ewHeartPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.96); }
+}
+@keyframes ewMascotBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes ewShrug {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50% { transform: rotate(6deg) translateY(-2px); }
+}
+
+.ew-heart {
+  animation: ewHeartPulse 3s ease-in-out infinite;
+  transform-origin: 150px 110px;
+}
+.ew-mascot {
+  animation: ewMascotBob 3.2s ease-in-out infinite;
+  transform-origin: 71px 168px;
+}
+.ew-head {
+  animation: ewShrug 3.2s ease-in-out infinite;
+  transform-origin: 71px 62px;
+}
+
+/* ----- 404 (lost/confused mascot) ----- */
+.nf-mascot {
+  display: block;
+  margin: 0 auto 0.5rem;
+}
+.nf-char {
+  animation: ewMascotBob 4s ease-in-out infinite;
+  transform-origin: 112px 190px;
+}
+.nf-head {
+  animation: ewShrug 4.4s ease-in-out infinite;
+  transform-origin: 112px 80px;
+}
+.nf-scratch {
+  animation: ewShrug 2.4s ease-in-out infinite;
+  transform-origin: 168px 106px;
+}
+@keyframes ewQfloat {
+  0%, 100% { opacity: 0.2; transform: translateY(0); }
+  50% { opacity: 0.9; transform: translateY(-6px); }
+}
+.nf-q { animation: ewQfloat 3s ease-in-out infinite; }
+.nf-q.q2 { animation-delay: 0.8s; }
+.nf-q.q3 { animation-delay: 1.6s; }

@@ -40,7 +40,7 @@ const STATIC_NAV_LINKS = [
 ];
 
 export default function Layout({ children, activeNav }: LayoutProps) {
-  const { isLoggedIn, userName, cartCount, settings, isDark, toggleDark, logout } = useApp();
+  const { isLoggedIn, userName, cartCount, cartBounce, clearCartBounce, settings, isDark, toggleDark, logout } = useApp();
   const [isStaff, setIsStaff] = useState(false);
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [subcategories, setSubcategories] = useState<any[]>([]);
@@ -61,6 +61,12 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     if (!sid) { sid = crypto.randomUUID?.() || Math.random().toString(36).substring(2, 15); sessionStorage.setItem("wa_sid", sid); }
     sessionIdRef.current = sid;
   }, []);
+
+  useEffect(() => {
+    if (!cartBounce) return;
+    const t = setTimeout(clearCartBounce, 600);
+    return () => clearTimeout(t);
+  }, [cartBounce, clearCartBounce]);
 
   useEffect(() => {
     const sid = sessionIdRef.current;
@@ -259,7 +265,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           <div className="header-icon-links">
             <Link href="/cart" className="header-icon-link" aria-label={`Cart, ${cartCount} item${cartCount === 1 ? "" : "s"}`} title="Cart">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-              {cartCount > 0 && <span className="cart-badge" aria-label={`${cartCount} items in cart`}>{cartCount}</span>}
+              {cartCount > 0 && <span className={`cart-badge${cartBounce ? " cart-badge--bounce" : ""}`} aria-label={`${cartCount} items in cart`}>{cartCount}</span>}
             </Link>
             <Link href="/wishlist" className="header-icon-link" aria-label="Wishlist" title="Wishlist">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
