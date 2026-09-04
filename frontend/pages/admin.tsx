@@ -5039,6 +5039,25 @@ function AdminSuppliers() {
   );
 }
 
+function niceCeil(n: number): number {
+  if (n <= 0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(n)));
+  const norm = n / mag;
+  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return step * mag;
+}
+
+function compactKes(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1) + "K";
+  return String(n);
+}
+
+function dayLabel(iso: string): string {
+  const p = iso.split("T")[0].split("-");
+  return p.length === 3 ? `${p[2]}/${p[1]}` : iso.slice(5);
+}
+
 function SalesTrendsChart({ from, to, branchId }: { from: string; to: string; branchId: string }) {
   const [trends, setTrends] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -5050,28 +5069,51 @@ function SalesTrendsChart({ from, to, branchId }: { from: string; to: string; br
     api<{ trends: any[] }>(url).then(d => setTrends(d.trends)).catch(() => setTrends([])).finally(() => setLoading(false));
   }, [from, to, branchId]);
 
-  if (loading) return <div className="skeleton" style={{ height: 200 }} />;
+  if (loading) return <div className="skeleton" style={{ height: 220 }} />;
   if (!trends || trends.length === 0) return <p className="muted">No trend data for this period.</p>;
 
+  const padL = 46, padR = 10, padT = 10, padB = 24;
   const maxRevenue = Math.max(...trends.map(t => t.revenue), 1);
-  const barWidth = Math.max(12, Math.min(60, 600 / trends.length));
-  const chartW = Math.max(300, trends.length * (barWidth + 4));
-  const chartH = 200;
+  const ticks = 4;
+  const step = Math.max(1, niceCeil(maxRevenue / ticks));
+  const barW = Math.max(8, Math.min(34, 560 / trends.length));
+  const slot = barW + 2;
+  const plotW = Math.max(1, trends.length * slot - 2);
+  const chartW = padL + plotW + padR;
+  const chartH = 220;
+  const plotH = chartH - padT - padB;
+  const baselineY = padT + plotH;
+  const labelEvery = Math.max(1, Math.ceil(trends.length / 12));
 
   return (
     <div style={{ overflowX: "auto", marginBottom: "1rem" }}>
       <h3>Daily Revenue Trend</h3>
-      <svg width={chartW} height={chartH} style={{ display: "block" }}>
+      <p className="muted" style={{ margin: "0.1rem 0 0.75rem", fontSize: "0.85rem" }}>
+        Daily revenue (KES) with order count per day, from <strong>{from}</strong> to <strong>{to}</strong>. Hover a bar for exact values.
+      </p>
+      <svg width={chartW} height={chartH} style={{ display: "block", fontFamily: "inherit" }}>
+        {[0, 1, 2, 3, 4].map((i) => {
+          const val = step * i;
+          const y = baselineY - (val / (step * 4)) * plotH;
+          return (
+            <g key={i}>
+              <line x1={padL} x2={chartW - padR} y1={y} y2={y} stroke="var(--border)" strokeDasharray={i === 0 ? "0" : "3 3"} strokeWidth={1} />
+              <text x={padL - 5} y={y + 3} textAnchor="end" fontSize={9} fill="var(--text-secondary)">{compactKes(val)}</text>
+            </g>
+          );
+        })}
         {trends.map((t, i) => {
-          const barH = (t.revenue / maxRevenue) * (chartH - 20);
-          const x = i * (barWidth + 4);
-          const y = chartH - 10 - barH;
+          const barH = (t.revenue / maxRevenue) * plotH;
+          const x = padL + i * slot;
+          const y = baselineY - barH;
           return (
             <g key={t.day}>
-              <rect x={x} y={y} width={barWidth} height={barH} fill="var(--primary)" rx={2}>
+              <rect x={x} y={y} width={barW} height={Math.max(barH, 1)} fill="var(--primary)" rx={2}>
                 <title>{t.day}: {formatPrice(t.revenue)} ({t.orders} orders)</title>
               </rect>
-              {trends.length <= 14 && <text x={x + barWidth / 2} y={chartH - 2} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">{t.day.slice(5)}</text>}
+              {(i % labelEvery === 0 || i === trends.length - 1) && (
+                <text x={x + barW / 2} y={chartH - 8} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">{dayLabel(t.day)}</text>
+              )}
             </g>
           );
         })}
@@ -5180,24 +5222,47 @@ function AdminVisitorsReport() {
 
 function VisitorTrendChart({ data }: { data: any[] }) {
   const maxVal = Math.max(...data.map((d: any) => d.visits), 1);
-  const barWidth = Math.max(12, Math.min(60, 600 / data.length));
-  const chartW = Math.max(300, data.length * (barWidth + 4));
-  const chartH = 200;
+  const ticks = 4;
+  const step = Math.max(1, niceCeil(maxVal / ticks));
+  const padL = 40, padR = 10, padT = 10, padB = 24;
+  const barW = Math.max(8, Math.min(34, 560 / data.length));
+  const slot = barW + 2;
+  const plotW = Math.max(1, data.length * slot - 2);
+  const chartW = padL + plotW + padR;
+  const chartH = 220;
+  const plotH = chartH - padT - padB;
+  const baselineY = padT + plotH;
+  const labelEvery = Math.max(1, Math.ceil(data.length / 12));
 
   return (
     <div style={{ overflowX: "auto", marginBottom: "1rem" }}>
       <h3>Daily Visits Trend</h3>
-      <svg width={chartW} height={chartH} style={{ display: "block" }}>
+      <p className="muted" style={{ margin: "0.1rem 0 0.75rem", fontSize: "0.85rem" }}>
+        Page visits per day across the selected period. Hover a bar for exact visit + session counts.
+      </p>
+      <svg width={chartW} height={chartH} style={{ display: "block", fontFamily: "inherit" }}>
+        {[0, 1, 2, 3, 4].map((i) => {
+          const val = step * i;
+          const y = baselineY - (val / (step * 4)) * plotH;
+          return (
+            <g key={i}>
+              <line x1={padL} x2={chartW - padR} y1={y} y2={y} stroke="var(--border)" strokeDasharray={i === 0 ? "0" : "3 3"} strokeWidth={1} />
+              <text x={padL - 5} y={y + 3} textAnchor="end" fontSize={9} fill="var(--text-secondary)">{val}</text>
+            </g>
+          );
+        })}
         {data.map((d: any, i: number) => {
-          const barH = (d.visits / maxVal) * (chartH - 20);
-          const x = i * (barWidth + 4);
-          const y = chartH - 10 - barH;
+          const barH = (d.visits / maxVal) * plotH;
+          const x = padL + i * slot;
+          const y = baselineY - barH;
           return (
             <g key={d.day}>
-              <rect x={x} y={y} width={barWidth} height={barH} fill="var(--primary)" rx={2}>
+              <rect x={x} y={y} width={barW} height={Math.max(barH, 1)} fill="var(--primary)" rx={2}>
                 <title>{d.day}: {d.visits} visits, {d.sessions} sessions</title>
               </rect>
-              {data.length <= 14 && <text x={x + barWidth / 2} y={chartH - 2} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">{d.day.slice(5)}</text>}
+              {(i % labelEvery === 0 || i === data.length - 1) && (
+                <text x={x + barW / 2} y={chartH - 8} textAnchor="middle" fontSize={9} fill="var(--text-secondary)">{dayLabel(d.day)}</text>
+              )}
             </g>
           );
         })}
