@@ -61,6 +61,7 @@ export interface Order {
   status: string;
   paymentMethod?: string;
   subtotal: number;
+  activeSubtotal?: number;
   shippingFee: number;
   total?: number;
   shippingName?: string;

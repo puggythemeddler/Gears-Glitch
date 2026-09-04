@@ -1529,7 +1529,7 @@ function AdminOrders() {
               <tr key={o.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => openOrder(o.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openOrder(o.id); } }}>
                 <td>{o.id}</td>
                 <td>{escapeHtml(o.shippingName || "—")}</td>
-                <td>{formatPrice(o.subtotal + o.shippingFee)}</td>
+                <td>{formatPrice((o.activeSubtotal ?? o.subtotal) + o.shippingFee)}</td>
                 <td><span style={{ textTransform: "capitalize" }}>{escapeHtml((o as any).source || "storefront")}</span></td>
                 <td>{o.shippingCounty || "—"}</td>
                 <td><span className="plan-status">{o.status}</span></td>

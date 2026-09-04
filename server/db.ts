@@ -191,6 +191,7 @@ interface Order {
   shippingFee: number;
   notes: string;
   subtotal: number;
+  activeSubtotal: number;
   createdAt: string;
   updatedAt: string;
   branchId: number | null;
@@ -3099,9 +3100,11 @@ async function getOrder(id: number): Promise<Order | undefined> {
   const row = await queryOne("SELECT * FROM orders WHERE id = $1", [id]) as any;
   if (!row) return undefined;
   const items = await queryAll("SELECT * FROM order_items WHERE order_id = $1", [id]) as any[];
-  return {
-    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0, tenderedAmount: Number(row.tendered_amount) || 0,
-    items: items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, warrantyExpires: i.warranty_expires || null, serialNumber: i.serial_number || "", cancelled: i.cancelled })),
+  const mappedItems = items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, warrantyExpires: i.warranty_expires || null, serialNumber: i.serial_number || "", cancelled: i.cancelled }));
+    const activeSubtotal = mappedItems.filter((i) => !i.cancelled).reduce((s, i) => s + i.lineTotal, 0);
+    return {
+    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, activeSubtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0, tenderedAmount: Number(row.tendered_amount) || 0,
+    items: mappedItems,
   };
 }
 
@@ -3759,7 +3762,7 @@ async function getSalesReportWithRange(startDate?: string, endDate?: string, gro
     where += ` AND EXISTS (SELECT 1 FROM order_items oi JOIN products gp ON gp.id = oi.product_id WHERE oi.order_id = o.id AND gp.group_id = $${idx})`;
     params.push(groupId); idx++;
   }
-  const orderStats = await queryOne(`SELECT COUNT(*) AS total_orders, COALESCE(SUM(subtotal + shipping_fee), 0) AS total_revenue FROM orders o WHERE ${where}`, params) as any;
+  const orderStats = await queryOne(`SELECT COUNT(*) AS total_orders, COALESCE(SUM((SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND NOT oi.cancelled) + o.shipping_fee), 0) AS total_revenue FROM orders o WHERE ${where}`, params) as any;
   const invoiceStats = await queryOne("SELECT COUNT(*) AS paid_invoices, COALESCE(SUM(amount), 0) AS invoice_revenue FROM order_invoices WHERE status = 'paid'") as any;
   const topProducts = await queryAll(
     `SELECT oi.product_id AS "productId", oi.name, SUM(oi.quantity) AS "totalSold", SUM(oi.price * oi.quantity) AS revenue
@@ -3768,8 +3771,8 @@ async function getSalesReportWithRange(startDate?: string, endDate?: string, gro
   ) as any[];
   const channelWhere = where.replace(/o\./g, ""); const channelParams = [...params];
   const channels = await queryAll(
-    `SELECT COALESCE(source, 'storefront') AS channel, COUNT(*) AS orders, COALESCE(SUM(subtotal + shipping_fee - COALESCE(discount_amount, 0) - COALESCE(gift_card_amount, 0)), 0) AS revenue
-     FROM orders WHERE ${channelWhere} GROUP BY COALESCE(source, 'storefront') ORDER BY revenue DESC`, channelParams
+    `SELECT COALESCE(source, 'storefront') AS channel, COUNT(*) AS orders, COALESCE(SUM((SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND NOT oi.cancelled) + o.shipping_fee - COALESCE(o.discount_amount, 0) - COALESCE(o.gift_card_amount, 0)), 0) AS revenue
+     FROM orders o WHERE ${channelWhere} GROUP BY COALESCE(source, 'storefront') ORDER BY revenue DESC`, channelParams
   ) as any[];
   return { totalRevenue: Number(orderStats?.total_revenue || 0), totalOrders: Number(orderStats?.total_orders || 0), paidInvoices: Number(invoiceStats?.paid_invoices || 0), invoiceRevenue: Number(invoiceStats?.invoice_revenue || 0), topProducts, channels };
 }
