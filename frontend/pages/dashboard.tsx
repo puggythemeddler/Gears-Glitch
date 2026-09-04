@@ -190,9 +190,12 @@ export default function DashboardPage() {
             </div>
             {orders.length === 0 ? <p className="muted">No orders yet. <a href="/">Browse products</a>.</p> : (
               orders.slice(0, 10).map((o) => {
-                const total = o.total || o.subtotal + (o.shippingFee || 0);
+                const all = o.items || [];
+                const items = all.filter((i: any) => !i.cancelled).slice(0, 3);
+                const activeSubtotal = all.filter((i: any) => !i.cancelled).reduce((s: number, i: any) => s + i.lineTotal, 0);
+                const total = o.total || activeSubtotal + (o.shippingFee || 0);
+                const activeCount = all.filter((i: any) => !i.cancelled).length;
                 const canInvoice = o.status !== "cancelled";
-                const items = (o.items || []).filter((i: any) => !i.cancelled).slice(0, 3);
                 return (
                   <a key={o.id} href={`/order?id=${o.id}`} className="order-item" style={{ display: "block", textDecoration: "none", color: "inherit", cursor: "pointer" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -210,7 +213,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <p className="muted" style={{ fontSize: "0.85rem", margin: "0.35rem 0" }}>
-                      {formatPrice(total)} — {o.items?.length || 0} item(s)
+                      {formatPrice(total)} — {activeCount} item(s)
                     </p>
                     {items.length > 0 && (
                       <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>

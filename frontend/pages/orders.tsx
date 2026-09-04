@@ -70,9 +70,12 @@ export default function OrdersPage() {
         </div>
       ) : (
         orders.map((o) => {
-          const total = o.total || o.subtotal + (o.shippingFee || 0);
+          const all = o.items || [];
+          const items = all.filter((i) => !i.cancelled).slice(0, 3);
+          const activeSubtotal = all.filter((i: any) => !i.cancelled).reduce((s: number, i: any) => s + i.lineTotal, 0);
+          const total = o.total || activeSubtotal + (o.shippingFee || 0);
+          const activeCount = all.filter((i: any) => !i.cancelled).length;
           const canInvoice = o.status !== "cancelled";
-          const items = (o.items || []).filter((i) => !i.cancelled).slice(0, 3);
           return (
             <div key={o.id} className="order-item" style={{ marginBottom: "0.75rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -92,7 +95,7 @@ export default function OrdersPage() {
                 </div>
               </div>
               <p className="muted" style={{ fontSize: "0.9rem", margin: "0.5rem 0" }}>
-                {formatPrice(total)} — {o.items?.length || 0} item(s)
+                {formatPrice(total)} — {activeCount} item(s)
               </p>
               {items.length > 0 && (
                 <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
@@ -105,7 +108,7 @@ export default function OrdersPage() {
                       </div>
                     );
                   })}
-                  {(o.items?.length || 0) > 3 && <span className="muted" style={{ fontSize: "0.8rem", alignSelf: "center" }}>+{(o.items?.length || 0) - 3} more</span>}
+                  {(items.length > 0 || activeCount > 0) && items.length < activeCount && <span className="muted" style={{ fontSize: "0.8rem", alignSelf: "center" }}>+{activeCount - items.length} more</span>}
                 </div>
               )}
               {o.shippingName && <p style={{ fontSize: "0.85rem", marginTop: "0.4rem" }}>{escapeHtml(o.shippingName)}{o.shippingCounty ? ` — ${escapeHtml(o.shippingCounty)}` : ""}</p>}

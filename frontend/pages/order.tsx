@@ -146,9 +146,11 @@ export default function OrderDetailPage() {
 
   const isPending = order.status === "pending";
   const canInvoice = order.status !== "cancelled";
-  const total = order.total || order.subtotal + (order.shippingFee || 0);
   const activeItems = (order.items || []).filter((i) => !i.cancelled);
   const cancelledItems = (order.items || []).filter((i) => i.cancelled);
+  const activeSubtotal = activeItems.reduce((s: number, i: any) => s + i.lineTotal, 0);
+  const cancelledTotal = cancelledItems.reduce((s: number, i: any) => s + i.lineTotal, 0);
+  const total = activeSubtotal + (order.shippingFee || 0);
 
   const createdDate = new Date(order.createdAt);
   const daysSince = Math.floor((Date.now() - createdDate.getTime()) / 86400000);
@@ -315,11 +317,8 @@ export default function OrderDetailPage() {
           })}
         </tbody>
         <tfoot>
-          <tr><td colSpan={3} style={{ textAlign: "right" }}>Subtotal</td><td>{formatPrice(order.subtotal)}</td><td /></tr>
+          <tr><td colSpan={3} style={{ textAlign: "right" }}>Subtotal</td><td>{formatPrice(activeSubtotal)}</td><td /></tr>
           <tr><td colSpan={3} style={{ textAlign: "right" }}>Shipping</td><td>{formatPrice(order.shippingFee || 0)}</td><td /></tr>
-          {cancelledItems.length > 0 && (
-            <tr><td colSpan={3} style={{ textAlign: "right", color: "var(--danger)" }}>Cancelled items</td><td style={{ color: "var(--danger)" }}>-{formatPrice(cancelledItems.reduce((s, i) => s + i.lineTotal, 0))}</td><td /></tr>
-          )}
           <tr><td colSpan={3} style={{ textAlign: "right", fontWeight: 700 }}>Total</td><td style={{ fontWeight: 700 }}>{formatPrice(total)}</td><td /></tr>
         </tfoot>
       </table>
