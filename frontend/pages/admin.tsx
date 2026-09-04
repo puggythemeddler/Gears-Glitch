@@ -96,7 +96,7 @@ const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   "whatsapp-settings": "whatsapp:view",
 };
 
-const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string }[] }[] = [
+const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string; features?: string[] }[] }[] = [
   {
     label: "Sales",
     items: [
@@ -126,8 +126,8 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     items: [
       { key: "stock-on-hand", label: "Stock on Hand", feature: "Low stock alerts" },
       { key: "stock-transfers", label: "Stock Transfers", feature: "Stock transfers" },
-      { key: "stock-take", label: "Stock Take", feature: "Stock take / inventory count" },
-      { key: "stock-control", label: "Stock Control", feature: "Stock take / inventory count" },
+      { key: "stock-take", label: "Stock Take", features: ["Stock take", "Stock take / inventory count"] },
+      { key: "stock-control", label: "Stock Control", features: ["Stock control", "Stock take / inventory count"] },
       { key: "serials", label: "Serial Numbers" },
       { key: "purchases", label: "Purchase Orders", feature: "Purchase order management" },
       { key: "suppliers", label: "Suppliers", feature: "Supplier management" },
@@ -290,6 +290,8 @@ export default function AdminPage() {
     "Discount/coupon management": useFeature("Discount/coupon management"),
     "Low stock alerts": useFeature("Low stock alerts"),
     "Stock take / inventory count": useFeature("Stock take / inventory count"),
+    "Stock take": useFeature("Stock take"),
+    "Stock control": useFeature("Stock control"),
     "Purchase order management": useFeature("Purchase order management"),
     "Invoice/quote PDF downloads": useFeature("Invoice/quote PDF downloads"),
     "Analytics dashboard": useFeature("Analytics dashboard"),
@@ -304,6 +306,13 @@ export default function AdminPage() {
     "Cart recovery": useFeature("Cart recovery"),
   };
   const hasFeature = (f?: string) => !f || featureFlags[f] === true;
+  // A nav item gated by `features: [...]` is visible if ANY listed feature is enabled
+  // (OR semantics). Lets the old combined "Stock take / inventory count" flag keep
+  // granting both pages, while the two new per-page toggles control them separately.
+  const itemVisible = (i: { feature?: string; features?: string[] }) => {
+    if (i.features) return i.features.some((f) => featureFlags[f] === true);
+    return hasFeature(i.feature);
+  }
   const canAccess = (key: AdminView) => {
     if (staffRole === "admin") return true;
     const perm = VIEW_PERMISSIONS[key];
@@ -311,7 +320,7 @@ export default function AdminPage() {
     if (perm === "") return true;
     return staffPermissions.includes(perm);
   };
-  const visibleNavGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => hasFeature(i.feature) && canAccess(i.key)) })).filter((g) => g.items.length > 0);
+  const visibleNavGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => itemVisible(i) && canAccess(i.key)) })).filter((g) => g.items.length > 0);
   const allVisibleKeys = visibleNavGroups.flatMap((g) => g.items.map((i) => i.key));
   const navQueryLower = navQuery.trim().toLowerCase();
   const navSearching = navQueryLower.length > 0;

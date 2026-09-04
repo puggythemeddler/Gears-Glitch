@@ -18,7 +18,7 @@ export const FEATURE_GROUPS = [
     group: "Inventory & Stock",
     icon: "boxes",
     features: [
-      "Low stock alerts", "Stock take / inventory count", "Stock transfers",
+      "Low stock alerts", "Stock take", "Stock control", "Stock transfers",
       "Supplier management", "Purchase order management", "Barcode scanning",
       "Bulk import/export", "Bulk product edit", "Inventory forecasting",
     ],
