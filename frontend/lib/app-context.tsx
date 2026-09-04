@@ -210,10 +210,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshCartCount();
   }
 
-  function logout() {
+  async function logout() {
     clearAllSessions();
     setState((s) => ({ ...s, isLoggedIn: false, userName: "", cartCount: 0 }));
-    logoutServer();
+    try { await logoutServer(); } catch {}
     if (typeof window !== "undefined") window.location.href = "/";
   }
 
