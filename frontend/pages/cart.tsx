@@ -317,7 +317,7 @@ export default function CartPage() {
           </div>
 
           {reviewOpen && (
-            <div className="panel" style={{ marginTop: "1.5rem", maxWidth: "100%", width: "100%" }}>
+            <div className="panel" style={{ marginTop: "1.5rem" }}>
               <h3 style={{ margin: "0 0 0.25rem" }}>Review your order</h3>
               <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0 0 1rem" }}>Please confirm the details below before placing your order.</p>
 
