@@ -486,6 +486,144 @@ app.use("/uploads", express.static(path.join(ROOT, "data", "uploads"), {
   }
 }));
 
+// ============ GLOBAL AUDIT MIDDLEWARE ============
+// Route-driven audit logging for staff/admin write operations. Only logs
+// successful (2xx) responses for authenticated staff users on routes listed
+// in AUDIT_SPECS. Routes that already call logAudit manually are intentionally
+// not listed here to avoid duplicate entries.
+const AUDIT_METHOD_ACTION: Record<string, string> = { POST: "created", PUT: "updated", PATCH: "updated", DELETE: "deleted" };
+type AuditSpec = { route: string; entity: string; action?: string; method?: string; pattern: { rx: RegExp; params: string[] } };
+const auditSpecs: AuditSpec[] = [];
+
+function defineAudit(route: string, entity: string, opts: { action?: string; method?: string } = {}): void {
+  const params: string[] = [];
+  const rx = new RegExp("^" + route.replace(/:[A-Za-z]+/g, (m) => { params.push(m.slice(1)); return "([^/]+)"; }) + "$");
+  auditSpecs.push({ route, entity, action: opts.action, method: opts.method, pattern: { rx, params } });
+}
+
+// Products
+defineAudit("/api/products", "product");
+defineAudit("/api/products/import", "product", { action: "imported" });
+defineAudit("/api/admin/products/bulk-edit", "product", { action: "bulk_edited" });
+defineAudit("/api/products/:id", "product");
+defineAudit("/api/products/:id/price", "product", { action: "price_changed" });
+defineAudit("/api/products/:id/subcategory", "product", { action: "subcategory_changed" });
+defineAudit("/api/products/:id/image", "product", { action: "image_changed" });
+defineAudit("/api/products/:id/images", "product", { action: "images_changed" });
+// Categories / groups / subcategories
+defineAudit("/api/categories", "category");
+defineAudit("/api/categories/:id", "category");
+defineAudit("/api/admin/groups", "group");
+defineAudit("/api/admin/groups/:id", "group");
+defineAudit("/api/subcategories", "subcategory");
+defineAudit("/api/subcategories/:id", "subcategory");
+// Marketing
+defineAudit("/api/admin/coupons", "coupon");
+defineAudit("/api/admin/coupons/:id", "coupon");
+defineAudit("/api/admin/gift-cards", "gift_card");
+defineAudit("/api/admin/gift-cards/:id", "gift_card");
+defineAudit("/api/admin/campaigns", "campaign");
+defineAudit("/api/admin/campaigns/:id", "campaign");
+// Suppliers / customers
+defineAudit("/api/admin/suppliers", "supplier");
+defineAudit("/api/admin/suppliers/:id", "supplier");
+defineAudit("/api/admin/customers", "customer");
+defineAudit("/api/admin/customers/:id", "customer");
+defineAudit("/api/admin/customers/:id/status", "customer", { action: "status_changed" });
+// Repairs
+defineAudit("/api/repairs", "repair");
+defineAudit("/api/repairs/:id", "repair");
+defineAudit("/api/repairs/:id/parts", "repair_part", { method: "POST" });
+defineAudit("/api/repairs/:id/parts/:partId", "repair_part");
+defineAudit("/api/repairs/:id/updates", "repair", { action: "updated", method: "POST" });
+defineAudit("/api/repairs/:id/send-quote", "repair", { action: "quote_sent", method: "POST" });
+// Purchases
+defineAudit("/api/purchases", "purchase");
+defineAudit("/api/purchases/:id", "purchase");
+defineAudit("/api/purchases/:id/status", "purchase", { action: "status_changed", method: "PATCH" });
+defineAudit("/api/purchases/:id/items", "purchase", { action: "item_added", method: "POST" });
+defineAudit("/api/purchases/:id/recall", "purchase", { action: "recalled", method: "POST" });
+defineAudit("/api/purchases/:id/receive-all", "purchase", { action: "received", method: "POST" });
+defineAudit("/api/purchases/:id/restore", "purchase", { action: "restored", method: "POST" });
+defineAudit("/api/purchases/items/:itemId/receive", "purchase_item", { action: "received", method: "POST" });
+// Stock
+defineAudit("/api/stock/:productId", "stock", { action: "level_updated", method: "PUT" });
+defineAudit("/api/stock-transfers", "stock_transfer", { method: "POST" });
+defineAudit("/api/stock-transfers/:id/complete", "stock_transfer", { action: "completed", method: "POST" });
+defineAudit("/api/stock-transfers/:id/reject", "stock_transfer", { action: "rejected", method: "POST" });
+// Serials
+defineAudit("/api/serials", "serial", { method: "POST" });
+defineAudit("/api/serials/generate", "serial", { action: "generated", method: "POST" });
+defineAudit("/api/serials/:id/void", "serial", { action: "voided", method: "POST" });
+defineAudit("/api/serials/link", "serial", { action: "linked", method: "POST" });
+// Stock take
+defineAudit("/api/stock-take/start", "stock_take", { action: "started", method: "POST" });
+defineAudit("/api/stock-take/:id/complete", "stock_take", { action: "completed", method: "POST" });
+defineAudit("/api/stock-take/:id/apply", "stock_take", { action: "applied", method: "POST" });
+defineAudit("/api/stock-take/:id", "stock_take", { method: "DELETE" });
+// Spec templates / roles / staff
+defineAudit("/api/spec-templates", "spec_template");
+defineAudit("/api/spec-templates/:id", "spec_template");
+defineAudit("/api/roles", "role");
+defineAudit("/api/roles/:roleId", "role");
+defineAudit("/api/staff/:id", "staff");
+defineAudit("/api/staff/:id/role", "staff", { action: "role_changed", method: "PATCH" });
+defineAudit("/api/staff/:id/reset-password", "staff", { action: "password_reset", method: "POST" });
+defineAudit("/api/staff/:id/permissions", "staff", { action: "permissions_changed", method: "PUT" });
+// Providers
+defineAudit("/api/admin/providers", "provider");
+defineAudit("/api/admin/providers/:id", "provider");
+defineAudit("/api/admin/providers/:id/status", "provider", { action: "status_changed", method: "PATCH" });
+// Finance
+defineAudit("/api/admin/credit-notes", "credit_note", { method: "POST" });
+// Settings & content
+defineAudit("/api/settings", "settings", { action: "updated", method: "PUT" });
+defineAudit("/api/rates", "settings", { action: "rates_updated" });
+defineAudit("/api/admin/storefront-layout", "storefront_layout", { action: "updated", method: "PUT" });
+defineAudit("/api/admin/layouts", "layout");
+defineAudit("/api/admin/layouts/:id", "layout");
+defineAudit("/api/admin/layouts/:id/activate", "layout", { action: "activated", method: "PUT" });
+defineAudit("/api/admin/about-us", "about_us", { action: "updated", method: "PUT" });
+defineAudit("/api/settings/nav-order", "settings", { action: "nav_order_updated", method: "PUT" });
+defineAudit("/api/settings/footer-config", "settings", { action: "footer_updated", method: "PUT" });
+defineAudit("/api/admin/repairs-page", "settings", { action: "repairs_page_updated", method: "PUT" });
+defineAudit("/api/admin/splashes", "splash");
+defineAudit("/api/admin/splashes/:id", "splash");
+defineAudit("/api/admin/whatsapp/templates", "whatsapp_template", { method: "POST" });
+defineAudit("/api/admin/whatsapp/templates/:id", "whatsapp_template", { method: "DELETE" });
+
+function patternId(spec: AuditSpec, groups: string[]): string | null {
+  const idIdx = spec.pattern.params.indexOf("id");
+  const idx = idIdx !== -1 ? idIdx : spec.pattern.params.length - 1;
+  const val = idx >= 0 && idx < groups.length ? groups[idx] : null;
+  return val && val !== "undefined" ? val : null;
+}
+
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.on("finish", async () => {
+    try {
+      if (res.statusCode < 200 || res.statusCode >= 300) return;
+      const req = _req;
+      if ((req as any).__auditLogged) return;
+      const user = (req as any).user as { sub?: number; username?: string; role?: string } | undefined;
+      if (!user) return;
+      const path = (req.originalUrl || req.url || "").split("?")[0];
+      const method = req.method;
+      for (const spec of auditSpecs) {
+        if (spec.method && spec.method !== method) continue;
+        const m = spec.pattern.rx.exec(path);
+        if (!m) continue;
+        (req as any).__auditLogged = true;
+        const entityId = patternId(spec, m.slice(1));
+        const action = spec.action || AUDIT_METHOD_ACTION[method] || method.toLowerCase();
+        await logAudit(user.sub ?? null, user.username || "Admin", action, spec.entity, entityId, {}, user.role || "");
+        break;
+      }
+    } catch { console.warn("[audit] Failed to write audit log"); }
+  });
+  next();
+});
+
 // App version (reported to the control plane)
 let APP_VERSION = "unknown";
 try {
