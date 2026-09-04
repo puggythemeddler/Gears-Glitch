@@ -2293,14 +2293,16 @@ app.get("/api/pos/receipt/:orderId", requirePdfAuth("pos-receipt", "orderId", "o
   const taxType = invoice?.tax_type || "A";
   const vscuReceiptNo = invoice?.vscu_receipt_no || "";
   const taxRate = Number(settings.taxRate || 16);
-  const total = order.subtotal + (order.shippingFee || 0);
+  const activeItems = order.items.filter((i: any) => !i.cancelled);
+  const activeSubtotal = activeItems.reduce((s: number, i: any) => s + i.lineTotal, 0);
+  const total = activeSubtotal + (order.shippingFee || 0);
   const modeLabel = etimsMode === "off" ? "OFF" : etimsMode === "vscu" ? "VSCU" : "OSCU";
   const payMethod = order.paymentMethod || "cash";
   const paymentLabel = payMethod === "mpesa" ? "M-Pesa" : payMethod === "multi-currency" ? "Multi-currency" : payMethod.charAt(0).toUpperCase() + payMethod.slice(1);
   const tenderedAmt = Number(order.tenderedAmount) || 0;
   const changeAmt = tenderedAmt > total ? tenderedAmt - total : 0;
   const hasEtims = !!(invoice?.etims_invoice_number);
-  const thermalItemsHtml = order.items.map((i: any) => {
+  const thermalItemsHtml = activeItems.map((i: any) => {
     const isTx = i.taxable !== false;
     const vat = isTx ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0;
     const tt = isTx ? taxType : "E";
@@ -2313,7 +2315,7 @@ app.get("/api/pos/receipt/:orderId", requirePdfAuth("pos-receipt", "orderId", "o
     const serialLine = i.serial_number ? `<div style="font-size:0.65rem;color:#374151;">S/N: ${escapeHtml(String(i.serial_number))}</div>` : "";
     return `<tr><td>${escapeHtml(i.name)}${warrantyLine ? "<br>" + warrantyLine : ""}${serialLine ? "<br>" + serialLine : ""}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A"}</td><td style="font-size:0.7rem;text-align:center">${tt}</td></tr>`;
   }).join("");
-  const totalVat = order.items.reduce((s: number, i: any) => {
+  const totalVat = activeItems.reduce((s: number, i: any) => {
     return s + (i.taxable !== false ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0);
   }, 0);
   const qrData = JSON.stringify({ inv: etimsNumber, dc: controlCode, pin: kraPin, amt: total, dt: order.createdAt, ri: vscuReceiptNo });
@@ -2322,7 +2324,8 @@ app.get("/api/pos/receipt/:orderId", requirePdfAuth("pos-receipt", "orderId", "o
 
   if (format === "pdf") {
     // PDF generation — reuse A4 layout then convert
-    const a4ItemsHtml = order.items.map((i: any) => {
+    const activeItems = order.items.filter((i: any) => !i.cancelled);
+    const a4ItemsHtml = activeItems.map((i: any) => {
       const isTx = i.taxable !== false;
       const vat = isTx ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0;
       const tt = isTx ? taxType : "E";
@@ -2365,7 +2368,7 @@ app.get("/api/pos/receipt/:orderId", requirePdfAuth("pos-receipt", "orderId", "o
     ${a4ItemsHtml}
   </tbody></table>
   <div style="text-align:right;">
-    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>Subtotal: ${currency} ${activeSubtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -2383,7 +2386,8 @@ app.get("/api/pos/receipt/:orderId", requirePdfAuth("pos-receipt", "orderId", "o
   }
 
   if (format === "a4") {
-    const a4ItemsHtml = order.items.map((i: any) => {
+    const activeItems = order.items.filter((i: any) => !i.cancelled);
+    const a4ItemsHtml = activeItems.map((i: any) => {
       const isTx = i.taxable !== false;
       const vat = isTx ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0;
       const tt = isTx ? taxType : "E";
@@ -2426,7 +2430,7 @@ app.get("/api/pos/receipt/:orderId", requirePdfAuth("pos-receipt", "orderId", "o
     ${a4ItemsHtml}
   </tbody></table>
   <div style="text-align:right;">
-    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>Subtotal: ${currency} ${activeSubtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -2967,7 +2971,8 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
   const vscuReceiptNo = invoice?.vscu_receipt_no || "";
   const taxRate = Number(settings.taxRate || 16);
   const hasEtims = !!(invoice?.etims_invoice_number);
-  const itemsHtml = order.items.map((i: any) => {
+  const activeItems = order.items.filter((i: any) => !i.cancelled);
+  const itemsHtml = activeItems.map((i: any) => {
     let warranty = "\u2014";
     if (i.hasWarranty) {
       const expiry = new Date(order.createdAt);
@@ -2979,8 +2984,9 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
     const tt = isTx ? taxType : "E";
     return `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
   }).join("");
-  const total = order.subtotal + (order.shippingFee || 0);
-  const totalVat = order.items.reduce((s: number, i: any) => {
+  const activeSubtotal = activeItems.reduce((s: number, i: any) => s + i.lineTotal, 0);
+  const total = activeSubtotal + (order.shippingFee || 0);
+  const totalVat = activeItems.reduce((s: number, i: any) => {
     return s + (i.taxable !== false ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0);
   }, 0);
   const qrData = JSON.stringify({ inv: etimsNumber, dc: controlCode, pin: kraPin, amt: total, dt: order.createdAt, ri: vscuReceiptNo });
@@ -3021,7 +3027,7 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
     ${itemsHtml}
   </tbody></table>
   <div class="totals">
-    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>Subtotal: ${currency} ${activeSubtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -3103,7 +3109,8 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
   const vscuReceiptNo = invoice?.vscu_receipt_no || "";
   const taxRate = Number(settings.taxRate || 16);
   const hasEtims = !!(invoice?.etims_invoice_number);
-  const itemsHtml = order.items.map((i: any) => {
+  const activeItems = order.items.filter((i: any) => !i.cancelled);
+  const itemsHtml = activeItems.map((i: any) => {
     let warranty = "\u2014";
     if (i.hasWarranty) {
       const expiry = new Date(order.createdAt);
@@ -3115,8 +3122,9 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
     const tt = isTx ? taxType : "E";
     return `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${isTx ? currency + " " + vat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "Exempt"}</td><td style="font-size:0.75rem;text-align:center">${tt}</td><td style="font-size:0.85rem;">${warranty}</td></tr>`;
   }).join("");
-  const total = order.subtotal + (order.shippingFee || 0);
-  const totalVat = order.items.reduce((s: number, i: any) => {
+  const activeSubtotal = activeItems.reduce((s: number, i: any) => s + i.lineTotal, 0);
+  const total = activeSubtotal + (order.shippingFee || 0);
+  const totalVat = activeItems.reduce((s: number, i: any) => {
     return s + (i.taxable !== false ? Math.round(i.lineTotal * taxRate / 116 * 100) / 100 : 0);
   }, 0);
   const qrData = JSON.stringify({ inv: etimsNumber, dc: controlCode, pin: kraPin, amt: total, dt: order.createdAt, ri: vscuReceiptNo });
@@ -3157,7 +3165,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
     ${itemsHtml}
   </tbody></table>
   <div class="totals">
-    <div>Subtotal: ${currency} ${order.subtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+    <div>Subtotal: ${currency} ${activeSubtotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>Shipping: ${currency} ${(order.shippingFee || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div>VAT (${taxRate}%): ${currency} ${totalVat.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
     <div class="total-row">Total incl. VAT: ${currency} ${total.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
