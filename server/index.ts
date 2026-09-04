@@ -591,6 +591,17 @@ defineAudit("/api/admin/splashes", "splash");
 defineAudit("/api/admin/splashes/:id", "splash");
 defineAudit("/api/admin/whatsapp/templates", "whatsapp_template", { method: "POST" });
 defineAudit("/api/admin/whatsapp/templates/:id", "whatsapp_template", { method: "DELETE" });
+// Customer-initiated business events (actor resolves from req.customer)
+defineAudit("/api/orders", "order", { method: "POST" });
+defineAudit("/api/orders/create-pending", "order", { action: "pending_created", method: "POST" });
+defineAudit("/api/quotes/from-wishlist", "quote", { action: "requested", method: "POST" });
+defineAudit("/api/quotes/:id/status", "quote", { action: "status_changed", method: "PATCH" });
+defineAudit("/api/loyalty/redeem", "loyalty", { action: "redeemed", method: "POST" });
+defineAudit("/api/products/:id/reviews", "review", { method: "POST" });
+defineAudit("/api/products/:id/reviews/:reviewId", "review");
+defineAudit("/api/messages", "message", { method: "POST" });
+// Order cancellation by customer (PATCH /api/orders/:id)
+defineAudit("/api/orders/:id", "order", { method: "PATCH" });
 
 function patternId(spec: AuditSpec, groups: string[]): string | null {
   const idIdx = spec.pattern.params.indexOf("id");
@@ -606,7 +617,11 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
       const req = _req;
       if ((req as any).__auditLogged) return;
       const user = (req as any).user as { sub?: number; username?: string; role?: string } | undefined;
-      if (!user) return;
+      const customer = (req as any).customer as { sub?: number; name?: string; email?: string; role?: string } | undefined;
+      if (!user && !customer) return;
+      const actorId = user ? user.sub : customer?.sub;
+      const actorName = user ? (user.username || "Admin") : (customer?.name || customer?.email || "Customer");
+      const actorRole = user ? (user.role || "staff") : "customer";
       const path = (req.originalUrl || req.url || "").split("?")[0];
       const method = req.method;
       for (const spec of auditSpecs) {
@@ -616,7 +631,7 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
         (req as any).__auditLogged = true;
         const entityId = patternId(spec, m.slice(1));
         const action = spec.action || AUDIT_METHOD_ACTION[method] || method.toLowerCase();
-        await logAudit(user.sub ?? null, user.username || "Admin", action, spec.entity, entityId, {}, user.role || "");
+        await logAudit(actorId ?? null, actorName, action, spec.entity, entityId, {}, actorRole);
         break;
       }
     } catch { console.warn("[audit] Failed to write audit log"); }
