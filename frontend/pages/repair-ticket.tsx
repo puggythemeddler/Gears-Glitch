@@ -43,12 +43,13 @@ export default function RepairTicketPage() {
   async function sendMessage() {
     if (!msg.trim() || sending) return;
     setSending(true);
+    setError("");
     try {
       await api(`/api/repairs/mine/${id}/message`, { method: "POST", body: JSON.stringify({ message: msg }) });
       setMsg("");
       const updated = await api<any>(`/api/repairs/mine/${id}`);
       setTicket(updated);
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message || "Failed to send message."); }
     finally { setSending(false); }
   }
 

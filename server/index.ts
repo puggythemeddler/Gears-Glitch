@@ -5165,12 +5165,17 @@ app.get("/api/repairs/mine/:id", customerAuthMiddleware, requireShopFeature("Rep
 }));
 
 app.post("/api/repairs/mine/:id/message", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
-  const ticket = await loadTicketDetails(String(req.params.id));
-  if (!ticket || ticket.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Ticket not found." }); return; }
-  const { message } = req.body || {};
-  if (!message || !String(message).trim()) { res.status(400).json({ error: "Message is required." }); return; }
-  await addRepairUpdate(String(req.params.id), null, "customer_note", String(message).trim(), true);
-  res.status(201).json({ ok: true });
+  try {
+    const ticket = await loadTicketDetails(String(req.params.id));
+    if (!ticket || ticket.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Ticket not found." }); return; }
+    const { message } = req.body || {};
+    if (!message || !String(message).trim()) { res.status(400).json({ error: "Message is required." }); return; }
+    await addRepairUpdate(String(req.params.id), null, "customer_note", String(message).trim(), true);
+    res.status(201).json({ ok: true });
+  } catch (err: any) {
+    console.error("[repair message send]", err?.message || err);
+    res.status(500).json({ error: "Failed to send message." });
+  }
 }));
 
 app.get("/api/repairs", staffAuthMiddleware, requirePermission("repair:list"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
@@ -5980,13 +5985,18 @@ async function getEffectiveFeatures(req: Request): Promise<string[]> {
 // (as resolved for the caller) does not include the named feature.
 function requireShopFeature(feature: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const features = await getEffectiveFeatures(req);
-    const name = feature.toLowerCase().trim();
-    if (!features.some((f) => String(f).toLowerCase().trim() === name)) {
-      res.status(403).json({ error: "This feature is not included in your plan." });
-      return;
+    try {
+      const features = await getEffectiveFeatures(req);
+      const name = feature.toLowerCase().trim();
+      if (!features.some((f) => String(f).toLowerCase().trim() === name)) {
+        res.status(403).json({ error: "This feature is not included in your plan." });
+        return;
+      }
+      next();
+    } catch (err: any) {
+      console.error("[requireShopFeature]", err?.message || err);
+      next(err);
     }
-    next();
   };
 }
 
