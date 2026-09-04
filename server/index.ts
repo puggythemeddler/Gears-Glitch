@@ -602,6 +602,11 @@ defineAudit("/api/products/:id/reviews/:reviewId", "review");
 defineAudit("/api/messages", "message", { method: "POST" });
 // Order cancellation by customer (PATCH /api/orders/:id)
 defineAudit("/api/orders/:id", "order", { method: "PATCH" });
+// Customer profile / security (actor resolves from req.customer)
+defineAudit("/api/customer/me", "customer", { action: "profile_updated", method: "PUT" });
+defineAudit("/api/customer/change-password", "customer", { action: "password_changed", method: "POST" });
+// Staff security (actor resolves from req.user)
+defineAudit("/api/auth/change-password", "staff", { action: "password_changed", method: "POST" });
 
 function patternId(spec: AuditSpec, groups: string[]): string | null {
   const idIdx = spec.pattern.params.indexOf("id");
@@ -4349,6 +4354,7 @@ app.post("/api/auth/login", asyncHandler(async (req: Request, res: Response) => 
     const provResult = await loginProvider(login, password);
     if (provResult.ok) {
       setSessionCookie(res, provResult.token);
+      try { await logAudit(null, login || "provider", "login", "auth", null, { method: "password", role: "provider" }, "provider"); } catch { console.warn("[audit] Failed to write audit log"); }
       res.json({ token: provResult.token, username: provResult.name, email: provResult.email, role: "provider" });
       return;
     }
@@ -4356,6 +4362,7 @@ app.post("/api/auth/login", asyncHandler(async (req: Request, res: Response) => 
     return;
   }
   setSessionCookie(res, result.token);
+  try { await logAudit(null, result.username || login || "staff", "login", "auth", null, { method: "password" }, result.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
   res.json({ token: result.token, username: result.username, email: result.email, role: result.role, permissions: result.permissions || [] });
 }));
 
@@ -4385,6 +4392,17 @@ app.get("/api/auth/session", asyncHandler(async (req: Request, res: Response) =>
 }));
 
 app.post("/api/auth/logout", (req: Request, res: Response) => {
+  try {
+    const token = getBearerToken(req);
+    if (token) {
+      try {
+        const u = verifyToken(token);
+        const name = (u as any).username || (u as any).name || (u as any).email || "user";
+        const role = (u as any).role || "guest";
+        logAudit(null, name, "logout", "auth", null, {}, role);
+      } catch { /* token already invalid; nothing to attribute */ }
+    }
+  } catch { console.warn("[audit] Failed to write audit log"); }
   clearSessionCookie(res);
   res.json({ ok: true });
 });
@@ -4398,6 +4416,7 @@ app.post("/api/customer/register", asyncHandler(async (req: Request, res: Respon
   const result = await registerCustomer({ name: body.name, email: body.email, password: body.password });
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   setSessionCookie(res, result.token, 7 * 24 * 3600);
+  try { await logAudit(null, result.name || result.email || "customer", "customer_registered", "customer", null, { email: result.email }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
@@ -4408,6 +4427,7 @@ app.post("/api/customer/login", asyncHandler(async (req: Request, res: Response)
   const result = await loginCustomer(body.email, body.password);
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
   setSessionCookie(res, result.token, 7 * 24 * 3600);
+  try { await logAudit(null, result.name || body.email || "customer", "customer_login", "auth", null, { method: "password" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
@@ -4417,6 +4437,7 @@ app.post("/api/customer/google-login", asyncHandler(async (req: Request, res: Re
   const result = await googleLogin(googleToken);
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
   setSessionCookie(res, result.token, 7 * 24 * 3600);
+  try { await logAudit(null, result.name || result.email || "customer", "customer_login", "auth", null, { method: "google" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
@@ -4439,6 +4460,7 @@ app.post("/api/auth/2fa/verify", staffAuthMiddleware, asyncHandler(async (req: R
   if (!totp.totpSecret) { res.status(400).json({ error: "Run 2FA setup first." }); return; }
   if (!verifyTotp(totp.totpSecret, code)) { res.status(400).json({ error: "Invalid code." }); return; }
   await setUserTotp(userId, totp.totpSecret, true);
+  try { await logAudit(userId, (req as any).user.username || "admin", "2fa_enabled", "auth", null, {}, (req as any).user.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
   res.json({ ok: true, message: "2FA enabled." });
 }));
 
@@ -4453,6 +4475,7 @@ app.post("/api/auth/2fa/disable", staffAuthMiddleware, asyncHandler(async (req: 
     res.status(401).json({ error: "Incorrect password." }); return;
   }
   await setUserTotp(userId, null, false);
+  try { await logAudit(userId, (req as any).user.username || "admin", "2fa_disabled", "auth", null, {}, (req as any).user.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
   res.json({ ok: true, message: "2FA disabled." });
 }));
 
@@ -4474,6 +4497,7 @@ app.post("/api/auth/staff/step-up", staffAuthMiddleware, asyncHandler(async (req
     res.status(401).json({ error: "Incorrect password." }); return;
   }
   const stepUpToken = signToken({ sub: userId, purpose: "step-up" }, STEP_UP_TTL);
+  try { await logAudit(userId, (req as any).user.username || "staff", "step_up", "auth", null, {}, (req as any).user.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
   res.json({ stepUpToken, expiresIn: STEP_UP_TTL });
 }));
 
@@ -4553,6 +4577,7 @@ app.post("/api/auth/magic-login", asyncHandler(async (req: Request, res: Respons
     // epoch seconds; changedAt is a PG timestamp string.
     if (changedAt && payload.iat && payload.iat < Math.floor(Date.parse(String(changedAt)) / 1000)) { res.status(400).json({ error: "Token no longer valid." }); return; }
     const sessionToken = signToken({ sub: payload.sub, email: payload.email, name: payload.name, role: "customer" });
+    try { await logAudit(null, (payload as any).name || (payload as any).email || "customer", "customer_login", "auth", null, { method: "magic" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
     res.json({ token: sessionToken, name: payload.name });
   } catch (_err) {
     res.status(400).json({ error: "Invalid or expired token." });
@@ -4588,6 +4613,7 @@ app.post("/api/auth/admin-password-reset", asyncHandler(async (req: Request, res
     if (!staff) { res.status(404).json({ error: "User not found." }); return; }
     if (!payload.jti || !(await consumeAuthToken(payload.jti, payload.role, payload.sub))) { res.status(400).json({ error: "Token already used." }); return; }
     await changeStaffPassword(payload.sub, newPassword);
+    try { await logAudit(payload.sub, staff?.username || "admin", "password_reset", "auth", null, { method: "email_token" }, payload.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
     res.json({ ok: true });
   } catch (_err) {
     res.status(400).json({ error: "Invalid or expired token." });
@@ -4610,6 +4636,7 @@ app.post("/api/auth/google-admin-login", asyncHandler(async (req: Request, res: 
     if (!staff) { res.status(403).json({ error: "Login failed." }); return; }
     const permissions = await getUserPermissions(staff.id);
     const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: staff.role, permissions });
+    try { await logAudit(staff.id, staff.username, "login", "auth", null, { method: "google" }, staff.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
     res.json({ token, username: staff.username, email: staff.email, role: staff.role, permissions });
   } catch (_err) {
     res.status(400).json({ error: "Google login failed." });
@@ -4641,6 +4668,7 @@ app.post("/api/auth/password-reset", asyncHandler(async (req: Request, res: Resp
     if (!payload.jti || !(await consumeAuthToken(payload.jti, "customer", payload.sub))) { res.status(400).json({ error: "Token already used." }); return; }
     const success = changeCustomerPassword(payload.sub, newPassword);
     if (!success) { res.status(404).json({ error: "User not found." }); return; }
+    try { await logAudit(payload.sub, (payload as any).name || (payload as any).email || "customer", "password_reset", "auth", null, { method: "email_token" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
     res.json({ ok: true });
   } catch (_err) {
     res.status(400).json({ error: "Invalid or expired token." });
