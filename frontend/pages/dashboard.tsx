@@ -6,6 +6,7 @@ import { useFeature } from "@/lib/features";
 import { escapeHtml } from "@/lib/sanitize";
 import { usePageTitle } from "@/lib/use-page-title";
 import { useApp } from "@/lib/app-context";
+import Icon from "@/components/icons";
 
 type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "profile";
 
@@ -112,13 +113,13 @@ export default function DashboardPage() {
     window.location.href = "/";
   }
 
-  const sections: { key: Section; label: string; show: boolean; feature?: string }[] = [
-    { key: "overview", label: "Overview", show: true },
-    { key: "orders", label: "Orders", show: isCustomer, feature: "Order management" },
-    { key: "repairs", label: "Repairs", show: isCustomer, feature: "Repair ticketing" },
-    { key: "wishlist", label: "Wishlist", show: isCustomer },
-    { key: "messages", label: "Messages", show: true, feature: "Messaging" },
-    { key: "profile", label: "Profile", show: true },
+  const sections: { key: Section; label: string; icon: string; show: boolean; feature?: string }[] = [
+    { key: "overview", label: "Overview", icon: "home", show: true },
+    { key: "orders", label: "Orders", icon: "clipboard", show: isCustomer, feature: "Order management" },
+    { key: "repairs", label: "Repairs", icon: "wrench", show: isCustomer, feature: "Repair ticketing" },
+    { key: "wishlist", label: "Wishlist", icon: "heart", show: isCustomer },
+    { key: "messages", label: "Messages", icon: "message", show: true, feature: "Messaging" },
+    { key: "profile", label: "Profile", icon: "users", show: true },
   ];
 
   const visibleSections = sections.filter((s) => s.show && hasFeature(s.feature));
@@ -126,17 +127,24 @@ export default function DashboardPage() {
   return (
     <div className="dash-layout">
       <nav className="dash-nav">
-        {visibleSections.map((s) => (
-          <button
-            key={s.key}
-            className={activeSection === s.key ? "active" : ""}
-            onClick={() => setActiveSection(s.key)}
-            aria-current={activeSection === s.key ? "page" : undefined}
-          >
-            {s.label}
-          </button>
-        ))}
-        <button onClick={logout} style={{ marginTop: "auto", color: "var(--primary)" }}>Sign out</button>
+        <div className="dash-nav-group">
+          <div className="dash-nav-group-label has-active">My Account</div>
+          {visibleSections.map((s) => (
+            <button
+              key={s.key}
+              className={`dash-nav-item${activeSection === s.key ? " active" : ""}`}
+              onClick={() => setActiveSection(s.key)}
+              aria-current={activeSection === s.key ? "page" : undefined}
+            >
+              <Icon name={s.icon} size={15} />
+              <span className="dash-nav-item-label">{s.label}</span>
+            </button>
+          ))}
+        </div>
+        <button className="dash-nav-item dash-nav-signout" onClick={logout}>
+          <Icon name="logOut" size={15} />
+          Sign out
+        </button>
       </nav>
 
       <div className="dash-content">
