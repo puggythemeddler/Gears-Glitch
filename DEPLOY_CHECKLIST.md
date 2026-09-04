@@ -1,103 +1,67 @@
-# Deploy Checklist
+# Deploy & Smoke-Test Checklist
 
-Step-by-step deployment checklist. Items marked **operator action** require logging into external dashboards — they cannot be done from code.
+Deploy safeguard: the push updates are auto-deployed to the **test site** only; production
+promotion is a deliberate manual step. All three services have `autoDeploy: true` on `main`.
 
-## Generate fresh secrets
+## 0. Before deploying
 
-Run this once and copy the output into the env vars below:
+- [ ] **Rotate `JWT_SECRET`** on the backend service. The old one was short (`Livid@50` — do not
+      reuse/echo it). Set a strong value (`openssl rand -hex 32`). The server throws at boot if
+      unset or default.
+- [ ] Confirm you have **Render free-instance capacity** for the backend (each new reseller
+      client = its own additional free Render service).
 
-```bash
-node -e "const c=require('crypto');console.log('JWT_SECRET='+c.randomBytes(32).toString('hex'));console.log('CONTROL_PLANE_SECRET=cps_'+c.randomBytes(24).toString('hex'));console.log('ADMIN_PASSWORD='+c.randomBytes(16).toString('base64url'));console.log('CP_ADMIN_PASSWORD='+c.randomBytes(16).toString('base64url'));"
-```
+## 1. Backend — Render service `gear-glitch-backend`
 
-## 1. Backend (Render — your store's backend service)
+- Build: `npm ci --omit=optional && npx tsc` · Start: `node dist/server/index.js` · Health: `/api/health`
+- Auto-deploys on push to `main`. If not, trigger **Manual Deploy → Deploy latest commit**.
+- Verify: `/api/health` returns `{ ok: true }`; watch the Render deploy log it finishes without error.
 
-| Env var | Value | Notes |
-|---|---|---|
-| `DATABASE_URL` | (Neon connection string) | Rotate the Neon password first (Neon console → Roles → reset), then paste the new string here |
-| `JWT_SECRET` | (generated, 64 hex chars) | Replace the old one — min 32 chars; server refuses to start if it's a known placeholder |
-| `STORE_NAME` | (your store's name) | Default store name seeded on first boot; drives the browser tab title and og tags. Control plane sets this to the client's name on provisioning |
-| `ADMIN_USERNAME` | `admin` | Seeded admin account |
-| `ADMIN_EMAIL` | `admin@gearandglitch.com` | Seeded admin email |
-| `ADMIN_PASSWORD` | (generated) | Required in production — without it, no admin user is created |
-| `TECH_USERNAME` | `technician` | Seeded technician account |
-| `TECH_EMAIL` | `tech@gearandglitch.com` | Seeded technician email |
-| `TECH_PASSWORD` | (generated) | Used to test role-gated views |
-| `CONTROL_PLANE_SECRET` | `cps_...` (min 16 chars) | Enables remote management from the control plane. Leave unset to disable all CP access |
-| `CLOUDINARY_CLOUD_NAME` | (from Cloudinary) | |
-| `CLOUDINARY_API_KEY` | (from Cloudinary) | |
-| `CLOUDINARY_API_SECRET` | (regenerated — see below) | The old one was exposed publicly until `/api/cloudinary-config` was locked down |
-| `CLOUDINARY_FOLDER` | `gear-glitch` | Per-client folders go under this (e.g. `gear-glitch/{client-slug}`) |
-| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` | (your SMTP) | Email notifications; leave blank to log to `data/emails.log` instead |
-| `NODE_ENV` | `production` | Disables demo accounts + weak-password fallbacks |
-| `DB_SSL_REJECT` | `false` | Required for Neon |
-| `PORT` | `8020` | |
+### 1a. Verify this raft (audit middleware + audit-log API)
+- [ ] Server typecheck + `npx tsc` build both pass (already verified in-repo).
+- [ ] No DB migration needed (`audit_log.actor_role` column already exists).
 
-### Rotate the Cloudinary API secret (operator action)
+## 2. Frontend — Vercel (git integration from `main`, rootDirectory `frontend`)
 
-1. Cloudinary dashboard → Settings → API Keys → **Regenerate** the secret.
-2. Copy the new secret into `CLOUDINARY_API_SECRET` on Render for the store's backend.
-3. In the control plane → **Sync Cloudinary** to push the new credentials to all clients (or pull from this client first if the stored CP cloudinary config is stale).
+- Auto-deploys on push. If not, trigger a **Production** deploy.
+- Verify the production deployment is **green** and the storefront loads.
+- This carries: admin nav-remount fix, Stock take/control split, audit-log filters UI.
 
-## 2. Frontend (Vercel — your main deployment)
+## 3. Control plane — Render service `gear-glitch-control-plane`
 
-| Env var | Value | Notes |
-|---|---|---|
-| `NEXT_PUBLIC_MARKETING_ENABLED` | `true` | Enables `/marketing` landing page on the main deployment. Client deployments don't set this. |
-| `BACKEND_URL` | `https://gears-glitch.onrender.com` | (or your backend's Render URL) Server-side env — used in `next.config.js` rewrites |
+- Build: `cd control-plane && npm ci && npx tsc && cp -r public dist/public`
+- Start: `cd control-plane && node dist/server/index.js` · Health: `/api/health`
+- Auto-deploys on push. Verify health + watch for the new startup line:
+  - OK: `[startup] Provisioning env OK: NEON_API_KEY, RENDER_API_KEY, VERCEL_TOKEN present.`
+  - Warn: `[startup] WARNING: provisioning is DISABLED until these env vars are set: ...`
+- Make sure `NEON_API_KEY`, `RENDER_API_KEY`, `VERCEL_TOKEN` are set (else, as the owner, you'll
+  the warning + Add Client modal banner, and new-client provisioning will be blocked until set).
 
-Redeploy after adding env vars (Vercel → Deployments → Redeploy).
+## 4. Smoke tests
 
-## 3. Control Plane (Render — separate Express app)
+### 4a. Admin navigation (was broken)
+- [ ] Open Admin panel as **admin**.
+- [ ] Click through **every** nav item — none should jump back to the dashboard.
+- [ ] On each screen, click buttons. If any shows **"Internal server error."**, grab the matching
+      `[Error] ...` line from the Render backend log for that exact click and send it for diagnosis.
 
-| Env var | Value | Notes |
-|---|---|---|
-| `CONTROL_PLANE_DATABASE_URL` | (Neon — different DB from clients) | The control plane's own PostgreSQL database |
-| `CP_ADMIN_PASSWORD` | (generated) | Replace the default `gearglitch2024`. **Change immediately after first login.** |
-| `JWT_SECRET` | (generated) | JWT signing secret for CP sessions (was auto-generated per-boot if unset — set it so sessions persist across restarts) |
-| `CONTROL_PLANE_API_KEY` | (optional) | Legacy global API key — only needed for backwards compatibility |
-| `RENDER_API_KEY` | (from Render) | Render → Account Settings → API Keys |
-| `NEON_API_KEY` | (from Neon) | Neon console → API keys |
-| `VERCEL_TOKEN` | (from Vercel) | Vercel → Settings → Tokens |
-| `VERCEL_TEAM_ID` | (optional) | Vercel team account ID |
-| `CLOUDFLARE_API_TOKEN` | (optional) | For automatic subdomain DNS on provisioning |
-| `CLOUDFLARE_ZONE_ID` | (optional) | The zone for your base domain |
-| `DOMAIN_BASE` | `gearglitch.com` | Base domain for provisioned client subdomains |
-| `OPERATOR_ADMIN_EMAIL` | (your email, e.g. `jolly@gearandglitch.com`) | Default admin email for new clients — when you leave "Admin Email" blank on Add Client, the seeded admin account uses this email. Set this to your account so you control every client. |
-| `FRONTEND_GIT_REPO` | `puggythemeddler/Gears-Glitch` | Repo that gets deployed for each client |
-| `SMTP_*` + `FROM_EMAIL` | (your SMTP) | Welcome emails on provisioning |
+### 4b. Audit log (new)
+- [ ] Admin → Audit Log.
+- [ ] Verify filters (user / action / entity type / from / to date) + **Reset**.
+- [ ] Verify pagination (Prev/Next) + the total-entry count.
+- [ ] Perform some actions (edit a product, add a coupon, place an order, log in/out) and confirm
+      new entries appear with correct user + role.
 
-### After control plane is deployed
+### 4c. Auth (A-1 cookie + new auth audit entries)
+- [ ] Staff: log in → appears as `login` entry; log out → `logout` entry.
+- [ ] Customer: register/login → `customer_registered` / `customer_login` entries.
 
-1. Log in with `admin` + `CP_ADMIN_PASSWORD`.
-2. Click the **2FA Off** badge in the header → **Set Up 2FA** → scan QR → enter code → enable.
-3. For each existing client row → click **Push Secret** to inject `CONTROL_PLANE_SECRET` into the client's Render service.
-4. To register your store as a managed client: **+ Add Existing** with its backend URL, Render service ID, and the same `CONTROL_PLANE_SECRET` you set on the store's Render env — or use **Push Secret** after adding it without a secret (one is auto-generated and pushed).
+### 4d. Stock take / control split (backward compatible)
+- [ ] Admin → Plans & Roles feature pickers show **Stock take** and **Stock control** as separate
+      toggles (old combined "Stock take / inventory count" still works as a hidden alias).
+- [ ] Old grants still show both pages; new per-page toggles control them independently.
 
-## 4. Provisioning a new client (Add Client)
+## 5. After smoke tests pass
 
-When you click **Add Client** in the control plane, the following happens automatically:
-
-1. **Neon database** created (separate PostgreSQL per client)
-2. **Render web service** created from the shared repo with env vars pre-set:
-   - `DATABASE_URL`, a random `JWT_SECRET`, the new `CONTROL_PLANE_SECRET`, and `STORE_NAME` (the client's name — so the tab title and og tags show their own brand, not Gear&Glitch)
-   - `ADMIN_USERNAME=admin`, `ADMIN_EMAIL=<client admin email>`, `ADMIN_PASSWORD=<generated>`
-   - `TECH_USERNAME=technician`, `TECH_EMAIL`, `TECH_PASSWORD=<generated>`
-   - Cloudinary credentials with per-client folder `gear-glitch/{client-slug}`
-3. **Vercel project** created and wired to the new backend URL
-4. **DNS** subdomain set up under `DOMAIN_BASE` (if Cloudflare configured)
-5. **Welcome email** sent with login credentials + URLs
-
-The new client's admin can log in at `{frontend-url}/login` immediately. `NEXT_PUBLIC_MARKETING_ENABLED` is **not** set for clients, so their `/marketing` page renders "not available".
-
-## Post-deploy verification
-
-- [ ] `https://gears-glitch.onrender.com/api/health` returns `{ok:true}` (no business stats without CP auth)
-- [ ] `/api/cloudinary-config` returns `403` without the `x-control-plane-key` header
-- [ ] `/api/plans/sync` returns `403` without the `x-control-plane-key` header
-- [ ] Control plane **Health Check** shows all clients as `healthy`
-- [ ] Control plane **Suspend** flips a client's `/api/health` to `{ok:true, suspended:true}` and storefront returns 403 to visitors
-- [ ] Admin → Settings → **Delivery Fees** shows the county table and Save persists
-- [ ] `/marketing` on the main Vercel deployment renders the full landing page
-- [ ] `/marketing` on a client deployment renders "not available"
-- [ ] Admin login → Settings → **2FA** can be enabled (QR shown, code verified)
+- [ ] D2 — provision yourself as a reseller client (see TEST_PLAN.md Section D2).
+- [ ] C-8 — Render paid tier (open, owner decision; no cash budget currently).
