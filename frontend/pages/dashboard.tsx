@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState, useRef } from "react";
-import { api, getRole, clearAllSessions, downloadPdf } from "@/lib/api";
+import { api, getRole, downloadPdf } from "@/lib/api";
 import type { Order, RepairTicket, WishlistItem, Message, Quote } from "@/lib/types";
 import { useToast } from "@/components/Toast";
 import { useFeature } from "@/lib/features";
@@ -13,7 +13,7 @@ type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "pr
 
 export default function DashboardPage() {
   const [role, setRole] = useState<"customer" | null>(null);
-  const { formatPrice } = useApp();
+  const { formatPrice, logout } = useApp();
   usePageTitle("My account - Gear&Glitch");
   const [userName, setUserName] = useState("");
   const [activeSection, setActiveSection] = useState<Section>("overview");
@@ -126,11 +126,6 @@ export default function DashboardPage() {
       const r = await api<{ token: string }>("/api/orders/invoice-token/" + orderId, { method: "POST" });
       await downloadPdf(`/api/orders/${orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${orderId}.pdf`);
     } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown error")); }
-  }
-
-  function logout() {
-    clearAllSessions();
-    window.location.href = "/";
   }
 
   const sections: { key: Section; label: string; icon: string; show: boolean; feature?: string }[] = [

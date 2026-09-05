@@ -250,7 +250,7 @@ const NAV_ICONS: Partial<Record<AdminView, string>> = {
 };
 
 export default function AdminPage() {
-  const { isDark, toggleDark, settings, refreshSettings } = useApp();
+  const { isDark, toggleDark, settings, refreshSettings, logout } = useApp();
   const [authed, setAuthed] = useState(false);
   const [staffRole, setStaffRole] = useState<StaffRole>("admin");
   const [staffPermissions, setStaffPermissions] = useState<string[]>([]);
@@ -642,7 +642,7 @@ export default function AdminPage() {
         <RippleButton
           variant="ghost"
           className="dash-nav-item dash-nav-signout"
-          onClick={() => { localStorage.removeItem("computerStoreToken"); window.location.href = "/"; }}
+          onClick={logout}
         >
           <Icon name="logOut" size={15} />
           Sign out
