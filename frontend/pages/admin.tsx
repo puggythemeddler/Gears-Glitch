@@ -820,6 +820,10 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
     () => canOrders ? api<any>(`/api/reports/sales?from=${monthStart}&to=${today}`) : Promise.resolve(null),
     [monthStart, today]
   );
+  const { data: allTimeReport } = useFetch(
+    () => canOrders ? api<any>(`/api/reports/sales?from=1900-01-01&to=2099-12-31`) : Promise.resolve(null),
+    []
+  );
 
   // Attention panel data
   const canStock = hasPerm("stock:list");
@@ -845,6 +849,8 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
   const todayOrders = todayReport?.totalOrders ?? 0;
   const monthRevenue = monthReport?.totalRevenue ?? 0;
   const monthOrders = monthReport?.totalOrders ?? 0;
+  const allTimeRevenue = allTimeReport?.totalRevenue ?? 0;
+  const allTimeOrders = allTimeReport?.totalOrders ?? 0;
 
   const attentionItems = [
     canStock && lowItems.length > 0 ? { label: "Low stock", value: lowItems.length, note: outOfStock > 0 ? `${outOfStock} out of stock` : undefined, view: "stock-on-hand" as AdminView, tone: outOfStock > 0 ? "danger" : "warning" } : null,
@@ -891,6 +897,8 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
         {canOrders && <StatCard value={todayRevenue} label="Revenue Today (KES)" onClick={() => nav("reports")} />}
         {canOrders && <StatCard value={monthRevenue} label="Revenue This Month (KES)" onClick={() => nav("reports")} />}
         {canOrders && <StatCard value={monthOrders} label="Orders This Month" onClick={() => nav("orders")} />}
+        {canOrders && <StatCard value={allTimeRevenue} label="Revenue All Time (KES)" onClick={() => nav("reports")} />}
+        {canOrders && <StatCard value={allTimeOrders} label="Orders All Time" onClick={() => nav("orders")} />}
         {canRepairs && <StatCard value={openTickets.length} label="Open Repairs" onClick={() => nav("repairs")} />}
         {canStock && <StatCard value={lowItems.length} label="Low-Stock Items" tone={lowItems.length > 0 ? "warning" : undefined} onClick={() => nav("stock-on-hand")} />}
         {isAdmin && <StatCard value={stats?.totalStaff ?? 0} label="Users" onClick={() => nav("users")} />}
