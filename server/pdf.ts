@@ -41,7 +41,7 @@ export async function htmlToPdf(html: string, options?: { format?: string; lands
               ? Promise.resolve()
               : new Promise<void>((resolve) => {
                   let settled = false;
-                  const timer = setTimeout(() => { settled = true; resolve(); }, 10000);
+                  const timer = setTimeout(() => { settled = true; resolve(); }, 3000);
                   const done = () => { if (!settled) { settled = true; clearTimeout(timer); resolve(); } };
                   img.addEventListener("load", done, { once: true });
                   img.addEventListener("error", done, { once: true });

@@ -3757,7 +3757,7 @@ async function getSalesReport(): Promise<SalesReport> {
 async function getSalesReportWithRange(startDate?: string, endDate?: string, groupId?: string): Promise<SalesReport> {
   let where = " o.status != 'cancelled'"; const params: any[] = []; let idx = 1;
   if (startDate) { where += ` AND o.created_at::timestamp >= $${idx}`; params.push(startDate); idx++; }
-  if (endDate) { where += ` AND o.created_at::timestamp <= $${idx}`; params.push(endDate); idx++; }
+  if (endDate) { where += ` AND o.created_at::timestamp < ($${idx}::date + interval '1 day')`; params.push(endDate); idx++; }
   if (groupId && groupId !== "all") {
     where += ` AND EXISTS (SELECT 1 FROM order_items oi JOIN products gp ON gp.id = oi.product_id WHERE oi.order_id = o.id AND gp.group_id = $${idx})`;
     params.push(groupId); idx++;

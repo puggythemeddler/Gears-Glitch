@@ -1027,16 +1027,23 @@
   flex-direction: column;
   align-items: center;
   gap: 0.75rem;
+  max-width: 92vw;
+  max-height: 92vh;
+  padding: 1rem;
+  overflow: hidden;
   animation: ocPopIn 0.5s cubic-bezier(0.17, 0.89, 0.32, 1.28) both;
 }
 .oc-badge {
-  font-size: 1.6rem;
+  font-size: clamp(1.1rem, 4vw, 1.6rem);
   font-weight: 700;
   color: var(--surface);
   background: var(--primary);
   padding: 0.5rem 1.6rem;
   border-radius: 999px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+  max-width: 90vw;
+  text-align: center;
 }
 .oc-confetti {
   position: absolute;
@@ -1051,6 +1058,10 @@
   will-change: transform, opacity;
 }
 .oc-mascot {
+  width: min(160px, 38vw);
+  height: auto;
+  max-height: 45vh;
+  flex-shrink: 0;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
 }
 .oc-head {

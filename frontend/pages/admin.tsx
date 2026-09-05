@@ -810,10 +810,15 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
 
   // Today's numbers
   const today = new Date().toISOString().slice(0, 10);
+  const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0, 10);
   const canOrders = hasPerm("order:view");
   const { data: todayReport } = useFetch(
     () => canOrders ? api<any>(`/api/reports/sales?from=${today}&to=${today}`) : Promise.resolve(null),
     [today]
+  );
+  const { data: monthReport } = useFetch(
+    () => canOrders ? api<any>(`/api/reports/sales?from=${monthStart}&to=${today}`) : Promise.resolve(null),
+    [monthStart, today]
   );
 
   // Attention panel data
@@ -838,6 +843,8 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
 
   const todayRevenue = todayReport?.totalRevenue ?? 0;
   const todayOrders = todayReport?.totalOrders ?? 0;
+  const monthRevenue = monthReport?.totalRevenue ?? 0;
+  const monthOrders = monthReport?.totalOrders ?? 0;
 
   const attentionItems = [
     canStock && lowItems.length > 0 ? { label: "Low stock", value: lowItems.length, note: outOfStock > 0 ? `${outOfStock} out of stock` : undefined, view: "stock-on-hand" as AdminView, tone: outOfStock > 0 ? "danger" : "warning" } : null,
@@ -882,6 +889,8 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
         <StatCard value={products?.products?.length ?? 0} label="Total Products" onClick={() => nav("products")} />
         {canOrders && <StatCard value={todayOrders} label="Orders Today" onClick={() => nav("orders")} />}
         {canOrders && <StatCard value={todayRevenue} label="Revenue Today (KES)" onClick={() => nav("reports")} />}
+        {canOrders && <StatCard value={monthRevenue} label="Revenue This Month (KES)" onClick={() => nav("reports")} />}
+        {canOrders && <StatCard value={monthOrders} label="Orders This Month" onClick={() => nav("orders")} />}
         {canRepairs && <StatCard value={openTickets.length} label="Open Repairs" onClick={() => nav("repairs")} />}
         {canStock && <StatCard value={lowItems.length} label="Low-Stock Items" tone={lowItems.length > 0 ? "warning" : undefined} onClick={() => nav("stock-on-hand")} />}
         {isAdmin && <StatCard value={stats?.totalStaff ?? 0} label="Users" onClick={() => nav("users")} />}
