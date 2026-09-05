@@ -4300,6 +4300,14 @@ async function hasCustomerReviewed(productId: string, customerId: number): Promi
   return !!row;
 }
 
+async function hasDeliveredOrderForProduct(productId: string, customerId: number): Promise<boolean> {
+  const row = await queryOne(
+    "SELECT o.id FROM orders o JOIN order_items oi ON oi.order_id = o.id WHERE o.customer_id = $1 AND oi.product_id = $2 AND o.status = 'delivered' AND oi.cancelled = 0 LIMIT 1",
+    [customerId, productId]
+  );
+  return !!row;
+}
+
 async function getReviewById(reviewId: number): Promise<any> {
   return await queryOne("SELECT pr.*, c.name AS customer_name FROM product_reviews pr JOIN customers c ON c.id = pr.customer_id WHERE pr.id = $1", [reviewId]);
 }
@@ -4776,7 +4784,7 @@ export {
   createSubscriptionRequest, listSubscriptionRequests, reviewSubscriptionRequest,
   getSpecTemplateFields, getAllSpecTemplateFields, createSpecTemplateField, updateSpecTemplateField, deleteSpecTemplateField,
   listSuppliers, getSupplier, createSupplier, updateSupplier, deleteSupplier,
-  createReview, getProductReviews, getProductReviewCount, getProductRating, getProductRatingDistribution, hasCustomerReviewed, getReviewById, updateReview, deleteReview, getAllReviews, getAllReviewCount,
+  createReview, getProductReviews, getProductReviewCount, getProductRating, getProductRatingDistribution, hasCustomerReviewed, hasDeliveredOrderForProduct, getReviewById, updateReview, deleteReview, getAllReviews, getAllReviewCount,
   getLoyaltyPoints, earnLoyaltyPoints, redeemLoyaltyPoints, getLoyaltyTransactions, listAllLoyaltyCustomers,
   listActiveSplashes, listAllSplashes, getSplash, createSplash, updateSplash, deleteSplash,
   updateProductSortOrder, updateCategorySortOrder, logEmail, listEmailLogs,

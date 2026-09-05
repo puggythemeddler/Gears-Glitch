@@ -36,6 +36,7 @@ export default function ProductPage() {
   const loggedIn = isCustomerLoggedIn();
   const [userReviewed, setUserReviewed] = useState(false);
   const [userReview, setUserReview] = useState<any>(null);
+  const [canReview, setCanReview] = useState(false);
   const [editingReview, setEditingReview] = useState(false);
   const [deletingReview, setDeletingReview] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -58,7 +59,7 @@ export default function ProductPage() {
         setReviews(d.reviews); setReviewsRating(d.rating); setReviewDistribution(d.distribution); setReviewTotalPages(d.totalPages);
       });
       if (isCustomerLoggedIn()) {
-        api<{ hasReviewed: boolean; review: any }>(`/api/products/${encodeURIComponent(id as string)}/reviews/check`).then((d) => { setUserReviewed(d.hasReviewed); if (d.review) setUserReview(d.review); }).catch(() => {});
+        api<{ hasReviewed: boolean; review: any; canReview: boolean }>(`/api/products/${encodeURIComponent(id as string)}/reviews/check`).then((d) => { setUserReviewed(d.hasReviewed); if (d.review) setUserReview(d.review); setCanReview(Boolean(d.canReview)); }).catch(() => {});
       }
       if (p.category) {
         fetch("/api/categories").then((r) => r.json()).then((d) => {
@@ -377,7 +378,15 @@ export default function ProductPage() {
           </div>
         )}
 
-        {loggedIn && !userReviewed && !editingReview && (
+        {loggedIn && !canReview && !userReviewed && (
+          <div className="panel" style={{ maxWidth: 500, marginBottom: "1.5rem", background: "var(--surface)" }}>
+            <p style={{ fontSize: "0.9rem", margin: 0, color: "var(--text-secondary)" }}>
+              You can write a review once an order containing this product has been <strong>delivered</strong>.
+            </p>
+          </div>
+        )}
+
+        {loggedIn && canReview && !userReviewed && !editingReview && (
           <div className="panel" style={{ maxWidth: 500, marginBottom: "1.5rem" }}>
             <h4 style={{ margin: "0 0 0.75rem" }}>Write a Review</h4>
             {reviewMsg && <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: reviewMsg.startsWith("Error") || reviewMsg.startsWith("Failed") ? "var(--danger)" : "var(--success)" }}>{reviewMsg}</p>}

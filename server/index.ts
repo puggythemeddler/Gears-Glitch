@@ -255,6 +255,7 @@ import {
   getProductRating,
   getProductRatingDistribution,
   hasCustomerReviewed,
+  hasDeliveredOrderForProduct,
   getReviewById,
   updateReview,
   deleteReview,
@@ -4210,11 +4211,13 @@ app.get("/api/products/:id/reviews", asyncHandler(async (req: Request, res: Resp
 
 app.get("/api/products/:id/reviews/check", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const hasReviewed = await hasCustomerReviewed(String(req.params.id), (req as any).customer.sub);
-    const review = hasReviewed ? await queryOne("SELECT * FROM product_reviews WHERE product_id = $1 AND customer_id = $2", [String(req.params.id), (req as any).customer.sub]) : null;
-    res.json({ hasReviewed, review });
+    const customerId = (req as any).customer.sub;
+    const hasReviewed = await hasCustomerReviewed(String(req.params.id), customerId);
+    const review = hasReviewed ? await queryOne("SELECT * FROM product_reviews WHERE product_id = $1 AND customer_id = $2", [String(req.params.id), customerId]) : null;
+    const canReview = await hasDeliveredOrderForProduct(String(req.params.id), customerId);
+    res.json({ hasReviewed, review, canReview });
   } catch (err: any) {
-    res.json({ hasReviewed: false, review: null });
+    res.json({ hasReviewed: false, review: null, canReview: false });
   }
 }));
 
@@ -4223,6 +4226,7 @@ app.post("/api/products/:id/reviews", customerAuthMiddleware, asyncHandler(async
   const customerId = (req as any).customer.sub;
   try {
     if (await hasCustomerReviewed(productId, customerId)) { res.status(400).json({ error: "You have already reviewed this product." }); return; }
+    if (!(await hasDeliveredOrderForProduct(productId, customerId))) { res.status(403).json({ error: "You can only review a product after it has been delivered to you." }); return; }
     const { rating, title, comment } = req.body || {};
     if (!rating || Number(rating) < 1 || Number(rating) > 5) { res.status(400).json({ error: "Rating must be between 1 and 5." }); return; }
     const review = await createReview(productId, customerId, Number(rating), String(title || "").trim().slice(0, 200), String(comment || "").trim().slice(0, 2000));
