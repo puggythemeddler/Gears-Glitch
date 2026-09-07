@@ -16,7 +16,7 @@ npm run dev             # http://localhost:4000
 | Variable | Required | Description |
 |---|---|---|
 | `CONTROL_PLANE_DATABASE_URL` | Yes | Neon PostgreSQL connection string (separate from client DBs) |
-| `CONTROL_PLANE_API_KEY` | No (legacy) | Legacy API key for backward compatibility (still works) |
+| `CONTROL_PLANE_API_KEY` | No (legacy) | Removed. No longer accepted for authentication — use per-user API keys from the `cp_users` table instead. |
 | `JWT_SECRET` | No | JWT signing secret (auto-generated if not set) |
 | `CP_ADMIN_PASSWORD` | No | Default admin password (defaults to `gearglitch2024`) |
 | `OPERATOR_ADMIN_EMAIL` | No | Default admin email for new clients (defaults to `admin@gearandglitch.com`) |
@@ -151,7 +151,7 @@ Use the **Feature Overrides** picker in the Edit Client modal to fine-tune what 
 
 - **Command injection hardening** — The backup `pg_dump` path runs via `spawn` with an argument array (no shell) piped to gzip (`control-plane/server/index.ts`), so the client DB URL can never be interpreted as a shell command.
 - **Secret handling** — `GET /api/clients/:id` never returns `cp_secret`/`neon_db_url` to viewer-role users, `GET /api/smtp` returns a masked password, and `GET /api/users` masks other users' API keys. The main dashboard admin password is never rendered into the DOM.
-- **API keys** — Mutual auth between the control plane and each client uses per-client `CONTROL_PLANE_SECRET` compared with `timingSafeEqual`. Programmatic access uses per-user API keys (or the legacy global `CONTROL_PLANE_API_KEY`); the legacy global key remains backward compatible. Deploy actions recommend using a per-user admin key rather than the shared legacy global key.
+- **API keys** — Mutual auth between the control plane and each client uses per-client `CONTROL_PLANE_SECRET` compared with `timingSafeEqual`. Programmatic access uses per-user API keys (`x-api-key`, from the `cp_users` table). The legacy global `CONTROL_PLANE_API_KEY` env value is no longer accepted. Deploy routes require a per-user key with the `admin` role.
 - **Content Security Policy** — See the dedicated CSP section above (keep `scriptSrcAttr` set).
 
 ## Two-Factor Authentication (2FA)
@@ -161,7 +161,7 @@ Administrators can protect their control-plane accounts with TOTP two-factor aut
 - **Two-step login:** Enter username + password → if 2FA is enabled, the screen switches to a 6-digit code input → verify with your authenticator app (Google Authenticator, Authy, 1Password, etc.) → sign in.
 - **Setup:** Click the **2FA Off** badge in the dashboard header → **Set Up 2FA** → scan the QR code with your authenticator app → enter the 6-digit code to enable. The badge turns green (**2FA On**).
 - **Disable:** Click the badge → enter your password to confirm.
-- **API access bypasses 2FA:** Programmatic calls using `x-api-key` (per-user API key or the legacy `CONTROL_PLANE_API_KEY`) skip the 2FA step so cron jobs, GitHub Actions, and other automation keep working.
+- **API access bypasses 2FA:** Programmatic calls using `x-api-key` (per-user API key) skip the 2FA step so cron jobs, GitHub Actions, and other automation keep working.
 - **Database:** The `cp_users` table carries `totp_secret` (string) and `totp_enabled` (boolean) columns.
 
 ## Client Provisioning
@@ -220,8 +220,8 @@ Plans that are not marked to sync are still saved locally on the creating client
 
 All endpoints require authentication via one of:
 - **Bearer JWT token** — `Authorization: Bearer <token>` (from login)
-- **Per-user API key** — `x-api-key: <key>` (each user gets a unique key)
-- **Legacy global API key** — `x-api-key: <CONTROL_PLANE_API_KEY>` (backward compatible)
+- **Per-user API key** — `x-api-key: <key>` (each user gets a unique key; the role on the user's `cp_users` row determines what the route allows)
+- **Client control-plane secret** — `x-control-plane-key: <secret>` (authenticated client services only, treated as a `client`-role user)
 
 ### Authentication
 | Method | Endpoint | Description |
@@ -321,7 +321,7 @@ Production rollout is **deliberate and manual**. This workflow has **no push tri
 
 ### Required GitHub Secrets
 - `CONTROL_PLANE_URL` — your control plane's URL
-- `CONTROL_PLANE_API_KEY` — your control plane API key (legacy global key or any per-user API key)
+- `CONTROL_PLANE_API_KEY` — per-user API key with the `admin` role (from Settings → Users in the control plane; the legacy global key is no longer accepted)
 
 > `RENDER_API_KEY` is no longer needed in GitHub Actions — deploys are triggered through the control plane's own Render API key.
 

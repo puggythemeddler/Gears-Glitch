@@ -35,7 +35,8 @@ jobs:
             echo "⚠️  Skipping — GitHub Actions secrets not configured."
             echo "Set these in your repo: Settings → Secrets and variables → Actions"
             echo "  CONTROL_PLANE_URL    (e.g. https://gear-glitch-control-plane.onrender.com)"
-            echo "  CONTROL_PLANE_API_KEY (your control plane API key)"
+            echo "  CONTROL_PLANE_API_KEY (an ADMIN user's per-user API key from the control plane:"
+            echo "                          Settings → Users → your admin account → API Key, starts with 'cp_')"
             exit 0
           fi
 
