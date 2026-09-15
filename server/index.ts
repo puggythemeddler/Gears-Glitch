@@ -940,11 +940,11 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
     console.warn("[M-Pesa] Failed to update order status:", err.message);
   }
 
-  // Notify the store admin when a storefront order is actually paid (first time).
+  // Notify the store admin when an order is actually paid (first time).
   if (resultCode === 0 && mpesaReceipt) {
     try {
       const order = await getOrderByCheckoutRequest(checkoutId);
-      if (order && order.source === "storefront") {
+      if (order && (order.source === "storefront" || order.source === "pos")) {
         const notifySettings = await getSettings();
         const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
         const { subject, html } = orderPaidAdminEmail(
@@ -2205,6 +2205,26 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     const change = pmt === "cash" && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
     // Audit log
     await recordAuditLog(staff.sub, staffName, "pos_sale", "order", String(orderId), JSON.stringify({ invoiceNumber: invNum, total: subtotal, paymentMethod: pmt, items: resolvedItems.length }), staff.role || "staff");
+    // Notify the store admin of the POS sale (cash/other completes immediately; M-Pesa is notified on payment via callback)
+    if (!holding) {
+      try {
+        const notifySettings = await getSettings();
+        const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+        const { subject, html } = newOrderAdminEmail(
+          `#${orderId}`,
+          customerName || "POS Customer",
+          String(subtotal.toFixed(2)),
+          notifySettings.currency || "KES",
+          resolvedItems.length,
+          `${base}/admin`,
+          "pos",
+          notifySettings.storeName || "My Shop"
+        );
+        await notifyAdminEmail(subject, html);
+      } catch (err: any) {
+        console.warn("[notify] POS-sale notification failed:", err?.message || err);
+      }
+    }
     res.status(201).json({ order: { ...updated, invoiceNumber: invNum }, change, mpesa: mpesaState });
   } catch (err: any) {
     console.error("[POS Checkout Error]", err);
@@ -2239,6 +2259,23 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
           await confirmOrderPayment(id);
           await query("UPDATE orders SET status = 'paid', updated_at = NOW()::text WHERE id = $1", [id]);
           paid = true; status = "paid";
+          try {
+            const full = await getOrder(id);
+            if (full && full.source === "pos") {
+              const notifySettings = await getSettings();
+              const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+              const { subject, html } = orderPaidAdminEmail(
+                `#${full.id}`,
+                full.customerName || full.customerEmail || "Customer",
+                String((Number(full.subtotal) + Number(full.shippingFee) - (Number(full.discountAmount) || 0) - (Number(full.giftCardAmount) || 0)).toFixed(2)),
+                notifySettings.currency || "KES",
+                mpesaReceipt || "",
+                `${base}/admin`,
+                notifySettings.storeName || "My Shop"
+              );
+              await notifyAdminEmail(subject, html);
+            }
+          } catch (err: any) { console.warn("[notify] POS payment-confirmed notification failed:", err?.message || err); }
         } else if (code > 0) {
           await releaseOrderHeldStock(id);
           await updateOrderStatus(id, "cancelled");
