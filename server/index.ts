@@ -29,6 +29,7 @@ import {
   generateProductId,
   findCustomerByEmail,
   findCustomerById,
+  updateCustomerLastLogin,
   findStaffById,
   findStaffByEmail,
   listStaff,
@@ -316,6 +317,11 @@ import {
   registerCustomer,
   loginProvider,
   googleLogin,
+  generateGoogleOAuthState,
+  verifyGoogleOAuthState,
+  getGoogleOAuthURL,
+  getGoogleOAuthCredentials,
+  exchangeGoogleCode,
   signToken,
   verifyToken,
   getBearerToken,
@@ -4492,6 +4498,93 @@ app.post("/api/customer/login", asyncHandler(async (req: Request, res: Response)
   setSessionCookie(res, result.token, 7 * 24 * 3600);
   try { await logAudit(null, result.name || body.email || "customer", "customer_login", "auth", null, { method: "password" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
   res.json({ token: result.token, name: result.name, email: result.email });
+}));
+
+// ─── Google OAuth — server-side authorization code flow ─────────────
+// Start: user visits /api/auth/google, we bounce to Google consent with a
+// signed state (mode + post-login redirect). Callback: Google returns with a
+// `code`, we exchange it server-side, sign our own JWT and set the httpOnly
+// session cookie, then bounce the browser back to the storefront.
+
+function frontendUrl(req: Request): string {
+  const fromEnv = (process.env.FRONTEND_URL || "").trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+function safeRedirectPath(raw: unknown, fallback: string): string {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return fallback;
+  return value;
+}
+
+app.get("/api/auth/google", asyncHandler(async (req: Request, res: Response) => {
+  const mode = req.query.mode === "staff" ? "staff" : "customer";
+  const fallback = mode === "staff" ? "/admin" : "/dashboard";
+  const redirect = safeRedirectPath(req.query.redirect, fallback);
+  const base = frontendUrl(req);
+  const credentials = await getGoogleOAuthCredentials();
+  if (!credentials) {
+    res.redirect(303, `${base}${mode === "staff" ? "/admin?error=google_not_configured" : "/login?error=google_not_configured"}`);
+    return;
+  }
+  const state = generateGoogleOAuthState({ mode, redirect, ts: Date.now() });
+  res.redirect(302, getGoogleOAuthURL(state, credentials));
+}));
+
+app.get("/api/auth/google/callback", asyncHandler(async (req: Request, res: Response) => {
+  const state = verifyGoogleOAuthState(req.query.state as string | undefined);
+  const code = req.query.code as string | undefined;
+  const base = frontendUrl(req);
+
+  if (!state || !code) {
+    res.redirect(303, `${base}/login?error=google_auth_failed`);
+    return;
+  }
+
+  let profile;
+  try {
+    profile = await exchangeGoogleCode(code);
+  } catch (err) {
+    console.error("[google] Code exchange failed:", err instanceof Error ? err.message : err);
+    res.redirect(303, `${base}/login?error=google_auth_failed`);
+    return;
+  }
+  if (!profile.verified_email) {
+    res.redirect(303, `${base}/login?error=unverified_email`);
+    return;
+  }
+
+  const postLogin = safeRedirectPath(state.redirect, state.mode === "staff" ? "/admin" : "/dashboard");
+
+  if (state.mode === "staff") {
+    const staff = await findStaffByEmail(profile.email);
+    if (!staff) {
+      res.redirect(303, `${base}/admin?error=google_no_staff_account`);
+      return;
+    }
+    const permissions = await getUserPermissions(staff.id);
+    const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: staff.role, permissions });
+    setSessionCookie(res, token, 7 * 24 * 3600);
+    try { await logAudit(staff.id, staff.username, "login", "auth", null, { method: "google" }, staff.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
+    res.redirect(303, `${base}${postLogin}`);
+    return;
+  }
+
+  let customer: { id: number; name: string; email: string } | undefined = await findCustomerByEmail(profile.email);
+  if (!customer) {
+    const randomPass = crypto.randomBytes(16).toString("hex");
+    customer = await createCustomer({ name: profile.name, email: profile.email, password: randomPass });
+  }
+  if (!customer) {
+    res.redirect(303, `${base}/login?error=google_account_creation_failed`);
+    return;
+  }
+  await updateCustomerLastLogin(customer.id);
+  const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer" }, "7d");
+  setSessionCookie(res, token, 7 * 24 * 3600);
+  try { await logAudit(null, customer.name || profile.email, "customer_login", "auth", null, { method: "google" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
+  res.redirect(303, `${base}${postLogin}`);
 }));
 
 app.post("/api/customer/google-login", asyncHandler(async (req: Request, res: Response) => {

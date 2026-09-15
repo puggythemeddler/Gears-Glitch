@@ -413,6 +413,92 @@ async function posAuthMiddleware(req: Request, res: Response, next: NextFunction
   } catch { res.status(401).json({ error: "Session expired. Please log in again." }); }
 }
 
+// ─── Google OAuth (server-side authorization code flow) ─────────────
+// Adapted from the "g connections" reference flow: the server redirects the
+// browser to Google, Google returns to the callback with a `code` (never an
+// `access_token` in the browser), we exchange it for tokens server-side and
+// then create the session cookie ourselves.
+
+export interface GoogleOAuthState {
+  mode: "customer" | "staff";
+  redirect: string;
+  ts: number;
+}
+
+function generateGoogleOAuthState(state: GoogleOAuthState): string {
+  const payload = Buffer.from(JSON.stringify(state)).toString("base64url");
+  const sig = crypto.createHmac("sha256", getJwtSecret()).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+function verifyGoogleOAuthState(raw: string | undefined): GoogleOAuthState | null {
+  if (!raw) return null;
+  const [payload, sig] = raw.split(".");
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac("sha256", getJwtSecret()).update(payload).digest("base64url");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(sig);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const state = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as GoogleOAuthState;
+    if (Date.now() - state.ts > 10 * 60 * 1000) return null; // 10-minute state lifetime
+    if (state.mode !== "customer" && state.mode !== "staff") return null;
+    if (typeof state.redirect !== "string") return null;
+    return state;
+  } catch {
+    return null;
+  }
+}
+
+async function getGoogleOAuthCredentials() {
+  const clientId = (await getStoreSetting("google_client_id")) || process.env.GOOGLE_CLIENT_ID || "";
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || "";
+  if (!clientId || !clientSecret || !redirectUri) return null;
+  return { clientId, clientSecret, redirectUri };
+}
+
+function getGoogleOAuthURL(state: string, credentials: { clientId: string; redirectUri: string }): string {
+  const params = new URLSearchParams({
+    client_id: credentials.clientId,
+    redirect_uri: credentials.redirectUri,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "consent",
+    state,
+  });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+}
+
+interface GoogleProfile {
+  email: string;
+  name: string;
+  picture?: string;
+  verified_email: boolean;
+}
+
+async function exchangeGoogleCode(code: string): Promise<GoogleProfile> {
+  const credentials = await getGoogleOAuthCredentials();
+  if (!credentials) throw new Error("Google OAuth is not configured.");
+
+  // Exchange the authorization code for tokens server-side; the ID token is
+  // verified against our configured client id. No token ever touches the browser.
+  const oauth = new OAuth2Client(credentials.clientId, credentials.clientSecret, credentials.redirectUri);
+  const { tokens } = await oauth.getToken(code);
+  oauth.setCredentials(tokens);
+  const ticket = await oauth.verifyIdToken({ idToken: tokens.id_token, audience: credentials.clientId });
+  const payload = ticket.getPayload();
+  if (!payload || !payload.email) throw new Error("Google token missing email.");
+
+  return {
+    email: payload.email.toLowerCase(),
+    name: payload.name || payload.email.split("@")[0],
+    picture: payload.picture,
+    verified_email: payload.email_verified !== false,
+  };
+}
+
 // ─── Control-plane machine-to-machine auth ──────────────────────────
 // The control plane authenticates with a per-tenant shared secret sent in
 // the x-control-plane-key header. The secret is provisioned as the
@@ -493,6 +579,11 @@ export {
   registerCustomer,
   loginProvider,
   googleLogin,
+  generateGoogleOAuthState,
+  verifyGoogleOAuthState,
+  getGoogleOAuthURL,
+  getGoogleOAuthCredentials,
+  exchangeGoogleCode,
   signToken,
   verifyToken,
   getBearerToken,

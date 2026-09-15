@@ -826,7 +826,7 @@ Provider registration, login, subscription details, invoices, products at tier, 
 ## Authentication & Permissions
 
 1. **Unified login** at `/login` with customer + staff/provider tabs
-2. **Google Sign-In** via Google Identity Services — button appears on Customer tab when `GOOGLE_CLIENT_ID` is configured in `.env`
+2. **Google Sign-In** via a server-side OAuth authorization-code flow — the browser is redirected to Google, and the server swaps the returned code for tokens. The Google buttons on the Customer and Admin login pages appear when `GOOGLE_CLIENT_ID` is configured in `.env` (or the `google_client_id` store setting). Requires `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` too (see [Google Sign-In setup](#google-sign-in-setup)).
 3. **Two token types** stored in localStorage: `customerStoreToken` and `computerStoreToken` (staff/provider sessions). The former external-provider `providerToken` session is no longer used — providers sign into the unified staff portal.
 4. **JWT tokens**: Signed with `JWT_SECRET` (required — server fails without it). Staff tokens expire in **24 hours**, customer tokens in **7 days**. No query-string token support.
 5. **Rate limiting**: 10 login/register/password-reset attempts per IP per 15 minutes.
@@ -998,17 +998,21 @@ To enable Google sign-in for customers and staff:
    - Click **+ Create Credentials → OAuth client ID**
    - Application type: **Web application**
    - Name: e.g. "Gear&Glitch Web Client"
-   - Under **Authorized JavaScript origins**, add:
-     - `http://localhost:8020` (for development)
-     - `https://your-domain.com` (for production)
+   - Under **Authorized redirect URIs**, add the URL the server-side callback runs at. This MUST route through the storefront (if present) so the session cookie is set for the storefront origin:
+     - `http://localhost:8020/api/auth/google/callback` (for development)
+     - `https://your-domain.com/api/auth/google/callback` (for production)
    - Click **Create**
-5. **Copy the Client ID** shown in the popup and add it to `.env`:
+5. **Copy the Client ID and Client Secret** shown in the popup and add them to `.env`:
 
    ```env
    GOOGLE_CLIENT_ID=123456789-xxxxx.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx
+   GOOGLE_REDIRECT_URI=https://your-domain.com/api/auth/google/callback
    ```
 
-6. **Restart the server** — the Google sign-in button will now appear on the Customer login page and the Admin login page (when `GOOGLE_CLIENT_ID` is set).
+   The Google buttons appear on the Customer and Admin login pages when `GOOGLE_CLIENT_ID` is set. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` are also required — the server exchanges the authorization code server-side and never exposes a token to the browser.
+
+6. **Restart the server** — the Google sign-in button will now appear on the Customer login page and the Admin login page.
 
 > **Note:** Publishing the OAuth consent screen is only required for production. In testing, you must add each test user's email under **OAuth consent screen → Test users**. Up to 100 test users are allowed without verification.
 
@@ -1061,7 +1065,10 @@ The system supports both VSCU (local JAR bridge) and OSCU (cloud API) eTIMS mode
 | `SMTP_USER` | | SMTP username |
 | `SMTP_PASS` | | SMTP password |
 | `SITE_NAME` | Gear&Glitch | Brand name in emails |
-| `GOOGLE_CLIENT_ID` | | Google OAuth client ID |
+| `GOOGLE_CLIENT_ID` | | Google OAuth client ID (also settable via the `google_client_id` store setting) |
+| `GOOGLE_CLIENT_SECRET` | | Google OAuth client secret (server-side exchange) |
+| `GOOGLE_REDIRECT_URI` | | Google OAuth redirect URI, e.g. `https://your-domain.com/api/auth/google/callback` |
+| `FRONTEND_URL` | derived from request host | Storefront origin to land on after a Google login redirect |
 | `MPESA_CONSUMER_KEY` | | Set via admin UI or env |
 | `MPESA_CONSUMER_SECRET` | | |
 | `MPESA_PASSKEY` | | |

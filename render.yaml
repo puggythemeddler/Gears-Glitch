@@ -19,6 +19,20 @@ services:
         value: 8020
       - key: BASE_URL
         value: https://gears-glitch.onrender.com
+      # Public storefront origin — where the browser ends up after Google
+      # sign-in. The storefront routes /api/* to this backend via a rewrite.
+      - key: FRONTEND_URL
+        value: https://gears-glitch.vercel.app
+      # Google OAuth (server-side authorization code flow). GOOGLE_REDIRECT_URI
+      # MUST exactly match the "Authorized redirect URI" in the Google Cloud
+      # console for this OAuth client, and must route through the storefront so
+      # the session cookie is set for the storefront origin.
+      - key: GOOGLE_REDIRECT_URI
+        value: https://gears-glitch.vercel.app/api/auth/google/callback
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
