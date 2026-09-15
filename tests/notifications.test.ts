@@ -8,8 +8,9 @@ const HAS_DB = !!process.env.DATABASE_URL;
 
 describe("notification service (P1)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
   before(async () => {
-    // Ensure the notification_log table exists (schema runs at server boot, but
-    // tests may target a fresh isolated database).
+    // Ensure the settings + notification_log tables exist (schema runs at server
+    // boot, but tests may target a fresh isolated database).
+    await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
     await query(
       `CREATE TABLE IF NOT EXISTS notification_log (
         id SERIAL PRIMARY KEY,
