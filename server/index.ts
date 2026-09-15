@@ -105,6 +105,7 @@ import {
   getInvoiceRevenue,
   searchInvoices,
   markOverdueInvoices,
+  getOverdueInvoices,
   getInvoiceStats,
   exportInvoicesCsv,
   listOrderInvoices,
@@ -368,8 +369,9 @@ import {
 } from "./repairs";
 import warrantyRouter from "./warranty";
 import * as notifier from "./notify";
-import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail } from "./email";
+import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
+import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog } from "./notification-service";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
@@ -1379,7 +1381,7 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
     resetTransporter();
   }
   const mpesaCfg = getMpesaConfig();
-  const { whatsappEnabled, whatsappPhoneNumberId, whatsappAccessToken, whatsappAppSecret, whatsappVerifyToken, whatsappBusinessAccountId } = req.body || {};
+  const { whatsappEnabled, whatsappPhoneNumberId, whatsappAccessToken, whatsappAppSecret, whatsappVerifyToken, whatsappBusinessAccountId, whatsappApiVersion, adminWhatsAppEnabled, adminWhatsAppPhone } = req.body || {};
   const whatsappUpdates: any = {};
   if (whatsappEnabled !== undefined) whatsappUpdates.whatsappEnabled = String(whatsappEnabled);
   if (whatsappPhoneNumberId !== undefined) whatsappUpdates.whatsappPhoneNumberId = String(whatsappPhoneNumberId).trim();
@@ -1387,6 +1389,9 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
   if (whatsappAppSecret !== undefined) whatsappUpdates.whatsappAppSecret = String(whatsappAppSecret).trim();
   if (whatsappVerifyToken !== undefined) whatsappUpdates.whatsappVerifyToken = String(whatsappVerifyToken).trim();
   if (whatsappBusinessAccountId !== undefined) whatsappUpdates.whatsappBusinessAccountId = String(whatsappBusinessAccountId).trim();
+  if (whatsappApiVersion !== undefined) whatsappUpdates.whatsappApiVersion = String(whatsappApiVersion).trim();
+  if (adminWhatsAppEnabled !== undefined) whatsappUpdates.adminWhatsAppEnabled = String(adminWhatsAppEnabled);
+  if (adminWhatsAppPhone !== undefined) whatsappUpdates.adminWhatsAppPhone = String(adminWhatsAppPhone).trim();
   if (Object.keys(whatsappUpdates).length) {
     const updatedSettings = await updateSettings(whatsappUpdates);
     settings.whatsappEnabled = updatedSettings.whatsappEnabled;
@@ -1395,6 +1400,9 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
     settings.whatsappAppSecret = updatedSettings.whatsappAppSecret;
     settings.whatsappVerifyToken = updatedSettings.whatsappVerifyToken;
     settings.whatsappBusinessAccountId = updatedSettings.whatsappBusinessAccountId;
+    settings.whatsappApiVersion = updatedSettings.whatsappApiVersion;
+    settings.adminWhatsAppEnabled = updatedSettings.adminWhatsAppEnabled;
+    settings.adminWhatsAppPhone = updatedSettings.adminWhatsAppPhone;
   }
   settings.cloudinaryApiSecret = "";
   settings.whatsappAccessToken = "";
@@ -3408,6 +3416,21 @@ app.post("/api/admin/invoices/:id/email", allowControlPlane(ownerAuthMiddleware)
 
 app.post("/api/admin/invoices/mark-overdue", ownerAuthMiddleware, requirePermission("invoice:view"), asyncHandler(async (_req: Request, res: Response) => {
   const count = await markOverdueInvoices();
+  if (count > 0) {
+    try {
+      const overdue = await getOverdueInvoices();
+      for (const inv of overdue) {
+        await notify({
+          event: "invoice.overdue",
+          entityType: "invoice",
+          entityId: inv.id,
+          subject: `Invoice ${inv.invoiceNumber || inv.id} is overdue`,
+          bodyText: `Invoice ${inv.invoiceNumber || inv.id} (${inv.currency || "KES"} ${inv.amount}) is overdue.`,
+        });
+      }
+      console.log(`[invoices] Notified on ${count} overdue invoice(s).`);
+    } catch (_err: any) { console.warn("[invoices] overdue notification failed:", _err?.message || _err); }
+  }
   res.json({ marked: count });
 }));
 
@@ -3421,12 +3444,57 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
   if (planId !== undefined && !isStr(planId)) { res.status(400).json({ error: "Plan ID must be a valid string." }); return; }
   const invoice = await generateProviderInvoice(pid, planId || "starter");
   if (!invoice) { res.status(400).json({ error: "Could not generate invoice. Plan not found." }); return; }
+  try {
+    const settings = await getSettings();
+    const dashboardUrl = `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
+    const { subject, html } = subscriptionInvoiceEmail(
+      invoice.providerName || "Provider",
+      invoice.invoiceNumber || `INV-${invoice.id}`,
+      invoice.planName || "Plan",
+      String(invoice.amount),
+      invoice.currency || settings.currency || "KES",
+      invoice.dueDate || "",
+      dashboardUrl
+    );
+    await notify({
+      event: "invoice.created",
+      entityType: "invoice",
+      entityId: invoice.id,
+      subject,
+      bodyText: `Invoice ${invoice.invoiceNumber || invoice.id} generated (${invoice.currency || settings.currency || "KES"} ${invoice.amount}).`,
+      bodyHtml: html,
+    });
+  } catch (_err: any) { console.warn("[invoice] notification failed:", _err?.message || _err); }
   res.status(201).json(invoice);
 }));
 
 app.post("/api/admin/invoices/:id/pay", allowControlPlane(ownerAuthMiddleware), requirePermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
+  const invoice = await getInvoice(Number(req.params.id));
   const ok = await markInvoicePaid(Number(req.params.id));
   if (!ok) { res.status(404).json({ error: "Invoice not found." }); return; }
+  if (invoice) {
+    try {
+      const settings = await getSettings();
+      const dashboardUrl = `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
+      const { subject, html } = subscriptionInvoiceEmail(
+        invoice.providerName || "Provider",
+        invoice.invoiceNumber || `INV-${invoice.id}`,
+        invoice.planName || "Plan",
+        String(invoice.amount),
+        invoice.currency || settings.currency || "KES",
+        invoice.dueDate || "",
+        dashboardUrl
+      );
+      await notify({
+        event: "invoice.paid",
+        entityType: "invoice",
+        entityId: invoice.id,
+        subject: `Invoice ${invoice.invoiceNumber || invoice.id} paid`,
+        bodyText: `Invoice ${invoice.invoiceNumber || invoice.id} was marked as paid (${invoice.currency || settings.currency || "KES"} ${invoice.amount}).`,
+        bodyHtml: html,
+      });
+    } catch (_err: any) { console.warn("[invoice] notification failed:", _err?.message || _err); }
+  }
   res.json({ ok: true });
 }));
 
@@ -5370,6 +5438,29 @@ app.post("/api/repairs", customerAuthMiddleware, requireShopFeature("Repair tick
   const result = await createRepairTicket((req as any).customer.sub, req.body || {});
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   try { notifier.sendNewRepairEmail(result.ticket!).catch(() => {}); } catch (_e) { /* ignore */ }
+  try {
+    const t = result.ticket as any;
+    const settings = await getSettings();
+    const dashboardUrl = `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
+    const { subject, html } = repairCreatedAdminEmail(
+      String(t.id),
+      t.customerName || "Customer",
+      t.deviceType || "",
+      t.deviceModel || "",
+      t.issueDescription || "",
+      dashboardUrl,
+      settings.storeName || "My Shop"
+    );
+    await notify({
+      event: "repair.created",
+      entityType: "repair",
+      entityId: String(t.id),
+      subject,
+      bodyText: `New repair ticket ${t.id} from ${t.customerName || "Customer"} (${t.deviceType || ""} ${t.deviceModel || ""}). Open Admin > Repairs.`,
+      bodyHtml: html,
+      metadata: { ticketId: String(t.id), customerName: t.customerName || "" }
+    });
+  } catch (_e: any) { console.warn("[repair] notification failed:", _e?.message || _e); }
   res.status(201).json(result.ticket);
 }));
 
@@ -5432,9 +5523,38 @@ app.get("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:view"
 }));
 
 app.patch("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  const before = await loadTicketDetails(String(req.params.id));
   const result = await updateRepairTicket(String(req.params.id), req.body || {}, (req as any).user.sub);
   if (!result) { res.status(404).json({ error: "Ticket not found." }); return; }
   if ((result as any).error) { res.status(400).json({ error: (result as any).error }); return; }
+  // Admin notification when a repair status changes (idempotent: only fires on an actual transition).
+  if (before && req.body?.status && req.body.status !== before.status) {
+    try {
+      const dashboardUrl = `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
+      const combined = result as any;
+      const storeName = (await getSettings()).storeName || "My Shop";
+      const newStatus = String(combined.statusLabel || combined.status || req.body.status);
+      const { subject, html } = repairStatusAdminEmail(
+        String(combined.id),
+        combined.customerName || "Customer",
+        combined.deviceType || "",
+        combined.deviceModel || "",
+        String(before.statusLabel || before.status),
+        newStatus,
+        dashboardUrl,
+        storeName
+      );
+      await notify({
+        event: newStatus === "ready" ? "repair.ready" : newStatus === "collected" ? "repair.completed" : newStatus === "cancelled" ? "repair.cancelled" : "repair.status_changed",
+        entityType: "repair",
+        entityId: String(combined.id),
+        subject,
+        bodyText: `Repair ${combined.id} status changed to ${newStatus}.`,
+        bodyHtml: html,
+        metadata: { ticketId: String(combined.id), status: newStatus }
+      });
+    } catch (_err: any) { console.warn("[repair] status notification failed:", _err?.message || _err); }
+  }
   res.json(result);
 }));
 
@@ -5492,6 +5612,32 @@ app.delete("/api/repairs/:id/images/:imageId", staffAuthMiddleware, requirePermi
 app.post("/api/repairs/:id/send-quote", staffAuthMiddleware, requirePermission("quote:create"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const ok = await sendRepairQuote(String(req.params.id));
   if (!ok) { res.status(404).json({ error: "Ticket not found." }); return; }
+  try {
+    const t = await loadTicketDetails(String(req.params.id)) as any;
+    if (t) {
+      const settings = await getSettings();
+      const dashboardUrl = `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
+      const { subject, html } = repairQuoteAdminEmail(
+        String(t.id),
+        t.customerName || "Customer",
+        t.deviceType || "",
+        t.deviceModel || "",
+        Number(t.totalCost) || 0,
+        settings.currency || "KES",
+        dashboardUrl,
+        settings.storeName || "My Shop"
+      );
+      await notify({
+        event: "repair.quote_sent",
+        entityType: "repair",
+        entityId: String(t.id),
+        subject,
+        bodyText: `Repair quote ${t.id} sent to ${t.customerName || "Customer"} (${settings.currency || "KES"} ${(Number(t.totalCost) || 0).toFixed(2)}).`,
+        bodyHtml: html,
+        metadata: { ticketId: String(t.id), totalCost: Number(t.totalCost) || 0 }
+      });
+    }
+  } catch (_err: any) { console.warn("[repair] quote notification failed:", _err?.message || _err); }
   res.json({ ok: true });
 }));
 
@@ -5506,6 +5652,29 @@ app.post("/api/repairs/:id/quote-response", customerAuthMiddleware, requireShopF
   }
   const ok = await respondToRepairQuote(String(req.params.id), response);
   if (!ok) { res.status(400).json({ error: "No quote to respond to." }); return; }
+  try {
+    const dashboardUrl = `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
+    const settings = await getSettings();
+    const { subject, html } = repairStatusAdminEmail(
+      String(ticket.id),
+      ticket.customerName || "Customer",
+      ticket.deviceType || "",
+      ticket.deviceModel || "",
+      "quote sent",
+      response === "accepted" ? "quote approved" : "quote declined",
+      dashboardUrl,
+      settings.storeName || "My Shop"
+    );
+    await notify({
+      event: response === "accepted" ? "repair.quote_approved" : "repair.quote_declined",
+      entityType: "repair",
+      entityId: String(ticket.id),
+      subject,
+      bodyText: `Customer ${response === "accepted" ? "approved" : "declined"} the repair quote for ${ticket.id}.`,
+      bodyHtml: html,
+      metadata: { ticketId: String(ticket.id), response }
+    });
+  } catch (_err: any) { console.warn("[repair] quote response notification failed:", _err?.message || _err); }
   res.json({ ok: true });
 }));
 
@@ -6156,6 +6325,18 @@ app.put("/api/shop/subscription", ownerAuthMiddleware, requirePermission("subscr
   const ok = await setShopPlan(planId);
   if (!ok) { res.status(400).json({ error: "Invalid plan." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "plan_changed", "shop_subscription", planId, { from: current?.id || "none", to: planId }, (req as any).user.role);
+  if (current?.id !== planId) {
+    try {
+      const settings = await getSettings();
+      await notify({
+        event: "subscription.changed",
+        entityType: "subscription",
+        entityId: planId,
+        subject: `Subscription changed to ${planId} — ${settings.storeName || "My Shop"}`,
+        bodyText: `Store subscription plan changed from ${current?.id || "none"} to ${planId}.`,
+      });
+    } catch (_err: any) { console.warn("[subscription] notification failed:", _err?.message || _err); }
+  }
   res.json({ ok: true });
 }));
 
@@ -6883,9 +7064,10 @@ app.get("/api/webhooks/whatsapp", asyncHandler(async (req: Request, res: Respons
 }));
 
 app.post("/api/webhooks/whatsapp", asyncHandler(async (req: Request, res: Response) => {
-  const rawBody = (req as any).rawBody || JSON.stringify(req.body);
-  const signature = req.headers["x-hub-signature-256"] as string | undefined;
-  if (signature && !(await verifyWhatsAppSignature(rawBody, signature))) {
+  // Security: all WhatsApp webhook POSTs MUST carry a valid x-hub-signature-256.
+  // A missing signature is rejected outright (previous behavior only checked it
+  // when present, which would allow unauthenticated webhook injection).
+  if (!(await verifyWhatsAppSignature((req as any).rawBody || JSON.stringify(req.body), req.headers["x-hub-signature-256"] as string | undefined))) {
     res.sendStatus(403);
     return;
   }
@@ -6945,6 +7127,39 @@ app.post("/api/admin/notify/test", adminAuthMiddleware, requirePermission("setti
   res.json(results);
 }));
 
+app.get("/api/admin/notifications/preferences", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await getNotificationPreferences());
+}));
+
+app.put("/api/admin/notifications/preferences", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const prefs = await updateNotificationPreferences(req.body || {});
+    res.json(prefs);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || "Failed to update notification preferences." });
+  }
+}));
+
+app.get("/api/admin/notifications/log", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (req: Request, res: Response) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const eventFilter = req.query.event ? String(req.query.event) : undefined;
+  const result = await listNotificationLog(limit, offset, eventFilter);
+  res.json(result);
+}));
+
+app.get("/api/admin/notifications/events", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ events: [
+    "order.created", "order.paid", "order.status_changed",
+    "payment.completed", "payment.failed",
+    "customer.created", "customer.login",
+    "repair.created", "repair.status_changed", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled",
+    "warranty.created", "warranty.status_changed", "warranty.approved", "warranty.rejected", "warranty.resolved",
+    "invoice.created", "invoice.paid", "invoice.overdue",
+    "subscription.changed", "subscription.expiring", "subscription.expired"
+  ] });
+}));
+
 app.get("/api/admin/whatsapp/conversations", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
   const convos = await getWhatsAppConversations();
   res.json({ conversations: convos });
@@ -6970,7 +7185,11 @@ app.get("/api/whatsapp/media/:id", adminAuthMiddleware, requirePermission("whats
   const buf = Buffer.from(media.media_data, "base64");
   res.set("Content-Type", media.mime_type || "image/jpeg");
   res.set("Content-Length", String(buf.length));
-  if (media.filename) res.set("Content-Disposition", `inline; filename="${media.filename}"`);
+  if (media.filename) {
+    // Defense in depth: never let a stored filename break out of the header.
+    const safe = String(media.filename).replace(/[\r\n\x00-\x1f"]/g, "");
+    res.set("Content-Disposition", `inline; filename="${safe}"`);
+  }
   res.send(buf);
 }));
 

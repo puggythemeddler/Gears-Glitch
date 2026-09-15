@@ -203,3 +203,83 @@ export function subscriptionOverdueEmail(customerName: string, invoiceNumber: st
 `);
   return { subject: title, html };
 }
+
+// ─── Repair Notification Emails ───────────────────────────────────────────────
+
+export function repairCreatedAdminEmail(ticketId: string, customerName: string, deviceType: string, deviceModel: string, issueDescription: string, dashboardUrl: string, storeName: string = "My Shop"): { subject: string; html: string } {
+  const title = `New repair ticket ${esc(ticketId)} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>A new repair ticket has been created.</p>
+<div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Ticket:</strong> ${esc(ticketId)}</p>
+<p style="margin:8px 0 0;"><strong>Customer:</strong> ${esc(customerName)}</p>
+<p style="margin:8px 0 0;"><strong>Device:</strong> ${esc(deviceType)} ${esc(deviceModel)}</p>
+<p style="margin:8px 0 0;"><strong>Issue:</strong> ${esc(issueDescription).substring(0, 200)}</p>
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Open Admin → Repairs</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function repairStatusAdminEmail(ticketId: string, customerName: string, deviceType: string, deviceModel: string, oldStatus: string, newStatus: string, dashboardUrl: string, storeName: string = "My Shop"): { subject: string; html: string } {
+  const title = `Repair ${esc(ticketId)}: ${esc(oldStatus)} → ${esc(newStatus)} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>A repair ticket status has changed.</p>
+<div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Ticket:</strong> ${esc(ticketId)}</p>
+<p style="margin:8px 0 0;"><strong>Customer:</strong> ${esc(customerName)}</p>
+<p style="margin:8px 0 0;"><strong>Device:</strong> ${esc(deviceType)} ${esc(deviceModel)}</p>
+<p style="margin:8px 0 0;"><strong>Status:</strong> ${esc(oldStatus)} → <strong>${esc(newStatus)}</strong></p>
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Open Admin → Repairs</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function repairQuoteAdminEmail(ticketId: string, customerName: string, deviceType: string, deviceModel: string, totalCost: number, currency: string, dashboardUrl: string, storeName: string = "My Shop"): { subject: string; html: string } {
+  const title = `Repair quote sent: ${esc(ticketId)} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>A repair quote has been sent to the customer.</p>
+<div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Ticket:</strong> ${esc(ticketId)}</p>
+<p style="margin:8px 0 0;"><strong>Customer:</strong> ${esc(customerName)}</p>
+<p style="margin:8px 0 0;"><strong>Device:</strong> ${esc(deviceType)} ${esc(deviceModel)}</p>
+<p style="margin:8px 0 0;font-size:16px;font-weight:700;"><strong>Total:</strong> ${esc(currency)} ${totalCost.toFixed(2)}</p>
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Open Admin → Repairs</a></p>
+`);
+  return { subject: title, html };
+}
+
+// ─── Warranty Notification Emails ─────────────────────────────────────────────
+
+export function warrantyClaimAdminEmail(claimId: number, warrantyRef: string, customerName: string, serialNumber: string, notes: string, dashboardUrl: string, storeName: string = "My Shop"): { subject: string; html: string } {
+  const title = `New warranty claim #${claimId} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>A new warranty claim has been submitted.</p>
+<div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Claim:</strong> #${claimId}</p>
+<p style="margin:8px 0 0;"><strong>Reference:</strong> ${esc(warrantyRef)}</p>
+<p style="margin:8px 0 0;"><strong>Customer:</strong> ${esc(customerName)}</p>
+<p style="margin:8px 0 0;"><strong>Serial:</strong> ${esc(serialNumber)}</p>
+${notes ? `<p style="margin:8px 0 0;"><strong>Notes:</strong> ${esc(notes).substring(0, 200)}</p>` : ""}
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Open Admin → Warranties</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function warrantyStatusAdminEmail(claimId: number, warrantyRef: string, customerName: string, oldStatus: string, newStatus: string, dashboardUrl: string, storeName: string = "My Shop"): { subject: string; html: string } {
+  const title = `Warranty claim #${claimId}: ${esc(oldStatus)} → ${esc(newStatus)} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>A warranty claim status has changed.</p>
+<div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Claim:</strong> #${claimId}</p>
+<p style="margin:8px 0 0;"><strong>Reference:</strong> ${esc(warrantyRef)}</p>
+<p style="margin:8px 0 0;"><strong>Customer:</strong> ${esc(customerName)}</p>
+<p style="margin:8px 0 0;"><strong>Status:</strong> ${esc(oldStatus)} → <strong>${esc(newStatus)}</strong></p>
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Open Admin → Warranties</a></p>
+`);
+  return { subject: title, html };
+}

@@ -109,6 +109,7 @@ export default function WhatsAppSettings() {
           whatsappAppSecret: settings.whatsappAppSecret,
           whatsappVerifyToken: settings.whatsappVerifyToken,
           whatsappBusinessAccountId: settings.whatsappBusinessAccountId,
+          whatsappApiVersion: settings.whatsappApiVersion,
           adminWhatsAppEnabled: settings.adminWhatsAppEnabled,
           adminWhatsAppPhone: settings.adminWhatsAppPhone,
         }),
@@ -234,6 +235,10 @@ export default function WhatsAppSettings() {
         <div className="field"><label>Business Account ID
           <input value={settings?.whatsappBusinessAccountId || ""} onChange={(e) => setSettings({ ...settings, whatsappBusinessAccountId: e.target.value })} placeholder="WABA ID" />
         </label></div>
+        <div className="field"><label>Graph API Version
+          <input value={settings?.whatsappApiVersion || "v21.0"} onChange={(e) => setSettings({ ...settings, whatsappApiVersion: e.target.value })} placeholder="v21.0" />
+          <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>Meta Graph API version used for WhatsApp calls. Defaults to v21.0 when unset.</span>
+        </label></div>
 
         <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: "0.5rem 0 1rem" }}>
           Get these values from <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">Meta Developer Dashboard</a> → Your App → WhatsApp → API Setup.
@@ -309,7 +314,7 @@ export default function WhatsAppSettings() {
       {templatesTab && (
         <div className="panel" style={{ maxWidth: 700, marginBottom: "1.5rem" }}>
           <h3 style={{ marginTop: 0 }}>WhatsApp Templates</h3>
-          {templates.length === 0 ? <p style={{ color: "var(--text-secondary)" }}>No templates yet. Messages will use the hardcoded "general_notification" template.</p> : (
+          {templates.length === 0 ? <p style={{ color: "var(--text-secondary)" }}>No templates yet. Out-of-window notifications will reference the "general_notification" template and log a failure if it isn't registered.</p> : (
             <div className="table-wrap" style={{ marginBottom: "1rem" }}>
               <table className="data-table" style={{ fontSize: "0.8rem" }}>
                 <thead><tr><th>Name</th><th>Category</th><th>Header</th><th>Body</th><th></th></tr></thead>

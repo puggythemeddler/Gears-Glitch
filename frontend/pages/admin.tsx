@@ -19,6 +19,7 @@ import ProvidersPage from "@/components/admin/ProvidersPage";
 import CreditNotesPage from "@/components/admin/CreditNotesPage";
 import AboutUsPage from "@/components/admin/AboutUsPage";
 import WhatsAppSettings from "@/components/admin/WhatsAppSettings";
+import NotificationSettings from "@/components/admin/NotificationSettings";
 import ProductPositioningPage from "@/components/admin/ProductPositioningPage";
 import StockTakeListPage from "@/components/admin/StockTakeListPage";
 import StockOnHandPage from "@/components/admin/StockOnHandPage";
@@ -31,7 +32,7 @@ import FeaturePicker from "@/components/admin/FeaturePicker";
 import AdminWarranties from "@/components/admin/AdminWarranties";
 import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 
@@ -88,6 +89,7 @@ const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   "about-us": "about:view",
   "product-positioning": "positioning:view",
   "whatsapp-settings": "whatsapp:view",
+  "notifications-settings": "settings:view",
 };
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string; features?: string[] }[] }[] = [
@@ -179,6 +181,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "layout-builder", label: "Layout Builder", feature: "Drag-and-drop storefront builder" },
       { key: "email-settings", label: "Email", feature: "Email notifications" },
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
+      { key: "notifications-settings", label: "Notifications" },
       { key: "about-us", label: "About Us" },
       { key: "spec-templates", label: "Spec Templates" },
     ],
@@ -236,6 +239,7 @@ const NAV_ICONS: Partial<Record<AdminView, string>> = {
   "product-positioning": "move",
   "email-settings": "mail",
   "whatsapp-settings": "message",
+  "notifications-settings": "bell",
   "about-us": "info",
   plans: "layers",
   "spec-templates": "clipboard",
@@ -664,6 +668,7 @@ export default function AdminPage() {
             {view === "product-positioning" && <AdminProductPositioning />}
             {view === "email-settings" && <AdminEmailSettings />}
             {view === "whatsapp-settings" && <WhatsAppSettings />}
+            {view === "notifications-settings" && <NotificationSettings />}
             {view === "category-positioning" && <CategoryPositioningPage />}
             {view === "repairs" && <AdminRepairs adminOnly={staffRole === "admin"} />}
             {view === "warranties" && <AdminWarranties />}

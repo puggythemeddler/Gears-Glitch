@@ -2,8 +2,13 @@ import { Router, Request, Response } from "express";
 import { query, queryOne, queryAll } from "./db-helpers";
 import { staffAuthMiddleware } from "./auth";
 import { asyncHandler } from "./routes/shared";
+import { getSettings } from "./db";
+import { notify } from "./notification-service";
+import { warrantyClaimAdminEmail, warrantyStatusAdminEmail } from "./email";
 
 const router = Router();
+
+const DASH_URL = () => `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
 
 router.post("/", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { warrantyRef, customerId, serialNumber, repairTicketId, notes } = req.body || {};
@@ -22,7 +27,33 @@ router.post("/", staffAuthMiddleware, asyncHandler(async (req: Request, res: Res
       notes ? String(notes) : ""
     ]
   );
-  res.status(201).json(result.rows[0]);
+  const claim = result.rows[0];
+  if (claim) {
+    try {
+      const settings = await getSettings();
+      const storeName = settings.storeName || "My Shop";
+      const cRow = await queryOne("SELECT name FROM customers WHERE id = $1", [claim.customer_id]);
+      const customerName = claim.customer_id != null && cRow?.name ? String(cRow.name) : "Customer";
+      const { subject, html } = warrantyClaimAdminEmail(
+        claim.id,
+        claim.warranty_ref,
+        customerName,
+        claim.serial_number || "",
+        claim.notes || "",
+        DASH_URL(),
+        storeName
+      );
+      await notify({
+        event: "warranty.created",
+        entityType: "warranty",
+        entityId: claim.id,
+        subject,
+        bodyText: `New warranty claim #${claim.id} (${claim.warranty_ref}) from ${customerName}. Open Admin > Warranties to review.`,
+        bodyHtml: html,
+      });
+    } catch (_err: any) { console.warn("[warranty] notification failed:", _err?.message || _err); }
+  }
+  res.status(201).json(claim);
 }));
 
 router.get("/", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -53,6 +84,7 @@ router.put("/:id/status", staffAuthMiddleware, asyncHandler(async (req: Request,
   const allowed = ["submitted", "approved", "rejected", "resolved"];
   const newStatus = String(status || "").trim();
   if (!allowed.includes(newStatus)) { res.status(400).json({ error: "Invalid status." }); return; }
+  const oldClaim = await queryOne("SELECT * FROM warranty_claims WHERE id = $1", [id]);
   const result = await query(
     `UPDATE warranty_claims
      SET status = $1,
@@ -64,6 +96,32 @@ router.put("/:id/status", staffAuthMiddleware, asyncHandler(async (req: Request,
     [newStatus, notes ? String(notes) : "", approvedBy != null && !Number.isNaN(Number(approvedBy)) ? Number(approvedBy) : null, id]
   );
   if (!result.rows[0]) { res.status(404).json({ error: "Warranty claim not found." }); return; }
+  const claim = result.rows[0];
+  if (oldClaim && oldClaim.status !== newStatus) {
+    try {
+      const settings = await getSettings();
+      const storeName = settings.storeName || "My Shop";
+      const cRow = await queryOne("SELECT name FROM customers WHERE id = $1", [claim.customer_id]);
+      const customerName = claim.customer_id != null && cRow?.name ? String(cRow.name) : "Customer";
+      const { subject, html } = warrantyStatusAdminEmail(
+        claim.id,
+        claim.warranty_ref,
+        customerName,
+        String(oldClaim.status),
+        newStatus,
+        DASH_URL(),
+        storeName
+      );
+      await notify({
+        event: newStatus === "approved" ? "warranty.approved" : newStatus === "rejected" ? "warranty.rejected" : newStatus === "resolved" ? "warranty.resolved" : "warranty.status_changed",
+        entityType: "warranty",
+        entityId: claim.id,
+        subject,
+        bodyText: `Warranty claim #${claim.id} (${claim.warranty_ref}) status changed to ${newStatus}.`,
+        bodyHtml: html,
+      });
+    } catch (_err: any) { console.warn("[warranty] notification failed:", _err?.message || _err); }
+  }
   res.json(result.rows[0]);
 }));
 

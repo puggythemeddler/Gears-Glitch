@@ -288,6 +288,7 @@ interface Settings {
   whatsappAppSecret: string;
   whatsappVerifyToken: string;
   whatsappBusinessAccountId: string;
+  whatsappApiVersion: string;
   adminWhatsAppEnabled: boolean;
   adminWhatsAppPhone: string;
 }
@@ -865,6 +866,24 @@ async function runMigrations(): Promise<void> {
     )`);
     await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_type ON email_logs(type)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at)`);
+  } catch {}
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS notification_log (
+      id SERIAL PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      recipient TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      entity_type TEXT NOT NULL DEFAULT '',
+      entity_id TEXT NOT NULL DEFAULT '',
+      error_message TEXT DEFAULT NULL,
+      provider_message_id TEXT DEFAULT NULL,
+      created_at TEXT DEFAULT NOW()::text
+    )`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_event ON notification_log(event_type)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_channel ON notification_log(channel)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_status ON notification_log(status)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_created ON notification_log(created_at)`);
   } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_annual DOUBLE PRECISION`); } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`); } catch {}
@@ -1773,6 +1792,7 @@ async function getSettings(): Promise<Settings> {
     whatsappAppSecret: s.whatsappAppSecret || process.env.WHATSAPP_APP_SECRET || "",
     whatsappVerifyToken: s.whatsappVerifyToken || process.env.WHATSAPP_VERIFY_TOKEN || "gear-glitch-wa-verify",
     whatsappBusinessAccountId: s.whatsappBusinessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
+    whatsappApiVersion: s.whatsappApiVersion || process.env.WHATSAPP_API_VERSION || "v21.0",
     adminWhatsAppEnabled: s.adminWhatsAppEnabled === "true",
     adminWhatsAppPhone: s.adminWhatsAppPhone || process.env.ADMIN_WHATSAPP_PHONE || "",
   };
@@ -1789,7 +1809,7 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 }
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
-  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled", "whatsappEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId", "adminWhatsAppEnabled", "adminWhatsAppPhone"];
+  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled", "whatsappEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId", "whatsappApiVersion", "adminWhatsAppEnabled", "adminWhatsAppPhone"];
   // Secrets are never returned to the browser by GET /api/settings, so the
   // settings forms submit them as empty strings. Treat an empty value as "keep
   // the currently stored secret" instead of wiping it.
