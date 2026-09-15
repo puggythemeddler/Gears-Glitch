@@ -9,9 +9,23 @@ const HAS_DB = !!process.env.DATABASE_URL;
 describe("notification service (P1)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
   before(async () => {
     // Ensure the settings + notification_log tables exist (schema runs at server
-    // boot, but tests may target a fresh isolated database).
-    await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
-    await query(
+    // boot, but tests may target a fresh isolated database). The test runner
+    // executes each file in a separate process, so the isolation suite may be
+    // bootstrapping the same schema concurrently; retry on the catalog race
+    // (duplicate type name) until the other process commits.
+    const createIfNeeded = async (sql: string) => {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+          await query(sql);
+          return;
+        } catch (err: any) {
+          if (err?.code === "23505") { await new Promise(r => setTimeout(r, 300)); continue; }
+          throw err;
+        }
+      }
+    };
+    await createIfNeeded(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+    await createIfNeeded(
       `CREATE TABLE IF NOT EXISTS notification_log (
         id SERIAL PRIMARY KEY,
         event_type TEXT NOT NULL,
