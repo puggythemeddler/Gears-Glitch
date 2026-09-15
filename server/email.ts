@@ -124,6 +124,52 @@ export function orderStatusEmail(customerName: string, orderNumber: string, stat
   return { subject: title, html };
 }
 
+export function newOrderAdminEmail(orderNumber: string, customerName: string, total: string, currency: string, itemCount: number, dashboardUrl: string, source: string = "storefront", storeName: string = "My Shop"): { subject: string; html: string } {
+  const title = `New order ${esc(orderNumber)} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>You have a new <strong>${esc(source)}</strong> order from <strong>${esc(customerName)}</strong>.</p>
+<div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Order:</strong> ${esc(orderNumber)}</p>
+<p style="margin:8px 0 0;"><strong>Customer:</strong> ${esc(customerName)}</p>
+<p style="margin:8px 0 0;"><strong>Items:</strong> ${itemCount}</p>
+<p style="margin:8px 0 0;font-size:16px;font-weight:700;"><strong>Total:</strong> ${esc(currency)} ${esc(total)}</p>
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Open Admin → Orders</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function orderPaidAdminEmail(orderNumber: string, customerName: string, total: string, currency: string, receipt: string, dashboardUrl: string, storeName: string = "My Shop"): { subject: string; html: string } {
+  const title = `Payment received for order ${esc(orderNumber)} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>Payment has been received for order <strong>${esc(orderNumber)}</strong>.</p>
+<div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Order:</strong> ${esc(orderNumber)}</p>
+<p style="margin:8px 0 0;"><strong>Customer:</strong> ${esc(customerName)}</p>
+<p style="margin:8px 0 0;"><strong>Amount:</strong> ${esc(currency)} ${esc(total)}</p>
+${receipt ? `<p style="margin:8px 0 0;"><strong>Receipt:</strong> ${esc(receipt)}</p>` : ""}
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Open Admin → Orders</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function customerActivityAdminEmail(name: string, email: string, action: "registered" | "login", method: "password" | "google", dashboardUrl: string, storeName: string = "My Shop"): { subject: string; html: string } {
+  const isNew = action === "registered";
+  const title = isNew ? `New customer signed up — ${esc(storeName)}` : `Customer sign-in — ${esc(storeName)}`;
+  const badge = isNew ? "New account created" : "Signed in";
+  const html = wrapTemplate(title, `
+<p><strong>${esc(badge)}</strong>${isNew ? "" : " to the store"}:</p>
+<div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Name:</strong> ${esc(name)}</p>
+<p style="margin:8px 0 0;"><strong>Email:</strong> ${esc(email)}</p>
+<p style="margin:8px 0 0;"><strong>Via:</strong> ${method === "google" ? "Google" : "Password"}</p>
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Open Admin → Customers</a></p>
+`);
+  return { subject: title, html };
+}
+
 export function subscriptionInvoiceEmail(customerName: string, invoiceNumber: string, planName: string, amount: string, currency: string, dueDate: string, dashboardUrl: string): { subject: string; html: string } {
   const title = `Invoice ${esc(invoiceNumber)} — ${esc(planName)} Plan`;
   const html = wrapTemplate(title, `

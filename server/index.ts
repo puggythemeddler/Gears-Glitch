@@ -368,7 +368,7 @@ import {
 } from "./repairs";
 import warrantyRouter from "./warranty";
 import * as notifier from "./notify";
-import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail } from "./email";
+import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage } from "./whatsapp";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
@@ -938,6 +938,29 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
     await updateOrderMpesaStatus(checkoutId, resultCode, mpesaReceipt);
   } catch (err: any) {
     console.warn("[M-Pesa] Failed to update order status:", err.message);
+  }
+
+  // Notify the store admin when a storefront order is actually paid (first time).
+  if (resultCode === 0 && mpesaReceipt) {
+    try {
+      const order = await getOrderByCheckoutRequest(checkoutId);
+      if (order && order.source === "storefront") {
+        const notifySettings = await getSettings();
+        const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+        const { subject, html } = orderPaidAdminEmail(
+          `#${order.id}`,
+          order.customerName || order.customerEmail || "Customer",
+          String((Number(order.subtotal) + Number(order.shippingFee) - (Number(order.discountAmount) || 0) - (Number(order.giftCardAmount) || 0)).toFixed(2)),
+          notifySettings.currency || "KES",
+          mpesaReceipt,
+          `${base}/admin`,
+          notifySettings.storeName || "My Shop"
+        );
+        await notifyAdminEmail(subject, html);
+      }
+    } catch (err: any) {
+      console.warn("[notify] Order-paid notification failed:", err?.message || err);
+    }
   }
 
   // Log the callback with sanitised data
@@ -2587,6 +2610,23 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
       } catch (err: any) {
         console.error("M-Pesa STK push failed:", err.message);
       }
+    }
+    try {
+      const notifySettings = await getSettings();
+      const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+      const { subject: newOrderSub, html: newOrderHtml } = newOrderAdminEmail(
+        `#${order.id}`,
+        shippingName || order.customerName || "Customer",
+        String((Number(order.subtotal) + shippingF - couponDiscount - giftCardDiscount - pointsRedeemed).toFixed(2)),
+        notifySettings.currency || "KES",
+        cartItems.length,
+        `${base}/admin`,
+        "storefront",
+        notifySettings.storeName || "My Shop"
+      );
+      await notifyAdminEmail(newOrderSub, newOrderHtml);
+    } catch (err: any) {
+      console.warn("[notify] New-order notification failed:", err?.message || err);
     }
     res.status(201).json({ ...order, mpesaRequested, mpesaPhone: mpesaRequested ? mpesaPhone : undefined });
   } catch (err: any) {
@@ -4486,6 +4526,7 @@ app.post("/api/customer/register", asyncHandler(async (req: Request, res: Respon
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   setSessionCookie(res, result.token, 7 * 24 * 3600);
   try { await logAudit(null, result.name || result.email || "customer", "customer_registered", "customer", null, { email: result.email }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
+  try { await sendCustomerActivityNotification(result.name || "Customer", String(result.email || body.email), "registered", "password"); } catch { console.warn("[notify] Registration notification failed"); }
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
@@ -4497,6 +4538,7 @@ app.post("/api/customer/login", asyncHandler(async (req: Request, res: Response)
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
   setSessionCookie(res, result.token, 7 * 24 * 3600);
   try { await logAudit(null, result.name || body.email || "customer", "customer_login", "auth", null, { method: "password" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
+  try { await sendCustomerActivityNotification(result.name || "Customer", String(result.email || body.email), "login", "password"); } catch { console.warn("[notify] Login notification failed"); }
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
@@ -4516,6 +4558,37 @@ function safeRedirectPath(raw: unknown, fallback: string): string {
   const value = Array.isArray(raw) ? raw[0] : raw;
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return fallback;
   return value;
+}
+
+// Resolve the store's notification email (settings.emailSender, falling back to
+// the store contact email) and the admin dashboard URL used in notification emails.
+async function adminNotificationTarget(): Promise<{ email: string; dashboardUrl: string } | null> {
+  const settings = await getSettings();
+  const email = (settings.emailSender || settings.email || process.env.ADMIN_EMAIL || "").trim();
+  if (!email) return null;
+  const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+  return { email, dashboardUrl: `${base}/admin` };
+}
+
+async function notifyAdminEmail(subject: string, html: string, type: string = "admin_notification"): Promise<void> {
+  try {
+    const target = await adminNotificationTarget();
+    if (!target) { console.warn("[notify] No admin email configured — skipping notification email."); return; }
+    await sendEmail(target.email, subject, html, type);
+  } catch (err: any) {
+    console.warn("[notify] Failed to send admin notification:", err?.message || err);
+  }
+}
+
+async function sendCustomerActivityNotification(name: string, email: string, action: "registered" | "login", method: "password" | "google"): Promise<void> {
+  try {
+    const settings = await getSettings();
+    const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+    const { subject, html } = customerActivityAdminEmail(name, email, action, method, `${base}/admin`, settings.storeName || "My Shop");
+    await notifyAdminEmail(subject, html);
+  } catch (err: any) {
+    console.warn("[notify] Customer activity notification failed:", err?.message || err);
+  }
 }
 
 app.get("/api/auth/google", asyncHandler(async (req: Request, res: Response) => {
@@ -4572,9 +4645,11 @@ app.get("/api/auth/google/callback", asyncHandler(async (req: Request, res: Resp
   }
 
   let customer: { id: number; name: string; email: string } | undefined = await findCustomerByEmail(profile.email);
+  let googleNewCustomer = false;
   if (!customer) {
     const randomPass = crypto.randomBytes(16).toString("hex");
     customer = await createCustomer({ name: profile.name, email: profile.email, password: randomPass });
+    googleNewCustomer = true;
   }
   if (!customer) {
     res.redirect(303, `${base}/login?error=google_account_creation_failed`);
@@ -4584,6 +4659,7 @@ app.get("/api/auth/google/callback", asyncHandler(async (req: Request, res: Resp
   const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer" }, "7d");
   setSessionCookie(res, token, 7 * 24 * 3600);
   try { await logAudit(null, customer.name || profile.email, "customer_login", "auth", null, { method: "google" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
+  try { await sendCustomerActivityNotification(customer.name || profile.name || "Customer", customer.email, googleNewCustomer ? "registered" : "login", "google"); } catch (err: any) { console.warn("[notify] Google login notification failed:", err?.message || err); }
   res.redirect(303, `${base}${postLogin}`);
 }));
 
@@ -4594,6 +4670,7 @@ app.post("/api/customer/google-login", asyncHandler(async (req: Request, res: Re
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
   setSessionCookie(res, result.token, 7 * 24 * 3600);
   try { await logAudit(null, result.name || result.email || "customer", "customer_login", "auth", null, { method: "google" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
+  try { await sendCustomerActivityNotification(result.name || "Customer", String(result.email || ""), "login", "google"); } catch (err: any) { console.warn("[notify] Google login notification failed:", err?.message || err); }
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
