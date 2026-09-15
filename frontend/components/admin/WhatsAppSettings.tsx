@@ -64,6 +64,8 @@ export default function WhatsAppSettings() {
   const [msg, setMsg] = useState("");
   const [testResult, setTestResult] = useState("");
   const [testLoading, setTestLoading] = useState(false);
+  const [testNotifyLoading, setTestNotifyLoading] = useState(false);
+  const [testNotifyResult, setTestNotifyResult] = useState("");
   const [config, setConfig] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
@@ -125,6 +127,19 @@ export default function WhatsAppSettings() {
       setTestResult(d.ok ? `Connected! Phone: ${d.phoneNumber}` : `Failed: ${d.error}`);
     } catch (e: any) { setTestResult("Error: " + e.message); }
     finally { setTestLoading(false); }
+  }
+
+  async function sendTestNotification() {
+    setTestNotifyLoading(true); setTestNotifyResult("");
+    try {
+      const d = await api<any>("/api/admin/notify/test", { method: "POST" });
+      const lines = [
+        `Email (${d.email || "none"}): ${d.emailResult}`,
+        `WhatsApp (${d.whatsapp || "none"}): ${d.whatsappResult}`,
+      ];
+      setTestNotifyResult(lines.join(" • "));
+    } catch (e: any) { setTestNotifyResult("Error: " + e.message); }
+    finally { setTestNotifyLoading(false); }
   }
 
   async function createTemplate() {
@@ -226,9 +241,11 @@ export default function WhatsAppSettings() {
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <RippleButton onClick={saveWhatsAppSettings} loading={saving}>Save</RippleButton>
           <RippleButton variant="ghost" onClick={testConnection} loading={testLoading}>Test Connection</RippleButton>
+          <RippleButton variant="ghost" onClick={sendTestNotification} loading={testNotifyLoading}>Send Test Notification</RippleButton>
         </div>
         {msg && <p style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success)" }}>{msg}</p>}
         {testResult && <p style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: testResult.startsWith("Connected") ? "var(--success)" : "var(--danger)" }}>{testResult}</p>}
+        {testNotifyResult && <p style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: testNotifyResult.includes("failed") ? "var(--danger)" : "var(--success)" }}>{testNotifyResult}</p>}
       </div>
 
       <div className="panel" style={{ maxWidth: 600, marginBottom: "1.5rem" }}>

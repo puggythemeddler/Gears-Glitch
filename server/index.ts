@@ -6907,6 +6907,44 @@ app.post("/api/admin/whatsapp/test", adminAuthMiddleware, requirePermission("wha
   res.json(result);
 }));
 
+app.post("/api/admin/notify/test", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+  const settings = await getSettings();
+  const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+  const { subject, html } = newOrderAdminEmail(
+    "#TEST",
+    "Test Customer",
+    "0.00",
+    settings.currency || "KES",
+    1,
+    `${base}/admin`,
+    "test",
+    settings.storeName || "My Shop"
+  );
+  const results: { email: string; emailResult: "sent" | "skipped" | "failed"; whatsapp: string; whatsappResult: "sent" | "skipped" | "failed" } = { email: "", emailResult: "skipped", whatsapp: "", whatsappResult: "skipped" };
+  const { email } = await adminNotificationTarget();
+  results.email = email;
+  if (!email) { results.emailResult = "skipped"; } else {
+    try { await sendEmail(email, subject, html, "admin_notification"); results.emailResult = "sent"; }
+    catch (err: any) { results.emailResult = "failed"; results.email = results.email + ` (${err?.message || "error"})`; }
+  }
+  const phone = (settings.adminWhatsAppPhone || settings.phone || "").replace(/\D/g, "");
+  results.whatsapp = phone;
+  if (!settings.whatsappEnabled || !settings.whatsappPhoneNumberId || !settings.whatsappAccessToken) {
+    results.whatsappResult = "skipped";
+    results.whatsapp = (results.whatsapp || "none") + (settings.whatsappEnabled ? "" : " — WhatsApp not enabled");
+  } else if (!settings.adminWhatsAppEnabled) {
+    results.whatsappResult = "skipped";
+    results.whatsapp = (results.whatsapp || "none") + " — admin WhatsApp notifications not enabled";
+  } else if (!phone) {
+    results.whatsappResult = "skipped";
+    results.whatsapp = "no phone set (set Admin Notification Phone or store phone)";
+  } else {
+    try { await notifyAdminWhatsApp(`Test notification from ${settings.storeName || "My Shop"} — admin notifications are working.`); results.whatsappResult = "sent"; }
+    catch (err: any) { results.whatsappResult = "failed"; results.whatsapp = results.whatsapp + ` (${err?.message || "error"})`; }
+  }
+  res.json(results);
+}));
+
 app.get("/api/admin/whatsapp/conversations", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
   const convos = await getWhatsAppConversations();
   res.json({ conversations: convos });
