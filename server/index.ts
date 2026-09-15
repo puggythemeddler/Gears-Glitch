@@ -369,7 +369,7 @@ import {
 import warrantyRouter from "./warranty";
 import * as notifier from "./notify";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail } from "./email";
-import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage } from "./whatsapp";
+import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
@@ -956,7 +956,7 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
           `${base}/admin`,
           notifySettings.storeName || "My Shop"
         );
-        await notifyAdminEmail(subject, html);
+        await notifyAdminEmail(subject, html, "admin_notification", `Payment received for order ${order.id} (${notifySettings.currency || "KES"} ${(Number(order.subtotal) + Number(order.shippingFee) - (Number(order.discountAmount) || 0) - (Number(order.giftCardAmount) || 0)).toFixed(2)}) from ${order.customerName || "Customer"}.`);
       }
     } catch (err: any) {
       console.warn("[notify] Order-paid notification failed:", err?.message || err);
@@ -2220,7 +2220,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
           "pos",
           notifySettings.storeName || "My Shop"
         );
-        await notifyAdminEmail(subject, html);
+        await notifyAdminEmail(subject, html, "admin_notification", `New POS sale #${orderId} (${notifySettings.currency || "KES"} ${subtotal.toFixed(2)}, ${resolvedItems.length} item(s), ${pmt.toUpperCase()}).`);
       } catch (err: any) {
         console.warn("[notify] POS-sale notification failed:", err?.message || err);
       }
@@ -2273,7 +2273,7 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
                 `${base}/admin`,
                 notifySettings.storeName || "My Shop"
               );
-              await notifyAdminEmail(subject, html);
+              await notifyAdminEmail(subject, html, "admin_notification", `Payment received for order ${full.id} (${notifySettings.currency || "KES"} ${(Number(full.subtotal) + Number(full.shippingFee) - (Number(full.discountAmount) || 0) - (Number(full.giftCardAmount) || 0)).toFixed(2)}) — POS.`);
             }
           } catch (err: any) { console.warn("[notify] POS payment-confirmed notification failed:", err?.message || err); }
         } else if (code > 0) {
@@ -2661,7 +2661,7 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
         "storefront",
         notifySettings.storeName || "My Shop"
       );
-      await notifyAdminEmail(newOrderSub, newOrderHtml);
+      await notifyAdminEmail(newOrderSub, newOrderHtml, "admin_notification", `New order ${order.id} (${notifySettings.currency || "KES"} ${(Number(order.subtotal) + shippingF - couponDiscount - giftCardDiscount - pointsRedeemed).toFixed(2)}, ${cartItems.length} item(s)) from ${shippingName || "Customer"}.`);
     } catch (err: any) {
       console.warn("[notify] New-order notification failed:", err?.message || err);
     }
@@ -4607,13 +4607,16 @@ async function adminNotificationTarget(): Promise<{ email: string; dashboardUrl:
   return { email, dashboardUrl: `${base}/admin` };
 }
 
-async function notifyAdminEmail(subject: string, html: string, type: string = "admin_notification"): Promise<void> {
+async function notifyAdminEmail(subject: string, html: string, type: string = "admin_notification", whatsappText?: string): Promise<void> {
   try {
     const target = await adminNotificationTarget();
     if (!target) { console.warn("[notify] No admin email configured — skipping notification email."); return; }
     await sendEmail(target.email, subject, html, type);
   } catch (err: any) {
     console.warn("[notify] Failed to send admin notification:", err?.message || err);
+  }
+  if (whatsappText) {
+    await notifyAdminWhatsApp(whatsappText).catch((err: any) => console.warn("[notify] Failed to send admin WhatsApp:", err?.message || err));
   }
 }
 
@@ -4622,7 +4625,10 @@ async function sendCustomerActivityNotification(name: string, email: string, act
     const settings = await getSettings();
     const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
     const { subject, html } = customerActivityAdminEmail(name, email, action, method, `${base}/admin`, settings.storeName || "My Shop");
-    await notifyAdminEmail(subject, html);
+    const whatsappText = action === "registered"
+      ? `New customer signed up: ${name} (${email}) via ${method === "google" ? "Google" : "password"}.`
+      : `Customer sign-in: ${name} (${email}) via ${method === "google" ? "Google" : "password"}.`;
+    await notifyAdminEmail(subject, html, "admin_notification", whatsappText);
   } catch (err: any) {
     console.warn("[notify] Customer activity notification failed:", err?.message || err);
   }

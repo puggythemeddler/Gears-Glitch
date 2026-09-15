@@ -288,6 +288,8 @@ interface Settings {
   whatsappAppSecret: string;
   whatsappVerifyToken: string;
   whatsappBusinessAccountId: string;
+  adminWhatsAppEnabled: boolean;
+  adminWhatsAppPhone: string;
 }
 
 interface CategoryRow {
@@ -1771,6 +1773,8 @@ async function getSettings(): Promise<Settings> {
     whatsappAppSecret: s.whatsappAppSecret || process.env.WHATSAPP_APP_SECRET || "",
     whatsappVerifyToken: s.whatsappVerifyToken || process.env.WHATSAPP_VERIFY_TOKEN || "gear-glitch-wa-verify",
     whatsappBusinessAccountId: s.whatsappBusinessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
+    adminWhatsAppEnabled: s.adminWhatsAppEnabled === "true",
+    adminWhatsAppPhone: s.adminWhatsAppPhone || process.env.ADMIN_WHATSAPP_PHONE || "",
   };
 }
 
@@ -1785,7 +1789,7 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 }
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
-  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled", "whatsappEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId"];
+  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled", "whatsappEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId", "adminWhatsAppEnabled", "adminWhatsAppPhone"];
   // Secrets are never returned to the browser by GET /api/settings, so the
   // settings forms submit them as empty strings. Treat an empty value as "keep
   // the currently stored secret" instead of wiping it.

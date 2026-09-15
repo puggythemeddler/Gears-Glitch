@@ -223,6 +223,17 @@ export async function sendWhatsAppMessage(to: string, text: string, entityType: 
   }
 }
 
+export async function notifyAdminWhatsApp(text: string): Promise<void> {
+  const s = await getSettings();
+  if (!s.whatsappEnabled || !s.whatsappPhoneNumberId || !s.whatsappAccessToken) return;
+  if (!s.adminWhatsAppEnabled) return;
+  const phone = (s.adminWhatsAppPhone || s.phone || "").replace(/\D/g, "");
+  if (!phone) return;
+  await sendWhatsAppMessage(phone, text, "staff", 0, s.storeName || "My Shop").catch((err: any) =>
+    console.warn("[whatsapp] Admin notification failed:", err?.message || err)
+  );
+}
+
 export async function verifyWhatsAppSignature(body: string | Buffer, signature: string | undefined): Promise<boolean> {
   const s = await getSettings();
   const appSecret = s.whatsappAppSecret;

@@ -107,6 +107,8 @@ export default function WhatsAppSettings() {
           whatsappAppSecret: settings.whatsappAppSecret,
           whatsappVerifyToken: settings.whatsappVerifyToken,
           whatsappBusinessAccountId: settings.whatsappBusinessAccountId,
+          adminWhatsAppEnabled: settings.adminWhatsAppEnabled,
+          adminWhatsAppPhone: settings.adminWhatsAppPhone,
         }),
       });
       setSettings(updated);
@@ -195,6 +197,18 @@ export default function WhatsAppSettings() {
           </label>
           <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: "0.25rem 0 0" }}>When enabled, messages sent through the system will also be sent via WhatsApp to the recipient.</p>
         </div>
+
+        <div className="field">
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+            <input type="checkbox" checked={settings?.adminWhatsAppEnabled || false} onChange={(e) => setSettings({ ...settings, adminWhatsAppEnabled: e.target.checked })} style={{ width: "auto" }} />
+            Send store-admin notifications via WhatsApp
+          </label>
+          <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: "0.25rem 0 0" }}>When enabled, you'll also get a WhatsApp alert for new orders, payments, POS sales, and customer sign-ins. If no phone is set below, the store phone is used.</p>
+        </div>
+
+        <div className="field"><label>Admin Notification Phone
+          <input value={settings?.adminWhatsAppPhone || ""} onChange={(e) => setSettings({ ...settings, adminWhatsAppPhone: e.target.value })} placeholder="254712345678 (falls back to store phone)" />
+        </label></div>
 
         <div className="field"><label>Phone Number ID
           <input value={settings?.whatsappPhoneNumberId || ""} onChange={(e) => setSettings({ ...settings, whatsappPhoneNumberId: e.target.value })} placeholder="e.g. 123456789012345" />
