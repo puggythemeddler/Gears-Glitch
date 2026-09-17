@@ -530,6 +530,7 @@
         <button class="ops-tab" data-opstab="drift" role="tab" aria-selected="false" onclick="switchOpsSub('drift', this)">Config Drift</button>
         <button class="ops-tab" data-opstab="usage" role="tab" aria-selected="false" onclick="switchOpsSub('usage', this)">Usage</button>
         <button class="ops-tab" data-opstab="thresholds" role="tab" aria-selected="false" onclick="switchOpsSub('thresholds', this)">Thresholds</button>
+        <button class="ops-tab" data-opstab="platform" role="tab" aria-selected="false" onclick="switchOpsSub('platform', this)">Platform</button>
       </div>
       <div id="ops-overview"><div class="empty"><p>Loading…</p></div></div>
       <div id="ops-health" style="display:none"><div class="empty"><p>Loading…</p></div></div>
@@ -542,6 +543,7 @@
       <div id="ops-drift" style="display:none"><div class="empty"><p>Loading…</p></div></div>
       <div id="ops-usage" style="display:none"><div class="empty"><p>Loading…</p></div></div>
       <div id="ops-thresholds" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-platform" style="display:none"><div class="empty"><p>Loading…</p></div></div>
     </div>
 
     <div id="tab-client-detail" role="region" aria-label="Client details" style="display:none">
@@ -2620,6 +2622,74 @@
       } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
     }
 
+    async function opsLoadPlatform() {
+      const el = document.getElementById("ops-platform");
+      try {
+        const data = await api("/api/ops/platform-report");
+        const t = data.totals || {};
+        const mrr = data.mrr || {};
+        const monthRows = (data.growth || []).map(g => {
+          const pay = (data.payments || []).find(p => p.month === g.month);
+          const usg = (data.usage || []).find(u => u.month === g.month);
+          return `<tr>
+            <td>${esc(g.month)}</td>
+            <td>${opsFmtNum(g.created)}</td>
+            <td>${pay ? opsFmtNum(pay.payments) : "0"}</td>
+            <td>${pay ? opsMoney(pay.amount) : opsMoney(0)}</td>
+            <td>${usg ? opsFmtNum(usg.orders) : "\u2014"}</td>
+            <td>${usg ? opsMoney(usg.revenue) : "\u2014"}</td>
+          </tr>`;
+        }).join("");
+        const planRows = (data.plan_split || []).map(p => {
+          const clients = Number(p.clients || 0);
+          const monthly = Number(p.price || 0);
+          const annual = Number(p.price_annual || 0);
+          return `<tr>
+            <td>${esc(p.plan)}</td>
+            <td>${esc(p.plan_name)}</td>
+            <td>${opsFmtNum(clients)}</td>
+            <td>${monthly ? opsMoney(monthly) : "\u2014"}</td>
+            <td>${annual ? opsMoney(annual) : "\u2014"}</td>
+            <td>${monthly ? opsMoney(monthly * clients) : "\u2014"}</td>
+            <td>${annual ? opsMoney(annual * clients) : "\u2014"}</td>
+          </tr>`;
+        }).join("");
+        const statusRows = (data.status_split || []).map(s => `<tr><td>${esc(s.status)}</td><td>${opsFmtNum(s.count)}</td></tr>`).join("");
+        const kpi = (label, value, color) => `<div class="stat-card"><div class="value" style="${color ? "color:" + color : ""}">${value}</div><div class="label">${label}</div></div>`;
+        el.innerHTML = `<div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Platform Report</h3></div>
+          <p class="tab-intro">Cross-client business figures built only from control-plane tables (clients, plan catalog, recorded payments, usage snapshots). Growth and plan split exclude test clients. MRR uses the plan catalog price per assigned plan \u2014 label it as the catalog, not recorded revenue.</p>
+          <div class="ops-kpi">
+            ${kpi("Production clients", opsFmtNum(t.production_clients), "")}
+            ${kpi("Active (production)", opsFmtNum(t.active_production), "var(--success-strong)")}
+            ${kpi("Suspended", opsFmtNum(t.suspended_production), t.suspended_production > 0 ? "var(--danger-strong)" : "")}
+            ${kpi("MRR (active, catalog)", opsMoney(mrr.mrr_active), "")}
+            ${kpi("ARR (all prod, catalog)", opsMoney(mrr.mrr_all * 12), "")}
+            ${kpi("Test clients", opsFmtNum(t.test_clients), "")}
+            ${kpi("Provisioning", opsFmtNum(t.provisioning), t.provisioning > 0 ? "var(--warning-strong)" : "")}
+            ${kpi("Expired subs", opsFmtNum(t.expired_subscriptions), t.expired_subscriptions > 0 ? "var(--danger-strong)" : "")}
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:var(--space-3)">
+            <div class="detail-panel">
+              <h4 style="margin:0 0 0.75rem">Monthly roll-up (production)</h4>
+              <table class="mini-tbl"><thead><tr><th>Month</th><th>New clients</th><th>Payments</th><th>Recorded amount</th><th>Orders*</th><th>Revenue*</th></tr></thead>
+              <tbody>${monthRows || '<tr><td colspan="6" class="empty"><p>No client history yet.</p></td></tr>'}</tbody></table>
+              <div class="ops-note mt">*Orders/revenue come from the daily usage snapshots the control-plane records from each client's health endpoint.</div>
+            </div>
+            <div class="detail-panel">
+              <h4 style="margin:0 0 0.75rem">Plan split &amp; catalog value</h4>
+              <table class="mini-tbl"><thead><tr><th>Plan</th><th>Name</th><th>Clients</th><th>Monthly</th><th>Annual</th><th>MRR contrib.</th><th>ARR contrib.</th></tr></thead>
+              <tbody>${planRows || '<tr><td colspan="7" class="empty"><p>No plans assigned yet.</p></td></tr>'}</tbody></table>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:var(--space-3);margin-top:var(--space-3)">
+            <div class="detail-panel">
+              <h4 style="margin:0 0 0.75rem">Clients by status (all)</h4>
+              <table class="mini-tbl"><thead><tr><th>Status</th><th>Clients</th></tr></thead><tbody>${statusRows || '<tr><td colspan="2" class="empty"><p>No clients yet.</p></td></tr>'}</tbody></table>
+            </div>
+          </div>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
     function opsTabsKeydown(e) {
       if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
       const tabs = Array.from(document.querySelectorAll(".ops-tab"));
@@ -2636,11 +2706,11 @@
       document.querySelectorAll(".ops-tab").forEach(t => { t.classList.remove("active"); t.setAttribute("aria-selected", "false"); });
       el.classList.add("active");
       el.setAttribute("aria-selected", "true");
-      ["overview", "health", "alerts", "incidents", "diagnostics", "releases", "support", "maintenance", "drift", "usage", "thresholds"].forEach(t => {
+      ["overview", "health", "alerts", "incidents", "diagnostics", "releases", "support", "maintenance", "drift", "usage", "thresholds", "platform"].forEach(t => {
         const p = document.getElementById("ops-" + t);
         if (p) p.style.display = t === tab ? "" : "none";
       });
-      ({ overview: opsLoadOverview, health: opsLoadHealth, alerts: opsLoadAlerts, incidents: opsLoadIncidents, diagnostics: opsLoadDiagnostics, releases: opsLoadReleases, support: opsLoadSupport, maintenance: opsLoadMaintenance, drift: opsLoadDrift, usage: opsLoadUsage, thresholds: opsLoadThresholds }[tab])();
+      ({ overview: opsLoadOverview, health: opsLoadHealth, alerts: opsLoadAlerts, incidents: opsLoadIncidents, diagnostics: opsLoadDiagnostics, releases: opsLoadReleases, support: opsLoadSupport, maintenance: opsLoadMaintenance, drift: opsLoadDrift, usage: opsLoadUsage, thresholds: opsLoadThresholds, platform: opsLoadPlatform }[tab])();
     }
 
     function opsReloadCurrent() {
@@ -2657,6 +2727,7 @@
       if (sub === "drift") return opsLoadDrift();
       if (sub === "usage") return opsLoadUsage();
       if (sub === "thresholds") return opsLoadThresholds();
+      if (sub === "platform") return opsLoadPlatform();
       return opsLoadHealth();
     }
 

@@ -589,6 +589,82 @@ export function registerOpsRoutes(app: express.Application, deps: Deps): void {
     } catch (err: any) { res.status(500).json({ error: "Failed to update settings" }); }
   });
 
+  // ─── PLATFORM REPORT ──────────────────────────────────────────────────────
+  // Cross-client, business-side platform report. Every figure is derived from
+  // control-plane tables only (clients, custom_plans, client_payments,
+  // client_usage_history) — nothing is fabricated:
+  //   - growth = production clients created per month (is_test excluded);
+  //   - plan split + MRR/ARR uses the CP plan catalog monthly price per
+  //     assigned plan (labeled as the catalog, not recorded revenue);
+  //   - payments = recorded client_payments amounts by month (money actually
+  //     recorded against invoices);
+  //   - usage trend = daily snapshots the CP pulls from each client health
+  //     endpoint, aggregated across all production clients.
+  app.get("/api/ops/platform-report", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const totals = await queryOne(
+        `SELECT
+           COUNT(*)::int AS total_clients,
+           COUNT(*) FILTER (WHERE is_test = 1)::int AS test_clients,
+           COUNT(*) FILTER (WHERE is_test = 0)::int AS production_clients,
+           COUNT(*) FILTER (WHERE is_test = 0 AND status = 'active')::int AS active_production,
+           COUNT(*) FILTER (WHERE is_test = 0 AND status = 'suspended')::int AS suspended_production,
+           COUNT(*) FILTER (WHERE is_test = 0 AND status = 'provisioning')::int AS provisioning,
+           COUNT(*) FILTER (WHERE is_test = 0 AND subscription_expires IS NOT NULL AND subscription_expires < NOW())::int AS expired_subscriptions
+         FROM clients`
+      );
+      const growth = await queryAll(
+        `SELECT to_char(created_at, 'YYYY-MM') AS month, COUNT(*)::int AS created
+         FROM clients WHERE is_test = 0 GROUP BY 1 ORDER BY 1 ASC LIMIT 24`
+      );
+      const statusSplit = await queryAll(
+        `SELECT status, COUNT(*)::int AS count FROM clients GROUP BY status ORDER BY count DESC`
+      );
+      const planSplit = await queryAll(
+        `SELECT COALESCE(NULLIF(c.plan,''),'none') AS plan,
+           COALESCE(NULLIF(cp.name,''),'n/a') AS plan_name,
+           COALESCE(cp.price, 0) AS price,
+           COALESCE(cp.price_annual, 0) AS price_annual,
+           COUNT(*)::int AS clients
+         FROM clients c LEFT JOIN custom_plans cp ON cp.id = c.plan
+         WHERE c.is_test = 0
+         GROUP BY 1, cp.name, cp.price, cp.price_annual ORDER BY clients DESC`
+      );
+      const mrr = await queryOne(
+        `SELECT
+           COALESCE(SUM(CASE WHEN c.status = 'active' THEN COALESCE(cp.price, 0) ELSE 0 END), 0) AS mrr_active,
+           COALESCE(SUM(COALESCE(cp.price, 0)), 0) AS mrr_all
+         FROM clients c LEFT JOIN custom_plans cp ON cp.id = c.plan
+         WHERE c.is_test = 0`
+      );
+      const payments = await queryAll(
+        `SELECT to_char(created_at, 'YYYY-MM') AS month,
+           COUNT(*)::int AS payments,
+           SUM(amount) AS amount
+         FROM client_payments GROUP BY 1 ORDER BY 1 ASC LIMIT 24`
+      );
+      const usage = await queryAll(
+        `SELECT to_char(day, 'YYYY-MM') AS month,
+           SUM(orders)::int AS orders,
+           SUM(customers)::int AS customers,
+           SUM(revenue) AS revenue
+         FROM client_usage_history GROUP BY 1 ORDER BY 1 ASC LIMIT 24`
+      );
+      res.json({
+        totals: totals || {},
+        growth: growth || [],
+        status_split: statusSplit || [],
+        plan_split: planSplit || [],
+        mrr: mrr || { mrr_active: 0, mrr_all: 0 },
+        payments: payments || [],
+        usage: usage || [],
+      });
+    } catch (err: any) {
+      console.error("[api] Platform report error:", err.message);
+      res.status(500).json({ error: "Failed to build platform report" });
+    }
+  });
+
   // ─── RELEASES ─────────────────────────────────────────────────────────────
   app.get("/api/ops/releases", requireAuth, requireAdmin, async (_req, res) => {
     try {
