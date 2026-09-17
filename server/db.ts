@@ -2790,8 +2790,8 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
 }
 
 async function generateInvoiceNumber(): Promise<string> {
-  const row = await queryOne("SELECT COUNT(*) AS count FROM orders") as any;
-  const num = Number(row?.count || 0) + 1;
+  const row = await queryOne("SELECT nextval('order_invoice_number_seq') AS num") as any;
+  const num = Number(row?.num || 1);
   return `INV-${String(num).padStart(5, "0")}`;
 }
 
@@ -2848,7 +2848,7 @@ async function deleteCoupon(id: number): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
-async function recordCouponUsage(couponId: number, orderId: number): Promise<boolean> {
+async function recordCouponUsage(couponId: number, orderId: number, customerId: number, discountAmount: number): Promise<boolean> {
   // Guard-gated atomic increment: never exceed max_uses even when several
   // concurrent orders passed validateCoupon at the same used_count. The row
   // lock taken by this UPDATE makes check-then-increment race-free. Returns
@@ -2857,6 +2857,17 @@ async function recordCouponUsage(couponId: number, orderId: number): Promise<boo
     "UPDATE coupons SET used_count = used_count + 1 WHERE id = $1 AND is_active = 1 AND (max_uses IS NULL OR max_uses = 0 OR used_count < max_uses)",
     [couponId]
   );
+  if ((result.rowCount ?? 0) > 0) {
+    try {
+      // Per-order redemption history (schema.sql `coupon_usage`): record who
+      // used the coupon and what it was worth. Bad write (e.g. missing FK row)
+      // must not fail the checkout, so it is swallowed like the audit log.
+      await query(
+        "INSERT INTO coupon_usage (coupon_id, order_id, customer_id, discount_amount) VALUES ($1, $2, $3, $4)",
+        [couponId, orderId, customerId, discountAmount]
+      );
+    } catch {}
+  }
   return (result.rowCount ?? 0) > 0;
 }
 

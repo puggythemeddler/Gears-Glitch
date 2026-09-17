@@ -2833,7 +2833,7 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
       processedBy: `Customer #${customerId}`,
       campaignId,
     });
-    if (couponOk && couponId) { try { await recordCouponUsage(couponId, order.id); } catch {} }
+    if (couponOk && couponId) { try { await recordCouponUsage(couponId, order.id, customerId, couponDiscount); } catch {} }
     if (giftCardOk && giftCardId && giftCardDiscount > 0) { await redeemGiftCard(giftCardId, order.id, customerId, giftCardDiscount); }
     if (pointsRedeemed > 0) { await redeemLoyaltyPoints(customerId, order.id, pointsRedeemed); }
     await clearCart(customerId);
