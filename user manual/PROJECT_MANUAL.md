@@ -98,7 +98,10 @@ Laptop sale/
 │   ├── upload.ts             # Multer image upload (Cloudinary production / disk dev)
 │   ├── mpesa.ts              # Daraja API STK Push
 │   ├── email.ts              # Unified email transporter
-│   ├── notify.ts             # Email notification helpers
+│   ├── notification-service.ts # Central dispatcher (email + WhatsApp, per-event prefs, log)
+│   ├── customer-notifications.ts # Customer lifecycle messages (welcome, orders, repairs, warranty reminders)
+│   ├── whatsapp.ts           # WhatsApp Business Cloud API sender
+│   ├── notify.ts             # Legacy email notification helpers
 │   └── routes/shared.ts      # asyncHandler, escapeHtml, validation helpers, invoice templates
 ├── control-plane/            # Operator dashboard (Express + own Neon DB)
 │   ├── server/               # index.ts, provision.ts (Neon/Render/Vercel/Cloudflare), db.ts

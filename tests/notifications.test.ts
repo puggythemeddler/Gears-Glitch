@@ -13,13 +13,17 @@ describe("notification service (P1)", { skip: !HAS_DB && "DATABASE_URL not set (
     // executes each file in a separate process, so the isolation suite may be
     // bootstrapping the same schema concurrently; retry on the catalog race
     // (duplicate type name) until the other process commits.
+    const RETRYABLE = ["23505", "42P07", "42701", "40001", "40P01"];
     const createIfNeeded = async (sql: string) => {
-      for (let attempt = 0; attempt < 10; attempt++) {
+      for (let attempt = 0; attempt < 12; attempt++) {
         try {
           await query(sql);
           return;
         } catch (err: any) {
-          if (err?.code === "23505") { await new Promise(r => setTimeout(r, 300)); continue; }
+          // The runner executes each file in its own process, so the isolation
+          // suite may be running schema.sql concurrently and racing on the
+          // catalog (duplicate type/table/column, serialization, deadlock).
+          if (RETRYABLE.includes(err?.code)) { await new Promise(r => setTimeout(r, 300)); continue; }
           throw err;
         }
       }
@@ -36,10 +40,19 @@ describe("notification service (P1)", { skip: !HAS_DB && "DATABASE_URL not set (
         entity_id TEXT NOT NULL DEFAULT '',
         error_message TEXT DEFAULT NULL,
         provider_message_id TEXT DEFAULT NULL,
+        subject TEXT DEFAULT NULL,
+        customer_id INTEGER DEFAULT NULL,
+        idempotency_key TEXT DEFAULT NULL,
+        sent_at TEXT DEFAULT NULL,
         created_at TEXT DEFAULT NOW()::text
       )`
     );
-    await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_event ON notification_log(event_type)`);
+    // Existing deployments/tests may have created the pre-enrichment table.
+    await createIfNeeded(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS subject TEXT DEFAULT NULL`);
+    await createIfNeeded(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS customer_id INTEGER DEFAULT NULL`);
+    await createIfNeeded(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS idempotency_key TEXT DEFAULT NULL`);
+    await createIfNeeded(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS sent_at TEXT DEFAULT NULL`);
+    await createIfNeeded(`CREATE INDEX IF NOT EXISTS idx_notif_log_event ON notification_log(event_type)`);
   });
 
   it("notification_preferences store + update without losing unknown keys", async () => {

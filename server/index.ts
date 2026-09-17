@@ -369,9 +369,10 @@ import {
 } from "./repairs";
 import warrantyRouter from "./warranty";
 import * as notifier from "./notify";
-import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail } from "./email";
+import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
-import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog } from "./notification-service";
+import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs } from "./notification-service";
+import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
@@ -959,6 +960,8 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
           notifySettings.storeName || "My Shop"
         );
         await notifyAdminEmail(subject, html, "admin_notification", `Payment received for order ${order.id} (${notifySettings.currency || "KES"} ${(Number(order.subtotal) + Number(order.shippingFee) - (Number(order.discountAmount) || 0) - (Number(order.giftCardAmount) || 0)).toFixed(2)}) from ${order.customerName || "Customer"}.`);
+        // Customer-facing order.processed (idempotent; also fires from POS/admin paths).
+        try { notifyCustomerOrderProcessed(order.id).catch(() => {}); } catch { /* ignore */ }
       }
     } catch (err: any) {
       console.warn("[notify] Order-paid notification failed:", err?.message || err);
@@ -2259,6 +2262,7 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
       await confirmOrderPayment(id);
       await query("UPDATE orders SET status = 'paid', mpesa_receipt = COALESCE(mpesa_receipt, $1), updated_at = NOW()::text WHERE id = $2", [`SIM${id}`, id]);
       paid = true; status = "paid"; mpesaReceipt = mpesaReceipt || `SIM${id}`;
+      try { notifyCustomerOrderProcessed(id).catch(() => {}); } catch { /* ignore */ }
     } else if (status === "pending_payment" || status === "pending") {
       try {
         const q = await queryStatus(checkoutRequestId);
@@ -2283,6 +2287,7 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
               );
               await notifyAdminEmail(subject, html, "admin_notification", `Payment received for order ${full.id} (${notifySettings.currency || "KES"} ${(Number(full.subtotal) + Number(full.shippingFee) - (Number(full.discountAmount) || 0) - (Number(full.giftCardAmount) || 0)).toFixed(2)}) — POS.`);
             }
+            try { notifyCustomerOrderProcessed(id).catch(() => {}); } catch { /* ignore */ }
           } catch (err: any) { console.warn("[notify] POS payment-confirmed notification failed:", err?.message || err); }
         } else if (code > 0) {
           await releaseOrderHeldStock(id);
@@ -2305,6 +2310,7 @@ app.post("/api/pos/orders/:id/pay-cash", posAuthMiddleware, asyncHandler(async (
     await confirmOrderPayment(id);
   }
   await query("UPDATE orders SET payment_method = 'cash', tendered_amount = $1, status = 'delivered', updated_at = NOW()::text WHERE id = $2", [tenderedAmount, order.id]);
+  try { notifyCustomerOrderProcessed(order.id).catch(() => {}); } catch { /* ignore */ }
   const change = tenderedAmount > order.subtotal ? tenderedAmount - order.subtotal : 0;
   res.json({ order: { ...order, status: "delivered", paymentMethod: "cash", tenderedAmount }, change });
 }));
@@ -2858,6 +2864,9 @@ app.patch("/api/provider/orders/:id/status", providerAuthMiddleware, asyncHandle
       const { subject: emailSub, html } = orderStatusEmail(updatedOrder.customerName || "Customer", `#${updatedOrder.id}`, status, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${updatedOrder.id}`);
       sendEmail(updatedOrder.customerEmail, emailSub, html, "order_status");
     }
+    if (["confirmed", "shipped", "delivered"].includes(status)) {
+      try { notifyCustomerOrderProcessed(Number(req.params.id)).catch(() => {}); } catch { /* ignore */ }
+    }
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to update order status." });
@@ -2971,6 +2980,9 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, requirePermission
   if (order && order.customerEmail) {
     const { subject: emailSub, html } = orderStatusEmail(order.customerName || "Customer", `#${order.id}`, status, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`);
     sendEmail(order.customerEmail, emailSub, html, "order_status");
+  }
+  if (["confirmed", "shipped", "delivered"].includes(status)) {
+    try { notifyCustomerOrderProcessed(Number(req.params.id)).catch(() => {}); } catch { /* ignore */ }
   }
 }));
 
@@ -4632,6 +4644,7 @@ app.post("/api/customer/register", asyncHandler(async (req: Request, res: Respon
   setSessionCookie(res, result.token, 7 * 24 * 3600);
   try { await logAudit(null, result.name || result.email || "customer", "customer_registered", "customer", null, { email: result.email }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
   try { await sendCustomerActivityNotification(result.name || "Customer", String(result.email || body.email), "registered", "password"); } catch { console.warn("[notify] Registration notification failed"); }
+  try { notifyCustomerWelcomeByEmail(String(result.email || body.email)).catch(() => {}); } catch { /* ignore */ }
   res.json({ token: result.token, name: result.name, email: result.email });
 }));
 
@@ -4761,6 +4774,7 @@ app.get("/api/auth/google/callback", asyncHandler(async (req: Request, res: Resp
     const randomPass = crypto.randomBytes(16).toString("hex");
     customer = await createCustomer({ name: profile.name, email: profile.email, password: randomPass });
     googleNewCustomer = true;
+    try { notifyCustomerWelcome({ id: customer.id, name: customer.name, email: customer.email, phone: (customer as any).phone }).catch(() => {}); } catch { /* ignore */ }
   }
   if (!customer) {
     res.redirect(303, `${base}/login?error=google_account_creation_failed`);
@@ -4858,6 +4872,26 @@ app.put("/api/customer/me", customerAuthMiddleware, asyncHandler(async (req: Req
   if (phone !== undefined && !isStr(phone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
   await queryOne("UPDATE customers SET name = COALESCE($1, name), phone = COALESCE($2, phone) WHERE id = $3 RETURNING *", [name || null, phone || null, customerId]);
   res.json({ ok: true, customer: await findCustomerById(customerId) });
+}));
+
+// Customer communication preferences (opt-outs) for email + WhatsApp.
+app.get("/api/customer/preferences", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  res.json(await getCustomerCommPrefs((req as any).customer.sub));
+}));
+
+app.put("/api/customer/preferences", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { email, whatsapp } = req.body || {};
+  if (email !== undefined && typeof email !== "boolean") { res.status(400).json({ error: "email must be a boolean." }); return; }
+  if (whatsapp !== undefined && typeof whatsapp !== "boolean") { res.status(400).json({ error: "whatsapp must be a boolean." }); return; }
+  const updated = await updateCustomerCommPrefs((req as any).customer.sub, { email, whatsapp });
+  res.json(updated);
+}));
+
+// Customer messaging history (only their own notifications).
+app.get("/api/customer/notifications", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  res.json(await listCustomerNotifications((req as any).customer.sub, limit, offset));
 }));
 
 app.post("/api/customer/change-password", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -5437,7 +5471,6 @@ app.get("/api/repairs/statuses", requireShopFeature("Repair ticketing"), (_req: 
 app.post("/api/repairs", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const result = await createRepairTicket((req as any).customer.sub, req.body || {});
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
-  try { notifier.sendNewRepairEmail(result.ticket!).catch(() => {}); } catch (_e) { /* ignore */ }
   try {
     const t = result.ticket as any;
     const settings = await getSettings();
@@ -5460,6 +5493,19 @@ app.post("/api/repairs", customerAuthMiddleware, requireShopFeature("Repair tick
       bodyHtml: html,
       metadata: { ticketId: String(t.id), customerName: t.customerName || "" }
     });
+    // Personalized customer acknowledgement (email + WhatsApp, honors opt-outs).
+    try {
+      await notifyCustomerRepairUpdate({
+        ticketId: String(t.id),
+        customerId: t.customerId || (req as any).customer.sub,
+        customerName: t.customerName,
+        customerEmail: t.customerEmail,
+        deviceType: t.deviceType,
+        deviceModel: t.deviceModel,
+        serialNumber: t.serialNumber || t.serial_number || "",
+        statusLabel: t.statusLabel || t.status || "Received",
+      });
+    } catch (err: any) { console.warn("[repair] customer notification failed:", err?.message || err); }
   } catch (_e: any) { console.warn("[repair] notification failed:", _e?.message || _e); }
   res.status(201).json(result.ticket);
 }));
@@ -5553,6 +5599,19 @@ app.patch("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:upd
         bodyHtml: html,
         metadata: { ticketId: String(combined.id), status: newStatus }
       });
+      // Personalized customer status update (email + WhatsApp, honors opt-outs).
+      try {
+        await notifyCustomerRepairUpdate({
+          ticketId: String(combined.id),
+          customerId: combined.customerId,
+          customerName: combined.customerName,
+          customerEmail: combined.customerEmail,
+          deviceType: combined.deviceType,
+          deviceModel: combined.deviceModel,
+          serialNumber: combined.serialNumber || combined.serial_number || "",
+          statusLabel: newStatus,
+        });
+      } catch (err: any) { console.warn("[repair] customer status notification failed:", err?.message || err); }
     } catch (_err: any) { console.warn("[repair] status notification failed:", _err?.message || _err); }
   }
   res.json(result);
@@ -6731,6 +6790,7 @@ app.post("/api/admin/customers", ownerAuthMiddleware, requirePermission("custome
     if (existing) { res.status(409).json({ error: "Email already registered." }); return; }
     const customer = await createCustomer({ name, email, password, phone: phone || "" });
     if (!customer) { res.status(500).json({ error: "Failed to create customer." }); return; }
+    try { notifyCustomerWelcome({ id: customer.id, name: customer.name, email: customer.email, phone: customer.phone }).catch(() => {}); } catch { /* ignore */ }
     res.json({ customer });
   } catch (err: any) { res.status(500).json({ error: "Failed to create customer." }); }
 }));
@@ -7150,14 +7210,56 @@ app.get("/api/admin/notifications/log", adminAuthMiddleware, requirePermission("
 
 app.get("/api/admin/notifications/events", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
   res.json({ events: [
-    "order.created", "order.paid", "order.status_changed",
+    "order.created", "order.paid", "order.status_changed", "order.processed",
     "payment.completed", "payment.failed",
     "customer.created", "customer.login",
-    "repair.created", "repair.status_changed", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled",
-    "warranty.created", "warranty.status_changed", "warranty.approved", "warranty.rejected", "warranty.resolved",
+    "repair.created", "repair.status_changed", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled", "repair.customer_update",
+    "warranty.created", "warranty.status_changed", "warranty.approved", "warranty.rejected", "warranty.resolved", "warranty.customer_update", "warranty.expiry_reminder", "warranty.expired",
     "invoice.created", "invoice.paid", "invoice.overdue",
     "subscription.changed", "subscription.expiring", "subscription.expired"
   ] });
+}));
+
+// Warranty reminder lead time (days before expiry), admin configurable.
+app.get("/api/admin/notifications/warranty-reminder", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ days: await getWarrantyReminderDays() });
+}));
+
+app.put("/api/admin/notifications/warranty-reminder", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const days = Number(req.body?.days);
+  if (!Number.isFinite(days) || days < 1 || days > 365) { res.status(400).json({ error: "days must be between 1 and 365." }); return; }
+  res.json({ days: await setWarrantyReminderDays(days) });
+}));
+
+// Send a sample customer notification (welcome template) to the store's own
+// admin email + WhatsApp so the customer-facing path can be verified. The
+// subject/message are clearly marked [TEST].
+app.post("/api/admin/notifications/test-customer", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+  const settings = await getSettings();
+  const base = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+  const { subject, html } = welcomeCustomerEmail("Test Customer", settings.storeName || "My Shop", `${base}/dashboard`);
+  const testSubject = `[TEST] ${subject}`;
+  const results: { email: string; emailResult: "sent" | "skipped" | "failed"; whatsapp: string; whatsappResult: "sent" | "skipped" | "failed" } = { email: "", emailResult: "skipped", whatsapp: "", whatsappResult: "skipped" };
+  const { email } = await adminNotificationTarget();
+  results.email = email;
+  if (!email) { results.emailResult = "skipped"; } else {
+    try { await sendEmail(email, testSubject, html, "notification_customer_test"); results.emailResult = "sent"; }
+    catch (err: any) { results.emailResult = "failed"; results.email = `${results.email} (${err?.message || "error"})`; }
+  }
+  const phone = (settings.adminWhatsAppPhone || settings.phone || "").replace(/\D/g, "");
+  results.whatsapp = phone;
+  if (!settings.whatsappEnabled || !settings.whatsappPhoneNumberId || !settings.whatsappAccessToken) {
+    results.whatsappResult = "skipped";
+  } else if (!settings.adminWhatsAppEnabled) {
+    results.whatsappResult = "skipped";
+  } else if (!phone) {
+    results.whatsappResult = "skipped";
+    results.whatsapp = "no phone set";
+  } else {
+    try { await notifyAdminWhatsApp(`[TEST] Hi Test Customer, welcome to ${settings.storeName || "My Shop"}! (sample customer notification)`); results.whatsappResult = "sent"; }
+    catch (err: any) { results.whatsappResult = "failed"; results.whatsapp = `${results.whatsapp} (${err?.message || "error"})`; }
+  }
+  res.json(results);
 }));
 
 app.get("/api/admin/whatsapp/conversations", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
@@ -7281,6 +7383,17 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       };
       sweepSubscriptions();
       setInterval(sweepSubscriptions, 6 * 60 * 60 * 1000);
+
+      // Warranty expiry reminders + expired notices. Idempotent per order item
+      // (deterministic key), so repeated sweeps never double-send.
+      const sweepWarranties = async () => {
+        try {
+          const r = await runWarrantyNotificationSweep();
+          if (r.reminders || r.expired) console.log(`[warranty-notify] reminders=${r.reminders} expired=${r.expired} checked=${r.checked}`);
+        } catch (err: any) { console.error("[warranty-notify] Sweep error:", err.message); }
+      };
+      sweepWarranties();
+      setInterval(sweepWarranties, 6 * 60 * 60 * 1000);
 
       // M-Pesa held-stock timeout: any pending_payment order that never received
       // a payment callback releases its held stock after 15 minutes so inventory

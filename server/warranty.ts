@@ -4,6 +4,7 @@ import { staffAuthMiddleware } from "./auth";
 import { asyncHandler } from "./routes/shared";
 import { getSettings } from "./db";
 import { notify } from "./notification-service";
+import { notifyCustomerWarrantyUpdate } from "./customer-notifications";
 import { warrantyClaimAdminEmail, warrantyStatusAdminEmail } from "./email";
 
 const router = Router();
@@ -32,7 +33,7 @@ router.post("/", staffAuthMiddleware, asyncHandler(async (req: Request, res: Res
     try {
       const settings = await getSettings();
       const storeName = settings.storeName || "My Shop";
-      const cRow = await queryOne("SELECT name FROM customers WHERE id = $1", [claim.customer_id]);
+      const cRow = await queryOne("SELECT name, email, phone FROM customers WHERE id = $1", [claim.customer_id]);
       const customerName = claim.customer_id != null && cRow?.name ? String(cRow.name) : "Customer";
       const { subject, html } = warrantyClaimAdminEmail(
         claim.id,
@@ -51,6 +52,18 @@ router.post("/", staffAuthMiddleware, asyncHandler(async (req: Request, res: Res
         bodyText: `New warranty claim #${claim.id} (${claim.warranty_ref}) from ${customerName}. Open Admin > Warranties to review.`,
         bodyHtml: html,
       });
+      try {
+        await notifyCustomerWarrantyUpdate({
+          claimId: claim.id,
+          warrantyRef: claim.warranty_ref,
+          customerId: claim.customer_id,
+          customerName,
+          customerEmail: cRow?.email ? String(cRow.email) : undefined,
+          customerPhone: cRow?.phone ? String(cRow.phone) : undefined,
+          serialNumber: claim.serial_number || "",
+          statusLabel: "Submitted",
+        });
+      } catch (err: any) { console.warn("[warranty] customer notification failed:", err?.message || err); }
     } catch (_err: any) { console.warn("[warranty] notification failed:", _err?.message || _err); }
   }
   res.status(201).json(claim);
@@ -101,7 +114,7 @@ router.put("/:id/status", staffAuthMiddleware, asyncHandler(async (req: Request,
     try {
       const settings = await getSettings();
       const storeName = settings.storeName || "My Shop";
-      const cRow = await queryOne("SELECT name FROM customers WHERE id = $1", [claim.customer_id]);
+      const cRow = await queryOne("SELECT name, email, phone FROM customers WHERE id = $1", [claim.customer_id]);
       const customerName = claim.customer_id != null && cRow?.name ? String(cRow.name) : "Customer";
       const { subject, html } = warrantyStatusAdminEmail(
         claim.id,
@@ -120,6 +133,18 @@ router.put("/:id/status", staffAuthMiddleware, asyncHandler(async (req: Request,
         bodyText: `Warranty claim #${claim.id} (${claim.warranty_ref}) status changed to ${newStatus}.`,
         bodyHtml: html,
       });
+      try {
+        await notifyCustomerWarrantyUpdate({
+          claimId: claim.id,
+          warrantyRef: claim.warranty_ref,
+          customerId: claim.customer_id,
+          customerName,
+          customerEmail: cRow?.email ? String(cRow.email) : undefined,
+          customerPhone: cRow?.phone ? String(cRow.phone) : undefined,
+          serialNumber: claim.serial_number || "",
+          statusLabel: newStatus.charAt(0).toUpperCase() + newStatus.slice(1),
+        });
+      } catch (err: any) { console.warn("[warranty] customer notification failed:", err?.message || err); }
     } catch (_err: any) { console.warn("[warranty] notification failed:", _err?.message || _err); }
   }
   res.json(result.rows[0]);

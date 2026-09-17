@@ -283,3 +283,121 @@ export function warrantyStatusAdminEmail(claimId: number, warrantyRef: string, c
 `);
   return { subject: title, html };
 }
+
+// ─── Customer-facing Notification Emails ─────────────────────────────────────
+// Personalized (greeting uses the customer's name — never "Dear Customer"),
+// escaped, and free of internal admin links. Device details are only shown
+// when they actually exist on the order.
+
+export interface CustomerDeviceInfo {
+  name: string;
+  serialNumber?: string;
+  warrantyStatus?: "active" | "expiring" | "expired" | "none";
+  warrantyStart?: string;
+  warrantyExpiry?: string;
+}
+
+function warrantyBadge(device: CustomerDeviceInfo): string {
+  if (!device.warrantyStatus || device.warrantyStatus === "none") return "";
+  const map: Record<string, { label: string; bg: string; color: string }> = {
+    active:   { label: "Under warranty", bg: "#f0fdf4", color: "#16a34a" },
+    expiring: { label: "Warranty expiring soon", bg: "#fffbeb", color: "#d97706" },
+    expired:  { label: "Warranty expired", bg: "#fef2f2", color: "#dc2626" },
+  };
+  const m = map[device.warrantyStatus];
+  if (!m) return "";
+  const dates = [device.warrantyStart ? `from ${esc(device.warrantyStart)}` : "", device.warrantyExpiry ? `until ${esc(device.warrantyExpiry)}` : ""].filter(Boolean).join(" ");
+  return `<div style="margin-top:4px;"><span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;background:${m.bg};color:${m.color};">${m.label}</span>${dates ? `<span style="font-size:12px;color:#64748b;margin-left:6px;">${dates}</span>` : ""}</div>`;
+}
+
+function deviceRows(devices: CustomerDeviceInfo[]): string {
+  if (!devices.length) return "";
+  return devices.map((d) => `
+<div style="background:#f8fafc;border:1px solid #e2e8f0;padding:12px 14px;margin:8px 0;border-radius:6px;">
+<p style="margin:0;font-weight:600;">${esc(d.name)}</p>
+${d.serialNumber ? `<p style="margin:4px 0 0;font-size:13px;color:#475569;"><strong>Serial:</strong> ${esc(d.serialNumber)}</p>` : ""}
+${warrantyBadge(d)}
+</div>`).join("");
+}
+
+export function welcomeCustomerEmail(customerName: string, storeName: string, dashboardUrl: string): { subject: string; html: string } {
+  const title = `Welcome to ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>Hi ${esc(customerName)},</p>
+<p>Thanks for creating an account with <strong>${esc(storeName)}</strong>. You can now track orders, warranties and repair tickets in one place.</p>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Go to your dashboard</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function orderProcessedCustomerEmail(customerName: string, orderNumber: string, devices: CustomerDeviceInfo[], total: string, currency: string, storeName: string, orderUrl: string): { subject: string; html: string } {
+  const title = `Your order ${esc(orderNumber)} has been processed — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>Hi ${esc(customerName)},</p>
+<p>Your order <strong>${esc(orderNumber)}</strong> has been processed. Here is what you purchased:</p>
+${deviceRows(devices)}
+<div style="background:#f1f5f9;padding:14px 16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;font-size:16px;font-weight:700;"><strong>Total:</strong> ${esc(currency)} ${esc(total)}</p>
+</div>
+<p><a href="${orderUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View order</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function warrantyReminderCustomerEmail(customerName: string, productName: string, serialNumber: string, expiryDate: string, daysLeft: number, storeName: string, orderUrl: string): { subject: string; html: string } {
+  const title = `Warranty for ${esc(productName)} expires soon — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>Hi ${esc(customerName)},</p>
+<p>The warranty on your <strong>${esc(productName)}</strong> will expire in <strong>${daysLeft} day${daysLeft === 1 ? "" : "s"}</strong>.</p>
+<div style="background:#fffbeb;border:1px solid #fde68a;padding:14px 16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Product:</strong> ${esc(productName)}</p>
+${serialNumber ? `<p style="margin:6px 0 0;"><strong>Serial:</strong> ${esc(serialNumber)}</p>` : ""}
+<p style="margin:6px 0 0;"><strong>Expires:</strong> ${esc(expiryDate)}</p>
+</div>
+<p>If you need to report an issue, please contact us before the warranty expires.</p>
+<p><a href="${orderUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View order</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function warrantyExpiredCustomerEmail(customerName: string, productName: string, serialNumber: string, expiryDate: string, storeName: string): { subject: string; html: string } {
+  const title = `Warranty for ${esc(productName)} has expired — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>Hi ${esc(customerName)},</p>
+<p>The warranty on your <strong>${esc(productName)}</strong> expired on <strong>${esc(expiryDate)}</strong>.</p>
+${serialNumber ? `<p style="font-size:13px;color:#475569;"><strong>Serial:</strong> ${esc(serialNumber)}</p>` : ""}
+<p>We can still help with repairs — just book a repair ticket and we will take it from there.</p>
+`);
+  return { subject: title, html };
+}
+
+export function repairCustomerEmail(customerName: string, ticketId: string, deviceLabel: string, serialNumber: string, statusLabel: string, storeName: string, dashboardUrl: string): { subject: string; html: string } {
+  const title = `Repair ${esc(ticketId)} — ${esc(statusLabel)} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>Hi ${esc(customerName)},</p>
+<p>Your repair ticket <strong>${esc(ticketId)}</strong> has been updated.</p>
+<div style="background:#f1f5f9;padding:14px 16px;margin:16px 0;border-radius:6px;">
+${deviceLabel ? `<p style="margin:0;"><strong>Device:</strong> ${esc(deviceLabel)}</p>` : ""}
+${serialNumber ? `<p style="margin:6px 0 0;"><strong>Serial:</strong> ${esc(serialNumber)}</p>` : ""}
+<p style="margin:6px 0 0;"><strong>Status:</strong> ${esc(statusLabel)}</p>
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View your repairs</a></p>
+`);
+  return { subject: title, html };
+}
+
+export function warrantyClaimCustomerEmail(customerName: string, claimId: number, warrantyRef: string, serialNumber: string, statusLabel: string, storeName: string, dashboardUrl: string): { subject: string; html: string } {
+  const title = `Warranty claim #${claimId} — ${esc(statusLabel)} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>Hi ${esc(customerName)},</p>
+<p>Your warranty claim has been updated.</p>
+<div style="background:#f1f5f9;padding:14px 16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;"><strong>Claim:</strong> #${claimId}</p>
+<p style="margin:6px 0 0;"><strong>Reference:</strong> ${esc(warrantyRef)}</p>
+${serialNumber ? `<p style="margin:6px 0 0;"><strong>Serial:</strong> ${esc(serialNumber)}</p>` : ""}
+<p style="margin:6px 0 0;"><strong>Status:</strong> ${esc(statusLabel)}</p>
+</div>
+<p><a href="${dashboardUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View your account</a></p>
+`);
+  return { subject: title, html };
+}

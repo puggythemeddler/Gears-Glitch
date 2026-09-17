@@ -9,7 +9,7 @@ import { useApp } from "@/lib/app-context";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
-type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "profile";
+type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "notifications" | "profile";
 
 export default function DashboardPage() {
   const [role, setRole] = useState<"customer" | null>(null);
@@ -134,6 +134,7 @@ export default function DashboardPage() {
     { key: "repairs", label: "Repairs", icon: "wrench", show: isCustomer, feature: "Repair ticketing" },
     { key: "wishlist", label: "Wishlist", icon: "heart", show: isCustomer },
     { key: "messages", label: "Messages", icon: "message", show: true, feature: "Messaging" },
+    { key: "notifications", label: "Notifications", icon: "bell", show: isCustomer },
     { key: "profile", label: "Profile", icon: "users", show: true },
   ];
 
@@ -416,6 +417,13 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* NOTIFICATIONS */}
+        {activeSection === "notifications" && (
+          <div className="dash-section active">
+            <CustomerNotifications />
+          </div>
+        )}
+
         {/* PROFILE */}
         {activeSection === "profile" && (
           <div className="dash-section active">
@@ -481,6 +489,80 @@ function CustomerProfileForm({ profile, onSaved }: { profile: any; onSaved: (p: 
         <button className="btn" disabled={saving}>{saving ? "Updating..." : "Change password"}</button>
       </form>
     </div>
+  );
+}
+
+function CustomerNotifications() {
+  const { toast } = useToast();
+  const [prefs, setPrefs] = useState<{ email: boolean; whatsapp: boolean } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api<{ email: boolean; whatsapp: boolean }>("/api/customer/preferences")
+      .then((p) => { setPrefs(p); setLoading(false); })
+      .catch(() => setLoading(false));
+    api<{ logs: any[] }>("/api/customer/notifications")
+      .then((d) => setLogs(d.logs || []))
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    if (!prefs) return;
+    setSaving(true);
+    try {
+      const updated = await api<{ email: boolean; whatsapp: boolean }>("/api/customer/preferences", {
+        method: "PUT",
+        body: JSON.stringify(prefs),
+      });
+      setPrefs(updated);
+      toast("success", "Notification preferences saved.");
+    } catch (e: any) { toast("error", e.message || "Failed to save preferences."); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <>
+      <h2>Notifications</h2>
+      <p className="muted" style={{ fontSize: "0.85rem" }}>Choose how we keep you updated about orders, warranties and repairs.</p>
+      {loading || !prefs ? <p className="muted">Loading…</p> : (
+        <div className="panel" style={{ maxWidth: 480, marginBottom: "1.5rem" }}>
+          <div className="field">
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input type="checkbox" checked={prefs.email} onChange={(e) => setPrefs({ ...prefs, email: e.target.checked })} style={{ width: "auto" }} />
+              Email notifications
+            </label>
+          </div>
+          <div className="field">
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input type="checkbox" checked={prefs.whatsapp} onChange={(e) => setPrefs({ ...prefs, whatsapp: e.target.checked })} style={{ width: "auto" }} />
+              WhatsApp notifications
+            </label>
+          </div>
+          <button className="btn btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save preferences"}</button>
+        </div>
+      )}
+
+      <h3>Recent notifications</h3>
+      {logs.length === 0 ? <p className="muted">No notifications yet.</p> : (
+        <div className="table-wrap" style={{ maxWidth: 760 }}>
+          <table className="data-table" style={{ fontSize: "0.8rem" }}>
+            <thead><tr><th>Date</th><th>Type</th><th>Channel</th><th>Status</th></tr></thead>
+            <tbody>
+              {logs.map((l: any) => (
+                <tr key={l.id}>
+                  <td>{new Date(l.created_at).toLocaleString("en-GB")}</td>
+                  <td>{escapeHtml(l.subject || l.event_type)}</td>
+                  <td>{escapeHtml(l.channel)}</td>
+                  <td style={{ color: l.status === "sent" ? "var(--success)" : l.status === "failed" ? "var(--danger)" : "var(--text-secondary)", fontWeight: 600 }}>{escapeHtml(l.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 

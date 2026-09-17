@@ -878,6 +878,10 @@ async function runMigrations(): Promise<void> {
       entity_id TEXT NOT NULL DEFAULT '',
       error_message TEXT DEFAULT NULL,
       provider_message_id TEXT DEFAULT NULL,
+      subject TEXT DEFAULT NULL,
+      customer_id INTEGER DEFAULT NULL,
+      idempotency_key TEXT DEFAULT NULL,
+      sent_at TEXT DEFAULT NULL,
       created_at TEXT DEFAULT NOW()::text
     )`);
     await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_event ON notification_log(event_type)`);
@@ -885,6 +889,15 @@ async function runMigrations(): Promise<void> {
     await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_status ON notification_log(status)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_created ON notification_log(created_at)`);
   } catch {}
+  // Enrich notification_log for customer messaging history + durable idempotency.
+  try { await query(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS subject TEXT DEFAULT NULL`); } catch {}
+  try { await query(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS customer_id INTEGER DEFAULT NULL`); } catch {}
+  try { await query(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS idempotency_key TEXT DEFAULT NULL`); } catch {}
+  try { await query(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS sent_at TEXT DEFAULT NULL`); } catch {}
+  try { await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_customer ON notification_log(customer_id)`); } catch {}
+  try { await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_idem ON notification_log(idempotency_key)`); } catch {}
+  // Per-customer communication opt-outs (JSON, e.g. {"email":false}).
+  try { await query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS comm_prefs TEXT DEFAULT '{}'`); } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_annual DOUBLE PRECISION`); } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`); } catch {}
   try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS sync_to_others INTEGER DEFAULT 1`); } catch {}
