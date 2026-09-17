@@ -2,6 +2,8 @@
 
 **Phase 0 audit scoring.** Each category scored 0–5 per the brief scale. Every score < 3 includes a concrete explanation of what remains. Scores reflect **current state as of the Phase 0 audit** (no implementation performed).
 
+> **STATUS (updated 2026-09-17, Phases 1–3):** scores are Phase-0 baselines, not current. Verified-now deltas: Migrations (1→3) — the runner is versioned/transactional/fail-loud (`schema_migrations` + `0001`–`0014`, `server/db.ts:653-693`). Database (2→3) — `order_items`/`stock_levels` product FKs `ON DELETE RESTRICT`, per-branch stock unique index, new indexes incl. `idx_orders_branch_id`. Warranty (1→3) — `warranty_claims` + branch provenance landed and DB-tested. Inventory (2→3) — serial/branch consistency + transfer reattribution (BN3). Testing (1→3) — 37 tests incl. DB-gated suites in CI. Live register: `PRODUCTION_READINESS_AUDIT_FULL.md`. Scores not listed here (e.g. money NUMERIC, backups, observability, control plane) were **not** re-verified this session — re-score "as-is" before trusting any row.
+
 **Scale:** 0 missing · 1 prototype · 2 partially implemented · 3 production acceptable · 4 strong · 5 excellent
 
 ---

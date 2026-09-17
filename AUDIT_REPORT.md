@@ -5,6 +5,8 @@
 **Audit date:** 2026-08-29
 **Method:** Manual verification of high-risk claims (credentials, secrets exposure, money types, migration mechanics, stock/money arithmetic, callback handling) plus deep file-level review of all major subsystems.
 
+> **STATUS (updated 2026-09-17, Phases 1–3):** this is a Phase-0 snapshot. Live source of truth: `PRODUCTION_READINESS_AUDIT_FULL.md` (A–G with per-phase addenda). Removed/changed since: destructive boot DDL/DML (`order_items`/`stock_levels` now `ON DELETE RESTRICT`), warranty↔repair link, branch attribution (migrations 0013/0014), route shadowing, M-Pesa callback auth, eTIMS boot reset, migration runner. One open CRITICAL remains — the eTIMS KRA adapter (stub returns `submitted:false`).
+
 ---
 
 ## 1. Executive Summary

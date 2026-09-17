@@ -4,6 +4,8 @@
 **Scope:** Entire frontend (`frontend/`), control plane (`control-plane/public/`), measured against `DESIGN.md` (the product's own design spec) and the business-software brief (Shopify + Square + ServiceNow + ERP â€” not AI-startup).
 **Status:** READ-ONLY AUDIT. No code was modified. Implementation awaits approval.
 
+> **STATUS (updated 2026-09-17, Phases 1–3):** this is a Phase-0 snapshot. Live source of truth: `PRODUCTION_READINESS_AUDIT_FULL.md` (A–G with per-phase addenda). Removed/changed since: destructive boot DDL/DML (`order_items`/`stock_levels` now `ON DELETE RESTRICT`), warranty↔repair link, branch attribution (migrations 0013/0014), route shadowing, M-Pesa callback auth, eTIMS boot reset, migration runner. One open CRITICAL remains — the eTIMS KRA adapter (stub returns `submitted:false`).
+
 ---
 
 ## 0. Executive Summary

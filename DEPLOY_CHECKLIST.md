@@ -3,6 +3,8 @@
 Deploy safeguard: the push updates are auto-deployed to the **test site** only; production
 promotion is a deliberate manual step. All three services have `autoDeploy: true` on `main`.
 
+> **STATUS (updated 2026-09-17):** this checklist is current for operator tasks. Schema/migration notes were refreshed in `DATABASE_MIGRATIONS.md` (versioned runner `0001`–`0014`; no manual SQL needed at deploy). New optional env since this doc was written: `MPESA_CALLBACK_SECRET` (see README). One open CRITICAL: the eTIMS KRA adapter — do not enable `etims_mode` expecting real e-invoicing (stub returns `submitted:false`).
+
 ## 0. Before deploying
 
 - [ ] **Rotate `JWT_SECRET`** on the backend service. The old one was short (`Livid@50` — do not

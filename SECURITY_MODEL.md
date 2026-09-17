@@ -2,6 +2,8 @@
 
 **Documented security model for Gears&Glitch** — authentication, authorization, multi-tenancy, control plane, secrets, payments/webhooks, and file uploads. Phase 0 audit snapshot; no implementation.
 
+> **STATUS (updated 2026-09-17, Phases 1–3):** this is a Phase-0 snapshot. Live source of truth: `PRODUCTION_READINESS_AUDIT_FULL.md` (B.3/AZ register). Removed/changed since: query-token auth is opt-in and logged (`server/auth.ts`), sessions/CSRF verified stateless (double-submit cookie + env-required `JWT_SECRET`; AZ3 now PASS), M-Pesa callback optional shared-secret auth. Items below (e.g. `backupImageToDb` path traversal, `trust proxy` scoping) were verified fixed in code; the control-plane items remain subject to the CP's own audit. One open CRITICAL remains — the eTIMS KRA adapter (stub returns `submitted:false`).
+
 ---
 
 ## 1. Deployment topology

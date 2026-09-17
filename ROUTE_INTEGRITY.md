@@ -4,6 +4,8 @@
 
 > Coverage note: this matrix covers every **page route** and every **privileged/critical API route**, plus the frontend navigation surfaces. It does not claim 100% route coverage of all 382 backend route registrations — that exhaustive API list lives in `API_ROUTE_INTEGRITY.md`. Everything below was verified by reading the source (Phase 0).
 
+> **STATUS (updated 2026-09-17, Phases 1–3):** this is a Phase-0 snapshot. Live source of truth: `PRODUCTION_READINESS_AUDIT_FULL.md`. Route shadowing F1–F3 (credit-notes/order-status, purchases/deleted, purchases/completed, products/batch-images) was fixed in Phase 2; `tests/route-order.test.ts` guards against regression. One open CRITICAL remains — the eTIMS KRA adapter (stub returns `submitted:false`).
+
 ---
 
 ## Legend

@@ -2,6 +2,8 @@
 
 Current action points for the project, by priority. Copy into GitHub Issues or a project board with `major` / `medium` / `low` labels.
 
+> **STATUS (updated 2026-09-17):** items below predate the Phase 1–3 production-readiness remediation — see `PRODUCTION_READINESS_AUDIT_FULL.md` for the live register. Duplicate-risk: anything here about migrating to "formal SQL migrations" is done (versioned runner `0001`–`0014` live), CSRF/CSP is [x]-checked, and the Cloudinary/Neon/env tasks remain the operator-action items.
+
 ## Major — operator action required
 
 These require access to external dashboards (Neon, Cloudinary, Render, Vercel). See `DEPLOY_CHECKLIST.md` for the step-by-step env vars and rotation values.

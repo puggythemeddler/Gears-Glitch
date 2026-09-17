@@ -311,3 +311,10 @@ Approved and applied after Phase 2 (eTIMS intentionally deferred — see below).
 **Verification:** root typecheck ✅, build ✅, unit tests **37** ✅ (0 fail) — +4 static AZ1 tests, new `tests/order-branch.integration.test.ts` (DB-gated: 0014 backfill/idempotency/index/movement-reattribution, cross-branch serial rejection, consume stamping, transfer reattribution) runs in CI's server-test job and skips locally.
 
 **Deferred (unchanged):** P1 eTIMS — real KRA adapter needs sandbox credentials; stub still returns `submitted:false` (`db.ts:3645`). Recommended follow-ups: migrate print links to purpose-scoped tokens end-to-end, and back the login lockout with a DB/Redis counter for strict multi-replica brute-force defense.
+
+**G2 — stale audit-doc reconciliation (same commit):**
+- Added a **status banner** to the eight Phase-0 docs listed in G2 (`AUDIT_REPORT.md`, `PRODUCTION_READINESS_AUDIT.md`, `UX_AUDIT.md`, `ROUTE_INTEGRITY.md`, `SECURITY_MODEL.md`, `PRODUCTION_SCORECARD.md`, `ACTION_ITEMS.md`, `DEPLOY_CHECKLIST.md`) pointing to this report as the live source of truth and listing what Phases 1–3 changed.
+- Corrected the README "Product Deletion" feature line (still claimed destructive `ON DELETE CASCADE` auto-removal; actual behavior is RESTRICT-gated with 409 → deactivate).
+- `DEPLOY_CHECKLIST.md` banner: flagged the eTIMS KRA adapter as the open CRITICAL, and referenced `MPESA_CALLBACK_SECRET` (Phase 2) and the refreshed `DATABASE_MIGRATIONS.md`.
+
+**Verification (docs-only commit):** no runtime code touched; `npm test` still 37 ✅ — the read-only `route-order.test.ts` guard is unaffected.
