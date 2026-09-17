@@ -417,6 +417,15 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
 // Start server after DB is ready
 const app = express();
 
+// Public storefront responses must never include internal cost data (unit cost
+// is used for profit reporting only). Strip it at the public boundary.
+function publicProduct(p: any): any {
+  if (!p) return p;
+  const copy = { ...p };
+  delete copy.costPrice;
+  return copy;
+}
+
 // Trust first proxy (required for rate-limiter on Render)
 app.set("trust proxy", 1);
 
@@ -2006,7 +2015,7 @@ app.get("/api/provider/products", providerAuthMiddleware, requireProviderFeature
   const tier = sub ? ((await getSubscriptionPlan(sub.planId))?.tierLevel ?? 0) : 0;
   const products = await listProducts();
   const settings = await getSettings();
-  res.json({ products, currency: settings.currency, tier });
+  res.json({ products: products.map(publicProduct), currency: settings.currency, tier });
 }));
 
 // ============ ORDERS ============
@@ -2175,7 +2184,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
             const expiry = addCalendarMonthsClamped(new Date(), wd);
             wExp = `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, "0")}-${String(expiry.getDate()).padStart(2, "0")}`;
           }
-          const inserted = await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id", [newOrderId, item.id, item.name, item.unitPrice, item.quantity, item.lineTotal, hw, wd, wExp, tx]);
+          const inserted = await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable, unit_cost) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id", [newOrderId, item.id, item.name, item.unitPrice, item.quantity, item.lineTotal, hw, wd, wExp, tx, item.costPrice === undefined || item.costPrice === null || isNaN(Number(item.costPrice)) ? null : Number(item.costPrice)]);
           const orderItemId = inserted.rows[0]?.id;
           if (orderItemId && item.serials && item.serials.length) {
             const linked = await linkSerialsToOrderItem(orderItemId, item.serials, client);
@@ -4084,13 +4093,13 @@ app.get("/api/products", asyncHandler(async (req: Request, res: Response) => {
       p.rating = rating && rating.count > 0 ? rating : null;
     }
   }
-  res.json({ products, currency: (await getSettings()).currency });
+  res.json({ products: products.map(publicProduct), currency: (await getSettings()).currency });
 }));
 
 app.get("/api/products/by-barcode/:code", asyncHandler(async (req: Request, res: Response) => {
   const product = await getProductByBarcode(String(req.params.code || ""));
   if (!product) { res.status(404).json({ error: "No product matches that barcode." }); return; }
-  res.json(product);
+  res.json(publicProduct(product));
 }));
 
 app.get("/api/products/:id", asyncHandler(async (req: Request, res: Response) => {
@@ -4099,7 +4108,7 @@ app.get("/api/products/:id", asyncHandler(async (req: Request, res: Response) =>
     if (!product) { res.status(404).json({ error: "Product not found." }); return; }
     if (product.isHidden && req.query.includeHidden !== "1") { res.status(404).json({ error: "Product not found." }); return; }
     try { await recordProductView(String(req.params.id), "anonymous"); } catch { console.warn("[analytics] Failed to record product view"); }
-    res.json(product);
+    res.json(publicProduct(product));
   } catch (err: any) {
     console.error("GET /api/products/:id error:", err?.message || err);
     res.status(500).json({ error: "Failed to load product." });
@@ -4121,6 +4130,7 @@ app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create
   const name = String(body.name || "").trim();
   if (!name) { res.status(400).json({ error: "Product name cannot be empty." }); return; }
   if (body.price !== undefined && !isNonNegNum(Number(body.price))) { res.status(400).json({ error: "Price must be a non-negative number." }); return; }
+  if (body.costPrice !== undefined && body.costPrice !== null && body.costPrice !== "" && !isNonNegNum(Number(body.costPrice))) { res.status(400).json({ error: "Cost price must be a non-negative number." }); return; }
   if (body.imageAlt !== undefined && !isStr(body.imageAlt, 500)) { res.status(400).json({ error: "imageAlt must be a valid string." }); return; }
 
   const product = await createProduct({
@@ -4129,6 +4139,7 @@ app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create
     category: body.category || "",
     groupId,
     price: Number(body.price) || 0,
+    costPrice: body.costPrice === undefined || body.costPrice === null || body.costPrice === "" ? null : Number(body.costPrice),
     specs: normalizeSpecs(body.specs),
     inStock: Boolean(body.inStock),
     isNonStock: Boolean(body.isNonStock),
@@ -4170,6 +4181,7 @@ app.post("/api/products/import", ownerAuthMiddleware, requirePermission("product
         hasWarranty: String(row.hasWarranty).toUpperCase() === "TRUE",
         warrantyDuration: Number(row.warrantyDuration) || 0,
         taxable: String(row.taxable).toUpperCase() !== "FALSE",
+        costPrice: row.costPrice === undefined || row.costPrice === null || row.costPrice === "" ? null : Number(row.costPrice),
       });
       imported++;
     } catch (e: any) {
@@ -4197,6 +4209,7 @@ app.post("/api/admin/products/bulk-edit", ownerAuthMiddleware, requirePermission
     if (!p) { notFound.push(id); continue; }
     const change: any = {};
     if (updates.price !== undefined) change.price = Number(updates.price);
+    if (updates.costPrice !== undefined) change.costPrice = updates.costPrice === null || updates.costPrice === "" ? null : Number(updates.costPrice);
     if (updates.inStock !== undefined) change.inStock = Boolean(updates.inStock);
     if (updates.category !== undefined) change.category = String(updates.category).trim();
     if (updates.isNonStock !== undefined) change.isNonStock = Boolean(updates.isNonStock);
@@ -4257,6 +4270,13 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
       return;
     }
   }
+  if (body.costPrice !== undefined && body.costPrice !== null && body.costPrice !== "") {
+    const cp = Number(body.costPrice);
+    if (!Number.isFinite(cp) || cp < 0) {
+      res.status(400).json({ error: "Cost price must be a positive number." });
+      return;
+    }
+  }
 
   const updates: any = {};
   if (body.category !== undefined) updates.category = body.category;
@@ -4264,6 +4284,7 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
   if (body.name !== undefined) updates.name = String(body.name).trim();
   if (body.price !== undefined) updates.price = Number(body.price);
   if (body.salePrice !== undefined) updates.salePrice = body.salePrice === null || body.salePrice === "" ? null : Number(body.salePrice);
+  if (body.costPrice !== undefined) updates.costPrice = body.costPrice === null || body.costPrice === "" ? null : Number(body.costPrice);
   if (body.specs !== undefined) updates.specs = normalizeSpecs(body.specs);
   if (body.inStock !== undefined) updates.inStock = Boolean(body.inStock);
   if (body.isNonStock !== undefined) updates.isNonStock = Boolean(body.isNonStock);
@@ -6677,7 +6698,7 @@ app.get("/api/campaigns/:slug", asyncHandler(async (req: Request, res: Response)
     const p = await getProduct(pid);
     if (p && !p.isHidden) products.push(p);
   }
-  res.json({ campaign, products });
+  res.json({ campaign, products: products.map(publicProduct) });
 }));
 
 // ============ CAMPAIGNS (Admin) ============

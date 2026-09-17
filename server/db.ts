@@ -25,6 +25,7 @@ interface ProductRow {
   serial_tracking: number;
   barcode: string;
   taxable: number;
+  cost_price: number | null;
   stock_on_hand: number;
   created_at: string;
   updated_at: string;
@@ -47,6 +48,7 @@ interface Product {
   serialTracking: boolean;
   barcode: string;
   taxable: boolean;
+  costPrice: number | null;
   imageAlt: string;
   imageUrl: string;
   stockOnHand: number;
@@ -577,6 +579,7 @@ function mapProduct(row: ProductRow | null): Product | null {
     serialTracking: Boolean(row.serial_tracking),
     barcode: row.barcode || "",
     taxable: Boolean(row.taxable),
+    costPrice: row.cost_price ?? null,
     imageAlt: row.image_alt || "",
     imageUrl,
     stockOnHand: row.stock_on_hand ?? 0,
@@ -780,6 +783,32 @@ async function runMigrations(): Promise<void> {
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_email TEXT NOT NULL DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancelled INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try {
+    // Reporting cost basis (additive, nullable — a NULL means "not recorded", never 0).
+    const hasCost = await query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'order_items' AND column_name = 'unit_cost'`);
+    await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_cost DOUBLE PRECISION`);
+    await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price DOUBLE PRECISION`);
+    if ((hasCost.rowCount ?? 0) === 0) {
+      // One-time backfill of historical order lines from the best-known cost at
+      // the time of sale: prefer products.cost_price, else the average PO unit
+      // cost received before the order was placed. Runs only when the column is
+      // first created so later cost edits never rewrite historical COGS.
+      await query(
+        `UPDATE order_items oi
+         SET unit_cost = COALESCE(
+           (SELECT p.cost_price FROM products p WHERE p.id = oi.product_id),
+           (SELECT AVG(poi.unit_cost)
+              FROM purchase_order_items poi
+              JOIN purchase_orders po ON po.id = poi.purchase_order_id
+             WHERE poi.product_id = oi.product_id
+               AND poi.unit_cost IS NOT NULL
+               AND COALESCE(NULLIF(po.updated_at, ''), po.created_at)::timestamp
+                     <= (SELECT o.created_at::timestamp FROM orders o WHERE o.id = oi.order_id))
+         )
+         WHERE oi.unit_cost IS NULL AND NOT oi.cancelled`
+      );
+    }
+  } catch {}
   try { await query(`INSERT INTO settings (key, value) SELECT 'logo_position', 'top-left' WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'logo_position')`); } catch {}
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DOUBLE PRECISION`); } catch {}
   // Serial number tracking (warranty lookups, PO intake, sale linking)
@@ -1942,16 +1971,16 @@ async function generateProductId(category: string): Promise<string> {
   return `${prefix}-${String(num).padStart(3, "0")}`;
 }
 
-async function createProduct(product: { id: string; category: string; groupId?: string; name: string; price: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; serialTracking?: boolean; barcode?: string; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
+async function createProduct(product: { id: string; category: string; groupId?: string; name: string; price: number; salePrice?: number | null; costPrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; serialTracking?: boolean; barcode?: string; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product> {
   await query(
-    `INSERT INTO products (id, category, group_id, name, price, sale_price, specs, in_stock, is_non_stock, is_hidden, subcategory, has_warranty, warranty_duration, serial_tracking, barcode, taxable, image_alt, image_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-    [product.id, product.category, product.groupId || "", product.name, product.price, product.salePrice || null, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.isHidden ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.serialTracking ? 1 : 0, product.barcode || "", product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
+    `INSERT INTO products (id, category, group_id, name, price, sale_price, cost_price, specs, in_stock, is_non_stock, is_hidden, subcategory, has_warranty, warranty_duration, serial_tracking, barcode, taxable, image_alt, image_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+    [product.id, product.category, product.groupId || "", product.name, product.price, product.salePrice || null, product.costPrice ?? null, JSON.stringify(product.specs || []), product.inStock !== false ? 1 : 0, product.isNonStock ? 1 : 0, product.isHidden ? 1 : 0, product.subcategory || "", product.hasWarranty ? 1 : 0, product.warrantyDuration || 0, product.serialTracking ? 1 : 0, product.barcode || "", product.taxable !== false ? 1 : 0, product.imageAlt || "", product.imageUrl || ""]
   );
   return (await getProduct(product.id))!;
 }
 
-async function updateProduct(id: string, updates: { category?: string; groupId?: string; name?: string; price?: number; salePrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; serialTracking?: boolean; barcode?: string; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
+async function updateProduct(id: string, updates: { category?: string; groupId?: string; name?: string; price?: number; salePrice?: number | null; costPrice?: number | null; specs?: any[]; inStock?: boolean; isNonStock?: boolean; isHidden?: boolean; subcategory?: string; hasWarranty?: boolean; warrantyDuration?: number; serialTracking?: boolean; barcode?: string; taxable?: boolean; imageAlt?: string; imageUrl?: string }): Promise<Product | undefined> {
   const existing = await getProduct(id);
   if (!existing) return undefined;
   const fields: string[] = []; const params: any[] = []; let idx = 1;
@@ -1960,6 +1989,7 @@ async function updateProduct(id: string, updates: { category?: string; groupId?:
   if (updates.name !== undefined) { fields.push(`name = $${idx}`); params.push(updates.name); idx++; }
   if (updates.price !== undefined) { fields.push(`price = $${idx}`); params.push(updates.price); idx++; }
   if (updates.salePrice !== undefined) { fields.push(`sale_price = $${idx}`); params.push(updates.salePrice); idx++; }
+  if (updates.costPrice !== undefined) { fields.push(`cost_price = $${idx}`); params.push(updates.costPrice === null ? null : Number(updates.costPrice)); idx++; }
   if (updates.specs !== undefined) { fields.push(`specs = $${idx}`); params.push(JSON.stringify(updates.specs)); idx++; }
   if (updates.inStock !== undefined) { fields.push(`in_stock = $${idx}`); params.push(updates.inStock ? 1 : 0); idx++; }
   if (updates.isNonStock !== undefined) { fields.push(`is_non_stock = $${idx}`); params.push(updates.isNonStock ? 1 : 0); idx++; }
@@ -2739,15 +2769,17 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
       // rule used everywhere else applies: product sale-time snapshot, clamps
       // to month-end (Jan 31 + 1mo -> Feb 28).
       let hasWarranty = 0, warrantyDuration = 0, wExp: string | null = null;
+      let unitCost: number | null = null;
       try {
-        const p = (await client.query("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [item.productId])).rows?.[0] as any;
+        const p = (await client.query("SELECT has_warranty, warranty_duration, cost_price FROM products WHERE id = $1", [item.productId])).rows?.[0] as any;
         if (p && p.has_warranty && Number(p.warranty_duration) > 0) {
           hasWarranty = 1;
           warrantyDuration = Number(p.warranty_duration);
           wExp = computeWarrantyExpiry(new Date().toISOString(), warrantyDuration);
         }
+        if (p && p.cost_price !== null && !isNaN(Number(p.cost_price))) unitCost = Number(p.cost_price);
       } catch { /* no-warranty defaults on lookup failure */ }
-      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1)", [insertOrderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal, hasWarranty, warrantyDuration, wExp]);
+      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable, unit_cost) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10)", [insertOrderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal, hasWarranty, warrantyDuration, wExp, unitCost]);
     }
     for (const item of quote.items) {
       // I-1/I-4: guarded atomic decrement — if stock_on_hand is insufficient the
@@ -3135,11 +3167,18 @@ async function createOrder(data: { customerId: number; customerName: string; cus
       [data.customerId, data.customerName, data.customerEmail, data.shippingName, data.shippingAddress, data.shippingCity, data.shippingCounty, data.shippingPostcode, data.shippingPhone, data.shippingFee, data.notes || "", subtotal, data.couponId || null, data.discountAmount || 0, data.staffId || null, data.branchId || null, data.processedBy || null, data.idempotencyKey || null, data.source || "storefront", data.giftCardId || null, data.giftCardAmount || 0]
     );
     const oid = result.rows[0].id;
+    const costMap: Record<string, number | null> = {};
+    try {
+      const costRows = await client.query("SELECT id, cost_price FROM products WHERE id = ANY($1::text[])", [data.items.map((i) => i.productId)]);
+      for (const cr of costRows.rows as any[]) {
+        costMap[String(cr.id)] = cr.cost_price === null || isNaN(Number(cr.cost_price)) ? null : Number(cr.cost_price);
+      }
+    } catch {}
     for (const item of data.items) {
       // W-4: snapshot the warranty expiry at sale time (first-class event) rather
       // than deriving it later. computeWarrantyExpiry clamps to month-end (Jan 31 + 1mo -> Feb 28).
       const wExp = item.hasWarranty && item.warrantyDuration ? computeWarrantyExpiry(new Date().toISOString(), item.warrantyDuration) : null;
-      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, has_warranty, warranty_duration, warranty_expires, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [oid, item.productId, item.name, Math.round(item.price * 100) / 100, item.quantity, item.hasWarranty ? 1 : 0, item.warrantyDuration || 0, wExp, item.taxable !== false ? 1 : 0]);
+      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, has_warranty, warranty_duration, warranty_expires, taxable, unit_cost) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", [oid, item.productId, item.name, Math.round(item.price * 100) / 100, item.quantity, item.hasWarranty ? 1 : 0, item.warrantyDuration || 0, wExp, item.taxable !== false ? 1 : 0, costMap[item.productId] ?? null]);
     }
     return oid;
   });
@@ -3150,7 +3189,7 @@ async function getOrder(id: number): Promise<Order | undefined> {
   const row = await queryOne("SELECT * FROM orders WHERE id = $1", [id]) as any;
   if (!row) return undefined;
   const items = await queryAll("SELECT * FROM order_items WHERE order_id = $1", [id]) as any[];
-  const mappedItems = items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, warrantyExpires: i.warranty_expires || null, serialNumber: i.serial_number || "", cancelled: i.cancelled }));
+  const mappedItems = items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, warrantyExpires: i.warranty_expires || null, serialNumber: i.serial_number || "", cancelled: i.cancelled, unitCost: i.unit_cost ?? null }));
     const activeSubtotal = mappedItems.filter((i) => !i.cancelled).reduce((s, i) => s + i.lineTotal, 0);
     return {
     id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, activeSubtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0, tenderedAmount: Number(row.tendered_amount) || 0,

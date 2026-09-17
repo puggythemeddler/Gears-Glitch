@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS products (
   serial_tracking INTEGER NOT NULL DEFAULT 0,
   barcode TEXT NOT NULL DEFAULT '',
   taxable INTEGER NOT NULL DEFAULT 1,
+  cost_price DOUBLE PRECISION,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
@@ -149,6 +150,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   stock_deducted INTEGER NOT NULL DEFAULT 0,
   taxable INTEGER NOT NULL DEFAULT 1,
   cancelled INTEGER NOT NULL DEFAULT 0,
+  unit_cost DOUBLE PRECISION,
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
