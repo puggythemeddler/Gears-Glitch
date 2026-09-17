@@ -2244,6 +2244,13 @@ async function completeStockTransfer(id: number): Promise<boolean> {
       [transfer.product_id, "transfer_in", qty, "stock_transfer", String(id), `Transfer #${id} in`, null, transfer.to_branch_id]
     );
 
+    // BN3: the transferred units physically move between branches — reattribute any
+    // still-in-stock serials so branch reports and POS branch checks follow the stock.
+    await client.query(
+      "UPDATE serial_numbers SET branch_id = $1 WHERE product_id = $2 AND branch_id = $3 AND status = 'in_stock'",
+      [transfer.to_branch_id, transfer.product_id, transfer.from_branch_id]
+    );
+
     const result = await client.query("UPDATE stock_transfers SET status = 'completed', completed_at = NOW()::text WHERE id = $1 AND status = 'pending'", [id]);
     return (result.rowCount ?? 0) > 0;
   });
@@ -4802,8 +4809,9 @@ async function linkSerialsToOrderItem(orderItemId: number, serialNumbers: string
     if (!item) return { ok: false, error: "Order item not found" };
     const warranty = await client.query("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [item.product_id]);
     const w = warranty.rows?.[0] as any;
-    const orderRes = await client.query("SELECT created_at FROM orders WHERE id = $1", [item.order_id]);
+    const orderRes = await client.query("SELECT created_at, branch_id FROM orders WHERE id = $1", [item.order_id]);
     const order = orderRes.rows?.[0] as any;
+    const orderBranch = order?.branch_id == null ? null : Number(order.branch_id);
     const list: string[] = [];
     for (const raw of serialNumbers || []) {
       const sn = String(raw || "").trim();
@@ -4816,11 +4824,18 @@ async function linkSerialsToOrderItem(orderItemId: number, serialNumbers: string
       if (serial.product_id !== item.product_id) return { ok: false, error: `Serial ${sn} does not belong to this product` };
       if (serial.status === "sold") return { ok: false, error: `Serial ${sn} is already sold` };
       if (serial.status === "void") return { ok: false, error: `Serial ${sn} has been voided` };
+      // BN3: a serial physically stocked at a different branch cannot be sold from
+      // this one. Only enforced when both sides are known (legacy rows may be NULL).
+      if (serial.status === "in_stock" && serial.branch_id != null && orderBranch != null && Number(serial.branch_id) !== orderBranch) {
+        return { ok: false, error: `Serial ${sn} is stocked at branch ${serial.branch_id}, not this branch. Transfer it first.` };
+      }
       let expires: string | null = null;
       if (w && w.has_warranty && w.warranty_duration) {
         expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), w.warranty_duration);
       }
-      await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serial.id]);
+      // BN3: the unit leaves the till's branch on sale — reattribute the serial so
+      // branch reporting and future branch checks keep pointing at the selling branch.
+      await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires), branch_id = COALESCE($5, branch_id) WHERE id = $4", [item.order_id, orderItemId, expires, serial.id, orderBranch]);
       list.push(sn);
     }
     if (list.length) {
@@ -4852,13 +4867,17 @@ async function linkSerialToOrderItem(serialId: number, orderItemId: number): Pro
       if (serial.product_id !== item.product_id) return { ok: false, error: "Serial does not belong to this product" };
       const warranty = await client.query("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [serial.product_id]);
       const w = warranty.rows?.[0] as any;
-      const orderRes = await client.query("SELECT created_at FROM orders WHERE id = $1", [item.order_id]);
+      const orderRes = await client.query("SELECT created_at, branch_id FROM orders WHERE id = $1", [item.order_id]);
       const order = orderRes.rows?.[0] as any;
+      const orderBranch = order?.branch_id == null ? null : Number(order.branch_id);
       let expires: string | null = null;
       if (w && w.has_warranty && w.warranty_duration) {
         expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), w.warranty_duration);
       }
-      await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires) WHERE id = $4", [item.order_id, orderItemId, expires, serialId]);
+      if (serial.status === "in_stock" && serial.branch_id != null && orderBranch != null && Number(serial.branch_id) !== orderBranch) {
+        return { ok: false, error: `Serial is stocked at branch ${serial.branch_id}, not this branch. Transfer it first.` };
+      }
+      await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires), branch_id = COALESCE($5, branch_id) WHERE id = $4", [item.order_id, orderItemId, expires, serialId, orderBranch]);
       await client.query("UPDATE order_items SET serial_number = $1 WHERE id = $2", [serial.serial_number, orderItemId]);
       return { ok: true };
     });

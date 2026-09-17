@@ -2161,10 +2161,18 @@ async function pushPosStk(req: Request, orderId: number, amount: number, mpesaPh
 
 app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey, branchId, mpesaPhone } = req.body || {};
+    const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey, branchId: branchIdInput, mpesaPhone } = req.body || {};
     if (!items || !Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "Items are required." }); return; }
     if (items.length > 100) { res.status(400).json({ error: "Too many items (max 100)." }); return; }
     const pmt = paymentMethod || "cash";
+    // BN2: attribute every POS sale to a branch. Use the explicit branch when the
+    // till sends one; otherwise fall back to the single branch (a one-branch shop
+    // has no ambiguity), so sales are never silently bucketed as global/NULL.
+    let branchId: number | null = branchIdInput == null || branchIdInput === "" ? null : Number(branchIdInput);
+    if (branchId == null || Number.isNaN(branchId)) {
+      const lone = await queryOne("SELECT COUNT(*) AS c, MIN(id) AS id FROM branches") as any;
+      branchId = lone && Number(lone.c) === 1 ? Number(lone.id) : null;
+    }
     if (idempotencyKey) {
       const existing = await queryOne("SELECT id FROM orders WHERE idempotency_key = $1", [idempotencyKey]) as any;
       if (existing) {
@@ -2230,6 +2238,9 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
           if (!found) { res.status(400).json({ error: `Serial ${sn} not found.` }); return; }
           if (found.product_id !== product.id) { res.status(400).json({ error: `Serial ${sn} does not belong to ${product.name}.` }); return; }
           if (found.status === "sold" || found.status === "void") { res.status(400).json({ error: `Serial ${sn} is no longer available.` }); return; }
+          if (found.status === "in_stock" && found.branch_id != null && branchId != null && Number(found.branch_id) !== branchId) {
+            res.status(400).json({ error: `Serial ${sn} is stocked at branch ${found.branch_id}, not the selected branch. Transfer it first.` }); return;
+          }
         }
       }
       if (branchId) {

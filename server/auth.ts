@@ -154,6 +154,7 @@ function getBearerToken(req: Request): string | null {
   if (fromCookie) return fromCookie;
   // Opt-in query token for opening protected pages/receipts in a new tab.
   if (req.query?.allowQueryToken === "1" && typeof req.query?.token === "string" && req.query.token) {
+    console.warn(`[auth] query-token auth used for ${req.method} ${req.path} (token never logged)`);
     return req.query.token;
   }
   return null;

@@ -1,6 +1,6 @@
 # DATABASE_MIGRATIONS.md
 
-**Schema and migration architecture for Gears&Glitch.** Phase 0 audit — documents the current model and the required changes. **No schema was modified.**
+**Schema and migration architecture for Gears&Glitch.** Originated as the Phase 0 audit document. Since then the schema has been remediated in phases (`order_items`/`stock_levels` are now `ON DELETE RESTRICT`, per-branch stock/attribution columns exist) and the versioned migration runner is live — see §1 and the update log at the end. **`server/schema.sql` and the `server/migrations/` set have been modified; this doc is maintained, not frozen.**
 
 ---
 
@@ -8,26 +8,26 @@
 
 The database layer is raw PostgreSQL accessed through parameterized queries in `server/db.ts` (via `pg` Pool helpers in `server/db-helpers.ts`).
 
-Two mechanisms run at **every server boot**:
-1. `runSchema()` — applies `server/schema.sql` (873 lines, `CREATE TABLE IF NOT EXISTS`, idempotent).
-2. `runMigrations()` — `server/db.ts:659-930`: ~270 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements, each wrapped in `try/catch {}` that swallows errors.
+Three mechanisms run at/after **server boot**:
+1. `runSchema()` — applies `server/schema.sql` (`CREATE TABLE IF NOT EXISTS`, idempotent).
+2. `runVersionedMigrations()` — the **canonical, versioned runner** (`server/db.ts:653-693`): every file matching `/^\d{4}_.+\.sql$/` in `server/migrations/` is applied in lexicographic order, each in its own transaction, and recorded in `schema_migrations` so a later boot never re-runs an applied migration. Current set: `0001`–`0014`.
+3. `runMigrations()` — legacy net-new-column drift guard (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, `try/catch`-wrapped). Kept only as belt-and-braces for tenants that predate the versioned runner; new schema changes must go through the versioned runner.
 
-Plus a single migration file `server/migrations/001_whatsapp_tables.sql` that is **never loaded** by any runner.
+> **Update (Phase 2/3):** the earlier claim that migrations are "not run" is obsolete — the versioned runner is active and every applied file is tracked in `schema_migrations`. `0001_whatsapp_tables.sql` → `0014_order_branch_and_serial_integrity.sql` are all wired into the runner.
 
 ### Assessment against Phase 19 requirements
 | Requirement | Status |
 |---|---|
-| Migrations versioned | ❌ No version/tracking table (`schema_migrations` absent) |
-| Migrations deterministic | ❌ Boot-time ALTER loop, non-ordered, `IF NOT EXISTS` implies best-effort |
-| Production DBs upgrade safely | ⚠️ Idempotent but silent failures leave inconsistent partial schema |
-| Fresh DBs reach same schema | ⚠️ Generally yes (all `IF NOT EXISTS`) but drift across tenants possible |
-| Rollback/recovery possible | ❌ No down-migrations; no version map |
-| Migration mannaged/documented | ❌ Fragmented (`schema.sql` + inline ALTERs + unused file) |
+| Migrations versioned | ✅ `schema_migrations` tracking table + ordered `0001`–`0014` files (post-remediation) |
+| Migrations deterministic | ⚠️ Versioned migrations apply once, in order, transactionally; legacy boot ALTER loop remains as best-effort drift guard |
+| Production DBs upgrade safely | ⚠️ Versioned runner fails loudly + records version; legacy guards idempotent but silent |
+| Fresh DBs reach same schema | ✅ One path (`schema.sql` → versioned migrations) per environment |
+| Rollback/recovery possible | ❌ No down-migrations; forward-only (as before) |
+| Migration managed/documented | ⚠️ Runner + version table live; this doc kept current |
 
-**Findings:**
-- **P1 (M-1):** No version tracking; ~270 statements run per boot; each in its own autocommit transaction; `catch {}` silently hides failures; partial failure → half-migrated schema with no rollback.
-- **P3 (M-2):** `server/migrations/001_whatsapp_tables.sql` is dead/unwired.
-- **Recommended:** a versioned migration runner (tracking table, or `node-pg-migrate`), each migration transactional, record version, fail loudly on error. This is a **high-risk change requiring approval** (DB architecture/migrations).
+**Findings (Phase 0, context):**
+- **P1 (M-1):** versioned runner now exists (`server/db.ts:653-693`) — see §1 update.
+- **P3 (M-2):** dead `001_whatsapp_tables.sql` claim resolved — the file is now `0001_whatsapp_tables.sql` and **is** loaded by the runner.
 
 ---
 
@@ -101,3 +101,26 @@ Ranked safe sequence:
 4. **Money: `DOUBLE PRECISION` → integer-cents/NUMERIC (P0, HIGH RISK, approval)** — requires audit of every SQL arithmetic/comparison on monetary columns and frontend `formatPrice` consistency; run under the Change-Safety Protocol with a data backup + rollback plan.
 
 Every step must go through the versioned migration runner (step 1 of §2) so production upgrades are deterministic and reversible.
+
+---
+
+## Update log (post-Phase 0)
+
+| Version | Migration | Purpose |
+|---|---|---|
+| 0001 | whatsapp tables | whatsapp_media + webhook storage |
+| 0002 | money numeric | monetary columns → NUMERIC |
+| 0003 | warranty_claims | warranty claim table |
+| 0004 | assets & service history | customer_assets / service_history |
+| 0005 | indexes | missing report/list indexes |
+| 0006 | stock_levels unique | per-branch uniqueness |
+| 0007 | repair warranty links | repair ↔ warranty wiring |
+| 0008 | fk integrity | order_items/stock_levels product FK RESTRICT |
+| 0009 | warranty coverage | warranty metadata on order items |
+| 0010 | order items warranty expiry | snapshot at sale |
+| 0011 | audit traceability | audit_log actor columns |
+| 0012 | subscription expiry | branch_subscriptions expiry |
+| 0013 | branch attribution + repair link | per-branch columns (stock_movements, stock_take_sessions, quotes, purchase_orders, repair_tickets, warranty_claims); `warranty_claims.repair_ticket_id` → TEXT + FK |
+| 0014 | order branch + serial integrity | backfill single-branch POS orders, `idx_orders_branch_id`, reattribute order movements; BN2/BN3 |
+
+Current applied head: **0014**. Check `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;`.

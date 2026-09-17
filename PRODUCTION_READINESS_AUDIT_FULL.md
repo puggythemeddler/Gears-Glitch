@@ -282,3 +282,32 @@ Approved and applied after Phase 1.
 **Verification:** root typecheck ✅, build ✅, unit tests 33 ✅ (0 fail) including the new route-order suite; DB-gated migrations suite runs in CI.
 
 **Remaining (not yet started):** P1 eTIMS (KRA adapter), BN2 order `branch_id` write-enforcement, AZ1 query-token disable, AZ3 shared-session/CSRF hardening, docs reconciliation — awaiting approval for Phase 3/4.
+
+## Phase 3/4 — Remediation Applied (2026-09-17)
+
+Approved and applied after Phase 2 (eTIMS intentionally deferred — see below).
+
+**BN2 — order branch write-enforcement (`server/index.ts`, `server/migrations/0014`):**
+- POS checkout now resolves the sale branch even when the till sends none: explicit `branchId` → single-branch fallback (a one-branch shop has no ambiguity) → `NULL` only when genuinely ambiguous (multi-branch, no selection). POS sales are never silently bucketed as global/NULL in the single-branch case.
+- Frontend already sends `branchId` when a branch is selected; storefront `POST /api/orders` remains intentionally branchless (web channel).
+- Migration `0014`: backfills legacy single-branch POS orders, adds `idx_orders_branch_id`, and reattributes branchless `stock_movements` that reference an order to the order's branch. Idempotent + additive (verified by re-run in tests).
+
+**BN3 — serial branch consistency (`server/db.ts`, `server/index.ts`, migration `0014`):**
+- `linkSerialsToOrderItem`/`linkSerialToOrderItem`: a serial physically stocked at branch X can no longer be consumed by an order at branch Y (returns "Transfer it first" — enforced only when both sides are known, so legacy NULL rows still work), and a consumed serial is reattributed (`branch_id = COALESCE($order_branch, branch_id)`) to the selling branch so warranty/report branch truth follows the unit.
+- POS checkout validates serial↔branch parity before entering the transaction for a snappy 400.
+- `completeStockTransfer` now reattributes `status='in_stock'` serials of the transferred product from `from_branch_id` → `to_branch_id` (sold serials keep their sale branch).
+
+**AZ1 — query-token hygiene (`server/auth.ts`, `tests/query-token.test.ts`):**
+- Query auth remains opt-in (`allowQueryToken=1`) — it is used by new-tab invoice/receipt print links, and the receipt endpoints mint **purpose-scoped** tokens (`/api/admin/pos-receipt-token`, `/api/admin/invoice-token`), not the raw staff JWT. Every query-token use is now logged server-side (`[auth] query-token auth used for …`, token never logged).
+- New static, DB-free suite asserts: no `allowQueryToken=1` → rejected; empty/non-string tokens rejected; header/cookie win over query.
+
+**AZ3 — session/CSRF over multiple instances — VERIFIED PASS (no change required):**
+- Evidence contradicts the original finding: CSRF tokens are stateless double-submit cookies (`/api/csrf-token` stores the 64-hex token in the `csrf_token` cookie; the middleware compares `x-csrf-token`/`_csrf` to the cookie). Sessions are stateless JWTs signed by `JWT_SECRET` (hard-fail if unset/weak, `auth.ts:91-97`) inside the `gg_session` cookie. A restart does **not** invalidate admin sessions, and multi-replica with a shared `JWT_SECRET` works without sticky sessions.
+- Known limitation recorded: the per-account login lockout map (`loginFailures`, `auth.ts:17`) is in-process — best-effort only on multi-replica. Documented rather than changed.
+
+**G1 — doc reconciliation (`DATABASE_MIGRATIONS.md`):**
+- Fixed the stale "migrations are never loaded" claim (line 15) and the Phase 0 assessment table → the versioned runner (`schema_migrations` + `0001`–`0014`, transactional, per-file) is documented as the active mechanism, with a migration update log and applied-head (0014) instructions.
+
+**Verification:** root typecheck ✅, build ✅, unit tests **37** ✅ (0 fail) — +4 static AZ1 tests, new `tests/order-branch.integration.test.ts` (DB-gated: 0014 backfill/idempotency/index/movement-reattribution, cross-branch serial rejection, consume stamping, transfer reattribution) runs in CI's server-test job and skips locally.
+
+**Deferred (unchanged):** P1 eTIMS — real KRA adapter needs sandbox credentials; stub still returns `submitted:false` (`db.ts:3645`). Recommended follow-ups: migrate print links to purpose-scoped tokens end-to-end, and back the login lockout with a DB/Redis counter for strict multi-replica brute-force defense.
