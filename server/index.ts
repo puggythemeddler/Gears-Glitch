@@ -385,6 +385,7 @@ import {
   respondToRepairQuote,
 } from "./repairs";
 import warrantyRouter from "./warranty";
+import reportRouter from "./report-routes";
 import * as notifier from "./notify";
 import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail } from "./email";
@@ -728,6 +729,7 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use("/api/warranty", warrantyRouter);
+app.use("/api/reports", reportRouter);
 
 app.post("/api/control-plane/suspend", controlPlaneAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   await setStoreSetting("store_suspended", "true");
