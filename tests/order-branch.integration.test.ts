@@ -146,6 +146,11 @@ describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "DATA
     await seedBranch(9131);
     await seedBranch(9132);
     await seedProduct("tf-prod");
+    // createStockTransfer records created_by → users(id); the suite never seeds
+    // users, so create the staff row the FK requires (mirrors a live POS staff session).
+    await query(
+      `INSERT INTO users (id, username, password_hash, role) VALUES (1, 'transfer-test', 'x', 'admin')
+       ON CONFLICT (id) DO NOTHING`);
     await query(
       `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock) VALUES ('tf-prod', 9131, 5)`);
     await query(
