@@ -304,6 +304,23 @@ import {
 } from "./db";
 import { query, queryOne, queryAll, transaction } from "./db-helpers";
 import {
+  parseDateRange,
+  allTimeRange,
+  salesTotals,
+  salesSeries,
+  salesBreakdown,
+  salesComparison,
+  previousPeriod,
+  pctChange,
+  sendCsv,
+  toCsv,
+  REPORT_FORMULAS,
+  type OrderFilter,
+  type Granularity,
+  type SalesBreakdownBy,
+  type CsvColumn,
+} from "./reporting";
+import {
   adminAuthMiddleware,
   ownerAuthMiddleware,
   staffAuthMiddleware,
@@ -6970,21 +6987,151 @@ app.patch("/api/admin/messages/:id/read", ownerAuthMiddleware, requirePermission
 app.get("/api/reports/sales/trends", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
   const from = String(req.query.from || "").slice(0, 10);
   const to = String(req.query.to || "").slice(0, 10);
-  const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
   if (!from || !to) { res.status(400).json({ error: "from and to dates required." }); return; }
-  let sql = `SELECT DATE(created_at) as day, COUNT(*) as orders, SUM(subtotal + shipping_fee - COALESCE(discount_amount, 0)) as revenue FROM orders WHERE status != 'cancelled' AND created_at::timestamp >= $1 AND created_at::timestamp < ($2::date + interval '1 day')`;
-  const params: any[] = [from, to];
-  if (branchId) { sql += ` AND branch_id = $${params.length + 1}`; params.push(branchId); }
-  sql += " GROUP BY day ORDER BY day";
-  const rows = await queryAll(sql, params);
-  res.json({ trends: rows });
+  const range = parseDateRange(from, to);
+  if (!range) { res.status(400).json({ error: "Invalid date range. Use yyyy-mm-dd." }); return; }
+  const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+  const granularity: Granularity = req.query.granularity === "week" || req.query.granularity === "month" ? req.query.granularity : "day";
+  const filter: OrderFilter = { from: range.from, to: range.to, branchId };
+  const series = await salesSeries(filter, granularity);
+  res.json({
+    from: range.from,
+    to: range.to,
+    granularity,
+    trends: series.map((p) => ({
+      day: p.bucket,
+      orders: p.orders,
+      revenue: p.gross_sales,
+      gross_sales: p.gross_sales,
+      net_sales: p.net_sales,
+      discounts: p.discounts,
+      gift_cards: p.gift_cards,
+      refunds: p.refunds,
+      aov: p.aov,
+    })),
+  });
 }));
 
 app.get("/api/reports/sales", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
   const from = String(req.query.from || "1970-01-01");
   const to = String(req.query.to || "2099-12-31");
-  const groupId = req.query.group_id ? String(req.query.group_id) : undefined;
-  res.json(await getSalesReportWithRange(from, to, groupId));
+  const range = parseDateRange(from, to);
+  if (!range) { res.status(400).json({ error: "Invalid date range. Use yyyy-mm-dd." }); return; }
+  const groupRaw = req.query.group_id ? String(req.query.group_id) : undefined;
+  const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+  const filter: OrderFilter = {
+    from: range.from,
+    to: range.to,
+    groupId: groupRaw && groupRaw !== "all" ? groupRaw : undefined,
+    branchId,
+  };
+  const [totals, products, channels, comparison] = await Promise.all([
+    salesTotals(filter),
+    salesBreakdown(filter, "product"),
+    salesBreakdown(filter, "channel"),
+    salesComparison(filter, range),
+  ]);
+  const toNum = (n: number, d = 2) => Number(n.toFixed(d));
+  const invoiceStats = await queryOne("SELECT COUNT(*) AS paid_invoices, COALESCE(SUM(amount), 0) AS invoice_revenue FROM order_invoices WHERE status = 'paid'") as any;
+  res.json({
+    from: range.from,
+    to: range.to,
+    totalRevenue: toNum(totals.gross_sales),
+    totalOrders: totals.orders,
+    netSales: toNum(totals.net_sales),
+    discounts: toNum(totals.discounts),
+    giftCards: toNum(totals.gift_cards),
+    refunds: toNum(totals.refunds),
+    shipping: toNum(totals.shipping),
+    itemsSold: totals.items_sold,
+    aov: toNum(totals.aov),
+    paidInvoices: Number(invoiceStats?.paid_invoices || 0),
+    invoiceRevenue: Number(invoiceStats?.invoice_revenue || 0),
+    topProducts: products.slice(0, 10).map((p) => ({ productId: String(p.id), name: p.label, totalSold: p.items_sold, revenue: toNum(p.revenue) })),
+    channels: channels.map((c) => ({ channel: c.label, orders: c.orders, revenue: toNum(c.revenue), net: toNum(c.net) })),
+    comparison: comparison ? {
+      current: { net: toNum(comparison.current.net_sales), gross: toNum(comparison.current.gross_sales), orders: comparison.current.orders },
+      previous: { net: toNum(comparison.previous.net_sales), gross: toNum(comparison.previous.gross_sales), orders: comparison.previous.orders },
+      abs_change: toNum(comparison.abs_change),
+      pct_change: comparison.pct_change === null ? null : toNum(comparison.pct_change),
+    } : null,
+  });
+}));
+
+app.get("/api/reports/definitions", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ formulas: REPORT_FORMULAS });
+}));
+
+function reportQueryFilter(req: Request): OrderFilter {
+  const from = String(req.query.from || allTimeRange().from);
+  const to = String(req.query.to || allTimeRange().to);
+  const range = parseDateRange(from, to) ?? allTimeRange();
+  const groupRaw = req.query.group_id ? String(req.query.group_id) : undefined;
+  const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+  const staffId = req.query.staff_id ? Number(req.query.staff_id) : undefined;
+  const paymentMethod = req.query.payment_method ? String(req.query.payment_method) : undefined;
+  const productId = req.query.product_id ? String(req.query.product_id) : undefined;
+  return {
+    from: range.from,
+    to: range.to,
+    groupId: groupRaw && groupRaw !== "all" ? groupRaw : undefined,
+    branchId,
+    staffId,
+    paymentMethod,
+    productId,
+  };
+}
+
+app.get("/api/reports/sales/export.csv", ownerAuthMiddleware, requirePermission("reports:export"), asyncHandler(async (req: Request, res: Response) => {
+  const filter = reportQueryFilter(req);
+  const [products, channels, staff, payments] = await Promise.all([
+    salesBreakdown(filter, "product"),
+    salesBreakdown(filter, "channel"),
+    salesBreakdown(filter, "staff"),
+    salesBreakdown(filter, "payment_method"),
+  ]);
+  const cols: CsvColumn[] = [
+    { key: "productId", label: "Product ID" },
+    { key: "name", label: "Product" },
+    { key: "itemsSold", label: "Units sold" },
+    { key: "orders", label: "Orders" },
+    { key: "revenue", label: "Gross sales" },
+  ];
+  const csv = toCsv(
+    products.slice(0, 500).map((p) => ({ productId: String(p.id), name: p.label, itemsSold: p.items_sold, orders: p.orders, revenue: p.revenue })),
+    cols
+  );
+  const extra = [
+    `Channel breakdown`,
+    `Channel,Orders,Revenue`,
+    ...channels.map((c) => `${c.label},${c.orders},${c.revenue}`),
+    ``,
+    `Payment method breakdown`,
+    `Method,Orders,Revenue`,
+    ...payments.map((c) => `${c.label},${c.orders},${c.revenue}`),
+    ``,
+    `Staff breakdown`,
+    `Staff,Orders,Revenue`,
+    ...staff.map((c) => `${c.label},${c.orders},${c.revenue}`),
+  ].join("\n");
+  sendCsv(res, `sales-${filter.from}-to-${filter.to}.csv`, csv + "\n\n" + extra);
+}));
+
+app.get("/api/reports/employee-sales/export.csv", ownerAuthMiddleware, requirePermission("reports:export"), asyncHandler(async (req: Request, res: Response) => {
+  const filter = reportQueryFilter(req);
+  const rows = await salesBreakdown(filter, "staff");
+  const csv = toCsv(
+    rows.map((r) => ({ staff: r.label, orders: r.orders, gross: r.revenue, net: r.net })),
+    [{ key: "staff", label: "Staff member" }, { key: "orders", label: "Orders" }, { key: "gross", label: "Gross sales" }, { key: "net", label: "Net sales" }]
+  );
+  sendCsv(res, `employee-sales-${filter.from}-to-${filter.to}.csv`, csv);
+}));
+
+app.get("/api/reports/sales/breakdown", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
+  const by = String(req.query.by || "product") as SalesBreakdownBy;
+  const valid: SalesBreakdownBy[] = ["product", "category", "group", "branch", "staff", "payment_method", "customer", "channel", "hour", "dow", "day"];
+  if (!valid.includes(by)) { res.status(400).json({ error: "Unknown breakdown dimension." }); return; }
+  res.json({ breakdown: await salesBreakdown(reportQueryFilter(req), by) });
 }));
 
 // Visitor tracking (public — called by storefront frontend)
@@ -7011,21 +7158,24 @@ app.get("/api/reports/stock-summary", ownerAuthMiddleware, requirePermission("re
 }));
 
 app.get("/api/reports/employee-sales", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
-  const from = req.query.from as string | undefined;
-  const to = req.query.to as string | undefined;
-  const params: any[] = [];
-  let dateFilter = "";
-  if (from) { dateFilter += ` AND o.created_at::timestamp >= $${params.length + 1}`; params.push(from); }
-  if (to) { dateFilter += ` AND o.created_at::timestamp <= $${params.length + 1}`; params.push(to + "T23:59:59"); }
-  const rows = await queryAll(
-    `SELECT u.id AS "staffId", u.username AS "staffName",
-      COUNT(o.id) AS "totalOrders",
-      COALESCE(SUM(o.subtotal + o.shipping_fee), 0) AS "totalRevenue"
-     FROM users u LEFT JOIN orders o ON o.staff_id = u.id AND o.status != 'cancelled'${dateFilter}
-     WHERE u.role != 'customer' GROUP BY u.id, u.username ORDER BY "totalRevenue" DESC`,
-    params
+  const range = parseDateRange(
+    req.query.from ? String(req.query.from) : allTimeRange().from,
+    req.query.to ? String(req.query.to) : allTimeRange().to
   );
-  res.json({ employees: rows });
+  if (!range) { res.status(400).json({ error: "Invalid date range. Use yyyy-mm-dd." }); return; }
+  const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+  const rows = await salesBreakdown({ from: range.from, to: range.to, branchId }, "staff");
+  res.json({
+    from: range.from,
+    to: range.to,
+    employees: rows.map((r) => ({
+      staffId: Number(r.id) || null,
+      staffName: r.label,
+      totalOrders: r.orders,
+      totalRevenue: r.revenue,
+      net: r.net,
+    })),
+  });
 }));
 
 app.get("/api/reports/technician-repairs", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {

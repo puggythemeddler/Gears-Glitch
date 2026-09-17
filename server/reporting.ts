@@ -92,7 +92,7 @@ export interface OrderFilter {
   paymentMethod?: string;
   source?: string;
   customerId?: number;
-  productId?: number;
+  productId?: string;
   groupId?: string;
   category?: string;
   /** Sales semantics: exclude cancelled orders. Default true. */
