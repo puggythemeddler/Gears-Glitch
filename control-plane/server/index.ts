@@ -12,6 +12,9 @@ import { generateSecret, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
 import rateLimit from "express-rate-limit";
 import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
+import { initOpsCenterDb, aggregateUsageForClients } from "./ops-db";
+import { evaluateForClient, expireSupportAndMaintenance } from "./ops";
+import { registerOpsRoutes } from "./ops-routes";
 import {
   provisionClient,
   deployAllClients,
@@ -1057,6 +1060,9 @@ app.post("/api/health-check", requireAuth, requireAdmin, async (_req, res) => {
       // Track uptime (sleeping cold-starts do not count as failures)
       await recordHealthCheck(c.id, status);
 
+      // Ops Center: detect alerts + config drift from the fresh signal
+      await evaluateForClient(c.id);
+
       // Fetch usage stats from client backend
       const usage = await fetchClientUsage(c.render_service_url, c.cp_secret);
       if (usage) {
@@ -1071,6 +1077,8 @@ app.post("/api/health-check", requireAuth, requireAdmin, async (_req, res) => {
 
     await enforceUsageLimits();
     await enforceSubscriptionPayments();
+    await expireSupportAndMaintenance();
+    await aggregateUsageForClients(clients as any[]);
     await refreshNotifications();
     res.json({ results });
   } catch (err: any) {
@@ -2113,6 +2121,8 @@ setInterval(async () => {
     for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
       const status = await checkClientHealth(c.render_service_url, c.cp_secret);
       await recordHealthCheck(c.id, status);
+      // Ops Center: detect alerts + config drift from the fresh signal
+      await evaluateForClient(c.id);
       // Fetch usage
       const usage = await fetchClientUsage(c.render_service_url, c.cp_secret);
       if (usage) {
@@ -2121,6 +2131,8 @@ setInterval(async () => {
     }
     await enforceUsageLimits();
     await enforceSubscriptionPayments();
+    await expireSupportAndMaintenance();
+    await aggregateUsageForClients(clients as any[]);
     await refreshNotifications();
     console.log(`[auto-health] Checked ${clients.length} clients.`);
   } catch (err: any) {
@@ -2250,6 +2262,9 @@ async function runStartupHealthCheck() {
   } catch (e: any) { console.warn("[startup] Health check routine failed:", e?.message); }
 }
 
+// ─── OPS CENTER ROUTES (health, alerts, incidents, diagnostics, drift, support, maintenance) ─
+registerOpsRoutes(app, { requireAuth, requireAdmin, auditLog });
+
 // ─── SPA FALLBACK ────────────────────────────────────────
 app.get("*", (_req, res) => {
   res.sendFile(path.join(__dirname, "..", "..", "public", "index.html"));
@@ -2258,6 +2273,7 @@ app.get("*", (_req, res) => {
 // ─── START ───────────────────────────────────────────────
 async function start() {
   await initControlPlaneDb();
+  await initOpsCenterDb();
   await seedDefaultAdmin();
   app.listen(PORT, () => {
     console.log(`[control-plane] Running on http://localhost:${PORT}`);

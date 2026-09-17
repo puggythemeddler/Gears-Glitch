@@ -369,6 +369,7 @@ import {
 } from "./repairs";
 import warrantyRouter from "./warranty";
 import * as notifier from "./notify";
+import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail } from "./email";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs } from "./notification-service";
@@ -717,7 +718,20 @@ app.post("/api/control-plane/resume", controlPlaneAuthMiddleware, asyncHandler(a
 }));
 
 app.get("/api/control-plane/status", controlPlaneAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ ok: true, version: APP_VERSION, suspended: storeSuspended });
+  const [checks, schemaVersion] = await Promise.all([
+    buildHeartbeatPayload().then((p) => p.checks).catch(() => ({})),
+    getSchemaVersion().catch(() => ""),
+  ]);
+  res.json({
+    ok: true,
+    version: APP_VERSION,
+    schemaVersion,
+    envType: process.env.NODE_ENV || "production",
+    suspended: storeSuspended,
+    checks,
+    capabilities: ["heartbeat", "usage", "suspension", "plans", "backup-images"],
+    timestamp: new Date().toISOString(),
+  });
 }));
 
 app.get("/api/csrf-token", (req: Request, res: Response) => {
@@ -7405,6 +7419,9 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       warmPdf();
+
+      // Control-plane heartbeat reporter (client → control plane managed push)
+      startHeartbeatReporter();
 
       // Auto-billing: check for overdue invoices every 6 hours
       setInterval(async () => {

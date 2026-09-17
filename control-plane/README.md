@@ -2,6 +2,8 @@
 
 Central dashboard for managing all Gear&Glitch client instances. Provision new clients, monitor health, manage subscriptions, deploy updates, handle invoicing, configure SMTP/Cloudinary, toggle per-client features (including Visitor analytics), receive Slack alerts on down clients, enforce usage limits, track payment reminders with automatic deactivation for missed payments, read in-app notifications, track admin actions in an audit log, and download database backups — all from one place.
 
+The **Ops Center** (Operations tab) extends this with client-pushed heartbeats, derived health states, deduplicated/self-healing alerts, config drift detection, incidents, diagnostic reports, support access sessions, maintenance windows, and daily usage history — see [`OPS_CENTER.md`](OPS_CENTER.md).
+
 ## Quick Start
 
 ```bash
@@ -37,7 +39,7 @@ npm run dev             # http://localhost:4000
 | `SMTP_USER` | No | SMTP username |
 | `SMTP_PASS` | No | SMTP password |
 | `FROM_EMAIL` | No | Sender email address |
-| `SLACK_WEBHOOK_URL` | No | Slack webhook URL for down-client and over-usage alerts |
+| `SLACK_WEBHOOK_URL` | No | Slack webhook URL for down-client, over-usage, and stale-heartbeat alerts |
 | `SUSPEND_GRACE_DAYS` | No | Grace period (days) before an active client is auto-suspended for a missed payment (defaults to `3`) |
 
 ## Deploy to Render
@@ -132,6 +134,23 @@ Use the **Feature Overrides** picker in the Edit Client modal to fine-tune what 
 - **Deploy Test Site** — deploys only the client marked as the test site (production clients untouched).
 - **Deploy All Clients** — deliberate manual production rollout to every active client.
 - Pushes to `main` land here automatically with their git ID (see *GitHub Actions Auto-Deploy* below).
+
+### Operations (Client Health & Ops Center)
+The **Operations** tab (admin only) is the single pane for tenant health and incident response. It uses the existing 5-minute health pull **plus** a client-pushed heartbeat (`POST /api/heartbeat`, every ~2 min per client) to derive per-client health, catch stale reporters, and self-heal without waiting for the next pull cycle. See [`OPS_CENTER.md`](OPS_CENTER.md) for the full reference. Sub-tabs:
+
+- **Overview** — every client with derived status (healthy / degraded / sleeping / offline / unknown / provisioning / disabled), heartbeat age, open alerts, open incidents, drift count, maintenance count, last backup, failed deploys/backups in 7d, and a status-count summary.
+- **Health** — per-client health table with derived state and recent heartbeat/check details; drills into one client's heartbeats, drift, alerts, incidents, and usage.
+- **Alerts** — deduplicated alert queue (`dedupe_key` unique): ack / assign / note / resolve / reopen / suppress / unsuppress / promote-to-incident. Resolved alerts only reopen after the configured cooldown; cleared conditions auto-resolve.
+- **Incidents** — ticket records with status/severity/priority/assignee, internal-or-client comments, and automatic `resolved_at` stamping on resolve/close. Alerts can be promoted into incidents directly.
+- **Diagnostics** — on-demand JSON snapshot reports per client (health, platform, checks, usage + 14-day history, reliability, alerts, incidents, drift, maintenance, support, heartbeats) — redacted by construction: no `cp_secret`, Neon URLs, passwords, or API keys ever appear; downloadable.
+- **Releases** — latest changelog version vs each client's deployed `app_version`, plus the recent deploy log, to track rollout progress.
+- **Support Access** — time-boxed technician sessions (scopes, 1–720h) with a full pending → active → expired/revoked audit trail.
+- **Maintenance** — scheduled windows that auto-transition scheduled → active → ended and can be cancelled.
+- **Config Drift** — per-client deviations: outdated release version, missing heartbeat reporter, unconfigured M-Pesa/WhatsApp/email, backups disabled — each auto-closes when the condition clears.
+- **Usage** — daily usage snapshots (orders/customers/revenue) charted per client.
+- **Thresholds** — tune `heartbeat_stale_min`, `offline_stale_min`, retention windows, the alert-reopen cooldown, backup-stale hours, and the heartbeat-reporter deadline (persisted in `cp_settings`, audit-logged).
+
+> **Client reporter** — every deployed client backend now starts a heartbeat reporter (`server/control-plane-heartbeat.ts`) when `CONTROL_PLANE_URL` + `CONTROL_PLANE_SECRET` are configured; `HEARTBEAT_INTERVAL_MIN` (default 2) tunes the cadence. A missing reporter shows up as a stale-heartbeat alert and a drift finding, not a false "down".
 
 ### Backups
 - Run `pg_dump` backups for all active client databases
@@ -299,6 +318,48 @@ All endpoints require authentication via one of:
 | GET | `/api/deploys` | List deploy history (last 300; filter by `?status=` and `?q=` search over client/commit) |
 | GET | `/api/audit` | List audit log entries (last 200) |
 
+### Operations (Ops Center)
+Admin-only routes for the client health & operations surface (heartbeat ingestion is server-to-server via the client's secret). Full behavioral reference: [`OPS_CENTER.md`](OPS_CENTER.md).
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/heartbeat` | Client heartbeat ingest (client-role, requires `x-control-plane-key`, 300 req/min) |
+| GET | `/api/ops/overview` | All clients with derived health state, heartbeat age, checks, and aggregate counts |
+| GET | `/api/ops/alerts` | List alerts (`?state=`, `?severity=`, `?client_id=`) |
+| GET | `/api/ops/alerts/summary` | Open/acknowledged/investigating/suppressed/resolved counts |
+| POST | `/api/ops/alerts/:id/ack` | Acknowledge alert |
+| POST | `/api/ops/alerts/:id/assign` | Assign to an operator |
+| POST | `/api/ops/alerts/:id/note` | Append an operator note |
+| POST | `/api/ops/alerts/:id/resolve` | Resolve with a resolution note |
+| POST | `/api/ops/alerts/:id/reopen` | Reopen (bypasses the auto-cooldown) |
+| POST | `/api/ops/alerts/:id/suppress` / `unsuppress` | Suppress (requires reason) / un-suppress |
+| POST | `/api/ops/alerts/:id/incident` | Promote an alert into an incident |
+| GET | `/api/ops/incidents` | List incidents (`?status=`, `?client_id=`) |
+| GET | `/api/ops/incidents/:id` | Incident detail + comments |
+| POST | `/api/ops/incidents` | Create incident |
+| PUT | `/api/ops/incidents/:id` | Update incident (validated; resolve/close stamps `resolved_at`) |
+| POST | `/api/ops/incidents/:id/comments` | Add comment (`visibility: client\|internal`) |
+| GET | `/api/ops/clients/:id/heartbeats` | Heartbeat history for one client |
+| GET | `/api/ops/clients/:id/drift` | Drift findings for one client |
+| GET | `/api/ops/drift` | All drift findings (`?state=`, `?severity=`) |
+| GET | `/api/ops/clients/:id/alerts` | One client's alerts |
+| GET | `/api/ops/clients/:id/incidents` | One client's incidents |
+| GET | `/api/ops/clients/:id/usage` | Daily usage history (`?days=`) |
+| POST | `/api/ops/clients/:id/report` | Generate a diagnostic report |
+| GET | `/api/ops/clients/:id/reports` | A client's reports |
+| GET | `/api/ops/reports` | Recent reports (100) |
+| GET | `/api/ops/reports/:id/download` | Download report as JSON |
+| GET | `/api/ops/support` | Support sessions + technician list (`?client_id=`, `?status=`) |
+| POST | `/api/ops/support` | Request a support session (`{clientId, scopes, durationHours}`) |
+| POST | `/api/ops/support/:id/approve` | Approve a pending session |
+| POST | `/api/ops/support/:id/revoke` | Revoke a session (`{reason}`) |
+| GET | `/api/ops/maintenance` | Maintenance windows (`?client_id=`, `?status=`) |
+| POST | `/api/ops/maintenance` | Schedule a maintenance window |
+| POST | `/api/ops/maintenance/:id/cancel` | Cancel a scheduled/active window |
+| GET | `/api/ops/settings` | Get Ops thresholds |
+| PUT | `/api/ops/settings` | Update Ops thresholds (`{settings:{key:value}}`, audit-logged) |
+| GET | `/api/ops/releases` | Latest changelog version vs deployed `app_version` per client + deploy log |
+
 ### SMTP Configuration
 | Method | Endpoint | Description |
 |---|---|---|
@@ -311,7 +372,7 @@ All endpoints require authentication via one of:
 Deploys are split into two workflows so **clients never receive untested, error-prone updates**:
 
 ### `ci.yml` — typecheck gate on every push/PR
-A separate continuous-integration workflow runs on every push to `main` and every PR. It runs the **server** (`npm run typecheck` + `npm run build` at the repo root) and the **control plane** (typecheck + build in `control-plane/`), plus an **isolation test suite** (`npm run test`) against an ephemeral PostgreSQL 17 service container. Any failure blocks the workflow, so broken code is caught before it reaches the auto-deploy step. Branch protection can require this workflow to pass before a PR merges.
+A separate continuous-integration workflow runs on every push to `main` and every PR. It runs the **server** (`npm run typecheck` + `npm run build` at the repo root) and the **control plane** (typecheck + build in `control-plane/`), plus two DB-backed test suites against ephemeral PostgreSQL 17 service containers: the **server isolation suite** (`npm run test` at the root) and the **control-plane Ops Center suite** (`npm run test` in `control-plane/`, covering heartbeat ingest, alert dedupe/cooldown, incident CRUD, drift, support/maintenance sweeps, and diagnostic-report redaction). Any failure blocks the workflow, so broken code is caught before it reaches the auto-deploy step. Branch protection can require this workflow to pass before a PR merges.
 
 ### `deploy-test.yml` — automatic, on every push
 Runs on every push to `main` (and via manual dispatch). Its first job (`check`) runs **`npm run typecheck` for the server and the control plane** and aborts the workflow if either fails; only a green build proceeds to the deploy job. It calls `POST /api/deploy-test`, which deploys **only the client marked as the test site** (`is_test = 1`). Production clients are never touched. The workflow sends the push's git commit SHA and message, which the control plane records in the deploy log. If no test site is configured — or the deploy fails — the workflow fails (red), and production was still untouched.
@@ -339,6 +400,8 @@ The control plane checks all active clients every 5 minutes:
 
 The client `/api/health` endpoint discloses business stats (orders, customers, revenue — including paid subscription revenue from invoices) only to the control plane; the public response is just `{ ok: true }`.
 
+**Ops Center signals** — on top of the pull loop, each client pushes a heartbeat (`POST /api/heartbeat`) every ~2 minutes with version, readiness, and coarse integration checks. Every ingest immediately re-runs `evaluateForClient(id)` so alerts (stale heartbeat, backup overdue, subscription expiring) and config-drift findings fire or self-heal within seconds, and the periodic sweep (`expireSupportAndMaintenance`, `pruneOpsData`) keeps support sessions, maintenance windows, and retention windows tidy. See [`OPS_CENTER.md`](OPS_CENTER.md).
+
 ## Payment Reminders & Auto-Deactivation
 
 - **Reminders** (`GET /api/payment-reminders`) compute four windows from each client's `next_payment_date`: `7d` (due in 1 week), `2d` (due in 2 days), `due` (due today), and `overdue`. Each window fires once per client per due date (recorded in the `payment_reminders` table with a `UNIQUE(client_id, "window", due_date)` constraint) and appears in the reminders banner and as a bell notification.
@@ -364,6 +427,15 @@ The control plane uses its own PostgreSQL database (not shared with clients):
 | `client_payments` | Recorded subscription payments (client, invoice, amount, period, due date, notes) |
 | `payment_reminders` | One-time reminder events per client per window per due date (`UNIQUE(client_id, "window", due_date)`) |
 | `cp_notifications` | In-app notifications (type, title, body, severity, client, read state, `dedupe_key UNIQUE`) |
+| `client_heartbeats` | Raw client-pushed heartbeats (app/schema version, readiness, checks, received_at) |
+| `client_usage_history` | Daily usage snapshots per client (`UNIQUE(client_id, day)`) |
+| `alerts` | Deduplicated alerts (`dedupe_key UNIQUE`) with state machine + resolution audit columns |
+| `incidents` / `incident_comments` | Incident tickets and timed internal/client comments |
+| `diagnostic_reports` | Generated secret-free diagnostic snapshots + filenames |
+| `support_access_sessions` | Technician sessions (scopes, expiry, full approve/revoke audit trail) |
+| `maintenance_windows` | Scheduled maintenance with status state machine |
+| `client_drift` | Config-drift findings (`UNIQUE(client_id, key)`) |
+| `cp_settings` | Ops thresholds (heartbeat staleness, retention, cooldowns, backup-stale hours) |
 
 ## Architecture
 

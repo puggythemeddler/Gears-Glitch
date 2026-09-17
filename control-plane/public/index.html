@@ -163,6 +163,52 @@
     .badge-overlimit { background: var(--tint-overlimit); color: var(--overlimit-strong); }
     @keyframes pulseBadge { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
+    /* Ops Center — Client Health & Operations */
+    .badge-degraded { background: var(--tint-warning); color: var(--warning-strong); }
+    .badge-maintenance { background: var(--tint-primary); color: var(--deploying-strong); }
+    .badge-offline { background: var(--tint-danger); color: var(--danger-strong); }
+    .badge-disabled { background: var(--tint-muted); color: var(--text-secondary); }
+    .badge-info { background: var(--tint-muted); color: var(--text-secondary); }
+    .badge-resolved { background: var(--tint-success); color: var(--success-strong); }
+    .badge-acknowledged { background: var(--tint-warning); color: var(--warning-strong); }
+    .badge-investigating { background: var(--tint-primary); color: var(--deploying-strong); animation: pulseBadge 1.6s ease-in-out infinite; }
+    .badge-suppressed { background: var(--tint-muted); color: var(--text-muted); }
+    .badge-pending { background: var(--tint-warning); color: var(--warning-strong); }
+    .badge-open { background: var(--tint-danger); color: var(--danger-strong); }
+    .badge-expired { background: var(--tint-muted); color: var(--text-muted); }
+    .badge-revoked { background: var(--tint-danger); color: var(--danger-strong); }
+    .badge-cancelled { background: var(--tint-muted); color: var(--text-muted); }
+    .badge-ended { background: var(--tint-muted); color: var(--text-secondary); }
+    .badge-enabled { background: var(--tint-success); color: var(--success-strong); }
+    .badge-critical { background: var(--tint-danger); color: var(--danger-strong); }
+    .badge-high { background: var(--tint-danger); color: var(--danger-strong); }
+    .badge-medium { background: var(--tint-warning); color: var(--warning-strong); }
+    .badge-low { background: var(--tint-muted); color: var(--text-secondary); }
+    .badge-normal { background: var(--tint-muted); color: var(--text-muted); }
+    .badge-urgent { background: var(--tint-danger); color: var(--danger-strong); }
+    .badge-assigned { background: var(--tint-primary); color: var(--deploying-strong); }
+    .badge-monitoring { background: var(--tint-primary); color: var(--deploying-strong); }
+    .badge-closed { background: var(--tint-muted); color: var(--text-muted); }
+    .badge-waiting_client, .badge-waiting_vendor { background: var(--tint-warning); color: var(--warning-strong); }
+    .ops-tabs { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: var(--space-4); }
+    .ops-tab { padding: 0.45rem 0.9rem; cursor: pointer; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); border: none; border-bottom: 2px solid transparent; background: none; white-space: nowrap; }
+    .ops-tab:hover { color: var(--text); }
+    .ops-tab.active { color: var(--primary-strong); border-bottom-color: var(--primary); }
+    .ops-kpi { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.75rem; margin-bottom: var(--space-4); }
+    .ops-chip-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: var(--space-3); align-items: center; }
+    .tab-intro a { color: var(--primary-strong); }
+    .mini-tbl td, .mini-tbl th { padding: 0.5rem 0.75rem; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
+    .muted { color: var(--text-muted); }
+    .mt { margin-top: var(--space-3); }
+    .mb { margin-bottom: var(--space-3); }
+    .flow { display: flex; flex-direction: column; gap: var(--space-3); }
+    .ops-note { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+    .checks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem; }
+    .check-tile { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem 0.7rem; font-size: 0.8rem; }
+    .check-tile .name { color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .check-tile .val { margin-top: 0.2rem; font-weight: 600; }
+
     .actions-cell { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
     .actions-menu { position: relative; display: inline-block; }
     .actions-menu summary { list-style: none; cursor: pointer; }
@@ -314,6 +360,7 @@
       <button class="tab" id="tab-btn-backups" role="tab" aria-selected="false" aria-controls="tab-backups" onclick="switchTab('backups', this)">Backups</button>
       <button class="tab" id="tab-btn-audit" role="tab" aria-selected="false" aria-controls="tab-audit" onclick="switchTab('audit', this)">Audit Log</button>
       <button class="tab" id="tab-btn-settings" role="tab" aria-selected="false" aria-controls="tab-settings" onclick="switchTab('settings', this)">Settings</button>
+      <button class="tab" id="tab-btn-ops" data-admin role="tab" aria-selected="false" aria-controls="tab-ops" onclick="switchTab('ops', this)">Operations</button>
       <button class="tab" role="tab" aria-selected="false" aria-controls="tab-users" onclick="switchTab('users', this)" id="tab-btn-users" style="display:none">Users</button>
     </div>
     </div>
@@ -458,6 +505,43 @@
           <span id="cld-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
         </div>
       </div>
+    </div>
+
+    <div id="tab-ops" role="tabpanel" aria-labelledby="tab-btn-ops" style="display:none">
+      <div class="page-head">
+        <h2>Client Health &amp; Operations Center</h2>
+        <div class="btn-row">
+          <button class="btn btn-primary btn-sm" onclick="opsRunHealthCheck()">Health Check Now</button>
+        </div>
+      </div>
+      <p class="tab-intro" style="margin-bottom:var(--space-3)">
+        Availability is derived from the 5-minute pull plus each client's pushed heartbeat. Alerts, incidents, config drift,
+        diagnostic reports, support access and maintenance windows are logged here and audited. Secrets are never stored or shown.
+      </p>
+      <div class="ops-tabs" role="tablist" aria-label="Operations sections" onkeydown="opsTabsKeydown(event)">
+        <button class="ops-tab active" data-opstab="overview" role="tab" aria-selected="true" onclick="switchOpsSub('overview', this)">Overview</button>
+        <button class="ops-tab" data-opstab="health" role="tab" aria-selected="false" onclick="switchOpsSub('health', this)">Health</button>
+        <button class="ops-tab" data-opstab="alerts" role="tab" aria-selected="false" onclick="switchOpsSub('alerts', this)">Alerts</button>
+        <button class="ops-tab" data-opstab="incidents" role="tab" aria-selected="false" onclick="switchOpsSub('incidents', this)">Incidents</button>
+        <button class="ops-tab" data-opstab="diagnostics" role="tab" aria-selected="false" onclick="switchOpsSub('diagnostics', this)">Diagnostics</button>
+        <button class="ops-tab" data-opstab="releases" role="tab" aria-selected="false" onclick="switchOpsSub('releases', this)">Releases</button>
+        <button class="ops-tab" data-opstab="support" role="tab" aria-selected="false" onclick="switchOpsSub('support', this)">Support Access</button>
+        <button class="ops-tab" data-opstab="maintenance" role="tab" aria-selected="false" onclick="switchOpsSub('maintenance', this)">Maintenance</button>
+        <button class="ops-tab" data-opstab="drift" role="tab" aria-selected="false" onclick="switchOpsSub('drift', this)">Config Drift</button>
+        <button class="ops-tab" data-opstab="usage" role="tab" aria-selected="false" onclick="switchOpsSub('usage', this)">Usage</button>
+        <button class="ops-tab" data-opstab="thresholds" role="tab" aria-selected="false" onclick="switchOpsSub('thresholds', this)">Thresholds</button>
+      </div>
+      <div id="ops-overview"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-health" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-alerts" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-incidents" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-diagnostics" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-releases" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-support" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-maintenance" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-drift" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-usage" style="display:none"><div class="empty"><p>Loading…</p></div></div>
+      <div id="ops-thresholds" style="display:none"><div class="empty"><p>Loading…</p></div></div>
     </div>
 
     <div id="tab-client-detail" role="region" aria-label="Client details" style="display:none">
@@ -2147,6 +2231,783 @@
       tabs[next].focus();
     }
 
+    // ─── OPS CENTER (Client Health & Operations) ─────────────
+    const opsState = { clients: [], overview: null, healthFilter: "", healthStatusFilter: "" };
+
+    function opsFmtNum(n) { return Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+    function opsMoney(n) { return "KES " + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+    function opsFmt(iso) { if (!iso) return "—"; const d = new Date(iso); return isNaN(d) ? "—" : d.toLocaleString(); }
+    function opsAge(iso) {
+      if (!iso) return "—";
+      const t = new Date(iso).getTime();
+      if (isNaN(t)) return "—";
+      const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+      if (m < 1) return "now";
+      if (m < 60) return m + "m ago";
+      const h = Math.floor(m / 60);
+      if (h < 24) return h + "h " + (m % 60) + "m ago";
+      return Math.floor(h / 24) + "d ago";
+    }
+    function opsSevClass(sev) {
+      return { danger: "badge-down", warning: "badge-warning", info: "badge-info", critical: "badge-critical", high: "badge-high", medium: "badge-medium", low: "badge-low", normal: "badge-normal", urgent: "badge-urgent" }[sev] || "badge-unknown";
+    }
+    function opsStateClass(state) {
+      return { open: "badge-open", acknowledged: "badge-acknowledged", investigating: "badge-investigating", suppressed: "badge-suppressed", resolved: "badge-resolved", closed: "badge-closed", ended: "badge-ended", cancelled: "badge-cancelled", expired: "badge-expired", revoked: "badge-revoked", pending: "badge-pending", active: "badge-active", assigned: "badge-assigned", monitoring: "badge-monitoring", waiting_client: "badge-waiting_client", waiting_vendor: "badge-waiting_vendor" }[state] || "badge-unknown";
+    }
+    function opsStatusBadge(status) {
+      const cls = { healthy: "badge-healthy", degraded: "badge-degraded", offline: "badge-offline", sleeping: "badge-sleeping", unknown: "badge-unknown", provisioning: "badge-provisioning", disabled: "badge-disabled", failed: "badge-failed", maintenance: "badge-maintenance" }[status] || "badge-unknown";
+      return `<span class="badge ${cls}">${esc(status || "unknown")}</span>`;
+    }
+    function opsCheckTile(name, chk) {
+      const val = chk && typeof chk === "object" ? chk.status : (chk === undefined ? "unknown" : String(chk));
+      const cls = val === "ok" || val === "configured" || val === "enabled" ? "badge-active" : val === "fail" ? "badge-down" : "badge-unknown";
+      return `<div class="check-tile"><div class="name">${esc(name)}</div><div class="val"><span class="badge ${cls}">${esc(val)}</span></div>${chk && typeof chk === 'object' && chk.detail ? '<div class="ops-note" style="margin-top:0.2rem">' + esc(chk.detail) + '</div>' : ''}</div>`;
+    }
+
+    async function opsGetClients(force) {
+      if (!force && opsState.clients.length) return opsState.clients;
+      const data = await api("/api/ops/overview");
+      opsState.overview = data;
+      opsState.clients = data.clients || [];
+      return opsState.clients;
+    }
+    function opsClientOption(id) { return (opsState.clients || []).find(c => c.id === Number(id)); }
+    function opsClientOptions() { return (opsState.clients || []).map(c => ({ value: c.id, label: c.name })); }
+
+    function opsHealthTable(clients) {
+      const rows = clients.map(c => {
+        const openA = c.open_alerts || 0, openI = c.open_incidents || 0, drift = c.drift_count || 0, maint = c.maintenance_count || 0;
+        const hb = c.heartbeatAgeMin === null ? "—" : c.heartbeatAgeMin + "m";
+        const uptime = c.uptime_pct != null ? Number(c.uptime_pct).toFixed(1) + "%" : "—";
+        return `<tr>
+          <td><button class="link-btn" onclick="openOpsClient(${c.id})">${esc(c.name)}</button><div class="ops-note">${esc(c.domain || "")}${c.is_test ? ' <span class="badge badge-provisioning">test site</span>' : ""}</div></td>
+          <td>${opsStatusBadge(c.derived && c.derived.status)}</td>
+          <td><span class="mono">${esc(c.app_version || "—")}</span><div class="ops-note">schema ${esc(c.schema_version || "—")}</div></td>
+          <td>${esc(c.env_type || "—")}</td>
+          <td>${hb}</td>
+          <td>${uptime}</td>
+          <td>
+            ${openA ? `<span class="badge badge-open" title="open alerts">${openA} alert${openA > 1 ? "s" : ""}</span>` : ""}
+            ${openI ? `<span class="badge badge-investigating" title="open incidents">${openI} incident${openI > 1 ? "s" : ""}</span>` : ""}
+            ${drift ? `<span class="badge badge-warning" title="open drift">${drift} drift</span>` : ""}
+            ${maint ? `<span class="badge badge-maintenance" title="scheduled/active maintenance">${maint} maint</span>` : ""}
+            ${!openA && !openI && !drift && !maint ? '<span class="muted" style="font-size:0.8rem">clear</span>' : ""}
+          </td>
+          <td><div class="actions-cell">
+            <button class="btn btn-ghost btn-sm" onclick="openOpsClient(${c.id})">Detail</button>
+            <button class="btn btn-ghost btn-sm" onclick="opsGenReport(${c.id})">Report</button>
+          </div></td>
+        </tr>`;
+      }).join("");
+      return `<table><thead><tr>
+        <th>Client</th><th>Status</th><th>Version</th><th>Env</th><th>Heartbeat</th><th>Uptime</th><th>Open</th><th>Actions</th>
+      </tr></thead><tbody>${rows || '<tr><td colspan="8" class="empty">No clients yet.</td></tr>'}</tbody></table>`;
+    }
+
+    function opsHealthFiltered() { return (opsState.clients || []).filter(c => {
+      const q = opsState.healthFilter.trim().toLowerCase();
+      const okQ = !q || (c.name || "").toLowerCase().includes(q) || (c.domain || "").toLowerCase().includes(q) || (c.app_version || "").toLowerCase().includes(q);
+      const okS = !opsState.healthStatusFilter || (c.derived && c.derived.status) === opsState.healthStatusFilter;
+      return okQ && okS;
+    }); }
+
+    async function opsLoadOverview() {
+      const el = document.getElementById("ops-overview");
+      try {
+        const clients = await opsGetClients(true);
+        const counts = (opsState.overview && opsState.overview.counts) || {};
+        const bc = counts.byStatus || {};
+        const offlineish = (bc.offline || 0) + (bc.sleeping || 0);
+        const kpi = (label, value, color) => `<div class="stat-card"><div class="value" style="${color ? "color:" + color : ""}">${value}</div><div class="label">${label}</div></div>`;
+        el.innerHTML = `
+          <div class="ops-kpi">
+            ${kpi("Total", counts.total ?? clients.length, "")}
+            ${kpi("Healthy", bc.healthy || 0, "var(--success-strong)")}
+            ${kpi("Degraded", bc.degraded || 0, "var(--warning-strong)")}
+            ${kpi("Offline / cold", offlineish, offlineish ? "var(--danger-strong)" : "")}
+            ${kpi("Open alerts", counts.openAlerts || 0, counts.openAlerts ? "var(--danger-strong)" : "var(--success-strong)")}
+            ${kpi("Open incidents", counts.openIncidents || 0, counts.openIncidents ? "var(--warning-strong)" : "var(--success-strong)")}
+          </div>
+          <div class="ops-chip-row">
+            <span class="badge badge-warning">Open drift: ${counts.drift || 0}</span>
+            <span class="badge badge-maintenance">Maintenance: ${counts.maintenance || 0}</span>
+            <span class="muted" style="font-size:0.8rem">Derived from the 5-minute pull + client heartbeats; offline ≠ revenue loss, dormant stores cold-start on first request.</span>
+          </div>
+          ${opsHealthTable(clients)}
+        `;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    async function opsLoadHealth() {
+      const el = document.getElementById("ops-health");
+      try {
+        await opsGetClients();
+        const statuses = [...new Set((opsState.clients || []).map(c => c.derived && c.derived.status))].sort();
+        el.innerHTML = `
+          <div class="toolbar">
+            <input type="search" id="ops-health-search" class="input" placeholder="Search name, domain, version…" oninput="opsState.healthFilter=this.value;opsRenderHealthTable()">
+            <select id="ops-health-status" class="select" onchange="opsState.healthStatusFilter=this.value;opsRenderHealthTable()">
+              <option value="">All statuses</option>
+              ${statuses.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("")}
+            </select>
+            <span id="ops-health-count" class="muted" style="font-size:0.85rem"></span>
+          </div>
+          <div id="ops-health-table">${rowsHtmlOrEmpty(opsHealthFiltered())}</div>
+        `;
+        opsRenderHealthTable();
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+      function rowsHtmlOrEmpty(list) { return opsHealthTable(list); }
+    }
+    function opsRenderHealthTable() {
+      const list = opsHealthFiltered();
+      const el = document.getElementById("ops-health-table");
+      if (el) el.innerHTML = opsHealthTable(list);
+      const count = document.getElementById("ops-health-count");
+      if (count) count.textContent = list.length + " client(s)";
+    }
+
+    async function opsLoadAlerts() {
+      const el = document.getElementById("ops-alerts");
+      try {
+        const [list, summary] = await Promise.all([api("/api/ops/alerts"), api("/api/ops/alerts/summary")]);
+        const counts = summary.counts || {};
+        const chips = [
+          `<span class="badge badge-open">Open: ${counts.open || 0}</span>`,
+          `<span class="badge badge-acknowledged">Ack: ${counts.acknowledged || 0}</span>`,
+          `<span class="badge badge-investigating">Investigating: ${counts.investigating || 0}</span>`,
+          `<span class="badge badge-suppressed">Suppressed: ${counts.suppressed || 0}</span>`,
+          `<span class="badge badge-resolved">Resolved: ${counts.resolved || 0}</span>`,
+        ].join(" ");
+        const rows = (list.alerts || []).map(a => `
+          <tr>
+            <td><span class="badge ${opsSevClass(a.severity)}">${esc(a.severity)}</span></td>
+            <td>${esc(a.category)}</td>
+            <td><button class="link-btn" onclick="openOpsClient(${a.client_id})">${esc(a.client_name || "client " + a.client_id)}</button></td>
+            <td><div><strong>${esc(a.title)}</strong></div><div class="ops-note">${esc(a.description || "")}</div>${a.notes ? '<div class="ops-note" style="color:var(--warning-strong)">' + esc(a.notes) + '</div>' : ""}</td>
+            <td><span class="badge ${opsStateClass(a.state)}">${esc(a.state)}</span></td>
+            <td>${a.occurrence_count}×</td>
+            <td style="font-size:0.8rem">${opsAge(a.detected_at)}<div class="ops-note">${opsAge(a.last_occurrence)}</div></td>
+            <td>${esc(a.assigned_to || "—")}</td>
+            <td><div class="actions-cell">
+              ${a.state === "open" ? `<button class="btn btn-ghost btn-sm" onclick="opsAckAlert(${a.id})">Ack</button>` : ""}
+              <button class="btn btn-ghost btn-sm" onclick="opsAssignPrompt(${a.id})">Assign</button>
+              ${["open", "acknowledged", "investigating"].includes(a.state) ? `<button class="btn btn-ghost btn-sm" onclick="opsResolvePrompt(${a.id})">Resolve</button>` : ""}
+              ${a.state === "resolved" ? `<button class="btn btn-ghost btn-sm" onclick="opsReopenAlert(${a.id})">Reopen</button>` : ""}
+              ${a.state === "suppressed" ? `<button class="btn btn-ghost btn-sm" onclick="opsUnsuppressAlert(${a.id})">Unsuppress</button>` : ""}
+              ${a.state !== "suppressed" && a.state !== "resolved" ? `<button class="btn btn-ghost btn-sm" onclick="opsSuppressPrompt(${a.id})">Suppress</button>` : ""}
+              ${a.state !== "resolved" && a.state !== "suppressed" ? `<button class="btn btn-primary btn-sm" onclick="opsAlertToIncidentPrompt(${a.id})">Incident</button>` : ""}
+            </div></td>
+          </tr>`).join("");
+        el.innerHTML = `<div class="ops-chip-row">${chips}</div>
+          <table><thead><tr><th>Severity</th><th>Category</th><th>Client</th><th>Alert</th><th>State</th><th>Occur.</th><th>Detected / Last</th><th>Assigned</th><th>Actions</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="9" class="empty"><p>No alerts. The fleet is quiet.</p></td></tr>'}</tbody></table>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    async function opsLoadIncidents() {
+      const el = document.getElementById("ops-incidents");
+      try {
+        await opsGetClients();
+        const data = await api("/api/ops/incidents");
+        const rows = (data.incidents || []).map(i => `
+          <tr>
+            <td>#${i.id}</td>
+            <td><button class="link-btn" onclick="openOpsClient(${i.client_id})">${esc(i.client_name || "client " + i.client_id)}</button></td>
+            <td><div><strong>${esc(i.title)}</strong></div><div class="ops-note">${esc((i.description || "").slice(0, 160))}</div></td>
+            <td><span class="badge ${opsSevClass(i.severity)}">${esc(i.severity)}</span></td>
+            <td><span class="badge ${opsSevClass(i.priority)}">${esc(i.priority)}</span></td>
+            <td><span class="badge ${opsStateClass(i.status)}">${esc(i.status)}</span></td>
+            <td>${esc(i.assignee || "—")}</td>
+            <td style="font-size:0.8rem">${opsAge(i.updated_at)}</td>
+            <td><div class="actions-cell">
+              <button class="btn btn-ghost btn-sm" onclick="openIncidentDetail(${i.id})">View</button>
+            </div></td>
+          </tr>`).join("");
+        el.innerHTML = `<div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Incidents</h3>
+            <button class="btn btn-primary btn-sm" onclick="opsCreateIncidentPrompt()">+ New Incident</button></div>
+          <table><thead><tr><th>#</th><th>Client</th><th>Title</th><th>Severity</th><th>Priority</th><th>Status</th><th>Assignee</th><th>Updated</th><th></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="9" class="empty"><p>No incidents yet.</p></td></tr>'}</tbody></table>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    async function opsLoadDiagnostics() {
+      const el = document.getElementById("ops-diagnostics");
+      try {
+        await opsGetClients();
+        const data = await api("/api/ops/reports");
+        const rows = (data.reports || []).map(r => `
+          <tr>
+            <td>#${r.id}</td>
+            <td>${esc(r.client_name || "client " + r.client_id)}</td>
+            <td><span class="badge ${opsStateClass(r.status || "pending")}">${esc(r.status || "pending")}</span></td>
+            <td>${esc(r.requested_by || "—")}</td>
+            <td style="font-size:0.8rem">${opsFmt(r.requested_at)}</td>
+            <td style="font-size:0.8rem">${r.completed_at ? opsFmt(r.completed_at) : "—"}</td>
+            <td>${r.error ? '<span class="badge badge-down" title="' + esc(r.error) + '">error</span>' : ""}</td>
+            <td><div class="actions-cell">
+              ${r.status === "ready" ? `<a class="btn btn-ghost btn-sm" href="/api/ops/reports/${r.id}/download" download>Download JSON</a>` : ""}
+              ${r.status === "failed" ? `<button class="btn btn-ghost btn-sm" onclick="opsGenReport(${r.client_id})">Retry</button>` : ""}
+            </div></td>
+          </tr>`).join("");
+        el.innerHTML = `<div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Diagnostic Reports</h3>
+            <div class="btn-row">
+              <select id="ops-report-client" class="select"><option value="">Select client…</option>${opsClientOptions().map(o => `<option value="${o.value}">${esc(o.label)}</option>`).join("")}</select>
+              <button class="btn btn-primary btn-sm" onclick="opsGenSelected()">Generate Report</button>
+            </div></div>
+          <p class="tab-intro">A diagnostic report is a point-in-time snapshot built from control-plane data (health, heartbeats, checks, alerts, incidents, drift, usage, reliability). It contains <strong>no secrets</strong> — only booleans, counts, and versions. Download it as JSON for sharing.</p>
+          <table><thead><tr><th>#</th><th>Client</th><th>Status</th><th>Requested By</th><th>Requested</th><th>Completed</th><th></th><th>Actions</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="8" class="empty"><p>No reports yet. Generate one from the button above.</p></td></tr>'}</tbody></table>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    async function opsLoadReleases() {
+      const el = document.getElementById("ops-releases");
+      try {
+        const data = await api("/api/ops/releases");
+        const latest = data.latest;
+        const outdated = (data.clients || []).filter(c => c.app_version && latest && latest.version && c.app_version !== latest.version);
+        const oldRows = outdated.map(c => `<tr>
+          <td><button class="link-btn" onclick="openOpsClient(${c.id})">${esc(c.name)}</button></td>
+          <td><span class="badge ${opsStateClass(c.status)}">${esc(c.status)}</span></td>
+          <td><span class="mono">${esc(c.app_version)}</span></td>
+          <td><span class="mono" style="color:var(--warning-strong)">→ ${esc(latest.version)}</span></td>
+          <td style="font-size:0.8rem">${opsAge(c.last_heartbeat)}</td>
+        </tr>`).join("");
+        const depRows = (data.deploys || []).slice(0, 40).map(d => {
+          const cls = d.status === "failed" ? "badge-failed" : d.status === "deploying" ? "badge-deploying" : (d.status === "deploy" || d.status === "deploy_test") ? "badge-active" : d.status === "backup" ? "badge-info" : d.status === "backup_failed" ? "badge-overdue" : "badge-unknown";
+          return `<tr>
+            <td>${esc(d.client_name || "client " + d.client_id)}</td>
+            <td><span class="badge ${cls}">${esc(d.status)}</span></td>
+            <td style="font-size:0.8rem">${esc(d.triggered_by || "manual")}</td>
+            <td><span class="mono" style="font-size:0.78rem">${esc((d.commit_message || d.commit_sha || "—").slice(0, 80))}</span></td>
+            <td style="font-size:0.8rem">${opsFmt(d.triggered_at)}</td>
+          </tr>`;
+        }).join("");
+        el.innerHTML = `
+          <div class="detail-panel" style="margin-bottom:var(--space-4)">
+            <div class="page-head" style="margin-bottom:0.5rem"><h3 style="margin:0">Latest release</h3>${
+              latest ? `<span class="badge badge-maintenance" style="align-self:center">${esc(latest.version)}</span>` : ""}</div>
+            ${latest ? `<div><strong>${esc(latest.title)}</strong></div><div class="ops-note" style="margin-top:0.25rem">${esc((latest.body || "").slice(0, 400))}</div>
+              <div class="ops-note mt">Published ${opsFmt(latest.created_at)} — the version each client reports over its heartbeat is compared against this.</div>` :
+              '<p class="ops-note">Publish a changelog entry to track client versions against it.</p>'}
+          </div>
+          <div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Clients behind latest (${outdated.length})</h3></div>
+          <table style="margin-bottom:var(--space-5)"><thead><tr><th>Client</th><th>Status</th><th>Running</th><th>Latest</th><th>Last heartbeat</th></tr></thead>
+          <tbody>${oldRows || '<tr><td colspan="5" class="empty"><p>All reporting clients are on the latest version.</p></td></tr>'}</tbody></table>
+          <div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Recent deployments &amp; backups</h3></div>
+          <table><thead><tr><th>Client</th><th>Status</th><th>Triggered by</th><th>Commit</th><th>When</th></tr></thead>
+          <tbody>${depRows || '<tr><td colspan="5" class="empty"><p>No deploys recorded yet.</p></td></tr>'}</tbody></table>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    async function opsLoadSupport() {
+      const el = document.getElementById("ops-support");
+      try {
+        await opsGetClients();
+        const data = await api("/api/ops/support");
+        const sessions = data.sessions || [];
+        const rows = sessions.map(s => `
+          <tr>
+            <td>#${s.id}</td>
+            <td><button class="link-btn" onclick="openOpsClient(${s.client_id})">${esc(s.client_name || "client " + s.client_id)}</button></td>
+            <td>${esc(s.technician_name || "—")}</td>
+            <td><div class="ops-note">${esc((s.reason || "").slice(0, 120))}</div></td>
+            <td>${(s.scopes || "[]").replace(/^\[|\]$/g, "").split(",").map(x => x.replace(/["']/g, "").trim()).filter(Boolean).map(x => `<span class="badge badge-low">${esc(x)}</span>`).join(" ") || "—"}</td>
+            <td><span class="badge ${opsStateClass(s.status)}">${esc(s.status)}</span></td>
+            <td style="font-size:0.8rem">${opsFmt(s.starts_at)}<div class="ops-note">→ ${opsFmt(s.expires_at)}</div></td>
+            <td><div class="actions-cell">
+              ${s.status === "pending" ? `<button class="btn btn-primary btn-sm" onclick="opsApproveSupport(${s.id})">Approve</button>` : ""}
+              ${["pending", "active"].includes(s.status) ? `<button class="btn btn-danger btn-sm" onclick="opsRevokePrompt(${s.id})">Revoke</button>` : ""}
+            </div></td>
+          </tr>`).join("");
+        el.innerHTML = `<div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Support Access Sessions</h3>
+            <button class="btn btn-primary btn-sm" onclick="opsCreateSupportPrompt()">+ Request Support Access</button></div>
+          <p class="tab-intro">Time-boxed, scope-limited access sessions for a named technician, always expiry-<wbr>enforced and revoked automatically at <code>expiresAt</code>. Creation and every state change are written to the audit log. Note: the control plane does not yet inject credentials into client stores — this records the approved workflow and intent.</p>
+          <table><thead><tr><th>#</th><th>Client</th><th>Technician</th><th>Reason</th><th>Scopes</th><th>Status</th><th>Window</th><th>Actions</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="8" class="empty"><p>No support sessions yet.</p></td></tr>'}</tbody></table>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    async function opsLoadMaintenance() {
+      const el = document.getElementById("ops-maintenance");
+      try {
+        await opsGetClients();
+        const data = await api("/api/ops/maintenance");
+        const rows = (data.windows || []).map(w => `
+          <tr>
+            <td>#${w.id}</td>
+            <td><button class="link-btn" onclick="openOpsClient(${w.client_id})">${esc(w.client_name || "client " + w.client_id)}</button></td>
+            <td><div class="ops-note">${esc((w.reason || "").slice(0, 120))}</div></td>
+            <td style="font-size:0.8rem">${opsFmt(w.starts_at)}</td>
+            <td style="font-size:0.8rem">${opsFmt(w.ends_at)}</td>
+            <td><span class="badge ${opsStateClass(w.status)}">${esc(w.status)}</span></td>
+            <td>${esc(w.approved_by || "—")}</td>
+            <td><div class="actions-cell">
+              ${["scheduled", "active"].includes(w.status) ? `<button class="btn btn-danger btn-sm" onclick="opsCancelMaintenanceConfirm(${w.id})">Cancel</button>` : ""}
+            </div></td>
+          </tr>`).join("");
+        el.innerHTML = `<div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Maintenance Windows</h3>
+            <button class="btn btn-primary btn-sm" onclick="opsCreateMaintenancePrompt()">+ Schedule Maintenance</button></div>
+          <p class="tab-intro">Scheduled maintenance surfaces as a <span class="badge badge-maintenance">maintenance</span> health status without masking real outages or alerting. Windows auto-transition scheduled → active → ended; active windows can be cancelled.</p>
+          <table><thead><tr><th>#</th><th>Client</th><th>Reason</th><th>Starts</th><th>Ends</th><th>Status</th><th>Approved by</th><th></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="8" class="empty"><p>No maintenance windows yet.</p></td></tr>'}</tbody></table>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    async function opsLoadDrift() {
+      const el = document.getElementById("ops-drift");
+      try {
+        const data = await api("/api/ops/drift");
+        const rows = (data.drift || []).filter(d => d.state === "open").map(d => `
+          <tr>
+            <td><span class="badge ${opsSevClass(d.severity)}">${esc(d.severity)}</span></td>
+            <td><button class="link-btn" onclick="openOpsClient(${d.client_id})">${esc(d.client_name || "client " + d.client_id)}</button></td>
+            <td><strong>${esc(d.check_label)}</strong><div class="ops-note">${esc(d.key)}</div></td>
+            <td><div class="ops-note">Expected: <strong style="color:var(--success-strong)">${esc(d.expected || "—")}</strong></div><div class="ops-note">Actual: <strong style="color:var(--danger-strong)">${esc(d.actual || "—")}</strong></div></td>
+            <td><div class="ops-note">${esc(d.recommendation || "")}</div></td>
+            <td style="font-size:0.8rem">${opsAge(d.detected_at)}</td>
+          </tr>`).join("");
+        el.innerHTML = `<div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Configuration drift (open)</h3></div>
+          <p class="tab-intro">Differences between each client's reported configuration and the expected baseline — release version behind latest, missing heartbeat reporter, or unconfigued integrations. Rows auto-resolve when the client self-heals or gets released; none of these are availability failures by themselves.</p>
+          <table><thead><tr><th>Severity</th><th>Client</th><th>Check</th><th>Expected vs Actual</th><th>Recommendation</th><th>Detected</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" class="empty"><p>No open drift. All reporting clients match the baseline.</p></td></tr>'}</tbody></table>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    async function opsLoadUsage() {
+      const el = document.getElementById("ops-usage");
+      try {
+        const clients = await opsGetClients();
+        const scoped = clients.slice(0, 16);
+        const html = [];
+        for (const c of scoped) {
+          try {
+            const u = await api("/api/ops/clients/" + c.id + "/usage?days=14");
+            const hist = u.usage || [];
+            const last = hist[hist.length - 1];
+            const rows = hist.slice(-7).map(d => `<tr><td style="font-size:0.8rem">${new Date(d.day + (d.day.length === 10 ? "T00:00:00" : "")).toLocaleDateString()}</td><td>${opsFmtNum(d.orders)}</td><td>${opsFmtNum(d.customers)}</td><td>${opsMoney(d.revenue)}</td></tr>`).join("");
+            html.push(`<div class="detail-panel" style="margin-bottom:var(--space-3);padding:1rem">
+              <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
+                <strong><button class="link-btn" onclick="openOpsClient(${c.id})">${esc(c.name)}</button></strong>
+                <div class="ops-chip-row" style="margin:0"><span class="badge badge-info">Orders ${opsFmtNum(c.usage_orders)}</span><span class="badge badge-info">Customers ${opsFmtNum(c.usage_customers)}</span><span class="badge badge-active">${opsMoney(c.usage_revenue)}</span></div>
+              </div>
+              <table class="mini-tbl"><thead><tr><th>Day</th><th>Orders</th><th>Customers</th><th>Revenue</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="empty"><p>No usage history yet (populates each health cycle).</p></td></tr>'}</tbody></table>
+              ${last ? `<div class="ops-note mt">Latest snapshot ${new Date(last.day + (last.day.length === 10 ? "T00:00:00" : "")).toLocaleDateString()} — recorded daily from the control-plane pull, not client-reported numbers.</div>` : ""}
+            </div>`);
+          } catch { /* skip */ }
+        }
+        el.innerHTML = `<div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Usage (real metrics from the last 14 days)</h3></div>
+          <p class="tab-intro">Orders / customers / revenue are read from each client's own health endpoint each cycle and snapshotted into daily history — displayed here for the first ${scoped.length} clients by name. No fabricated numbers.</p>
+          <div class="flow">${html.join("") || '<div class="empty"><p>No clients yet.</p></div>'}</div>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    async function opsLoadThresholds() {
+      const el = document.getElementById("ops-thresholds");
+      try {
+        const data = await api("/api/ops/settings");
+        const rows = Object.entries(data.settings || {}).map(([key, s]) => `
+          <tr>
+            <td><strong>${esc(s.label)}</strong><div class="ops-note">${esc(s.help)}</div></td>
+            <td>${esc(key)}</td>
+            <td style="width:180px"><input type="number" class="input" id="ops-th-${esc(key)}" value="${s.value}" min="1" step="1" style="width:100%"></td>
+            <td class="muted">${esc(s.unit)} <span class="ops-note">(default ${s.default})</span></td>
+          </tr>`).join("");
+        el.innerHTML = `<div class="page-head" style="margin-bottom:var(--space-3)"><h3 style="margin:0">Detection thresholds</h3>
+            <button class="btn btn-primary btn-sm" onclick="opsSaveThresholds()">Save Thresholds</button></div>
+          <p class="tab-intro">Tune when heartbeats are stale, when offline is presumed, backup/usage retention, alert reopen cooldown, and the overdue-backup window. Changes apply from the next monitoring cycle.</p>
+          <table><thead><tr><th>Setting</th><th>Key</th><th>Value</th><th>Unit</th></tr></thead><tbody>${rows || ""}</tbody></table>`;
+      } catch (e) { el.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; }
+    }
+
+    function opsTabsKeydown(e) {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      const tabs = Array.from(document.querySelectorAll(".ops-tab"));
+      const i = tabs.indexOf(document.activeElement);
+      let next = i;
+      if (e.key === "ArrowRight") next = i + 1; else next = i - 1;
+      if (next < 0 || next >= tabs.length) return;
+      e.preventDefault();
+      tabs[next].click();
+      tabs[next].focus();
+    }
+
+    function switchOpsSub(tab, el) {
+      document.querySelectorAll(".ops-tab").forEach(t => { t.classList.remove("active"); t.setAttribute("aria-selected", "false"); });
+      el.classList.add("active");
+      el.setAttribute("aria-selected", "true");
+      ["overview", "health", "alerts", "incidents", "diagnostics", "releases", "support", "maintenance", "drift", "usage", "thresholds"].forEach(t => {
+        const p = document.getElementById("ops-" + t);
+        if (p) p.style.display = t === tab ? "" : "none";
+      });
+      ({ overview: opsLoadOverview, health: opsLoadHealth, alerts: opsLoadAlerts, incidents: opsLoadIncidents, diagnostics: opsLoadDiagnostics, releases: opsLoadReleases, support: opsLoadSupport, maintenance: opsLoadMaintenance, drift: opsLoadDrift, usage: opsLoadUsage, thresholds: opsLoadThresholds }[tab])();
+    }
+
+    function opsReloadCurrent() {
+      const active = document.querySelector(".ops-tab.active");
+      if (!active) return;
+      const sub = active.dataset.opstab;
+      if (sub === "overview") return opsLoadOverview();
+      if (sub === "alerts") return opsLoadAlerts();
+      if (sub === "incidents") return opsLoadIncidents();
+      if (sub === "diagnostics") return opsLoadDiagnostics();
+      if (sub === "releases") return opsLoadReleases();
+      if (sub === "support") return opsLoadSupport();
+      if (sub === "maintenance") return opsLoadMaintenance();
+      if (sub === "drift") return opsLoadDrift();
+      if (sub === "usage") return opsLoadUsage();
+      if (sub === "thresholds") return opsLoadThresholds();
+      return opsLoadHealth();
+    }
+
+    // ─── OPS: MODAL FORM BUILDER ────────────────────────────
+    const opsForms = {};
+    function opsModal(id, cfg) {
+      let box = opsForms[id] && opsForms[id].overlay;
+      if (!box) { box = document.createElement("div"); box.id = "ops-modal-" + id; box.className = "modal-overlay"; document.body.appendChild(box); }
+      const modal = document.createElement("div");
+      modal.className = "modal";
+      const fieldsHtml = (cfg.fields || []).map((f, i) => {
+        const help = f.help ? `<div class="ops-note" style="margin-top:0.25rem">${esc(f.help)}</div>` : "";
+        const lid = `opsf-${id}-${i}`;
+        if (f.type === "textarea") return `<div class="field"><label for="${lid}">${esc(f.label)}</label><textarea id="${lid}" placeholder="${esc(f.placeholder || "")}">${esc(f.default || "")}</textarea>${help}</div>`;
+        if (f.type === "select") {
+          const opts = (f.options || []).map(o => `<option value="${esc(o.value)}" ${String(o.value) === String(f.default || "") ? "selected" : ""}>${esc(o.label ?? o.value)}</option>`).join("");
+          return `<div class="field"><label for="${lid}">${esc(f.label)}</label><select id="${lid}">${opts}<option value="" ${f.default === "" ? "selected" : ""}>—</option></select>${help}</div>`;
+        }
+        if (f.type === "checkbox") return `<div class="field"><label for="${lid}" style="display:flex;align-items:center;gap:0.4rem;font-weight:500"><input type="checkbox" id="${lid}" ${f.default ? "checked" : ""} style="width:auto"> ${esc(f.label)}</label>${help}</div>`;
+        if (f.type === "multiselect") {
+          const opts = (f.options || []).map(o => `<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;padding:0.2rem 0"><input type="checkbox" class="ops-ms-${id}" value="${esc(o.value)}" ${(f.default || []).map(String).includes(String(o.value)) ? "checked" : ""} style="width:auto"> ${esc(o.label ?? o.value)}</label>`).join("");
+          return `<div class="field"><label>${esc(f.label)}</label><div style="display:flex;flex-wrap:wrap;gap:0 1.25rem">${opts}</div>${help}</div>`;
+        }
+        const t = f.type === "number" ? "number" : f.type === "datetime" ? "datetime-local" : f.type === "password" ? "password" : "text";
+        return `<div class="field"><label for="${lid}">${esc(f.label)}</label><input type="${t}" id="${lid}" value="${esc(f.default || "")}" placeholder="${esc(f.placeholder || "")}" ${f.type === "number" ? "min='1'" : ""} step="any">${help}</div>`;
+      }).join("");
+      modal.innerHTML = `<h2>${esc(cfg.title)}</h2>${cfg.subtitle ? '<p class="subtitle">' + esc(cfg.subtitle) + "</p>" : ""}${fieldsHtml}
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="opsCloseForm('${id}')">Cancel</button>
+          <button class="btn btn-primary" onclick="opsSubmitForm('${id}')">${esc(cfg.saveLabel || "Save")}</button>
+        </div>`;
+      box.innerHTML = "";
+      box.appendChild(modal);
+      opsForms[id] = { overlay: box, cfg };
+      openModal(box);
+    }
+    function opsCloseForm(id) { const f = opsForms[id]; if (f) closeModal(f.overlay); }
+    function opsSubmitForm(id) {
+      const f = opsForms[id];
+      if (!f) return;
+      const values = {};
+      f.cfg.fields.forEach((field, i) => {
+        const el = document.getElementById("opsf-" + id + "-" + i);
+        if (!el) return;
+        if (field.type === "checkbox") values[field.key] = el.checked;
+        else if (field.type === "multiselect") values[field.key] = Array.from(document.querySelectorAll(".ops-ms-" + id)).filter(c => c.checked).map(c => c.value);
+        else values[field.key] = el.value;
+      });
+      for (const fld of f.cfg.fields) {
+        const v = values[fld.key];
+        if (fld.required && (v === undefined || v === "" || (Array.isArray(v) && v.length === 0))) { toast((fld.label || fld.key) + " is required.", "error"); return; }
+      }
+      closeModal(f.overlay);
+      if (f.cfg.onSave) f.cfg.onSave(values);
+    }
+
+    // ─── OPS: ACTIONS ───────────────────────────────────────
+    async function opsRunHealthCheck() {
+      try {
+        toast("Running health check on all active clients…", "info", 6000);
+        const data = await api("/api/health-check", { method: "POST" });
+        const results = data.results || [];
+        const down = results.filter(r => r.status === "down").length;
+        toast("Health check complete — " + down + " down, " + (results.length - down) + " up.", down ? "error" : "success");
+      } catch (e) { toast("Health check failed: " + e.message, "error"); }
+      opsState.clients = [];
+      opsReloadCurrent();
+    }
+
+    async function opsAckAlert(id) {
+      try { await api("/api/ops/alerts/" + id + "/ack", { method: "POST" }); toast("Alert acknowledged."); opsReloadCurrent(); }
+      catch (e) { toast(e.message, "error"); }
+    }
+    function opsAssignPrompt(id) { opsModal("assign", { title: "Assign alert", fields: [{ key: "assignee", label: "Assignee", type: "text", required: true, placeholder: "e.g. Lucy (technician)" }], saveLabel: "Assign", onSave: async v => { try { await api("/api/ops/alerts/" + id + "/assign", { method: "POST", body: JSON.stringify({ assignee: v.assignee }) }); toast("Assigned."); opsReloadCurrent(); } catch (e) { toast(e.message, "error"); } } }); }
+    function opsResolvePrompt(id) { opsModal("resolve", { title: "Resolve alert", fields: [{ key: "resolution", label: "Resolution", type: "textarea", placeholder: "What resolved it?" }], saveLabel: "Resolve", onSave: async v => { try { await api("/api/ops/alerts/" + id + "/resolve", { method: "POST", body: JSON.stringify({ resolution: v.resolution }) }); toast("Alert resolved."); opsReloadCurrent(); } catch (e) { toast(e.message, "error"); } } }); }
+    function opsSuppressPrompt(id) { opsModal("suppress", { title: "Suppress alert", fields: [{ key: "reason", label: "Reason", type: "textarea", required: true, placeholder: "Why suppress (e.g. known maintenance, duplicate)?" }], saveLabel: "Suppress", onSave: async v => { try { await api("/api/ops/alerts/" + id + "/suppress", { method: "POST", body: JSON.stringify({ reason: v.reason }) }); toast("Alert suppressed."); opsReloadCurrent(); } catch (e) { toast(e.message, "error"); } } }); }
+    async function opsReopenAlert(id) { try { await api("/api/ops/alerts/" + id + "/reopen", { method: "POST" }); toast("Alert reopened."); opsReloadCurrent(); } catch (e) { toast(e.message, "error"); } }
+    async function opsUnsuppressAlert(id) { try { await api("/api/ops/alerts/" + id + "/unsuppress", { method: "POST" }); toast("Alert unsuppressed."); opsReloadCurrent(); } catch (e) { toast(e.message, "error"); } }
+    function opsAlertToIncidentPrompt(id) { opsModal("toIncident", { title: "Create incident from alert", fields: [{ key: "assignee", label: "Assignee (optional)", type: "text", placeholder: "Technician" }, { key: "note", label: "Note", type: "textarea", placeholder: "Opening context…" }], saveLabel: "Create Incident", onSave: async v => { try { await api("/api/ops/alerts/" + id + "/incident", { method: "POST", body: JSON.stringify({ assignee: v.assignee, note: v.note }) }); toast("Incident created from alert."); opsReloadCurrent(); } catch (e) { toast(e.message, "error"); } } }); }
+
+    async function opsCreateIncidentPrompt() {
+      await opsGetClients();
+      opsModal("incident", {
+        title: "New Incident", subtitle: "An incident tracks a problem through diagnosis to resolution with a comment timeline.",
+        fields: [
+          { key: "clientId", label: "Client", type: "select", required: true, options: opsClientOptions() },
+          { key: "title", label: "Title", type: "text", required: true, placeholder: "e.g. Orders failing at checkout" },
+          { key: "severity", label: "Severity", type: "select", default: "medium", options: ["low", "medium", "high", "critical"].map(v => ({ value: v, label: v })) },
+          { key: "priority", label: "Priority", type: "select", default: "normal", options: ["low", "normal", "high", "urgent"].map(v => ({ value: v, label: v })) },
+          { key: "assignee", label: "Assignee (optional)", type: "text", placeholder: "Technician username" },
+          { key: "description", label: "Description", type: "textarea", placeholder: "Symptoms, impact, what's been tried…" },
+        ],
+        saveLabel: "Create Incident",
+        onSave: async v => {
+          try {
+            await api("/api/ops/incidents", { method: "POST", body: JSON.stringify({ clientId: Number(v.clientId), title: v.title, severity: v.severity, priority: v.priority, assignee: v.assignee, description: v.description }) });
+            toast("Incident created."); opsReloadCurrent();
+          } catch (e) { toast(e.message, "error"); }
+        },
+      });
+    }
+
+    const opsIncidentOverlay = { box: null };
+    async function openIncidentDetail(id) {
+      let box = opsIncidentOverlay.box;
+      if (!box) { box = document.createElement("div"); box.className = "modal-overlay"; box.id = "ops-incident-detail"; document.body.appendChild(box); opsIncidentOverlay.box = box; }
+      const modal = document.createElement("div");
+      modal.className = "modal";
+      modal.style.width = "680px";
+      modal.innerHTML = '<div class="empty"><p>Loading incident…</p></div>';
+      box.innerHTML = ""; box.appendChild(modal);
+      openModal(box);
+      try {
+        const data = await api("/api/ops/incidents/" + id);
+        const i = data.incident || {};
+        const comments = data.comments || [];
+        const statusOptions = ["open", "assigned", "investigating", "waiting_client", "waiting_vendor", "monitoring", "resolved", "closed"].map(s => `<option value="${s}" ${s === i.status ? "selected" : ""}>${s}</option>`).join("");
+        const commentRows = comments.map(c => `<div style="border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem;margin-bottom:0.5rem">
+          <div class="ops-note"><strong>${esc(c.author)}</strong> · ${opsFmt(c.created_at)} · <span class="badge badge-info">${esc(c.visibility)}</span></div>
+          <div style="margin-top:0.3rem;font-size:0.9rem">${esc(c.body)}</div>
+        </div>`).join("");
+        modal.innerHTML = `
+          <h2>#${i.id} — ${esc(i.title)}</h2>
+          <div class="ops-chip-row mt mb">
+            <span class="badge ${opsSevClass(i.severity)}">${esc(i.severity)}</span>
+            <span class="badge ${opsSevClass(i.priority)}">${esc(i.priority)}</span>
+            <span class="badge ${opsStateClass(i.status)}">${esc(i.status)}</span>
+            ${i.assignee ? `<span class="badge badge-assigned">${esc(i.assignee)}</span>` : ""}
+          </div>
+          ${i.description ? `<div class="detail-panel" style="padding:1rem"><h4 style="margin-bottom:0.5rem">Description</h4><div class="ops-note" style="color:var(--text)">${esc(i.description)}</div></div>` : ""}
+          <div class="detail-panel" style="padding:1rem">
+            <h4 style="margin-bottom:0.75rem">Update</h4>
+            <div class="form-grid">
+              <div class="field"><label>Status</label><select id="ops-inc-status">${statusOptions}</select></div>
+              <div class="field"><label>Assignee</label><input id="ops-inc-assignee" value="${esc(i.assignee || "")}" placeholder="Technician"></div>
+              <div class="field" style="grid-column:1/-1"><label>Resolution summary</label><textarea id="ops-inc-res">${esc(i.resolution_summary || "")}</textarea></div>
+              <div class="field" style="grid-column:1/-1"><label>Root cause</label><textarea id="ops-inc-root">${esc(i.root_cause || "")}</textarea></div>
+              <div class="field" style="grid-column:1/-1"><label>Prevention</label><textarea id="ops-inc-prev">${esc(i.prevention || "")}</textarea></div>
+            </div>
+            <div class="actions-row">
+              <button class="btn btn-primary btn-sm" onclick="opsUpdateIncidentFromDetail(${i.id})">Save Changes</button>
+              <button class="btn btn-ghost btn-sm" onclick="opsAddIncidentCommentPrompt(${i.id})">Add Comment</button>
+            </div>
+          </div>
+          <h4 class="mb" style="margin-top:1rem">Timeline</h4>
+          ${commentRows || '<p class="ops-note mb">No comments yet.</p>'}
+          ${i.resolved_at ? `<p class="ops-note mt">Resolved ${opsFmt(i.resolved_at)}.</p>` : ""}
+          <div class="modal-actions"><button class="btn btn-ghost" onclick="opsCloseForm('incidentDetail')">Close</button></div>`;
+        if (!opsForms.incidentDetail) opsForms.incidentDetail = { overlay: box, cfg: null };
+      } catch (e) { modal.innerHTML = `<h2>Error</h2><p class="ops-note">${esc(e.message)}</p><div class="modal-actions"><button class="btn btn-ghost" onclick="opsCloseForm('incidentDetail')">Close</button></div>`; }
+    }
+    function opsUpdateIncidentFromDetail(id) {
+      const patch = {
+        status: document.getElementById("ops-inc-status").value,
+        assignee: document.getElementById("ops-inc-assignee").value,
+        resolution_summary: document.getElementById("ops-inc-res").value,
+        root_cause: document.getElementById("ops-inc-root").value,
+        prevention: document.getElementById("ops-inc-prev").value,
+      };
+      api("/api/ops/incidents/" + id, { method: "PUT", body: JSON.stringify(patch) })
+        .then(() => { toast("Incident updated."); openIncidentDetail(id); })
+        .catch(e => toast(e.message, "error"));
+    }
+    function opsAddIncidentCommentPrompt(id) {
+      opsModal("comment", { title: "Add incident comment", fields: [{ key: "body", label: "Comment", type: "textarea", required: true }, { key: "visibility", label: "Visible to client", type: "checkbox", default: false }], saveLabel: "Add", onSave: async v => {
+        try { await api("/api/ops/incidents/" + id + "/comments", { method: "POST", body: JSON.stringify({ body: v.body, visibility: v.visibility ? "client" : "internal" }) }); toast("Comment added."); openIncidentDetail(id); } catch (e) { toast(e.message, "error"); }
+      } });
+    }
+    function opsCloseForm(id) { if (id === "incidentDetail" && opsForms.incidentDetail) { closeModal(opsForms.incidentDetail.overlay); return; } const f = opsForms[id]; if (f) closeModal(f.overlay); }
+
+    async function opsGenSelected() {
+      const sel = document.getElementById("ops-report-client");
+      if (!sel || !sel.value) { toast("Select a client first.", "error"); return; }
+      await opsGenReport(Number(sel.value));
+    }
+    async function opsGenReport(clientId) {
+      try { await api("/api/ops/clients/" + clientId + "/report", { method: "POST" }); toast("Diagnostic report generated.", "success"); } catch (e) { toast(e.message, "error"); }
+      const current = document.querySelector(".ops-tab.active");
+      if (current && current.dataset.opstab === "diagnostics") opsLoadDiagnostics();
+    }
+
+    async function opsCreateSupportPrompt() {
+      await opsGetClients();
+      const users = await api("/api/ops/support");
+      const techs = (users.technicians || []).map(t => ({ value: t.id, label: t.username }));
+      opsModal("support", {
+        title: "Request Support Access", subtitle: "A time-boxed, scope-limited session for a technician. Expires automatically; every transition is audited.",
+        fields: [
+          { key: "clientId", label: "Client", type: "select", required: true, options: opsClientOptions() },
+          { key: "technicianId", label: "Technician", type: "select", required: true, options: techs.length ? techs : [{ value: "0", label: "Self (current user)" }] },
+          { key: "reason", label: "Reason for access", type: "textarea", required: true, placeholder: "Why is this access needed?" },
+          { key: "scopes", label: "Scopes", type: "multiselect", required: true, default: ["diagnostics"], options: ["diagnostics", "configuration", "data", "billing", "full_access"].map(v => ({ value: v, label: v })) },
+          { key: "durationHours", label: "Duration (hours)", type: "number", default: "24" },
+        ],
+        saveLabel: "Request Access",
+        onSave: async v => {
+          try {
+            await api("/api/ops/support", { method: "POST", body: JSON.stringify({ clientId: Number(v.clientId), technicianId: Number(v.technicianId) || null, reason: v.reason, scopes: v.scopes, durationHours: Number(v.durationHours) }) });
+            toast("Support access session requested."); opsReloadCurrent();
+          } catch (e) { toast(e.message, "error"); }
+        },
+      });
+    }
+    async function opsApproveSupport(id) { try { await api("/api/ops/support/" + id + "/approve", { method: "POST" }); toast("Session approved & activated."); opsReloadCurrent(); } catch (e) { toast(e.message, "error"); } }
+    function opsRevokePrompt(id) { opsModal("revoke", { title: "Revoke support access", fields: [{ key: "reason", label: "Reason", type: "textarea", required: true }], saveLabel: "Revoke", onSave: async v => { try { await api("/api/ops/support/" + id + "/revoke", { method: "POST", body: JSON.stringify({ reason: v.reason }) }); toast("Session revoked."); opsReloadCurrent(); } catch (e) { toast(e.message, "error"); } } }); }
+
+    async function opsCreateMaintenancePrompt() {
+      await opsGetClients();
+      const now = new Date();
+      const pad = n => String(n).padStart(2, "0");
+      const toLocal = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+      const starts = toLocal(new Date(now.getTime() + 60000));
+      const ends = toLocal(new Date(now.getTime() + 2 * 3600000));
+      opsModal("maintenance", {
+        title: "Schedule Maintenance Window", subtitle: "The client's derived health becomes 'maintenance' during the window without masking real failures.",
+        fields: [
+          { key: "clientId", label: "Client", type: "select", required: true, options: opsClientOptions() },
+          { key: "reason", label: "Reason", type: "textarea", required: true, placeholder: "e.g. v1.3 platform upgrade" },
+          { key: "startsAt", label: "Starts", type: "datetime", required: true, default: starts },
+          { key: "endsAt", label: "Ends", type: "datetime", required: true, default: ends },
+          { key: "clientMessage", label: "Client-facing message", type: "textarea", placeholder: "Shown to the store owner…" },
+        ],
+        saveLabel: "Schedule",
+        onSave: async v => {
+          try {
+            await api("/api/ops/maintenance", { method: "POST", body: JSON.stringify({ clientId: Number(v.clientId), reason: v.reason, startsAt: v.startsAt, endsAt: v.endsAt, clientMessage: v.clientMessage }) });
+            toast("Maintenance window scheduled."); opsReloadCurrent();
+          } catch (e) { toast(e.message, "error"); }
+        },
+      });
+    }
+    function opsCancelMaintenanceConfirm(id) {
+      confirmDialog({ title: "Cancel maintenance window?", message: "This will mark the window cancelled immediately.", confirmLabel: "Cancel Window", danger: true, onConfirm: async () => {
+        try { await api("/api/ops/maintenance/" + id + "/cancel", { method: "POST" }); toast("Window cancelled."); opsReloadCurrent(); } catch (e) { toast(e.message, "error"); }
+      } });
+    }
+
+    async function opsSaveThresholds() {
+      const settings = {};
+      document.querySelectorAll("[id^='ops-th-']").forEach(el => settings[el.id.replace("ops-th-", "")] = Number(el.value));
+      try {
+        await api("/api/ops/settings", { method: "PUT", body: JSON.stringify({ settings }) });
+        toast("Thresholds saved — next cycle picks them up.");
+        opsLoadThresholds();
+      } catch (e) { toast(e.message, "error"); }
+    }
+
+    // ─── OPS: CLIENT DETAIL MODAL ──────────────────────────
+    const opsClientBox = { box: null };
+    async function openOpsClient(id) {
+      let box = opsClientBox.box;
+      if (!box) { box = document.createElement("div"); box.className = "modal-overlay"; box.id = "ops-client-detail"; document.body.appendChild(box); opsClientBox.box = box; }
+      const modal = document.createElement("div");
+      modal.className = "modal";
+      modal.style.width = "720px";
+      modal.innerHTML = '<div class="empty"><p>Loading client…</p></div>';
+      box.innerHTML = ""; box.appendChild(modal);
+      openModal(box);
+      try {
+        const c = opsClientOption(id) || (await opsGetClients(true)).find(x => x.id === Number(id));
+        if (!c) throw new Error("Client not found");
+        const [alerts, incidents, drift, hb, usage, reports, maint, support] = await Promise.all([
+          api("/api/ops/clients/" + id + "/alerts"), api("/api/ops/clients/" + id + "/incidents"),
+          api("/api/ops/clients/" + id + "/drift"), api("/api/ops/clients/" + id + "/heartbeats?limit=10"),
+          api("/api/ops/clients/" + id + "/usage?days=14"), api("/api/ops/clients/" + id + "/reports"),
+          api("/api/ops/maintenance?client_id=" + id), api("/api/ops/support?client_id=" + id),
+        ]);
+        const openAlerts = (alerts.alerts || []).filter(a => ["open", "acknowledged", "investigating"].includes(a.state));
+        const openInc = (incidents.incidents || []).filter(i => !["resolved", "closed"].includes(i.status));
+        const openDrift = (drift.drift || []).filter(d => d.state === "open");
+        const hbRows = (hb.heartbeats || []).map(h => `<tr><td style="font-size:0.8rem">${opsFmt(h.received_at)}</td><td><span class="mono" style="font-size:0.78rem">${esc(h.app_version)}</span></td><td><span class="mono" style="font-size:0.78rem">${esc(h.schema_version)}</span></td><td><span class="badge ${h.readiness === "ok" ? "badge-active" : "badge-warning"}">${esc(h.readiness || "—")}</span></td></tr>`).join("");
+        const usageRows = (usage.usage || []).slice(-7).map(d => `<tr><td style="font-size:0.8rem">${new Date(d.day + (d.day.length === 10 ? "T00:00:00" : "")).toLocaleDateString()}</td><td>${opsFmtNum(d.orders)}</td><td>${opsFmtNum(d.customers)}</td><td>${opsMoney(d.revenue)}</td></tr>`).join("");
+        const reportRows = (reports.reports || []).slice(0, 5).map(r => `<tr><td>#${r.id}</td><td><span class="badge ${opsStateClass(r.status)}">${esc(r.status)}</span></td><td style="font-size:0.8rem">${opsAge(r.requested_at)}</td><td>${r.status === "ready" ? `<a class="btn btn-ghost btn-sm" href="/api/ops/reports/${r.id}/download" download>JSON</a>` : r.status === "failed" ? `<button class="btn btn-ghost btn-sm" onclick="opsGenReport(${id})">Retry</button>` : "—"}</td></tr>`).join("");
+        const alertRows = openAlerts.slice(0, 8).map(a => `<tr><td><span class="badge ${opsSevClass(a.severity)}">${esc(a.severity)}</span></td><td>${esc(a.title)}</td><td><span class="badge ${opsStateClass(a.state)}">${esc(a.state)}</span></td><td style="font-size:0.8rem">${opsAge(a.last_occurrence)}</td></tr>`).join("");
+        const incidentRows = openInc.slice(0, 8).map(i => `<tr><td>#${i.id}</td><td>${esc(i.title)}</td><td><span class="badge ${opsSevClass(i.severity)}">${esc(i.severity)}</span></td><td><span class="badge ${opsStateClass(i.status)}">${esc(i.status)}</span></td><td style="font-size:0.8rem">${opsAge(i.updated_at)}</td></tr>`).join("");
+        const driftRows = openDrift.slice(0, 8).map(d => `<tr><td><span class="badge ${opsSevClass(d.severity)}">${esc(d.severity)}</span></td><td>${esc(d.check_label)}</td><td><div class="ops-note">Expected ${esc(d.expected || "—")} · Actual <strong style="color:var(--danger-strong)">${esc(d.actual || "—")}</strong></div></td></tr>`).join("");
+        const maintRows = (maint.windows || []).filter(w => ["scheduled", "active"].includes(w.status)).map(w => `<tr><td><span class="badge badge-maintenance">${esc(w.status)}</span></td><td style="font-size:0.8rem">${opsFmt(w.starts_at)} → ${opsFmt(w.ends_at)}</td><td>${esc((w.reason || "").slice(0, 60))}</td></tr>`).join("");
+        const supportRows = (support.sessions || []).filter(s => ["pending", "active"].includes(s.status)).map(s => `<tr><td>${esc(s.technician_name)}</td><td><span class="badge ${opsStateClass(s.status)}">${esc(s.status)}</span></td><td style="font-size:0.8rem">${opsFmt(s.expires_at)}</td></tr>`).join("");
+        const checks = c.checks || {};
+        const checkNames = ["db", "payments", "notifications", "email", "whatsapp", "mpesa", "backups", "storage"];
+
+        modal.innerHTML = `
+          <h2>${esc(c.name)} <span class="badge ${c.status === "active" ? "badge-active" : c.status === "suspended" ? "badge-suspended" : c.status === "provisioning" ? "badge-provisioning" : "badge-failed"}" style="vertical-align:middle">${esc(c.status)}</span></h2>
+          <div class="ops-chip-row mt mb">
+            ${opsStatusBadge(c.derived && c.derived.status)}
+            <span class="badge badge-info">${esc(c.plan || "starter")}</span>
+            ${c.env_type ? `<span class="badge badge-low">env ${esc(c.env_type)}</span>` : ""}
+            ${c.derived ? `<span class="badge badge-medium" title="${esc(c.derived.reason)}">${esc(c.derived.reason)}</span>` : ""}
+          </div>
+          <div class="detail-panel" style="padding:1rem">
+            <div class="detail-grid">
+              <div class="detail-item"><div class="label">Domain</div><div class="value">${esc(c.domain || "—")}</div></div>
+              <div class="detail-item"><div class="label">Admin email</div><div class="value">${esc(c.admin_email || "—")}</div></div>
+              <div class="detail-item"><div class="label">App version</div><div class="value mono">${esc(c.app_version || "—")}</div></div>
+              <div class="detail-item"><div class="label">Schema version</div><div class="value mono">${esc(c.schema_version || "—")}</div></div>
+              <div class="detail-item"><div class="label">Last heartbeat</div><div class="value">${opsFmt(c.last_heartbeat)} <span class="muted">(${opsAge(c.last_heartbeat)})</span></div></div>
+              <div class="detail-item"><div class="label">Last health check</div><div class="value">${opsFmt(c.last_health_check)}</div></div>
+              <div class="detail-item"><div class="label">Uptime</div><div class="value">${c.uptime_pct != null ? Number(c.uptime_pct).toFixed(1) + "%" : "—"}</div></div>
+              <div class="detail-item"><div class="label">Subscription expires</div><div class="value">${opsFmt(c.subscription_expires)}</div></div>
+              <div class="detail-item"><div class="label">Orders</div><div class="value">${opsFmtNum(c.usage_orders)}</div></div>
+              <div class="detail-item"><div class="label">Revenue</div><div class="value">${opsMoney(c.usage_revenue)}</div></div>
+            </div>
+          </div>
+          <div class="detail-panel" style="padding:1rem">
+            <h4 style="margin-bottom:0.75rem">Reported checks <span class="badge badge-info">last heartbeat</span></h4>
+            <div class="checks-grid">${checkNames.map(n => opsCheckTile(n, checks[n])).join("")}</div>
+            <div class="ops-note mt">Values are booleans/statuses only, from the client's most recent heartbeat — never secrets.</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)" class="mb">
+            <div class="detail-panel" style="margin:0;padding:1rem"><h4 style="margin-bottom:0.5rem">Open alerts (${openAlerts.length})</h4>
+              <table class="mini-tbl"><tbody>${alertRows || '<tr><td class="empty" style="padding:1rem">—</td></tr>'}</tbody></table>
+            </div>
+            <div class="detail-panel" style="margin:0;padding:1rem"><h4 style="margin-bottom:0.5rem">Open incidents (${openInc.length})</h4>
+              <table class="mini-tbl"><tbody>${incidentRows || '<tr><td class="empty" style="padding:1rem">—</td></tr>'}</tbody></table>
+            </div>
+          </div>
+          <div class="detail-panel" style="padding:1rem">
+            <h4 style="margin-bottom:0.5rem">Config drift (${openDrift.length})</h4>
+            <table class="mini-tbl"><tbody>${driftRows || '<tr><td class="empty" style="padding:1rem">—</td></tr>'}</tbody></table>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)" class="mb">
+            <div class="detail-panel" style="margin:0;padding:1rem"><h4 style="margin-bottom:0.5rem">Usage (last 7 days)</h4>
+              <table class="mini-tbl"><thead><tr><th>Day</th><th>Orders</th><th>Cust</th><th>Revenue</th></tr></thead><tbody>${usageRows || '<tr><td colspan="4" class="empty" style="padding:1rem">—</td></tr>'}</tbody></table>
+            </div>
+            <div class="detail-panel" style="margin:0;padding:1rem"><h4 style="margin-bottom:0.5rem">Heartbeats</h4>
+              <table class="mini-tbl"><thead><tr><th>Received</th><th>App</th><th>Schema</th><th>Readiness</th></tr></thead><tbody>${hbRows || '<tr><td colspan="4" class="empty" style="padding:1rem">No heartbeat received yet</td></tr>'}</tbody></table>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)" class="mb">
+            <div class="detail-panel" style="margin:0;padding:1rem"><h4 style="margin-bottom:0.5rem">Maintenance</h4>
+              <table class="mini-tbl"><tbody>${maintRows || '<tr><td class="empty" style="padding:1rem">—</td></tr>'}</tbody></table>
+            </div>
+            <div class="detail-panel" style="margin:0;padding:1rem"><h4 style="margin-bottom:0.5rem">Support access</h4>
+              <table class="mini-tbl"><tbody>${supportRows || '<tr><td class="empty" style="padding:1rem">—</td></tr>'}</tbody></table>
+            </div>
+          </div>
+          <div class="detail-panel" style="padding:1rem">
+            <h4 style="margin-bottom:0.5rem">Diagnostic reports</h4>
+            <table class="mini-tbl"><tbody>${reportRows || '<tr><td class="empty" style="padding:1rem">No reports yet</td></tr>'}</tbody></table>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="opsCloseModal('client')">Close</button>
+            <button class="btn btn-primary" onclick="opsGenReport(${id})">Generate Report</button>
+          </div>`;
+      } catch (e) { modal.innerHTML = `<h2>Error</h2><p class="ops-note">${esc(e.message)}</p><div class="modal-actions"><button class="btn btn-ghost" onclick="opsCloseModal('client')">Close</button></div>`; }
+    }
+    function opsCloseModal(which) {
+      const box = which === "client" ? opsClientBox.box : opsIncidentOverlay.box;
+      if (box) closeModal(box);
+    }
+
     function switchTab(tab, el) {
       document.querySelectorAll(".tab").forEach(t => { t.classList.remove("active"); t.setAttribute("aria-selected", "false"); });
       el.classList.add("active");
@@ -2159,6 +3020,7 @@
       document.getElementById("tab-users").style.display = tab === "users" ? "" : "none";
       document.getElementById("tab-audit").style.display = tab === "audit" ? "" : "none";
       document.getElementById("tab-settings").style.display = tab === "settings" ? "" : "none";
+      document.getElementById("tab-ops").style.display = tab === "ops" ? "" : "none";
       document.getElementById("tab-client-detail").style.display = tab === "client-detail" ? "" : "none";
       if (tab === "plans") loadPlans();
       if (tab === "changelog") loadChangelog();
@@ -2168,6 +3030,14 @@
       if (tab === "audit") loadAudit();
       if (tab === "settings") loadSettings();
       if (tab === "clients") { loadUpgradeRequests(); loadPaymentReminders(); }
+      if (tab === "ops") {
+        const dt = document.getElementById("tab-btn-detail");
+        if (dt) dt.remove();
+        let active = document.querySelector(".ops-tab.active");
+        const defaultEl = document.querySelector('.ops-tab[data-opstab="overview"]');
+        if (!active && defaultEl) { defaultEl.classList.add("active"); defaultEl.setAttribute("aria-selected", "true"); active = defaultEl; }
+        switchOpsSub(active ? active.dataset.opstab : "overview", active || defaultEl);
+      }
     }
 
     async function viewClientDetails(id) {

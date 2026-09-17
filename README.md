@@ -286,6 +286,7 @@ A separate operator dashboard at `control-plane/` serves as the central admin hu
 **Features:**
 - **Client lifecycle management** — Provision, suspend, resume, and delete client deployments (Neon DB + Render backend + Vercel frontend)
 - **Health monitoring** — 5-minute auto-health-check loop pings each client's `/api/health`, tracks uptime %, alerts on down transitions via Slack
+- **Operations Center** — client-pushed heartbeats, derived health states, deduplicated/self-healing alerts, config-drift detection, incidents, secret-free diagnostic reports, audited support-access sessions, maintenance windows, and daily usage history (see [`control-plane/OPS_CENTER.md`](control-plane/OPS_CENTER.md))
 - **Payment reminders & auto-deactivation** — Reminder windows (1 week / 2 days / due / overdue) from `next_payment_date`, and automatic suspension (never deletion) of clients whose subscription payment is missed past the `SUSPEND_GRACE_DAYS` grace period
 - **In-app notification bell** — Payment due/overdue, client down, usage-over-limit, deploy/backup/provisioning-failed, and upgrade-request alerts with read state and deduplication
 - **Plan management** — Create/edit custom subscription plans, sync to all clients, approve/reject upgrade requests
