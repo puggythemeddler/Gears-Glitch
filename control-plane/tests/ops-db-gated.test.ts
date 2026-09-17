@@ -185,7 +185,7 @@ describe("ops center (db)", { skip: !HAS_DB && "CONTROL_PLANE_DATABASE_URL not s
   it("createIncidentFromAlert links the alert, maps severity, and adds a comment", async () => {
     const c = await seedClient();
     const { id: alertId } = await upsertAlert({ clientId: c, key: "alert:incident", category: "availability", severity: "danger", title: "Store DOWN", description: "unreachable" });
-    const incident = await createIncidentFromAlert(alertId, { assignee: "ops@team", createdBy: "admin", note: "investigating" }) as any;
+    const incident = await createIncidentFromAlert(alertId, { assignee: "ops@team", createdBy: "admin" }) as any;
 
     assert.equal(incident.client_id, c);
     assert.equal(incident.severity, "high", "danger alert maps to high incident");
@@ -194,7 +194,9 @@ describe("ops center (db)", { skip: !HAS_DB && "CONTROL_PLANE_DATABASE_URL not s
     assert.equal(alert.related_incident_id, incident.id);
     const comments = await listIncidentComments(incident.id) as any[];
     assert.equal(comments.length, 1);
-    assert.match(comments[0].body, /alert #/);
+    const comment = comments[0] as any;
+    assert.match(comment.body, /alert #/);
+    assert.equal(comment.author, "admin");
   });
 
   // ── DRIFT ──────────────────────────────────────────────────────────────────
