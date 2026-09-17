@@ -165,7 +165,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         link.rel = rel;
         document.head.appendChild(link);
       }
-      if (size) link.sizes = size;
+      if (size) link.setAttribute("sizes", size);
       link.type = type;
       link.href = href;
     };
