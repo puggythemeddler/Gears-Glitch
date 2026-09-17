@@ -120,6 +120,10 @@ CREATE TABLE IF NOT EXISTS orders (
   branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
   coupon_id INTEGER,
   discount_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+  vat_rate DOUBLE PRECISION,
+  vat_amount DOUBLE PRECISION,
+  vat_estimated INTEGER NOT NULL DEFAULT 0,
+  campaign_id INTEGER,
   processed_by TEXT,
   invoice_number TEXT,
   payment_method TEXT NOT NULL DEFAULT '',
@@ -134,6 +138,7 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_campaign ON orders(campaign_id);
 
 CREATE TABLE IF NOT EXISTS order_items (
   id SERIAL PRIMARY KEY,
@@ -644,6 +649,7 @@ CREATE TABLE IF NOT EXISTS loyalty_points (
 CREATE TABLE IF NOT EXISTS loyalty_transactions (
   id SERIAL PRIMARY KEY,
   customer_id INTEGER NOT NULL REFERENCES customers(id),
+  order_id INTEGER,
   points INTEGER NOT NULL,
   type TEXT NOT NULL,
   reference_type TEXT NOT NULL DEFAULT '',
@@ -652,6 +658,7 @@ CREATE TABLE IF NOT EXISTS loyalty_transactions (
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 CREATE INDEX IF NOT EXISTS idx_loyalty_tx_customer ON loyalty_transactions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_loyalty_tx_order ON loyalty_transactions(order_id);
 
 CREATE TABLE IF NOT EXISTS credit_notes (
   id SERIAL PRIMARY KEY,

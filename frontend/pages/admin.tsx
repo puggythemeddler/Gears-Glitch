@@ -2897,6 +2897,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
     highlights: ["Genuine Products", "Fast Delivery Across Kenya", "Secure Payments"],
     trustText: "Trusted by 5,000+ customers across Kenya",
   });
+  const [statsPublic, setStatsPublic] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -2918,6 +2919,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
         setHeroForm((prev) => ({ ...prev, ...h }));
       }
       try { const cd = await api<any>("/api/categories"); setCatList(cd.categories || []); } catch {}
+      try { const sc = await api<any>("/api/storefront/stats-config"); setStatsPublic(sc?.publicTotals === true); } catch {}
     } catch {}
     finally { setLoading(false); }
   }
@@ -3305,9 +3307,19 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, stats: [...heroForm.stats, { value: "", label: "" }] })}>+ Add Stat</RippleButton>
               <RippleButton size="small" variant="ghost" onClick={async () => {
-                try { const d = await api<any>("/api/storefront-stats"); setHeroForm({ ...heroForm, stats: [{ value: String(d.totalProducts) + "+", label: "Products" }, { value: String(d.totalCustomers) + "+", label: "Customers" }, { value: String(d.totalOrders) + "+", label: "Orders" }] }); } catch { toast("error", "Failed to load stats"); }
+                try { const d = await api<any>("/api/admin/storefront-stats"); setHeroForm({ ...heroForm, stats: [{ value: String(d.totalProducts) + "+", label: "Products" }, { value: String(d.totalCustomers) + "+", label: "Customers" }, { value: String(d.totalOrders) + "+", label: "Orders" }] }); } catch { toast("error", "Failed to load stats"); }
               }}>Populate from Live Data</RippleButton>
             </div>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.85rem", cursor: "pointer" }}>
+              <input type="checkbox" checked={statsPublic} onChange={async (e) => {
+                const next = e.target.checked;
+                setStatsPublic(next);
+                try { await api("/api/storefront/stats-config", { method: "PUT", body: JSON.stringify({ publicTotals: next }) }); toast("success", "Storefront stats visibility updated"); }
+                catch { setStatsPublic(!next); toast("error", "Failed to update stats visibility"); }
+              }} />
+              Show live customer/order/review counts when no manual stats are set
+            </label>
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "0.25rem 0 0" }}>Off by default &mdash; business totals stay admin-only. When off, the public hero falls back to your manual stat values or safe defaults.</p>
           </div>
         </div>
 

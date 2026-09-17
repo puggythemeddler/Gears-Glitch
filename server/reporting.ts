@@ -308,9 +308,9 @@ export async function salesBreakdown(filter: OrderFilter, by: SalesBreakdownBy):
       orderLevel: true,
     },
     payment_method: {
-      select: "COALESCE(NULLIF(o.payment_method,''),'unrecorded') AS label, COALESCE(NULLIF(o.payment_method,''),'') AS id",
+      select: "COALESCE(NULLIF(LOWER(TRIM(o.payment_method)),''),'unrecorded') AS label, COALESCE(NULLIF(LOWER(TRIM(o.payment_method)),''),'') AS id",
       join: "",
-      group: "o.payment_method",
+      group: "LOWER(TRIM(o.payment_method))",
       orderLevel: true,
     },
     customer: {

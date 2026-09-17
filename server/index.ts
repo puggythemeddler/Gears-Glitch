@@ -86,6 +86,8 @@ import {
   getProviderAssignmentHistory,
   createOrder,
   getOrder,
+  normalizePaymentMethod,
+  computeVatAmount,
   listOrders,
   updateOrderStatus,
   updateOrderDetails,
@@ -496,6 +498,23 @@ app.use("/api/provider/login", authLimiter);
 app.use("/api/provider/register", authLimiter);
 app.use("/api/auth/request-password-reset", authLimiter);
 app.use("/api/auth/request-admin-password-reset", authLimiter);
+
+// Anonymous analytics/tracking endpoints are latency-tolerant and spam-prone —
+// tighter per-IP windows than the general /api limiter (200/15m).
+const pageviewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+const productViewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
 
 // ============ INPUT VALIDATION HELPERS ============
 // Re-exported from ./routes/shared for backward compatibility
@@ -1104,23 +1123,69 @@ app.get("/api/public-settings", asyncHandler(async (_req: Request, res: Response
 }));
 
 // ============ STOREFRONT STATS (public) ============
+// Public surface is deliberately minimal: product count + categories only.
+// Business totals (customers / orders / reviews) are marketing numbers — they
+// are returned publicly ONLY when the owner opts in via the
+// `storefront_stats_totals` setting. Authenticated admins always get the full
+// picture from /api/admin/storefront-stats.
+
+async function loadStorefrontStats(): Promise<{ totalProducts: number; totalCustomers: number; totalOrders: number; totalReviews: number; categories: { id: number; label: string }[] }> {
+  const productCount = await queryOne("SELECT COUNT(*) AS count FROM products WHERE is_hidden = 0") as any;
+  const customerCount = await queryOne("SELECT COUNT(*) AS count FROM customers") as any;
+  const orderCount = await queryOne("SELECT COUNT(*) AS count FROM orders WHERE status != 'cancelled'") as any;
+  const categories = await queryAll("SELECT id, label FROM categories ORDER BY label") as any[];
+  const reviewCount = await queryOne("SELECT COUNT(*) AS count FROM product_reviews") as any;
+  return {
+    totalProducts: Number(productCount?.count) || 0,
+    totalCustomers: Number(customerCount?.count) || 0,
+    totalOrders: Number(orderCount?.count) || 0,
+    totalReviews: Number(reviewCount?.count) || 0,
+    categories: (categories || []).map((c: any) => ({ id: c.id, label: c.label })),
+  };
+}
 
 app.get("/api/storefront-stats", asyncHandler(async (_req: Request, res: Response) => {
   try {
-    const productCount = await queryOne("SELECT COUNT(*) AS count FROM products WHERE is_hidden = 0") as any;
-    const customerCount = await queryOne("SELECT COUNT(*) AS count FROM customers") as any;
-    const orderCount = await queryOne("SELECT COUNT(*) AS count FROM orders WHERE status != 'cancelled'") as any;
-    const categories = await queryAll("SELECT id, label FROM categories ORDER BY label") as any[];
-    const reviewCount = await queryOne("SELECT COUNT(*) AS count FROM product_reviews") as any;
-    res.json({
-      totalProducts: Number(productCount?.count) || 0,
-      totalCustomers: Number(customerCount?.count) || 0,
-      totalOrders: Number(orderCount?.count) || 0,
-      totalReviews: Number(reviewCount?.count) || 0,
-      categories: (categories || []).map((c: any) => ({ id: c.id, label: c.label })),
-    });
+    const stats = await loadStorefrontStats();
+    const showTotals = (await getStoreSetting("storefront_stats_totals")) === "true";
+    const payload: any = { totalProducts: stats.totalProducts, categories: stats.categories };
+    if (showTotals) {
+      payload.totalCustomers = stats.totalCustomers;
+      payload.totalOrders = stats.totalOrders;
+      payload.totalReviews = stats.totalReviews;
+    }
+    res.json(payload);
   } catch (err: any) {
     res.status(500).json({ error: "Failed to load storefront stats." });
+  }
+}));
+
+app.get("/api/admin/storefront-stats", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (_req: Request, res: Response) => {
+  try {
+    res.json(await loadStorefrontStats());
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load storefront stats." });
+  }
+}));
+
+// Opt-in for exposing the live customer/order/review counts on the public hero
+// strip. Off by default — the public endpoint then only reports product count
+// and categories, which any visitor can already see anyway.
+app.get("/api/storefront/stats-config", ownerAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (_req: Request, res: Response) => {
+  try {
+    res.json({ publicTotals: (await getStoreSetting("storefront_stats_totals")) === "true" });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load storefront stats config." });
+  }
+}));
+
+app.put("/api/storefront/stats-config", ownerAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const publicTotals = req.body?.publicTotals === true;
+    await setStoreSetting("storefront_stats_totals", publicTotals ? "true" : "false");
+    res.json({ publicTotals });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to update storefront stats config." });
   }
 }));
 
@@ -2173,6 +2238,14 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     const notes = `POS sale | ${pmt.toUpperCase()} | by ${staffName}`;
     const tendered = Number(tenderedAmount) > 0 ? Number(tenderedAmount) : 0;
     const holding = pmt === "mpesa";
+    // VAT snapshot at POS sale — same tax-inclusive formula as the storefront
+    // (lineTotal × rate/(100+rate)); a later settings.taxRate change never
+    // rewrites stored VAT. Payment method is stored normalized so the payments
+    // report can group "MPESA"/"M-Pesa"/"Mpesa" as one method.
+    const posSettingsVat = await getSettings();
+    const posVatRate = Number(posSettingsVat.taxRate || 16);
+    const posVat = computeVatAmount(resolvedItems.map((i) => ({ price: i.unitPrice, quantity: i.quantity, taxable: i.taxable !== false })), posVatRate);
+    const posPaymentMethod = normalizePaymentMethod(pmt);
     let orderId: number;
     // O-2: create the order, its line items, serial links, and stock movements in
     // a single transaction so a mid-checkout failure rolls everything back — never
@@ -2183,13 +2256,13 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
         let r: any;
         if (idempotencyKey) {
           r = await client.query(
-            "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6, 'pos', $7, $8) RETURNING id",
-            [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey, branchId ? Number(branchId) : null, tendered]
+            "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, idempotency_key, source, branch_id, tendered_amount, vat_rate, vat_amount, payment_method) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, $6, 'pos', $7, $8, $9, $10, $11) RETURNING id",
+            [customerId, customerName || "POS Customer", notes, subtotal, staffName, idempotencyKey, branchId ? Number(branchId) : null, tendered, posVatRate, posVat, posPaymentMethod]
           );
         } else {
           r = await client.query(
-            "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id, tendered_amount) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6, $7) RETURNING id",
-            [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null, tendered]
+            "INSERT INTO orders (customer_id, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, source, branch_id, tendered_amount, vat_rate, vat_amount, payment_method) VALUES ($1, 'pending', $2, 'POS Sale', '1', 0, $3, $4, $5, 'pos', $6, $7, $8, $9, $10) RETURNING id",
+            [customerId, customerName || "POS Customer", notes, subtotal, staffName, branchId ? Number(branchId) : null, tendered, posVatRate, posVat, posPaymentMethod]
           );
         }
         const newOrderId = r.rows[0].id;
@@ -2699,6 +2772,16 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
       pointsRedeemed = Math.floor(capped);
     }
     const total = subtotal + shippingF - couponDiscount - giftCardDiscount - pointsRedeemed;
+    // Campaign attribution: the storefront campaign page drops a `gg_campaign`
+    // cookie with the campaign slug. Attribute the order only if the campaign
+    // still exists and is active, so the campaigns report's attributed orders
+    // are honest (buyer visited the campaign landing page before checkout).
+    let campaignId: number | undefined;
+    const campaignSlug = req.cookies && typeof req.cookies.gg_campaign === "string" ? String(req.cookies.gg_campaign).trim().slice(0, 64) : "";
+    if (campaignSlug && /^[\w-]+$/.test(campaignSlug)) {
+      const cRow = await queryOne("SELECT id FROM campaigns WHERE slug = $1 AND is_active = 1", [campaignSlug]) as any;
+      if (cRow) campaignId = Number(cRow.id);
+    }
     const order = await createOrder({
       customerId,
       customerName: shippingName,
@@ -2718,6 +2801,7 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
       giftCardAmount: giftCardDiscount,
       source: "storefront",
       processedBy: `Customer #${customerId}`,
+      campaignId,
     });
     if (couponOk && couponId) { try { await recordCouponUsage(couponId, order.id); } catch {} }
     if (giftCardOk && giftCardId && giftCardDiscount > 0) { await redeemGiftCard(giftCardId, order.id, customerId, giftCardDiscount); }
@@ -3409,10 +3493,12 @@ function renderStoreLogo(logoUrl: string, position: string, storeName: string, b
 
 // ============ PRODUCT ANALYTICS ============
 
-app.post("/api/products/:id/view", asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/products/:id/view", productViewLimiter, asyncHandler(async (req: Request, res: Response) => {
+  const id = String(req.params.id || "");
+  if (!id || id.length > 100 || !/^[\w-]+$/.test(id)) { res.status(400).json({ error: "Invalid product id." }); return; }
   const viewerType = req.body?.viewerType || "anonymous";
   if (viewerType && !inSet(viewerType, ["anonymous", "customer"])) { res.status(400).json({ error: "viewerType must be 'anonymous' or 'customer'." }); return; }
-  await recordProductView(String(req.params.id), viewerType);
+  await recordProductView(id, viewerType);
   res.json({ ok: true });
 }));
 
@@ -7136,13 +7222,24 @@ app.get("/api/reports/sales/breakdown", ownerAuthMiddleware, requirePermission("
   res.json({ breakdown: await salesBreakdown(reportQueryFilter(req), by) });
 }));
 
-// Visitor tracking (public — called by storefront frontend)
-app.post("/api/track/pageview", asyncHandler(async (req: Request, res: Response) => {
+// Visitor tracking (public — called by storefront frontend). Inputs are
+// sanitized server-side (control chars stripped, path must be a site path,
+// sessionId restricted to a safe charset) and the route has its own IP
+// limiter so analytics can't be spammed into nonsense.
+app.post("/api/track/pageview", pageviewLimiter, asyncHandler(async (req: Request, res: Response) => {
   const { path, referrer, sessionId, deviceType } = req.body || {};
-  if (!path || !sessionId) { res.status(400).json({ error: "path and sessionId required" }); return; }
-  const userAgent = req.headers["user-agent"] || "";
-  const derivedDevice = deviceType || (userAgent.includes("Mobi") || userAgent.includes("Android") ? "mobile" : userAgent.includes("Tablet") ? "tablet" : "desktop");
-  await trackPageView(String(path).slice(0, 500), String(sessionId).slice(0, 64), null, String(referrer || "").slice(0, 500), userAgent.slice(0, 500), derivedDevice);
+  const rawPath = typeof path === "string" ? path.replace(/[\u0000-\u001f\u007f]/g, "") : "";
+  if (!rawPath || rawPath.length > 500) { res.status(400).json({ error: "path is required (max 500 chars)" }); return; }
+  if (rawPath[0] !== "/" || rawPath.startsWith("//")) { res.status(400).json({ error: "path must be a site path starting with /" }); return; }
+  const rawSession = typeof sessionId === "string" ? sessionId.trim() : "";
+  if (!rawSession || rawSession.length > 64 || !/^[\w.:-]+$/.test(rawSession)) { res.status(400).json({ error: "invalid sessionId" }); return; }
+  let safeReferrer = typeof referrer === "string" ? referrer.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 500) : "";
+  if (safeReferrer && !/^https?:\/\//i.test(safeReferrer)) safeReferrer = "";
+  const userAgent = String(req.headers["user-agent"] || "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 500);
+  const derivedDevice = typeof deviceType === "string" && inSet(deviceType, ["mobile", "tablet", "desktop"])
+    ? deviceType
+    : (userAgent.includes("Mobi") || userAgent.includes("Android") ? "mobile" : userAgent.includes("Tablet") ? "tablet" : "desktop");
+  await trackPageView(rawPath, rawSession, null, safeReferrer, userAgent, derivedDevice);
   res.json({ ok: true });
 }));
 

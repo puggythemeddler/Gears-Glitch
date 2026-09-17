@@ -155,7 +155,7 @@ router.get("/payments", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
   const filter = filterFromQuery(req);
   const { where, params } = buildOrderWhere(filter);
   const rows = await queryAll(
-    `SELECT COALESCE(NULLIF(o.payment_method,''),'unrecorded') AS method,
+    `SELECT COALESCE(NULLIF(LOWER(TRIM(o.payment_method)),''),'unrecorded') AS method,
        COUNT(*)::int AS orders,
        COUNT(*) FILTER (WHERE o.status IN ('paid','shipped','delivered'))::int AS collected_orders,
        COALESCE(SUM(li.line_revenue), 0) + COALESCE(SUM(o.shipping_fee), 0) AS revenue,
@@ -165,7 +165,7 @@ router.get("/payments", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
         FROM order_items oi2 WHERE NOT oi2.cancelled GROUP BY oi2.order_id
      ) li ON li.order_id = o.id
      WHERE ${where}
-     GROUP BY o.payment_method ORDER BY revenue DESC`,
+     GROUP BY LOWER(TRIM(o.payment_method)) ORDER BY revenue DESC`,
     params
   );
   const methods = rows.map((r: any) => ({
@@ -192,9 +192,9 @@ router.get("/payments/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(asy
   const filter = filterFromQuery(req);
   const { where, params } = buildOrderWhere(filter);
   const rows = await queryAll(
-    `SELECT COALESCE(NULLIF(o.payment_method,''),'unrecorded') AS method, COUNT(*)::int AS orders, COALESCE(SUM(li.line_revenue),0) + COALESCE(SUM(o.shipping_fee),0) AS revenue, COALESCE(SUM(o.amount_refunded),0) AS refunds
+    `SELECT COALESCE(NULLIF(LOWER(TRIM(o.payment_method)),''),'unrecorded') AS method, COUNT(*)::int AS orders, COALESCE(SUM(li.line_revenue),0) + COALESCE(SUM(o.shipping_fee),0) AS revenue, COALESCE(SUM(o.amount_refunded),0) AS refunds
      FROM orders o LEFT JOIN (SELECT oi2.order_id, SUM(oi2.price*oi2.quantity) AS line_revenue FROM order_items oi2 WHERE NOT oi2.cancelled GROUP BY oi2.order_id) li ON li.order_id = o.id
-     WHERE ${where} GROUP BY o.payment_method ORDER BY revenue DESC`,
+     WHERE ${where} GROUP BY LOWER(TRIM(o.payment_method)) ORDER BY revenue DESC`,
     params
   );
   const csv = toCsv(
@@ -328,15 +328,34 @@ router.get("/warranty", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
   const from = String(req.query.from || allTimeRange().from);
   const to = String(req.query.to || allTimeRange().to);
   const range = parseDateRange(from, to) ?? allTimeRange();
+  const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+  // Branch attribution: warranty claims carry no branch column, so they are
+  // attributed via the sale that produced them (claim serial → order line →
+  // order.branch). Claims with no serial link have no branch and only appear in
+  // the unfiltered view.
+  const branchJoinClaims = `LEFT JOIN order_items oi ON oi.serial_number = wc.serial_number
+    LEFT JOIN orders o ON o.id = oi.order_id`;
+  const branchClaimFilter = branchId ? " AND o.branch_id = $3" : "";
+  const branchOrderFilter = branchId ? " AND o.branch_id = $3" : "";
+  const branchStatusFilter = branchId ? " AND o.branch_id = $1" : "";
+  const claimsParams: any[] = [range.from, range.to, ...(branchId ? [branchId.toString()] : [])];
   const [claims, sold, expiring, byStatus] = await Promise.all([
-    queryAll(`SELECT * FROM warranty_claims WHERE claim_date::timestamp >= $1 AND claim_date::timestamp < ($2::date + interval '1 day') ORDER BY claim_date DESC LIMIT 500`, [range.from, range.to]),
+    queryAll(`SELECT wc.* FROM warranty_claims wc
+              ${branchJoinClaims}
+              WHERE wc.claim_date::timestamp >= $1 AND wc.claim_date::timestamp < ($2::date + interval '1 day')${branchClaimFilter}
+              ORDER BY wc.claim_date DESC LIMIT 500`, claimsParams),
     queryOne(`SELECT COUNT(*)::int AS units_sold, COUNT(*) FILTER (WHERE warranty_expires IS NOT NULL)::int AS coverage
               FROM order_items oi JOIN orders o ON o.id = oi.order_id AND o.status != 'cancelled'
-              WHERE o.created_at::timestamp >= $1 AND o.created_at::timestamp < ($2::date + interval '1 day') AND NOT oi.cancelled AND oi.has_warranty >= 1`, [range.from, range.to]),
-    queryAll(`SELECT oi.id, oi.name, oi.serial_number, oi.warranty_expires, oi.order_id FROM order_items oi
+              WHERE o.created_at::timestamp >= $1 AND o.created_at::timestamp < ($2::date + interval '1 day') AND NOT oi.cancelled AND oi.has_warranty >= 1${branchOrderFilter}`, claimsParams),
+    queryAll(`SELECT oi.id, oi.name, oi.serial_number, oi.warranty_expires, oi.order_id, o.branch_id FROM order_items oi
+              JOIN orders o ON o.id = oi.order_id
               WHERE NOT oi.cancelled AND oi.has_warranty >= 1 AND oi.warranty_expires IS NOT NULL
-                AND oi.warranty_expires::date >= $1 AND oi.warranty_expires::date < ($2::date + interval '1 day') ORDER BY oi.warranty_expires LIMIT 200`, [new Date().toISOString().slice(0, 10), new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)]),
-    queryAll(`SELECT status, COUNT(*)::int AS cnt FROM warranty_claims GROUP BY status ORDER BY cnt DESC`),
+                AND oi.warranty_expires::date >= $1 AND oi.warranty_expires::date < ($2::date + interval '1 day')${branchOrderFilter}
+              ORDER BY oi.warranty_expires LIMIT 200`, [new Date().toISOString().slice(0, 10), new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10), ...(branchId ? [branchId.toString()] : [])]),
+    queryAll(`SELECT wc.status, COUNT(*)::int AS cnt FROM warranty_claims wc
+              ${branchJoinClaims}
+              WHERE 1=1${branchStatusFilter}
+              GROUP BY wc.status ORDER BY cnt DESC`, [...(branchId ? [branchId.toString()] : [])]),
   ]);
   const unitsSold = Number((sold as any)?.units_sold || 0);
   const claimRate = unitsSold > 0 ? r2((claims?.length ?? 0) / unitsSold * 100) : null;
@@ -351,7 +370,7 @@ router.get("/warranty", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
       expiring_next_30_days: expiring?.length ?? 0,
     },
     statuses: byStatus || [],
-    note: "Claim rate = claims ÷ units sold with warranty in the period; blank when no warranty sales are recorded.",
+    note: "Claim rate = claims ÷ units sold with warranty in the period; blank when no warranty sales are recorded. Claims carry no branch — under a branch filter they are attributed via the sale that produced them (serial → line → branch); unlinked claims appear only in the unfiltered view.",
   });
 }));
 
@@ -359,10 +378,17 @@ router.get("/warranty/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(asy
   const from = String(req.query.from || allTimeRange().from);
   const to = String(req.query.to || allTimeRange().to);
   const range = parseDateRange(from, to) ?? allTimeRange();
-  const claims = await queryAll(`SELECT warranty_ref, status, claim_date, resolution_date, serial_number FROM warranty_claims WHERE claim_date::timestamp >= $1 AND claim_date::timestamp < ($2::date + interval '1 day') ORDER BY claim_date DESC`, [range.from, range.to]);
+  const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
+  const claimsParams: any[] = [range.from, range.to, ...(branchId ? [branchId.toString()] : [])];
+  const claims = await queryAll(`SELECT wc.warranty_ref, wc.status, wc.claim_date, wc.resolution_date, wc.serial_number, o.branch_id
+      FROM warranty_claims wc
+      LEFT JOIN order_items oi ON oi.serial_number = wc.serial_number
+      LEFT JOIN orders o ON o.id = oi.order_id
+      WHERE wc.claim_date::timestamp >= $1 AND wc.claim_date::timestamp < ($2::date + interval '1 day')${branchId ? " AND o.branch_id = $3" : ""}
+      ORDER BY wc.claim_date DESC`, claimsParams);
   const csv = toCsv(
-    (claims || []).map((c: any) => ({ ref: c.warranty_ref, status: c.status, serial: c.serial_number || "", claim_date: c.claim_date, resolution_date: c.resolution_date || "" })),
-    [{ key: "ref", label: "Reference" }, { key: "status", label: "Status" }, { key: "serial", label: "Serial" }, { key: "claim_date", label: "Claim date" }, { key: "resolution_date", label: "Resolution date" }]
+    (claims || []).map((c: any) => ({ ref: c.warranty_ref, status: c.status, serial: c.serial_number || "", claim_date: c.claim_date, resolution_date: c.resolution_date || "", branch_id: c.branch_id ?? "" })),
+    [{ key: "ref", label: "Reference" }, { key: "status", label: "Status" }, { key: "serial", label: "Serial" }, { key: "claim_date", label: "Claim date" }, { key: "resolution_date", label: "Resolution date" }, { key: "branch_id", label: "Branch ID" }]
   );
   sendCsv(res, `warranty-claims-${range.from}-to-${range.to}.csv`, csv);
 }));
@@ -628,7 +654,9 @@ router.get("/tax", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, 
        COALESCE(SUM(ioi.amount), 0) AS amount,
        COUNT(*) FILTER (WHERE ioi.control_code IS NOT NULL AND ioi.control_code <> '')::int AS filed,
        COALESCE(SUM(ioi.amount) FILTER (WHERE ioi.control_code IS NOT NULL AND ioi.control_code <> ''), 0) AS filed_amount,
-       COUNT(*) FILTER (WHERE ioi.status = 'pending')::int AS pending
+       COUNT(*) FILTER (WHERE ioi.status = 'pending')::int AS pending,
+       COALESCE(SUM(o.vat_amount), 0) AS vat,
+       COUNT(*) FILTER (WHERE o.vat_estimated = 1)::int AS vat_estimated_orders
      FROM order_invoices ioi
      JOIN orders o ON o.id = ioi.order_id AND o.status IN ('paid','shipped','delivered')
      WHERE ioi.created_at >= $1 AND ioi.created_at < $2${branchSql}`,
@@ -652,7 +680,9 @@ router.get("/tax", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, 
     to,
     coverage_pct: tot.count > 0 ? r2((tot.filed / tot.count) * 100) : 0,
     invoices: tot,
+    vat: { amount: money(invoices?.vat), estimated_orders: Number(invoices?.vat_estimated_orders || 0) },
     credit_notes: { count: Number(credits?.count || 0), amount: money(credits?.amount) },
+    note: "vat.amount is the VAT snapshot stored on each order; orders backfilled at the current tax rate before VAT persisted are counted in vat.estimated_orders.",
   });
 }));
 
@@ -664,7 +694,9 @@ router.get("/tax/summary", ownerAuthMiddleware, VIEW, asyncHandler(async (req: R
     `SELECT substr(o.created_at, 1, 7) AS month,
        COUNT(*)::int AS orders,
        COALESCE(SUM(ioi.amount), 0) AS amount,
-       COUNT(ioi.control_code) FILTER (WHERE ioi.control_code IS NOT NULL AND ioi.control_code <> '')::int AS filed
+       COUNT(ioi.control_code) FILTER (WHERE ioi.control_code IS NOT NULL AND ioi.control_code <> '')::int AS filed,
+       COALESCE(SUM(o.vat_amount), 0) AS vat,
+       COUNT(*) FILTER (WHERE o.vat_estimated = 1)::int AS vat_estimated_orders
      FROM orders o
      LEFT JOIN order_invoices ioi ON ioi.order_id = o.id
      WHERE o.status IN ('paid','shipped','delivered') AND o.created_at >= $1${branchSql}
@@ -677,6 +709,8 @@ router.get("/tax/summary", ownerAuthMiddleware, VIEW, asyncHandler(async (req: R
       orders: Number(r.orders || 0),
       amount: money(r.amount),
       filed: Number(r.filed || 0),
+      vat: money(r.vat),
+      vat_estimated_orders: Number(r.vat_estimated_orders || 0),
     })),
   });
 }));
@@ -848,6 +882,7 @@ router.get("/campaigns", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Req
     product_ids: JSON.parse(c.product_ids || "[]"),
   }));
   const allIds = Array.from(new Set(idsByCampaign.flatMap((c) => c.product_ids)));
+  const allCampaignIds = idsByCampaign.map((c) => c.id);
   const rows: any[] = [];
   if (allIds.length > 0) {
     const branchSql = branchId ? " AND o.branch_id = $2" : "";
@@ -875,13 +910,47 @@ router.get("/campaigns", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Req
       rows.push({ ...c, orders, units, revenue: money(revenue) });
     }
   }
+  // Attributed orders: buyer reached checkout with a `gg_campaign` cookie set by
+  // the campaign landing page, so orders.campaign_id was stamped at placement.
+  // Distinct from featured-product sales — a campaign may sell items it never
+  // features, and featured products can sell outside any campaign flow.
+  let attributed = new Map<number, { orders: number; revenue: number }>();
+  if (allCampaignIds.length > 0) {
+    const branchSql = branchId ? " AND o.branch_id = $4" : "";
+    const aParams: any[] = [allCampaignIds, from, to, ...(branchId ? [branchId.toString()] : [])];
+    const aRows = await queryAll(
+      `SELECT o.campaign_id AS campaign_id,
+         COUNT(DISTINCT o.id)::int AS orders,
+         COALESCE(SUM(li.line_revenue) + COALESCE(SUM(o.shipping_fee), 0), 0) AS revenue
+       FROM orders o LEFT JOIN (
+         SELECT oi2.order_id, SUM(oi2.price * oi2.quantity) AS line_revenue
+         FROM order_items oi2 WHERE NOT oi2.cancelled GROUP BY oi2.order_id
+       ) li ON li.order_id = o.id
+       WHERE o.campaign_id = ANY($1::int[])
+         AND o.status IN ('paid','shipped','delivered')
+         AND o.created_at >= $2 AND o.created_at < $3${branchSql}
+       GROUP BY o.campaign_id`,
+      aParams
+    );
+    attributed = new Map((aRows || []).map((r: any) => [Number(r.campaign_id), { orders: Number(r.orders || 0), revenue: Number(r.revenue || 0) }]));
+  }
+  for (const r of rows) {
+    const a = attributed.get(Number(r.id));
+    r.attributed_orders = a?.orders || 0;
+    r.attributed_revenue = money(a?.revenue);
+  }
   const totals = {
     campaigns: idsByCampaign.length,
     active: idsByCampaign.filter((c) => c.is_active).length,
     revenue: money(rows.reduce((s, r) => s + r.revenue, 0)),
     units: rows.reduce((s, r) => s + r.units, 0),
+    attributed_revenue: money(rows.reduce((s, r) => s + Number(r.attributed_revenue || 0), 0)),
+    attributed_orders: rows.reduce((s, r) => s + Number(r.attributed_orders || 0), 0),
   };
-  res.json({ from, to, totals, rows });
+  res.json({
+    from, to, totals, rows,
+    note: "featured_revenue counts sales of each campaign's featured products; attributed_revenue counts orders stamped with the campaign at checkout (buyer visited the campaign landing page). The two are not the same thing.",
+  });
 }));
 
 // ─── Cart recovery ──────────────────────────────────────────────────────────

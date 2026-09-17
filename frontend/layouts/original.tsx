@@ -153,19 +153,23 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     return [...kept, ...added];
   })();
 
-  const stats = hero?.stats?.length > 0
-    ? hero.stats
-    : liveStats
-      ? [
-          { value: String(liveStats.totalProducts) + "+", label: "Products" },
-          { value: String(liveStats.totalCustomers) + "+", label: "Customers" },
-          { value: String(liveStats.totalOrders) + "+", label: "Orders" },
-        ]
-      : [
-          { value: "1000+", label: "Products" },
-          { value: "500+", label: "Happy Customers" },
-          { value: "24/7", label: "Support" },
-        ];
+  const defaultStats = [
+    { value: "1000+", label: "Products" },
+    { value: "500+", label: "Happy Customers" },
+    { value: "24/7", label: "Support" },
+  ];
+  // The public /api/storefront-stats endpoint only returns business totals when
+  // the owner has opted in (storefront_stats_totals). Only render chips for the
+  // numbers the store chose to expose.
+  const liveStatsArr = liveStats
+    ? [
+        ...(liveStats.totalProducts != null ? [{ value: String(liveStats.totalProducts) + "+", label: "Products" }] : []),
+        ...(liveStats.totalCustomers != null ? [{ value: String(liveStats.totalCustomers) + "+", label: "Customers" }] : []),
+        ...(liveStats.totalOrders != null ? [{ value: String(liveStats.totalOrders) + "+", label: "Orders" }] : []),
+        ...(liveStats.totalReviews != null ? [{ value: String(liveStats.totalReviews) + "+", label: "Reviews" }] : []),
+      ]
+    : [];
+  const stats = hero?.stats?.length > 0 ? hero.stats : liveStatsArr.length > 0 ? liveStatsArr : defaultStats;
 
   const highlights = hero?.highlights?.length > 0
     ? hero.highlights

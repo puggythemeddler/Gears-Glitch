@@ -15,6 +15,12 @@ export default function CampaignPage() {
 
   useEffect(() => {
     if (!slug) return;
+    // Stamped so /api/orders can attribute the checkout to this campaign
+    // (buyer visited the landing page). Keyed by slug; server re-validates the
+    // campaign exists and is active before stamping orders.campaign_id.
+    try {
+      document.cookie = `gg_campaign=${encodeURIComponent(String(slug).toLowerCase())}; path=/; max-age=${30 * 86400}; SameSite=Lax`;
+    } catch {}
     let cancelled = false;
     setLoading(true);
     setError("");

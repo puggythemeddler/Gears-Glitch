@@ -200,6 +200,10 @@ interface Order {
   items: OrderItem[];
   couponId?: number | null;
   discountAmount?: number;
+  vatRate?: number | null;
+  vatAmount?: number | null;
+  vatEstimated?: number;
+  campaignId?: number | null;
   processedBy?: string;
   idempotencyKey?: string;
   source: string;
@@ -808,6 +812,32 @@ async function runMigrations(): Promise<void> {
          WHERE oi.unit_cost IS NULL AND NOT oi.cancelled`
       );
     }
+  } catch {}
+  try {
+    // VAT persistence + campaign attribution (additive, nullable).
+    await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_rate DOUBLE PRECISION`);
+    await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_amount DOUBLE PRECISION`);
+    await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_estimated INTEGER NOT NULL DEFAULT 0`);
+    await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS campaign_id INTEGER`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_orders_campaign ON orders(campaign_id)`);
+    await query(`ALTER TABLE loyalty_transactions ADD COLUMN IF NOT EXISTS order_id INTEGER`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_loyalty_tx_order ON loyalty_transactions(order_id)`);
+  } catch {}
+  try {
+    // One-time snapshot of historical VAT at the CURRENT configured rate. The
+    // render-time formula is lineTotal * rate/(100+rate); the snapshot is
+    // flagged vat_estimated so the tax report never presents it as recorded.
+    const rateRow = await queryOne("SELECT COALESCE(CAST(value AS DOUBLE PRECISION), 0) AS rate FROM settings WHERE key = 'taxRate'") as any;
+    const rate = Number(rateRow?.rate || 16);
+    await query(
+      `UPDATE orders SET
+         vat_rate = $1,
+         vat_amount = ROUND(COALESCE((SELECT SUM(ROUND(oi.line_total * $1 / (100 + $1), 2))
+            FROM order_items oi WHERE oi.order_id = orders.id AND NOT oi.cancelled AND oi.taxable = 1), 0), 2),
+         vat_estimated = 1
+       WHERE vat_amount IS NULL`,
+      [rate]
+    );
   } catch {}
   try { await query(`INSERT INTO settings (key, value) SELECT 'logo_position', 'top-left' WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'logo_position')`); } catch {}
   try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DOUBLE PRECISION`); } catch {}
@@ -3156,15 +3186,35 @@ async function cancelOrderItemQuantity(orderItemId: number, quantity: number): P
   });
 }
 
-async function createOrder(data: { customerId: number; customerName: string; customerEmail: string; shippingName: string; shippingAddress: string; shippingCity: string; shippingCounty: string; shippingPostcode: string; shippingPhone: string; shippingFee: number; notes?: string; items: { productId: string; name: string; price: number; quantity: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean }[]; couponId?: number; discountAmount?: number; staffId?: number; branchId?: number; processedBy?: string; idempotencyKey?: string; source?: string; giftCardId?: number; giftCardAmount?: number }): Promise<Order> {
+// VAT snapshot helper (shared by storefront createOrder and POS checkout so the
+// captured amount always matches what the invoice renderer displays: prices are
+// tax-inclusive, so VAT = lineTotal × rate/(100+rate), rounded per line).
+export function computeVatAmount(items: { price: number; quantity: number; taxable?: boolean }[], taxRate: number): number {
+  const rate = Number(taxRate);
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+  let total = 0;
+  for (const i of items) {
+    if (i.taxable === false) continue;
+    total += Math.round(Number(i.price) * Number(i.quantity) * rate / (100 + rate) * 100) / 100;
+  }
+  return total;
+}
+
+async function createOrder(data: { customerId: number; customerName: string; customerEmail: string; shippingName: string; shippingAddress: string; shippingCity: string; shippingCounty: string; shippingPostcode: string; shippingPhone: string; shippingFee: number; notes?: string; items: { productId: string; name: string; price: number; quantity: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean }[]; couponId?: number; discountAmount?: number; staffId?: number; branchId?: number; processedBy?: string; idempotencyKey?: string; source?: string; giftCardId?: number; giftCardAmount?: number; campaignId?: number }): Promise<Order> {
   const subtotal = Math.round(data.items.reduce((sum, i) => sum + i.price * i.quantity, 0) * 100) / 100;
+  // VAT snapshot at placement: same tax-inclusive formula the invoices render
+  // (lineTotal × rate/(100+rate)); later settings.taxRate changes can never
+  // rewrite stored VAT. POS uses the shared computeVatAmount helper too.
+  const settingsVat = await getSettings();
+  const vatRate = Number(settingsVat.taxRate || 16);
+  const vatAmount = computeVatAmount(data.items, vatRate);
   // Order + its line items commit atomically so a mid-loop failure can never
   // leave an orphaned order or a partial item set.
   const orderId = await transaction(async (client) => {
     const result = await client.query(
-      `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_city, shipping_county, shipping_postcode, shipping_phone, shipping_fee, notes, subtotal, coupon_id, discount_amount, staff_id, branch_id, processed_by, idempotency_key, source, gift_card_id, gift_card_amount)
-       VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id`,
-      [data.customerId, data.customerName, data.customerEmail, data.shippingName, data.shippingAddress, data.shippingCity, data.shippingCounty, data.shippingPostcode, data.shippingPhone, data.shippingFee, data.notes || "", subtotal, data.couponId || null, data.discountAmount || 0, data.staffId || null, data.branchId || null, data.processedBy || null, data.idempotencyKey || null, data.source || "storefront", data.giftCardId || null, data.giftCardAmount || 0]
+      `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_city, shipping_county, shipping_postcode, shipping_phone, shipping_fee, notes, subtotal, coupon_id, discount_amount, vat_rate, vat_amount, campaign_id, staff_id, branch_id, processed_by, idempotency_key, source, gift_card_id, gift_card_amount)
+       VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING id`,
+      [data.customerId, data.customerName, data.customerEmail, data.shippingName, data.shippingAddress, data.shippingCity, data.shippingCounty, data.shippingPostcode, data.shippingPhone, data.shippingFee, data.notes || "", subtotal, data.couponId || null, data.discountAmount || 0, vatRate, vatAmount, data.campaignId || null, data.staffId || null, data.branchId || null, data.processedBy || null, data.idempotencyKey || null, data.source || "storefront", data.giftCardId || null, data.giftCardAmount || 0]
     );
     const oid = result.rows[0].id;
     const costMap: Record<string, number | null> = {};
@@ -3192,7 +3242,7 @@ async function getOrder(id: number): Promise<Order | undefined> {
   const mappedItems = items.map((i) => ({ id: i.id, orderId: i.order_id, productId: i.product_id, name: i.name, price: i.price, quantity: i.quantity, lineTotal: i.price * i.quantity, hasWarranty: i.has_warranty, warrantyDuration: i.warranty_duration, warrantyExpires: i.warranty_expires || null, serialNumber: i.serial_number || "", cancelled: i.cancelled, unitCost: i.unit_cost ?? null }));
     const activeSubtotal = mappedItems.filter((i) => !i.cancelled).reduce((s, i) => s + i.lineTotal, 0);
     return {
-    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, activeSubtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0, tenderedAmount: Number(row.tendered_amount) || 0,
+    id: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, status: row.status, paymentMethod: row.payment_method, shippingName: row.shipping_name, shippingAddress: row.shipping_address, shippingCity: row.shipping_city, shippingCounty: row.shipping_county, shippingPostcode: row.shipping_postcode, shippingPhone: row.shipping_phone, shippingFee: row.shipping_fee, notes: row.notes, subtotal: row.subtotal, activeSubtotal, createdAt: row.created_at, updatedAt: row.updated_at, branchId: row.branch_id, couponId: row.coupon_id, discountAmount: row.discount_amount, vatRate: row.vat_rate === null || row.vat_rate === undefined ? null : Number(row.vat_rate), vatAmount: row.vat_amount === null || row.vat_amount === undefined ? null : Number(row.vat_amount), vatEstimated: Number(row.vat_estimated || 0), campaignId: row.campaign_id ?? null, processedBy: row.processed_by, idempotencyKey: row.idempotency_key, source: row.source || "storefront", giftCardId: row.gift_card_id, giftCardAmount: Number(row.gift_card_amount) || 0, amountRefunded: Number(row.amount_refunded) || 0, tenderedAmount: Number(row.tendered_amount) || 0,
     items: mappedItems,
   };
 }
@@ -3382,6 +3432,13 @@ async function getOrderByCheckoutRequest(checkoutRequestId: string): Promise<Ord
   return getOrder(row.id);
 }
 
+// Canonical payment-method key: lower-case, whitespace trimmed, punctuation
+// stripped so "M-Pesa", "MPESA" and "Mpesa" all group as "mpesa". Applied at
+// write time; reports lower/trim on read for legacy rows.
+export function normalizePaymentMethod(v: unknown): string {
+  return String(v || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 async function updateOrderDetails(id: number, data: { shippingName?: string; shippingAddress?: string; shippingCity?: string; shippingCounty?: string; shippingPostcode?: string; shippingPhone?: string; shippingFee?: number; notes?: string; paymentMethod?: string }): Promise<boolean> {
   const fields: string[] = [];
   const params: any[] = [];
@@ -3394,7 +3451,7 @@ async function updateOrderDetails(id: number, data: { shippingName?: string; shi
   if (data.shippingPhone !== undefined) { fields.push(`shipping_phone = $${idx}`); params.push(data.shippingPhone); idx++; }
   if (data.shippingFee !== undefined) { fields.push(`shipping_fee = $${idx}`); params.push(data.shippingFee); idx++; }
   if (data.notes !== undefined) { fields.push(`notes = $${idx}`); params.push(data.notes); idx++; }
-  if (data.paymentMethod !== undefined) { fields.push(`payment_method = $${idx}`); params.push(data.paymentMethod); idx++; }
+  if (data.paymentMethod !== undefined) { fields.push(`payment_method = $${idx}`); params.push(normalizePaymentMethod(data.paymentMethod)); idx++; }
   if (fields.length === 0) return false;
   fields.push(`updated_at = NOW()::text`);
   params.push(id);
