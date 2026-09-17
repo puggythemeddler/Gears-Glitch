@@ -506,4 +506,418 @@ router.get("/stock-take-summary", ownerAuthMiddleware, VIEW, asyncHandler(async 
   })) });
 }));
 
+// ─── Suppliers / procurement ────────────────────────────────────────────────
+
+router.get("/suppliers", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to } = filterFromQuery(req);
+  const rows = await queryAll(
+    `SELECT po.supplier_name AS name,
+       COUNT(DISTINCT po.id)::int AS purchase_orders,
+       COUNT(DISTINCT po.id) FILTER (WHERE po.status IN ('received','delivered','complete','paid'))::int AS received_orders,
+       COALESCE(SUM(CASE WHEN po.status IN ('received','delivered','complete','paid') THEN poi.quantity_received * poi.unit_cost ELSE 0 END), 0) AS received_value,
+       COALESCE(SUM(poi.quantity_ordered * poi.unit_cost), 0) AS ordered_value
+     FROM purchase_orders po
+     JOIN purchase_order_items poi ON poi.purchase_order_id = po.id
+     WHERE po.order_date >= $1 AND po.order_date < $2
+     GROUP BY po.supplier_name
+     ORDER BY received_value DESC`,
+    [from, to]
+  );
+  res.json({
+    from,
+    to,
+    rows: (rows || []).map((r: any) => ({
+      supplier: String(r.name || "Unnamed"),
+      purchase_orders: Number(r.purchase_orders || 0),
+      received_orders: Number(r.received_orders || 0),
+      ordered_value: money(r.ordered_value),
+      received_value: money(r.received_value),
+    })),
+  });
+}));
+
+router.get("/suppliers/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to } = filterFromQuery(req);
+  const rows = await queryAll(
+    `SELECT po.supplier_name AS name, COUNT(DISTINCT po.id)::int AS pos,
+       COALESCE(SUM(poi.quantity_ordered * poi.unit_cost), 0) AS ordered_value,
+       COALESCE(SUM(poi.quantity_received * poi.unit_cost), 0) AS received_value
+     FROM purchase_orders po
+     JOIN purchase_order_items poi ON poi.purchase_order_id = po.id
+     WHERE po.order_date >= $1 AND po.order_date < $2
+     GROUP BY po.supplier_name ORDER BY received_value DESC`,
+    [from, to]
+  );
+  const csv = toCsv(
+    (rows || []).map((r: any) => ({
+      supplier: String(r.name || "Unnamed"),
+      purchase_orders: Number(r.pos || 0),
+      ordered_value: money(r.ordered_value),
+      received_value: money(r.received_value),
+    })),
+    [
+      { key: "supplier", label: "Supplier" },
+      { key: "purchase_orders", label: "Purchase orders" },
+      { key: "ordered_value", label: "Ordered value" },
+      { key: "received_value", label: "Received value" },
+    ]
+  );
+  sendCsv(res, `suppliers-${from}-to-${to}.csv`, csv);
+}));
+
+// ─── Quotes / conversion ────────────────────────────────────────────────────
+// A quote "converts" when a checkout is completed with source='quote' (the
+// created_at of the resulting order is what is counted in the period).
+
+router.get("/quotes", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to } = filterFromQuery(req);
+  const created = await queryOne(
+    `SELECT COUNT(*)::int AS count, COALESCE(SUM(total), 0) AS total FROM quotes WHERE created_at >= $1 AND created_at < $2`,
+    [from, to]
+  );
+  const converted = await queryOne(
+    `SELECT COUNT(*)::int AS count, COALESCE(SUM(subtotal + shipping_fee - discount_amount - gift_card_amount), 0) AS total
+     FROM orders WHERE source = 'quote' AND status IN ('paid','shipped','delivered') AND created_at >= $1 AND created_at < $2`,
+    [from, to]
+  );
+  res.json({
+    from,
+    to,
+    created: { count: Number(created?.count || 0), total: money(created?.total) },
+    converted: { count: Number(converted?.count || 0), total: money(converted?.total) },
+    conversion_rate_pct: Number(created?.count || 0) > 0 ? r2((Number(converted?.count || 0) / Number(created.count)) * 100) : 0,
+  });
+}));
+
+router.get("/quotes/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to } = filterFromQuery(req);
+  const created = await queryAll(
+    `SELECT q.quote_number, c.name AS customer, q.total, q.status, q.created_at
+     FROM quotes q LEFT JOIN customers c ON c.id = q.customer_id
+     WHERE q.created_at >= $1 AND q.created_at < $2
+     ORDER BY q.created_at DESC LIMIT 500`,
+    [from, to]
+  );
+  const csv = toCsv(
+    (created || []).map((r: any) => ({
+      quote_number: String(r.quote_number || ""),
+      customer: String(r.customer || "—"),
+      total: money(r.total),
+      status: String(r.status || "draft"),
+      created_at: String(r.created_at || ""),
+    })),
+    [
+      { key: "quote_number", label: "Quote" },
+      { key: "customer", label: "Customer" },
+      { key: "total", label: "Total" },
+      { key: "status", label: "Status" },
+      { key: "created_at", label: "Created" },
+    ]
+  );
+  sendCsv(res, `quotes-${from}-to-${to}.csv`, csv);
+}));
+
+// ─── Tax / eTIMS compliance ─────────────────────────────────────────────────
+
+router.get("/tax", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to, branchId } = filterFromQuery(req);
+  const branchSql = branchId ? " AND o.branch_id = $3" : "";
+  const params = [from, to, ...(branchId ? [branchId.toString()] : [])];
+  const invoices = await queryOne(
+    `SELECT COUNT(*)::int AS count,
+       COALESCE(SUM(ioi.amount), 0) AS amount,
+       COUNT(*) FILTER (WHERE ioi.control_code IS NOT NULL AND ioi.control_code <> '')::int AS filed,
+       COALESCE(SUM(ioi.amount) FILTER (WHERE ioi.control_code IS NOT NULL AND ioi.control_code <> ''), 0) AS filed_amount,
+       COUNT(*) FILTER (WHERE ioi.status = 'pending')::int AS pending
+     FROM order_invoices ioi
+     JOIN orders o ON o.id = ioi.order_id AND o.status IN ('paid','shipped','delivered')
+     WHERE ioi.created_at >= $1 AND ioi.created_at < $2${branchSql}`,
+    params
+  );
+  const credits = await queryOne(
+    `SELECT COUNT(*)::int AS count, COALESCE(SUM(total_amount), 0) AS amount
+     FROM credit_notes cn JOIN orders o ON o.id = cn.order_id
+     WHERE cn.created_at >= $1 AND cn.created_at < $2${branchSql}`,
+    params
+  );
+  const tot = {
+    count: Number(invoices?.count || 0),
+    amount: money(invoices?.amount),
+    filed: Number(invoices?.filed || 0),
+    filed_amount: money(invoices?.filed_amount),
+    pending: Number(invoices?.pending || 0),
+  };
+  res.json({
+    from,
+    to,
+    coverage_pct: tot.count > 0 ? r2((tot.filed / tot.count) * 100) : 0,
+    invoices: tot,
+    credit_notes: { count: Number(credits?.count || 0), amount: money(credits?.amount) },
+  });
+}));
+
+router.get("/tax/summary", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+  const { branchId } = filterFromQuery(req);
+  const branchSql = branchId ? " AND o.branch_id = $2" : "";
+  const params = ["2024-01-01", ...(branchId ? [branchId.toString()] : [])];
+  const rows = await queryAll(
+    `SELECT substr(o.created_at, 1, 7) AS month,
+       COUNT(*)::int AS orders,
+       COALESCE(SUM(ioi.amount), 0) AS amount,
+       COUNT(ioi.control_code) FILTER (WHERE ioi.control_code IS NOT NULL AND ioi.control_code <> '')::int AS filed
+     FROM orders o
+     LEFT JOIN order_invoices ioi ON ioi.order_id = o.id
+     WHERE o.status IN ('paid','shipped','delivered') AND o.created_at >= $1${branchSql}
+     GROUP BY 1 ORDER BY 1 DESC LIMIT 13`,
+    params
+  );
+  res.json({
+    rows: (rows || []).map((r: any) => ({
+      month: String(r.month || ""),
+      orders: Number(r.orders || 0),
+      amount: money(r.amount),
+      filed: Number(r.filed || 0),
+    })),
+  });
+}));
+
+// ─── Serial numbers ─────────────────────────────────────────────────────────
+
+router.get("/serial", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to, branchId } = filterFromQuery(req);
+  const branchSql = branchId ? " AND s.branch_id = $3" : "";
+  const params = [from, to, ...(branchId ? [branchId.toString()] : [])];
+  const rows = await queryAll(
+    `SELECT pp.id AS product_id, pp.name AS product,
+       COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE s.status = 'in_stock')::int AS in_stock,
+       COUNT(*) FILTER (WHERE s.status = 'sold' AND s.sold_at >= $1 AND s.sold_at < $2)::int AS sold_in_period,
+       COUNT(*) FILTER (WHERE s.status = 'void')::int AS void,
+       COUNT(*) FILTER (WHERE s.warranty_expires IS NOT NULL AND s.warranty_expires >= NOW()::text)::int AS warranty_active
+     FROM serial_numbers s
+     JOIN products pp ON pp.id = s.product_id
+     WHERE 1=1${branchSql}
+     GROUP BY pp.id, pp.name ORDER BY in_stock DESC`,
+    params
+  );
+  const t = (rows || []).reduce((a, r: any) => {
+    a.total += Number(r.total || 0); a.in_stock += Number(r.in_stock || 0);
+    a.sold_in_period += Number(r.sold_in_period || 0); a.void += Number(r.void || 0);
+    a.warranty_active += Number(r.warranty_active || 0); return a;
+  }, { total: 0, in_stock: 0, sold_in_period: 0, void: 0, warranty_active: 0 });
+  res.json({
+    from,
+    to,
+    totals: t,
+    rows: (rows || []).map((r: any) => ({
+      product_id: r.product_id,
+      product: String(r.product || "—"),
+      total: Number(r.total || 0),
+      in_stock: Number(r.in_stock || 0),
+      sold_in_period: Number(r.sold_in_period || 0),
+      void: Number(r.void || 0),
+      warranty_active: Number(r.warranty_active || 0),
+    })),
+  });
+}));
+
+router.get("/serial/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(async (req: Request, res: Response) => {
+  const { branchId } = filterFromQuery(req);
+  const branchSql = branchId ? " WHERE s.branch_id = $1" : "";
+  const params = branchId ? [branchId.toString()] : [];
+  const rows = await queryAll(
+    `SELECT pp.id AS product_id, pp.name AS product, s.serial_number, s.status, s.sold_at, s.warranty_expires,
+            o.invoice_number, o.customer_name
+     FROM serial_numbers s
+     JOIN products pp ON pp.id = s.product_id
+     LEFT JOIN orders o ON o.id = s.order_id${branchSql}
+     ORDER BY s.created_at DESC LIMIT 1000`,
+    params
+  );
+  const csv = toCsv(
+    (rows || []).map((r: any) => ({
+      serial: String(r.serial_number || ""),
+      product: String(r.product || "—"),
+      status: String(r.status || ""),
+      sold_at: String(r.sold_at || ""),
+      warranty_expires: String(r.warranty_expires || ""),
+      invoice: String(r.invoice_number || ""),
+      customer: String(r.customer_name || ""),
+    })),
+    [
+      { key: "serial", label: "Serial" },
+      { key: "product", label: "Product" },
+      { key: "status", label: "Status" },
+      { key: "sold_at", label: "Sold" },
+      { key: "warranty_expires", label: "Warranty expires" },
+      { key: "invoice", label: "Invoice" },
+      { key: "customer", label: "Customer" },
+    ]
+  );
+  sendCsv(res, `serial-numbers.csv`, csv);
+}));
+
+// ─── Loyalty ────────────────────────────────────────────────────────────────
+
+router.get("/loyalty", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to } = filterFromQuery(req);
+  const snapshot = await queryOne(
+    `SELECT COUNT(*)::int AS members, COALESCE(SUM(points), 0)::int AS outstanding,
+       COALESCE(SUM(lifetime_earned), 0)::int AS lifetime_earned FROM loyalty_points`
+  );
+  const activity = await queryAll(
+    `SELECT COALESCE(NULLIF(type,''),'other') AS type,
+       COUNT(*)::int AS count,
+       COALESCE(SUM(points), 0)::int AS points
+     FROM loyalty_transactions
+     WHERE created_at >= $1 AND created_at < $2
+     GROUP BY 1 ORDER BY points DESC`,
+    [from, to]
+  );
+  const top = await queryAll(
+    `SELECT c.name, lp.points, lp.lifetime_earned
+     FROM loyalty_points lp JOIN customers c ON c.id = lp.customer_id
+     ORDER BY lp.points DESC LIMIT 20`
+  );
+  res.json({
+    from,
+    to,
+    totals: {
+      members: Number(snapshot?.members || 0),
+      outstanding_points: Number(snapshot?.outstanding || 0),
+      lifetime_earned: Number(snapshot?.lifetime_earned || 0),
+    },
+    activity: (activity || []).map((r: any) => ({
+      type: String(r.type),
+      count: Number(r.count || 0),
+      points: Number(r.points || 0),
+    })),
+    top_members: (top || []).map((r: any) => ({
+      name: String(r.name || "—"),
+      points: Number(r.points || 0),
+      lifetime_earned: Number(r.lifetime_earned || 0),
+    })),
+  });
+}));
+
+// ─── Gift cards ─────────────────────────────────────────────────────────────
+
+router.get("/gift-cards", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to } = filterFromQuery(req);
+  const issued = await queryOne(
+    `SELECT COUNT(*)::int AS count, COALESCE(SUM(initial_value), 0) AS value
+     FROM gift_cards WHERE created_at >= $1 AND created_at < $2`,
+    [from, to]
+  );
+  const redeemed = await queryOne(
+    `SELECT COUNT(*)::int AS count, COALESCE(SUM(amount), 0) AS value
+     FROM gift_card_redemptions WHERE created_at >= $1 AND created_at < $2`,
+    [from, to]
+  );
+  const outstanding = await queryOne(
+    `SELECT COUNT(*)::int AS count, COALESCE(SUM(balance), 0) AS balance, COUNT(*) FILTER (WHERE is_active = 1)::int AS active
+     FROM gift_cards`
+  );
+  const expiresSoon = await queryOne(
+    `SELECT COUNT(*)::int AS count, COALESCE(SUM(balance), 0) AS balance
+     FROM gift_cards
+     WHERE is_active = 1 AND balance > 0 AND expires_at IS NOT NULL AND expires_at <= (NOW() + INTERVAL '30 days')::text`
+  );
+  res.json({
+    from,
+    to,
+    issued: { count: Number(issued?.count || 0), value: money(issued?.value) },
+    redeemed: { count: Number(redeemed?.count || 0), value: money(redeemed?.value) },
+    outstanding: { count: Number(outstanding?.count || 0), balance: money(outstanding?.balance), active: Number(outstanding?.active || 0) },
+    expiring_30d: { count: Number(expiresSoon?.count || 0), balance: money(expiresSoon?.balance) },
+  });
+}));
+
+// ─── Campaigns (featured product performance) ───────────────────────────────
+// Campaign attribution is not stamped at order level, so these figures report
+// the sales of each campaign's featured products — not "campaign-driven" sales.
+
+router.get("/campaigns", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to, branchId } = filterFromQuery(req);
+  const campaigns = await queryAll(`SELECT * FROM campaigns ORDER BY created_at DESC`);
+  const idsByCampaign = (campaigns || []).map((c: any) => ({
+    id: c.id,
+    slug: c.slug,
+    title: c.title,
+    is_active: Number(c.is_active || 0),
+    product_ids: JSON.parse(c.product_ids || "[]"),
+  }));
+  const allIds = Array.from(new Set(idsByCampaign.flatMap((c) => c.product_ids)));
+  const rows: any[] = [];
+  if (allIds.length > 0) {
+    const branchSql = branchId ? " AND o.branch_id = $2" : "";
+    const params: any[] = [from, to, ...(branchId ? [branchId.toString()] : [])];
+    const placeholders = allIds.map((_, i) => `$${i + (branchId ? 3 : 2)}`);
+    const stats = await queryAll(
+      `SELECT oi.product_id,
+         COUNT(DISTINCT o.id)::int AS orders,
+         COALESCE(SUM(oi.quantity), 0)::int AS units,
+         COALESCE(SUM(oi.quantity * oi.price), 0) AS revenue
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id AND o.status IN ('paid','shipped','delivered')
+       WHERE o.created_at >= $1 AND o.created_at < $2${branchSql}
+         AND oi.product_id IN (${placeholders.join(",")})
+       GROUP BY oi.product_id`,
+      [...params.slice(0, 2), ...(branchId ? params.slice(2, 3) : []), ...allIds]
+    );
+    const byId = new Map((stats || []).map((s: any) => [s.product_id, s]));
+    for (const c of idsByCampaign) {
+      let orders = 0, units = 0, revenue = 0;
+      for (const pid of c.product_ids) {
+        const s = byId.get(pid);
+        if (s) { orders += Number(s.orders || 0); units += Number(s.units || 0); revenue += Number(s.revenue || 0); }
+      }
+      rows.push({ ...c, orders, units, revenue: money(revenue) });
+    }
+  }
+  const totals = {
+    campaigns: idsByCampaign.length,
+    active: idsByCampaign.filter((c) => c.is_active).length,
+    revenue: money(rows.reduce((s, r) => s + r.revenue, 0)),
+    units: rows.reduce((s, r) => s + r.units, 0),
+  };
+  res.json({ from, to, totals, rows });
+}));
+
+// ─── Cart recovery ──────────────────────────────────────────────────────────
+
+router.get("/cart-recovery", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+  const { from, to } = filterFromQuery(req);
+  const [cart] = await queryAll(
+    `SELECT COUNT(DISTINCT c.customer_id)::int AS carts,
+       COALESCE(SUM(ci.quantity * p.price), 0) AS value,
+       COUNT(ci.id)::int AS items
+     FROM cart_items ci
+     JOIN customers c ON c.id = ci.customer_id
+     LEFT JOIN products p ON p.id = ci.product_id
+     WHERE COALESCE(ci.updated_at, ci.created_at) >= $1 AND COALESCE(ci.updated_at, ci.created_at) < $2`,
+    [from, to]
+  );
+  const reminders = await queryOne(
+    `SELECT COUNT(*)::int AS sent,
+       COUNT(*) FILTER (WHERE order_id IS NOT NULL)::int AS recovered
+     FROM cart_recovery_reminders WHERE created_at >= $1 AND created_at < $2`,
+    [from, to]
+  );
+  const recoveredOrders = await queryOne(
+    `SELECT COUNT(*)::int AS count, COALESCE(SUM(o.subtotal + o.shipping_fee - o.discount_amount - o.gift_card_amount), 0) AS value
+     FROM cart_recovery_reminders r JOIN orders o ON o.id = r.order_id
+     WHERE o.status IN ('paid','shipped','delivered') AND o.created_at >= $1 AND o.created_at < $2`,
+    [from, to]
+  );
+  const sent = Number(reminders?.sent || 0);
+  res.json({
+    from,
+    to,
+    carts: { count: Number(cart?.carts || 0), items: Number(cart?.items || 0), value: money(cart?.value) },
+    reminders: { sent, recovered: Number(reminders?.recovered || 0), recovery_rate_pct: sent > 0 ? r2((Number(reminders?.recovered || 0) / sent) * 100) : 0 },
+    recovered_orders: { count: Number(recoveredOrders?.count || 0), value: money(recoveredOrders?.value) },
+  });
+}));
+
 export default router;
