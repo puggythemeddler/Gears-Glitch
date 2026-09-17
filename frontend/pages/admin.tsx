@@ -4451,26 +4451,94 @@ function AdminQuotations() {
 }
 
 // ===================== REPORTS =====================
+type ReportTabId =
+  | "sales" | "employee-sales" | "tech-performance" | "purchases" | "stock" | "visitors"
+  | "gross-profit" | "payments" | "receivables" | "repairs" | "warranty" | "customers"
+  | "valuation" | "stock-take" | "suppliers" | "quotes" | "tax" | "serial" | "loyalty"
+  | "gift-cards" | "campaigns" | "cart-recovery";
+
+const REPORT_CATEGORIES: { key: string; label: string; tabs: { id: ReportTabId; label: string }[] }[] = [
+  { key: "sales", label: "Sales", tabs: [
+    { id: "sales", label: "Sales" },
+    { id: "employee-sales", label: "Employee Sales" },
+    { id: "gross-profit", label: "Gross Profit" },
+    { id: "quotes", label: "Quotes" },
+    { id: "visitors", label: "Visitors" },
+  ]},
+  { key: "money", label: "Money", tabs: [
+    { id: "payments", label: "Payments" },
+    { id: "receivables", label: "Receivables" },
+    { id: "tax", label: "Tax (eTIMS)" },
+  ]},
+  { key: "operations", label: "Operations", tabs: [
+    { id: "purchases", label: "Purchases" },
+    { id: "suppliers", label: "Suppliers" },
+    { id: "repairs", label: "Repairs" },
+    { id: "warranty", label: "Warranty" },
+    { id: "tech-performance", label: "Technician Performance" },
+  ]},
+  { key: "inventory", label: "Inventory", tabs: [
+    { id: "stock", label: "Stock Summary" },
+    { id: "valuation", label: "Valuation" },
+    { id: "stock-take", label: "Stock Takes" },
+    { id: "serial", label: "Serials" },
+  ]},
+  { key: "customers", label: "Customers & Marketing", tabs: [
+    { id: "customers", label: "Customers" },
+    { id: "loyalty", label: "Loyalty" },
+    { id: "gift-cards", label: "Gift Cards" },
+    { id: "campaigns", label: "Campaigns" },
+    { id: "cart-recovery", label: "Cart Recovery" },
+  ]},
+];
+
 function AdminReports() {
   const hasVisitorAnalytics = useFeature("Visitor analytics");
-  const [tab, setTab] = useState<"sales" | "employee-sales" | "tech-performance" | "purchases" | "stock" | "visitors">("sales");
+  const [category, setCategory] = useState("sales");
+  const cat = REPORT_CATEGORIES.find((c) => c.key === category) ?? REPORT_CATEGORIES[0];
+  const [tab, setTab] = useState<ReportTabId>("sales");
+  const visibleTabs = (cat?.tabs || []).filter((t) => t.id !== "visitors" || hasVisitorAnalytics);
+  const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0].id;
 
   return (
     <>
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
-        <RippleButton size="small" variant={tab === "sales" ? "primary" : "ghost"} onClick={() => setTab("sales")}>Sales Report</RippleButton>
-        <RippleButton size="small" variant={tab === "employee-sales" ? "primary" : "ghost"} onClick={() => setTab("employee-sales")}>Employee Sales</RippleButton>
-        <RippleButton size="small" variant={tab === "tech-performance" ? "primary" : "ghost"} onClick={() => setTab("tech-performance")}>Technician Performance</RippleButton>
-        <RippleButton size="small" variant={tab === "purchases" ? "primary" : "ghost"} onClick={() => setTab("purchases")}>Purchases</RippleButton>
-        <RippleButton size="small" variant={tab === "stock" ? "primary" : "ghost"} onClick={() => setTab("stock")}>Stock Summary</RippleButton>
-        {hasVisitorAnalytics && <RippleButton size="small" variant={tab === "visitors" ? "primary" : "ghost"} onClick={() => setTab("visitors")}>Visitors</RippleButton>}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
+        {REPORT_CATEGORIES.map((c) => (
+          <RippleButton key={c.key} size="small" variant={cat.key === c.key ? "primary" : "ghost"}
+            onClick={() => { setCategory(c.key); setTab(c.tabs[0].id); }}>
+            {c.label}
+          </RippleButton>
+        ))}
       </div>
-      {tab === "sales" && <AdminSalesReport />}
-      {tab === "employee-sales" && <AdminEmployeeSales />}
-      {tab === "tech-performance" && <AdminTechPerformance />}
-      {tab === "purchases" && <AdminPurchasesReport />}
-      {tab === "stock" && <AdminStockSummary />}
-      {tab === "visitors" && <AdminVisitorsReport />}
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+        {visibleTabs.map((t) => (
+          <RippleButton key={t.id} size="small" variant={activeTab === t.id ? "primary" : "ghost"} onClick={() => setTab(t.id)}>
+            {t.label}
+          </RippleButton>
+        ))}
+      </div>
+      {activeTab === "sales" && <AdminSalesReport />}
+      {activeTab === "employee-sales" && <AdminEmployeeSales />}
+      {activeTab === "tech-performance" && <AdminTechPerformance />}
+      {activeTab === "purchases" && <AdminPurchasesReport />}
+      {activeTab === "stock" && <AdminStockSummary />}
+      {activeTab === "visitors" && <AdminVisitorsReport />}
+      {activeTab === "gross-profit" && <ReportGrossProfit />}
+      {activeTab === "payments" && <ReportPayments />}
+      {activeTab === "receivables" && <ReportReceivables />}
+      {activeTab === "repairs" && <ReportRepairs />}
+      {activeTab === "warranty" && <ReportWarranty />}
+      {activeTab === "customers" && <ReportCustomers />}
+      {activeTab === "valuation" && <ReportValuation />}
+      {activeTab === "stock-take" && <ReportStockTake />}
+      {activeTab === "suppliers" && <ReportSuppliers />}
+      {activeTab === "quotes" && <ReportQuotes />}
+      {activeTab === "tax" && <ReportTax />}
+      {activeTab === "serial" && <ReportSerial />}
+      {activeTab === "loyalty" && <ReportLoyalty />}
+      {activeTab === "gift-cards" && <ReportGiftCards />}
+      {activeTab === "campaigns" && <ReportCampaigns />}
+      {activeTab === "cart-recovery" && <ReportCartRecovery />}
     </>
   );
 }
@@ -6865,5 +6933,680 @@ function AdminDeliveryFees() {
         </div>
       </div>
     </>
+  );
+}
+
+// ===================== REPORT HUB (PHASE 5) =====================
+
+function ReportScreen({ title, endpoint, note, withBranch, withGroup, byOptions, byDefault, exportPath, children }: {
+  title: string;
+  endpoint: string;
+  note?: string;
+  withBranch?: boolean;
+  withGroup?: boolean;
+  byOptions?: { value: string; label: string }[];
+  byDefault?: string;
+  exportPath?: (qs: string) => string | null;
+  children: (data: any, sel: { from: string; to: string }) => React.ReactNode;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [from, setFrom] = useState("1900-01-01");
+  const [to, setTo] = useState(today);
+  const [branchId, setBranchId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [by, setBy] = useState(byDefault || "");
+  const { data: branches } = useFetch(() => api<{ branches: Branch[] }>("/api/admin/branches"), []);
+  const { data: groups } = useFetch(() => api<{ groups: any[] }>("/api/admin/groups"), []);
+  const [report, setReport] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  function qs() {
+    const p = new URLSearchParams();
+    p.set("from", from); p.set("to", to);
+    if (branchId) p.set("branch_id", branchId);
+    if (groupId) p.set("group_id", groupId);
+    if (by) p.set("by", by);
+    return p.toString();
+  }
+  function build() {
+    setLoading(true); setError("");
+    api<any>(`${endpoint}?${qs()}`)
+      .then(setReport)
+      .catch((e: any) => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { build(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  return (
+    <>
+      <h1 style={{ marginBottom: "0.25rem" }}>{title}</h1>
+      <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
+        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
+        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        {withBranch && (
+          <div className="field" style={{ margin: 0 }}>
+            <label>Branch
+              <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                <option value="">All Branches</option>
+                {(branches?.branches || []).filter((b: any) => b.isActive).map((b: any) => (
+                  <option key={b.id} value={String(b.id)}>{escapeHtml(b.name)}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+        {withGroup && (
+          <div className="field" style={{ margin: 0 }}>
+            <label>Group
+              <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+                <option value="">All Groups</option>
+                {(groups?.groups || []).map((g: any) => (
+                  <option key={g.id} value={String(g.id)}>{escapeHtml(g.name)}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+        {byOptions && (
+          <div className="field" style={{ margin: 0 }}>
+            <label>By
+              <select value={by} onChange={(e) => setBy(e.target.value)}>
+                {byOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+        <RippleButton onClick={build} loading={loading}>Generate</RippleButton>
+        {exportPath && report && (
+          <RippleButton size="small" variant="secondary" onClick={() => {
+            const u = exportPath(qs());
+            if (!u) return;
+            const a = document.createElement("a");
+            a.href = u; a.download = "";
+            document.body.appendChild(a); a.click(); a.remove();
+          }}>Export CSV</RippleButton>
+        )}
+      </div>
+      {error && <ErrorMsg msg={error} />}
+      {note && <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginBottom: "1rem" }}>{escapeHtml(note)}</p>}
+      {loading && !report && <Spinner />}
+      {report && children(report, { from, to })}
+    </>
+  );
+}
+
+const ReportStat = ({ value, label, suffix }: { value: any; label: string; suffix?: string }) => (
+  <div className="stat-card">
+    <div className="stat-card__value">{value}{suffix ? suffix : ""}</div>
+    <div className="stat-card__label">{label}</div>
+  </div>
+);
+
+function ReportTable({ columns, rows, rowKey, ariaLabel, title }: {
+  columns: any[]; rows: any[]; rowKey: (r: any) => string; ariaLabel: string; title?: string;
+}) {
+  return (
+    <>
+      {title && <h3>{escapeHtml(title)}</h3>}
+      <div className="table-wrap" style={{ marginBottom: "1rem" }}>
+        <DataTable<any>
+          ariaLabel={ariaLabel}
+          columns={columns}
+          rows={rows}
+          rowKey={rowKey}
+          empty={<EmptyState icon="reports" title="No data" description="Nothing recorded for this period." />}
+        />
+      </div>
+    </>
+  );
+}
+
+// ----- Gross profit -----
+function ReportGrossProfit() {
+  return (
+    <ReportScreen
+      title="Gross Profit"
+      endpoint="/api/reports/gross-profit"
+      byOptions={[
+        { value: "all", label: "Overall" },
+        { value: "product", label: "Product" },
+        { value: "category", label: "Category" },
+        { value: "group", label: "Group" },
+      ]}
+      byDefault="all"
+      note="Gross profit = revenue − COGS. COGS uses the unit cost captured natively from purchase orders at sale time; lines sold before a cost was ever recorded are excluded from margin and reported under \u201ccost data incomplete\u201d."
+      exportPath={(qs) => `/api/reports/gross-profit/export.csv?${qs}`}
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={formatPrice(r.totals.revenue)} label="Revenue (gross)" />
+            <ReportStat value={formatPrice(r.totals.cost)} label="COGS" />
+            <ReportStat value={formatPrice(r.totals.profit)} label="Gross profit" />
+            <ReportStat value={r.totals.margin_pct === null ? "\u2014" : r.totals.margin_pct + "%"} label="Margin (of costed revenue)" />
+            <ReportStat value={r.totals.lines_with_cost} label="Lines with cost" />
+            <ReportStat value={r.totals.lines_without_cost} label="Lines without cost" />
+          </div>
+          <ReportTable
+            title={r.by === "all" ? "Revenue vs cost" : "Breakdown"}
+            ariaLabel="Gross profit breakdown"
+            rowKey={(row) => String(row.id ?? row.label)}
+            columns={[
+              { key: "label", label: "Item", sortable: true, value: (row: any) => row.label, render: (row: any) => escapeHtml(String(row.label)) },
+              { key: "units", label: "Units", align: "right", sortable: true, value: (row: any) => row.units },
+              { key: "revenue", label: "Revenue", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
+              { key: "cost", label: "COGS", align: "right", sortable: true, value: (row: any) => row.cost, render: (row: any) => formatPrice(row.cost) },
+              { key: "profit", label: "Gross profit", align: "right", sortable: true, value: (row: any) => row.profit, render: (row: any) => formatPrice(row.profit) },
+              { key: "margin_pct", label: "Margin %", align: "right", sortable: true, value: (row: any) => row.margin_pct ?? -1, render: (row: any) => row.margin_pct === null ? "\u2014" : row.margin_pct + "%" },
+              { key: "cost_coverage_pct", label: "Cost coverage %", align: "right", sortable: true, value: (row: any) => row.cost_coverage_pct ?? -1, render: (row: any) => row.cost_coverage_pct === null ? "\u2014" : row.cost_coverage_pct + "%" },
+            ]}
+            rows={r.rows}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Payments & collections -----
+function ReportPayments() {
+  return (
+    <ReportScreen
+      title="Payments & Collections"
+      endpoint="/api/reports/payments"
+      withBranch
+      note="Collected revenue = orders whose status is paid, shipped or delivered. Outstanding revenue = orders still in the pipeline (money not yet received)."
+      exportPath={(qs) => `/api/reports/payments/export.csv?${qs}`}
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={formatPrice(r.summary.total_revenue)} label="Total revenue" />
+            <ReportStat value={formatPrice(r.summary.collected_revenue)} label="Collected" />
+            <ReportStat value={formatPrice(r.summary.outstanding_revenue)} label="Outstanding" />
+            <ReportStat value={formatPrice(r.summary.total_refunds)} label="Refunds" />
+            <ReportStat value={r.summary.orders} label="Orders" />
+          </div>
+          <ReportTable
+            title="By payment method"
+            ariaLabel="Payments by method"
+            rowKey={(row) => row.method}
+            columns={[
+              { key: "method", label: "Method", sortable: true, value: (row: any) => row.method, render: (row: any) => <span style={{ textTransform: "capitalize" }}>{escapeHtml(row.method)}</span> },
+              { key: "orders", label: "Orders", align: "right", sortable: true, value: (row: any) => row.orders },
+              { key: "revenue", label: "Revenue", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
+              { key: "refunds", label: "Refunds", align: "right", sortable: true, value: (row: any) => row.refunds, render: (row: any) => formatPrice(row.refunds) },
+              { key: "collected_revenue", label: "Collected", align: "right", sortable: true, value: (row: any) => row.collected_revenue, render: (row: any) => formatPrice(row.collected_revenue) },
+            ]}
+            rows={r.methods}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Receivables -----
+function ReportReceivables() {
+  return (
+    <ReportScreen
+      title="Receivables (Outstanding Orders)"
+      endpoint="/api/reports/receivables"
+      withBranch
+      note="Outstanding orders = non-cancelled orders not yet paid or delivered. Money still to flow; not yet accounting income. Aging buckets split the open balance by days since the order was created."
+      exportPath={(qs) => `/api/reports/receivables/export.csv?${qs}`}
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={formatPrice(r.summary.outstanding)} label="Outstanding" />
+            <ReportStat value={r.summary.count} label="Open orders" />
+            <ReportStat value={formatPrice(r.summary.buckets["0_7"])} label="0\u20137 days" />
+            <ReportStat value={formatPrice(r.summary.buckets["7_14"])} label="7\u201314 days" />
+            <ReportStat value={formatPrice(r.summary.buckets["14_30"])} label="14\u201330 days" />
+            <ReportStat value={formatPrice(r.summary.buckets["30_plus"])} label="30+ days" />
+          </div>
+          <ReportTable
+            title="Open orders"
+            ariaLabel="Outstanding orders"
+            rowKey={(row) => String(row.id)}
+            columns={[
+              { key: "id", label: "Order", align: "right", sortable: true, value: (row: any) => row.id },
+              { key: "customer", label: "Customer", sortable: true, value: (row: any) => row.customer || "", render: (row: any) => escapeHtml(row.customer || "\u2014") },
+              { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{escapeHtml(row.status)}</span> },
+              { key: "total", label: "Total", align: "right", sortable: true, value: (row: any) => row.total, render: (row: any) => formatPrice(row.total) },
+              { key: "age_days", label: "Age (days)", align: "right", sortable: true, value: (row: any) => row.age_days },
+              { key: "created_at", label: "Created", sortable: true, value: (row: any) => row.created_at, render: (row: any) => new Date(row.created_at).toLocaleDateString("en-GB") },
+            ]}
+            rows={r.items}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Repairs -----
+function ReportRepairs() {
+  return (
+    <ReportScreen
+      title="Repairs"
+      endpoint="/api/reports/repairs"
+      note="Completed counts only tickets with status 'collected' (completed_at is stamped when the customer collects the unit). Other statuses are still mid-flow."
+      exportPath={(qs) => `/api/reports/repairs/export.csv?${qs}`}
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={r.summary.tickets} label="Tickets" />
+            <ReportStat value={r.summary.completed} label="Completed (collected)" />
+            <ReportStat value={r.summary.cancelled} label="Cancelled / rejected" />
+            <ReportStat value={formatPrice(r.summary.revenue)} label="Revenue (collected)" />
+            <ReportStat value={r.summary.avg_turnover_days === null ? "\u2014" : r.summary.avg_turnover_days + " days"} label="Avg turnaround" />
+          </div>
+          <ReportTable
+            title="By status"
+            ariaLabel="Repairs by status"
+            rowKey={(row) => row.status}
+            columns={[
+              { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{escapeHtml(row.status)}</span> },
+              { key: "tickets", label: "Tickets", align: "right", sortable: true, value: (row: any) => row.tickets },
+              { key: "revenue", label: "Revenue", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
+            ]}
+            rows={r.statuses}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Warranty -----
+function ReportWarranty() {
+  return (
+    <ReportScreen
+      title="Warranty"
+      endpoint="/api/reports/warranty"
+      note="Claim rate = claims \u00f7 units sold with warranty in the period; blank when there were no warranty sales recorded."
+      exportPath={(qs) => `/api/reports/warranty/export.csv?${qs}`}
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={r.summary.claims} label="Claims in period" />
+            <ReportStat value={r.summary.units_sold_with_warranty} label="Units sold with warranty" />
+            <ReportStat value={r.summary.coverage_active} label="With expiry set" />
+            <ReportStat value={r.summary.claim_rate_pct === null ? "\u2014" : r.summary.claim_rate_pct + "%"} label="Claim rate" />
+            <ReportStat value={r.summary.expiring_next_30_days} label="Expiring next 30 days" />
+          </div>
+          <ReportTable
+            title="Claims by status (all time)"
+            ariaLabel="Claims by status"
+            rowKey={(row) => String(row.status)}
+            columns={[
+              { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{escapeHtml(row.status)}</span> },
+              { key: "cnt", label: "Claims", align: "right", sortable: true, value: (row: any) => row.cnt },
+            ]}
+            rows={r.statuses || []}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Customers -----
+function ReportCustomers() {
+  return (
+    <ReportScreen
+      title="Customers"
+      endpoint="/api/reports/customers"
+      withBranch
+      note="Buyers = distinct customers with at least one non-cancelled order in the period. Repeat rate = customers who ordered more than once \u00f7 all buyers."
+      exportPath={(qs) => `/api/reports/customers/export.csv?${qs}`}
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={r.summary.total_customers} label="Total customers" />
+            <ReportStat value={r.summary.new_in_period} label="New in period" />
+            <ReportStat value={r.summary.active_accounts} label="Active accounts" />
+            <ReportStat value={r.summary.buyers_in_period} label="Buyers" />
+            <ReportStat value={r.summary.repeat_buyers} label="Repeat buyers" />
+            <ReportStat value={r.summary.repeat_rate_pct === null ? "\u2014" : r.summary.repeat_rate_pct + "%"} label="Repeat rate" />
+            <ReportStat value={r.summary.average_spend_per_customer === null ? "\u2014" : formatPrice(r.summary.average_spend_per_customer)} label="Avg spend / buyer" />
+          </div>
+          <ReportTable
+            title="Top customers"
+            ariaLabel="Top customers"
+            rowKey={(row) => row.name}
+            columns={[
+              { key: "name", label: "Customer", sortable: true, value: (row: any) => row.name, render: (row: any) => escapeHtml(row.name) },
+              { key: "orders", label: "Orders", align: "right", sortable: true, value: (row: any) => row.orders },
+              { key: "revenue", label: "Gross", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
+              { key: "net", label: "Net", align: "right", sortable: true, value: (row: any) => row.net, render: (row: any) => formatPrice(row.net) },
+            ]}
+            rows={r.top_customers}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Stock valuation -----
+function ReportValuation() {
+  return (
+    <ReportScreen
+      title="Stock Valuation"
+      endpoint="/api/reports/valuation"
+      byOptions={[
+        { value: "category", label: "Category" },
+        { value: "product", label: "Product" },
+        { value: "group", label: "Group" },
+      ]}
+      byDefault="category"
+      note="Retail value = stock on hand \u00d7 selling price. Cost value = stock on hand \u00d7 product cost price (blank where cost was never recorded). Margin on hand is the paper margin locked up in stock."
+      exportPath={() => "/api/reports/valuation/export.csv"}
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={r.totals.products} label="Products" />
+            <ReportStat value={r.totals.units} label="Units on hand" />
+            <ReportStat value={formatPrice(r.totals.retail_value)} label="Retail value" />
+            <ReportStat value={formatPrice(r.totals.cost_value)} label="Cost value" />
+            <ReportStat value={formatPrice(r.totals.margin_on_hand)} label="Margin on hand" />
+            <ReportStat value={r.totals.costed_products} label="Products with cost" />
+          </div>
+          <ReportTable
+            title={"By " + r.by}
+            ariaLabel="Stock valuation breakdown"
+            rowKey={(row) => String(row.id)}
+            columns={[
+              { key: "label", label: r.by === "product" ? "Product ID" : "Segment", sortable: true, value: (row: any) => row.label, render: (row: any) => escapeHtml(String(row.label)) },
+              { key: "products", label: "Products", align: "right", sortable: true, value: (row: any) => row.products },
+              { key: "units", label: "Units", align: "right", sortable: true, value: (row: any) => row.units },
+              { key: "retail_value", label: "Retail", align: "right", sortable: true, value: (row: any) => row.retail_value, render: (row: any) => formatPrice(row.retail_value) },
+              { key: "cost_value", label: "Cost", align: "right", sortable: true, value: (row: any) => row.cost_value, render: (row: any) => formatPrice(row.cost_value) },
+              { key: "cost_coverage_pct", label: "Cost coverage %", align: "right", sortable: true, value: (row: any) => row.cost_coverage_pct ?? -1, render: (row: any) => row.cost_coverage_pct === null ? "\u2014" : row.cost_coverage_pct + "%" },
+            ]}
+            rows={r.rows}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Stock take summary -----
+function ReportStockTake() {
+  return (
+    <ReportScreen title="Stock Take Summary" endpoint="/api/reports/stock-take-summary">
+      {(r) => (
+        <ReportTable
+          title="Recent stock take sessions"
+          ariaLabel="Stock take sessions"
+          rowKey={(row) => String(row.id)}
+          columns={[
+            { key: "id", label: "Session", align: "right", sortable: true, value: (row: any) => row.id },
+            { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{escapeHtml(row.status)}</span> },
+            { key: "items", label: "Items", align: "right", sortable: true, value: (row: any) => row.items },
+            { key: "net_variance_units", label: "Net variance", align: "right", sortable: true, value: (row: any) => row.net_variance_units },
+            { key: "gross_variance_units", label: "Gross variance", align: "right", sortable: true, value: (row: any) => row.gross_variance_units },
+            { key: "variance_retail", label: "Variance (retail)", align: "right", sortable: true, value: (row: any) => row.variance_retail, render: (row: any) => formatPrice(row.variance_retail) },
+            { key: "variance_cost", label: "Variance (cost)", align: "right", sortable: true, value: (row: any) => row.variance_cost ?? -1, render: (row: any) => row.variance_cost === null ? "cost data incomplete" : formatPrice(row.variance_cost) },
+            { key: "created_at", label: "Created", sortable: true, value: (row: any) => row.created_at, render: (row: any) => new Date(row.created_at).toLocaleDateString("en-GB") },
+          ]}
+          rows={r.sessions}
+        />
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Suppliers -----
+function ReportSuppliers() {
+  return (
+    <ReportScreen
+      title="Suppliers"
+      endpoint="/api/reports/suppliers"
+      note="Ordered value = quantity ordered \u00d7 unit cost on purchase orders dated in the period. Received value = quantity actually received \u00d7 unit cost."
+      exportPath={(qs) => `/api/reports/suppliers/export.csv?${qs}`}
+    >
+      {(r) => (
+        <ReportTable
+          title="Procurement by supplier"
+          ariaLabel="Suppliers"
+          rowKey={(row) => row.supplier}
+          columns={[
+            { key: "supplier", label: "Supplier", sortable: true, value: (row: any) => row.supplier, render: (row: any) => escapeHtml(row.supplier) },
+            { key: "purchase_orders", label: "POs", align: "right", sortable: true, value: (row: any) => row.purchase_orders },
+            { key: "received_orders", label: "Received POs", align: "right", sortable: true, value: (row: any) => row.received_orders },
+            { key: "ordered_value", label: "Ordered", align: "right", sortable: true, value: (row: any) => row.ordered_value, render: (row: any) => formatPrice(row.ordered_value) },
+            { key: "received_value", label: "Received", align: "right", sortable: true, value: (row: any) => row.received_value, render: (row: any) => formatPrice(row.received_value) },
+          ]}
+          rows={r.rows}
+        />
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Quotes -----
+function ReportQuotes() {
+  return (
+    <ReportScreen
+      title="Quotes"
+      endpoint="/api/reports/quotes"
+      note="A quote converts when a checkout completes with source 'quote'. The conversion rate compares converted orders with quotes created in the same period."
+      exportPath={(qs) => `/api/reports/quotes/export.csv?${qs}`}
+    >
+      {(r) => (
+        <div className="stat-grid">
+          <ReportStat value={r.created.count} label="Quotes created" />
+          <ReportStat value={formatPrice(r.created.total)} label="Quoted value" />
+          <ReportStat value={r.converted.count} label="Converted orders" />
+          <ReportStat value={formatPrice(r.converted.total)} label="Converted value" />
+          <ReportStat value={r.conversion_rate_pct + "%"} label="Conversion rate" />
+        </div>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Tax / eTIMS -----
+function ReportTax() {
+  return (
+    <ReportScreen
+      title="Tax Compliance (eTIMS)"
+      endpoint="/api/reports/tax"
+      withBranch
+      note="Filed = invoices carrying a KRA control code. Coverage = filed \u00f7 all paid invoices in the period."
+      exportPath={(qs) => `/api/reports/tax/summary?${qs}`}
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={r.invoices.count} label="Invoices" />
+            <ReportStat value={formatPrice(r.invoices.amount)} label="Invoice amount" />
+            <ReportStat value={r.invoices.filed} label="Filed (control code)" />
+            <ReportStat value={formatPrice(r.invoices.filed_amount)} label="Filed amount" />
+            <ReportStat value={r.coverage_pct + "%"} label="Coverage" />
+            <ReportStat value={r.invoices.pending} label="Pending" />
+            <ReportStat value={r.credit_notes.count} label="Credit notes" />
+            <ReportStat value={formatPrice(r.credit_notes.amount)} label="Credit note value" />
+          </div>
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Serials -----
+function ReportSerial() {
+  return (
+    <ReportScreen
+      title="Serial Numbers"
+      endpoint="/api/reports/serial"
+      withBranch
+      note="Totals reflect the current serial ledger. Sold in period counts serials stamped sold between the chosen dates."
+      exportPath={() => "/api/reports/serial/export.csv"}
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={r.totals.total} label="Total serials" />
+            <ReportStat value={r.totals.in_stock} label="In stock" />
+            <ReportStat value={r.totals.sold_in_period} label="Sold in period" />
+            <ReportStat value={r.totals.void} label="Void" />
+            <ReportStat value={r.totals.warranty_active} label="Active warranties" />
+          </div>
+          <ReportTable
+            title="By product"
+            ariaLabel="Serials by product"
+            rowKey={(row) => String(row.product_id)}
+            columns={[
+              { key: "product", label: "Product", sortable: true, value: (row: any) => row.product, render: (row: any) => escapeHtml(row.product) },
+              { key: "total", label: "Total", align: "right", sortable: true, value: (row: any) => row.total },
+              { key: "in_stock", label: "In stock", align: "right", sortable: true, value: (row: any) => row.in_stock },
+              { key: "sold_in_period", label: "Sold in period", align: "right", sortable: true, value: (row: any) => row.sold_in_period },
+              { key: "void", label: "Void", align: "right", sortable: true, value: (row: any) => row.void },
+              { key: "warranty_active", label: "Active warranties", align: "right", sortable: true, value: (row: any) => row.warranty_active },
+            ]}
+            rows={r.rows}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Loyalty -----
+function ReportLoyalty() {
+  return (
+    <ReportScreen title="Loyalty" endpoint="/api/reports/loyalty">
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={r.totals.members} label="Members" />
+            <ReportStat value={r.totals.outstanding_points} label="Points outstanding" />
+            <ReportStat value={r.totals.lifetime_earned} label="Lifetime points earned" />
+          </div>
+          <ReportTable
+            title="Activity in period"
+            ariaLabel="Loyalty activity"
+            rowKey={(row) => row.type}
+            columns={[
+              { key: "type", label: "Type", sortable: true, value: (row: any) => row.type, render: (row: any) => <span style={{ textTransform: "capitalize" }}>{escapeHtml(row.type)}</span> },
+              { key: "count", label: "Transactions", align: "right", sortable: true, value: (row: any) => row.count },
+              { key: "points", label: "Points", align: "right", sortable: true, value: (row: any) => row.points },
+            ]}
+            rows={r.activity}
+          />
+          {r.top_members.length > 0 && (
+            <ReportTable
+              title="Top members"
+              ariaLabel="Top loyalty members"
+              rowKey={(row) => row.name}
+              columns={[
+                { key: "name", label: "Member", sortable: true, value: (row: any) => row.name, render: (row: any) => escapeHtml(row.name) },
+                { key: "points", label: "Points", align: "right", sortable: true, value: (row: any) => row.points },
+                { key: "lifetime_earned", label: "Lifetime earned", align: "right", sortable: true, value: (row: any) => row.lifetime_earned },
+              ]}
+              rows={r.top_members}
+            />
+          )}
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Gift cards -----
+function ReportGiftCards() {
+  return (
+    <ReportScreen
+      title="Gift Cards"
+      endpoint="/api/reports/gift-cards"
+      note="Issued and redeemed are measured within the chosen period. Outstanding balance is the current ledger position."
+    >
+      {(r) => (
+        <div className="stat-grid">
+          <ReportStat value={r.issued.count} label="Issued in period" />
+          <ReportStat value={formatPrice(r.issued.value)} label="Value issued" />
+          <ReportStat value={r.redeemed.count} label="Redemptions" />
+          <ReportStat value={formatPrice(r.redeemed.value)} label="Value redeemed" />
+          <ReportStat value={r.outstanding.count} label="Outstanding cards" />
+          <ReportStat value={formatPrice(r.outstanding.balance)} label="Outstanding balance" />
+          <ReportStat value={r.outstanding.active} label="Active cards" />
+          <ReportStat value={r.expiring_30d.count} label="Expiring in 30 days" />
+          <ReportStat value={formatPrice(r.expiring_30d.balance)} label="Balance expiring" />
+        </div>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Campaigns -----
+function ReportCampaigns() {
+  return (
+    <ReportScreen
+      title="Campaigns"
+      endpoint="/api/reports/campaigns"
+      withBranch
+      note="Campaign attribution is not stamped on orders, so these figures show the sales of each campaign's featured products \u2014 not 'campaign-driven' sales."
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={r.totals.campaigns} label="Campaigns" />
+            <ReportStat value={r.totals.active} label="Active" />
+            <ReportStat value={r.totals.units} label="Featured units sold" />
+            <ReportStat value={formatPrice(r.totals.revenue)} label="Featured revenue" />
+          </div>
+          <ReportTable
+            title="Featured product performance"
+            ariaLabel="Campaigns"
+            rowKey={(row) => String(row.id)}
+            columns={[
+              { key: "title", label: "Campaign", sortable: true, value: (row: any) => row.title, render: (row: any) => escapeHtml(row.title) },
+              { key: "is_active", label: "Status", sortable: true, value: (row: any) => row.is_active, render: (row: any) => <span className="plan-status">{row.is_active ? "active" : "inactive"}</span> },
+              { key: "orders", label: "Orders", align: "right", sortable: true, value: (row: any) => row.orders },
+              { key: "units", label: "Units", align: "right", sortable: true, value: (row: any) => row.units },
+              { key: "revenue", label: "Revenue", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
+            ]}
+            rows={r.rows}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Cart recovery -----
+function ReportCartRecovery() {
+  return (
+    <ReportScreen
+      title="Cart Recovery"
+      endpoint="/api/reports/cart-recovery"
+      note="Carts = open carts touched in the period. Recovery rate = reminders that produced an order \u00f7 all reminders sent."
+    >
+      {(r) => (
+        <div className="stat-grid">
+          <ReportStat value={r.carts.count} label="Active carts" />
+          <ReportStat value={r.carts.items} label="Cart items" />
+          <ReportStat value={formatPrice(r.carts.value)} label="Cart value" />
+          <ReportStat value={r.reminders.sent} label="Reminders sent" />
+          <ReportStat value={r.reminders.recovered} label="Recovered" />
+          <ReportStat value={r.reminders.recovery_rate_pct + "%"} label="Recovery rate" />
+          <ReportStat value={r.recovered_orders.count} label="Recovered orders" />
+          <ReportStat value={formatPrice(r.recovered_orders.value)} label="Recovered value" />
+        </div>
+      )}
+    </ReportScreen>
   );
 }
