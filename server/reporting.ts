@@ -123,15 +123,15 @@ export function buildOrderWhere(filter: OrderFilter, startIdx = 1): BuiltWhere {
   if (filter.source) { conds.push(`o.source = $${idx}`); params.push(filter.source); idx++; }
   if (filter.customerId) { conds.push(`o.customer_id = $${idx}`); params.push(filter.customerId); idx++; }
   if (filter.productId) {
-    conds.push(`EXISTS (SELECT 1 FROM order_items oi_p WHERE oi_p.order_id = o.id AND oi_p.product_id = $${idx} AND NOT oi_p.cancelled)`);
+    conds.push(`EXISTS (SELECT 1 FROM order_items oi_p WHERE oi_p.order_id = o.id AND oi_p.product_id = $${idx} AND oi_p.cancelled = 0)`);
     params.push(filter.productId); idx++;
   }
   if (filter.groupId) {
-    conds.push(`EXISTS (SELECT 1 FROM order_items oi_g JOIN products p_g ON p_g.id = oi_g.product_id WHERE oi_g.order_id = o.id AND p_g.group_id = $${idx} AND NOT oi_g.cancelled)`);
+    conds.push(`EXISTS (SELECT 1 FROM order_items oi_g JOIN products p_g ON p_g.id = oi_g.product_id WHERE oi_g.order_id = o.id AND p_g.group_id = $${idx} AND oi_g.cancelled = 0)`);
     params.push(filter.groupId); idx++;
   }
   if (filter.category) {
-    conds.push(`EXISTS (SELECT 1 FROM order_items oi_c JOIN products p_c ON p_c.id = oi_c.product_id WHERE oi_c.order_id = o.id AND LOWER(p_c.category) = LOWER($${idx}) AND NOT oi_c.cancelled)`);
+    conds.push(`EXISTS (SELECT 1 FROM order_items oi_c JOIN products p_c ON p_c.id = oi_c.product_id WHERE oi_c.order_id = o.id AND LOWER(p_c.category) = LOWER($${idx}) AND oi_c.cancelled = 0)`);
     params.push(filter.category); idx++;
   }
   return { where: conds.length ? conds.join(" AND ") : "TRUE", params };
@@ -142,7 +142,7 @@ const LINE_JOIN = `
     SELECT oi.order_id,
            SUM(oi.price * oi.quantity) AS line_revenue,
            SUM(oi.quantity) AS units
-    FROM order_items oi WHERE NOT oi.cancelled
+    FROM order_items oi WHERE oi.cancelled = 0
     GROUP BY oi.order_id
   ) li ON li.order_id = o.id`;
 
@@ -279,19 +279,19 @@ export async function salesBreakdown(filter: OrderFilter, by: SalesBreakdownBy):
   const dim: Record<SalesBreakdownBy, Dim> = {
     product: {
       select: "oi.product_id AS id, oi.name AS label",
-      join: "JOIN order_items oi ON oi.order_id = o.id AND NOT oi.cancelled",
+      join: "JOIN order_items oi ON oi.order_id = o.id AND oi.cancelled = 0",
       group: "oi.product_id, oi.name",
       orderLevel: false,
     },
     category: {
       select: "COALESCE(NULLIF(pc.category,''),'Uncategorised') AS label, COALESCE(NULLIF(pc.category,''),'') AS id",
-      join: "JOIN order_items oi ON oi.order_id = o.id AND NOT oi.cancelled LEFT JOIN products pc ON pc.id = oi.product_id",
+      join: "JOIN order_items oi ON oi.order_id = o.id AND oi.cancelled = 0 LEFT JOIN products pc ON pc.id = oi.product_id",
       group: "pc.category",
       orderLevel: false,
     },
     group: {
       select: "COALESCE(NULLIF(pg.name,''),'Ungrouped') AS label, COALESCE(pg.id::text,'') AS id",
-      join: "JOIN order_items oi ON oi.order_id = o.id AND NOT oi.cancelled LEFT JOIN products pp ON pp.id = oi.product_id LEFT JOIN product_groups pg ON pg.id = pp.group_id",
+      join: "JOIN order_items oi ON oi.order_id = o.id AND oi.cancelled = 0 LEFT JOIN products pp ON pp.id = oi.product_id LEFT JOIN product_groups pg ON pg.id = pp.group_id",
       group: "pg.id, pg.name",
       orderLevel: false,
     },
@@ -348,7 +348,7 @@ export async function salesBreakdown(filter: OrderFilter, by: SalesBreakdownBy):
   const d = dim[by];
   const LINE_AGG = `LEFT JOIN (
       SELECT order_id, SUM(price * quantity) AS line_revenue, SUM(quantity) AS units
-      FROM order_items WHERE NOT cancelled GROUP BY order_id
+      FROM order_items WHERE cancelled = 0 GROUP BY order_id
     ) oi ON oi.order_id = o.id`;
 
   if (d.orderLevel) {

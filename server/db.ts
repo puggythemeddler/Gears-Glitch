@@ -809,7 +809,7 @@ async function runMigrations(): Promise<void> {
                AND COALESCE(NULLIF(po.updated_at, ''), po.created_at)::timestamp
                      <= (SELECT o.created_at::timestamp FROM orders o WHERE o.id = oi.order_id))
          )
-         WHERE oi.unit_cost IS NULL AND NOT oi.cancelled`
+         WHERE oi.unit_cost IS NULL AND oi.cancelled = 0`
       );
     }
   } catch {}
@@ -833,7 +833,7 @@ async function runMigrations(): Promise<void> {
       `UPDATE orders SET
          vat_rate = $1,
          vat_amount = ROUND(COALESCE((SELECT SUM(ROUND(oi.line_total * $1 / (100 + $1), 2))
-            FROM order_items oi WHERE oi.order_id = orders.id AND NOT oi.cancelled AND oi.taxable = 1), 0), 2),
+            FROM order_items oi WHERE oi.order_id = orders.id AND oi.cancelled = 0 AND oi.taxable = 1), 0), 2),
          vat_estimated = 1
        WHERE vat_amount IS NULL`,
       [rate]
@@ -3902,7 +3902,7 @@ async function getSalesReportWithRange(startDate?: string, endDate?: string, gro
     where += ` AND EXISTS (SELECT 1 FROM order_items oi JOIN products gp ON gp.id = oi.product_id WHERE oi.order_id = o.id AND gp.group_id = $${idx})`;
     params.push(groupId); idx++;
   }
-  const orderStats = await queryOne(`SELECT COUNT(*) AS total_orders, COALESCE(SUM((SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND NOT oi.cancelled) + o.shipping_fee), 0) AS total_revenue FROM orders o WHERE ${where}`, params) as any;
+  const orderStats = await queryOne(`SELECT COUNT(*) AS total_orders, COALESCE(SUM((SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.cancelled = 0) + o.shipping_fee), 0) AS total_revenue FROM orders o WHERE ${where}`, params) as any;
   const invoiceStats = await queryOne("SELECT COUNT(*) AS paid_invoices, COALESCE(SUM(amount), 0) AS invoice_revenue FROM order_invoices WHERE status = 'paid'") as any;
   const topProducts = await queryAll(
     `SELECT oi.product_id AS "productId", oi.name, SUM(oi.quantity) AS "totalSold", SUM(oi.price * oi.quantity) AS revenue
@@ -3911,7 +3911,7 @@ async function getSalesReportWithRange(startDate?: string, endDate?: string, gro
   ) as any[];
   const channelWhere = where.replace(/o\./g, ""); const channelParams = [...params];
   const channels = await queryAll(
-    `SELECT COALESCE(source, 'storefront') AS channel, COUNT(*) AS orders, COALESCE(SUM((SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND NOT oi.cancelled) + o.shipping_fee - COALESCE(o.discount_amount, 0) - COALESCE(o.gift_card_amount, 0)), 0) AS revenue
+    `SELECT COALESCE(source, 'storefront') AS channel, COUNT(*) AS orders, COALESCE(SUM((SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.cancelled = 0) + o.shipping_fee - COALESCE(o.discount_amount, 0) - COALESCE(o.gift_card_amount, 0)), 0) AS revenue
      FROM orders o WHERE ${channelWhere} GROUP BY COALESCE(source, 'storefront') ORDER BY revenue DESC`, channelParams
   ) as any[];
   return { totalRevenue: Number(orderStats?.total_revenue || 0), totalOrders: Number(orderStats?.total_orders || 0), paidInvoices: Number(invoiceStats?.paid_invoices || 0), invoiceRevenue: Number(invoiceStats?.invoice_revenue || 0), topProducts, channels };

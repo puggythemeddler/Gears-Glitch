@@ -56,7 +56,7 @@ function filterFromQuery(req: Request): OrderFilter {
 type ProfitDim = "all" | "product" | "category" | "group";
 
 const PROFIT_LINE = `FROM orders o
-  JOIN order_items oi ON oi.order_id = o.id AND NOT oi.cancelled
+  JOIN order_items oi ON oi.order_id = o.id AND oi.cancelled = 0
   LEFT JOIN products pp ON pp.id = oi.product_id`;
 
 async function profitRows(filter: OrderFilter, dim: ProfitDim = "all"): Promise<any[]> {
@@ -162,7 +162,7 @@ router.get("/payments", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
        COALESCE(SUM(o.amount_refunded), 0) AS refunds
      FROM orders o LEFT JOIN (
         SELECT oi2.order_id, SUM(oi2.price * oi2.quantity) AS line_revenue
-        FROM order_items oi2 WHERE NOT oi2.cancelled GROUP BY oi2.order_id
+        FROM order_items oi2 WHERE oi2.cancelled = 0 GROUP BY oi2.order_id
      ) li ON li.order_id = o.id
      WHERE ${where}
      GROUP BY LOWER(TRIM(o.payment_method)) ORDER BY revenue DESC`,
@@ -193,7 +193,7 @@ router.get("/payments/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(asy
   const { where, params } = buildOrderWhere(filter);
   const rows = await queryAll(
     `SELECT COALESCE(NULLIF(LOWER(TRIM(o.payment_method)),''),'unrecorded') AS method, COUNT(*)::int AS orders, COALESCE(SUM(li.line_revenue),0) + COALESCE(SUM(o.shipping_fee),0) AS revenue, COALESCE(SUM(o.amount_refunded),0) AS refunds
-     FROM orders o LEFT JOIN (SELECT oi2.order_id, SUM(oi2.price*oi2.quantity) AS line_revenue FROM order_items oi2 WHERE NOT oi2.cancelled GROUP BY oi2.order_id) li ON li.order_id = o.id
+     FROM orders o LEFT JOIN (SELECT oi2.order_id, SUM(oi2.price*oi2.quantity) AS line_revenue FROM order_items oi2 WHERE oi2.cancelled = 0 GROUP BY oi2.order_id) li ON li.order_id = o.id
      WHERE ${where} GROUP BY LOWER(TRIM(o.payment_method)) ORDER BY revenue DESC`,
     params
   );
@@ -218,7 +218,7 @@ router.get("/receivables", ownerAuthMiddleware, VIEW, asyncHandler(async (req: R
        COALESCE(o.amount_refunded, 0) AS refunded
      FROM orders o LEFT JOIN (
         SELECT oi2.order_id, SUM(oi2.price * oi2.quantity) AS line_revenue
-        FROM order_items oi2 WHERE NOT oi2.cancelled GROUP BY oi2.order_id
+        FROM order_items oi2 WHERE oi2.cancelled = 0 GROUP BY oi2.order_id
      ) li ON li.order_id = o.id
      WHERE ${sqlWhere} ORDER BY o.created_at`,
     params
@@ -250,7 +250,7 @@ router.get("/receivables/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(
   const { where, params } = buildOrderWhere(filter);
   const rows = await queryAll(
     `SELECT o.id, o.customer_name, o.status, o.created_at, (COALESCE(li.line_revenue,0) + COALESCE(o.shipping_fee,0)) AS total, COALESCE(o.amount_refunded,0) AS refunded
-     FROM orders o LEFT JOIN (SELECT oi2.order_id, SUM(oi2.price*oi2.quantity) AS line_revenue FROM order_items oi2 WHERE NOT oi2.cancelled GROUP BY oi2.order_id) li ON li.order_id = o.id
+     FROM orders o LEFT JOIN (SELECT oi2.order_id, SUM(oi2.price*oi2.quantity) AS line_revenue FROM order_items oi2 WHERE oi2.cancelled = 0 GROUP BY oi2.order_id) li ON li.order_id = o.id
      WHERE ${where} AND o.status IN (${OUTSTANDING_STATUSES}) ORDER BY o.created_at`,
     params
   );
@@ -346,10 +346,10 @@ router.get("/warranty", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
               ORDER BY wc.claim_date DESC LIMIT 500`, claimsParams),
     queryOne(`SELECT COUNT(*)::int AS units_sold, COUNT(*) FILTER (WHERE warranty_expires IS NOT NULL)::int AS coverage
               FROM order_items oi JOIN orders o ON o.id = oi.order_id AND o.status != 'cancelled'
-              WHERE o.created_at::timestamp >= $1 AND o.created_at::timestamp < ($2::date + interval '1 day') AND NOT oi.cancelled AND oi.has_warranty >= 1${branchOrderFilter}`, claimsParams),
+              WHERE o.created_at::timestamp >= $1 AND o.created_at::timestamp < ($2::date + interval '1 day') AND oi.cancelled = 0 AND oi.has_warranty >= 1${branchOrderFilter}`, claimsParams),
     queryAll(`SELECT oi.id, oi.name, oi.serial_number, oi.warranty_expires, oi.order_id, o.branch_id FROM order_items oi
               JOIN orders o ON o.id = oi.order_id
-              WHERE NOT oi.cancelled AND oi.has_warranty >= 1 AND oi.warranty_expires IS NOT NULL
+              WHERE oi.cancelled = 0 AND oi.has_warranty >= 1 AND oi.warranty_expires IS NOT NULL
                 AND oi.warranty_expires::date >= $1 AND oi.warranty_expires::date < ($2::date + interval '1 day')${branchOrderFilter}
               ORDER BY oi.warranty_expires LIMIT 200`, [new Date().toISOString().slice(0, 10), new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10), ...(branchId ? [branchId.toString()] : [])]),
     queryAll(`SELECT wc.status, COUNT(*)::int AS cnt FROM warranty_claims wc
@@ -924,7 +924,7 @@ router.get("/campaigns", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Req
          COALESCE(SUM(li.line_revenue) + COALESCE(SUM(o.shipping_fee), 0), 0) AS revenue
        FROM orders o LEFT JOIN (
          SELECT oi2.order_id, SUM(oi2.price * oi2.quantity) AS line_revenue
-         FROM order_items oi2 WHERE NOT oi2.cancelled GROUP BY oi2.order_id
+         FROM order_items oi2 WHERE oi2.cancelled = 0 GROUP BY oi2.order_id
        ) li ON li.order_id = o.id
        WHERE o.campaign_id = ANY($1::int[])
          AND o.status IN ('paid','shipped','delivered')
