@@ -1272,8 +1272,6 @@ async function runMigrations(): Promise<void> {
   const etimsMode = await queryOne("SELECT value FROM settings WHERE key = 'etims_mode'");
   if (!etimsMode) {
     await query("INSERT INTO settings (key, value) VALUES ('etims_mode', 'off')");
-  } else if (etimsMode.value !== "off") {
-    await query("UPDATE settings SET value = 'off' WHERE key = 'etims_mode'");
   }
   const settingDefaults: { [k: string]: string } = {
     etims_branch_id: "00", etims_device_serial: "dvc001", etims_vscu_url: "http://localhost:8088",

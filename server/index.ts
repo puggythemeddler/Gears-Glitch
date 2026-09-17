@@ -951,6 +951,20 @@ app.delete("/api/admin/delivery-fees", adminAuthMiddleware, requirePermission("s
 
 // M-Pesa callback (called by Safaricom — body validated for expected structure)
 app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
+  // Optional shared-secret auth: when MPESA_CALLBACK_SECRET is set, callbacks must
+  // carry it in the X-Callback-Secret header; otherwise the existing structural
+  // validation + atomic amount verification still protects order state.
+  const expectedSecret = (process.env.MPESA_CALLBACK_SECRET || "").trim();
+  if (expectedSecret) {
+    const providedSecret = String(req.get("x-callback-secret") || "");
+    const a = Buffer.from(expectedSecret);
+    const b = Buffer.from(providedSecret);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      console.warn("[M-Pesa] Callback rejected — missing or invalid X-Callback-Secret");
+      return res.status(401).json({ ResultCode: 1, ResultDesc: "Unauthorized" });
+    }
+  }
+
   const data = req.body;
   if (!data || typeof data !== "object") { return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid payload" }); }
 
@@ -3692,6 +3706,18 @@ app.get("/api/admin/credit-notes", ownerAuthMiddleware, requirePermission("credi
   res.json({ creditNotes: await listCreditNotes() });
 }));
 
+app.get("/api/admin/credit-notes/order-status", ownerAuthMiddleware, requirePermission("credit_note:view"), asyncHandler(async (req: Request, res: Response) => {
+  const { orderIds } = req.query;
+  if (!orderIds) { res.status(400).json({ error: "orderIds query param required." }); return; }
+  const ids = String(orderIds).split(",").map(Number).filter(Boolean);
+  const result: Record<number, boolean> = {};
+  for (const orderId of ids) {
+    const notes = await listCreditNotes(orderId);
+    result[orderId] = notes.length > 0;
+  }
+  res.json({ credited: result });
+}));
+
 app.get("/api/admin/credit-notes/:id", ownerAuthMiddleware, requirePermission("credit_note:view"), asyncHandler(async (req: Request, res: Response) => {
   const cn = await getCreditNote(Number(req.params.id));
   if (!cn) { res.status(404).json({ error: "Credit note not found." }); return; }
@@ -3741,18 +3767,6 @@ app.post("/api/admin/credit-notes", ownerAuthMiddleware, requirePermission("cred
     const { subject: emailSub, html } = creditNoteEmail(order.customerName || "Customer", cn.id, reason || "", String(cn.totalAmount || order.subtotal || 0), settings.currency, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`, settings.storeName);
     sendEmail(order.customerEmail, emailSub, html, "credit_note");
   }
-}));
-
-app.get("/api/admin/credit-notes/order-status", ownerAuthMiddleware, requirePermission("credit_note:view"), asyncHandler(async (req: Request, res: Response) => {
-  const { orderIds } = req.query;
-  if (!orderIds) { res.status(400).json({ error: "orderIds query param required." }); return; }
-  const ids = String(orderIds).split(",").map(Number).filter(Boolean);
-  const result: Record<number, boolean> = {};
-  for (const orderId of ids) {
-    const notes = await listCreditNotes(orderId);
-    result[orderId] = notes.length > 0;
-  }
-  res.json({ credited: result });
 }));
 
 app.get("/api/admin/credit-notes/:id/view", staffAuthMiddleware, requirePermission("credit_note:view"), asyncHandler(async (req: Request, res: Response) => {
@@ -4207,6 +4221,25 @@ app.get("/api/products/by-barcode/:code", asyncHandler(async (req: Request, res:
   res.json(publicProduct(product));
 }));
 
+// Batch primary images for order-item thumbnails
+app.get("/api/products/batch-images", asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const ids = String(req.query.ids || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 50);
+    if (ids.length === 0) { res.json({ images: {} }); return; }
+    const images: Record<string, string> = {};
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const p = await getProduct(id);
+        if (p?.imageUrl) images[id] = p.imageUrl;
+      } catch {}
+    }));
+    res.json({ images });
+  } catch (err: any) {
+    console.error("[batch-images]", err?.message || err);
+    res.status(500).json({ error: "Failed to load images." });
+  }
+}));
+
 app.get("/api/products/:id", asyncHandler(async (req: Request, res: Response) => {
   try {
     const product = await getProduct(String(req.params.id));
@@ -4471,25 +4504,6 @@ app.get("/api/products/:id/images", asyncHandler(async (req: Request, res: Respo
     res.json({ images: combined });
   } catch (err: any) {
     console.error("[product images]", err?.message || err);
-    res.status(500).json({ error: "Failed to load images." });
-  }
-}));
-
-// Batch primary images for order-item thumbnails
-app.get("/api/products/batch-images", asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const ids = String(req.query.ids || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 50);
-    if (ids.length === 0) { res.json({ images: {} }); return; }
-    const images: Record<string, string> = {};
-    await Promise.all(ids.map(async (id) => {
-      try {
-        const p = await getProduct(id);
-        if (p?.imageUrl) images[id] = p.imageUrl;
-      } catch {}
-    }));
-    res.json({ images });
-  } catch (err: any) {
-    console.error("[batch-images]", err?.message || err);
     res.status(500).json({ error: "Failed to load images." });
   }
 }));
@@ -5932,6 +5946,14 @@ app.post("/api/purchases", adminAuthMiddleware, asyncHandler(async (req: Request
   res.status(201).json(po);
 }));
 
+app.get("/api/purchases/deleted", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ orders: await listDeletedPurchaseOrders() });
+}));
+
+app.get("/api/purchases/completed", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ orders: await listCompletedPurchaseOrders() });
+}));
+
 app.get("/api/purchases/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const po = await getPurchaseOrder(Number(req.params.id));
   if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
@@ -6075,14 +6097,6 @@ app.post("/api/purchases/:id/receive-all", adminAuthMiddleware, asyncHandler(asy
     console.error("[purchase receive-all]", err?.message || err);
     res.status(500).json({ error: "Failed to mark purchase order as received." });
   }
-}));
-
-app.get("/api/purchases/deleted", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ orders: await listDeletedPurchaseOrders() });
-}));
-
-app.get("/api/purchases/completed", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ orders: await listCompletedPurchaseOrders() });
 }));
 
 app.post("/api/purchases/:id/restore", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {

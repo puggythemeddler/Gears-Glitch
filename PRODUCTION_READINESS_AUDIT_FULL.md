@@ -264,3 +264,21 @@ Approved and applied after the audit. Code changes only where noted; all additiv
 - Root typecheck ✅, build ✅, unit tests 30 ✅ (0 fail).
 - New DB-gated suite `tests/migrations.integration.test.ts` (column presence, TEXT linkage, branch backfill, RESTRICT deletes) — runs in CI's server-test job; skipped locally without Postgres.
 - Remaining (not yet started): P1 eTIMS, P3 callback auth, F1-F3 route shadowing, BN2 order write enforcement, AZ1/AZ3 hardening, docs reconciliation — awaiting approval for Phase 2.
+
+## Phase 2 — Remediation Applied (2026-09-17)
+
+Approved and applied after Phase 1.
+
+**F1-F3 — route shadowing fixed (`server/index.ts`):**
+- `GET /api/admin/credit-notes/order-status`, `GET /api/purchases/deleted`, `GET /api/purchases/completed`, and `GET /api/products/batch-images` are now registered **before** their `:id` siblings. URLs unchanged, so frontend callers (`admin.tsx:1294/2583/6205`, `dashboard.tsx:92`, `order.tsx:60`, `orders.tsx:33`) work without modification.
+- Regression guard: `tests/route-order.test.ts` statically asserts literal-before-`:id` ordering (DB-free, runs in every suite).
+
+**P3 — M-Pesa callback optional shared-secret auth (`server/index.ts`):**
+- When `MPESA_CALLBACK_SECRET` is set, `/api/mpesa/callback` requires a matching `X-Callback-Secret` header (timing-safe compare) and returns 401 otherwise. Unset (sandbox/dev) preserves the legacy validation + atomic amount-verification path. Documented in the README env table.
+
+**P2 — eTIMS mode no longer reset at boot (`server/db.ts`):**
+- The `UPDATE settings SET 'etims_mode'='off'` on every startup is removed; the missing-key default insert remains. An operator-enabled `etims_mode` now survives restarts.
+
+**Verification:** root typecheck ✅, build ✅, unit tests 33 ✅ (0 fail) including the new route-order suite; DB-gated migrations suite runs in CI.
+
+**Remaining (not yet started):** P1 eTIMS (KRA adapter), BN2 order `branch_id` write-enforcement, AZ1 query-token disable, AZ3 shared-session/CSRF hardening, docs reconciliation — awaiting approval for Phase 3/4.
