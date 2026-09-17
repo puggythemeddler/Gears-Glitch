@@ -299,9 +299,9 @@ export async function getAlert(id: number): Promise<any | null> {
 export async function listAlerts(opts: { clientId?: number; state?: string; severity?: string; limit?: number } = {}): Promise<any[]> {
   const conds: string[] = [];
   const params: any[] = [];
-  if (opts.clientId) { params.push(opts.clientId); conds.push(`client_id = $${params.length}`); }
-  if (opts.state) { params.push(opts.state); conds.push(`state = $${params.length}`); }
-  if (opts.severity) { params.push(opts.severity); conds.push(`severity = $${params.length}`); }
+  if (opts.clientId) { params.push(opts.clientId); conds.push(`a.client_id = $${params.length}`); }
+  if (opts.state) { params.push(opts.state); conds.push(`a.state = $${params.length}`); }
+  if (opts.severity) { params.push(opts.severity); conds.push(`a.severity = $${params.length}`); }
   const where = conds.length ? ` WHERE ${conds.join(" AND ")}` : "";
   const limit = Math.min(Math.max(Number(opts.limit) || 200, 1), 500);
   return queryAll(
@@ -316,8 +316,8 @@ export async function updateAlert(id: number, patch: Record<string, any>): Promi
   const sets: string[] = [];
   const params: any[] = [];
   let idx = 1;
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === undefined) continue;
+for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined || k === "updated_at") continue; // updated_at is stamped below
     sets.push(`${k} = $${idx}`);
     params.push(v);
     idx++;
@@ -363,8 +363,8 @@ export async function getIncident(id: number): Promise<any | null> {
 export async function listIncidents(opts: { clientId?: number; status?: string; limit?: number } = {}): Promise<any[]> {
   const conds: string[] = [];
   const params: any[] = [];
-  if (opts.clientId) { params.push(opts.clientId); conds.push(`client_id = $${params.length}`); }
-  if (opts.status) { params.push(opts.status); conds.push(`status = $${params.length}`); }
+  if (opts.clientId) { params.push(opts.clientId); conds.push(`i.client_id = $${params.length}`); }
+  if (opts.status) { params.push(opts.status); conds.push(`i.status = $${params.length}`); }
   const where = conds.length ? ` WHERE ${conds.join(" AND ")}` : "";
   const limit = Math.min(Math.max(Number(opts.limit) || 200, 1), 500);
   return queryAll(
@@ -431,7 +431,7 @@ export async function getReport(id: number): Promise<any | null> {
 export async function listReports(opts: { clientId?: number; limit?: number } = {}): Promise<any[]> {
   const conds: string[] = [];
   const params: any[] = [];
-  if (opts.clientId) { params.push(opts.clientId); conds.push(`client_id = $${params.length}`); }
+  if (opts.clientId) { params.push(opts.clientId); conds.push(`r.client_id = $${params.length}`); }
   const where = conds.length ? ` WHERE ${conds.join(" AND ")}` : "";
   const limit = Math.min(Math.max(Number(opts.limit) || 100, 1), 500);
   return queryAll(
@@ -467,8 +467,8 @@ export async function getSupportSession(id: number): Promise<any | null> {
 export async function listSupportSessions(opts: { clientId?: number; status?: string; limit?: number } = {}): Promise<any[]> {
   const conds: string[] = [];
   const params: any[] = [];
-  if (opts.clientId) { params.push(opts.clientId); conds.push(`client_id = $${params.length}`); }
-  if (opts.status) { params.push(opts.status); conds.push(`status = $${params.length}`); }
+  if (opts.clientId) { params.push(opts.clientId); conds.push(`s.client_id = $${params.length}`); }
+  if (opts.status) { params.push(opts.status); conds.push(`s.status = $${params.length}`); }
   const where = conds.length ? ` WHERE ${conds.join(" AND ")}` : "";
   const limit = Math.min(Math.max(Number(opts.limit) || 200, 1), 500);
   return queryAll(
@@ -518,8 +518,8 @@ export async function getMaintenanceWindow(id: number): Promise<any | null> {
 export async function listMaintenanceWindows(opts: { clientId?: number; status?: string; limit?: number } = {}): Promise<any[]> {
   const conds: string[] = [];
   const params: any[] = [];
-  if (opts.clientId) { params.push(opts.clientId); conds.push(`client_id = $${params.length}`); }
-  if (opts.status) { params.push(opts.status); conds.push(`status = $${params.length}`); }
+  if (opts.clientId) { params.push(opts.clientId); conds.push(`m.client_id = $${params.length}`); }
+  if (opts.status) { params.push(opts.status); conds.push(`m.status = $${params.length}`); }
   const where = conds.length ? ` WHERE ${conds.join(" AND ")}` : "";
   const limit = Math.min(Math.max(Number(opts.limit) || 200, 1), 500);
   return queryAll(
@@ -581,8 +581,8 @@ export async function resolveDrift(clientId: number, key: string): Promise<void>
 export async function listDrift(opts: { clientId?: number; state?: string; limit?: number } = {}): Promise<any[]> {
   const conds: string[] = [];
   const params: any[] = [];
-  if (opts.clientId) { params.push(opts.clientId); conds.push(`client_id = $${params.length}`); }
-  if (opts.state) { params.push(opts.state); conds.push(`state = $${params.length}`); }
+  if (opts.clientId) { params.push(opts.clientId); conds.push(`d.client_id = $${params.length}`); }
+  if (opts.state) { params.push(opts.state); conds.push(`d.state = $${params.length}`); }
   const where = conds.length ? ` WHERE ${conds.join(" AND ")}` : "";
   const limit = Math.min(Math.max(Number(opts.limit) || 200, 1), 500);
   return queryAll(

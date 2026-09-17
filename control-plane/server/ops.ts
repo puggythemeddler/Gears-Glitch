@@ -325,7 +325,7 @@ export async function buildDiagnosticReport(clientId: number, requestedBy: strin
       [clientId]
     );
     const deploys = await queryAll(
-      "SELECT status, triggered_at, started_at FROM (SELECT status, triggered_at, started_at FROM deploy_log WHERE client_id = $1 ORDER BY triggered_at DESC LIMIT 10) t",
+      "SELECT status, triggered_at FROM (SELECT status, triggered_at FROM deploy_log WHERE client_id = $1 ORDER BY triggered_at DESC LIMIT 10) t",
       [clientId]
     );
     const usageHistory = await queryAll(
