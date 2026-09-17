@@ -66,7 +66,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - Warranty registration on products, duration tracking, and warranty status on invoices
 
 ### Finance & invoicing
-- KRA eTIMS compliant invoices and credit notes with control codes, serial numbers, and receipt generation
+- Standard tax invoices and credit notes with itemised VAT, plus credit-note and receipt generation (eTIMS submission is **disabled** until a production KRA adapter ships)
 - Quotation engine with line items, discounts, PDF export, and one-click conversion to orders
 - M-Pesa payments with callback validation (POS + online checkout), cash and bank transfer tracking, automatic reconciliation
 - Multi-currency support with live exchange rate conversion (feature-gated)
@@ -403,7 +403,7 @@ Access is fine-tuned in **Users & Permissions** (assign/remove roles per user, t
 - **Plans** — Create/edit/delete tiered subscription plans with feature checkboxes (58+ available features). Plans can be activated/deactivated to control visibility on the public pricing page. Inactive plans are hidden from customers. Plan editor features organized into 11 collapsible groups (Core Commerce, Inventory & Stock, Invoicing & Finance, Repairs & Service, Customer Engagement, WhatsApp & Communication, Multi-Location, Marketing & Storefront, Analytics & Security, Support & Account, Payments & Currency) with select-all toggles per group and feature count badges.
 - **Providers** — View providers, assign plans, custom pricing, status
 - **Invoices** — Generate invoices per provider, mark paid, PDF download for order invoices
-- **Credit Notes** — Create eTIMS-compliant credit notes from invoices, with printable audit details and submission tracking, PDF download
+- **Credit Notes** — Create credit notes from invoices with printable audit details, PDF download (eTIMS submission is **disabled**; credit notes are not marked as KRA-"submitted")
 - **Reports** — 5 sub-tabs: Sales Report with combined/per-branch filtering, channel breakdown (Storefront / POS / Quote), and export to Excel/PDF, Employee Sales, Technician Performance, Purchases Report, and Stock Summary
 - **Stock on Hand** — Current stock levels per branch (filter by branch), snapshot history, low-stock alerts
 - **Stock Transfers** — Create and manage inter-branch stock transfers with pending/complete/reject workflow; completing a transfer actually moves stock between branches with dual movement records
@@ -419,7 +419,7 @@ Access is fine-tuned in **Users & Permissions** (assign/remove roles per user, t
 - **Storefront** — Choose layout theme (Original, Amazon, Jumia, Mobile), manage promotional banners
 - **Splashes** — Create/edit/delete promotional banners with quick presets (Black Friday, Happy Hour, Christmas, New Year Sale, Back to School), custom background/text colors, marquee vs static toggle, active date ranges, and on/off toggle. Kenyan holidays auto-displayed with themed colors.
 - **Shop Subscription** — View current plan, activate new plan, approve/reject owner requests
-- **Settings** — Store info, M-Pesa config, store logo upload with position selector (top-left/top-middle/top-right), currency, configurable POS payment methods (add/edit/remove with KRA codes), eTIMS/KRA compliance (VSCU/OSCU mode selector with branch, device, API settings), image storage (Cloudinary primary + optional database backup toggle), exchange rates, and **Storefront** page for layout management (activate, create dynamic JSON layouts, reorder)
+- **Settings** — Store info, M-Pesa config, store logo upload with position selector (top-left/top-middle/top-right), currency, configurable POS payment methods (add/edit/remove with KRA codes), KRA PIN (eTIMS integration is **disabled** — see the compliance section), image storage (Cloudinary primary + optional database backup toggle), exchange rates, and **Storefront** page for layout management (activate, create dynamic JSON layouts, reorder)
 
 ---
 
@@ -1046,7 +1046,7 @@ The POS checkout endpoint (`POST /api/pos/checkout`) enforces:
 - **Staff audit trail** — `processed_by` column records which staff member processed each POS order
 
 ### eTIMS / KRA Compliance
-The system supports both VSCU (local JAR bridge) and OSCU (cloud API) eTIMS modes selectable in admin settings. See `eTIMS_INTEGRATION.md` for the full compliance document, including invoice number format, SHA-256 control codes, two-step sales pipeline, tax type codes (A/E), QR code generation, and all invoice templates (customer, admin, POS thermal/A4).
+eTIMS is **disabled in this build**. The VSCU/OSCU integration described in `eTIMS_INTEGRATION.md` is an implementation spec, not production behaviour: no invoice or credit note is submitted to KRA, and nothing is marked as KRA-"submitted". A production KRA adapter will be enabled behind an explicit flag when it ships; until then invoices and receipts print as standard tax documents (invoice code lives in the invoice generation functions in `server/index.ts`).
 
 ---
 

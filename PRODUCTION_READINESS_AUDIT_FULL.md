@@ -310,11 +310,25 @@ Approved and applied after Phase 2 (eTIMS intentionally deferred — see below).
 
 **Verification:** root typecheck ✅, build ✅, unit tests **37** ✅ (0 fail) — +4 static AZ1 tests, new `tests/order-branch.integration.test.ts` (DB-gated: 0014 backfill/idempotency/index/movement-reattribution, cross-branch serial rejection, consume stamping, transfer reattribution) runs in CI's server-test job and skips locally.
 
-**Deferred (unchanged):** P1 eTIMS — real KRA adapter needs sandbox credentials; stub still returns `submitted:false` (`db.ts:3645`). Recommended follow-ups: migrate print links to purpose-scoped tokens end-to-end, and back the login lockout with a DB/Redis counter for strict multi-replica brute-force defense.
+**Deferred (unchanged):** P1 eTIMS — real KRA adapter needs sandbox credentials; stub still returns `submitted:false` (`db.ts:3645`). Recommended follow-ups: migrate print links to purpose-scoped tokens end-to-end, and back the login lockout with a DB/Redis counter for strict multi-replica brute-force defense. *(Resolved-by-disable in Phase 5 — see below.)*
 
 **G2 — stale audit-doc reconciliation (same commit):**
 - Added a **status banner** to the eight Phase-0 docs listed in G2 (`AUDIT_REPORT.md`, `PRODUCTION_READINESS_AUDIT.md`, `UX_AUDIT.md`, `ROUTE_INTEGRITY.md`, `SECURITY_MODEL.md`, `PRODUCTION_SCORECARD.md`, `ACTION_ITEMS.md`, `DEPLOY_CHECKLIST.md`) pointing to this report as the live source of truth and listing what Phases 1–3 changed.
 - Corrected the README "Product Deletion" feature line (still claimed destructive `ON DELETE CASCADE` auto-removal; actual behavior is RESTRICT-gated with 409 → deactivate).
 - `DEPLOY_CHECKLIST.md` banner: flagged the eTIMS KRA adapter as the open CRITICAL, and referenced `MPESA_CALLBACK_SECRET` (Phase 2) and the refreshed `DATABASE_MIGRATIONS.md`.
+
+## Phase 5 — eTIMS surface disabled (2026-09-17)
+
+Approved direction: **remove the "enabled" eTIMS surface** rather than ship a stub that claims compliance. There is no production KRA adapter; a real one (VSCU/OSCU behind KRA sandbox credentials) can be added later behind an explicit flag. Changes:
+
+- **`server/db.ts`** — `createEtimsSalesTransaction` is now a loud no-op (`console.warn("[etims] … DISABLED …")`, returns `{ submitted:false, disabled:true }`); `submitCreditNoteToEtims` refuses and returns `false`. Neither function fabricates submissions.
+- **`server/index.ts`** — the credit-note route no longer stamps `status='submitted'` / fabricated control codes (previously unconditional, `index.ts:3766-3773`); it warns if `etims_mode !== 'off'` and returns the credit note at its honest `issued` status (schema default, `schema.sql:674`). The eTIMS export/import was cleaned. The settings PUT now **forces any non-`off` mode to `off`** with a warning, so operators cannot re-enable via API.
+- **`frontend/pages/admin.tsx`** — the Compliance panel's VSCU/OSCU selector + OSCU credential fields were replaced with a static "eTIMS disabled" notice (KRA PIN field retained).
+- **`frontend/pages/marketing.tsx`** + **`README.md`** + **`DESIGN.md`** + **`control-plane/public/index.html`** — removed/reworded false "eTIMS/KRA compliant out of the box" claims (marketing FAQ, receipt sample, feature bullets, finance section, settings blurb, eTIMS section; `eTIMS_INTEGRATION.md` retitled a banner to "implementation spec, not production behaviour").
+- Invoice/receipt templates (`index.ts` invoice generation) already degrade to plain "TAX INVOICE / RECEIPT" when no `etims_invoice_number` is present — which is now always the case. The `Tax (eTIMS)` report still renders ("Filed" = invoices carrying a control code) and will show honest 0% coverage until a real adapter lands.
+
+**Verification:** root typecheck ✅, build ✅, unit tests **43** ✅ (0 fail) — new DB-free static suite `tests/etims-disabled.test.ts` (6 tests) asserts: credit-note route no longer invokes `submitCreditNoteToEtims` (import removed), the settings PUT force-off guard is present, the stubs refuse to fabricate submissions, the admin surface has no VSCU/OSCU toggle or credential fields, and the marketing FAQ no longer claims built-in KRA compliance.
+
+**Remaining follow-ups (non-blocking, no open CRITICAL code path):** purpose-scoped print tokens end-to-end (already used by receipt/invoice token endpoints), DB/Redis-backed login lockout for strict multi-replica brute-force defense (current: in-process `loginFailures` map, documented), real KRA adapter when credentials are available.
 
 **Verification (docs-only commit):** no runtime code touched; `npm test` still 37 ✅ — the read-only `route-order.test.ts` guard is unaffected.

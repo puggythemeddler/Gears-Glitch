@@ -115,7 +115,6 @@ import {
   createCreditNote,
   getCreditNote,
   listCreditNotes,
-  submitCreditNoteToEtims,
   getProductImages,
   addProductImage,
   deleteProductImage,
@@ -1492,6 +1491,12 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
     etimsVscuUrl: "etims_vscu_url", etimsOscuApiUrl: "etims_oscu_api_url",
     etimsOscuConsumerKey: "etims_oscu_consumer_key", etimsOscuConsumerSecret: "etims_oscu_consumer_secret",
   };
+  // eTIMS is DISABLED: never persist a non-''off'' mode. The "enabled" surface
+  // was removed; a future real KRA adapter will reopen it behind a flag.
+  if ((req.body as any)?.etimsMode !== undefined && String((req.body as any).etimsMode).trim() !== "off") {
+    console.warn("[etims] eTIMS is disabled in this build — forcing etims_mode to 'off' (real adapter not enabled).");
+    (req.body as any).etimsMode = "off";
+  }
   for (const [bodyKey, dbKey] of Object.entries(etimsKeys)) {
     if ((req.body as any)[bodyKey] !== undefined) {
       await query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [dbKey, String((req.body as any)[bodyKey]).trim()]);
@@ -3763,16 +3768,16 @@ app.post("/api/admin/credit-notes", ownerAuthMiddleware, requirePermission("cred
   const cn = await createCreditNote({ orderId: Number(orderId), reason: reason || "", createdBy: user.sub, reasonCode: resolvedReasonCode, items: orderItems });
   if (!cn) { res.status(400).json({ error: "Order not found or credit note creation failed." }); return; }
 
-  const etimsData = {
-    cnNumber: `CN-${cn.id}`,
-    controlCode: "",
-    serialNumber: cn.id,
-    internalData: "",
-    signatureData: "",
-  };
-  await submitCreditNoteToEtims(cn.id, etimsData);
-  const finalCn = await getCreditNote(cn.id);
-  res.status(201).json(finalCn || cn);
+  // eTIMS is DISABLED: credit notes are NOT marked as KRA-submitted (the real
+  // KRA adapter is not enabled). Warn loudly if an operator still expects it.
+  try {
+    const etimsMode = (await queryOne("SELECT value FROM settings WHERE key = 'etims_mode'"))?.value || "off";
+    if (etimsMode !== "off") {
+      console.warn(`[etims] eTIMS mode is '${etimsMode}' but eTIMS is disabled in this build — credit note #${cn.id} was NOT submitted to KRA.`);
+    }
+  } catch { /* non-fatal */ }
+
+  res.status(201).json(cn);
   if (order.customerEmail) {
     const settings = await getSettings();
     const { subject: emailSub, html } = creditNoteEmail(order.customerName || "Customer", cn.id, reason || "", String(cn.totalAmount || order.subtotal || 0), settings.currency, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`, settings.storeName);

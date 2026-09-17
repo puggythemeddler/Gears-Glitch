@@ -1,5 +1,11 @@
 # eTIMS Integration — KRA Compliance Document
 
+> **STATUS (updated 2026-09-17):** eTIMS is **DISABLED** in this build. This document is the
+> implementation **specification** (VSCU/OSCU), not production behaviour. No invoice or credit note is
+> submitted to KRA, and nothing is marked as KRA-`submitted`. A production KRA adapter must be
+> implemented (behind an explicit feature flag) before any claim of eTIMS compliance is made. Do not
+> set `etims_mode` expecting real e-invoicing — the server forces it to `off`.
+
 > **System:** TIS (Trade Information System) — Online Retail Platform
 > **Version:** 1.0
 > **Date:** July 2026

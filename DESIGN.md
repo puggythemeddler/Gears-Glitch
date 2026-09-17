@@ -1,6 +1,6 @@
 ---
 name: Gear&Glitch
-description: Multi-tenant electronics retail and repair platform — POS, inventory, repairs, and KRA eTIMS invoicing
+description: Multi-tenant electronics retail and repair platform — POS, inventory, repairs, and tax-compliant invoicing (KRA eTIMS submission planned, not yet enabled)
 colors:
   till-orange: "#c2410c"
   till-orange-deep: "#9a3412"

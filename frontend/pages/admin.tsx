@@ -3936,8 +3936,6 @@ function AdminCompliance() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
-  const [etimsMode, setEtimsMode] = useState("off");
-  useEffect(() => { if (settings?.etimsMode) setEtimsMode(settings.etimsMode); }, [settings?.etimsMode]);
 
   async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -3949,14 +3947,6 @@ function AdminCompliance() {
         body: JSON.stringify({
           googleClientId: fd.get("googleClientId"),
           kraPin: fd.get("kraPin"),
-          etimsSerialPrefix: fd.get("etimsSerialPrefix"),
-          etimsMode: fd.get("etimsMode"),
-          etimsBranchId: fd.get("etimsBranchId"),
-          etimsDeviceSerial: fd.get("etimsDeviceSerial"),
-          etimsVscuUrl: fd.get("etimsVscuUrl"),
-          etimsOscuApiUrl: fd.get("etimsOscuApiUrl"),
-          etimsOscuConsumerKey: fd.get("etimsOscuConsumerKey"),
-          etimsOscuConsumerSecret: fd.get("etimsOscuConsumerSecret"),
         }),
       });
       setMsg("Compliance settings saved.");
@@ -3982,21 +3972,12 @@ function AdminCompliance() {
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <h3 style={{ marginTop: 0 }}>eTIMS / KRA Compliance</h3>
           <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
-            VSCU (Virtual Sales Control Unit) uses a local JAR bridge. OSCU (Online Sales Control Unit) communicates directly with KRA's cloud API.
+            eTIMS e-invoicing is <strong>disabled</strong> in this build. A production KRA adapter
+            (VSCU/OSCU) has not been enabled, so no invoice or credit note is submitted to KRA and
+            nothing is marked as KRA-"submitted". When a real adapter ships it will replace this
+            notice. Until then invoices and receipts print as standard tax documents.
           </p>
-          <div className="field"><label>Integration Mode<select name="etimsMode" value={etimsMode} onChange={(e) => setEtimsMode(e.target.value)}><option value="off">Off</option><option value="vscu">VSCU (Local JAR)</option><option value="oscu">OSCU (Cloud API)</option></select></label></div>
           <div className="field"><label>KRA PIN<input name="kraPin" defaultValue={settings?.kraPin || ""} placeholder="P051234567Z" /></label></div>
-          {etimsMode === "vscu" ? <>
-            <div className="field"><label>Branch ID<input name="etimsBranchId" defaultValue={settings?.etimsBranchId || "00"} placeholder="00" /></label></div>
-            <div className="field"><label>Device Serial No.<input name="etimsDeviceSerial" defaultValue={settings?.etimsDeviceSerial || "dvc001"} placeholder="dvc001" /></label></div>
-            <div className="field"><label>VSCU Server URL<input name="etimsVscuUrl" defaultValue={settings?.etimsVscuUrl || "http://localhost:8088"} placeholder="http://localhost:8088" /></label></div>
-            <div className="field"><label>eTIMS Serial Prefix<input name="etimsSerialPrefix" defaultValue={settings?.etimsSerialPrefix || "01"} placeholder="01" /></label></div>
-          </> : <>
-            <div className="field"><label>Branch ID<input name="etimsBranchId" defaultValue={settings?.etimsBranchId || "00"} placeholder="00" /></label></div>
-            <div className="field"><label>OSCU API URL<input name="etimsOscuApiUrl" defaultValue={settings?.etimsOscuApiUrl || "https://etims.kra.go.ke/api"} placeholder="https://etims.kra.go.ke/api" /></label></div>
-            <div className="field"><label>Consumer Key<input name="etimsOscuConsumerKey" type="password" autoComplete="new-password" defaultValue={settings?.etimsOscuConsumerKey || ""} placeholder="OSCU consumer key" /></label></div>
-            <div className="field"><label>Consumer Secret<input name="etimsOscuConsumerSecret" type="password" autoComplete="new-password" defaultValue={settings?.etimsOscuConsumerSecret || ""} placeholder="OSCU consumer secret" /></label></div>
-          </>}
         </div>
         {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", marginBottom: "0.75rem" }}>{msg}</p>}
         <RippleButton type="submit" loading={saving}>Save compliance settings</RippleButton>

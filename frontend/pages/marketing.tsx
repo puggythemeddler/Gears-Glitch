@@ -34,7 +34,7 @@ const NAV_LINKS = [
 ];
 
 const LIFE_CYCLE = [
-  { num: "01", icon: "store", title: "SELL", desc: "Counter, web, or WhatsApp. Sales ring up in seconds and settle by M-Pesa or card, on a receipt or an eTIMS invoice." },
+  { num: "01", icon: "store", title: "SELL", desc: "Counter, web, or WhatsApp. Sales ring up in seconds and settle by M-Pesa or card, on a standard tax receipt." },
   { num: "02", icon: "box", title: "TRACK", desc: "Stock is branch-accurate. Every sale, transfer, delivery, and repair part updates your on-hand numbers in real time." },
   { num: "03", icon: "wrench", title: "SERVICE", desc: "What you sell becomes an asset. Repairs, quotes, and technician work attach to the item — not to anyone&apos;s memory." },
   { num: "04", icon: "shield", title: "WARRANTY", desc: "Coverage starts at the sale and follows the serial number. Claims share a screen with the purchase and the repairs." },
@@ -132,7 +132,7 @@ const FAQS = [
   { q: "Can I import my existing data?", a: "Yes. Import products, customers, and suppliers through the admin panel, including bulk CSV uploads for large catalogs." },
   { q: "How do repairs work?", a: "Create a ticket, assign a technician, generate a quote, and track every stage until collection. Customers get updates by email and WhatsApp, and can track progress themselves." },
   { q: "How does warranty tracking work?", a: "Coverage is registered at the point of sale against the item's serial number. A dedicated Warranty panel shows every active, expiring, and expired warranty in your store — searchable by customer, product, or serial — so claims are decided in seconds, not an argument." },
-  { q: "Is KRA eTIMS compliance built in?", a: "Yes. Every invoice and credit note carries a proper eTIMS control code and serial numbers, so your records are always audit-ready." },
+  { q: "Is KRA eTIMS compliance built in?", a: "Not yet. eTIMS submission is disabled until a production KRA adapter ships — invoices print as standard tax documents with a full VAT breakdown, but nothing is submitted to KRA or marked as eTIMS-compliant today." },
   { q: "Can I try before I buy?", a: "Yes. The Starter plan is free and includes core features. Upgrade to Growth, Pro, or Enterprise whenever you need more." },
 ];
 
@@ -385,8 +385,8 @@ function CommercePanel() {
           <div className="mk-detail-value">KES 7,600</div>
         </div>
         <div className="mk-detail">
-          <div className="mk-detail-label">eTIMS</div>
-          <div className="mk-detail-value">Control code ready</div>
+          <div className="mk-detail-label">Invoice</div>
+          <div className="mk-detail-value">VAT breakdown included</div>
         </div>
       </div>
       <div className="mk-row-actions">
@@ -678,7 +678,7 @@ function MarketingContent() {
           bullets={[
             { icon: "store", title: "Counter and online sales", desc: "A barcode-friendly POS, an online storefront, and campaign pages — all reading from the same stock and the same customers." },
             { icon: "card", title: "Payments that reconcile themselves", desc: "M-Pesa pushes straight to the till with a real confirmation before a sale completes. Cash and bank transfers are tracked the same way." },
-            { icon: "fileText", title: "eTIMS-ready documents", desc: "Quotes convert to invoices in one click. Every receipt and credit note carries a KRA control code — audit-ready by default." },
+            { icon: "fileText", title: "Tax-clear documents", desc: "Quotes convert to invoices in one click. Every receipt carries an itemised VAT breakdown and clear tax totals." },
             { icon: "sliders", title: "Listings that sort and filter", desc: "Storefront categories, groups, and campaigns sort by newest, price, or name, filter what you see, and page through results 12 at a time — no endless scroll." },
             { icon: "monitor", title: "A calm storefront that matches your brand", desc: "A clean, flat hero in your brand colors that follows each visitor's device theme. No flashy countdowns, glow, or effects — just the products, front and centre." },
             { icon: "briefcase", title: "An admin workspace built for work", desc: "A focused staff portal: operational dashboard with revenue and needs-attention lists, sortable tables, semantic status colors, and keyboard-friendly controls. No gimmicks." },

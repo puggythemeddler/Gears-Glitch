@@ -3587,10 +3587,11 @@ async function generateEtimsInvoiceNumber(): Promise<string> {
   return `${prefix}${branchId}-${serial}`;
 }
 
-async function createEtimsSalesTransaction(data: { invoiceNumber: string; items: { name: string; quantity: number; unitPrice: number; taxAmount: number }[]; totalTax: number; totalAmount: number; paymentType: string }): Promise<any> {
-  const mode = await getEtimsMode();
-  if (mode === "off") return { success: true, mode: "off" };
-  return { success: true, mode, invoiceNumber: data.invoiceNumber, submitted: false };
+async function createEtimsSalesTransaction(_data: { invoiceNumber: string; items: { name: string; quantity: number; unitPrice: number; taxAmount: number }[]; totalTax: number; totalAmount: number; paymentType: string }): Promise<any> {
+  // eTIMS is DISABLED in this build (no production KRA adapter). This function
+  // exists only so a future adapter can replace it; it never submits today.
+  console.warn("[etims] eTIMS is DISABLED in this build — no KRA submission performed (real adapter not enabled).");
+  return { success: true, mode: "off", submitted: false, disabled: true };
 }
 
 async function createOrderInvoice(orderId: number): Promise<OrderInvoice> {
@@ -3634,12 +3635,11 @@ async function createCreditNote(data: { orderId: number; reason: string; reasonC
   return await getCreditNote(creditNoteId);
 }
 
-async function submitCreditNoteToEtims(creditNoteId: number, etimsData: { cnNumber: string; controlCode: string; serialNumber: number; internalData: string; signatureData: string }): Promise<boolean> {
-  const result = await query(
-    "UPDATE credit_notes SET etims_cn_number = $1, etims_control_code = $2, etims_serial_number = $3, etims_internal_data = $4, etims_signature_data = $5, etims_submitted_at = NOW()::text, status = 'submitted' WHERE id = $6",
-    [etimsData.cnNumber, etimsData.controlCode, etimsData.serialNumber, etimsData.internalData, etimsData.signatureData, creditNoteId]
-  );
-  return (result.rowCount ?? 0) > 0;
+async function submitCreditNoteToEtims(_creditNoteId: number, _etimsData: { cnNumber: string; controlCode: string; serialNumber: number; internalData: string; signatureData: string }): Promise<boolean> {
+  // eTIMS is DISABLED — never fabricate a "submitted" credit note. No caller
+  // may mark a credit note as KRA-submitted until a real adapter ships.
+  console.warn("[etims] eTIMS is DISABLED in this build — refusing to mark credit note as KRA-submitted.");
+  return false;
 }
 
 async function getCreditNote(id: number): Promise<CreditNote | undefined> {

@@ -7,7 +7,7 @@
 
 > This document is the Phase 0 deliverable. It captures the current state of the platform across all audit categories, classifies every finding by severity, and documents risk, fix, migration impact, regression risk, and testing required.
 
-> **STATUS (updated 2026-09-17, Phases 1–3):** this is a Phase-0 snapshot. Live source of truth: `PRODUCTION_READINESS_AUDIT_FULL.md` (A–G with per-phase addenda). Removed/changed since: destructive boot DDL/DML (`order_items`/`stock_levels` now `ON DELETE RESTRICT`), warranty↔repair link, branch attribution (migrations 0013/0014), route shadowing, M-Pesa callback auth, eTIMS boot reset, migration runner. One open CRITICAL remains — the eTIMS KRA adapter (stub returns `submitted:false`).
+> **STATUS (updated 2026-09-17, Phases 1–3):** this is a Phase-0 snapshot. Live source of truth: `PRODUCTION_READINESS_AUDIT_FULL.md` (A–G with per-phase addenda). Removed/changed since: destructive boot DDL/DML (`order_items`/`stock_levels` now `ON DELETE RESTRICT`), warranty↔repair link, branch attribution (migrations 0013/0014), route shadowing, M-Pesa callback auth, eTIMS boot reset, migration runner. eTIMS is now DISABLED by design (no open CRITICAL code path) — see Phase 5 in the live report. eTIMS mode is forced to `off`; no invoice/credit note is submitted to KRA.
 
 ---
 
