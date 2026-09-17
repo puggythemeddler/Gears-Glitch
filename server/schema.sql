@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   cancelled INTEGER NOT NULL DEFAULT 0,
   unit_cost DOUBLE PRECISION,
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 
@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS stock_levels (
   quantity_sold INTEGER NOT NULL DEFAULT 0,
   low_stock_threshold INTEGER NOT NULL DEFAULT 5,
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
-  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS stock_movements (
@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   reference_type TEXT,
   reference_id TEXT,
   notes TEXT,
+  branch_id INTEGER REFERENCES branches(id),
   created_by INTEGER,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
@@ -339,6 +340,7 @@ CREATE TABLE IF NOT EXISTS repair_tickets (
   issue_description TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'received',
   assigned_to INTEGER,
+  branch_id INTEGER REFERENCES branches(id),
   eta_at TEXT NOT NULL,
   scheduled_at TEXT,
   diagnosis TEXT NOT NULL DEFAULT '',
@@ -402,6 +404,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   id SERIAL PRIMARY KEY,
   supplier_name TEXT NOT NULL,
   supplier_contact TEXT NOT NULL DEFAULT '',
+  branch_id INTEGER REFERENCES branches(id),
   order_date TEXT NOT NULL DEFAULT (NOW()::text),
   status TEXT NOT NULL DEFAULT 'pending',
   notes TEXT NOT NULL DEFAULT '',
@@ -475,6 +478,7 @@ CREATE TABLE IF NOT EXISTS quotes (
   quote_number TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'draft',
   notes TEXT NOT NULL DEFAULT '',
+  branch_id INTEGER REFERENCES branches(id),
   total DOUBLE PRECISION NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
@@ -498,6 +502,7 @@ CREATE TABLE IF NOT EXISTS stock_take_sessions (
   id SERIAL PRIMARY KEY,
   status TEXT NOT NULL DEFAULT 'in_progress',
   notes TEXT NOT NULL DEFAULT '',
+  branch_id INTEGER REFERENCES branches(id),
   created_by INTEGER REFERENCES users(id),
   completed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (NOW()::text)

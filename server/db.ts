@@ -1250,63 +1250,6 @@ async function runMigrations(): Promise<void> {
     } catch {}
   }
 
-  // Seed stock_on_hand for products that have 0 (run once per migration)
-  try {
-    const zeroStock = await queryAll(`SELECT id FROM products WHERE stock_on_hand = 0 AND is_non_stock = 0`) as any[];
-    for (const p of zeroStock) {
-      const seed = Math.floor(Math.random() * 20) + 5;
-      await query(`UPDATE products SET stock_on_hand = $1 WHERE id = $2`, [seed, p.id]);
-    }
-  } catch {}
-
-  // Fix FK constraints on product-referencing tables to allow CASCADE deletes
-  const cascadeFks = [
-    { table: "order_items", col: "product_id" },
-    { table: "quote_items", col: "product_id" },
-    { table: "purchase_order_items", col: "product_id" },
-    { table: "stock_take_items", col: "product_id" },
-    { table: "stock_snapshots", col: "product_id" },
-    { table: "price_history", col: "product_id" },
-    { table: "product_reviews", col: "product_id" },
-  ];
-  for (const fk of cascadeFks) {
-    try {
-      const conRows = await queryAll(
-        `SELECT con.conname FROM pg_constraint con JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = ANY(con.conkey) WHERE con.conrelid = $1::regclass AND con.confrelid = 'products'::regclass AND a.attname = $2`,
-        [fk.table, fk.col]
-      ) as any[];
-      for (const con of conRows) {
-        if (con.conname && !con.conname.includes("cascade")) {
-          await query(`ALTER TABLE ${fk.table} DROP CONSTRAINT ${con.conname}`);
-          await query(`ALTER TABLE ${fk.table} ADD CONSTRAINT ${fk.table}_${fk.col}_fkey FOREIGN KEY (${fk.col}) REFERENCES products(id) ON DELETE CASCADE`);
-        }
-      }
-    } catch {}
-  }
-
-  // Delete old placeholder/test products that were never ordered
-  const oldProductIds = [
-    "46231", "bp-office-slim", "gl-strike-17", "ml-pro-14", "wl-student-15",
-    "bs-blade-storage", "md-pro-tower", "rs-rack-4u-storage", "bp-workstation-tower",
-    "gl-aurora-15", "feat-bp-office", "ts-tower-smb", "rp-data-recovery",
-    "rp-virus-tuneup", "pr-label-industrial", "pr-inkjet-home", "bs-blade-node",
-    "bs-blade-chassis", "ts-tower-pro", "rs-rack-1u-b", "rs-rack-2u-a",
-    "md-studio-m2", "bp-micro-desk", "gp-entry-storm", "gl-compact-g14",
-    "ml-air-15", "ml-air-m2", "wl-probook-14", "wl-ultralite-13",
-    "feat-pr-laser", "feat-gl-aurora", "gp-titan-ultra", "rp-screen-laptop",
-    "pr-laser-office", "ts-tower-entry", "md-mini-m2", "gl-aurora-15",
-  ];
-  for (const pid of oldProductIds) {
-    try { await query(`DELETE FROM order_items WHERE product_id = $1`, [pid]); } catch {}
-    try { await query(`DELETE FROM quote_items WHERE product_id = $1`, [pid]); } catch {}
-    try { await query(`DELETE FROM purchase_order_items WHERE product_id = $1`, [pid]); } catch {}
-    try { await query(`DELETE FROM stock_take_items WHERE product_id = $1`, [pid]); } catch {}
-    try { await query(`DELETE FROM stock_snapshots WHERE product_id = $1`, [pid]); } catch {}
-    try { await query(`DELETE FROM price_history WHERE product_id = $1`, [pid]); } catch {}
-    try { await query(`DELETE FROM product_reviews WHERE product_id = $1`, [pid]); } catch {}
-    try { await query(`DELETE FROM products WHERE id = $1`, [pid]); } catch {}
-  }
-
   const existingTypes = await queryOne("SELECT COUNT(*) AS c FROM repair_types") as any;
   if (existingTypes && Number(existingTypes.c) === 0) {
     const types = [

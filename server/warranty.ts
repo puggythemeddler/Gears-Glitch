@@ -17,15 +17,27 @@ router.post("/", staffAuthMiddleware, asyncHandler(async (req: Request, res: Res
     res.status(400).json({ error: "warranty_ref is required." });
     return;
   }
+  let claimBranchId: number | null = null;
+  if (serialNumber) {
+    const branchRow = await queryOne(
+      `SELECT o.branch_id FROM order_items oi JOIN orders o ON o.id = oi.order_id
+       WHERE oi.serial_number = $1 AND o.branch_id IS NOT NULL ORDER BY o.created_at DESC LIMIT 1`,
+      [String(serialNumber)]
+    ) as any;
+    if (branchRow && branchRow.branch_id != null && !Number.isNaN(Number(branchRow.branch_id))) {
+      claimBranchId = Number(branchRow.branch_id);
+    }
+  }
   const result = await query(
-    `INSERT INTO warranty_claims (warranty_ref, customer_id, serial_number, repair_ticket_id, notes)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    `INSERT INTO warranty_claims (warranty_ref, customer_id, serial_number, repair_ticket_id, notes, branch_id)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
     [
       String(warrantyRef).trim(),
       customerId != null && !Number.isNaN(Number(customerId)) ? Number(customerId) : null,
       serialNumber ? String(serialNumber) : null,
-      repairTicketId != null && !Number.isNaN(Number(repairTicketId)) ? Number(repairTicketId) : null,
-      notes ? String(notes) : ""
+      repairTicketId != null && String(repairTicketId).trim() ? String(repairTicketId).trim() : null,
+      notes ? String(notes) : "",
+      claimBranchId
     ]
   );
   const claim = result.rows[0];

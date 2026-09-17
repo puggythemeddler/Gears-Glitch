@@ -329,15 +329,15 @@ router.get("/warranty", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
   const to = String(req.query.to || allTimeRange().to);
   const range = parseDateRange(from, to) ?? allTimeRange();
   const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
-  // Branch attribution: warranty claims carry no branch column, so they are
-  // attributed via the sale that produced them (claim serial → order line →
-  // order.branch). Claims with no serial link have no branch and only appear in
-  // the unfiltered view.
+  // Branch attribution: claims carry an optional branch_id (stamped at creation
+  // from the sale that produced them); older/unlinked claims are attributed via
+  // claim serial → order line → order.branch. Claims with neither have no branch
+  // and only appear in the unfiltered view.
   const branchJoinClaims = `LEFT JOIN order_items oi ON oi.serial_number = wc.serial_number
     LEFT JOIN orders o ON o.id = oi.order_id`;
-  const branchClaimFilter = branchId ? " AND o.branch_id = $3" : "";
+  const branchClaimFilter = branchId ? " AND COALESCE(wc.branch_id, o.branch_id) = $3" : "";
   const branchOrderFilter = branchId ? " AND o.branch_id = $3" : "";
-  const branchStatusFilter = branchId ? " AND o.branch_id = $1" : "";
+  const branchStatusFilter = branchId ? " AND COALESCE(wc.branch_id, o.branch_id) = $1" : "";
   const claimsParams: any[] = [range.from, range.to, ...(branchId ? [branchId.toString()] : [])];
   const [claims, sold, expiring, byStatus] = await Promise.all([
     queryAll(`SELECT wc.* FROM warranty_claims wc
@@ -370,7 +370,7 @@ router.get("/warranty", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
       expiring_next_30_days: expiring?.length ?? 0,
     },
     statuses: byStatus || [],
-    note: "Claim rate = claims ÷ units sold with warranty in the period; blank when no warranty sales are recorded. Claims carry no branch — under a branch filter they are attributed via the sale that produced them (serial → line → branch); unlinked claims appear only in the unfiltered view.",
+    note: "Claim rate = claims ÷ units sold with warranty in the period; blank when no warranty sales are recorded. Branch filter matches stored claim branch (stamped at creation) falling back to the sale branch (serial → line → order); claims with no branch appear only in the unfiltered view.",
   });
 }));
 
@@ -380,11 +380,11 @@ router.get("/warranty/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(asy
   const range = parseDateRange(from, to) ?? allTimeRange();
   const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
   const claimsParams: any[] = [range.from, range.to, ...(branchId ? [branchId.toString()] : [])];
-  const claims = await queryAll(`SELECT wc.warranty_ref, wc.status, wc.claim_date, wc.resolution_date, wc.serial_number, o.branch_id
+  const claims = await queryAll(`SELECT wc.warranty_ref, wc.status, wc.claim_date, wc.resolution_date, wc.serial_number, COALESCE(wc.branch_id, o.branch_id) AS branch_id
       FROM warranty_claims wc
       LEFT JOIN order_items oi ON oi.serial_number = wc.serial_number
       LEFT JOIN orders o ON o.id = oi.order_id
-      WHERE wc.claim_date::timestamp >= $1 AND wc.claim_date::timestamp < ($2::date + interval '1 day')${branchId ? " AND o.branch_id = $3" : ""}
+      WHERE wc.claim_date::timestamp >= $1 AND wc.claim_date::timestamp < ($2::date + interval '1 day')${branchId ? " AND COALESCE(wc.branch_id, o.branch_id) = $3" : ""}
       ORDER BY wc.claim_date DESC`, claimsParams);
   const csv = toCsv(
     (claims || []).map((c: any) => ({ ref: c.warranty_ref, status: c.status, serial: c.serial_number || "", claim_date: c.claim_date, resolution_date: c.resolution_date || "", branch_id: c.branch_id ?? "" })),
