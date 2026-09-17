@@ -548,7 +548,7 @@ function CustomerNotifications() {
       {logs.length === 0 ? <p className="muted">No notifications yet.</p> : (
         <div className="table-wrap" style={{ maxWidth: 760 }}>
           <table className="data-table" style={{ fontSize: "0.8rem" }}>
-            <thead><tr><th>Date</th><th>Type</th><th>Channel</th><th>Status</th></tr></thead>
+            <thead><tr><th>Date</th><th>Type</th><th>Channel</th><th>Status</th><th>Reason</th></tr></thead>
             <tbody>
               {logs.map((l: any) => (
                 <tr key={l.id}>
@@ -556,6 +556,7 @@ function CustomerNotifications() {
                   <td>{escapeHtml(l.subject || l.event_type)}</td>
                   <td>{escapeHtml(l.channel)}</td>
                   <td style={{ color: l.status === "sent" ? "var(--success)" : l.status === "failed" ? "var(--danger)" : "var(--text-secondary)", fontWeight: 600 }}>{escapeHtml(l.status)}</td>
+                  <td style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>{l.status !== "sent" && l.error_message ? escapeHtml(l.error_message) : "—"}</td>
                 </tr>
               ))}
             </tbody>

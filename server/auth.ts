@@ -85,6 +85,7 @@ interface AuthResult {
   role?: string;
   totpRequired?: boolean;
   permissions?: string[];
+  created?: boolean;
 }
 
 function getJwtSecret(): string {
@@ -365,6 +366,7 @@ async function googleLogin(googleToken: string): Promise<AuthResult> {
     const name = payload.name || email.split("@")[0];
 
     let customer = await findCustomerByEmail(email);
+    const created = !customer;
     if (!customer) {
       const { createCustomer } = require("./db");
       const randomPass = crypto.randomBytes(16).toString("hex");
@@ -382,7 +384,7 @@ async function googleLogin(googleToken: string): Promise<AuthResult> {
       name: customer.name,
       role: "customer",
     }, "7d");
-    return { ok: true, token, name: customer.name, email: customer.email, role: "customer" };
+    return { ok: true, token, name: customer.name, email: customer.email, role: "customer", created };
   } catch (err: any) {
     return { ok: false, error: err.message || "Google login failed." };
   }

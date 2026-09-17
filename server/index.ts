@@ -376,7 +376,7 @@ import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrde
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
-import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus } from "./mpesa";
+import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus, callbackBaseUrl } from "./mpesa";
 import bcrypt from "bcryptjs";
 import { htmlToPdf, closeBrowser, warmPdf } from "./pdf";
 import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml, addCalendarMonthsClamped } from "./routes/shared";
@@ -928,19 +928,38 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
 
   // Extract transaction metadata if successful
   let mpesaReceipt: string | undefined;
+  let paidAmount: number | null = null;
   if (resultCode === 0) {
     const metadata = stkCallback.CallbackMetadata?.Item;
     if (metadata && Array.isArray(metadata)) {
       const receiptItem = metadata.find((item: any) => item.Name === "MpesaReceiptNumber");
       if (receiptItem && receiptItem.Value) mpesaReceipt = String(receiptItem.Value);
+      const amountItem = metadata.find((item: any) => item.Name === "Amount");
+      if (amountItem && amountItem.Value !== undefined) paidAmount = Number(amountItem.Value);
     }
   }
 
-  // Update order in database
+  // Update order in database — atomic amount verification + state transition.
   try {
-    await updateOrderMpesaStatus(checkoutId, resultCode, mpesaReceipt);
+    const applied = await updateOrderMpesaStatus(checkoutId, resultCode, mpesaReceipt, paidAmount);
+    if (resultCode === 0 && mpesaReceipt && !applied.applied) {
+      // A-1/D-4: amount mismatch or an unpayable state — acknowledge with
+      // ResultCode 0 so Safaricom does not retry forever, but the order is
+      // deliberately NOT marked paid. It stays pending for manual reconciliation
+      // and the callback is logged with the reason.
+      console.warn(`[M-Pesa] Callback accepted without marking order paid (${applied.reason || "unknown reason"}): ${checkoutId}`);
+      try {
+        fs.appendFileSync(path.join(__dirname, "..", "data", "mpesa-callback.log"),
+          `${JSON.stringify({ timestamp: new Date().toISOString(), checkoutRequestId: checkoutId, merchantRequestId, resultCode, resultDesc: "Accepted without paid (reconcile manually)", mpesaReceipt, paidAmount, reason: applied.reason })}\n`, "utf-8");
+      } catch { /* non-fatal */ }
+      return res.json({ ResultCode: 0, ResultDesc: "Success" });
+    }
   } catch (err: any) {
-    console.warn("[M-Pesa] Failed to update order status:", err.message);
+    // D-4: never lose a payment. If the DB transition did not happen, acknowledge
+    // with a retryable failure so Safaricom re-delivers the callback (returning
+    // 200 here would silently swallow the payment).
+    console.error("[M-Pesa] Callback processing failed — acknowledging retryable failure:", err.message);
+    return res.status(500).json({ ResultCode: 1, ResultDesc: "Temporary processing failure — retry" });
   }
 
   // Notify the store admin when an order is actually paid (first time).
@@ -1411,7 +1430,11 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
   settings.whatsappAccessToken = "";
   settings.whatsappAppSecret = "";
   settings.whatsappVerifyToken = "";
-  res.json({ ...settings, paymentMethods: await getPaymentMethods(), mpesa: mpesaCfg, springboardMenu: (await getStoreSetting("springboard_menu")) === "true" });
+  // The persisted mpesa_config blob holds credential material — never echo it
+  // back to the client (S-6/P-4); the explicit `mpesa` field is also redacted.
+  settings.mpesa = "";
+  settings.mpesa_config = "";
+  res.json({ ...settings, paymentMethods: await getPaymentMethods(), mpesa: { ...mpesaCfg, consumerSecret: "", passkey: "" }, springboardMenu: (await getStoreSetting("springboard_menu")) === "true" });
 }));
 
 app.post("/api/settings/logo", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
@@ -1988,9 +2011,20 @@ app.get("/api/pos/branches", posAuthMiddleware, asyncHandler(async (_req: Reques
 }));
 
 async function pushPosStk(req: Request, orderId: number, amount: number, mpesaPhone: string): Promise<{ status: "pending" | "failed"; checkoutRequestId?: string | null }> {
-  const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
+  const callbackUrl = `${callbackBaseUrl(req)}/api/mpesa/callback`;
   const accountRef = `POS${orderId}`;
   try {
+    // D-3 duplicate-initiation guard: if a live checkout already exists for this
+    // order, reuse it instead of overwriting with a fresh push (which orphans the
+    // previous callback and risks double-charging if the first one also succeeds).
+    try {
+      const existing = await queryOne("SELECT checkout_request_id, status FROM orders WHERE id = $1", [orderId]) as any;
+      if (existing?.checkout_request_id && !String(existing.checkout_request_id).startsWith("SIM")) {
+        if (existing.status === "pending" || existing.status === "pending_payment") {
+          return { status: "pending", checkoutRequestId: existing.checkout_request_id };
+        }
+      }
+    } catch { /* query failure — fall through to a fresh push */ }
     const stkResult = await stkPush(mpesaPhone, amount, accountRef, callbackUrl);
     const checkoutRequestId = stkResult?.CheckoutRequestID || stkResult?.checkoutRequestId || null;
     if (checkoutRequestId) {
@@ -2650,7 +2684,7 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
     let mpesaRequested = false;
     if (mpesaPhone) {
       try {
-        const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
+        const callbackUrl = `${callbackBaseUrl(req)}/api/mpesa/callback`;
         const accountRef = `ORD${order.id}`;
         const stkResult = await stkPush(mpesaPhone, total, accountRef, callbackUrl);
         const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
@@ -2748,15 +2782,23 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
     let mpesaRequested = false;
     if (paymentMethod === "mpesa" && mpesaPhone) {
       try {
-        const total = order.subtotal + (order.shippingFee || 0);
-        const callbackUrl = `${req.protocol}://${req.get("host")}/api/mpesa/callback`;
-        const accountRef = `ORD${orderId}`;
-        const stkResult = await stkPush(mpesaPhone, total, accountRef, callbackUrl);
-        const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
-        if (checkoutRequestId) {
-          await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, orderId]);
+        // D-3: don't re-push when a live checkout already exists for this order —
+        // the original push may still succeed; a second push would orphan it.
+        const liveRow = await queryOne("SELECT checkout_request_id, status FROM orders WHERE id = $1", [orderId]) as any;
+        const liveCheckout = liveRow?.checkout_request_id && !String(liveRow.checkout_request_id).startsWith("SIM") ? String(liveRow.checkout_request_id) : null;
+        if (liveCheckout && (liveRow.status === "pending" || liveRow.status === "pending_payment")) {
+          mpesaRequested = true;
+        } else {
+          const total = order.subtotal + (order.shippingFee || 0);
+          const callbackUrl = `${callbackBaseUrl(req)}/api/mpesa/callback`;
+          const accountRef = `ORD${orderId}`;
+          const stkResult = await stkPush(mpesaPhone, total, accountRef, callbackUrl);
+          const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
+          if (checkoutRequestId) {
+            await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, orderId]);
+          }
+          mpesaRequested = true;
         }
-        mpesaRequested = true;
       } catch (err: any) {
         console.error("[M-Pesa] STK push failed on order update:", err.message);
       }
@@ -2863,9 +2905,6 @@ app.patch("/api/provider/orders/:id/status", providerAuthMiddleware, asyncHandle
     if (updatedOrder && updatedOrder.customerEmail) {
       const { subject: emailSub, html } = orderStatusEmail(updatedOrder.customerName || "Customer", `#${updatedOrder.id}`, status, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${updatedOrder.id}`);
       sendEmail(updatedOrder.customerEmail, emailSub, html, "order_status");
-    }
-    if (["confirmed", "shipped", "delivered"].includes(status)) {
-      try { notifyCustomerOrderProcessed(Number(req.params.id)).catch(() => {}); } catch { /* ignore */ }
     }
     res.json({ ok: true });
   } catch (err: any) {
@@ -2980,9 +3019,6 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, requirePermission
   if (order && order.customerEmail) {
     const { subject: emailSub, html } = orderStatusEmail(order.customerName || "Customer", `#${order.id}`, status, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`);
     sendEmail(order.customerEmail, emailSub, html, "order_status");
-  }
-  if (["confirmed", "shipped", "delivered"].includes(status)) {
-    try { notifyCustomerOrderProcessed(Number(req.params.id)).catch(() => {}); } catch { /* ignore */ }
   }
 }));
 
@@ -4795,6 +4831,11 @@ app.post("/api/customer/google-login", asyncHandler(async (req: Request, res: Re
   if (!result.ok) { res.status(401).json({ error: result.error }); return; }
   setSessionCookie(res, result.token, 7 * 24 * 3600);
   try { await logAudit(null, result.name || result.email || "customer", "customer_login", "auth", null, { method: "google" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
+  if (result.created) {
+    // One-tap accounts are auto-created on first login — fire the welcome the
+    // same way the full Google flow and password registration do (idempotent).
+    try { notifyCustomerWelcomeByEmail(String(result.email || "")).catch(() => {}); } catch { /* ignore */ }
+  }
   try { await sendCustomerActivityNotification(result.name || "Customer", String(result.email || ""), "login", "google"); } catch (err: any) { console.warn("[notify] Google login notification failed:", err?.message || err); }
   res.json({ token: result.token, name: result.name, email: result.email });
 }));

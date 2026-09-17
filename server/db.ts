@@ -2734,7 +2734,20 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
     );
     const insertOrderId = result.rows[0].id;
     for (const item of quote.items) {
-      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, taxable) VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 1)", [insertOrderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal]);
+      // Quote lines have no warranty columns; preserve coverage from the product
+      // so converting a quote does not silently strip a sold warranty. The
+      // rule used everywhere else applies: product sale-time snapshot, clamps
+      // to month-end (Jan 31 + 1mo -> Feb 28).
+      let hasWarranty = 0, warrantyDuration = 0, wExp: string | null = null;
+      try {
+        const p = (await client.query("SELECT has_warranty, warranty_duration FROM products WHERE id = $1", [item.productId])).rows?.[0] as any;
+        if (p && p.has_warranty && Number(p.warranty_duration) > 0) {
+          hasWarranty = 1;
+          warrantyDuration = Number(p.warranty_duration);
+          wExp = computeWarrantyExpiry(new Date().toISOString(), warrantyDuration);
+        }
+      } catch { /* no-warranty defaults on lookup failure */ }
+      await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1)", [insertOrderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal, hasWarranty, warrantyDuration, wExp]);
     }
     for (const item of quote.items) {
       // I-1/I-4: guarded atomic decrement — if stock_on_hand is insufficient the
@@ -3146,7 +3159,18 @@ async function getOrder(id: number): Promise<Order | undefined> {
 }
 
 async function updateOrderItemWarranty(orderId: number, orderItemId: number, hasWarranty: boolean, warrantyDuration: number): Promise<void> {
-  await query("UPDATE order_items SET has_warranty = $1, warranty_duration = $2 WHERE id = $3 AND order_id = $4", [hasWarranty ? 1 : 0, warrantyDuration, orderItemId, orderId]);
+  // Keeping the sale-time snapshot (warranty_expires) authoritative: when the
+  // admin toggles coverage or changes the term, recompute the expiry from the
+  // order date instead of leaving a stale snapshot that the register/sweep read.
+  let expires: string | null = null;
+  if (hasWarranty && Number(warrantyDuration) > 0) {
+    const row = await queryOne("SELECT created_at FROM orders WHERE id = $1", [orderId]) as any;
+    expires = computeWarrantyExpiry(row?.created_at || new Date().toISOString(), Number(warrantyDuration));
+  }
+  await query(
+    "UPDATE order_items SET has_warranty = $1, warranty_duration = $2, warranty_expires = $3 WHERE id = $4 AND order_id = $5",
+    [hasWarranty ? 1 : 0, Number(warrantyDuration) || 0, expires, orderItemId, orderId]
+  );
 }
 
 async function listOrders(customerId?: number): Promise<Order[]> {
@@ -3251,31 +3275,66 @@ async function releaseOrderHeldStock(orderId: number): Promise<void> {
   });
 }
 
-async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: number, mpesaReceipt?: string): Promise<void> {
+async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: number, mpesaReceipt?: string, callbackAmount?: number | null): Promise<{ applied: boolean; reason?: string }> {
+  let outcome: { applied: boolean; reason?: string } = { applied: false, reason: "order not found" };
   await transaction(async (client) => {
     // FOR UPDATE serialises concurrent callbacks/polls for the same checkout,
     // so a duplicate success callback cannot deduct stock twice, and a late
     // failure callback cannot undo an already-paid order.
-    const order = (await client.query("SELECT id, branch_id, status FROM orders WHERE checkout_request_id = $1 FOR UPDATE", [checkoutRequestId])).rows?.[0] as any;
+    const order = (await client.query(
+      `SELECT id, branch_id, status, subtotal, shipping_fee, discount_amount, gift_card_amount FROM orders WHERE checkout_request_id = $1 FOR UPDATE`,
+      [checkoutRequestId]
+    )).rows?.[0] as any;
     if (!order) return;
     const alreadyPaid = order.status === "paid" || order.status === "delivered";
-    if (resultCode === 0 && mpesaReceipt) {
-      if (alreadyPaid) {
-        // Duplicate success callback — refresh the receipt, never re-deduct.
-        await client.query("UPDATE orders SET mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
-      } else if (order.status === "pending" || order.status === "pending_payment") {
-        await deductReservedStockForOrder(client, order);
-        await client.query("UPDATE orders SET status = 'paid', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
+
+    if (resultCode === 0) {
+      // A-1: the order's stored total is authoritative for the STK amount.
+      // Points redemptions aren't persisted on the order, so reconcile them from
+      // loyalty_transactions (1 point = 1 currency unit). A mismatched callback
+      // is never marked paid — the order stays pending for manual reconciliation.
+      if (mpesaReceipt) {
+        if (callbackAmount != null) {
+          const points = (await client.query(
+            "SELECT COALESCE(SUM(points), 0) AS p FROM loyalty_transactions WHERE order_id = $1 AND type = 'redeem'",
+            [order.id]
+          )).rows?.[0]?.p || 0;
+          const expected = Number(order.subtotal) + Number(order.shipping_fee)
+            - (Number(order.discount_amount) || 0) - (Number(order.gift_card_amount) || 0)
+            - (Number(points) || 0);
+          if (Math.abs(callbackAmount - expected) > 1) {
+            outcome = { applied: false, reason: `amount mismatch (callback ${callbackAmount} vs expected ${expected})` };
+            return;
+          }
+        }
+        if (alreadyPaid) {
+          // Duplicate success callback — refresh the receipt, never re-deduct.
+          await client.query("UPDATE orders SET mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
+          outcome = { applied: true };
+        } else if (order.status === "pending" || order.status === "pending_payment") {
+          await deductReservedStockForOrder(client, order);
+          await client.query("UPDATE orders SET status = 'paid', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
+          outcome = { applied: true };
+        } else {
+          outcome = { applied: false, reason: `order status ${order.status} not payable` };
+        }
+        // 'cancelled' orders are left untouched — their stock was already released.
+      } else {
+        // Success callback WITHOUT a receipt number: money may or may not have
+        // moved, but there is no proof to mark paid. Keep the order pending and
+        // do NOT cancel it — a later receipt/query can still reconcile.
+        outcome = { applied: false, reason: "success callback without receipt — left pending" };
       }
-      // 'cancelled' orders are left untouched — their stock was already released.
     } else {
-      if (alreadyPaid) return;
+      if (alreadyPaid) return; // late failure must not undo an already-paid order
       if (order.status !== "cancelled") {
         await releaseReservedStockForOrder(client, order);
         await client.query("UPDATE orders SET status = 'cancelled', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt || null, order.id]);
+        outcome = { applied: true };
       }
     }
   });
+  return outcome;
 }
 
 async function getOrderByCheckoutRequest(checkoutRequestId: string): Promise<Order | undefined> {

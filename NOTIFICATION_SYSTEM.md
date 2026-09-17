@@ -55,8 +55,8 @@ notification can never fail the business transaction that raised it.
 
 | Event | Dispatched from | Notes |
 |---|---|---|
-| `customer.created` (welcome) | register, Google signup, admin-create customer | personalized greeting; email + WhatsApp |
-| `order.processed` | M-Pesa callback, POS (SIM/poll/pay-cash), provider order status, admin order status | fires once the order is `paid` / `confirmed` / `shipped` / `delivered`; all devices consolidated into one message |
+| `customer.created` (welcome) | register, Google signup, admin-create customer | personalized greeting; email + WhatsApp independently resolved, WhatsApp-only possible; both channels missing → a `skipped` row is logged with the reason |
+| `order.processed` | M-Pesa callback, POS (SIM/poll/pay-cash) | fires only after **verified payment** (status `paid`/`delivered` or an M-Pesa receipt on file); all devices consolidated into one message. Provider/admin status routes do NOT fire it — those customers get the status email directly, so a `confirmed`/`shipped` order that was never paid never triggers a "processed" appreciation |
 | `repair.customer_update` | `POST /api/repairs`, repair status change | device/serial + status, personalized |
 | `warranty.customer_update` | `POST /api/warranty/`, `PUT /api/warranty/:id/status` | claim status + device/serial |
 | `warranty.expiry_reminder` | warranty sweep (boot + every 6h) | opt-in reminder before expiry |
@@ -105,9 +105,10 @@ the customer dashboard. Both default to **opt-in**; only an explicit `false` sup
   `warranty.customer_update:warranty:<claimId>:<status>`,
   `warranty.expiry_reminder:order_item:<itemId>:<expiry>`,
   `customer.created:customer:<id>`.
-- Durable per-channel guard: `notification_log` is checked for an already-`sent` row with the
-  same `idempotency_key` and channel. An already-sent channel is skipped; only a failed channel
-  is retried on the next dispatch.
+- Durable per-channel guard: the per-channel send history (`notification_log` rows for the same
+  `idempotency_key`) is checked FIRST; a channel already `sent` is skipped. A full skip happens
+  only when **both** channels were already sent. Channels that previously failed are retried, so
+  a transient failure never permanently suppresses a notification.
 - In-memory cache (keyed `entityType:entityId:event`, TTL 5 min) remains as a fast path.
 - WhatsApp inbound webhooks additionally dedup by Meta message id (`processedMessageIds`,
   TTL 5 min) — Meta redelivers until a 200.
@@ -118,6 +119,11 @@ the customer dashboard. Both default to **opt-in**; only an explicit `false` sup
 (default **30** days; 7/14/30/60 or a custom value) is stored under the settings key
 `warranty_reminder_days` and clamped to 1–365. The sweep skips cancelled orders, already-expired
 warranties, invalid dates, and warranties already reminded.
+
+To stay safe across multiple app instances, the sweep first takes a Postgres session advisory
+lock (`pg_try_advisory_lock(72748721)` on a dedicated client). If another instance already holds
+it, this instance skips the run entirely; the lock is released in `finally`. This complements
+the per-order `already_reminded` guard so at most one instance sends any given reminder.
 
 ## Admin API
 
@@ -148,8 +154,14 @@ warranties, invalid dates, and warranties already reminded.
 
 - Notification isolation is DB scoping + `customer_id` ownership filters (this codebase is
   single-tenant per database; there is no `tenant_id` column).
-- Recipients for admin events are resolved from store settings only. Expanding to staff users
-  with Owner/Admin roles remains the documented follow-up.
+- Recipients for admin events are resolved from store settings only (a single admin address).
+  Expanding to staff users with Owner/Admin roles remains the documented follow-up — this was
+  deliberately kept to avoid silently adding recipients an owner never configured.
 - WhatsApp template fallback outside the 24-hour customer window requires the
   `general_notification` template; if missing the send fails with a clear logged error instead
   of silently attempting a bad send.
+- WhatsApp sends persist the provider's message id (`waMessageId`) to `notification_log.provider_message_id`
+  so failures can be traced in Meta. The email backend returns a boolean only, so email rows keep
+  `provider_message_id` null.
+- The customer dashboard timeline and the admin log both render failure reasons (`error_message`)
+  so a failed/skipped delivery is visible, not silent; the admin log also shows the provider message id.

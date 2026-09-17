@@ -220,7 +220,7 @@ export default function NotificationSettings() {
           ) : (
             <div className="table-wrap">
               <table className="data-table" style={{ fontSize: "0.8rem" }}>
-                <thead><tr><th>Event</th><th>Channel</th><th>Recipient</th><th>Status</th><th>Entity</th><th>Date</th></tr></thead>
+                <thead><tr><th>Event</th><th>Channel</th><th>Recipient</th><th>Status</th><th>Provider ID</th><th>Entity</th><th>Date</th></tr></thead>
                 <tbody>
                   {logs.map((l: any) => (
                     <tr key={l.id}>
@@ -231,6 +231,7 @@ export default function NotificationSettings() {
                         <span style={{ color: l.status === "sent" ? "var(--success)" : l.status === "failed" ? "var(--danger)" : "var(--text-secondary)", fontWeight: 600 }}>{l.status}</span>
                         {l.error_message ? <div style={{ fontSize: "0.7rem", color: "var(--danger)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.error_message}>{escapeHtml(l.error_message)}</div> : null}
                       </td>
+                      <td>{l.provider_message_id ? <span style={{ fontSize: "0.72rem", fontFamily: "monospace" }} title={l.provider_message_id} >{escapeHtml(String(l.provider_message_id).slice(0, 18))}{String(l.provider_message_id).length > 18 ? "…" : ""}</span> : <span style={{ color: "var(--text-secondary)", fontSize: "0.72rem" }}>—</span>}</td>
                       <td><span style={{ fontSize: "0.75rem" }}>{escapeHtml(l.entity_type)}#{escapeHtml(String(l.entity_id))}</span></td>
                       <td>{new Date(l.created_at).toLocaleString("en-GB")}</td>
                     </tr>

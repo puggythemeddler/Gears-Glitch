@@ -7,7 +7,7 @@
 // one path.
 
 import { getSettings, getOrder, getStoreSetting, setStoreSetting, findCustomerById, findCustomerByEmail } from "./db";
-import { queryAll, queryOne } from "./db-helpers";
+import { queryAll, queryOne, getPool } from "./db-helpers";
 import { notify } from "./notification-service";
 import {
   welcomeCustomerEmail,
@@ -82,9 +82,15 @@ export function buildOrderDevices(order: any): CustomerDeviceInfo[] {
   return items.filter((i: any) => !i.cancelled).map((i: any) => {
     const device: CustomerDeviceInfo = { name: String(i.name || "Item") };
     if (i.serialNumber) device.serialNumber = String(i.serialNumber);
-    if (i.hasWarranty && i.warrantyExpires) {
+    // Coverage = a sale-time order-item snapshot, a registered serial record, or
+    // a warranty-bearing product. Precedence inside deriveWarranty: order-item
+    // snapshot → serial record → derivation from the sale date + duration.
+    const hasCoverage = i.hasWarranty || !!i.serialWarrantyExpires;
+    if (hasCoverage) {
       const d = deriveWarranty({
         order_item_expires: i.warrantyExpires,
+        warranty_expires: i.serialWarrantyExpires,
+        sold_at: i.serialSoldAt,
         order_created_at: order.createdAt,
         warranty_duration: i.warrantyDuration,
       });
@@ -96,6 +102,23 @@ export function buildOrderDevices(order: any): CustomerDeviceInfo[] {
     }
     return device;
   });
+}
+
+// Enrich order items with the registered serial's warranty record so messages
+// can fall back to serial-level coverage when the order-item snapshot is absent.
+async function enrichOrderItemsWithSerialWarranty(order: any): Promise<void> {
+  const itemIds = (order?.items || []).map((i: any) => Number(i.id)).filter((n: number) => Number.isInteger(n) && n > 0);
+  if (!itemIds.length) return;
+  try {
+    const rows = await queryAll("SELECT order_item_id, sold_at, warranty_expires FROM serial_numbers WHERE order_item_id = ANY($1)", [itemIds]) as any[];
+    for (const r of rows) {
+      const item = (order.items || []).find((i: any) => Number(i.id) === Number(r.order_item_id));
+      if (item) {
+        if (r.sold_at) item.serialSoldAt = r.sold_at;
+        if (r.warranty_expires) item.serialWarrantyExpires = r.warranty_expires;
+      }
+    }
+  } catch { /* optional enrichment — never blocks the message */ }
 }
 
 function orderTotal(order: any): string {
@@ -120,7 +143,22 @@ async function customerContact(order: any): Promise<{ id?: number; name: string;
 
 // ─── Welcome (fires on account creation) ──────────────────────────────────────
 export async function notifyCustomerWelcome(customer: { id: number; name: string; email: string; phone?: string }): Promise<void> {
-  if (!customer?.email) return;
+  const email = String(customer?.email || "").trim();
+  const phone = normalizePhone(customer?.phone);
+  // Channels are resolved independently: an email-only or WhatsApp-only account
+  // still gets a welcome on the channel it does have. If a customer has neither
+  // (anomaly), record a skipped row so the gap is visible in the message log.
+  if (!email && !phone) {
+    try {
+      const { query } = await import("./db-helpers");
+      await query(
+        `INSERT INTO notification_log (event_type, channel, recipient, status, entity_type, entity_id, error_message, customer_id, idempotency_key, created_at)
+         VALUES ('customer.created', 'email', '', 'skipped', 'customer', $1, 'No customer contact channel (email/phone) on file', $2, $3, NOW()::text)`,
+        [String(customer?.id ?? ""), customer?.id || null, `customer.created:customer:${customer?.id}`]
+      );
+    } catch { /* non-fatal */ }
+    return;
+  }
   const settings = await getSettings();
   const storeName = settings.storeName || "My Shop";
   const { subject, html } = welcomeCustomerEmail(customer.name || "there", storeName, `${baseUrl()}/dashboard`);
@@ -134,8 +172,8 @@ export async function notifyCustomerWelcome(customer: { id: number; name: string
     bodyHtml: html,
     audience: "customer",
     customerId: customer.id,
-    recipientEmail: customer.email,
-    recipientPhone: normalizePhone(customer.phone),
+    recipientEmail: email,
+    recipientPhone: phone,
     recipientName: customer.name || "Customer",
     idempotencyKey: `customer.created:customer:${customer.id}`,
   });
@@ -148,8 +186,24 @@ export async function notifyCustomerOrderProcessed(orderId: number): Promise<voi
   const processedStatuses = ["paid", "confirmed", "shipped", "delivered"];
   if (!processedStatuses.includes(String(order.status))) return;
 
+  // order.processed is an "order confirmed AFTER payment" appreciation. It must
+  // never fire on an order whose payment is unverified — provider/admin routes can
+  // mark an order confirmed/shipped without money moving (those customers get the
+  // orderStatusEmail from the route itself). Verified = status paid/delivered
+  // (set only after genuine payment verification) or an M-Pesa receipt on file.
+  try {
+    const core = await queryOne("SELECT status, mpesa_receipt FROM orders WHERE id = $1", [orderId]) as any;
+    const verified = core && (
+      ["paid", "delivered"].includes(String(core.status)) ||
+      (core.mpesa_receipt && String(core.mpesa_receipt).trim() !== "")
+    );
+    if (!verified) return;
+  } catch { return; }
+
   const contact = await customerContact(order);
   if (!contact.email && !contact.phone) return;
+
+  await enrichOrderItemsWithSerialWarranty(order);
 
   const settings = await getSettings();
   const storeName = settings.storeName || "My Shop";
@@ -284,7 +338,38 @@ export async function notifyCustomerWarrantyUpdate(input: {
 }
 
 // ─── Warranty reminder / expired sweep ────────────────────────────────────────
+// Advisory-lock gate: if the app ever runs more than one instance (Render can
+// spin up a second replica), only one process performs the sweep at a time.
+// Messages stay idempotent regardless, so worst case is wasted work without the
+// lock — but this avoids double-sending races across processes during a sweep.
+const WARRANTY_SWEEP_LOCK_KEY = 72748721;
+
 export async function runWarrantyNotificationSweep(): Promise<{ reminders: number; expired: number; checked: number }> {
+  let lock: any = null;
+  let locked = false;
+  try {
+    lock = await getPool().connect();
+    const got = await lock.query("SELECT pg_try_advisory_lock($1) AS locked", [WARRANTY_SWEEP_LOCK_KEY]);
+    locked = !!got?.rows?.[0]?.locked;
+    if (!locked) {
+      console.log("[customer-notifications] Warranty sweep skipped — another instance holds the lock");
+      return { reminders: 0, expired: 0, checked: 0 };
+    }
+  } catch {
+    // Lock unavailable (hosted DB without advisory locks, etc.) — sweep anyway;
+    // deterministic per-item idempotency keys keep it safe.
+  }
+  try {
+    return await sweepWarrantiesInner();
+  } finally {
+    if (lock) {
+      try { await lock.query("SELECT pg_advisory_unlock($1)", [WARRANTY_SWEEP_LOCK_KEY]); } catch { /* best-effort */ }
+      lock.release();
+    }
+  }
+}
+
+async function sweepWarrantiesInner(): Promise<{ reminders: number; expired: number; checked: number }> {
   const reminderDays = await getWarrantyReminderDays();
   let rows: any[] = [];
   try {

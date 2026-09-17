@@ -62,6 +62,88 @@ describe("customer notification derivation (pure)", () => {
     });
     assert.equal(devices.length, 0);
   });
+
+  it("deriveWarranty prefers the order-item snapshot over a conflicting serial expiry", () => {
+    const d = deriveWarranty({
+      order_created_at: "2020-01-01T00:00:00Z",
+      order_item_expires: "2099-12-31",
+      warranty_expires: "2020-06-01",
+      warranty_duration: 12,
+    });
+    assert.equal(isoDay(d.expiry!), "2099-12-31");
+    assert.equal(d.status, "active");
+  });
+
+  it("deriveWarranty falls back to the serial record when the order-item snapshot is absent", () => {
+    const d = deriveWarranty({
+      order_created_at: "2020-01-01T00:00:00Z",
+      order_item_expires: null,
+      warranty_expires: "2021-03-15",
+      warranty_duration: 12,
+    });
+    assert.equal(isoDay(d.expiry!), "2021-03-15");
+  });
+
+  it("deriveWarranty derives from the serial sale date when no expiry is recorded anywhere", () => {
+    const d = deriveWarranty({
+      sold_at: "2023-01-15T10:00:00Z",
+      order_created_at: "2020-01-01T00:00:00Z",
+      warranty_duration: 1,
+    });
+    assert.equal(isoDay(d.expiry!), "2023-02-15");
+  });
+
+  it("deriveWarranty reports expired coverage", () => {
+    const d = deriveWarranty({ order_created_at: "2019-01-01T00:00:00Z", order_item_expires: "2020-01-01" });
+    assert.equal(d.status, "expired");
+    assert.ok((d.daysLeft ?? 0) < 0);
+  });
+
+  it("deriveWarranty returns 'none' when only a serial exists without expiry or duration", () => {
+    const d = deriveWarranty({ sold_at: "2024-01-01T00:00:00Z", warranty_duration: 0 });
+    assert.equal(d.expiry, null);
+    assert.equal(d.status, "none");
+  });
+
+  it("buildOrderDevices falls back to the registered serial warranty record", () => {
+    const devices = buildOrderDevices({
+      createdAt: "2020-01-01T00:00:00Z",
+      items: [{ name: "Laptop", serialNumber: "SN-9", hasWarranty: 1, warrantyExpires: null, serialWarrantyExpires: "2099-12-31", serialSoldAt: "2020-01-15T00:00:00Z", warrantyDuration: 12, cancelled: 0 }],
+    });
+    assert.equal(devices[0].warrantyExpiry, "2099-12-31");
+    assert.equal(devices[0].warrantyStatus, "active");
+  });
+
+  it("buildOrderDevices keeps the order-item snapshot authoritative over a stale serial expiry", () => {
+    const devices = buildOrderDevices({
+      createdAt: "2020-01-01T00:00:00Z",
+      items: [{ name: "Laptop", hasWarranty: 1, warrantyExpires: "2099-06-30", serialWarrantyExpires: "2020-01-01", warrantyDuration: 12, cancelled: 0 }],
+    });
+    assert.equal(devices[0].warrantyExpiry, "2099-06-30");
+  });
+
+  it("buildOrderDevices derives expiry from the serial sale date", () => {
+    const devices = buildOrderDevices({
+      createdAt: "2020-01-01T00:00:00Z",
+      items: [{ name: "Laptop", hasWarranty: 1, warrantyExpires: null, serialSoldAt: "2023-01-15T00:00:00Z", warrantyDuration: 1, cancelled: 0 }],
+    });
+    assert.equal(devices[0].warrantyExpiry, "2023-02-15");
+  });
+
+  it("buildOrderDevices aggregates multiple serialized devices", () => {
+    const devices = buildOrderDevices({
+      createdAt: "2020-01-01T00:00:00Z",
+      items: [
+        { id: 1, name: "Laptop", hasWarranty: 1, warrantyExpires: "2099-01-01", serialNumber: "SN-A", cancelled: 0 },
+        { id: 2, name: "Phone", hasWarranty: 1, warrantyExpires: "2099-02-02", serialNumber: "SN-B", cancelled: 0 },
+        { id: 3, name: "Cable", hasWarranty: 0, cancelled: 0 },
+      ],
+    });
+    assert.equal(devices.length, 3);
+    assert.equal(devices[0].serialNumber, "SN-A");
+    assert.equal(devices[1].warrantyExpiry, "2099-02-02");
+    assert.equal(devices[2].warrantyStatus, undefined);
+  });
 });
 
 // ─── DB-backed (opt-in) ───────────────────────────────────────────────────────

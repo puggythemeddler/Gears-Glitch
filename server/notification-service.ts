@@ -224,10 +224,11 @@ async function sendNotifWhatsApp(
   entityType: string = "staff",
   entityId: number = 0,
   entityName: string = "My Shop"
-): Promise<{ status: NotificationStatus; error?: string }> {
+): Promise<{ status: NotificationStatus; error?: string; messageId?: string }> {
   try {
-    await sendWhatsAppMessage(to, text, entityType, entityId, entityName || "My Shop");
-    return { status: "sent" };
+    const r = await sendWhatsAppMessage(to, text, entityType, entityId, entityName || "My Shop");
+    if (r.ok) return { status: "sent", messageId: r.messageId };
+    return { status: "failed", error: r.error || "WhatsApp send failed" };
   } catch (err: any) {
     return { status: "failed", error: err?.message || "WhatsApp send error" };
   }
@@ -276,11 +277,16 @@ export async function dispatchNotification(ctx: NotificationContext): Promise<No
   // Deterministic idempotency key (never a timestamp) scoped per audience so an
   // admin and a customer notification for the same entity do not collide.
   const idempotencyKey = ctx.idempotencyKey || `${ctx.entityType}:${ctx.entityId}:${ctx.event}:${audience}`;
-  if (isDuplicate(idempotencyKey)) {
-    console.log(`[notification-service] Skipping duplicate event: ${idempotencyKey}`);
+  // Durable per-channel state FIRST: previously-sent channels are never re-sent,
+  // and a failed/skipped channel stays retryable. The in-memory cache is only
+  // consulted to collapse rapid repeats of a FULLY-delivered dispatch, so a
+  // wholesale retry of a failed channel within the TTL is no longer dropped.
+  const alreadySent = await getSentChannels(idempotencyKey);
+  if (alreadySent.size >= 2 && isDuplicate(idempotencyKey)) {
+    console.log(`[notification-service] Skipping duplicate event (all channels delivered): ${idempotencyKey}`);
     return result;
   }
-  const alreadySent = await getSentChannels(idempotencyKey);
+  isDuplicate(idempotencyKey); // warm the cache (result intentionally ignored)
 
   const prefs = await getPreferences();
   const eventPrefs = prefs[ctx.event] || { email: false, whatsapp: false };
@@ -342,7 +348,7 @@ export async function dispatchNotification(ctx: NotificationContext): Promise<No
     for (const phone of phoneTargets) {
       const waResult = await sendNotifWhatsApp(phone, ctx.bodyText, storeName, waEntityType, waEntityId, waEntityName);
       result.whatsapp = { ...waResult, recipient: phone };
-      await logNotification(ctx.event, "whatsapp", phone, waResult.status, ctx.entityType, ctx.entityId, waResult.error, undefined, logFields);
+      await logNotification(ctx.event, "whatsapp", phone, waResult.status, ctx.entityType, ctx.entityId, waResult.error, waResult.messageId, logFields);
     }
   }
 

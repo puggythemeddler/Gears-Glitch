@@ -1078,6 +1078,7 @@ The system supports both VSCU (local JAR bridge) and OSCU (cloud API) eTIMS mode
 | `MPESA_SHORTCODE` | | |
 | `MPESA_TILL_NUMBER` | | Displayed at checkout |
 | `MPESA_ENV` | sandbox | `sandbox` or `production` |
+| `MPESA_CALLBACK_URL` | | Public HTTPS URL Safaricom must reach for STK callbacks. Defaults to `BASE_URL`, then the request's own host. Set explicitly in production. See [`MPESA_INTEGRATION.md`](MPESA_INTEGRATION.md) |
 | `CLOUDINARY_CLOUD_NAME` | | Cloudinary cloud name (required for image uploads in production) |
 | `CLOUDINARY_API_KEY` | | Cloudinary API key |
 | `CLOUDINARY_API_SECRET` | | Cloudinary API secret |

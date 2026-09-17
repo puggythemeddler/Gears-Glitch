@@ -33,12 +33,51 @@ export function updateMpesaConfig(updates: Partial<MpesaConfig>): void {
   cachedToken = null;
 }
 
+// Resolve the public HTTPS base that Safaricom will reach for the STK callback.
+// Preference order (D-2): explicit MPESA_CALLBACK_URL > BASE_URL > the request's
+// own scheme/host (trust-proxy aware on Render). A request-derived host is only a
+// fallback — the app must not depend on it for production STK pushes.
+export function callbackBaseUrl(req?: { protocol: string; host: string | undefined }): string {
+  const configured = (process.env.MPESA_CALLBACK_URL || process.env.BASE_URL || "").trim().replace(/\/$/, "");
+  if (configured) return configured;
+  return `${req?.protocol || "https"}://${req?.host || "localhost:8020"}`;
+}
+
 export function getMpesaConfig(): MpesaConfig {
   return { ...config };
 }
 
 export function isMpesaConfigured(): boolean {
-  return !!(config.consumerKey && config.consumerSecret && config.shortcode);
+  return !!(config.consumerKey && config.consumerSecret && config.passkey && config.shortcode);
+}
+
+// Daraja requires the password timestamp in East Africa Time (UTC+3, no DST) in
+// yyyymmddHHmmss format. Using UTC here made the generated password drift by 3
+// hours from what Safaricom's servers were deriving — a silent auth failure
+// class (D-1). Kept pure and exported for tests.
+export function mpesaTimestamp(date: Date = new Date()): string {
+  const eat = new Date(date.getTime() + 3 * 60 * 60 * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${eat.getUTCFullYear()}${p(eat.getUTCMonth() + 1)}${p(eat.getUTCDate())}${p(eat.getUTCHours())}${p(eat.getUTCMinutes())}${p(eat.getUTCSeconds())}`;
+}
+
+// Normalize a customer's phone to the 254… international format Daraja wants.
+export function normalizeDarajaPhone(phone?: string | null): { ok: boolean; phone?: string; error?: string } {
+  const digits = String(phone || "").replace(/[^0-9]/g, "");
+  if (digits.startsWith("254")) {
+    const normalized = digits;
+    if (normalized.length !== 12) return { ok: false, error: "M-Pesa phone number must be 12 digits (254…)" };
+    return { ok: true, phone: normalized };
+  }
+  if (digits.startsWith("0") && digits.length === 10) {
+    return { ok: true, phone: `254${digits.slice(1)}` };
+  }
+  // Bare 9-digit Safaricom-style numbers (7XXXXXXXX). A leading 0 here is a
+  // truncated 0XXXXXXXXX and must be rejected, not silently re-prefixed.
+  if (digits.length === 9 && !digits.startsWith("0")) {
+    return { ok: true, phone: `254${digits}` };
+  }
+  return { ok: false, error: "Invalid M-Pesa phone number (expected 0XXXXXXXXX or 254XXXXXXXXX)" };
 }
 
 async function getAccessToken(): Promise<string> {
@@ -56,7 +95,7 @@ async function getAccessToken(): Promise<string> {
 }
 
 function generatePassword(): { password: string; timestamp: string } {
-  const timestamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+  const timestamp = mpesaTimestamp();
   const raw = `${config.shortcode}${config.passkey}${timestamp}`;
   return { password: Buffer.from(raw).toString("base64"), timestamp };
 }
@@ -83,8 +122,9 @@ async function logTransaction(data: any): Promise<void> {
 
 export async function stkPush(phone: string, amount: number, accountRef: string, callbackUrl: string): Promise<any> {
   const { password, timestamp } = generatePassword();
-  const cleanPhone = phone.replace(/[^0-9]/g, "");
-  const partyA = cleanPhone.startsWith("254") ? cleanPhone : `254${cleanPhone.replace(/^0?/, "")}`;
+  const normalized = normalizeDarajaPhone(phone);
+  if (!normalized.ok) throw new Error(normalized.error || "Invalid M-Pesa phone number");
+  const partyA = normalized.phone!;
 
   if (!isMpesaConfigured()) {
     const simulated = {

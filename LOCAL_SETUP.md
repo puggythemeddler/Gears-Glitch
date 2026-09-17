@@ -93,9 +93,11 @@ MPESA_CONSUMER_SECRET=your-sandbox-consumer-secret
 MPESA_PASSKEY=your-sandbox-passkey
 MPESA_SHORTCODE=174379
 MPESA_ENV=sandbox
+# Optional override; falls back to BASE_URL, then the request's own host:
+MPESA_CALLBACK_URL=https://<your-host>/api/mpesa/callback
 ```
 
-The same values can also be entered in **Admin → Settings → Payments**, where they are saved to the database and reloaded on server restart (DB values take precedence over `.env`). Set `MPESA_ENV=production` and use live credentials before taking real payments. The STK push callback URL must be publicly reachable — use a tunnel (e.g. ngrok) pointing to `https://<your-host>/api/mpesa/callback`.
+The same values can also be entered in **Admin → Settings → Payments**, where they are saved to the database and reloaded on server restart (DB values take precedence over `.env`). Set `MPESA_ENV=production` and use live credentials before taking real payments. The STK push callback URL must be publicly reachable — use a tunnel (e.g. ngrok) and set `MPESA_CALLBACK_URL` to `https://<your-host>/api/mpesa/callback`. The passkey is now required: without it the store is treated as not configured and STK pushes run in simulated mode. See [`MPESA_INTEGRATION.md`](MPESA_INTEGRATION.md).
 
 ---
 

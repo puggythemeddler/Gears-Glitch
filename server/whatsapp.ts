@@ -207,7 +207,7 @@ export async function sendWhatsAppListMessage(to: string, bodyText: string, butt
   }
 }
 
-export async function sendWhatsAppMessage(to: string, text: string, entityType: string, entityId: number, entityName: string): Promise<void> {
+export async function sendWhatsAppMessage(to: string, text: string, entityType: string, entityId: number, entityName: string): Promise<{ ok: boolean; messageId?: string; error?: string }> {
   const normalizedTo = normalizePhone(to);
   const conversation = await getWhatsAppConversationByPhone(normalizedTo);
   const withinWindow = isWithin24Hours(conversation?.last_incoming_at || null);
@@ -228,6 +228,7 @@ export async function sendWhatsAppMessage(to: string, text: string, entityType: 
     const result = await sendWhatsAppText(normalizedTo, text);
     await logWhatsAppMessage(normalizedTo, "outbound", "text", text, result.ok ? "sent" : "failed", result.waMessageId, result.error);
     await upsertWhatsAppConversation(normalizedTo, storeType, storeId, storeName, "outbound");
+    return { ok: result.ok, messageId: result.waMessageId, error: result.error };
   } else {
     const template = await getWhatsAppTemplateByName("general_notification");
     if (!template) {
@@ -236,7 +237,7 @@ export async function sendWhatsAppMessage(to: string, text: string, entityType: 
       const errMsg = "Fallback template 'general_notification' is not found in the WhatsApp template store. Add it to enable outbound notifications outside the 24-hour window.";
       await logWhatsAppMessage(normalizedTo, "outbound", "template", text, "failed", undefined, errMsg);
       console.warn("[whatsapp]" + errMsg);
-      return;
+      return { ok: false, error: errMsg };
     }
     const templateName = template.name || "general_notification";
     const lang = template?.language || "en";
@@ -246,6 +247,7 @@ export async function sendWhatsAppMessage(to: string, text: string, entityType: 
     ]);
     await logWhatsAppMessage(normalizedTo, "outbound", "template", text, result.ok ? "sent" : "failed", result.waMessageId, result.error);
     await upsertWhatsAppConversation(normalizedTo, storeType, storeId, storeName, "outbound");
+    return { ok: result.ok, messageId: result.waMessageId, error: result.error };
   }
 }
 
