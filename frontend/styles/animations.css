@@ -1299,18 +1299,20 @@
 }
 
 /* ----- Editorial: hero timeline ----- */
-.motion-js .hero-timeline > * {
-  opacity: 0;
-}
-.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > * {
+.motion-js .hero-timeline > * { opacity: 0; }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(1) { animation-delay: calc(var(--motion-delay, 0s) + 0s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(2) { animation-delay: calc(var(--motion-delay, 0s) + 0.15s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(3) { animation-delay: calc(var(--motion-delay, 0s) + 0.3s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(n+4) { animation-delay: calc(var(--motion-delay, 0s) + 0.45s); }
+
+/* Two-column hero (carousel/split): collapse the wrapper, stagger columns + panel */
+.motion-js .hero-timeline .dy-hero-inner > * { opacity: 0; }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline .dy-hero-inner { opacity: 1; animation: none; }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline .dy-hero-inner > * {
   animation: fadeInUp var(--motion-duration, 0.6s) var(--motion-ease, ease-out) both;
 }
-.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(1) { animation-delay: calc(var(--motion-delay, 0s) + 0s); }
-.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(2) { animation-delay: calc(var(--motion-delay, 0s) + 0.12s); }
-.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(3) { animation-delay: calc(var(--motion-delay, 0s) + 0.24s); }
-.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(4) { animation-delay: calc(var(--motion-delay, 0s) + 0.36s); }
-.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(5) { animation-delay: calc(var(--motion-delay, 0s) + 0.48s); }
-.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(n+6) { animation-delay: calc(var(--motion-delay, 0s) + 0.6s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline .dy-hero-inner > *:nth-child(1) { animation-delay: calc(var(--motion-delay, 0s) + 0s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline .dy-hero-inner > *:nth-child(2) { animation-delay: calc(var(--motion-delay, 0s) + 0.18s); }
 
 /* ----- Mobile: section-level opt-out ----- */
 @media (max-width: 640px) {

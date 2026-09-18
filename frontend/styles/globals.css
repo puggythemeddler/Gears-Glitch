@@ -3910,3 +3910,256 @@ a.about-contact-card:hover {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
+
+/* ============================================================
+   Visual Website Studio — editorial hero (dynamic engine)
+   Replaces the former glass/gradient AI-SaaS hero. Flat surfaces,
+   hairline structure, Archivo display type, Till Orange used as
+   the single accent (per DESIGN.md). Theme-aware via tokens.
+   ============================================================ */
+
+.dy-hero {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: clamp(3rem, 6vw, 5.5rem) 1.5rem;
+  position: relative;
+}
+
+.dy-hero--photo {
+  background-position: center;
+  background-size: cover;
+  border-bottom: 0;
+  color: #fff;
+}
+.dy-hero--photo::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 10, 9, 0.62);
+}
+.dy-hero--photo > *,
+.dy-hero--photo .dy-hero-badge,
+.dy-hero--photo .dy-hero-headline,
+.dy-hero--photo .dy-hero-sub,
+.dy-hero--photo .dy-hero-cta-row,
+.dy-hero--photo .dy-hero-trust,
+.dy-hero--photo .dy-hero-panel,
+.dy-hero--photo .dy-hero-dots { position: relative; z-index: 1; }
+
+.dy-hero-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  align-items: center;
+}
+
+.dy-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  margin-bottom: 1.25rem;
+  border-radius: 9999px;
+  background: var(--primary-subtle);
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.dy-hero-headline {
+  font-family: var(--font-display);
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+}
+
+.dy-hero-sub {
+  max-width: 46ch;
+  margin: 0 0 1.75rem;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.dy-hero-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+.dy-hero-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.8rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.dy-hero-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-subtle);
+}
+.dy-hero-btn--primary {
+  background: var(--primary);
+  color: #fff;
+}
+.dy-hero-btn--primary:hover { background: var(--primary-hover); }
+.dy-hero-btn--secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border-hover);
+}
+.dy-hero-btn--secondary:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+
+.dy-hero-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.dy-hero-trust-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.dy-hero-trust-item svg { color: var(--primary); flex-shrink: 0; }
+
+.dy-hero-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.dy-hero-panel:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+.dy-hero-panel-media {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: 1.5rem;
+  background: var(--bg);
+}
+.dy-hero-panel-media img {
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  transition: opacity 0.3s ease;
+}
+.dy-hero-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.15rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dy-hero-panel-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dy-hero-panel-price {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.dy-hero-dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  padding-top: 1.5rem;
+}
+.dy-hero-dot {
+  width: 28px;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--border-hover);
+  cursor: pointer;
+  transition: background 0.25s ease, width 0.25s ease;
+}
+.dy-hero-dot.is-active {
+  background: var(--primary);
+  width: 40px;
+}
+
+/* Photo-hero inversions (dark overlay) */
+.dy-hero--photo .dy-hero-headline { color: #fff; }
+.dy-hero--photo .dy-hero-sub { color: rgba(255, 255, 255, 0.86); }
+.dy-hero--photo .dy-hero-btn--secondary {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+.dy-hero--photo .dy-hero-btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+.dy-hero--photo .dy-hero-trust { border-top-color: rgba(255, 255, 255, 0.22); }
+.dy-hero--photo .dy-hero-trust-item { color: rgba(255, 255, 255, 0.86); }
+
+@media (max-width: 820px) {
+  .dy-hero-inner { grid-template-columns: 1fr; }
+  .dy-hero-panel-media { min-height: 220px; }
+  .dy-hero-panel-media img { max-height: 220px; }
+}
+
+/* Studio responsive grid (dynamic engine) — column count per breakpoint */
+.sb-responsive-grid {
+  --cols-d: 1;
+  --cols-t: var(--cols-d);
+  --cols-m: var(--cols-t);
+  display: grid;
+  grid-template-columns: repeat(var(--cols-d), minmax(0, 1fr));
+  gap: var(--space-6, 1.5rem);
+}
+@media (max-width: 1024px) {
+  .sb-responsive-grid { grid-template-columns: repeat(var(--cols-t), minmax(0, 1fr)); }
+}
+@media (max-width: 768px) {
+  .sb-responsive-grid { grid-template-columns: repeat(var(--cols-m), minmax(0, 1fr)); }
+  .sb-hide-mobile { display: none !important; }
+}
+
+/* Container queries: drive the same breakpoints from the preview panel
+   width, so the Studio's device switcher previews exact tablet/mobile layout. */
+.sb-responsive-grid { container-type: inline-size; }
+@container (max-width: 1024px) {
+  .sb-responsive-grid { grid-template-columns: repeat(var(--cols-t), minmax(0, 1fr)); }
+}
+@container (max-width: 768px) {
+  .sb-responsive-grid { grid-template-columns: repeat(var(--cols-m), minmax(0, 1fr)); }
+}
+
+.dy-hero { container-type: inline-size; }
+@container (max-width: 820px) {
+  .dy-hero-inner { grid-template-columns: 1fr; }
+  .dy-hero-panel-media { min-height: 220px; }
+  .dy-hero-panel-media img { max-height: 220px; }
+}
