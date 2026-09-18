@@ -27,11 +27,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to test site only
+        env:
+          GIT_SHA: ${{ github.sha }}
+          GIT_MSG: ${{ github.event.head_commit.message }}
+          CP_URL: ${{ secrets.CONTROL_PLANE_URL }}
+          CP_API_KEY: ${{ secrets.CONTROL_PLANE_API_KEY }}
         run: |
           echo "Triggering deploy for the test site only..."
 
           # Check that secrets are configured
-          if [ -z "${{ secrets.CONTROL_PLANE_URL }}" ] || [ -z "${{ secrets.CONTROL_PLANE_API_KEY }}" ]; then
+          if [ -z "$CP_URL" ] || [ -z "$CP_API_KEY" ]; then
             echo "⚠️  Skipping — GitHub Actions secrets not configured."
             echo "Set these in your repo: Settings → Secrets and variables → Actions"
             echo "  CONTROL_PLANE_URL    (e.g. https://gear-glitch-control-plane.onrender.com)"
@@ -40,8 +45,6 @@ jobs:
             exit 0
           fi
 
-          GIT_SHA="${{ github.sha }}"
-          GIT_MSG="${{ github.event.head_commit.message }}"
           if [ -z "$GIT_MSG" ]; then GIT_MSG="manual dispatch"; fi
           GIT_MSG=$(echo "$GIT_MSG" | head -n 1)
 
@@ -49,10 +52,10 @@ jobs:
             '{commit: {sha: $sha, message: $msg}, triggered_by: $by}')
 
           RESP=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "x-api-key: ${{ secrets.CONTROL_PLANE_API_KEY }}" \
+            -H "x-api-key: $CP_API_KEY" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
-            "${{ secrets.CONTROL_PLANE_URL }}/api/deploy-test")
+            "$CP_URL/api/deploy-test")
 
           BODY=$(echo "$RESP" | sed '$d')
           HTTP_CODE=$(echo "$RESP" | tail -n 1)
