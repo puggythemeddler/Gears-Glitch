@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { formatPrice } from "./shared";
 import { Pagination } from "@/components/ui";
+import { normalizeHref } from "@/lib/links";
 
 type SortKey = "newest" | "price-asc" | "price-desc" | "name";
 
@@ -49,7 +50,6 @@ function HeroStarRating({ average }: { average: number }) {
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const { isLoggedIn, userName, settings, isDark } = useApp();
   const [activeIdx, setActiveIdx] = useState(0);
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [liveStats, setLiveStats] = useState<any>(null);
   const [ratings, setRatings] = useState<Record<string, { average: number; count: number }>>({});
 
@@ -66,34 +66,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     "--hero-bg": customBg,
     "--hero-text": heroText,
     "--hero-text-secondary": heroTextSec,
-    "--hero-headline": heroText,
-    "--hero-stat-value": heroText,
-    "--hero-stat-label": heroTextSec,
-    "--hero-product-name": heroText,
-    "--hero-badge-color": bgIsDark ? "#fb923c" : "#c2410c",
-    "--hero-badge-bg": bgIsDark ? "rgba(249, 115, 22, 0.1)" : "rgba(234, 88, 12, 0.08)",
-    "--hero-badge-border": bgIsDark ? "rgba(249, 115, 22, 0.3)" : "rgba(234, 88, 12, 0.3)",
-    "--hero-chip-bg": bgIsDark ? "rgba(255, 255, 255, 0.04)" : "rgba(255, 255, 255, 0.65)",
-    "--hero-chip-border": bgIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(28, 25, 23, 0.12)",
-    "--hero-chip-hover-bg": bgIsDark ? "rgba(249, 115, 22, 0.15)" : "rgba(234, 88, 12, 0.1)",
-    "--hero-chip-hover-border": bgIsDark ? "rgba(249, 115, 22, 0.35)" : "rgba(234, 88, 12, 0.4)",
-    "--hero-chip-hover-text": bgIsDark ? "#fb923c" : "#c2410c",
-    "--hero-img-bg": bgIsDark ? "rgba(255, 255, 255, 0.03)" : "rgba(255, 255, 255, 0.5)",
-    "--hero-img-border": bgIsDark ? "rgba(255, 255, 255, 0.06)" : "rgba(28, 25, 23, 0.08)",
-    "--hero-dot-bg": bgIsDark ? "rgba(255, 255, 255, 0.25)" : "rgba(28, 25, 23, 0.25)",
-    "--hero-dot-active": bgIsDark ? "#fb923c" : "#ea580c",
-    "--hero-dot-hover": bgIsDark ? "rgba(255, 255, 255, 0.5)" : "rgba(28, 25, 23, 0.5)",
-    "--hero-stat-bg": bgIsDark ? "rgba(255, 255, 255, 0.04)" : "rgba(255, 255, 255, 0.65)",
-    "--hero-stat-border": bgIsDark ? "rgba(255, 255, 255, 0.08)" : "rgba(28, 25, 23, 0.1)",
   } as React.CSSProperties) : undefined;
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setPrefersReducedMotion(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
 
   useEffect(() => {
     fetch("/api/storefront-stats").then(r => r.json()).then(setLiveStats).catch(() => {});
@@ -179,56 +152,58 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
         "Secure Payments",
       ];
 
-  const trustText = hero?.trustText || "Trusted by 5,000+ customers across Kenya";
+  const trustStripItems = showTrustStrip
+    ? ["M-Pesa &amp; Cards accepted", "Nationwide delivery", "Warranty on all items", "Nairobi delivery in 24h"]
+    : [];
+  const editorialTrust = Array.from(new Set([...highlights, ...trustStripItems]));
+  const panel = featured.length > 0 ? featured[activeIdx % featured.length] : null;
 
   return (
-    <section className="hero" style={heroStyle}>
-      <div className="hero-inner">
-        <div className="hero-content">
+    <section className="dy-hero" style={heroStyle} aria-label="Featured products">
+      <div className="dy-hero-inner">
+        <div>
           {isLoggedIn && userName && (
-            <div className="hero-greeting">
+            <p className="dy-hero-greeting">
               Welcome back, {userName.split(/\s+/)[0]}
               <span>&mdash; we saved you some great deals</span>
-            </div>
+            </p>
           )}
 
           {badgeActive && (
             badgeLink ? (
-              <a href={badgeLink} className="hero-badge" style={{ textDecoration: "none" }}>
+              <a href={badgeLink} className="dy-hero-badge" style={{ textDecoration: "none" }}>
                 <span className="hero-badge-dot" />
                 <span>{badgeText}</span>
               </a>
             ) : (
-              <span className="hero-badge">
+              <span className="dy-hero-badge">
                 <span className="hero-badge-dot" />
                 <span>{badgeText}</span>
               </span>
             )
           )}
 
-          <h1 className="hero-headline">
-            {headline} <span className="hero-headline-accent">{headlineAccent}</span>
+          <h1 className="dy-hero-headline">
+            {headline} <span style={{ color: "var(--primary)" }}>{headlineAccent}</span>
           </h1>
 
-          <p className="hero-sub">
-            {subtitle}
-          </p>
+          <p className="dy-hero-sub">{subtitle}</p>
 
-          <div className="hero-actions">
-            <Link href={shopNowLink} className="btn btn-primary btn-lg">
+          <div className="dy-hero-cta-row">
+            <Link href={shopNowLink} className="dy-hero-btn dy-hero-btn--primary">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
               {shopNowLabel}
             </Link>
-            <Link href={browseLink} className="btn btn-secondary btn-lg">
+            <Link href={browseLink} className="dy-hero-btn dy-hero-btn--secondary">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
               {browseLabel}
             </Link>
             {showWhatsApp && waPhone && (
               <a
-                href={`https://wa.me/${waPhone}?text=${encodeURIComponent("Hello! I'm interested in your products.")}`}
+                href={normalizeHref(`https://wa.me/${waPhone}?text=${encodeURIComponent("Hello! I'm interested in your products.")}`)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn btn-secondary btn-lg hero-wa-btn"
+                className="dy-hero-btn dy-hero-btn--secondary"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
                 Chat on WhatsApp
@@ -236,122 +211,92 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
             )}
           </div>
 
-          <div className="hero-highlights">
-            {highlights.map((h: string) => (
-              <span key={h} className="hero-highlight">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <div className="dy-hero-trust">
+            {editorialTrust.map((h) => (
+              <span key={h} className="dy-hero-trust-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path d="M2.5 7.2l3.2 3.2 5.8-6.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
                 {h}
               </span>
             ))}
           </div>
 
-          {showTrustStrip && (
-            <div className="hero-truststrip">
-              <span className="hero-truststrip-item">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                M-Pesa &amp; Cards accepted
-              </span>
-              <span className="hero-truststrip-item">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-                Nationwide delivery
-              </span>
-              <span className="hero-truststrip-item">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
-                Warranty on all items
-              </span>
-              <span className="hero-truststrip-item">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Nairobi delivery in 24h
-              </span>
+          {catChips.length > 0 && (
+            <div className="dy-hero-chips">
+              {catChips.map((c: { label: string; href: string }) => (
+                <Link key={c.href} href={normalizeHref(c.href) || "/"} className="dy-hero-chip">{c.label}</Link>
+              ))}
             </div>
           )}
-
-          <div className="hero-chips">
-            {catChips.map((c: { label: string; href: string }) => (
-              <Link key={c.href} href={c.href} className="hero-chip">{c.label}</Link>
-            ))}
-          </div>
         </div>
 
-        <div className="hero-visual">
-          <div className="hero-image-wrap">
-            {featured.length > 0 ? (
-              featured.map((p, i) => (
-                <div
-                  key={p.id}
-                  className={`hero-product-slide${i === activeIdx ? " active" : ""}`}
-                >
-                  {p.salePrice && <span className="hero-sale-badge">Sale</span>}
-                  {p.imageUrl ? (
-                    <img src={p.imageUrl} alt={p.name} className={`hero-product-img${!prefersReducedMotion ? " hero-kenburns" : ""}`} />
-                  ) : (
-                    <div className="hero-product-placeholder">
-                      {p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+        <div>
+          {panel ? (
+            <Link href={`/product?id=${encodeURIComponent(panel.id)}`} className="dy-hero-panel" style={{ textDecoration: "none", color: "var(--text)" }} aria-label={`View ${panel.name}`}>
+              <div className="dy-hero-panel-media">
+                {panel.imageUrl ? (
+                  <img src={panel.imageUrl} alt={panel.name} />
+                ) : (
+                  <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem", textAlign: "center" }}>
+                    {panel.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div className="dy-hero-panel-foot">
+                <div style={{ minWidth: 0 }}>
+                  <span className="dy-hero-panel-name">{panel.name}</span>
+                  {ratings[panel.id] && (
+                    <div className="dy-hero-panel-meta">
+                      <HeroStarRating average={ratings[panel.id].average} />
+                      <span>({ratings[panel.id].count})</span>
+                      {panel.inStock && typeof panel.stockOnHand === "number" && panel.stockOnHand <= 5 && (
+                        <span>Only {panel.stockOnHand} left</span>
+                      )}
                     </div>
                   )}
-                  <div className="hero-product-info">
-                    <span className="hero-product-name">{p.name}</span>
-                    <span className="hero-product-price">
-                      {p.salePrice ? (
-                        <>
-                          <span style={{ textDecoration: "line-through", opacity: 0.6, fontSize: "0.8em", marginRight: "0.35rem" }}>{formatPrice(p.price)}</span>
-                          {formatPrice(p.salePrice)}
-                        </>
-                      ) : formatPrice(p.price)}
-                    </span>
-                    {ratings[p.id] && (
-                      <span className="hero-rating">
-                        <HeroStarRating average={ratings[p.id].average} />
-                        <span>({ratings[p.id].count})</span>
-                      </span>
-                    )}
-                    {p.inStock && typeof p.stockOnHand === "number" && p.stockOnHand <= 5 && (
-                      <span className="hero-stocknote">Only {p.stockOnHand} left</span>
-                    )}
-                  </div>
                 </div>
-              ))
-            ) : (
-              <div className="hero-product-placeholder hero-product-placeholder--large">
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{opacity:0.3}}><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span className="dy-hero-panel-price">
+                  {panel.salePrice ? (
+                    <>
+                      <span style={{ textDecoration: "line-through", opacity: 0.6, fontSize: "0.8em", marginRight: "0.35rem" }}>{formatPrice(panel.price)}</span>
+                      <span style={{ color: "var(--primary)" }}>{formatPrice(panel.salePrice)}</span>
+                    </>
+                  ) : formatPrice(panel.price)}
+                </span>
               </div>
-            )}
-            {featured.length > 1 && (
-              <div className="hero-dots">
-                {featured.map((_, i) => (
-                  <button
-                    key={i}
-                    className={`hero-dot${i === activeIdx ? " active" : ""}`}
-                    onClick={() => setActiveIdx(i)}
-                    aria-label={`Show product ${i + 1}`}
-                  />
-                ))}
+            </Link>
+          ) : (
+            <div className="dy-hero-panel">
+              <div className="dy-hero-panel-media">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
               </div>
-            )}
-          </div>
-
-          <div className="hero-stats">
-            {stats.map((s: { value: string; label: string }, i: number) => (
-              <div
-                key={s.label}
-                className="hero-stat hero-stat-glass"
-                style={{ animationDelay: `${i * 0.3}s` }}
-              >
-                <span className="hero-stat-value">{s.value}</span>
-                <span className="hero-stat-label">{s.label}</span>
-              </div>
-            ))}
-          </div>
+            </div>
+          )}
+          {featured.length > 1 && (
+            <div className="dy-hero-dots">
+              {featured.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`dy-hero-dot${i === activeIdx ? " is-active" : ""}`}
+                  onClick={() => setActiveIdx(i)}
+                  aria-label={`Show product ${i + 1}`}
+                />
+              ))}
+            </div>
+          )}
+          {stats.length > 0 && (
+            <div className="dy-hero-metrics">
+              {stats.map((s: { value: string; label: string }) => (
+                <div key={s.label} className="dy-hero-metric">
+                  <span className="dy-hero-metric-value">{s.value}</span>
+                  <span className="dy-hero-metric-label">{s.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
-
-      <div className="hero-trust">
-        <div className="hero-stars">
-          {[0,1,2,3,4].map((i) => (
-            <svg key={i} width="18" height="18" viewBox="0 0 24 24" style={{ fill: "var(--accent)", stroke: "var(--accent)" }} strokeWidth="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          ))}
-        </div>
-        <span className="hero-trust-text">{trustText}</span>
       </div>
     </section>
   );

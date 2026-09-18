@@ -3919,7 +3919,8 @@ a.about-contact-card:hover {
    ============================================================ */
 
 .dy-hero {
-  background: var(--bg);
+  background: var(--hero-bg, var(--bg));
+  color: var(--hero-text, var(--text));
   border-bottom: 1px solid var(--border);
   padding: clamp(3rem, 6vw, 5.5rem) 1.5rem;
   position: relative;
@@ -3985,7 +3986,7 @@ a.about-contact-card:hover {
   margin: 0 0 1.75rem;
   font-size: 1.05rem;
   line-height: 1.6;
-  color: var(--text-secondary);
+  color: var(--hero-text-secondary, var(--text-secondary));
 }
 
 .dy-hero-cta-row {
@@ -4037,7 +4038,7 @@ a.about-contact-card:hover {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  color: var(--text-secondary);
+  color: var(--hero-text-secondary, var(--text-secondary));
   font-size: 0.85rem;
   font-weight: 500;
 }
@@ -4108,6 +4109,82 @@ a.about-contact-card:hover {
 .dy-hero-dot.is-active {
   background: var(--primary);
   width: 40px;
+}
+
+/* Original-layout extras (reuses the editorial hero structure) */
+.dy-hero-greeting {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 1.25rem;
+  color: var(--hero-text-secondary, var(--text-secondary));
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+.dy-hero-greeting span { color: var(--hero-text-secondary, var(--text-tertiary)); }
+
+.dy-hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+.dy-hero-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--surface);
+  color: var(--hero-text-secondary, var(--text-secondary));
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+}
+.dy-hero-chip:hover {
+  border-color: var(--border-hover);
+  color: var(--hero-text, var(--text));
+  background: var(--surface-hover);
+}
+
+.dy-hero-panel-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.dy-hero-metrics {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.dy-hero-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 1rem 1.15rem;
+  background: var(--surface);
+}
+.dy-hero-metric-value {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dy-hero-metric-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 /* Photo-hero inversions (dark overlay) */
