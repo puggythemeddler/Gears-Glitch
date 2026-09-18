@@ -280,6 +280,9 @@ export async function salesBreakdown(filter: OrderFilter, by: SalesBreakdownBy):
   // stripped) so write-side variants like "M-Pesa"/" mpesa "/"MPESA" share one
   // bucket instead of fragmenting into m-pesa vs mpesa groups.
   const pmNorm = `regexp_replace(LOWER(TRIM(o.payment_method)), '[^a-z0-9]', '', 'g')`;
+  // GROUP BY must use the byte-identical expression, so label/id and group share
+  // one string (Postgres rejects mismatched select/group expressions).
+  const pmLabel = `COALESCE(NULLIF(${pmNorm}, ''), 'unrecorded')`;
   const dim: Record<SalesBreakdownBy, Dim> = {
     product: {
       select: "oi.product_id AS id, oi.name AS label",
@@ -312,9 +315,9 @@ export async function salesBreakdown(filter: OrderFilter, by: SalesBreakdownBy):
       orderLevel: true,
     },
     payment_method: {
-      select: `COALESCE(NULLIF(${pmNorm},''),'unrecorded') AS label, COALESCE(NULLIF(${pmNorm},''),'unrecorded') AS id`,
+      select: `${pmLabel} AS label, ${pmLabel} AS id`,
       join: "",
-      group: `COALESCE(${pmNorm},'')`,
+      group: pmLabel,
       orderLevel: true,
     },
     customer: {
