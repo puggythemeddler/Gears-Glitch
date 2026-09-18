@@ -88,6 +88,7 @@ function ProductPanel({ item }: { item?: Product }) {
   if (!item) return null;
   return (
     <a href={`/product?id=${item.id}`} className="dy-hero-panel" style={{ textDecoration: "none", color: "var(--text)" }} aria-label={`View ${item.name}`}>
+      <span className="dy-hero-panel-tag">Featured</span>
       <div className="dy-hero-panel-media">
         {item.imageUrl ? (
           <img src={item.imageUrl} alt={item.name} />

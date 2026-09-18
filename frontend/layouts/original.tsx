@@ -153,7 +153,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
       ];
 
   const trustStripItems = showTrustStrip
-    ? ["M-Pesa &amp; Cards accepted", "Nationwide delivery", "Warranty on all items", "Nairobi delivery in 24h"]
+    ? ["M-Pesa & Cards accepted", "Nationwide delivery", "Warranty on all items", "Nairobi delivery in 24h"]
     : [];
   const editorialTrust = Array.from(new Set([...highlights, ...trustStripItems]));
   const panel = featured.length > 0 ? featured[activeIdx % featured.length] : null;
@@ -234,6 +234,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
         <div>
           {panel ? (
             <Link href={`/product?id=${encodeURIComponent(panel.id)}`} className="dy-hero-panel" style={{ textDecoration: "none", color: "var(--text)" }} aria-label={`View ${panel.name}`}>
+              <span className="dy-hero-panel-tag">Featured</span>
               <div className="dy-hero-panel-media">
                 {panel.imageUrl ? (
                   <img src={panel.imageUrl} alt={panel.name} />
