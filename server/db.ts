@@ -3170,10 +3170,11 @@ async function createOrder(data: { customerId: number; customerName: string; cus
   // Order + its line items commit atomically so a mid-loop failure can never
   // leave an orphaned order or a partial item set.
   const orderId = await transaction(async (client) => {
+    const invoiceNumber = await generateInvoiceNumber();
     const result = await client.query(
-      `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_city, shipping_county, shipping_postcode, shipping_phone, shipping_fee, notes, subtotal, coupon_id, discount_amount, vat_rate, vat_amount, campaign_id, staff_id, branch_id, processed_by, idempotency_key, source, gift_card_id, gift_card_amount)
-       VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING id`,
-      [data.customerId, data.customerName, data.customerEmail, data.shippingName, data.shippingAddress, data.shippingCity, data.shippingCounty, data.shippingPostcode, data.shippingPhone, data.shippingFee, data.notes || "", subtotal, data.couponId || null, data.discountAmount || 0, vatRate, vatAmount, data.campaignId || null, data.staffId || null, data.branchId || null, data.processedBy || null, data.idempotencyKey || null, data.source || "storefront", data.giftCardId || null, data.giftCardAmount || 0]
+      `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_city, shipping_county, shipping_postcode, shipping_phone, shipping_fee, notes, subtotal, coupon_id, discount_amount, vat_rate, vat_amount, campaign_id, staff_id, branch_id, processed_by, idempotency_key, source, gift_card_id, gift_card_amount, invoice_number)
+       VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING id`,
+      [data.customerId, data.customerName, data.customerEmail, data.shippingName, data.shippingAddress, data.shippingCity, data.shippingCounty, data.shippingPostcode, data.shippingPhone, data.shippingFee, data.notes || "", subtotal, data.couponId || null, data.discountAmount || 0, vatRate, vatAmount, data.campaignId || null, data.staffId || null, data.branchId || null, data.processedBy || null, data.idempotencyKey || null, data.source || "storefront", data.giftCardId || null, data.giftCardAmount || 0, invoiceNumber]
     );
     const oid = result.rows[0].id;
     const costMap: Record<string, number | null> = {};

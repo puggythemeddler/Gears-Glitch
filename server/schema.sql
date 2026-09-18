@@ -138,6 +138,11 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+-- Invoice numbering for order invoices (INV-XXXXX): a dedicated sequence seeded
+-- one past the largest order id so numbering is monotonic and race-free. Tests
+-- run runSchema() only (not migrations), so this mirrors migration 0016.
+CREATE SEQUENCE IF NOT EXISTS order_invoice_number_seq START 1;
+SELECT setval('order_invoice_number_seq', COALESCE((SELECT MAX(id) FROM orders), 0) + 1, false);
 
 CREATE TABLE IF NOT EXISTS order_items (
   id SERIAL PRIMARY KEY,
