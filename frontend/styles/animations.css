@@ -11,6 +11,7 @@
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
@@ -1173,3 +1174,152 @@
 .nf-q { animation: ewQfloat 3s ease-in-out infinite; }
 .nf-q.q2 { animation-delay: 0.8s; }
 .nf-q.q3 { animation-delay: 1.6s; }
+
+/* ============================================================
+   Schema-driven Motion (storefront builder)
+   ------------------------------------------------------------
+   Every state is gated behind `.motion-js` (added by Motion.tsx
+   on the first client mount) so content is never hidden when JS
+   is unavailable or during SSR. Reduced-motion users are handled
+   by the global kill-switch above plus per-section overrides.
+   ============================================================ */
+
+@keyframes motionPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@keyframes motionFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+/* ----- Base item ----- */
+.motion-item {
+  --motion-name: fadeIn;
+  --motion-duration: 0.6s;
+  --motion-delay: 0s;
+  --motion-ease: ease-out;
+  --motion-direction: normal;
+  --motion-repeat: 0;
+  --motion-distance: 16px;
+  --motion-stagger: 0.08s;
+}
+
+/* Per-section reduced-motion override: never hidden, never animated */
+.motion-item.rm-disable,
+.motion-item.rm-disable * {
+  opacity: 1 !important;
+  transform: none !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+/* ----- Entrance: hidden state (JS present only) ----- */
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in) {
+  opacity: 0;
+  will-change: opacity, transform;
+}
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in)[data-anim="fade-up"],
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in)[data-anim="slide-up"] {
+  transform: translateY(var(--motion-distance));
+}
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in)[data-anim="fade-down"] {
+  transform: translateY(calc(var(--motion-distance) * -1));
+}
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in)[data-anim="fade-left"] {
+  transform: translateX(calc(var(--motion-distance) * -1));
+}
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in)[data-anim="fade-right"] {
+  transform: translateX(var(--motion-distance));
+}
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in)[data-anim="scale-in"],
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in)[data-anim="zoom-in"],
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in)[data-anim="bounce-in"] {
+  transform: scale(0.95);
+}
+.motion-js .motion-item[data-anim-type="entrance"]:not(.is-in)[data-anim="blur-in"] {
+  filter: blur(8px);
+}
+
+/* ----- Entrance: play when revealed ----- */
+.motion-js .motion-item[data-anim-type="entrance"].is-in {
+  animation: var(--motion-name) var(--motion-duration) var(--motion-ease) var(--motion-delay) both;
+  animation-direction: var(--motion-direction);
+  animation-iteration-count: calc(var(--motion-repeat, 0) + 1);
+}
+
+/* ----- Interaction presets (pure CSS, safe without JS) ----- */
+.motion-item[data-anim="lift-hover"] {
+  transition: transform 0.3s var(--motion-ease, ease);
+}
+.motion-item[data-anim="lift-hover"]:hover {
+  transform: translateY(-6px);
+}
+.motion-item[data-anim="tilt-hover"] {
+  transition: transform 0.3s var(--motion-ease, ease);
+}
+.motion-item[data-anim="tilt-hover"]:hover {
+  transform: rotate(1.2deg) scale(1.02);
+}
+.motion-item[data-anim="press"] {
+  transition: transform 0.12s var(--motion-ease, ease);
+}
+.motion-item[data-anim="press"]:active {
+  transform: scale(0.97);
+}
+.motion-item[data-anim="image-zoom-hover"] > img,
+.motion-item[data-anim="image-zoom-hover"] > a > img {
+  transition: transform var(--motion-duration, 0.6s) var(--motion-ease, ease);
+}
+.motion-item[data-anim="image-zoom-hover"]:hover > img,
+.motion-item[data-anim="image-zoom-hover"]:hover > a > img {
+  transform: scale(1.07);
+}
+
+/* ----- Infinite presets ----- */
+.motion-item[data-anim="pulse"] {
+  animation: motionPulse 2s var(--motion-ease, ease-in-out) infinite;
+  animation-delay: var(--motion-delay, 0s);
+}
+.motion-item[data-anim="float"] {
+  animation: motionFloat 3.5s var(--motion-ease, ease-in-out) infinite;
+  animation-delay: var(--motion-delay, 0s);
+}
+
+/* ----- Editorial: stagger group ----- */
+.motion-js .motion-item[data-anim="stagger"]:not(.is-in) > .motion-group-item,
+.motion-js .motion-item[data-anim="stagger"]:not(.is-in) .motion-child {
+  opacity: 0;
+}
+.motion-item[data-anim="stagger"].is-in .motion-group-item,
+.motion-item[data-anim="stagger"].is-in .motion-child {
+  animation: fadeInUp var(--motion-duration, 0.6s) var(--motion-ease, ease-out) both;
+  animation-delay: calc(var(--motion-delay, 0s) + var(--motion-i, 0) * var(--motion-stagger, 0.08s));
+}
+
+/* ----- Editorial: hero timeline ----- */
+.motion-js .hero-timeline > * {
+  opacity: 0;
+}
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > * {
+  animation: fadeInUp var(--motion-duration, 0.6s) var(--motion-ease, ease-out) both;
+}
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(1) { animation-delay: calc(var(--motion-delay, 0s) + 0s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(2) { animation-delay: calc(var(--motion-delay, 0s) + 0.12s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(3) { animation-delay: calc(var(--motion-delay, 0s) + 0.24s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(4) { animation-delay: calc(var(--motion-delay, 0s) + 0.36s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(5) { animation-delay: calc(var(--motion-delay, 0s) + 0.48s); }
+.motion-item[data-anim="hero-timeline"].is-in .hero-timeline > *:nth-child(n+6) { animation-delay: calc(var(--motion-delay, 0s) + 0.6s); }
+
+/* ----- Mobile: section-level opt-out ----- */
+@media (max-width: 640px) {
+  .motion-item[data-mobile="off"],
+  .motion-item[data-mobile="off"] * {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}

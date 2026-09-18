@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import type { Product } from "@/lib/types";
 import { formatPrice } from "./shared";
+import { Motion } from "@/components/motion/Motion";
+import { motionGroupItemVars } from "@/lib/motion";
+import type { MotionConfig, MotionTrigger } from "@/lib/motion";
 
 export interface DynamicLayoutConfig {
   hero?: {
@@ -14,6 +17,7 @@ export interface DynamicLayoutConfig {
     buttons?: { label: string; link: string; variant?: "secondary" | "outline" }[];
     backgroundImage?: string;
     featuredCategory?: string;
+    animation?: MotionConfig | null;
   };
   sections?: DynamicSection[];
   productCard?: {
@@ -29,15 +33,15 @@ export interface DynamicLayoutConfig {
 }
 
 export type DynamicSection =
-  | { type: "product-grid"; id?: string; title?: string; productFilter?: "all" | "featured" | "sale" | "newest"; columns?: number; limit?: number }
-  | { type: "category-grid"; id?: string; title?: string; columns?: number; style?: "cards" | "icons" }
-  | { type: "banner"; id?: string; imageUrl?: string; link?: string; text?: string; bgColor?: string; textColor?: string; buttonLabel?: string; buttonLink?: string }
-  | { type: "stats"; id?: string; items?: { icon?: string; value: string; label: string }[] }
-  | { type: "text"; id?: string; title?: string; content?: string; align?: "left" | "center" }
-  | { type: "button"; id?: string; label?: string; link?: string; variant?: "primary" | "secondary" | "outline"; align?: "left" | "center"; size?: "sm" | "md" | "lg" }
-  | { type: "image"; id?: string; imageUrl?: string; alt?: string; caption?: string; link?: string; maxWidth?: number; rounded?: boolean }
-  | { type: "features"; id?: string; title?: string; columns?: number; items?: { icon?: string; title?: string; text?: string }[] }
-  | { type: "spacer"; id?: string; height?: number };
+  | { type: "product-grid"; id?: string; title?: string; productFilter?: "all" | "featured" | "sale" | "newest"; columns?: number; limit?: number; animation?: MotionConfig | null }
+  | { type: "category-grid"; id?: string; title?: string; columns?: number; style?: "cards" | "icons"; animation?: MotionConfig | null }
+  | { type: "banner"; id?: string; imageUrl?: string; link?: string; text?: string; bgColor?: string; textColor?: string; buttonLabel?: string; buttonLink?: string; animation?: MotionConfig | null }
+  | { type: "stats"; id?: string; items?: { icon?: string; value: string; label: string }[]; animation?: MotionConfig | null }
+  | { type: "text"; id?: string; title?: string; content?: string; align?: "left" | "center"; animation?: MotionConfig | null }
+  | { type: "button"; id?: string; label?: string; link?: string; variant?: "primary" | "secondary" | "outline"; align?: "left" | "center"; size?: "sm" | "md" | "lg"; animation?: MotionConfig | null }
+  | { type: "image"; id?: string; imageUrl?: string; alt?: string; caption?: string; link?: string; maxWidth?: number; rounded?: boolean; animation?: MotionConfig | null }
+  | { type: "features"; id?: string; title?: string; columns?: number; items?: { icon?: string; title?: string; text?: string }[]; animation?: MotionConfig | null }
+  | { type: "spacer"; id?: string; height?: number; animation?: MotionConfig | null };
 
 const DEFAULT_HERO_BG = "linear-gradient(135deg, var(--primary) 0%, #ea580c 55%, var(--brand-gradient-b, #fbbf24) 120%)";
 
@@ -48,7 +52,16 @@ function heroBackground(hero: DynamicLayoutConfig["hero"], colors?: DynamicLayou
   return colors?.heroBg || DEFAULT_HERO_BG;
 }
 
-export function HeroSection({ hero, colors, products }: { hero: DynamicLayoutConfig["hero"]; colors?: DynamicLayoutConfig["colors"]; products: Product[]; categories?: { id: string; label: string }[] }) {
+export function HeroSection({ hero, colors, products, categories, forceTrigger }: { hero: DynamicLayoutConfig["hero"]; colors?: DynamicLayoutConfig["colors"]; products: Product[]; categories?: { id: string; label: string }[]; forceTrigger?: MotionTrigger }) {
+  if (!hero || hero.enabled === false || hero.style === "none") return null;
+  return (
+    <Motion config={hero.animation} trigger={forceTrigger}>
+      <HeroInner hero={hero} colors={colors} products={products} categories={categories} />
+    </Motion>
+  );
+}
+
+function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero"]; colors?: DynamicLayoutConfig["colors"]; products: Product[]; categories?: { id: string; label: string }[] }) {
   if (!hero || hero.enabled === false || hero.style === "none") return null;
 
   const bg = heroBackground(hero, colors);
@@ -65,9 +78,11 @@ export function HeroSection({ hero, colors, products }: { hero: DynamicLayoutCon
     return <a key={href + label} href={href} style={{ ...base, background: "transparent", color: textColor, border: `1px solid ${textColor}` }}>{label}</a>;
   };
 
+  const heroTimeline = hero.animation?.preset === "hero-timeline" ? "hero-timeline" : undefined;
+
   if (hero.style === "minimal") {
     return (
-      <div style={{ background: bg, color: textColor, padding: "3.5rem 2rem", textAlign: "center", backgroundSize: "cover", backgroundPosition: "center" }}>
+      <div className={heroTimeline} style={{ background: bg, color: textColor, padding: "3.5rem 2rem", textAlign: "center", backgroundSize: "cover", backgroundPosition: "center" }}>
         {hero.badge && <div style={{ display: "inline-block", background: accent, color: "#fff", padding: "0.3rem 1rem", borderRadius: 99, fontSize: "0.8rem", fontWeight: 600, marginBottom: "1rem" }}>{hero.badge}</div>}
         <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.6rem)", fontWeight: 700, margin: "0 0 1rem", lineHeight: 1.15 }}>{hero.headline || "Welcome"}</h1>
         {hero.subtitle && <p style={{ fontSize: "1.1rem", opacity: 0.88, maxWidth: 620, margin: "0 auto 1.5rem", lineHeight: 1.6 }}>{hero.subtitle}</p>}
@@ -80,7 +95,7 @@ export function HeroSection({ hero, colors, products }: { hero: DynamicLayoutCon
   if (hero.style === "split") {
     const featured = hero.featuredCategory ? products.filter((p) => p.category === hero.featuredCategory).slice(0, 1) : products.slice(0, 1);
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", background: bg, backgroundSize: "cover", backgroundPosition: "center", color: textColor, padding: "3.5rem 2rem", alignItems: "center" }}>
+      <div className={heroTimeline} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", background: bg, backgroundSize: "cover", backgroundPosition: "center", color: textColor, padding: "3.5rem 2rem", alignItems: "center" }}>
         <div>
           {hero.badge && <div style={{ display: "inline-block", background: accent, color: "#fff", padding: "0.3rem 1rem", borderRadius: 99, fontSize: "0.8rem", fontWeight: 600, marginBottom: "1rem" }}>{hero.badge}</div>}
           <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.8rem)", fontWeight: 700, margin: "0 0 1rem", lineHeight: 1.15 }}>{hero.headline || "Welcome"}</h1>
@@ -109,7 +124,7 @@ export function HeroSection({ hero, colors, products }: { hero: DynamicLayoutCon
   const item = featured[current] || featured[0];
 
   return (
-    <div style={{ background: bg, backgroundSize: "cover", backgroundPosition: "center", color: textColor, padding: "3.5rem 2rem", position: "relative", overflow: "hidden", minHeight: 340 }}>
+    <div className={heroTimeline} style={{ background: bg, backgroundSize: "cover", backgroundPosition: "center", color: textColor, padding: "3.5rem 2rem", position: "relative", overflow: "hidden", minHeight: 340 }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem", alignItems: "center" }}>
         <div>
           {hero.badge && <div style={{ display: "inline-block", background: accent, color: "#fff", padding: "0.3rem 1rem", borderRadius: 99, fontSize: "0.8rem", fontWeight: 600, marginBottom: "1rem" }}>{hero.badge}</div>}
@@ -173,7 +188,7 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
               {showSale && product.salePrice && <span style={{ fontSize: "0.8rem", color: "var(--text-tertiary)", textDecoration: "line-through" }}>{formatPrice(product.price)}</span>}
             </div>
             {showRating && (
-              <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginTop: 4 }}>{"★"} {(product as any).avgRating ? Number((product as any).avgRating).toFixed(1) : "—"}</div>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginTop: 4 }}>{"â˜…"} {(product as any).avgRating ? Number((product as any).avgRating).toFixed(1) : "â€”"}</div>
             )}
           </div>
         </div>
@@ -193,7 +208,7 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
             {showSale && product.salePrice && <span style={{ fontSize: "0.8rem", color: "var(--text-tertiary)", textDecoration: "line-through" }}>{formatPrice(product.price)}</span>}
           </div>
           {showRating && (
-            <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginTop: 4 }}>{"★"} {(product as any).avgRating ? Number((product as any).avgRating).toFixed(1) : "—"}</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginTop: 4 }}>{"â˜…"} {(product as any).avgRating ? Number((product as any).avgRating).toFixed(1) : "â€”"}</div>
           )}
         </div>
       </div>
@@ -201,7 +216,7 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
   );
 }
 
-export function DynamicSectionView({ section, products, categories, colors, cardConfig }: { section: DynamicSection; products: Product[]; categories: { id: string; label: string }[]; colors?: DynamicLayoutConfig["colors"]; cardConfig?: DynamicLayoutConfig["productCard"] }) {
+function DynamicSectionInner({ section, products, categories, colors, cardConfig }: { section: DynamicSection; products: Product[]; categories: { id: string; label: string }[]; colors?: DynamicLayoutConfig["colors"]; cardConfig?: DynamicLayoutConfig["productCard"] }) {
   if (section.type === "product-grid") {
     let filtered = [...products];
     if (section.productFilter === "featured") filtered = filtered.filter((p) => p.imageUrl);
@@ -209,6 +224,7 @@ export function DynamicSectionView({ section, products, categories, colors, card
     if (section.productFilter === "newest") filtered = [...filtered].reverse();
     if (section.limit) filtered = filtered.slice(0, section.limit);
     const cols = section.columns || 4;
+    const stagger = section.animation?.preset === "stagger";
     return (
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
         {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem" }}>{section.title}</h2>}
@@ -216,7 +232,13 @@ export function DynamicSectionView({ section, products, categories, colors, card
           <p style={{ color: "var(--text-tertiary)", padding: "1rem 0" }}>No products match this filter yet.</p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${cols > 3 ? 240 : 280}px, 1fr))`, gap: "1rem" }}>
-            {filtered.map((p) => <ProductCard key={p.id} product={p} cardConfig={cardConfig} />)}
+            {filtered.map((p, j) => stagger ? (
+              <div key={p.id} className="motion-child" style={motionGroupItemVars(j) as React.CSSProperties}>
+                <ProductCard product={p} cardConfig={cardConfig} />
+              </div>
+            ) : (
+              <ProductCard key={p.id} product={p} cardConfig={cardConfig} />
+            ))}
           </div>
         )}
       </div>
@@ -225,6 +247,12 @@ export function DynamicSectionView({ section, products, categories, colors, card
 
   if (section.type === "category-grid") {
     const cols = section.columns || 4;
+    const stagger = section.animation?.preset === "stagger";
+    const cellStyle: React.CSSProperties = {
+      display: "block", textDecoration: "none", color: "var(--text)", background: "var(--surface)",
+      border: "1px solid var(--border)", borderRadius: 10, padding: section.style === "icons" ? "1.25rem" : "1.5rem",
+      textAlign: "center", transition: "transform 0.2s, border-color 0.2s",
+    };
     return (
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
         {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem" }}>{section.title}</h2>}
@@ -232,8 +260,8 @@ export function DynamicSectionView({ section, products, categories, colors, card
           <p style={{ color: "var(--text-tertiary)", padding: "1rem 0" }}>No categories yet.</p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${section.style === "icons" ? 120 : 220}px, 1fr))`, gap: "1rem" }}>
-            {categories.map((cat) => (
-              <a key={cat.id} href={`/${cat.id}`} style={{ display: "block", textDecoration: "none", color: "var(--text)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: section.style === "icons" ? "1.25rem" : "1.5rem", textAlign: "center", transition: "transform 0.2s, border-color 0.2s" }}>
+            {categories.map((cat, j) => (
+              <a key={cat.id} href={`/${cat.id}`} className={stagger ? "motion-child" : undefined} style={stagger ? { ...cellStyle, ...motionGroupItemVars(j) } : cellStyle}>
                 <div style={{ fontSize: section.style === "icons" ? "1.5rem" : "0.95rem", fontWeight: 600 }}>{cat.label}</div>
               </a>
             ))}
@@ -269,11 +297,12 @@ export function DynamicSectionView({ section, products, categories, colors, card
   }
 
   if (section.type === "stats") {
+    const stagger = section.animation?.preset === "stagger";
     return (
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "1rem" }}>
           {(section.items || []).map((item, j) => (
-            <div key={j} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10 }}>
+            <div key={j} className={stagger ? "motion-child" : undefined} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{item.icon}</div>}
               <div style={{ fontSize: "1.8rem", fontWeight: 700, color: colors?.accent || "var(--primary)" }}>{item.value}</div>
               <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 4 }}>{item.label}</div>
@@ -307,7 +336,7 @@ export function DynamicSectionView({ section, products, categories, colors, card
         : { ...base, border: "1px solid var(--primary)", color: "#fff", background: "var(--primary)" };
     return (
       <div style={{ padding: "1rem 2rem", maxWidth: 1440, margin: "0 auto", textAlign: section.align || "center" }}>
-        {section.label ? <a href={section.link || "/"} style={style}>{section.label}</a> : <span style={{ color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Button — set a label</span>}
+        {section.label ? <a href={section.link || "/"} style={style}>{section.label}</a> : <span style={{ color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Button â€” set a label</span>}
       </div>
     );
   }
@@ -320,7 +349,7 @@ export function DynamicSectionView({ section, products, categories, colors, card
             <img src={section.imageUrl} alt={section.alt || section.caption || ""} loading="lazy" style={{ maxWidth: "100%", maxHeight: 480, width: section.maxWidth ? section.maxWidth : undefined, borderRadius: section.rounded ? 14 : 0, objectFit: "contain" }} />
           </a>
         ) : (
-          <div style={{ border: "2px dashed var(--border)", borderRadius: 12, padding: "3rem", color: "var(--text-tertiary)" }}>Image — add an image URL</div>
+          <div style={{ border: "2px dashed var(--border)", borderRadius: 12, padding: "3rem", color: "var(--text-tertiary)" }}>Image â€” add an image URL</div>
         )}
         {section.caption && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>{section.caption}</p>}
       </div>
@@ -329,12 +358,13 @@ export function DynamicSectionView({ section, products, categories, colors, card
 
   if (section.type === "features") {
     const cols = section.columns || 3;
+    const stagger = section.animation?.preset === "stagger";
     return (
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
         {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem", textAlign: "center" }}>{section.title}</h2>}
         <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${cols > 3 ? 200 : 260}px, 1fr))`, gap: "1rem" }}>
           {(section.items || []).map((item, j) => (
-            <div key={j} style={{ padding: "1.5rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, textAlign: "center" }}>
+            <div key={j} className={stagger ? "motion-child" : undefined} style={{ padding: "1.5rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, textAlign: "center", ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.8rem", marginBottom: "0.6rem" }}>{item.icon}</div>}
               {item.title && <div style={{ fontWeight: 700, marginBottom: "0.4rem" }}>{item.title}</div>}
               {item.text && <div style={{ fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>{item.text}</div>}
@@ -350,6 +380,14 @@ export function DynamicSectionView({ section, products, categories, colors, card
   }
 
   return null;
+}
+
+export function DynamicSectionView({ section, products, categories, colors, cardConfig, forceTrigger }: { section: DynamicSection; products: Product[]; categories: { id: string; label: string }[]; colors?: DynamicLayoutConfig["colors"]; cardConfig?: DynamicLayoutConfig["productCard"]; forceTrigger?: MotionTrigger }) {
+  return (
+    <Motion config={section.animation} trigger={forceTrigger}>
+      <DynamicSectionInner section={section} products={products} categories={categories} colors={colors} cardConfig={cardConfig} />
+    </Motion>
+  );
 }
 
 export function DynamicHomePage({ products, categories, banners, config }: { products: Product[]; categories: { id: string; label: string }[]; banners: any[]; config: DynamicLayoutConfig }) {

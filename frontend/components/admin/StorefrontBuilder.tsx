@@ -7,6 +7,7 @@ import { HeroSection, DynamicSectionView, DynamicLayoutConfig } from "@/layouts/
 import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
 import { Spinner, ErrorMsg } from "./shared";
+import MotionPanel from "./MotionPanel";
 
 type Section = NonNullable<DynamicLayoutConfig["sections"]>[number];
 
@@ -122,6 +123,7 @@ export default function StorefrontBuilder() {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [previewAnim, setPreviewAnim] = useState<number | "hero" | null>(null);
   const [dirty, setDirty] = useState(false);
 
   async function loadLayouts() {
@@ -497,14 +499,14 @@ export default function StorefrontBuilder() {
                     <span className="sb-grip">≡</span>
                     <span>Hero</span>
                   </div>
-                  <HeroSection hero={hero} colors={config.colors} products={products} categories={categories} />
+<HeroSection key={previewAnim === "hero" ? "hero-anim" : "hero-static"} hero={hero} colors={config.colors} products={products} categories={categories} forceTrigger={previewAnim === "hero" ? "load" : undefined} />
                 </div>
                 {sections.length === 0 && (
                   <div className="sb-empty">No sections yet. Add one from the left.</div>
                 )}
                 {sections.map((s, i) => (
                   <div
-                    key={(s as any).id || i}
+                    key={`${(s as any).id || i}-${previewAnim === i ? "anim" : "static"}`}
                     className={`sb-section${selectedSection === i ? " selected" : ""}`}
                     onClick={() => setSelectedSection(i)}
                   >
@@ -515,7 +517,7 @@ export default function StorefrontBuilder() {
                       <button type="button" aria-label="Move down" onClick={(e) => { e.stopPropagation(); moveSection(i, 1); }}>↓</button>
                       <button type="button" aria-label="Remove section" onClick={(e) => { e.stopPropagation(); removeSection(i); }}>✕</button>
                     </div>
-                    <DynamicSectionView section={s} products={products} categories={categories} colors={config.colors} cardConfig={config.productCard} />
+                    <DynamicSectionView section={s} products={products} categories={categories} colors={config.colors} cardConfig={config.productCard} forceTrigger={previewAnim === i ? "load" : undefined} />
                   </div>
                 ))}
               </div>
@@ -531,6 +533,10 @@ export default function StorefrontBuilder() {
             {selectedSectionData ? (
               <div>
                 {renderSectionPanel(selectedSectionData)}
+                <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
+                  <h4 style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>Animation</h4>
+                  <MotionPanel value={(selectedSectionData as any).animation} onChange={(a) => updateSection(selectedSection as number, { animation: a })} onPreview={() => setPreviewAnim(selectedSection)} />
+                </div>
                 <RippleButton size="small" variant="secondary" onClick={() => setSelectedSection(null)}>← Back to layout settings</RippleButton>
               </div>
             ) : (
@@ -557,6 +563,10 @@ export default function StorefrontBuilder() {
                   ))}
                   <Field label="Background image (optional)"><Text value={hero.backgroundImage || ""} onChange={(v) => updateHero({ backgroundImage: v })} placeholder="https://...jpg" /></Field>
                 </>)}
+                <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
+                  <h4 style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>Hero animation</h4>
+                  <MotionPanel value={hero.animation} onChange={(a) => updateHero({ animation: a })} onPreview={() => setPreviewAnim("hero")} />
+                </div>
 
                 <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.85rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>Colors</h4>
                 <Field label="Hero background"><Color value={config.colors?.heroBg || ""} onChange={(v) => updateColors({ heroBg: v })} /></Field>
