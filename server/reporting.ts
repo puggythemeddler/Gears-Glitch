@@ -276,6 +276,10 @@ export async function salesBreakdown(filter: OrderFilter, by: SalesBreakdownBy):
   // Line-level dimensions (product/category/group) cannot attribute shipping
   // or order discounts per line, so they report line revenue only and net == revenue.
   interface Dim { select: string; join: string; group: string; orderLevel: boolean }
+  // Same canonical form as normalizePaymentMethod (lowercase, non-alphanumerics
+  // stripped) so write-side variants like "M-Pesa"/" mpesa "/"MPESA" share one
+  // bucket instead of fragmenting into m-pesa vs mpesa groups.
+  const pmNorm = `regexp_replace(LOWER(TRIM(o.payment_method)), '[^a-z0-9]', '', 'g')`;
   const dim: Record<SalesBreakdownBy, Dim> = {
     product: {
       select: "oi.product_id AS id, oi.name AS label",
@@ -308,9 +312,9 @@ export async function salesBreakdown(filter: OrderFilter, by: SalesBreakdownBy):
       orderLevel: true,
     },
     payment_method: {
-      select: "COALESCE(NULLIF(LOWER(TRIM(o.payment_method)),''),'unrecorded') AS label, COALESCE(NULLIF(LOWER(TRIM(o.payment_method)),''),'') AS id",
+      select: `COALESCE(NULLIF(${pmNorm},''),'unrecorded') AS label, COALESCE(NULLIF(${pmNorm},''),'unrecorded') AS id`,
       join: "",
-      group: "LOWER(TRIM(o.payment_method))",
+      group: `COALESCE(${pmNorm},'')`,
       orderLevel: true,
     },
     customer: {

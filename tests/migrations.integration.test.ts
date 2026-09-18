@@ -119,7 +119,7 @@ describe("migration 0013 + boot hardening (DB)", { skip: !HAS_DB && "DATABASE_UR
     await query(
       `INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, taxable)
        VALUES ($1, 'rc-prod', 'P', 100, 1, 100, 1)`, [Number(order.rows[0].id)]);
-    await query(`INSERT INTO stock_levels (product_id, quantity_in_stock) VALUES ('rc-prod', 5) ON CONFLICT (product_id) DO NOTHING`);
+    await query(`INSERT INTO stock_levels (product_id, quantity_in_stock) VALUES ('rc-prod', 5) ON CONFLICT (product_id) WHERE branch_id IS NULL DO NOTHING`);
 
     await assert.rejects(
       () => query(`DELETE FROM products WHERE id = 'rc-prod'`),

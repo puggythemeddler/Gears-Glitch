@@ -166,8 +166,8 @@ describe("reporting integration (DB)", { skip: !HAS_DB && "DATABASE_URL not set 
     const unrecorded = byPayment.find((r) => r.id === "unrecorded");
     assert.ok(mpesa, "M-Pesa / mpesa merged into one bucket");
     assert.equal(mpesa?.orders, 2);
-    assert.equal(mpesa?.revenue, 230); // (200 + 50) + (100 + 0)
-    assert.equal(mpesa?.net, 200); // 230 - discount 10 - gift 20
+    assert.equal(mpesa?.revenue, 350); // (200 + 50) + (100 + 0)
+    assert.equal(mpesa?.net, 320); // 350 - discount 10 - gift 20
     assert.equal(card?.revenue, 120);
     assert.equal(unrecorded?.revenue, 40);
   });

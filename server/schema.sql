@@ -162,7 +162,8 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 
 CREATE TABLE IF NOT EXISTS stock_levels (
   id SERIAL PRIMARY KEY,
-  product_id TEXT NOT NULL UNIQUE,
+  product_id TEXT NOT NULL,
+  branch_id INTEGER REFERENCES branches(id),
   quantity_in_stock INTEGER NOT NULL DEFAULT 0,
   quantity_reserved INTEGER NOT NULL DEFAULT 0,
   quantity_sold INTEGER NOT NULL DEFAULT 0,
@@ -170,6 +171,10 @@ CREATE TABLE IF NOT EXISTS stock_levels (
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 );
+-- One global row per product (branch_id NULL) or one row per product+branch —
+-- matches migration 0006 so a fresh runSchema() DB is identical to a migrated one.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_levels_global ON stock_levels(product_id) WHERE branch_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_levels_branch ON stock_levels(product_id, branch_id) WHERE branch_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS stock_movements (
   id SERIAL PRIMARY KEY,

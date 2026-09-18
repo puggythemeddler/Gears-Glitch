@@ -39,7 +39,7 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "DATABASE_URL not set 
     );
     await query(
       `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold) VALUES ($1, 100, 0, 0)
-       ON CONFLICT (product_id) DO UPDATE SET quantity_in_stock = 100, quantity_reserved = 0, quantity_sold = 0`,
+       ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = 100, quantity_reserved = 0, quantity_sold = 0`,
       [productId]
     );
     return { customerId: cust.id, productId };
