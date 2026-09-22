@@ -395,7 +395,7 @@ import { notify, getNotificationPreferences, updateNotificationPreferences, list
 import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
-import { normalizeSlug, isReservedSlug, sanitizePageConfig } from "./pages";
+import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus, callbackBaseUrl } from "./mpesa";
@@ -1474,7 +1474,15 @@ app.put("/api/admin/pages/:id", adminAuthMiddleware, requirePermission("settings
   }
   if (description !== undefined) updates.description = typeof description === "string" ? description.slice(0, 1000) : "";
   if (config !== undefined) updates.config = sanitizePageConfig(config);
-  if (is_published !== undefined) updates.is_published = is_published === 1 ? 1 : 0;
+  if (is_published !== undefined) {
+    if (is_published === 1) {
+      // Never publish a row whose persisted identity is invalid — the UI saves
+      // first, but a direct client must not be able to bypass that contract.
+      const err = pagePublishError({ slug: updates.slug ?? existing.slug, title: updates.title ?? existing.title });
+      if (err) { res.status(400).json({ error: err }); return; }
+    }
+    updates.is_published = is_published === 1 ? 1 : 0;
+  }
   if (sort_order !== undefined) updates.sort_order = Number.isFinite(Number(sort_order)) ? Math.max(0, Math.round(Number(sort_order))) : existing.sort_order;
   const row = await updatePage(id, updates);
   if (!row) { res.status(404).json({ error: "Page not found." }); return; }

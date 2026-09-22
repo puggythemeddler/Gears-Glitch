@@ -5,6 +5,7 @@ import {
   isReservedSlug,
   sanitizeSections,
   sanitizePageConfig,
+  pagePublishError,
   PAGE_SECTION_TYPES,
 } from "../server/pages";
 
@@ -226,5 +227,33 @@ describe("sanitizePageConfig", () => {
   it("returns an empty object for an empty config object", () => {
     assert.deepEqual(sanitizePageConfig({}), {});
     assert.deepEqual(sanitizePageConfig({ extra: true }), {});
+  });
+});
+
+describe("pagePublishError", () => {
+  it("allows a valid titled page with a normalized, non-reserved slug", () => {
+    assert.equal(pagePublishError({ slug: "qa-test-page", title: "QA Test Page" }), null);
+    assert.equal(pagePublishError({ slug: "our-story", title: "About us" }), null);
+  });
+
+  it("rejects a missing or oversized title", () => {
+    assert.match(pagePublishError({ slug: "qa-test-page", title: "" }) || "", /Title is required/);
+    assert.match(pagePublishError({ slug: "qa-test-page", title: "   " }) || "", /Title is required/);
+    assert.match(pagePublishError({ slug: "qa-test-page", title: 42 }) || "", /Title is required/);
+    assert.match(pagePublishError({ slug: "qa-test-page", title: "x".repeat(201) }) || "", /200 characters/);
+  });
+
+  it("rejects an invalid or non-normalized slug", () => {
+    assert.match(pagePublishError({ slug: "ab", title: "Short" }) || "", /invalid slug/);
+    assert.match(pagePublishError({ slug: "has_underscore", title: "T" }) || "", /invalid slug/);
+    assert.match(pagePublishError({ slug: "Mixed-Case", title: "T" }) || "", /invalid slug/);
+    assert.match(pagePublishError({ slug: "a".repeat(81), title: "T" }) || "", /invalid slug/);
+    assert.match(pagePublishError({ slug: "", title: "T" }) || "", /invalid slug/);
+  });
+
+  it("rejects reserved slugs", () => {
+    assert.match(pagePublishError({ slug: "about", title: "About" }) || "", /reserved/);
+    assert.match(pagePublishError({ slug: "admin", title: "Admin" }) || "", /reserved/);
+    assert.match(pagePublishError({ slug: "pages", title: "Pages" }) || "", /reserved/);
   });
 });

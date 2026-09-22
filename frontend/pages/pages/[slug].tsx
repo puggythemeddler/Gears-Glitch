@@ -77,7 +77,8 @@ export default function CmsPageView() {
   }
 
   const sections = Array.isArray(page.config.sections) ? page.config.sections : [];
-  const hasContent = !!page.config.hero || sections.length > 0;
+  const heroActive = !!page.config.hero && page.config.hero.enabled !== false && page.config.hero.style !== "none";
+  const hasContent = heroActive || sections.length > 0;
 
   return (
     <>

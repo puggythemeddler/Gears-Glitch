@@ -26,6 +26,20 @@ export function isReservedSlug(slug: string): boolean {
   return RESERVED_SLUGS.has(slug);
 }
 
+// A page is only publishable when its persisted identity is valid: a title and a
+// normalized, non-reserved slug. Used by the admin routes before a draft flips
+// to `is_published = 1` so no direct API client can publish an invalid row.
+// Returns a human-readable error message, or null when the page may be published.
+export function pagePublishError(row: { slug: string; title: unknown }): string | null {
+  const title = typeof row.title === "string" ? row.title.trim() : "";
+  if (!title) return "Title is required before publishing.";
+  if (title.length > 200) return "Title must be 200 characters or fewer.";
+  const normalized = normalizeSlug(row.slug);
+  if (!normalized || normalized !== row.slug) return "Page has an invalid slug and can't be published.";
+  if (isReservedSlug(normalized)) return `"${normalized}" is a reserved URL and can't be published.`;
+  return null;
+}
+
 export const PAGE_SECTION_TYPES = [
   "product-grid", "category-grid", "banner", "stats", "text",
   "button", "image", "features", "spacer",

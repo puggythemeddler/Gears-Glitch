@@ -21,6 +21,7 @@ interface PageRow {
 }
 
 const SLUG_HINT = "Lowercase letters, numbers & dashes, 3–80 chars. Served at /pages/<slug>; one page per slug. Reserved: admin, api, product(s), category/ies, cart, about, contact, login …";
+const SLUG_ERROR = "Slug must be 3–80 lowercase letters, numbers and dashes.";
 
 const DEFAULT_PAGE = {
   colors: {},
@@ -135,24 +136,31 @@ export default function PagesManager() {
     }
   }
 
+  // Saves the current draft to the server. Returns true only when the save
+  // actually succeeded; throws on a hard failure. Does not manage messages or
+  // the saving spinner so both Save Draft and Publish can drive it.
+  async function performSave(): Promise<boolean> {
+    if (!selectedId) return false;
+    const normalized = normalizeSlug(slug);
+    if (!normalized) return false;
+    const row = await api<PageRow>(`/api/admin/pages/${selectedId}`, {
+      method: "PUT",
+      body: JSON.stringify({ slug: normalized, title, description, config: { ...config, sections: config.sections || [] } }),
+    });
+    setSlug(row.slug);
+    setTitle(row.title);
+    setDescription(row.description || "");
+    setConfig(row.config || DEFAULT_PAGE);
+    setDirty(false);
+    return true;
+  }
+
   async function savePage() {
     if (!selectedId) return;
     setSaving(true); setMsg("");
     try {
-      const normalized = normalizeSlug(slug);
-      if (!normalized) {
-        setMsg("Slug must be 3–80 lowercase letters, numbers and dashes.");
-        return;
-      }
-      const row = await api<PageRow>(`/api/admin/pages/${selectedId}`, {
-        method: "PUT",
-        body: JSON.stringify({ slug: normalized, title, description, config: { ...config, sections: config.sections || [] } }),
-      });
-      setSlug(row.slug);
-      setTitle(row.title);
-      setDescription(row.description || "");
-      setConfig(row.config || DEFAULT_PAGE);
-      setDirty(false);
+      if (!normalizeSlug(slug)) { setMsg(SLUG_ERROR); return; }
+      await performSave();
       setMsg("Draft saved.");
     } catch (e: any) {
       setMsg("Failed: " + e.message);
@@ -165,14 +173,25 @@ export default function PagesManager() {
     if (!selectedId) return setMsg("Select a page first.");
     setSaving(true); setMsg("");
     try {
-      if (dirty) await savePage();
+      if (dirty) {
+        // Publishing is only allowed after the draft actually saves. A failed
+        // save (invalid slug, collision, server error) must stop the publish.
+        const saved = await performSave();
+        if (!saved) {
+          setMsg(normalizeSlug(slug) ? "Couldn't save your draft — fix the errors above, then publish again." : SLUG_ERROR);
+          return;
+        }
+      } else {
+        if (!normalizeSlug(slug)) { setMsg(SLUG_ERROR); return; }
+        if (!title.trim()) { setMsg("Title is required before publishing."); return; }
+      }
       await api<any>(`/api/admin/pages/${selectedId}`, {
         method: "PUT",
         body: JSON.stringify({ is_published: 1 }),
       });
       await loadPages();
       setDirty(false);
-      setMsg("Page is live. Visit /pages/" + slug + " on your storefront.");
+      setMsg("Page is live. Visit /pages/" + (normalizeSlug(slug) || slug) + " on your storefront.");
     } catch (e: any) {
       setMsg("Failed: " + e.message);
     } finally { setSaving(false); }
@@ -253,6 +272,9 @@ export default function PagesManager() {
   }
 
   const hero = config.hero || {};
+  // Hero presence is explicit: no hero key, disabled, or style "none" means no
+  // hero is rendered (never an empty object treated as a configured hero).
+  const heroActive = !!config.hero && config.hero.enabled !== false && config.hero.style !== "none";
 
   const viewProps: Omit<DynamicSectionViewProps, "section"> = {
     products,
@@ -410,8 +432,8 @@ export default function PagesManager() {
             <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
               <div style={{ background: "var(--surface-hover)", padding: "0.4rem 0.75rem", fontSize: "0.75rem", color: "var(--text-secondary)" }}>/pages/{slug} · {device}</div>
               <div style={{ maxHeight: "65vh", overflow: "auto" }}>
-                {(config.sections || []).length === 0 && !hero && <p style={{ padding: "2rem", textAlign: "center", color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Nothing to preview yet.</p>}
-                <HeroSection hero={hero} colors={config.colors} products={products} categories={categories} forceTrigger={undefined} />
+                {(config.sections || []).length === 0 && !heroActive && <p style={{ padding: "2rem", textAlign: "center", color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Nothing to preview yet.</p>}
+                {heroActive && <HeroSection hero={config.hero} colors={config.colors} products={products} categories={categories} forceTrigger={undefined} />}
                 {(config.sections || []).map((s: Section, i: number) => (
                   <DynamicSectionView key={s.id || i} section={s} products={products} categories={categories} colors={config.colors} cardConfig={config.productCard} forceTrigger={undefined} index={i} />
                 ))}
