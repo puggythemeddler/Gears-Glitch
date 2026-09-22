@@ -141,4 +141,90 @@ describe("sanitizePageConfig", () => {
     assert.equal(out.extra, undefined);
     assert.equal(out.sections[0].evil, undefined);
   });
+
+  it("sanitizes the hero key, keeping known fields and enums", () => {
+    const out = sanitizePageConfig({
+      hero: {
+        enabled: true,
+        style: "minimal",
+        badge: "New",
+        headline: "Hi there",
+        subtitle: "Sub",
+        ctaText: "Shop",
+        ctaLink: "/products",
+        backgroundImage: "https://cdn/x.jpg",
+        featuredCategory: "tops",
+        evil: "drop",
+      },
+    });
+    assert.deepEqual(out.hero, {
+      enabled: true,
+      style: "minimal",
+      badge: "New",
+      headline: "Hi there",
+      subtitle: "Sub",
+      ctaText: "Shop",
+      ctaLink: "/products",
+      backgroundImage: "https://cdn/x.jpg",
+      featuredCategory: "tops",
+    });
+  });
+
+  it("coerces hero enums and rejects unknown variants", () => {
+    const out = sanitizePageConfig({
+      hero: { enabled: "yes", style: "wild", buttons: [{ label: "Go", link: "/", variant: "bogus" }] },
+    });
+    assert.equal(out.hero.enabled, undefined);
+    assert.equal(out.hero.style, undefined);
+    assert.equal(out.hero.buttons[0].variant, undefined);
+  });
+
+  it("caps hero string lengths and button count", () => {
+    const out = sanitizePageConfig({
+      hero: {
+        headline: "x".repeat(1000),
+        buttons: Array.from({ length: 10 }, (_, i) => ({ label: `b${i}`.repeat(200), link: "/", variant: i === 3 ? "outline" : "bogus" })),
+      },
+    });
+    assert.equal(out.hero.headline.length, 300);
+    assert.equal(out.hero.buttons.length, 6);
+    assert.equal(out.hero.buttons[0].label.length, 120);
+    assert.equal(out.hero.buttons[3].variant, "outline");
+  });
+
+  it("drops hero when it is empty or not an object", () => {
+    assert.equal(sanitizePageConfig({ hero: {} }).hero, undefined);
+    assert.equal(sanitizePageConfig({ hero: null }).hero, undefined);
+    assert.equal(sanitizePageConfig({ hero: "yes" }).hero, undefined);
+  });
+
+  it("sanitizes the productCard key", () => {
+    const out = sanitizePageConfig({
+      productCard: { style: "detailed", showRating: true, showSalePrice: false, evil: 1 },
+    });
+    assert.deepEqual(out.productCard, { style: "detailed", showRating: true, showSalePrice: false });
+  });
+
+  it("drops productCard when empty or invalid", () => {
+    assert.equal(sanitizePageConfig({ productCard: {} }).productCard, undefined);
+    assert.equal(sanitizePageConfig({ productCard: { style: "bogus" } }).productCard, undefined);
+  });
+
+  it("whitelists accent, heroBg and heroText colors", () => {
+    const out = sanitizePageConfig({
+      colors: { accent: "#a11", heroBg: "#000", heroText: "#fff", evil: "#fff" },
+    });
+    assert.deepEqual(out.colors, { accent: "#a11", heroBg: "#000", heroText: "#fff" });
+  });
+
+  it("keeps an already-sanitized hero and colors untouched", () => {
+    const out = sanitizePageConfig({ hero: { headline: "Keep" }, colors: { accent: "#123" } });
+    assert.deepEqual(out.hero, { headline: "Keep" });
+    assert.deepEqual(out.colors, { accent: "#123" });
+  });
+
+  it("returns an empty object for an empty config object", () => {
+    assert.deepEqual(sanitizePageConfig({}), {});
+    assert.deepEqual(sanitizePageConfig({ extra: true }), {});
+  });
 });

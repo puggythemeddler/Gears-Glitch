@@ -4898,6 +4898,84 @@ async function linkSerialToOrderItem(serialId: number, orderItemId: number): Pro
   }
 }
 
+// ---- Page Builder CMS -------------------------------------------------------
+
+export interface PageRow {
+  id: number;
+  slug: string;
+  title: string;
+  description: string;
+  config: any;
+  is_published: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapPageRow(row: any): PageRow {
+  return {
+    id: Number(row.id),
+    slug: row.slug,
+    title: row.title,
+    description: row.description || "",
+    config: typeof row.config === "string" ? JSON.parse(row.config) : row.config,
+    is_published: Number(row.is_published) || 0,
+    sort_order: Number(row.sort_order) || 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+async function listPages(): Promise<PageRow[]> {
+  const rows = await queryAll("SELECT id, slug, title, description, config, is_published, sort_order, created_at, updated_at FROM pages ORDER BY sort_order ASC, id ASC");
+  return rows.map(mapPageRow);
+}
+
+async function listPublishedPages(): Promise<PageRow[]> {
+  const rows = await queryAll("SELECT id, slug, title, description, config, is_published, sort_order, created_at, updated_at FROM pages WHERE is_published = 1 ORDER BY sort_order ASC, id ASC");
+  return rows.map(mapPageRow);
+}
+
+async function getPageBySlug(slug: string): Promise<PageRow | null> {
+  const row = await queryOne("SELECT id, slug, title, description, config, is_published, sort_order, created_at, updated_at FROM pages WHERE slug = $1", [slug]);
+  return row ? mapPageRow(row) : null;
+}
+
+async function getPageById(id: number): Promise<PageRow | null> {
+  const row = await queryOne("SELECT id, slug, title, description, config, is_published, sort_order, created_at, updated_at FROM pages WHERE id = $1", [id]);
+  return row ? mapPageRow(row) : null;
+}
+
+async function createPage(data: { slug: string; title: string; description?: string; config?: any; is_published?: number; sort_order?: number }): Promise<PageRow> {
+  const row = await queryOne(
+    "INSERT INTO pages (slug, title, description, config, is_published, sort_order) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+    [data.slug, data.title, data.description || "", JSON.stringify(data.config || { sections: [] }), data.is_published || 0, data.sort_order || 0]
+  );
+  return mapPageRow(row);
+}
+
+async function updatePage(id: number, updates: Partial<{ slug: string; title: string; description: string; config: any; is_published: number; sort_order: number }>): Promise<PageRow | null> {
+  const fields: string[] = [];
+  const params: any[] = [];
+  let idx = 1;
+  if (updates.slug !== undefined) { fields.push(`slug = $${idx}`); params.push(updates.slug); idx++; }
+  if (updates.title !== undefined) { fields.push(`title = $${idx}`); params.push(updates.title); idx++; }
+  if (updates.description !== undefined) { fields.push(`description = $${idx}`); params.push(updates.description); idx++; }
+  if (updates.config !== undefined) { fields.push(`config = $${idx}`); params.push(JSON.stringify(updates.config)); idx++; }
+  if (updates.is_published !== undefined) { fields.push(`is_published = $${idx}`); params.push(updates.is_published); idx++; }
+  if (updates.sort_order !== undefined) { fields.push(`sort_order = $${idx}`); params.push(updates.sort_order); idx++; }
+  if (fields.length === 0) return getPageById(id);
+  fields.push("updated_at = now()");
+  params.push(id);
+  const row = await queryOne(`UPDATE pages SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`, params);
+  return row ? mapPageRow(row) : null;
+}
+
+async function deletePage(id: number): Promise<boolean> {
+  const result = await query("DELETE FROM pages WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
 export {
   initDb, runMigrations, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
   seedDemoProvider, seedDemoCustomer, assignInitialRoles, seedProductsIfEmpty, ensureDefaultSubscriptionPlans,
@@ -4960,4 +5038,5 @@ export {
   getDb,
   storeImage, getImage, deleteImageByRef,
   getUserTotp, setUserTotp,
+  listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage,
 };

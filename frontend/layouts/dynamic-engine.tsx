@@ -459,7 +459,17 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
   return null;
 }
 
-export function DynamicSectionView({ section, products, categories, colors, cardConfig, forceTrigger, index }: { section: DynamicSection; products: Product[]; categories: { id: string; label: string }[]; colors?: DynamicLayoutConfig["colors"]; cardConfig?: DynamicLayoutConfig["productCard"]; forceTrigger?: MotionTrigger; index?: number }) {
+export interface DynamicSectionViewProps {
+  section: DynamicSection;
+  products: Product[];
+  categories: { id: string; label: string }[];
+  colors?: DynamicLayoutConfig["colors"];
+  cardConfig?: DynamicLayoutConfig["productCard"];
+  forceTrigger?: MotionTrigger;
+  index?: number;
+}
+
+export function DynamicSectionView({ section, products, categories, colors, cardConfig, forceTrigger, index }: DynamicSectionViewProps) {
   const sectionFid = index !== undefined ? `sections.${index}` : undefined;
   const hideOnMobile = (section as { hideOnMobile?: boolean }).hideOnMobile;
   const innerFid = sectionFid || undefined;

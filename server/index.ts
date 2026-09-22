@@ -394,6 +394,8 @@ import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs } from "./notification-service";
 import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
+import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
+import { normalizeSlug, isReservedSlug, sanitizePageConfig } from "./pages";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus, callbackBaseUrl } from "./mpesa";
@@ -643,6 +645,9 @@ defineAudit("/api/admin/about-us", "about_us", { action: "updated", method: "PUT
 defineAudit("/api/settings/nav-order", "settings", { action: "nav_order_updated", method: "PUT" });
 defineAudit("/api/settings/footer-config", "settings", { action: "footer_updated", method: "PUT" });
 defineAudit("/api/admin/repairs-page", "settings", { action: "repairs_page_updated", method: "PUT" });
+// Pages (Page Builder CMS)
+defineAudit("/api/admin/pages", "pages");
+defineAudit("/api/admin/pages/:id", "pages");
 defineAudit("/api/admin/splashes", "splash");
 defineAudit("/api/admin/splashes/:id", "splash");
 defineAudit("/api/admin/whatsapp/templates", "whatsapp_template", { method: "POST" });
@@ -1405,6 +1410,81 @@ app.put("/api/admin/layouts-reorder", adminAuthMiddleware, requirePermission("se
   for (let i = 0; i < orderedIds.length; i++) {
     await query("UPDATE storefront_layouts SET sort_order = $1 WHERE id = $2", [i, Number(orderedIds[i])]);
   }
+  res.json({ ok: true });
+}));
+
+// ============ PAGES (Page Builder CMS) ============
+
+function serializePage(p: PageRow) {
+  return { id: p.id, slug: p.slug, title: p.title, description: p.description, config: p.config, is_published: p.is_published, sort_order: p.sort_order };
+}
+
+// Public: only published pages are ever served. Unauthenticated, read-only.
+app.get("/api/pages", asyncHandler(async (_req: Request, res: Response) => {
+  const pages = await listPublishedPages();
+  res.json(pages.map((p) => ({ id: p.id, slug: p.slug, title: p.title, description: p.description })));
+}));
+
+app.get("/api/pages/:slug", asyncHandler(async (req: Request, res: Response) => {
+  const row = await getPageBySlug(String(req.params.slug || "").toLowerCase());
+  if (!row || row.is_published !== 1) { res.status(404).json({ error: "Page not found." }); return; }
+  res.json({ id: row.id, slug: row.slug, title: row.title, description: row.description, config: row.config, updated_at: row.updated_at });
+}));
+
+// Admin: full list (includes drafts) + CRUD + publish/unpublish.
+app.get("/api/admin/pages", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+  const pages = await listPages();
+  res.json(pages.map(serializePage));
+}));
+
+app.post("/api/admin/pages", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const { slug, title, description, config, is_published } = req.body || {};
+  const normalized = normalizeSlug(slug);
+  if (!normalized) { res.status(400).json({ error: "Slug must be 3–80 lowercase letters, numbers, and dashes." }); return; }
+  if (isReservedSlug(normalized)) { res.status(400).json({ error: `"${normalized}" is a reserved URL and can't be used as a page slug.` }); return; }
+  const t = typeof title === "string" ? title.trim() : "";
+  if (!t || t.length > 200) { res.status(400).json({ error: "Title is required (≤200 characters)." }); return; }
+  const existing = await getPageBySlug(normalized);
+  if (existing) { res.status(409).json({ error: `A page already exists at "/${normalized}".` }); return; }
+  const desc = typeof description === "string" ? description.slice(0, 1000) : "";
+  const row = await createPage({ slug: normalized, title: t, description: desc, config: sanitizePageConfig(config), is_published: is_published === 1 ? 1 : 0 });
+  res.status(201).json(serializePage(row));
+}));
+
+app.put("/api/admin/pages/:id", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const existing = await getPageById(id);
+  if (!existing) { res.status(404).json({ error: "Page not found." }); return; }
+  const { slug, title, description, config, is_published, sort_order } = req.body || {};
+  const updates: Partial<{ slug: string; title: string; description: string; config: any; is_published: number; sort_order: number }> = {};
+  if (slug !== undefined) {
+    const normalized = normalizeSlug(slug);
+    if (!normalized) { res.status(400).json({ error: "Slug must be 3–80 lowercase letters, numbers, and dashes." }); return; }
+    if (normalized !== existing.slug) {
+      if (isReservedSlug(normalized)) { res.status(400).json({ error: `"${normalized}" is a reserved URL and can't be used as a page slug.` }); return; }
+      const clash = await getPageBySlug(normalized);
+      if (clash) { res.status(409).json({ error: `A page already exists at "/${normalized}".` }); return; }
+    }
+    updates.slug = normalized;
+  }
+  if (title !== undefined) {
+    const t = typeof title === "string" ? title.trim() : "";
+    if (!t || t.length > 200) { res.status(400).json({ error: "Title is required (≤200 characters)." }); return; }
+    updates.title = t;
+  }
+  if (description !== undefined) updates.description = typeof description === "string" ? description.slice(0, 1000) : "";
+  if (config !== undefined) updates.config = sanitizePageConfig(config);
+  if (is_published !== undefined) updates.is_published = is_published === 1 ? 1 : 0;
+  if (sort_order !== undefined) updates.sort_order = Number.isFinite(Number(sort_order)) ? Math.max(0, Math.round(Number(sort_order))) : existing.sort_order;
+  const row = await updatePage(id, updates);
+  if (!row) { res.status(404).json({ error: "Page not found." }); return; }
+  res.json(serializePage(row));
+}));
+
+app.delete("/api/admin/pages/:id", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const ok = await deletePage(id);
+  if (!ok) { res.status(404).json({ error: "Page not found." }); return; }
   res.json({ ok: true });
 }));
 

@@ -1,14 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { getProducts } from "@/components/ProductCard";
 import type { Product } from "@/lib/types";
-import { DynamicSectionView } from "@/layouts/dynamic-engine";
+import { DynamicSectionView, HeroSection } from "@/layouts/dynamic-engine";
 import type { DynamicSection, DynamicSectionViewProps } from "@/layouts/dynamic-engine";
 import { normalizeSlug, uidSection } from "@/lib/sections";
 import type { Section } from "@/lib/sections";
-import { isSafeHref } from "@/lib/links";
+import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 import { Spinner, ErrorMsg } from "./shared";
-import { Field, Text, Num, Select, Check, Color, RippleButton, inputStyle } from "./studio-ui";
+import { Field, Text, Select, Check, Color, RippleButton, inputStyle } from "./studio-ui";
 
 interface PageRow {
   id: number;
@@ -20,7 +20,7 @@ interface PageRow {
   sort_order: number;
 }
 
-const SLUG_HINT = "Lowercase letters, numbers & dashes, 3–60 chars. One page per slug; the storefront uses it as the URL. Reserved: admin, api, product(s), category/ies, cart, about, contact, login …";
+const SLUG_HINT = "Lowercase letters, numbers & dashes, 3–80 chars. Served at /pages/<slug>; one page per slug. Reserved: admin, api, product(s), category/ies, cart, about, contact, login …";
 
 const DEFAULT_PAGE = {
   colors: {},
@@ -34,6 +34,17 @@ const BLANK_SECTION: Section = {
   content: "",
   align: "center",
 };
+
+const SECTION_TYPES: { value: Section["type"]; label: string }[] = [
+  { value: "text", label: "Text" },
+  { value: "image", label: "Image" },
+  { value: "banner", label: "Banner" },
+  { value: "stats", label: "Stats" },
+  { value: "features", label: "Features" },
+  { value: "product-grid", label: "Products" },
+  { value: "category-grid", label: "Categories" },
+  { value: "spacer", label: "Spacer" },
+];
 
 function PageRowItem({ row, active, onSelect }: { row: PageRow; active: boolean; onSelect: () => void }) {
   return (
@@ -62,7 +73,6 @@ export default function PagesManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [selected, setSelected] = useState<PageRow | null>(null);
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -76,15 +86,17 @@ export default function PagesManager() {
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [dragging, setDragging] = useState<number | null>(null);
 
-  const configRef = useRef(config);
-  const selectedRef = useRef(selected);
-  useEffect(() => { configRef.current = config; }, [config]);
-  useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => {
+    let cancelled = false;
+    getProducts().then((p) => { if (!cancelled) setProducts(p); }).catch(() => {});
+    fetch("/api/categories").then((r) => r.json()).then((d) => { if (!cancelled) setCategories(d.categories || []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   async function loadPages() {
     setLoading(true); setError("");
     try {
-      const rows = await api<PageRow[]>("/api/pages");
+      const rows = await api<PageRow[]>("/api/admin/pages");
       setPages(rows || []);
     } catch (e: any) {
       setError(e.message || "Failed to load pages.");
@@ -94,7 +106,7 @@ export default function PagesManager() {
   }
 
   async function createPage() {
-    const raw = window.prompt("Page title (also used to suggest a slug):");
+    const raw = await promptDialog({ title: "New page", label: "Page title", placeholder: "e.g. Our Story", confirmLabel: "Create" });
     if (!raw || !raw.trim()) return;
     const title = raw.trim();
     let slug = normalizeSlug(title) || "";
@@ -110,7 +122,6 @@ export default function PagesManager() {
       });
       await loadPages();
       setSelectedId(row.id);
-      setSelected(row);
       setSlug(row.slug);
       setTitle(row.title);
       setDescription(row.description || "");
@@ -130,14 +141,13 @@ export default function PagesManager() {
     try {
       const normalized = normalizeSlug(slug);
       if (!normalized) {
-        setMsg("Slug must be 3–60 lowercase letters, numbers and dashes.");
+        setMsg("Slug must be 3–80 lowercase letters, numbers and dashes.");
         return;
       }
       const row = await api<PageRow>(`/api/admin/pages/${selectedId}`, {
         method: "PUT",
         body: JSON.stringify({ slug: normalized, title, description, config: { ...config, sections: config.sections || [] } }),
       });
-      setSelected(row);
       setSlug(row.slug);
       setTitle(row.title);
       setDescription(row.description || "");
@@ -162,7 +172,7 @@ export default function PagesManager() {
       });
       await loadPages();
       setDirty(false);
-      setMsg("Page is live. Visit /" + slug + " on your storefront.");
+      setMsg("Page is live. Visit /pages/" + slug + " on your storefront.");
     } catch (e: any) {
       setMsg("Failed: " + e.message);
     } finally { setSaving(false); }
@@ -184,24 +194,21 @@ export default function PagesManager() {
 
   async function deletePage() {
     if (!selectedId) return;
-    if (!window.confirm("Delete this page? This can't be undone.")) return;
+    const ok = await confirmDialog({
+      title: "Delete this page?",
+      message: `"${title || slug}" will be permanently deleted. This can't be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setSaving(true); setMsg("");
     try {
       await api<any>(`/api/admin/pages/${selectedId}`, { method: "DELETE" });
-      setSelectedId(null); setSelected(null);
+      setSelectedId(null);
       await loadPages();
       setMsg("Page deleted.");
     } catch (e: any) { setMsg("Failed: " + e.message); }
     finally { setSaving(false); }
-  }
-
-  function updateSection(idx: number, patch: Partial<Section>) {
-    setConfig((prev: any) => {
-      const sections = [...(prev.sections || [])];
-      sections[idx] = { ...(sections[idx] || {}), ...patch };
-      return { ...prev, sections };
-    });
-    setDirty(true);
   }
 
   function addSection(type: Section["type"]) {
@@ -240,19 +247,14 @@ export default function PagesManager() {
     setDirty(true);
   }
 
-  const sectionTypes: { value: Section["type"]; label: string }[] = [
-    { value: "text", label: "Text" },
-    { value: "hero", label: "Hero" },
-    { value: "image", label: "Image" },
-    { value: "banner", label: "Banner" },
-    { value: "stats", label: "Stats" },
-    { value: "features", label: "Features" },
-    { value: "product-grid", label: "Products" },
-    { value: "category-grid", label: "Categories" },
-    { value: "spacer", label: "Spacer" },
-  ];
+  function setHero(patch: any) {
+    setConfig((prev: any) => ({ ...prev, hero: { ...(prev.hero || {}), ...patch } }));
+    setDirty(true);
+  }
 
-  const viewProps: DynamicSectionViewProps = {
+  const hero = config.hero || {};
+
+  const viewProps: Omit<DynamicSectionViewProps, "section"> = {
     products,
     categories,
     colors: config.colors,
@@ -271,13 +273,13 @@ export default function PagesManager() {
           <RippleButton onClick={createPage} loading={saving}>＋ New</RippleButton>
         </div>
         <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: "0 0 0.75rem" }}>
-          Build custom pages (About, FAQ, landing pages…). Each gets its own public URL.
+          Build custom pages (About, FAQ, landing pages…). Each gets its own public URL under /pages/.
         </p>
         {loading ? <Spinner /> : error ? <ErrorMsg msg={error} /> : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
             {pages.length === 0 && <p style={{ fontSize: "0.8rem", color: "var(--text-tertiary)" }}>No pages yet.</p>}
             {pages.map((p) => (
-              <PageRowItem key={p.id} row={p} active={p.id === selectedId} onSelect={() => { setSelectedId(p.id); setSelected(p); setSlug(p.slug); setTitle(p.title); setDescription(p.description || ""); setConfig(p.config || DEFAULT_PAGE); setDirty(false); }} />
+              <PageRowItem key={p.id} row={p} active={p.id === selectedId} onSelect={() => { setSelectedId(p.id); setSlug(p.slug); setTitle(p.title); setDescription(p.description || ""); setConfig(p.config || DEFAULT_PAGE); setDirty(false); }} />
             ))}
           </div>
         )}
@@ -294,7 +296,7 @@ export default function PagesManager() {
             <RippleButton onClick={publish} loading={saving}>Publish</RippleButton>
             <RippleButton variant="danger" onClick={unpublish} loading={saving}>Unpublish</RippleButton>
             <RippleButton variant="danger" onClick={deletePage} loading={saving}>Delete</RippleButton>
-            <a href={`/${slug}`} target="_blank" rel="noopener" style={{ fontSize: "0.8rem" }}>View ↗</a>
+            <a href={`/pages/${slug}`} target="_blank" rel="noopener" style={{ fontSize: "0.8rem" }}>View ↗</a>
           </div>
 
           <div style={{ display: "flex", gap: "0.4rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
@@ -324,7 +326,7 @@ export default function PagesManager() {
             <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: "1rem", alignItems: "start" }}>
               <div>
                 <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.8rem", color: "var(--text-secondary)" }}>Add section</h4>
-                {sectionTypes.map((t) => (
+                {SECTION_TYPES.map((t) => (
                   <button key={t.value} type="button" onClick={() => addSection(t.value)} style={{ display: "block", width: "100%", textAlign: "left", ...inputStyle, marginBottom: "0.35rem", cursor: "pointer" }}>{t.label}</button>
                 ))}
               </div>
@@ -337,6 +339,35 @@ export default function PagesManager() {
                   <span style={{ fontSize: "0.68rem", color: "var(--text-tertiary)" }}>{SLUG_HINT}</span>
                 </Field>
                 <Field label="Description"><Text value={description} onChange={(v) => { setDescription(v); setDirty(true); }} /></Field>
+
+                <div className="sb-item-card">
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+                    <strong style={{ fontSize: "0.78rem" }}>Hero (top of page)</strong>
+                    <span style={{ flex: 1 }} />
+                    <Check label="Show" checked={hero.enabled !== false} onChange={(v) => setHero({ enabled: v })} />
+                  </div>
+                  {hero.enabled !== false && (
+                    <>
+                      <Field label="Style">
+                        <Select
+                          value={hero.style || "carousel"}
+                          onChange={(v) => setHero({ style: v })}
+                          options={[
+                            { value: "carousel", label: "Carousel" },
+                            { value: "split", label: "Split" },
+                            { value: "minimal", label: "Minimal" },
+                            { value: "none", label: "None" },
+                          ]}
+                        />
+                      </Field>
+                      <Field label="Badge"><Text value={hero.badge || ""} onChange={(v) => setHero({ badge: v })} placeholder="e.g. New arrivals" /></Field>
+                      <Field label="Headline"><Text value={hero.headline || ""} onChange={(v) => setHero({ headline: v })} placeholder="Welcome to our store" /></Field>
+                      <Field label="Subtitle"><Text value={hero.subtitle || ""} onChange={(v) => setHero({ subtitle: v })} /></Field>
+                      <Field label="Button label"><Text value={hero.ctaText || ""} onChange={(v) => setHero({ ctaText: v })} placeholder="Shop now" /></Field>
+                      <Field label="Button link"><Text value={hero.ctaLink || ""} onChange={(v) => setHero({ ctaLink: v })} placeholder="/" /></Field>
+                    </>
+                  )}
+                </div>
 
                 {(config.sections || []).length === 0 && (
                   <p style={{ fontSize: "0.8rem", color: "var(--text-tertiary)" }}>No sections yet — add one from the left.</p>
@@ -369,16 +400,18 @@ export default function PagesManager() {
           {tab === "design" && (
             <div>
               <Field label="Accent color"><Color value={config.colors?.accent || ""} onChange={(v) => { setConfig((prev: any) => ({ ...prev, colors: { ...(prev.colors || {}), accent: v } })); setDirty(true); }} /></Field>
+              <Field label="Hero background"><Color value={config.colors?.heroBg || ""} onChange={(v) => { setConfig((prev: any) => ({ ...prev, colors: { ...(prev.colors || {}), heroBg: v } })); setDirty(true); }} /></Field>
+              <Field label="Hero text"><Color value={config.colors?.heroText || ""} onChange={(v) => { setConfig((prev: any) => ({ ...prev, colors: { ...(prev.colors || {}), heroText: v } })); setDirty(true); }} /></Field>
               <Check label="Show product ratings" checked={config.productCard?.showRating !== false} onChange={(v) => { setConfig((prev: any) => ({ ...prev, productCard: { ...(prev.productCard || {}), showRating: v } })); setDirty(true); }} />
             </div>
           )}
 
           {tab === "preview" && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ background: "var(--surface-hover)", padding: "0.4rem 0.75rem", fontSize: "0.75rem", color: "var(--text-secondary)" }}>/{slug} · {device}</div>
+              <div style={{ background: "var(--surface-hover)", padding: "0.4rem 0.75rem", fontSize: "0.75rem", color: "var(--text-secondary)" }}>/pages/{slug} · {device}</div>
               <div style={{ maxHeight: "65vh", overflow: "auto" }}>
-                {(config.sections || []).length === 0 && <p style={{ padding: "2rem", textAlign: "center", color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Nothing to preview yet.</p>}
-                <DynamicSectionView section={{ type: "hero", id: "hero", title: title || "", content: description || "", align: "center" } as any} products={products} categories={categories} colors={config.colors} cardConfig={config.productCard} forceTrigger={undefined} />
+                {(config.sections || []).length === 0 && !hero && <p style={{ padding: "2rem", textAlign: "center", color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Nothing to preview yet.</p>}
+                <HeroSection hero={hero} colors={config.colors} products={products} categories={categories} forceTrigger={undefined} />
                 {(config.sections || []).map((s: Section, i: number) => (
                   <DynamicSectionView key={s.id || i} section={s} products={products} categories={categories} colors={config.colors} cardConfig={config.productCard} forceTrigger={undefined} index={i} />
                 ))}

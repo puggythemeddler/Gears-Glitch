@@ -28,11 +28,12 @@ import AdminRepairs from "@/components/admin/AdminRepairs";
 import AdminSerials from "@/components/admin/AdminSerials";
 import HelpPanel from "@/components/admin/HelpPanel";
 import StorefrontBuilder from "@/components/admin/StorefrontBuilder";
+import PagesManager from "@/components/admin/PagesManager";
 import FeaturePicker from "@/components/admin/FeaturePicker";
 import AdminWarranties from "@/components/admin/AdminWarranties";
 import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 
@@ -90,6 +91,7 @@ const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   "product-positioning": "positioning:view",
   "whatsapp-settings": "whatsapp:view",
   "notifications-settings": "settings:view",
+  pages: "settings:view",
 };
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string; features?: string[] }[] }[] = [
@@ -179,6 +181,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "settings-system", label: "System" },
       { key: "storefront", label: "Storefront" },
       { key: "layout-builder", label: "Layout Builder", feature: "Drag-and-drop storefront builder" },
+      { key: "pages", label: "Pages", feature: "Custom pages & landing pages" },
       { key: "email-settings", label: "Email", feature: "Email notifications" },
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
       { key: "notifications-settings", label: "Notifications" },
@@ -228,6 +231,7 @@ const NAV_ICONS: Partial<Record<AdminView, string>> = {
   messages: "messageCircle",
   reviews: "star",
   audit: "eye",
+  pages: "fileText",
   "settings-store-info": "store",
   "settings-payments": "card",
   "settings-compliance": "shield",
@@ -657,6 +661,7 @@ export default function AdminPage() {
             {view === "about-us" && <AdminAboutUs />}
             {view === "storefront" && <AdminStorefront onOpenBuilder={() => setView("layout-builder")} />}
             {view === "layout-builder" && <StorefrontBuilder />}
+            {view === "pages" && <PagesManager />}
             {view === "settings-store-info" && <AdminStoreInfo />}
             {view === "settings-payments" && <AdminPayments />}
             {view === "settings-compliance" && <AdminCompliance />}

@@ -113,10 +113,63 @@ export function sanitizeSections(raw: unknown): any[] {
   return out;
 }
 
+const HERO_STYLES = ["carousel", "split", "minimal", "none"] as const;
+const HERO_BUTTON_VARIANTS = ["secondary", "outline"] as const;
+
+function sanitizeHeroButtons(raw: unknown): { label: string; link: string; variant?: "secondary" | "outline" }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { label: string; link: string; variant?: "secondary" | "outline" }[] = [];
+  for (const b of raw.slice(0, 6)) {
+    if (!b || typeof b !== "object" || Array.isArray(b)) continue;
+    const label = typeof (b as any).label === "string" ? (b as any).label.slice(0, 120) : "";
+    const link = typeof (b as any).link === "string" ? (b as any).link.slice(0, 500) : "";
+    const variant = (b as any).variant;
+    out.push({
+      label,
+      link,
+      ...(HERO_BUTTON_VARIANTS.includes(variant) ? { variant } : {}),
+    });
+  }
+  return out;
+}
+
+// Mirrors the top-level `hero` key of DynamicLayoutConfig (dynamic-engine.tsx).
+function sanitizeHero(raw: unknown): any {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const h: any = {};
+  if (typeof (raw as any).enabled === "boolean") h.enabled = (raw as any).enabled;
+  if (HERO_STYLES.includes((raw as any).style)) h.style = (raw as any).style;
+  const heroStringLimits: Record<string, number> = {
+    badge: 120, headline: 300, subtitle: 600,
+    ctaText: 120, ctaLink: 500, backgroundImage: 2000, featuredCategory: 120,
+  };
+  for (const [k, limit] of Object.entries(heroStringLimits)) {
+    const v = (raw as any)[k];
+    if (v !== undefined && typeof v !== "object") h[k] = String(v).slice(0, limit);
+  }
+  const buttons = sanitizeHeroButtons((raw as any).buttons);
+  if (buttons.length) h.buttons = buttons;
+  return Object.keys(h).length ? h : undefined;
+}
+
+// Mirrors the `productCard` key of DynamicLayoutConfig.
+function sanitizeProductCard(raw: unknown): any {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const pc: any = {};
+  if (["default", "compact", "detailed"].includes((raw as any).style)) pc.style = (raw as any).style;
+  if (typeof (raw as any).showRating === "boolean") pc.showRating = (raw as any).showRating;
+  if (typeof (raw as any).showSalePrice === "boolean") pc.showSalePrice = (raw as any).showSalePrice;
+  return Object.keys(pc).length ? pc : undefined;
+}
+
 export function sanitizePageConfig(raw: unknown): any {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { sections: [] };
   const cfg: any = {};
   if (Array.isArray((raw as any).sections)) cfg.sections = sanitizeSections((raw as any).sections);
+  const hero = sanitizeHero((raw as any).hero);
+  if (hero) cfg.hero = hero;
+  const productCard = sanitizeProductCard((raw as any).productCard);
+  if (productCard) cfg.productCard = productCard;
   const colors = (raw as any).colors;
   if (colors && typeof colors === "object" && !Array.isArray(colors)) {
     const c: any = {};
