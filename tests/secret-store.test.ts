@@ -40,7 +40,11 @@ describe("secret-store", () => {
   });
 
   it("fails safe (returns raw stored text) on a tampered or wrongly-keyed blob", () => {
-    const tampered = encryptSecret("real-secret").replace(/.$/, "X"); // corrupt last b64url char
+    const ciphertext = encryptSecret("real-secret");
+    // Flip one base64url character mid-blob so the auth tag can never match.
+    const at = Math.floor(ciphertext.length / 2);
+    const tampered = ciphertext.slice(0, at) + (ciphertext[at] === "A" ? "B" : "A") + ciphertext.slice(at + 1);
+    assert.notEqual(tampered, ciphertext, "test must actually change the ciphertext");
     assert.equal(decryptSecret(tampered), tampered);
     // wrong key: decrypt under a different key must not crash or leak plaintext
     const stored = encryptSecret("real-secret", deriveEncryptionKey({ jwtSecret: "key-a" }));
