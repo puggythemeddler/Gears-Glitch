@@ -391,6 +391,8 @@ import * as notifier from "./notify";
 import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail } from "./email";
 import { getGmailConfig, getGmailStatus, buildGmailAuthUrl, signGmailState, verifyGmailState, getOAuthStateSecret, exchangeGmailCode, saveGmailConnection, testGmailConnection, recordGmailTestResult, disconnectGmail } from "./gmail";
+import { getIntegrationsHealth } from "./integrations-health";
+import { upsertOauthAccount } from "./integrations-store";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs } from "./notification-service";
 import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
@@ -5064,6 +5066,10 @@ app.get("/api/integrations/gmail", staffAuthMiddleware, asyncHandler(async (_req
   res.json(await getGmailStatus());
 }));
 
+app.get("/api/integrations/status", staffAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ checks: await getIntegrationsHealth(), generatedAt: new Date().toISOString() });
+}));
+
 app.post("/api/integrations/gmail/test", staffAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   const result = await testGmailConnection();
   await recordGmailTestResult(result.ok, result.error ? new Error(result.error) : undefined).catch(() => {});
@@ -5111,6 +5117,7 @@ app.get("/api/auth/google/callback", asyncHandler(async (req: Request, res: Resp
     const permissions = await getUserPermissions(staff.id);
     const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: staff.role, permissions });
     setSessionCookie(res, token, 7 * 24 * 3600);
+    try { await upsertOauthAccount({ provider: "google", subject: profile.email, email: profile.email, name: profile.name, user_id: staff.id, customer_id: null }); } catch { console.warn("[auth] Google account link (staff) failed"); }
     try { await logAudit(staff.id, staff.username, "login", "auth", null, { method: "google" }, staff.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
     res.redirect(303, `${base}${postLogin}`);
     return;
@@ -5129,6 +5136,7 @@ app.get("/api/auth/google/callback", asyncHandler(async (req: Request, res: Resp
     return;
   }
   await updateCustomerLastLogin(customer.id);
+  try { await upsertOauthAccount({ provider: "google", subject: profile.email, email: customer.email, name: customer.name, customer_id: customer.id, user_id: null }); } catch { console.warn("[auth] Google account link (customer) failed"); }
   const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer" }, "7d");
   setSessionCookie(res, token, 7 * 24 * 3600);
   try { await logAudit(null, customer.name || profile.email, "customer_login", "auth", null, { method: "google" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }

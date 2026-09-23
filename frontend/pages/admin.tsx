@@ -19,6 +19,7 @@ import ProvidersPage from "@/components/admin/ProvidersPage";
 import CreditNotesPage from "@/components/admin/CreditNotesPage";
 import AboutUsPage from "@/components/admin/AboutUsPage";
 import WhatsAppSettings from "@/components/admin/WhatsAppSettings";
+import IntegrationsSettings from "@/components/admin/IntegrationsSettings";
 import NotificationSettings from "@/components/admin/NotificationSettings";
 import ProductPositioningPage from "@/components/admin/ProductPositioningPage";
 import StockTakeListPage from "@/components/admin/StockTakeListPage";
@@ -33,7 +34,7 @@ import FeaturePicker from "@/components/admin/FeaturePicker";
 import AdminWarranties from "@/components/admin/AdminWarranties";
 import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 
@@ -90,6 +91,7 @@ const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   "about-us": "about:view",
   "product-positioning": "positioning:view",
   "whatsapp-settings": "whatsapp:view",
+  "settings-integrations": "settings:view",
   "notifications-settings": "settings:view",
   pages: "settings:view",
 };
@@ -183,6 +185,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "layout-builder", label: "Layout Builder", feature: "Drag-and-drop storefront builder" },
       { key: "pages", label: "Pages", feature: "Custom pages & landing pages" },
       { key: "email-settings", label: "Email", feature: "Email notifications" },
+      { key: "settings-integrations", label: "Integrations" },
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
       { key: "notifications-settings", label: "Notifications" },
       { key: "about-us", label: "About Us" },
@@ -242,6 +245,7 @@ const NAV_ICONS: Partial<Record<AdminView, string>> = {
   "layout-builder": "layout",
   "product-positioning": "move",
   "email-settings": "mail",
+  "settings-integrations": "link",
   "whatsapp-settings": "message",
   "notifications-settings": "bell",
   "about-us": "info",
@@ -672,6 +676,7 @@ export default function AdminPage() {
             {view === "reviews" && <AdminReviews />}
             {view === "product-positioning" && <AdminProductPositioning />}
             {view === "email-settings" && <AdminEmailSettings />}
+            {view === "settings-integrations" && <IntegrationsSettings onNavigate={setView} />}
             {view === "whatsapp-settings" && <WhatsAppSettings />}
             {view === "notifications-settings" && <NotificationSettings />}
             {view === "category-positioning" && <CategoryPositioningPage />}

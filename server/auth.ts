@@ -379,6 +379,11 @@ async function googleLogin(googleToken: string): Promise<AuthResult> {
 
     await updateCustomerLastLogin(customer.id);
 
+    try {
+      const { upsertOauthAccount } = require("./integrations-store") as typeof import("./integrations-store");
+      await upsertOauthAccount({ provider: "google", subject: email, email: customer.email, name: customer.name, customer_id: customer.id, user_id: null });
+    } catch { console.warn("[auth] Google account link (one-tap) failed"); }
+
     const token = signToken({
       sub: customer.id,
       email: customer.email,
