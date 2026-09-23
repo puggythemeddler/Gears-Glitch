@@ -5,6 +5,31 @@ import path from "path";
 import { imageUrlForProduct, deleteProductImages } from "./upload";
 import { CATEGORIES } from "./categories";
 import { query, queryOne, queryAll, transaction, runSchema, getPool } from "./db-helpers";
+import { encryptSecret, decryptSecret, isEncrypted } from "./secret-store";
+
+// Settings keys whose values are secrets and must be encrypted at rest. Values
+// written through the settings layer are stored as `enc:v1:` ciphertext and
+// transparently decrypted on read, so existing plaintext rows keep working.
+const SECRET_SETTING_KEYS = new Set([
+  "mpesa_config",
+  "whatsappAccessToken",
+  "whatsappAppSecret",
+  "whatsappVerifyToken",
+  "cloudinaryApiSecret",
+  "etimsOscuConsumerSecret",
+  "etimsOscuConsumerKey",
+  "etims_oscu_consumer_secret",
+  "etims_oscu_consumer_key",
+  "kra_pin",
+]);
+
+function encryptSettingValue(key: string, value: string): string {
+  return SECRET_SETTING_KEYS.has(key) && value && !isEncrypted(value) ? encryptSecret(value) : value;
+}
+
+function decryptSettingValue(key: string, value: string): string {
+  return SECRET_SETTING_KEYS.has(key) ? decryptSecret(value) : value;
+}
 
 interface ProductRow {
   id: string;
@@ -1781,7 +1806,7 @@ async function seedProductsIfEmpty(): Promise<void> {
 async function getSettings(): Promise<Settings> {
   const rows = await queryAll("SELECT key, value FROM settings") as { key: string; value: string }[];
   const s: { [key: string]: string } = {};
-  for (const row of rows) s[row.key] = row.value;
+  for (const row of rows) s[row.key] = decryptSettingValue(row.key, row.value);
   return {
     storeName: s.storeName || process.env.STORE_NAME || "My Shop",
     phone: s.phone || "",
@@ -1832,7 +1857,7 @@ async function updateSettings(updates: { [key: string]: any }): Promise<Settings
     for (const key of allowed) {
       if (updates[key] === undefined) continue;
       if (secretKeys.includes(key) && updates[key] === "") continue;
-      await client.query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [key, String(updates[key])]);
+      await client.query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [key, encryptSettingValue(key, String(updates[key]))]);
     }
   });
   return await getSettings();
@@ -1840,11 +1865,11 @@ async function updateSettings(updates: { [key: string]: any }): Promise<Settings
 
 async function getStoreSetting(key: string): Promise<string | null> {
   const row = await queryOne("SELECT value FROM settings WHERE key = $1", [key]) as any;
-  return row ? row.value : null;
+  return row ? decryptSettingValue(key, row.value) : null;
 }
 
 async function setStoreSetting(key: string, value: string): Promise<void> {
-  await query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [key, value]);
+  await query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [key, encryptSettingValue(key, value)]);
 }
 
 async function listProducts(category?: string, group?: string, includeHidden: boolean = false): Promise<Product[]> {
