@@ -36,6 +36,7 @@ import {
   resumeClientRecord,
   getSmtpTransport,
   getMissingProvisioningEnv,
+  validateInitialPassword,
   type ProvisionResult,
 } from "./provision";
 
@@ -465,9 +466,18 @@ app.get("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
 // Add client — starts provisioning
 app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
   try {
-    let { name, adminEmail, plan, domain } = req.body || {};
+    let { name, adminEmail, plan, domain, adminPassword, confirmAdminPassword } = req.body || {};
     if (!name) {
       res.status(400).json({ error: "name is required" });
+      return;
+    }
+
+    // The controller-selected initial site administrator password is REQUIRED
+    // for provisioning. It is validated here and again in provisionClient, and
+    // never stored, logged, or returned by the control plane.
+    const passwordError = validateInitialPassword(adminPassword, confirmAdminPassword);
+    if (passwordError) {
+      res.status(400).json({ error: passwordError });
       return;
     }
     // Operator can set a default admin email via env var so every new client's
@@ -520,8 +530,10 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
     );
     const clientId = insertResult.rows[0].id;
 
-    // Provision in background
-    provisionClient(name, adminEmail, plan || "starter", uniqueDomain)
+    // Provision in background. The initial admin password is handed to the
+    // client's Render service as ADMIN_PASSWORD only — it is never persisted
+    // on the control plane or included in the audit trail.
+    provisionClient(name, adminEmail, plan || "starter", adminPassword, uniqueDomain)
       .then(async (result: ProvisionResult) => {
         const subdomain = result.domain.replace(`.${DOMAIN_BASE}`, "");
         await query(
@@ -530,9 +542,8 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
             neon_project_id = $2, neon_db_name = $3, neon_db_url = $4,
             render_service_id = $5, render_service_url = $6,
             vercel_project_id = $7, vercel_project_url = $8,
-            cp_secret = $9,
-            admin_password = $10
-          WHERE id = $11`,
+            cp_secret = $9
+          WHERE id = $10`,
           [
             result.domain,
             result.neon.projectId,
@@ -543,7 +554,6 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
             result.vercel.projectId,
             result.vercel.projectUrl,
             result.cpSecret,
-            await bcrypt.hash(result.adminPassword, 10),
             clientId,
           ]
         );

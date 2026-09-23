@@ -1,5 +1,6 @@
 import React from "react";
 import { useEffect, useState } from "react";
+import { normalizeHref } from "@/lib/links";
 
 interface Splash {
   id: number;
@@ -69,8 +70,11 @@ function SplashBar({ splash, style }: { splash: Splash; style?: React.CSSPropert
     </div>
   );
 
-  if (splash.link_url) {
-    return <a href={splash.link_url} style={{ textDecoration: "none", color: "inherit", display: "block" }}>{content}</a>;
+  // Guard the splash link: unsafe or placeholder links render as plain content
+  // instead of a dead/opaque anchor.
+  const href = splash.link_url ? normalizeHref(splash.link_url) : "#";
+  if (splash.link_url && href !== "#") {
+    return <a href={href} style={{ textDecoration: "none", color: "inherit", display: "block" }}>{content}</a>;
   }
   return content;
 }

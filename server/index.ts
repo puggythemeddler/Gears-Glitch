@@ -5235,7 +5235,7 @@ app.post("/api/auth/magic-request", asyncHandler(async (req: Request, res: Respo
   if (!customer) { res.json({ ok: true }); return; }
   const jti = crypto.randomUUID();
   const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "magic", jti }, "1h");
-  const link = `${process.env.BASE_URL || ""}/account.html?magic=${token}`;
+  const link = `${process.env.BASE_URL || ""}/account?magic=${token}`;
   try {
     await notifier.sendMagicLinkEmail(customer, link);
   } catch (_e) { /* ignore */ }
@@ -5268,7 +5268,7 @@ app.post("/api/auth/request-admin-password-reset", asyncHandler(async (req: Requ
   if (staff) {
     const jti = crypto.randomUUID();
     const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: "admin", purpose: "reset", jti }, "2h");
-    const link = `${process.env.BASE_URL || ""}/admin-password-reset?token=${token}`;
+    const link = `${process.env.BASE_URL || ""}/account?adminReset=${token}`;
     try {
       await notifier.sendPasswordResetEmail({ email: staff.email, name: staff.username }, link);
     } catch (_e) { /* ignore */ }
@@ -5327,7 +5327,7 @@ app.post("/api/auth/request-password-reset", asyncHandler(async (req: Request, r
   if (!customer) { res.json({ ok: true }); return; }
   const jti = crypto.randomUUID();
   const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "reset", jti }, "2h");
-  const link = `${process.env.BASE_URL || ""}/account.html?reset=${token}`;
+  const link = `${process.env.BASE_URL || ""}/account?reset=${token}`;
   try {
     await notifier.sendPasswordResetEmail(customer, link);
   } catch (_e) { /* ignore */ }

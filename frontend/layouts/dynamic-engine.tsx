@@ -6,6 +6,32 @@ import { motionGroupItemVars } from "@/lib/motion";
 import type { MotionConfig, MotionTrigger } from "@/lib/motion";
 import { normalizeHref } from "@/lib/links";
 
+// Render a builder-supplied link as an anchor only when it actually points
+// somewhere. Empty, "#", or unsafe links render as inert styled content so the
+// store never shows a dead `href="#"` button that does nothing on click.
+function DyLink({ href, className, style, fid, onClick, children }: {
+  href?: string;
+  className?: string;
+  style?: React.CSSProperties;
+  fid?: string;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  const target = normalizeHref(href || "");
+  if (!target || target === "#") {
+    return (
+      <span className={className} style={{ ...style, cursor: "default" } as React.CSSProperties} data-fid={fid} onClick={onClick}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <a className={className} href={target} style={style} data-fid={fid} onClick={onClick}>
+      {children}
+    </a>
+  );
+}
+
 export interface DynamicLayoutConfig {
   hero?: {
     enabled?: boolean;
@@ -148,10 +174,10 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
       {(hero.ctaText || (hero.buttons || []).length > 0) && (
         <div className="dy-hero-cta-row">
           {hero.ctaText && (
-            <a className="dy-hero-btn dy-hero-btn--primary" href={normalizeHref(hero.ctaLink || "/")} data-fid="hero.ctaText">{hero.ctaText}</a>
+            <DyLink className="dy-hero-btn dy-hero-btn--primary" href={hero.ctaLink} fid="hero.ctaText">{hero.ctaText}</DyLink>
           )}
           {(hero.buttons || []).map((b, i) => (
-            <a key={`${b.label}-${i}`} className="dy-hero-btn dy-hero-btn--secondary" href={normalizeHref(b.link)} data-fid={`hero.buttons.${i}.label`}>{b.label}</a>
+            <DyLink key={`${b.label}-${i}`} className="dy-hero-btn dy-hero-btn--secondary" href={b.link} fid={`hero.buttons.${i}.label`}>{b.label}</DyLink>
           ))}
         </div>
       )}
@@ -348,7 +374,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
   if (section.type === "banner") {
     return (
       <div style={{ margin: "1.5rem auto", maxWidth: 1440, padding: "0 2rem" }} data-fid={fid}>
-        <a href={normalizeHref(section.link || "/")} style={{ display: "block", background: section.bgColor || "var(--primary-subtle)", borderRadius: 12, overflow: "hidden", textDecoration: "none", color: "inherit" }}>
+        <DyLink href={section.link} style={{ display: "block", background: section.bgColor || "var(--primary-subtle)", borderRadius: 12, overflow: "hidden", textDecoration: "none", color: "inherit" }}>
           {section.imageUrl ? (
             <div style={{ position: "relative" }}>
               <img src={section.imageUrl} alt={section.text || ""} loading="lazy" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
@@ -365,7 +391,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
               {section.buttonLabel && <span style={{ background: "var(--primary)", color: "#fff", padding: "0.5rem 1.4rem", borderRadius: 8, fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
             </div>
           )}
-        </a>
+        </DyLink>
       </div>
     );
   }
@@ -410,7 +436,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
         : { ...base, border: "1px solid var(--primary)", color: "#fff", background: "var(--primary)" };
     return (
       <div style={{ padding: "1rem 2rem", maxWidth: 1440, margin: "0 auto", textAlign: section.align || "center" }} data-fid={fid}>
-        {section.label ? <a href={normalizeHref(section.link || "/")} style={style} data-fid={fid ? `${fid}.label` : undefined}>{section.label}</a> : <span style={{ color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Button â€” set a label</span>}
+        {section.label ? <DyLink href={section.link} style={style} fid={fid ? `${fid}.label` : undefined}>{section.label}</DyLink> : <span style={{ color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Button â€” set a label</span>}
       </div>
     );
   }
@@ -419,9 +445,9 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     return (
       <div style={{ padding: "1.5rem 2rem", maxWidth: 1440, margin: "0 auto", textAlign: "center" }} data-fid={fid}>
         {section.imageUrl ? (
-          <a href={section.link ? normalizeHref(section.link) : undefined} style={{ textDecoration: "none", color: "inherit", display: "inline-block" }}>
+          <DyLink href={section.link} style={{ textDecoration: "none", color: "inherit", display: "inline-block" }}>
             <img src={section.imageUrl} alt={section.alt || section.caption || ""} loading="lazy" style={{ maxWidth: "100%", maxHeight: 480, width: section.maxWidth ? section.maxWidth : undefined, borderRadius: section.rounded ? 14 : 0, objectFit: "contain" }} />
-          </a>
+          </DyLink>
         ) : (
           <div style={{ border: "2px dashed var(--border)", borderRadius: 12, padding: "3rem", color: "var(--text-tertiary)" }}>Image â€” add an image URL</div>
         )}

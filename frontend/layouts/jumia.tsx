@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
 import CurrencySelector from "@/components/CurrencySelector";
 import { formatPrice, escapeHtml } from "./shared";
@@ -50,6 +51,13 @@ export function LayoutStyles() {
 }
 
 export function Header({ categories, settings, isLoggedIn, userName, cartCount, isDark, toggleDark, logout, isStaff }: { categories: { id: string; label: string }[]; settings: any; isLoggedIn?: boolean; userName?: string; cartCount?: number; isDark?: boolean; toggleDark?: () => void; logout?: () => void; isStaff?: boolean }) {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const term = q.trim();
+    if (term) router.push(`/?search=${encodeURIComponent(term)}`);
+  };
   return (
     <>
       <div className="jum-header">
@@ -57,10 +65,10 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
           <Link href="/" className="jum-brand">
             {settings?.storeLogo ? <img src={settings.storeLogo} alt="Store" style={{ height: 80 }} /> : settings?.storeName || "Store"}
           </Link>
-          <div className="jum-search">
-            <input type="text" placeholder="Search products..." />
-            <button type="button">Search</button>
-          </div>
+          <form className="jum-search" onSubmit={submitSearch} role="search">
+            <input type="text" placeholder="Search products..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search products" />
+            <button type="submit">Search</button>
+          </form>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
             <CurrencySelector />
             <button type="button" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1 }}>{isDark ? "Light" : "Dark"}</button>

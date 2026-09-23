@@ -37,6 +37,26 @@ export function getMissingProvisioningEnv(): string[] {
   return missing;
 }
 
+// Validate the controller-selected initial site administrator password handed
+// to a new client during provisioning. Returns an error message or null when
+// the password is acceptable. All callers keep the password out of responses,
+// logs, and the audit trail.
+export function validateInitialPassword(password: string, confirm?: string): string | null {
+  if (typeof password !== "string" || password.trim().length === 0) {
+    return "An initial site administrator password is required.";
+  }
+  if (password.trim() !== password) {
+    return "The initial password must not have leading or trailing spaces.";
+  }
+  if (password.length < 8) {
+    return "The initial password must be at least 8 characters long.";
+  }
+  if (typeof confirm === "string" && password !== confirm) {
+    return "The passwords do not match.";
+  }
+  return null;
+}
+
 function parseGitRepo(repo: string): { owner: string; name: string; full: string } {
   const trimmed = repo.trim();
   const slash = trimmed.indexOf("/");
@@ -129,10 +149,22 @@ interface CloudinaryCredentials {
   folder: string;
 }
 
-async function createRenderService(clientName: string, dbUrl: string, clientSlug: string, cloudinary: CloudinaryCredentials | null | undefined, cpSecret: string, adminEmail: string, adminPassword: string) {
-  console.log(`[provision] Creating Render service for "${clientName}"...`);
+interface RenderEnvVars {
+  clientName: string;
+  dbUrl: string;
+  clientSlug: string;
+  cloudinary: CloudinaryCredentials | null | undefined;
+  cpSecret: string;
+  adminEmail: string;
+  adminPassword: string;
+}
 
-  const slug = slugify(clientName);
+// Pure builder for the environment variables passed to a new client's Render
+// service, so the layout is testable without hitting the Render API. The
+// controller-selected site admin password is only ever injected here as
+// ADMIN_PASSWORD — it is never persisted or returned by the control plane.
+export function buildRenderEnvVars(input: RenderEnvVars): { key: string; value: string }[] {
+  const { clientName, dbUrl, clientSlug, cloudinary, cpSecret, adminEmail, adminPassword } = input;
 
   const envVars: { key: string; value: string }[] = [
     { key: "NODE_ENV", value: "production" },
@@ -163,6 +195,19 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
       { key: "CLOUDINARY_API_SECRET", value: cloudinary.apiSecret },
       { key: "CLOUDINARY_FOLDER", value: `gear-glitch/${clientSlug}` }
     );
+  }
+
+  return envVars;
+}
+
+async function createRenderService(clientName: string, dbUrl: string, clientSlug: string, cloudinary: CloudinaryCredentials | null | undefined, cpSecret: string, adminEmail: string, adminPassword: string) {
+  console.log(`[provision] Creating Render service for "${clientName}"...`);
+
+  const slug = slugify(clientName);
+
+  const envVars = buildRenderEnvVars({ clientName, dbUrl, clientSlug, cloudinary, cpSecret, adminEmail, adminPassword });
+
+  if (cloudinary && cloudinary.cloudName && cloudinary.apiKey && cloudinary.apiSecret) {
     console.log(`[provision] Cloudinary configured for folder: gear-glitch/${clientSlug}`);
   }
 
@@ -464,7 +509,6 @@ async function setupCloudflareDns(subdomain: string, targetUrl: string) {
 export interface ProvisionResult {
   clientName: string;
   domain: string;
-  adminPassword: string;
   cpSecret: string;
   neon: { projectId: string; dbUrl: string };
   render: { serviceId: string; serviceUrl: string };
@@ -508,12 +552,19 @@ export async function provisionClient(
   clientName: string,
   adminEmail: string,
   plan: string,
+  adminPassword: string,
   domain?: string
 ): Promise<ProvisionResult> {
   const subdomain = slugify(clientName);
   const clientDomain = domain || `${subdomain}.${DOMAIN_BASE}`;
-  const adminPassword = randomPassword(20);
   const cpSecret = generateCpSecret();
+
+  // Defense in depth: provisioning refuses to run without a valid initial
+  // admin password even if a caller skips the API validation.
+  const passwordError = validateInitialPassword(adminPassword);
+  if (passwordError) {
+    throw new Error(passwordError);
+  }
 
   console.log(`\n[provision] ══════════════════════════════════════`);
   console.log(`[provision] Provisioning: ${clientName}`);
@@ -544,15 +595,14 @@ export async function provisionClient(
   console.log(`[provision] Backend:  ${render.serviceUrl}`);
   console.log(`[provision] Frontend: ${vercel.projectUrl}`);
   console.log(`[provision] Domain:   https://${clientDomain}`);
-  console.log(`[provision] Admin credentials sent via welcome email.\n`);
+  console.log(`[provision] Initial admin credentials were configured during provisioning (not emailed).\n`);
 
-  // 5. Send welcome email
-  await sendWelcomeEmail(adminEmail, clientName, vercel.projectUrl, render.serviceUrl, adminPassword, plan);
+  // 5. Send welcome email (contains links + username only — never the password)
+  await sendWelcomeEmail(adminEmail, clientName, vercel.projectUrl, render.serviceUrl, plan);
 
   return {
     clientName,
     domain: clientDomain,
-    adminPassword,
     cpSecret,
     neon,
     render,
@@ -792,12 +842,57 @@ export async function getSmtpTransport() {
   return { transporter, fromEmail, fromName };
 }
 
+// Welcome-email body builder. Intentionally takes no password: the initial
+// site administrator password is configured during provisioning and must
+// never travel over email. The body carries the site URL, the admin username,
+// and a pointer back to the provisioning flow.
+export function buildWelcomeEmailBody(
+  toEmail: string,
+  clientName: string,
+  frontendUrl: string,
+  backendUrl: string,
+  plan: string
+): string {
+  return `
+      <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem;">
+        <h1 style="color: #3b82f6; margin-bottom: 0.5rem;">Welcome to Gear&Glitch!</h1>
+        <p style="color: #666; font-size: 1.1rem;">Your store <strong>${clientName}</strong> is ready.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 1.5rem 0;">
+
+        <h3 style="margin-top: 1rem;">Your Login Details</h3>
+        <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+          <tr><td style="padding: 0.5rem; color: #666;">Email:</td><td style="padding: 0.5rem; font-weight: 600;">${toEmail}</td></tr>
+          <tr><td style="padding: 0.5rem; color: #666;">Username:</td><td style="padding: 0.5rem; font-weight: 600; font-family: monospace;">admin</td></tr>
+          <tr><td style="padding: 0.5rem; color: #666;">Plan:</td><td style="padding: 0.5rem; font-weight: 600; text-transform: capitalize;">${plan}</td></tr>
+        </table>
+
+        <div style="background: #f8fafc; border-radius: 8px; padding: 1.25rem; margin: 1.5rem 0;">
+          <h3 style="margin-top: 0;">Your Links</h3>
+          <p><a href="${frontendUrl}" style="color: #3b82f6;">Storefront</a> - ${frontendUrl}</p>
+          <p><a href="${frontendUrl}/login" style="color: #3b82f6;">Admin Login</a> - ${frontendUrl}/login</p>
+          <p><a href="${backendUrl}" style="color: #3b82f6;">API (Backend)</a> - ${backendUrl}</p>
+        </div>
+
+        <p style="color: #666; font-size: 0.9rem; margin-top: 1rem;">
+          Your initial site administrator password was configured during provisioning by the
+          Gear&Glitch platform operator and is not sent by email.
+          Log in at <a href="${frontendUrl}/login" style="color: #3b82f6;">${frontendUrl}/login</a>
+          with the username above and your password to start setting up your store.
+        </p>
+
+        <p style="color: #999; font-size: 0.85rem; margin-top: 2rem;">
+          If you never received a password, contact your operator at support@gearglitch.com.<br>
+          Please change your password after your first login for security.
+        </p>
+      </div>
+    `;
+}
+
 async function sendWelcomeEmail(
   toEmail: string,
   clientName: string,
   frontendUrl: string,
   backendUrl: string,
-  adminPassword: string,
   plan: string
 ) {
   const st = await getSmtpTransport();
@@ -807,38 +902,7 @@ async function sendWelcomeEmail(
   }
 
   try {
-
-    const html = `
-      <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem;">
-        <h1 style="color: #3b82f6; margin-bottom: 0.5rem;">Welcome to Gear&Glitch!</h1>
-        <p style="color: #666; font-size: 1.1rem;">Your store <strong>${clientName}</strong> is ready.</p>
-        <hr style="border: none; border-top: 1px solid #eee; margin: 1.5rem 0;">
-
-        <h3 style="margin-top: 1rem;">Your Login Details</h3>
-        <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
-          <tr><td style="padding: 0.5rem; color: #666;">Email:</td><td style="padding: 0.5rem; font-weight: 600;">${toEmail}</td></tr>
-          <tr><td style="padding: 0.5rem; color: #666;">Password:</td><td style="padding: 0.5rem; font-weight: 600; font-family: monospace;">${adminPassword}</td></tr>
-          <tr><td style="padding: 0.5rem; color: #666;">Plan:</td><td style="padding: 0.5rem; font-weight: 600; text-transform: capitalize;">${plan}</td></tr>
-        </table>
-
-        <div style="background: #f8fafc; border-radius: 8px; padding: 1.25rem; margin: 1.5rem 0;">
-<h3 style="margin-top: 0;">Your Links</h3>
-          <p><a href="${frontendUrl}" style="color: #3b82f6;">Storefront</a> - ${frontendUrl}</p>
-          <p><a href="${frontendUrl}/login" style="color: #3b82f6;">Admin Login</a> - ${frontendUrl}/login</p>
-          <p><a href="${backendUrl}" style="color: #3b82f6;">API (Backend)</a> - ${backendUrl}</p>
-        </div>
-
-        <p style="color: #666; font-size: 0.9rem; margin-top: 1rem;">
-          Log in at <a href="${frontendUrl}/login" style="color: #3b82f6;">${frontendUrl}/login</a>
-          using the admin credentials above to start setting up your store.
-        </p>
-
-        <p style="color: #999; font-size: 0.85rem; margin-top: 2rem;">
-          Please change your password after your first login for security.<br>
-          If you need any help, contact support@gearglitch.com
-        </p>
-      </div>
-    `;
+    const html = buildWelcomeEmailBody(toEmail, clientName, frontendUrl, backendUrl, plan);
 
     await st.transporter.sendMail({
       from: `"${st.fromName}" <${st.fromEmail}>`,

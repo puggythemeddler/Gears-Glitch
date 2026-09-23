@@ -619,6 +619,21 @@
         <div class="field"><label for="inp-email">Admin Email <span style="font-size:0.72rem;color:var(--text-muted)">(optional — defaults to your operator email)</span></label><input type="email" id="inp-email" placeholder="defaults to OPERATOR_ADMIN_EMAIL"></div>
         <div class="field"><label for="inp-domain">Domain (optional)</label><input type="text" id="inp-domain" placeholder="e.g. johns.gearglitch.com"></div>
         <div class="field"><label for="inp-plan">Plan</label><select id="inp-plan"><option value="starter">Starter</option><option value="growth" selected>Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
+        <div class="field">
+          <label for="inp-admin-password">Initial Site Administrator Password <span style="font-size:0.72rem;color:var(--text-muted)">(min 8 characters — set once for this store, never emailed)</span></label>
+          <div style="display:flex;gap:0.4rem;align-items:stretch">
+            <input type="password" id="inp-admin-password" placeholder="Initial admin password" autocomplete="new-password" style="flex:1;min-width:0">
+            <button type="button" class="btn btn-sm" onclick="togglePasswordField('inp-admin-password', this)" aria-label="Show or hide password">Show</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="inp-confirm-password">Confirm Password</label>
+          <div style="display:flex;gap:0.4rem;align-items:stretch">
+            <input type="password" id="inp-confirm-password" placeholder="Repeat the password" autocomplete="new-password" style="flex:1;min-width:0">
+            <button type="button" class="btn btn-sm" onclick="togglePasswordField('inp-confirm-password', this)" aria-label="Show or hide password">Show</button>
+          </div>
+        </div>
+        <p id="inp-password-error" role="alert" style="display:none;font-size:0.8rem;color:var(--danger-strong, #b3261e);margin:0.15rem 0 0"></p>
       </div>
       <div id="modal-progress" style="display:none"></div>
       <div class="modal-actions">
@@ -1295,7 +1310,7 @@
     }
 
     // ─── MODALS ───────────────────────────────────────────
-    function showModal() { openModal(document.getElementById("modal-overlay")); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = operatorEmail || ""; document.getElementById("inp-domain").value = ""; const p = document.getElementById("inp-plan"); if (p.options.length) p.selectedIndex = 0;
+    function showModal() { openModal(document.getElementById("modal-overlay")); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = operatorEmail || ""; document.getElementById("inp-domain").value = ""; const p = document.getElementById("inp-plan"); if (p.options.length) p.selectedIndex = 0; clearClientPasswordFields();
       // Show the owner upfront whether new-client provisioning can actually run.
       const warn = document.getElementById("provision-warning");
       try {
@@ -1308,7 +1323,7 @@
       } catch { if (warn) warn.style.display = "none"; }
       document.getElementById("btn-create").disabled = false;
     }
-    function hideModal() { closeModal(document.getElementById("modal-overlay")); }
+    function hideModal() { clearClientPasswordFields(); closeModal(document.getElementById("modal-overlay")); }
     function showExistingModal() { openModal(document.getElementById("existing-modal-overlay")); document.getElementById("inp-ex-name").value = ""; document.getElementById("inp-ex-email").value = operatorEmail || ""; document.getElementById("inp-ex-backend").value = ""; document.getElementById("inp-ex-frontend").value = ""; document.getElementById("inp-ex-domain").value = ""; document.getElementById("inp-ex-render-id").value = ""; document.getElementById("inp-ex-cp-secret").value = ""; }
     function hideExistingModal() { closeModal(document.getElementById("existing-modal-overlay")); }
     function hideEditModal() { closeModal(document.getElementById("edit-modal-overlay")); }
@@ -1368,12 +1383,50 @@
     }
 
     // ─── ACTIONS ──────────────────────────────────────────
+    function togglePasswordField(id, btn) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const show = el.type === "password";
+      el.type = show ? "text" : "password";
+      btn.textContent = show ? "Hide" : "Show";
+    }
+
+    function setPasswordError(msg) {
+      const el = document.getElementById("inp-password-error");
+      if (!el) return;
+      if (msg) { el.textContent = msg; el.style.display = ""; }
+      else { el.textContent = ""; el.style.display = "none"; }
+    }
+
+    // Clear the typed password so it never lingers in the DOM after closing.
+    function clearClientPasswordFields() {
+      const pw = document.getElementById("inp-admin-password");
+      const confirm = document.getElementById("inp-confirm-password");
+      if (pw) { pw.value = ""; pw.type = "password"; }
+      if (confirm) { confirm.value = ""; confirm.type = "password"; }
+      document.querySelectorAll('#modal-overlay .field button[onclick^="togglePasswordField"]').forEach((b) => { b.textContent = "Show"; });
+      setPasswordError("");
+    }
+
+    function validateClientPasswordInput(password, confirm) {
+      if (typeof password !== "string" || password.trim().length === 0) return "Set an initial site administrator password.";
+      if (password.trim() !== password) return "Remove leading or trailing spaces from the password.";
+      if (password.length < 8) return "The password must be at least 8 characters long.";
+      if (password !== confirm) return "The passwords do not match.";
+      return null;
+    }
+
     async function createClient() {
       const name = document.getElementById("inp-name").value.trim();
       const email = document.getElementById("inp-email").value.trim();
       const domain = document.getElementById("inp-domain").value.trim();
       const plan = document.getElementById("inp-plan").value;
+      const adminPassword = document.getElementById("inp-admin-password").value;
+      const confirmAdminPassword = document.getElementById("inp-confirm-password").value;
       if (!name) { toast("Business name required", "error"); return; }
+      const pwError = validateClientPasswordInput(adminPassword, confirmAdminPassword);
+      if (pwError) { setPasswordError(pwError); document.getElementById("inp-admin-password").focus(); return; }
+      setPasswordError("");
       document.getElementById("btn-create").disabled = true;
       const prog = document.getElementById("modal-progress");
       document.getElementById("modal-form").style.display = "none";
@@ -1381,7 +1434,7 @@
       const setProg = (html) => { prog.innerHTML = html; };
       setProg('<div style="padding:1rem;color:var(--primary-strong)">Starting provisioning for "' + esc(name) + '"...</div>');
       try {
-        const data = await api("/api/clients", { method: "POST", body: JSON.stringify({ name, adminEmail: email || undefined, plan, domain: domain || undefined }) });
+        const data = await api("/api/clients", { method: "POST", body: JSON.stringify({ name, adminEmail: email || undefined, plan, domain: domain || undefined, adminPassword, confirmAdminPassword }) });
         if (data.error) { setProg('<div style="padding:1rem;color:var(--danger-strong)">' + esc(data.error) + '</div>'); document.getElementById("btn-create").disabled = false; return; }
         const clientId = data.clientId;
         setProg('<div style="padding:1rem;color:var(--primary-strong)">Provisioning "' + esc(name) + '"...</div><div id="provision-log" style="font-size:0.85rem;color:var(--text-secondary);padding:0 1rem 1rem;line-height:1.7"></div>');
