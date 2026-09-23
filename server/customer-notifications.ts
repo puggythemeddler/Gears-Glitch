@@ -12,11 +12,12 @@ import { notify } from "./notification-service";
 import {
   welcomeCustomerEmail,
   orderProcessedCustomerEmail,
+  orderPlacedCustomerEmail,
   warrantyReminderCustomerEmail,
   warrantyExpiredCustomerEmail,
   repairCustomerEmail,
   warrantyClaimCustomerEmail,
-  CustomerDeviceInfo,
+  type CustomerDeviceInfo,
 } from "./email";
 
 const DEFAULT_REMINDER_DAYS = 30;
@@ -176,6 +177,43 @@ export async function notifyCustomerWelcome(customer: { id: number; name: string
     recipientPhone: phone,
     recipientName: customer.name || "Customer",
     idempotencyKey: `customer.created:customer:${customer.id}`,
+  });
+}
+
+// ─── Order placed (fires AFTER the order row is committed, storefront checkout,
+// ─── order.status is still pending/pending_payment — payment is NOT claimed).
+// ─── Order shapes that pre-date this change do not carry `items` here; we read
+// ─── them from the serialized order when present and otherwise omit the list.
+export async function notifyCustomerOrderPlaced(orderId: number): Promise<void> {
+  const order = await getOrder(orderId);
+  if (!order) return;
+  const contact = await customerContact(order);
+  if (!contact.email && !contact.phone) return;
+
+  const settings = await getSettings();
+  const storeName = settings.storeName || "My Shop";
+  const currency = settings.currency || "KES";
+  const total = orderTotal(order);
+  const orderUrl = `${baseUrl()}/order?id=${order.id}`;
+  const items: any[] = Array.isArray(order.items) ? order.items : [];
+  const itemLines = items.map((i: any) => `${i.name}${i.quantity ? ` x ${i.quantity}` : ""}`).join("\n");
+  const { subject, html } = orderPlacedCustomerEmail(contact.name, `#${order.id}`, itemLines, total, currency, storeName, orderUrl);
+  const bodyText = `Hi ${contact.name}, we received your order #${order.id}. ${itemLines ? `Items: ${itemLines}. ` : ""}Total: ${currency} ${total}. We'll notify you once payment is confirmed. Track: ${orderUrl}`;
+
+  await notify({
+    event: "order.created",
+    entityType: "order",
+    entityId: order.id,
+    subject,
+    bodyText,
+    bodyHtml: html,
+    audience: "customer",
+    customerId: contact.id,
+    recipientEmail: contact.email,
+    recipientPhone: contact.phone,
+    recipientName: contact.name,
+    idempotencyKey: `order.created:order:${order.id}`,
+    metadata: { source: order.source || "storefront" },
   });
 }
 

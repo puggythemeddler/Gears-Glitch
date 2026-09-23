@@ -393,6 +393,21 @@ ${deviceRows(devices)}
   return { subject: title, html };
 }
 
+export function orderPlacedCustomerEmail(customerName: string, orderNumber: string, itemsText: string, total: string, currency: string, storeName: string, orderUrl: string): { subject: string; html: string } {
+  const title = `Order received: ${esc(orderNumber)} — ${esc(storeName)}`;
+  const html = wrapTemplate(title, `
+<p>Hi ${esc(customerName)},</p>
+<p>Thanks for your order. We've received <strong>${esc(orderNumber)}</strong> and it is now waiting for payment confirmation.</p>
+${itemsText ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;padding:14px 16px;margin:16px 0;border-radius:6px;"><p style="margin:0;white-space:pre-wrap;">${esc(itemsText)}</p></div>` : ""}
+<div style="background:#f1f5f9;padding:14px 16px;margin:16px 0;border-radius:6px;">
+<p style="margin:0;font-size:16px;font-weight:700;"><strong>Total:</strong> ${esc(currency)} ${esc(total)}</p>
+</div>
+<p>We'll email you as soon as your payment is confirmed. You can track the order any time:</p>
+<p><a href="${orderUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Track your order</a></p>
+`);
+  return { subject: title, html };
+}
+
 export function warrantyReminderCustomerEmail(customerName: string, productName: string, serialNumber: string, expiryDate: string, daysLeft: number, storeName: string, orderUrl: string): { subject: string; html: string } {
   const title = `Warranty for ${esc(productName)} expires soon — ${esc(storeName)}`;
   const html = wrapTemplate(title, `

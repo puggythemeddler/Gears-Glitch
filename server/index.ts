@@ -393,7 +393,8 @@ import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, cred
 import { getGmailConfig, getGmailStatus, buildGmailAuthUrl, signGmailState, verifyGmailState, getOAuthStateSecret, exchangeGmailCode, saveGmailConnection, testGmailConnection, recordGmailTestResult, disconnectGmail } from "./gmail";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs } from "./notification-service";
-import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
+import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
+import { startNotificationQueueWorker } from "./notification-service";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
@@ -2958,6 +2959,10 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
     } catch (err: any) {
       console.warn("[notify] New-order notification failed:", err?.message || err);
     }
+    // Order confirmation to the customer. The order row is already committed at
+    // this point — this never runs before the order can be read back, and a
+    // notification failure must never roll back or fail the order itself.
+    try { await notifyCustomerOrderPlaced(order.id).catch(() => {}); } catch { /* non-fatal */ }
     res.status(201).json({ ...order, mpesaRequested, mpesaPhone: mpesaRequested ? mpesaPhone : undefined });
   } catch (err: any) {
     console.error("[order create]", err?.message || err);
@@ -2999,6 +3004,7 @@ app.post("/api/orders/create-pending", customerAuthMiddleware, asyncHandler(asyn
       processedBy: `Customer #${customerId}`,
     });
     await clearCart(customerId);
+    try { await notifyCustomerOrderPlaced(order.id).catch(() => {}); } catch { /* non-fatal */ }
     res.status(201).json(order);
   } catch (err: any) {
     console.error("[order create-pending]", err?.message || err);
@@ -7858,6 +7864,10 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
       // Control-plane heartbeat reporter (client → control plane managed push)
       startHeartbeatReporter();
+
+      // Durable notification queue: drains pending customer/admin deliveries
+      // every 15s with exponential backoff + dead-lettering.
+      startNotificationQueueWorker(15_000);
 
       // Auto-billing: check for overdue invoices every 6 hours
       setInterval(async () => {

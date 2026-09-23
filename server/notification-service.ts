@@ -269,30 +269,88 @@ async function logNotification(
   }
 }
 
-// ─── Main dispatch function ───────────────────────────────────────────────────
-export async function dispatchNotification(ctx: NotificationContext): Promise<NotificationResult> {
+// ─── Durable outbound queue ───────────────────────────────────────────────────
+// dispatchNotification now PERSISTS each recipient/channel as a row in
+// notification_deliveries first (fast DB writes, no external I/O in the request
+// path) and returns immediately. A background worker drains pending rows, sends
+// through the real channels, and settles with attempts + exponential backoff,
+// dead-lettering after max_attempts. A notification failure can therefore never
+// fail or roll back the business transaction that created the event.
+import {
+  enqueueDelivery,
+  listPendingDeliveries,
+  settleDelivery,
+  markDeliveryAttempt,
+} from "./integrations-store";
+
+// Exponential backoff per attempt index (1 = first retry after the initial try).
+export function deliveryBackoffMs(attempt: number): number {
+  const steps = [30_000, 2 * 60_000, 10 * 60_000, 30 * 60_000, 60 * 60_000];
+  if (!(attempt > 0)) return steps[0];
+  return steps[Math.min(attempt - 1, steps.length - 1)];
+}
+
+function parsePayload(raw: string | null): any {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+interface DeliveryRow {
+  id: number;
+  event_id: string;
+  event_type: string;
+  channel: string;
+  recipient: string;
+  subject: string;
+  payload: string;
+  attempts: number;
+  max_attempts: number;
+  entity_type: string;
+  entity_id: string;
+  customer_id: number | null;
+}
+
+// Insert one delivery row (UNIQUE(event_id, channel, recipient) makes
+// re-dispatch idempotent across restarts).
+async function pushDelivery(row: {
+  eventId: string; eventType: string; channel: NotificationChannel; audience: NotificationAudience;
+  entityType: string; entityId: string; recipient: string; subject: string; payload: string;
+  customerId?: number;
+}): Promise<void> {
+  await enqueueDelivery({
+    eventId: row.eventId,
+    eventType: row.eventType,
+    channel: row.channel,
+    audience: row.audience,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    recipient: row.recipient,
+    subject: row.subject,
+    payload: row.payload,
+    maxAttempts: 5,
+    customerId: row.customerId ?? null,
+    idempotencyKey: row.eventId,
+  });
+}
+
+// Main dispatch: resolve targets + preferences + opt-outs, persist deliveries.
+export async function enrollNotification(ctx: NotificationContext): Promise<NotificationResult> {
   const result: NotificationResult = { event: ctx.event };
   const audience: NotificationAudience = ctx.audience || "admin";
 
-  // Deterministic idempotency key (never a timestamp) scoped per audience so an
-  // admin and a customer notification for the same entity do not collide.
   const idempotencyKey = ctx.idempotencyKey || `${ctx.entityType}:${ctx.entityId}:${ctx.event}:${audience}`;
-  // Durable per-channel state FIRST: previously-sent channels are never re-sent,
-  // and a failed/skipped channel stays retryable. The in-memory cache is only
-  // consulted to collapse rapid repeats of a FULLY-delivered dispatch, so a
-  // wholesale retry of a failed channel within the TTL is no longer dropped.
   const alreadySent = await getSentChannels(idempotencyKey);
   if (alreadySent.size >= 2 && isDuplicate(idempotencyKey)) {
     console.log(`[notification-service] Skipping duplicate event (all channels delivered): ${idempotencyKey}`);
     return result;
   }
-  isDuplicate(idempotencyKey); // warm the cache (result intentionally ignored)
+  isDuplicate(idempotencyKey);
 
   const prefs = await getPreferences();
   const eventPrefs = prefs[ctx.event] || { email: false, whatsapp: false };
 
-  // Resolve recipients + opt-outs for the audience.
-  const storeName = (await getSettings()).storeName || "My Shop";
+  const settings = await getSettings();
+  const storeName = settings.storeName || "My Shop";
   let emailTargets: string[] = [];
   let phoneTargets: string[] = [];
   const optOut = { email: false, whatsapp: false };
@@ -311,6 +369,14 @@ export async function dispatchNotification(ctx: NotificationContext): Promise<No
   }
 
   const logFields: LogFields = { subject: ctx.subject, customerId: audience === "customer" ? ctx.customerId : undefined, idempotencyKey };
+  const entityId = String(ctx.entityId);
+  const emailPayload = JSON.stringify({ html: ctx.bodyHtml || `<p>${(ctx.bodyText || "").replace(/\n/g, "<br>")}</p>`, type: `notification_${ctx.event}` });
+  const whatsappPayload = JSON.stringify({
+    text: ctx.bodyText || ctx.subject || "",
+    entityType: audience === "customer" ? "customer" : "staff",
+    entityId: audience === "customer" ? (ctx.customerId || 0) : 0,
+    entityName: audience === "customer" ? (ctx.recipientName || "Customer") : storeName,
+  });
 
   // ── Email channel ──
   if (!eventPrefs.email) {
@@ -319,15 +385,13 @@ export async function dispatchNotification(ctx: NotificationContext): Promise<No
     result.email = { status: "sent", recipient: emailTargets[0] };
   } else if (audience === "customer" && optOut.email) {
     result.email = { status: "skipped", error: "Customer opted out of email" };
-    await logNotification(ctx.event, "email", "", "skipped", ctx.entityType, ctx.entityId, "Customer opted out of email", undefined, logFields);
+    await logNotification(ctx.event, "email", "", "skipped", ctx.entityType, entityId, "Customer opted out of email", undefined, logFields);
   } else if (emailTargets.length === 0) {
     result.email = { status: "skipped", error: audience === "customer" ? "No customer email on file" : "No admin email configured" };
   } else {
-    const html = ctx.bodyHtml || `<p>${ctx.bodyText.replace(/\n/g, "<br>")}</p>`;
     for (const email of emailTargets) {
-      const emailResult = await sendNotifEmail(email, ctx.subject, html, `notification_${ctx.event}`);
-      result.email = { ...emailResult, recipient: email };
-      await logNotification(ctx.event, "email", email, emailResult.status, ctx.entityType, ctx.entityId, emailResult.error, undefined, logFields);
+      await pushDelivery({ eventId: idempotencyKey, eventType: ctx.event, channel: "email", audience, entityType: ctx.entityType, entityId, recipient: email, subject: ctx.subject, payload: emailPayload, customerId: ctx.customerId });
+      result.email = { status: "pending", recipient: email };
     }
   }
 
@@ -338,21 +402,117 @@ export async function dispatchNotification(ctx: NotificationContext): Promise<No
     result.whatsapp = { status: "sent", recipient: phoneTargets[0] };
   } else if (audience === "customer" && optOut.whatsapp) {
     result.whatsapp = { status: "skipped", error: "Customer opted out of WhatsApp" };
-    await logNotification(ctx.event, "whatsapp", "", "skipped", ctx.entityType, ctx.entityId, "Customer opted out of WhatsApp", undefined, logFields);
+    await logNotification(ctx.event, "whatsapp", "", "skipped", ctx.entityType, entityId, "Customer opted out of WhatsApp", undefined, logFields);
   } else if (phoneTargets.length === 0) {
     result.whatsapp = { status: "skipped", error: audience === "customer" ? "No customer WhatsApp number on file" : "No admin WhatsApp phone configured" };
   } else {
-    const waEntityType = audience === "customer" ? "customer" : "staff";
-    const waEntityId = audience === "customer" ? (ctx.customerId || 0) : 0;
-    const waEntityName = audience === "customer" ? (ctx.recipientName || "Customer") : storeName;
     for (const phone of phoneTargets) {
-      const waResult = await sendNotifWhatsApp(phone, ctx.bodyText, storeName, waEntityType, waEntityId, waEntityName);
-      result.whatsapp = { ...waResult, recipient: phone };
-      await logNotification(ctx.event, "whatsapp", phone, waResult.status, ctx.entityType, ctx.entityId, waResult.error, waResult.messageId, logFields);
+      await pushDelivery({ eventId: idempotencyKey, eventType: ctx.event, channel: "whatsapp", audience, entityType: ctx.entityType, entityId, recipient: phone, subject: ctx.subject, payload: whatsappPayload, customerId: ctx.customerId });
+      result.whatsapp = { status: "pending", recipient: phone };
     }
   }
 
   return result;
+}
+
+export async function dispatchNotification(ctx: NotificationContext): Promise<NotificationResult> {
+  return enrollNotification(ctx);
+}
+
+// ─── Outbound worker ──────────────────────────────────────────────────────────
+
+// Process a single delivery row: send through the real channel, then settle.
+export async function processPendingDelivery(row: DeliveryRow): Promise<"sent" | "failed" | "dead" | "skipped"> {
+  const attemptsAfter = Number(row.attempts || 0) + 1;
+  const maxAttempts = Number(row.max_attempts || 5);
+  const entityType = row.entity_type || "staff";
+  const entityId = row.entity_id || "0";
+  const logFields: LogFields = { subject: row.subject || undefined, customerId: row.customer_id ?? undefined, idempotencyKey: row.event_id };
+  const payload = parsePayload(row.payload);
+
+  try {
+    if (row.channel === "email") {
+      const html = payload?.html || `<p>${(payload?.text || row.subject || "").replace(/\n/g, "<br>")}</p>`;
+      const type = payload?.type || `notification_${row.event_type}`;
+      const ok = await sendEmail(row.recipient, row.subject || "", html, type);
+      if (!ok) return await failDelivery(row, attemptsAfter, maxAttempts, "Email send failed", entityType, entityId, logFields);
+      await settleDelivery(row.id, { status: "sent", sentAt: new Date().toISOString() });
+      await logNotification(row.event_type as NotificationEvent, "email", row.recipient, "sent", entityType, entityId, undefined, undefined, logFields);
+      return "sent";
+    }
+
+    if (row.channel === "whatsapp") {
+      const text = payload?.text || row.subject || "";
+      const r = await sendNotifWhatsApp(row.recipient, text, payload?.entityName || "My Shop", payload?.entityType || "staff", Number(payload?.entityId || 0), payload?.entityName || "My Shop");
+      if (r.status !== "sent") return await failDelivery(row, attemptsAfter, maxAttempts, r.error || "WhatsApp send failed", entityType, entityId, logFields);
+      await settleDelivery(row.id, { status: "sent", sentAt: new Date().toISOString() });
+      await logNotification(row.event_type as NotificationEvent, "whatsapp", row.recipient, "sent", entityType, entityId, undefined, r.messageId, logFields);
+      return "sent";
+    }
+
+    return await failDelivery(row, attemptsAfter, maxAttempts, `Unknown channel ${row.channel}`, entityType, entityId, logFields, true);
+  } catch (err: any) {
+    return await failDelivery(row, attemptsAfter, maxAttempts, err?.message || String(err), entityType, entityId, logFields);
+  }
+}
+
+async function failDelivery(
+  row: DeliveryRow,
+  attemptsAfter: number,
+  maxAttempts: number,
+  error: string,
+  entityType: string,
+  entityId: string,
+  logFields: LogFields,
+  giveUp: boolean = false
+): Promise<"failed" | "dead" | "skipped"> {
+  const terminal = giveUp || attemptsAfter >= maxAttempts;
+  if (terminal) {
+    await markDeliveryAttempt(row.id, { status: "dead", error: error.slice(0, 500), nextAttemptAt: null });
+    await logNotification(row.event_type as NotificationEvent, row.channel as NotificationChannel, row.recipient, "failed", entityType, entityId, error, undefined, logFields);
+    return "dead";
+  }
+  const backoff = deliveryBackoffMs(attemptsAfter);
+  await markDeliveryAttempt(row.id, { status: "failed", error: error.slice(0, 500), nextAttemptAt: new Date(Date.now() + backoff).toISOString() });
+  await logNotification(row.event_type as NotificationEvent, row.channel as NotificationChannel, row.recipient, "failed", entityType, entityId, error, undefined, logFields);
+  return "failed";
+}
+
+let drainLock = false;
+
+// Process up to `limit` due deliveries. Safe to call from a timer or after an
+// enroll; guarded so concurrent drains never double-send.
+export async function drainNotificationQueueOnce(limit: number = 25): Promise<{ processed: number; sent: number; failed: number; dead: number; skipped?: number }> {
+  const counters = { processed: 0, sent: 0, failed: 0, dead: 0 };
+  if (drainLock) return { ...counters, skipped: 0 };
+  drainLock = true;
+  try {
+    const rows = await listPendingDeliveries(limit);
+    for (const row of rows) {
+      counters.processed++;
+      const outcome = await processPendingDelivery(row);
+      if (outcome === "sent") counters.sent++;
+      else if (outcome === "dead") counters.dead++;
+      else counters.failed++;
+    }
+    return { ...counters };
+  } catch (err: any) {
+    console.warn("[notification-queue] Drain failed:", err?.message || err);
+    return { ...counters };
+  } finally {
+    drainLock = false;
+  }
+}
+
+export function startNotificationQueueWorker(intervalMs: number = 15_000): NodeJS.Timeout {
+  const timer = setInterval(() => {
+    drainNotificationQueueOnce(50).catch((err: any) =>
+      console.warn("[notification-queue] Tick failed:", err?.message || err)
+    );
+  }, intervalMs);
+  timer.unref();
+  drainNotificationQueueOnce(50).catch(() => {});
+  return timer;
 }
 
 // ─── Convenience: fire-and-forget wrapper ─────────────────────────────────────
