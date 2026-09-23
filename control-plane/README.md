@@ -196,7 +196,7 @@ When you add a new client via the **Add Client** modal, the control plane automa
 
 ### Provisioning Details
 
-- **Admin account** — Every new client gets `ADMIN_USERNAME=admin`, `ADMIN_EMAIL` (taken from the modal or defaults to `OPERATOR_ADMIN_EMAIL`), and a generated `ADMIN_PASSWORD`. The backend creates this admin on first boot.
+- **Admin account** — Every new client gets `ADMIN_USERNAME=admin`, `ADMIN_EMAIL` (taken from the modal or defaults to `OPERATOR_ADMIN_EMAIL`), and a generated `ADMIN_PASSWORD`. The backend creates this admin on first boot. The password is an **initial provisioning credential only**: it is delivered as an env var to the new client service and is never persisted by the control plane, returned by its API, or written to the audit trail / welcome email. Once the admin exists, later boots never re-apply it — so a password the operator changes in the client app survives restarts and redeploys.
 - **Technician account** — A `technician` seed account is also created for testing role-gated views.
 - **Schema** — On first boot, the client backend loads `server/schema.sql` to create all database tables, ensuring a fresh database is fully initialized before running migrations.
 - **Vercel frontend** — After project creation, the control plane triggers a production deploy from `main` with `rootDirectory: "frontend"`. The `BACKEND_URL` env var is set before triggering the deploy.

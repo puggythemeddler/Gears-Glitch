@@ -78,8 +78,8 @@ Also set:
 
 ```env
 JWT_SECRET=any-long-random-string-here-at-least-32-characters
-ADMIN_PASSWORD=a-strong-password-here
-TECH_PASSWORD=a-strong-password-here
+ADMIN_PASSWORD=a-strong-password-here   # initial provisioning only — creates the admin on first run; never resets an existing admin's password
+TECH_PASSWORD=a-strong-password-here    # initial provisioning only — same lifecycle as ADMIN_PASSWORD
 STORE_NAME=My Shop   # optional — the store name shown in the tab title and og tags (defaults to "Gear&Glitch")
 ```
 

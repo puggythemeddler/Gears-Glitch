@@ -6,6 +6,7 @@ import { imageUrlForProduct, deleteProductImages } from "./upload";
 import { CATEGORIES } from "./categories";
 import { query, queryOne, queryAll, transaction, runSchema, getPool } from "./db-helpers";
 import { encryptSecret, decryptSecret, isEncrypted } from "./secret-store";
+import { provisionAdminUser } from "./admin-provisioning";
 
 // Settings keys whose values are secrets and must be encrypted at rest. Values
 // written through the settings layer are stored as `enc:v1:` ciphertext and
@@ -1512,21 +1513,10 @@ async function ensureDefaultCategories(): Promise<void> {
 }
 
 async function ensureAdminUser(): Promise<void> {
-  const username = process.env.ADMIN_USERNAME || "admin";
-  const email = process.env.ADMIN_EMAIL || "admin@gearandglitch.com";
-  let password = process.env.ADMIN_PASSWORD || "";
-  if (!password) {
-    if (process.env.NODE_ENV === "production") { console.warn("ADMIN_PASSWORD not set"); return; }
-    password = crypto.randomBytes(12).toString("hex");
-    console.warn(`[auth] ADMIN_PASSWORD not set — generated temporary dev password: ${password}`);
-  }
-  const passwordHash = await bcrypt.hash(password, 10);
-  const existing = await queryOne("SELECT id FROM users WHERE username = $1", [username]) as any;
-  if (existing) {
-    await query("UPDATE users SET password_hash = $1, email = $2 WHERE id = $3", [passwordHash, email, existing.id]);
-  } else {
-    await query("INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'admin')", [username, email, passwordHash]);
-  }
+  // ADMIN_PASSWORD is an INITIAL provisioning credential. The admin is created on
+  // first boot; on every later boot an existing admin is left untouched (only the
+  // configured email may be synchronized). See server/admin-provisioning.ts.
+  await provisionAdminUser();
 }
 
 async function ensureTechnicianUser(): Promise<void> {
