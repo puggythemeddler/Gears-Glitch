@@ -390,6 +390,7 @@ import reportRouter from "./report-routes";
 import * as notifier from "./notify";
 import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail } from "./email";
+import { getGmailConfig, getGmailStatus, buildGmailAuthUrl, signGmailState, verifyGmailState, getOAuthStateSecret, exchangeGmailCode, saveGmailConnection, testGmailConnection, recordGmailTestResult, disconnectGmail } from "./gmail";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs } from "./notification-service";
 import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
@@ -5021,6 +5022,53 @@ app.get("/api/auth/google", asyncHandler(async (req: Request, res: Response) => 
   }
   const state = generateGoogleOAuthState({ mode, redirect, ts: Date.now() });
   res.redirect(302, getGoogleOAuthURL(state, credentials));
+}));
+
+// ─── Gmail sending integration (OAuth, server-side code exchange) ────────────
+
+app.get("/api/integrations/gmail/auth-url", staffAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  const config = await getGmailConfig();
+  if (!config) {
+    res.status(400).json({ error: "Gmail OAuth is not configured. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and BASE_URL (or GMAIL_OAUTH_REDIRECT_URI), then reload." });
+    return;
+  }
+  const state = signGmailState(getOAuthStateSecret(), { purpose: "gmail", ts: Date.now() });
+  res.json({ url: buildGmailAuthUrl(config.clientId, config.redirectUri, state), redirectUri: config.redirectUri });
+}));
+
+app.get("/api/integrations/gmail/callback", asyncHandler(async (req: Request, res: Response) => {
+  const base = frontendUrl(req);
+  const state = verifyGmailState(req.query.state as string | undefined, getOAuthStateSecret());
+  const code = req.query.code as string | undefined;
+  if (!state || !code) {
+    res.redirect(303, `${base}/admin?integration=gmail&error=oauth_failed`);
+    return;
+  }
+  try {
+    const creds = await exchangeGmailCode(code);
+    await saveGmailConnection(creds);
+    res.redirect(303, `${base}/admin?integration=gmail&connected=1`);
+  } catch (err: any) {
+    console.error("[gmail] Connect failed:", err?.message || err);
+    res.redirect(303, `${base}/admin?integration=gmail&error=connect_failed`);
+  }
+}));
+
+app.get("/api/integrations/gmail", staffAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await getGmailStatus());
+}));
+
+app.post("/api/integrations/gmail/test", staffAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  const result = await testGmailConnection();
+  await recordGmailTestResult(result.ok, result.error ? new Error(result.error) : undefined).catch(() => {});
+  if (!result.ok) { res.status(400).json({ ok: false, error: result.error }); return; }
+  res.json({ ok: true });
+}));
+
+app.post("/api/integrations/gmail/disconnect", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  await disconnectGmail();
+  try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "disconnect", "integration", "gmail", {}, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
+  res.json({ ok: true });
 }));
 
 app.get("/api/auth/google/callback", asyncHandler(async (req: Request, res: Response) => {

@@ -1,6 +1,8 @@
 import { getSettings, logEmail } from "./db";
+import { getGmailTransporter, recordGmailSendResult, isGmailOAuthError } from "./gmail";
 
 let transporter: any = null;
+let transportKind: "gmail" | "smtp" | null = null;
 let nodemailer: any = null;
 
 function esc(s: string): string {
@@ -11,9 +13,20 @@ try {
   nodemailer = require("nodemailer");
 } catch (_err) {}
 
+// Gmail OAuth (connected via Integrations) is preferred over SMTP so stores
+// with a Gmail connection stop depending on an external SMTP server. Fails over
+// to SMTP when Gmail is not connected or its token could not be refreshed.
 async function getTransporter(): Promise<any> {
   if (transporter) return transporter;
   if (!nodemailer) return null;
+
+  const gmail = await getGmailTransporter();
+  if (gmail) {
+    transporter = gmail;
+    transportKind = "gmail";
+    return transporter;
+  }
+
   const s = await getSettings();
   const host = process.env.SMTP_HOST || "";
   const user = process.env.SMTP_USER || "";
@@ -26,11 +39,13 @@ async function getTransporter(): Promise<any> {
     secure: process.env.SMTP_SECURE === "1" || false,
     auth: { user: smtpUser, pass },
   });
+  transportKind = "smtp";
   return transporter;
 }
 
 export function resetTransporter(): void {
   transporter = null;
+  transportKind = null;
 }
 
 export async function sendEmail(to: string, subject: string, html: string, type: string = "general"): Promise<boolean> {
@@ -44,18 +59,52 @@ export async function sendEmail(to: string, subject: string, html: string, type:
   const fromField = `"${fromName}" <${from}>`;
   const transport = await getTransporter();
   if (!transport) {
-    console.log(`[Email] No SMTP configured. Would send to=${to} subject="${subject}" type=${type}`);
+    console.log(`[Email] No email transport configured. Would send to=${to} subject="${subject}" type=${type}`);
     await logEmail(to, from, subject, html, type, "no_smtp");
     return false;
   }
   try {
     await transport.sendMail({ from: fromField, to, subject, html });
-    console.log(`[Email] Sent to=${to} subject="${subject}" type=${type}`);
+    console.log(`[Email] Sent via ${transportKind || "smtp"} to=${to} subject="${subject}" type=${type}`);
     await logEmail(to, from, subject, html, type, "sent");
+    if (transportKind === "gmail") {
+      try { await recordGmailSendResult(true); } catch { /* best effort */ }
+    }
     return true;
   } catch (err: any) {
-    console.error(`[Email] Failed to send to=${to}:`, err.message || err);
+    console.error(`[Email] Failed to send via ${transportKind || "smtp"} to=${to}:`, err.message || err);
     await logEmail(to, from, subject, html, type, "failed", err.message || String(err));
+    // A stale/expired OAuth token must not poison future sends: drop the cached
+    // transporter so the next attempt rebuilds creds (and refresh) from scratch.
+    if (transportKind === "gmail") {
+      resetTransporter();
+      try { await recordGmailSendResult(false, err); } catch { /* best effort */ }
+      // A dead OAuth credential cannot be fixed by retrying — go straight to
+      // SMTP. Other transient failures get exactly one Gmail retry.
+      if (!isGmailOAuthError(err)) {
+        const retry = await sendEmail(to, subject, html, type);
+        if (retry) return true;
+      }
+      // Gmail worked but the message itself failed once — try SMTP as a
+      // second transport before giving up.
+      resetTransporter();
+      const smtpTransport = await getTransporter();
+      // transportKind is reassigned by getTransporter(); copy it into a
+      // widened local so the check reflects the post-call value.
+      const fallbackKind: string | null = transportKind;
+      if (smtpTransport && fallbackKind === "smtp") {
+        try {
+          await smtpTransport.sendMail({ from: fromField, to, subject, html });
+          console.log(`[Email] Sent via SMTP (fallback) to=${to} subject="${subject}" type=${type}`);
+          await logEmail(to, from, subject, html, type, "sent");
+          return true;
+        } catch (smtpErr: any) {
+          console.error(`[Email] SMTP fallback failed to=${to}:`, smtpErr.message || smtpErr);
+          await logEmail(to, from, subject, html, type, "failed", smtpErr.message || String(smtpErr));
+          return false;
+        }
+      }
+    }
     return false;
   }
 }
