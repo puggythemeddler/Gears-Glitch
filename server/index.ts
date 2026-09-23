@@ -392,7 +392,7 @@ import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from 
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail } from "./email";
 import { getGmailConfig, getGmailStatus, buildGmailAuthUrl, signGmailState, verifyGmailState, getOAuthStateSecret, exchangeGmailCode, saveGmailConnection, testGmailConnection, recordGmailTestResult, disconnectGmail } from "./gmail";
 import { getIntegrationsHealth } from "./integrations-health";
-import { upsertOauthAccount } from "./integrations-store";
+import { upsertOauthAccount, acquireWebhookEvent, markWebhookProcessed, markWebhookFailed } from "./integrations-store";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs } from "./notification-service";
 import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
@@ -1022,6 +1022,12 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
     }
   }
 
+  // Durable inbound ledger: record the callback (idempotent per CheckoutRequestID)
+  // so retries after crashes never double-apply and the integrations health page
+  // can report the last M-Pesa callback. Best-effort — never breaks acknowledgment.
+  const okEventKey = () => `stk:${checkoutId}`;
+  try { await acquireWebhookEvent("mpesa", okEventKey(), { checkoutRequestId: checkoutId, merchantRequestId, resultCode, resultDesc: resultDesc.slice(0, 500) }); } catch (err: any) { console.warn("[M-Pesa] Webhook ledger insert failed:", err?.message); }
+
   // Update order in database — atomic amount verification + state transition.
   try {
     const applied = await updateOrderMpesaStatus(checkoutId, resultCode, mpesaReceipt, paidAmount);
@@ -1035,6 +1041,7 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
         fs.appendFileSync(path.join(__dirname, "..", "data", "mpesa-callback.log"),
           `${JSON.stringify({ timestamp: new Date().toISOString(), checkoutRequestId: checkoutId, merchantRequestId, resultCode, resultDesc: "Accepted without paid (reconcile manually)", mpesaReceipt, paidAmount, reason: applied.reason })}\n`, "utf-8");
       } catch { /* non-fatal */ }
+      try { await markWebhookProcessed("mpesa", okEventKey(), 0); } catch { /* ledger is best-effort */ }
       return res.json({ ResultCode: 0, ResultDesc: "Success" });
     }
   } catch (err: any) {
@@ -1042,6 +1049,7 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
     // with a retryable failure so Safaricom re-delivers the callback (returning
     // 200 here would silently swallow the payment).
     console.error("[M-Pesa] Callback processing failed — acknowledging retryable failure:", err.message);
+    try { await markWebhookFailed("mpesa", okEventKey(), err.message); } catch { /* ledger is best-effort */ }
     return res.status(500).json({ ResultCode: 1, ResultDesc: "Temporary processing failure — retry" });
   }
 
@@ -1083,6 +1091,8 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
       fs.appendFileSync(path.join(__dirname, "..", "data", "mpesa-callback.log"),
       `${JSON.stringify(logEntry)}\n`, "utf-8");
   } catch { console.warn("[server] Failed to log M-Pesa callback"); }
+
+  try { await markWebhookProcessed("mpesa", okEventKey(), 0); } catch { /* ledger is best-effort */ }
 
   res.json({ ResultCode: 0, ResultDesc: "Success" });
 });

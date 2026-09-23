@@ -1,6 +1,7 @@
 import { getGmailStatus } from "./gmail";
 import { getMpesaConfig, isMpesaConfigured } from "./mpesa";
 import { getSettings, getStoreSetting } from "./db";
+import { queryOne } from "./db-helpers";
 
 export interface IntegrationHealthEntry {
   provider: "gmail" | "daraja" | "whatsapp" | "google";
@@ -44,12 +45,21 @@ export async function getIntegrationsHealth(): Promise<IntegrationHealthEntry[]>
   try {
     const cfg = getMpesaConfig();
     const configured = isMpesaConfigured();
+    let lastCallback: string | null = null;
+    let lastCallbackResult: string | null = null;
+    try {
+      const cb = await queryOne("SELECT processed_at, error, status FROM webhook_events WHERE provider = 'mpesa' ORDER BY received_at DESC LIMIT 1");
+      if (cb?.processed_at) lastCallback = String((cb as any).processed_at);
+      if (cb?.status === "failed") lastCallbackResult = String((cb as any).error || "processing failed");
+    } catch { /* ledger query is best-effort */ }
     entries.push({
       provider: "daraja",
       label: "M-Pesa Daraja",
       configured,
       connected: false,
       status: configured ? "configured" : "not_configured",
+      lastSuccessAt: lastCallback,
+      lastError: lastCallbackResult,
       meta: { env: cfg.env, shortcode: cfg.shortcode, tillNumber: cfg.tillNumber },
     });
   } catch (err: any) {
