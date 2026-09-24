@@ -39,3 +39,56 @@ These require access to external dashboards (Neon, Cloudinary, Render, Vercel). 
 - Enable TypeScript `strict: true` incrementally and add an ESLint/Prettier config + CI quality gate.
 - Move to formal SQL migrations instead of imperative startup migrations in `db.ts`.
 - [x] Enforce CSRF (hard-fail) instead of soft-logging (client server now returns 403 on missing/mismatched tokens; frontend sends the token on all mutating requests, lazily fetching it when needed; external webhooks/POS/control-plane requests are exempt) and enable a strict CSP in Helmet (client server CSP + control-plane CSP with `frame-ancestors 'none'`).
+
+---
+
+## Operator runbooks (added 2026-09-24, final verification pass)
+
+These convert the two remaining **operator-gated** items — CI independently confirmed, and a real DR restore drill — into exact, copy-pasteable procedures. They are written for the **operator's own machine**, because neither can be completed from the machine used for the code audit: that box has **no `gh` visibility into the private flyshop repo** (the `Gears-Glitch` repo 404s to the audited `gh` account) and **no Postgres toolchain** (`pg_dump`/`pg_restore`/`psql`/`gunzip` all absent). Nothing here was executed end-to-end; both items remain `NOT VERIFIED` until you run these steps.
+
+### Runbook A — Independently confirm CI on `main` (currently `4181de9`)
+
+The audit's CI status is reported as **NOT INDEPENDENTLY VERIFIED** precisely because the repo is private and not visible to the authed `gh` account used for the code work. From the owning account:
+
+```powershell
+# 1. Authenticate as the repo owner
+gh auth login
+
+# 2. list recent runs on main
+gh run list --repo <owner>/Gears-Glitch --branch main -L 6 --json workflowName,headSha,status,conclusion
+
+# 3. confirm the run for HEAD 4181de9 completed
+gh run view <run-id> --repo <owner>/Gears-Glitch
+
+# 4. fail log only (if it did NOT complete green)
+gh run view <run-id> --repo <owner>/Gears-Glitch --log-failed
+```
+
+Acceptance: the run whose `headSha` starts with `4181de9` shows `completed/success`; the workflow must run **all four gates** — server `typecheck`+`build`+`test`, control-plane `typecheck`+`build`+`test`, frontend `build` (the CF worker deployment job can be `success` independently; an amber `in_progress` on the code-quality workflow is not green). Expected local units that CI should mirror: server **137**, control-plane **72** (incl. 13 `cp-secrets`), frontend **29 static pages**. Optionally `gh run watch <run-id>` if still queued.
+
+### Runbook B — DR restore drill (documented-only today; `NOT VERIFIED`)
+
+Prerequisite: one RO**scratch** Neon project (independent from prod), and run on a machine with the Postgres client (e.g. `winget install PostgreSQL.PostgreSQL.16` gives `psql`).
+
+```powershell
+# 1. Get the latest backup from the control-plane backups page (admin-gated
+#    endpoint, .sql.gz). This box had no pg toolchain, so step 2-4 run on an
+#    operator machine with psql. Replace paths/conn strings.
+"# 2. decompress (PowerShell native, no 7z needed)"
+$src = "latest_backup.sql.gz"; $out = "latest_backup.sql"
+$in = [System.IO.Compression.GZipStream]::new(
+    [System.IO.File]::OpenRead($src),
+    [System.IO.Compression.CompressionMode]::Decompress)
+$of = [System.IO.File]::Create($out)
+$in.CopyTo($of); $in.Dispose(); $of.Dispose()
+
+# 3. restore into the scratch project (never against prod)
+psql "$SCRATCH_NEON_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f latest_backup.sql
+
+# 4. smoke verify against scratch
+psql "$SCRATCH_NEON_CONNECTION_STRING" -c "SELECT count(*) FROM clients;"
+psql "$SCRATCH_NEON_CONNECTION_STRING" -c "SELECT count(*) FROM customers;"
+psql "$SCRATCH_NEON_CONNECTION_STRING" -c "SELECT count(*) FROM invoices;"
+```
+
+Acceptance: counters match the pre-backup prod counters (log them before the drill), rows for a known customer/invoice resolve, and no `ERROR` lines appear (ON_ERROR_STOP forces failure loudly). Then point a **scratch** Render service at the scratch DB and smoke the storefront/POS logins before discarding the scratch project. Update `PRODUCTION_READINESS_CURRENT.md` from "restore … NOT DR-verified" to "DR-verified on <date> against scratch Neon project <id>". Until this is run, **DR is a documented runbook, not a verified capability** — the audit claims no more than that.
