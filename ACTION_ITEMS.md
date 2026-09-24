@@ -48,7 +48,7 @@ These convert the two remaining **operator-gated** items — CI independently co
 
 ### Runbook A — Independently confirm CI on `main` (currently `4181de9`)
 
-The audit's CI status is reported as **NOT INDEPENDENTLY VERIFIED** precisely because the repo is private and not visible to the authed `gh` account used for the code work. From the owning account:
+Audit truth (corrected 2026-09-24 after pulling CI from the owning account — my earlier "cannot see private repo" framing was a wrong-owner guess + `gh` quoting bug on this box, now disproven): **`CI` on `main` is a confirmed RED on the DB-gated isolation job** — completed/`failure` at `4181de9` and across the whole sampled window that predates this session's commits, while `Deploy Test Site` is `success` throughout. Root (exact fail-log): `[db] schema.sql not found at .../server/schema.sql` → `[migrations] directory not found, skipping` → `[FATAL] Server failed to start: relation "roles" does not exist` → `server never became healthy` → `hookFailed` → isolation suite cancelled (`cancelledByParent`). The files **exist on disk** in the checkout (`server/schema.sql` 43 KB; 20 migration files incl. `0020`), so the runner is resolving schema/migrations **CWD-relatively against the wrong directory when it spawns the server** — an infra boot-path signature, NOT an assertion regression and NOT caused by the crypto/reconciler/backup changes (all local DB-free gates are green: server 137/31 suites, control-plane 72/16 incl. 13 cp-secrets, frontend 29 static pages). From the owning account:
 
 ```powershell
 # 1. Authenticate as the repo owner
