@@ -80,6 +80,12 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
   - Control-plane `JWT_SECRET` random-fallback on missing env → session invalidation (P2).
 - Secrets-at-rest: M-Pesa creds plaintext in settings/mpesa_config (P2 — encrypt at rest).
 
+### Control-plane secrets at rest (verified 2026-09-24)
+- **`clients.cp_secret` is stored PLAINTEXT in the CP database (P1).** `requireAuth` resolves the `client` role with an equality lookup (`WHERE cp_secret = $1`, `control-plane/server/index.ts`), and outbound CP→tenant calls send the same value back, so it must remain readable by the CP. On the tenant side the key authenticates as **tenant admin** (`server/auth.ts` `controlPlaneAuthMiddleware`/`allowControlPlane` sets role `admin`) for plan sync, suspend/resume, invoice view/email/generate/pay, feature overrides, and subscription approve/reject. A read of the CP database (dump, replica, SQL-injection read, compromised DB creds) therefore leaks live tenant-admin keys for every client — **high severity**, not critical (it does not grant the CP admin UI, which is `cp_users`).
+- `smtp_config.pass` and `cloudinary_config.api_secret` are also stored PLAINTEXT in the CP DB (P2 — scoped to the one host/admin that already manages those services).
+- Positives verified: `cp_users.password_hash` is bcrypt(cost 12); `/api/clients` and `/api/clients/:id` strip `cp_secret` before responding (`control-plane/server/index.ts`); the app's own `.sql.gz` backups dump only **tenant** databases (never the CP DB), so the CP DB secrets are not exposed by the backup files — the trust boundary is CP DB access itself; tenant `CONTROL_PLANE_SECRET` exists only as a platform env var (never stored in the tenant database).
+- Remediation (queued, non-breaking only — requires a coordinated rollout, do not ship mid-flight): encrypt `cp_secret` deterministically (AES-256-GCM with an `enc:v1:` prefix and a dedicated `CP_SECRETS_KEY` env, deterministic-tag so the equality lookup still works), add a `cp_secret_lookup` column, dual-read legacy plaintext during a transition window, and rotate each secret via the existing push-secret endpoint. Apply the same mechanism to `smtp_config.pass` and `cloudinary_config.api_secret`. Alternative accepted mitigation: platform-level encryption-at-rest for the CP database plus least-privilege DB access (no direct dump access).
+
 ---
 
 ## 6. Payments & webhooks

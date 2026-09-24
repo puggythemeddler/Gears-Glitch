@@ -45,4 +45,14 @@ describe("session token sources (AZ1)", () => {
     const withCookie = req({ cookies: { gg_session: "cookie-token" } });
     assert.equal(getBearerToken(withCookie), "cookie-token");
   });
+
+  it("rejects the query token on any non-GET method even with the opt-in", () => {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+      assert.equal(
+        getBearerToken(req({ method, query: { allowQueryToken: "1", token: "scoped-print-token" } })),
+        null,
+        `query token must be rejected on ${method}`
+      );
+    }
+  });
 });

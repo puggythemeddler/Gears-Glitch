@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mpesaTimestamp, normalizeDarajaPhone, callbackBaseUrl, isMpesaConfigured, updateMpesaConfig } from "../server/mpesa";
+import { mpesaTimestamp, normalizeDarajaPhone, callbackBaseUrl, isMpesaConfigured, updateMpesaConfig, stkPush, queryStatus } from "../server/mpesa";
+
+const saveEnv = (names: string[]) => {
+  const prev: Record<string, string | undefined> = {};
+  for (const n of names) prev[n] = process.env[n];
+  return () => {
+    for (const n of names) {
+      if (prev[n] === undefined) delete process.env[n]; else process.env[n] = prev[n];
+    }
+  };
+};
 
 test("mpesaTimestamp produces a 14-digit yyyymmddHHmmss string", () => {
   const ts = mpesaTimestamp(new Date("2024-01-15T09:00:00.000Z"));
@@ -87,6 +97,73 @@ test("isMpesaConfigured requires consumerKey, consumerSecret, passkey and shortc
     if (prev.secret === undefined) delete process.env.MPESA_CONSUMER_SECRET; else process.env.MPESA_CONSUMER_SECRET = prev.secret;
     if (prev.passkey === undefined) delete process.env.MPESA_PASSKEY; else process.env.MPESA_PASSKEY = prev.passkey;
     if (prev.shortcode === undefined) delete process.env.MPESA_SHORTCODE; else process.env.MPESA_SHORTCODE = prev.shortcode;
+    updateMpesaConfig({
+      consumerKey: process.env.MPESA_CONSUMER_KEY || "",
+      consumerSecret: process.env.MPESA_CONSUMER_SECRET || "",
+      passkey: process.env.MPESA_PASSKEY || "",
+      shortcode: process.env.MPESA_SHORTCODE || "174379",
+    });
+  }
+});
+
+test("unconfigured M-Pesa refuses to simulate in production (stkPush)", async () => {
+  const restore = saveEnv(["MPESA_CONSUMER_KEY", "MPESA_CONSUMER_SECRET", "MPESA_PASSKEY", "MPESA_SHORTCODE", "NODE_ENV"]);
+  try {
+    updateMpesaConfig({ consumerKey: "", consumerSecret: "", passkey: "", shortcode: "174379" });
+    process.env.NODE_ENV = "production";
+    await assert.rejects(
+      () => stkPush("0712345678", 100, "ORD1", "https://example.com/api/mpesa/callback"),
+      /refusing simulated transaction in production/,
+      "an STK push in production with no M-Pesa configured must fail loudly, never simulate"
+    );
+  } finally {
+    restore();
+    updateMpesaConfig({
+      consumerKey: process.env.MPESA_CONSUMER_KEY || "",
+      consumerSecret: process.env.MPESA_CONSUMER_SECRET || "",
+      passkey: process.env.MPESA_PASSKEY || "",
+      shortcode: process.env.MPESA_SHORTCODE || "174379",
+    });
+  }
+});
+
+test("unconfigured M-Pesa refuses to simulate a status query in production (queryStatus)", async () => {
+  const restore = saveEnv(["MPESA_CONSUMER_KEY", "MPESA_CONSUMER_SECRET", "MPESA_PASSKEY", "MPESA_SHORTCODE", "NODE_ENV"]);
+  try {
+    updateMpesaConfig({ consumerKey: "", consumerSecret: "", passkey: "", shortcode: "174379" });
+    process.env.NODE_ENV = "production";
+    await assert.rejects(
+      () => queryStatus("SIM1234"),
+      /refusing simulated status query in production/,
+      "a status poll in production with no M-Pesa configured must fail loudly, never auto-confirm"
+    );
+  } finally {
+    restore();
+    updateMpesaConfig({
+      consumerKey: process.env.MPESA_CONSUMER_KEY || "",
+      consumerSecret: process.env.MPESA_CONSUMER_SECRET || "",
+      passkey: process.env.MPESA_PASSKEY || "",
+      shortcode: process.env.MPESA_SHORTCODE || "174379",
+    });
+  }
+});
+
+test("unconfigured M-Pesa still simulates outside production (existing dev/sandbox behavior)", async () => {
+  const restore = saveEnv(["MPESA_CONSUMER_KEY", "MPESA_CONSUMER_SECRET", "MPESA_PASSKEY", "MPESA_SHORTCODE", "NODE_ENV"]);
+  try {
+    delete process.env.MPESA_CONSUMER_KEY;
+    delete process.env.MPESA_CONSUMER_SECRET;
+    delete process.env.MPESA_PASSKEY;
+    delete process.env.MPESA_SHORTCODE;
+    updateMpesaConfig({ consumerKey: "", consumerSecret: "", passkey: "", shortcode: "174379" });
+    delete process.env.NODE_ENV;
+    const pushed = await stkPush("0712345678", 100, "ORD1", "https://example.com/api/mpesa/callback");
+    assert.equal(pushed.simulated, true);
+    const status = await queryStatus("SIM1234");
+    assert.equal(status.simulated, true);
+    assert.equal(status.resultCode, "0");
+  } finally {
+    restore();
     updateMpesaConfig({
       consumerKey: process.env.MPESA_CONSUMER_KEY || "",
       consumerSecret: process.env.MPESA_CONSUMER_SECRET || "",

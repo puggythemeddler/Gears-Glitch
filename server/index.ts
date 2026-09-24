@@ -97,6 +97,7 @@ import {
   getOrderByCheckoutRequest,
   confirmOrderPayment,
   releaseOrderHeldStock,
+  holdStockForOrder,
   recordProductView,
   getPopularProducts,
   getTotalViews,
@@ -2934,12 +2935,16 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
       source: "storefront",
       processedBy: `Customer #${customerId}`,
       campaignId,
+      // Stock integrity: M-Pesa orders hold stock (released if the push cannot
+      // start / the payment times out); non-M-Pesa orders deduct immediately.
+      stock: mpesaPhone ? "hold" : "deduct",
     });
     if (couponOk && couponId) { try { await recordCouponUsage(couponId, order.id, customerId, couponDiscount); } catch {} }
     if (giftCardOk && giftCardId && giftCardDiscount > 0) { await redeemGiftCard(giftCardId, order.id, customerId, giftCardDiscount); }
     if (pointsRedeemed > 0) { await redeemLoyaltyPoints(customerId, order.id, pointsRedeemed); }
     await clearCart(customerId);
     let mpesaRequested = false;
+    let mpesaCheckoutId: string | null = null;
     if (mpesaPhone) {
       try {
         const callbackUrl = `${callbackBaseUrl(req)}/api/mpesa/callback`;
@@ -2948,10 +2953,17 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
         const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
         if (checkoutRequestId) {
           await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, order.id]);
+          mpesaCheckoutId = checkoutRequestId;
         }
         mpesaRequested = true;
       } catch (err: any) {
         console.error("M-Pesa STK push failed:", err.message);
+      }
+      // This order held stock at creation; without a live checkout (push failed,
+      // or refused in production) nothing will ever settle the payment, so the
+      // hold is released immediately to keep items on the shelf.
+      if (!mpesaCheckoutId) {
+        try { await releaseOrderHeldStock(order.id); } catch (err: any) { console.error("[order] Failed to release held stock:", err.message); }
       }
     }
     try {
@@ -3052,13 +3064,26 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
         if (liveCheckout && (liveRow.status === "pending" || liveRow.status === "pending_payment")) {
           mpesaRequested = true;
         } else {
+          // Hold stock for the pending M-Pesa payment (idempotent — an order that
+          // already holds stock is left untouched). If no live checkout results
+          // from this push, release the hold so a dropped push never strands items.
+          try { await holdStockForOrder(orderId); } catch (err: any) { console.warn("[M-Pesa] Could not hold stock:", err.message); }
+          let stkCheckoutId: string | null = null;
           const total = order.subtotal + (order.shippingFee || 0);
           const callbackUrl = `${callbackBaseUrl(req)}/api/mpesa/callback`;
           const accountRef = `ORD${orderId}`;
-          const stkResult = await stkPush(mpesaPhone, total, accountRef, callbackUrl);
-          const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
-          if (checkoutRequestId) {
-            await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, orderId]);
+          try {
+            const stkResult = await stkPush(mpesaPhone, total, accountRef, callbackUrl);
+            const checkoutRequestId = stkResult.CheckoutRequestID || stkResult.checkoutRequestId || null;
+            if (checkoutRequestId) {
+              await query("UPDATE orders SET checkout_request_id = $1, mpesa_phone = $2 WHERE id = $3", [checkoutRequestId, mpesaPhone, orderId]);
+              stkCheckoutId = checkoutRequestId;
+            }
+          } catch (err: any) {
+            console.error("[M-Pesa] STK push failed on order update:", err.message);
+          }
+          if (!stkCheckoutId) {
+            try { await releaseOrderHeldStock(orderId); } catch { /* non-fatal */ }
           }
           mpesaRequested = true;
         }
@@ -7920,11 +7945,19 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       // M-Pesa held-stock timeout: any pending_payment order that never received
       // a payment callback releases its held stock after 15 minutes so inventory
       // is never silently stranded (prevents the lost/invisible stock of P-3).
+      // Storefront M-Pesa orders hold stock at checkout while staying 'pending'
+      // (they never enter pending_payment), so a storefront order that has a
+      // checkout_request_id is swept too. SIM-prefixed checkouts (dev/sandbox
+      // simulation) are excluded — outside production they represent the test
+      // harness, and in production the production gate refuses them entirely.
       const releaseTimedOut = async () => {
         try {
           const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
           const drained = (await queryAll(
-            "SELECT id FROM orders WHERE status = 'pending_payment' AND created_at IS NOT NULL AND created_at < $1",
+            `SELECT id FROM orders
+             WHERE (status = 'pending_payment'
+                    OR (status = 'pending' AND checkout_request_id IS NOT NULL AND checkout_request_id NOT LIKE 'SIM%'))
+               AND created_at IS NOT NULL AND created_at < $1`,
             [cutoff]
           )) as any[];
           for (const o of drained) {

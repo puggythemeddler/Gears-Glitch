@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT,
   password_hash TEXT NOT NULL,
   password_changed_at TEXT,
+  totp_secret TEXT,
+  totp_enabled BOOLEAN DEFAULT false,
   role TEXT NOT NULL DEFAULT 'admin',
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
@@ -31,7 +33,10 @@ CREATE TABLE IF NOT EXISTS products (
   serial_tracking INTEGER NOT NULL DEFAULT 0,
   barcode TEXT NOT NULL DEFAULT '',
   taxable INTEGER NOT NULL DEFAULT 1,
-  cost_price DOUBLE PRECISION,
+  cost_price NUMERIC(12,2),
+  sale_price NUMERIC(12,2),
+  stock_on_hand INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
@@ -55,6 +60,7 @@ CREATE TABLE IF NOT EXISTS categories (
   label TEXT NOT NULL,
   group_name TEXT NOT NULL DEFAULT '',
   show_on_pos INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 
@@ -74,6 +80,7 @@ CREATE TABLE IF NOT EXISTS customers (
   last_login TEXT,
   password_changed_at TEXT,
   is_active INTEGER NOT NULL DEFAULT 1,
+  comm_prefs TEXT DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 
@@ -97,6 +104,7 @@ CREATE TABLE IF NOT EXISTS branches (
   phone TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL DEFAULT '',
   manager_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  plan_id TEXT REFERENCES subscription_plans(id),
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
@@ -121,7 +129,7 @@ CREATE TABLE IF NOT EXISTS orders (
   coupon_id INTEGER,
   discount_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
   vat_rate DOUBLE PRECISION,
-  vat_amount DOUBLE PRECISION,
+  vat_amount NUMERIC(12,2),
   vat_estimated INTEGER NOT NULL DEFAULT 0,
   campaign_id INTEGER,
   processed_by TEXT,
@@ -132,6 +140,10 @@ CREATE TABLE IF NOT EXISTS orders (
   gift_card_id INTEGER,
   gift_card_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
   amount_refunded DOUBLE PRECISION NOT NULL DEFAULT 0,
+  checkout_request_id TEXT,
+  mpesa_receipt TEXT,
+  mpesa_phone TEXT,
+  tendered_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (customer_id) REFERENCES customers(id)
@@ -159,7 +171,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   stock_deducted INTEGER NOT NULL DEFAULT 0,
   taxable INTEGER NOT NULL DEFAULT 1,
   cancelled INTEGER NOT NULL DEFAULT 0,
-  unit_cost DOUBLE PRECISION,
+  unit_cost NUMERIC(12,2),
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 );
@@ -278,6 +290,9 @@ CREATE TABLE IF NOT EXISTS invoices (
   period_start TEXT NOT NULL,
   period_end TEXT NOT NULL,
   paid_at TEXT,
+  invoice_number TEXT DEFAULT '',
+  due_date TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE,
   FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
@@ -417,6 +432,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   order_date TEXT NOT NULL DEFAULT (NOW()::text),
   status TEXT NOT NULL DEFAULT 'pending',
   notes TEXT NOT NULL DEFAULT '',
+  deleted_at TEXT,
   created_by INTEGER,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
@@ -489,6 +505,10 @@ CREATE TABLE IF NOT EXISTS quotes (
   notes TEXT NOT NULL DEFAULT '',
   branch_id INTEGER REFERENCES branches(id),
   total DOUBLE PRECISION NOT NULL DEFAULT 0,
+  customer_name TEXT NOT NULL DEFAULT '',
+  customer_phone TEXT NOT NULL DEFAULT '',
+  discount_type TEXT NOT NULL DEFAULT '',
+  discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
@@ -502,6 +522,8 @@ CREATE TABLE IF NOT EXISTS quote_items (
   quantity INTEGER NOT NULL DEFAULT 1,
   unit_price DOUBLE PRECISION NOT NULL DEFAULT 0,
   line_total DOUBLE PRECISION NOT NULL DEFAULT 0,
+  discount_type TEXT NOT NULL DEFAULT '',
+  discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (quote_id) REFERENCES quotes(id) ON DELETE CASCADE,
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
@@ -643,7 +665,7 @@ CREATE TABLE IF NOT EXISTS product_reviews (
   id SERIAL PRIMARY KEY,
   product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   customer_id INTEGER NOT NULL REFERENCES customers(id),
-  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  rating INTEGER NOT NULL CONSTRAINT chk_review_rating CHECK (rating >= 1 AND rating <= 5),
   title TEXT NOT NULL DEFAULT '',
   comment TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
@@ -1015,3 +1037,94 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   UNIQUE (provider, event_key)
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_events_provider ON webhook_events(provider, status);
+
+-- ---------------------------------------------------------------------------
+-- Cumulative schema objects (historically applied at boot by the legacy
+-- runMigrations() which has been removed). These are now declared here so a
+-- FRESH database matches the fully-migrated state, and mirrored idempotently in
+-- migration 0020_legacy_schema_reconciler.sql for EXISTING databases.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS splashes (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL DEFAULT '',
+  bg_color TEXT NOT NULL DEFAULT '#f59e0b',
+  text_color TEXT NOT NULL DEFAULT '#ffffff',
+  image_url TEXT DEFAULT '',
+  link_url TEXT DEFAULT '',
+  is_marquee INTEGER NOT NULL DEFAULT 1,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  start_date TEXT,
+  end_date TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS email_logs (
+  id SERIAL PRIMARY KEY,
+  to_email TEXT NOT NULL,
+  from_email TEXT NOT NULL DEFAULT '',
+  subject TEXT NOT NULL DEFAULT '',
+  body_html TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL DEFAULT 'general',
+  status TEXT NOT NULL DEFAULT 'sent',
+  error_message TEXT DEFAULT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_email_logs_type ON email_logs(type);
+CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at);
+
+CREATE TABLE IF NOT EXISTS notification_log (
+  id SERIAL PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  recipient TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  entity_type TEXT NOT NULL DEFAULT '',
+  entity_id TEXT NOT NULL DEFAULT '',
+  error_message TEXT DEFAULT NULL,
+  provider_message_id TEXT DEFAULT NULL,
+  subject TEXT DEFAULT NULL,
+  customer_id INTEGER DEFAULT NULL,
+  idempotency_key TEXT DEFAULT NULL,
+  sent_at TEXT DEFAULT NULL,
+  created_at TEXT DEFAULT NOW()::text
+);
+CREATE INDEX IF NOT EXISTS idx_notif_log_event ON notification_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_notif_log_channel ON notification_log(channel);
+CREATE INDEX IF NOT EXISTS idx_notif_log_status ON notification_log(status);
+CREATE INDEX IF NOT EXISTS idx_notif_log_created ON notification_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_notif_log_customer ON notification_log(customer_id);
+CREATE INDEX IF NOT EXISTS idx_notif_log_idem ON notification_log(idempotency_key);
+
+CREATE TABLE IF NOT EXISTS storefront_layouts (
+  id SERIAL PRIMARY KEY,
+  layout_key TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  layout_type TEXT NOT NULL DEFAULT 'static',
+  config JSONB NOT NULL DEFAULT '{}',
+  is_active INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text),
+  updated_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+
+CREATE TABLE IF NOT EXISTS branch_subscriptions (
+  branch_id INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
+  plan_id TEXT NOT NULL REFERENCES subscription_plans(id),
+  activated_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP,
+  status TEXT DEFAULT 'active'
+);
+CREATE INDEX IF NOT EXISTS idx_branch_subscriptions_expires_at ON branch_subscriptions (expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_orders_campaign ON orders(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_loyalty_tx_order ON loyalty_transactions(order_id);
+CREATE INDEX IF NOT EXISTS idx_products_group ON products(group_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date);
+CREATE INDEX IF NOT EXISTS idx_orders_checkout_request ON orders(checkout_request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_levels_product_branch ON stock_levels(product_id, COALESCE(branch_id, 0));

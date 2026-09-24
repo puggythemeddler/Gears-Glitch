@@ -127,6 +127,13 @@ export async function stkPush(phone: string, amount: number, accountRef: string,
   const partyA = normalized.phone!;
 
   if (!isMpesaConfigured()) {
+    // Hard production gate: a simulated "success" in production would let an
+    // order be processed with no real money moved (an STK push returning
+    // simulated success, then a poll that auto-confirms). Simulation is a
+    // local/sandbox testing convenience only.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("M-Pesa is not configured; refusing simulated transaction in production.");
+    }
     const simulated = {
       success: true,
       simulated: true,
@@ -173,6 +180,11 @@ export async function queryStatus(checkoutRequestId: string): Promise<any> {
   const { password, timestamp } = generatePassword();
 
   if (!isMpesaConfigured()) {
+    // Same hard production gate as stkPush: a simulated success here would let
+    // a poll auto-confirm an order that was never actually paid.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("M-Pesa is not configured; refusing simulated status query in production.");
+    }
     return { success: true, simulated: true, resultCode: "0", resultDesc: "Success (simulated)" };
   }
 

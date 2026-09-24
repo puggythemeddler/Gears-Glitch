@@ -3,7 +3,6 @@ dotenv.config();
 
 import express from "express";
 import helmet from "helmet";
-import cors from "cors";
 import path from "path";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
@@ -12,6 +11,7 @@ import { generateSecret, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
 import rateLimit from "express-rate-limit";
 import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
+import { corsPolicyMiddleware, parseAllowedOrigins } from "./cors-policy";
 import { initOpsCenterDb, aggregateUsageForClients } from "./ops-db";
 import { evaluateForClient, expireSupportAndMaintenance } from "./ops";
 import { registerOpsRoutes } from "./ops-routes";
@@ -84,7 +84,12 @@ app.use(helmet({
     },
   },
 }));
-app.use(cors({ origin: true, credentials: true }));
+// CORS: same-origin + explicit allowlist only. Do NOT reflect arbitrary origins
+// with credentials. ALLOWED_ORIGINS is a comma-separated list of control-plane
+// origins (e.g. https://cp.example.com,http://localhost:4001). The static admin
+// UI in /public is same-origin and needs no entry; tenant backends talk
+// server-to-server via x-control-plane-key and never use browser CORS.
+app.use(corsPolicyMiddleware(parseAllowedOrigins(process.env.ALLOWED_ORIGINS)));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "..", "..", "public")));
 
@@ -104,13 +109,29 @@ function requireAuth(
   res: express.Response,
   next: express.NextFunction
 ) {
-  // 1. Try Bearer JWT token (from login)
+  // 1. Try Bearer JWT token (from login). The account is re-read from the DB on
+  //    every request so role changes, deletions, and revocations take effect
+  //    immediately instead of living for the life of a 7-day token.
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
     try {
       const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET) as AuthUser;
-      (req as any).user = decoded;
-      return next();
+      if (!decoded || typeof decoded.id !== "number" || decoded.id <= 0) {
+        res.status(401).json({ error: "Invalid session" });
+        return;
+      }
+      queryOne("SELECT id, username, role FROM cp_users WHERE id = $1", [decoded.id])
+        .then((user) => {
+          if (!user) {
+            res.status(401).json({ error: "Session account no longer exists" });
+            return;
+          }
+          (req as any).authVia = "jwt";
+          (req as any).user = { id: user.id, username: user.username, role: user.role };
+          return next();
+        })
+        .catch(() => res.status(500).json({ error: "Auth error" }));
+      return;
     } catch (e: any) { console.warn("[auth] JWT verification failed:", e?.message); }
   }
   // 2. Try x-control-plane-key (authenticated client services)
@@ -119,6 +140,7 @@ function requireAuth(
     queryOne("SELECT id, name FROM clients WHERE cp_secret = $1", [cpKey])
       .then((client) => {
         if (client) {
+          (req as any).authVia = "cp-key";
           (req as any).user = { id: client.id, username: `client:${client.name}`, role: "client" };
           return next();
         }
@@ -137,6 +159,7 @@ function requireAuth(
     queryOne("SELECT id, username, role FROM cp_users WHERE api_key = $1", [key])
       .then((user) => {
         if (user) {
+          (req as any).authVia = "api-key";
           (req as any).user = user;
           return next();
         }
@@ -236,9 +259,18 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
 
 // ─── 2FA MANAGEMENT ──────────────────────────────────────
 // Step 1: Generate a new TOTP secret (returns secret + QR URL). User must verify with a code to enable.
+// Requires the current password: a leaked/hijacked session must not be able to
+// rotate the 2FA secret out from under the real owner, so setup is
+// re-authenticated exactly like disable is (see below).
 app.post("/api/auth/2fa/setup", authLimiter, requireAuth, async (req, res) => {
   try {
     const user = (req as any).user as AuthUser;
+    const { password } = req.body || {};
+    if (!password) { res.status(400).json({ error: "Password required to change 2FA" }); return; }
+    const row = await queryOne("SELECT password_hash FROM cp_users WHERE id = $1", [user.id]);
+    if (!row) { res.status(404).json({ error: "User not found" }); return; }
+    const valid = await bcrypt.compare(password, row.password_hash);
+    if (!valid) { res.status(401).json({ error: "Invalid password" }); return; }
     const { secret, otpauthUrl } = makeTotpSecret(user.username);
     // Store the pending secret temporarily — not enabled until verified
     await query("UPDATE cp_users SET totp_secret = $1 WHERE id = $2", [secret, user.id]);
@@ -567,7 +599,7 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
         );
       });
 
-    auditLog(req, "create_client", "client", clientId, name);
+    await auditLog(req, "create_client", "client", clientId, name);
     res.status(202).json({
       clientId,
       message: `Provisioning started for "${name}". Check status at /api/clients/${clientId}`,
@@ -630,7 +662,7 @@ app.post("/api/clients/existing", requireAdmin, async (req, res) => {
       [name, uniqueDomain, adminEmail, plan || "growth", renderServiceId || "", backendUrl || "", frontendUrl || "", secret]
     );
 
-    auditLog(req, "add_existing_client", "client", result.rows[0].id, name);
+    await auditLog(req, "add_existing_client", "client", result.rows[0].id, name);
     res.status(201).json({
       clientId: result.rows[0].id,
       cpSecretGenerated: !cpSecret,
@@ -754,7 +786,7 @@ app.post("/api/deploy-all", destructiveLimiter, requireAdmin, async (req, res) =
       const logId = logIds.get(c.id);
       if (logId) await updateDeployLog(logId, r?.success ? "deploy" : "failed");
     }
-    auditLog(req, "deploy_all", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} clients${commit_sha ? ` (${commit_sha.slice(0,7)})` : ""}`);
+    await auditLog(req, "deploy_all", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} clients${commit_sha ? ` (${commit_sha.slice(0,7)})` : ""}`);
     res.json({ results });
   } catch (err: any) {
     console.error("[api] Deploy all error:", err.message);
@@ -795,7 +827,7 @@ app.post("/api/deploy-test", destructiveLimiter, requireAdmin, async (req, res) 
         results.push({ name: client.name, success: false, error: e.message });
       }
     }
-    auditLog(req, "deploy_test", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} test site(s)${commit_sha ? ` (${commit_sha.slice(0,7)})` : ""}`);
+    await auditLog(req, "deploy_test", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} test site(s)${commit_sha ? ` (${commit_sha.slice(0,7)})` : ""}`);
     res.json({ results });
   } catch (err: any) {
     console.error("[api] Deploy test error:", err.message);
@@ -820,7 +852,7 @@ app.post("/api/deploy/disable-auto-deploy", requireAdmin, async (_req, res) => {
         results.push({ name: c.name, success: false, error: e.message });
       }
     }
-    auditLog(_req, "disable_auto_deploy", "system", null, undefined, `Disabled auto-deploy on ${results.filter(r=>r.success).length}/${results.length} services`);
+    await auditLog(_req, "disable_auto_deploy", "system", null, undefined, `Disabled auto-deploy on ${results.filter(r=>r.success).length}/${results.length} services`);
     res.json({ ok: true, results });
   } catch (err: any) {
     console.error("[api] Disable auto-deploy error:", err.message);
@@ -838,7 +870,7 @@ app.post("/api/clients/:id/redeploy", destructiveLimiter, requireAdmin, async (r
     await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [client.id, ok ? "deploy" : "failed"]);
     if (ok) {
       await query("UPDATE clients SET health_status = 'deploying' WHERE id = $1", [client.id]);
-      auditLog(req, "redeploy_client", "client", client.id, client.name);
+      await auditLog(req, "redeploy_client", "client", client.id, client.name);
       res.json({ message: `Redeploy triggered for "${client.name}"` });
     } else {
       res.status(502).json({ error: `Render deploy request failed` });
@@ -902,7 +934,7 @@ app.post("/api/sync-cloudinary", requireAdmin, async (req, res) => {
 
     const ok = results.filter(r => r.success).length;
     const fail = results.filter(r => !r.success).length;
-    auditLog(req, "sync_cloudinary", "system", null, undefined, `${ok} ok, ${fail} failed`);
+    await auditLog(req, "sync_cloudinary", "system", null, undefined, `${ok} ok, ${fail} failed`);
     res.json({ message: `Cloudinary synced: ${ok} ok, ${fail} failed`, results });
   } catch (err: any) {
     console.error("[api] Sync Cloudinary error:", err.message);
@@ -957,7 +989,7 @@ app.post("/api/cloudinary", requireAdmin, async (req, res) => {
       return;
     }
     await setCloudinaryConfig(cloudName, apiKey, apiSecret, folder || "gear-glitch");
-    auditLog(req, "set_cloudinary", "config", null, undefined, `cloud: ${cloudName}, folder: ${folder || "gear-glitch"}`);
+    await auditLog(req, "set_cloudinary", "config", null, undefined, `cloud: ${cloudName}, folder: ${folder || "gear-glitch"}`);
     res.json({ message: "Cloudinary config saved." });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to save Cloudinary config" });
@@ -997,7 +1029,7 @@ app.post("/api/smtp", requireAdmin, async (req, res) => {
       return;
     }
     await setSmtpConfig(host, port || 587, user, pass, fromEmail || "noreply@gearglitch.com", fromName || "Gear&Glitch");
-    auditLog(req, "set_smtp", "config", null, undefined, `host: ${host}, user: ${user}`);
+    await auditLog(req, "set_smtp", "config", null, undefined, `host: ${host}, user: ${user}`);
     res.json({ message: "SMTP config saved." });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to save SMTP config" });
@@ -1105,7 +1137,7 @@ app.put("/api/clients/:id/suspend", destructiveLimiter, requireAdmin, async (req
 
     const { appSuspended } = await suspendClientRecord(client, "");
 
-    auditLog(req, "suspend_client", "client", client.id, client.name);
+    await auditLog(req, "suspend_client", "client", client.id, client.name);
     res.json({ message: `Client "${client.name}" suspended.`, appSuspended });
   } catch (err: any) {
     console.error("[api] Suspend error:", err.message);
@@ -1120,7 +1152,7 @@ app.put("/api/clients/:id/resume", destructiveLimiter, requireAdmin, async (req,
 
     const { appResumed } = await resumeClientRecord(client);
 
-    auditLog(req, "resume_client", "client", client.id, client.name);
+    await auditLog(req, "resume_client", "client", client.id, client.name);
     res.json({ message: `Client "${client.name}" resumed.`, appResumed, note: appResumed ? undefined : "App-level resume not confirmed; the flag will clear when the service is reachable — retry via PUT /api/clients/:id/resume." });
   } catch (err: any) {
     console.error("[api] Resume error:", err.message);
@@ -1143,7 +1175,7 @@ app.put("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
         await query("UPDATE clients SET is_test = 0 WHERE is_test = 1");
       }
       await query("UPDATE clients SET is_test = $1 WHERE id = $2", [testValue, id]);
-      auditLog(req, "set_test_site", "client", id, client.name, testValue ? "Marked as test site" : "Unmarked as test site");
+      await auditLog(req, "set_test_site", "client", id, client.name, testValue ? "Marked as test site" : "Unmarked as test site");
     }
 
     const fields: string[] = [];
@@ -1200,7 +1232,7 @@ app.post("/api/changelog", requireAdmin, async (req, res) => {
     // Notify all clients via email
     await notifyAllClientsChangelog(version, title, body || "");
 
-    auditLog(req, "publish_changelog", "changelog", null, undefined, `${version}: ${title}`);
+    await auditLog(req, "publish_changelog", "changelog", null, undefined, `${version}: ${title}`);
     res.status(201).json({ message: "Changelog published and clients notified." });
   } catch (err: any) {
     console.error("[api] Changelog error:", err.message);
@@ -1313,7 +1345,7 @@ app.post("/api/backups/run", destructiveLimiter, requireAdmin, async (req, res) 
     } catch (e: any) { console.warn("[startup] Failed to clean old backups:", e?.message); }
 
     const ok = results.filter(r => r.success).length;
-    auditLog(req, "run_backup", "system", null, undefined, `${ok}/${results.length} succeeded`);
+    await auditLog(req, "run_backup", "system", null, undefined, `${ok}/${results.length} succeeded`);
     res.json({ results });
   } catch (err: any) {
     console.error("[api] Backup error:", err.message);
@@ -1559,6 +1591,13 @@ app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, a
 // identified by its control-plane key so it is not re-pushed.
 app.post("/api/plans/sync-up", requireAuth, async (req, res) => {
   try {
+    // This endpoint distributes plans to every active client, so only an
+    // authenticated CLIENT (via its control-plane key) may call it. A signed-in
+    // CP admin or viewer must not push arbitrary plans fleet-wide.
+    if ((req as any).authVia !== "cp-key") {
+      res.status(403).json({ error: "A client control-plane key is required for plan sync" });
+      return;
+    }
     const plan = req.body?.plan;
     if (!plan || !plan.id || !plan.name) { res.status(400).json({ error: "Plan (id, name) required" }); return; }
     if (plan.syncToOthers === false) { res.json({ message: "Plan is not marked to sync to other clients." }); return; }
@@ -1641,6 +1680,7 @@ app.put("/api/clients/:id/upgrade-requests/:reqId", requireAuth, requireAdmin, a
     if (status === "approved" && data.plan) {
       await query("UPDATE clients SET plan = $1 WHERE id = $2", [data.plan, client.id]);
     }
+    await auditLog(req, status === "approved" ? "approve_upgrade_request" : "reject_upgrade_request", "client", client.id, client.name, `Request ${req.params.reqId} ${status}`);
     res.json({ message: `Request ${status}.` });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to update request" });
@@ -1674,8 +1714,9 @@ app.post("/api/clients/:id/invoices/generate", destructiveLimiter, requireAuth, 
       headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
       body: JSON.stringify({ providerId: 1, planId: client.plan, ...req.body }),
     });
-    const data = await r.json();
+    const data: any = await r.json();
     if (!r.ok) { res.status(r.status).json(data); return; }
+    await auditLog(req, "generate_invoice", "client", client.id, client.name, `Generated invoice ${data?.invoiceNumber || data?.id || ""} for plan ${client.plan}`);
     res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: "Failed to generate invoice" });
@@ -1737,12 +1778,12 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
     );
 
     const balance = Math.max(0, expected - amountPaid);
-    auditLog(req, "record_payment", "client", client.id, client.name, `${periodType} KES ${amountPaid} — extended to ${newExpiry.toISOString().slice(0, 10)}, next due ${nextPaymentDate}`);
+    await auditLog(req, "record_payment", "client", client.id, client.name, `${periodType} KES ${amountPaid} — extended to ${newExpiry.toISOString().slice(0, 10)}, next due ${nextPaymentDate}`);
 
     // If the client was auto/manually deactivated, reactivate now that payment is recorded
     if (client.status === "suspended") {
       await resumeClientRecord(client);
-      auditLog(req, "auto_resume_client", "client", client.id, client.name, "Resumed after payment recorded");
+      await auditLog(req, "auto_resume_client", "client", client.id, client.name, "Resumed after payment recorded");
     }
 
     // Clear any outstanding payment-due/overdue notifications for this client
@@ -1937,6 +1978,7 @@ app.post("/api/clients/:id/invoices/:invId/pay", requireAuth, requireAdmin, asyn
     const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/pay`, { method: "POST", headers: cpHeaders(client.cp_secret) });
     const data = await r.json();
     if (!r.ok) { res.status(r.status).json(data); return; }
+    await auditLog(req, "mark_invoice_paid", "client", client.id, client.name, `Invoice ${req.params.invId} paid`);
     res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: "Failed to mark invoice paid" });
@@ -2019,7 +2061,7 @@ app.post("/api/clients/:id/invoices/:invId/email", requireAuth, requireAdmin, as
       subject,
       html,
     });
-    auditLog(req, "email_invoice", "client", client.id, client.name, `Invoice ${invoiceNumber} → ${client.admin_email}`);
+    await auditLog(req, "email_invoice", "client", client.id, client.name, `Invoice ${invoiceNumber} → ${client.admin_email}`);
     res.json({ sent: true, to: client.admin_email });
   } catch (err: any) {
     console.error("[api] Email invoice error:", err.message);
@@ -2281,20 +2323,34 @@ app.get("*", (_req, res) => {
 });
 
 // ─── START ───────────────────────────────────────────────
-async function start() {
+// start() and app are exported so tests can boot the API against a scratch
+// CONTROL_PLANE_DATABASE_URL without the background jobs or module side effects.
+// Normal operation runs start() via the require.main guard below.
+export async function start(opts?: { background?: boolean }): Promise<import("http").Server> {
   await initControlPlaneDb();
   await initOpsCenterDb();
   await seedDefaultAdmin();
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`[control-plane] Running on http://localhost:${PORT}`);
-    setTimeout(autoImportPlans, 3000);
-    setTimeout(autoImportCloudinary, 4000);
-    setTimeout(runStartupHealthCheck, 5000);
-    scheduleAutoBackup();
+    if (!opts || opts.background !== false) {
+      setTimeout(autoImportPlans, 3000);
+      setTimeout(autoImportCloudinary, 4000);
+      setTimeout(runStartupHealthCheck, 5000);
+      scheduleAutoBackup();
+    }
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", () => resolve());
+    server.once("error", reject);
+  });
+  return server;
+}
+
+if (require.main === module) {
+  start().catch((err) => {
+    console.error("[control-plane] Fatal:", err);
+    process.exit(1);
   });
 }
 
-start().catch((err) => {
-  console.error("[control-plane] Fatal:", err);
-  process.exit(1);
-});
+export { app };

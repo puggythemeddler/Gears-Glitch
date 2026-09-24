@@ -8,22 +8,21 @@
 
 The database layer is raw PostgreSQL accessed through parameterized queries in `server/db.ts` (via `pg` Pool helpers in `server/db-helpers.ts`).
 
-Three mechanisms run at/after **server boot**:
-1. `runSchema()` — applies `server/schema.sql` (`CREATE TABLE IF NOT EXISTS`, idempotent).
-2. `runVersionedMigrations()` — the **canonical, versioned runner** (`server/db.ts:653-693`): every file matching `/^\d{4}_.+\.sql$/` in `server/migrations/` is applied in lexicographic order, each in its own transaction, and recorded in `schema_migrations` so a later boot never re-runs an applied migration. Current set: `0001`–`0014`.
-3. `runMigrations()` — legacy net-new-column drift guard (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, `try/catch`-wrapped). Kept only as belt-and-braces for tenants that predate the versioned runner; new schema changes must go through the versioned runner.
+Two mechanisms run at/after **server boot**:
+1. `runSchema()` — applies `server/schema.sql`. This is the **cumulative definition of the final schema**: `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` (idempotent), plus the money columns declared as `NUMERIC(12,2)`. A FRESH database reaches the exact fully-migrated state from this file alone.
+2. `runVersionedMigrations()` — the **canonical, versioned runner** (`server/db.ts`): every file matching `/^\d{4}_.+\.sql$/` in `server/migrations/` is applied in lexicographic order, each in its own transaction, and recorded in `schema_migrations` so a later boot never re-runs an applied migration. Existing databases are converged to the schema.sql state by `0020_legacy_schema_reconciler.sql`; all new schema changes must go through the versioned runner.
 
-> **Update (Phase 2/3):** the earlier claim that migrations are "not run" is obsolete — the versioned runner is active and every applied file is tracked in `schema_migrations`. `0001_whatsapp_tables.sql` → `0014_order_branch_and_serial_integrity.sql` are all wired into the runner.
+> **Update (Final reconciliation):** the legacy boot-time `runMigrations()` (a ~750-line `try/catch`-wrapped drift guard that silently mutated every database on every start) has been **removed**. Its DDL is now declared in `schema.sql` (fresh) and mirrored idempotently in `0020_legacy_schema_reconciler.sql` (existing databases); its one-time data backfills/seeds moved into 0020 (as exception-guarded, once-only operations) or into named, guard-based boot seed functions (`seedGroupsFromCategories`, `seedClientsRow`, `curatePlanFeatures`, `initRolesAsync`). No boot path mutates the schema anymore. Current set: `0001`–`0020`.
 
 ### Assessment against Phase 19 requirements
 | Requirement | Status |
 |---|---|
-| Migrations versioned | ✅ `schema_migrations` tracking table + ordered `0001`–`0014` files (post-remediation) |
-| Migrations deterministic | ⚠️ Versioned migrations apply once, in order, transactionally; legacy boot ALTER loop remains as best-effort drift guard |
-| Production DBs upgrade safely | ⚠️ Versioned runner fails loudly + records version; legacy guards idempotent but silent |
-| Fresh DBs reach same schema | ✅ One path (`schema.sql` → versioned migrations) per environment |
+| Migrations versioned | ✅ `schema_migrations` tracking table + ordered `0001`–`0020` files |
+| Migrations deterministic | ✅ Versioned migrations apply once, in order, transactionally; legacy boot ALTER loop removed |
+| Production DBs upgrade safely | ✅ Versioned runner fails loudly + records version; 0020 combined every pre-existing idempotent statement into one tracked, once-only migration |
+| Fresh DBs reach same schema | ✅ schema.sql declares the full cumulative schema; verified by the DB-gated `legacy-reconciler` integration suite |
 | Rollback/recovery possible | ❌ No down-migrations; forward-only (as before) |
-| Migration managed/documented | ⚠️ Runner + version table live; this doc kept current |
+| Migration managed/documented | ✅ Runner + version table live; this doc kept current |
 
 **Findings (Phase 0, context):**
 - **P1 (M-1):** versioned runner now exists (`server/db.ts:653-693`) — see §1 update.
@@ -37,8 +36,8 @@ Three mechanisms run at/after **server boot**:
 - `stock_levels.product_id TEXT NOT NULL UNIQUE` — **UNIQUE on `product_id` alone** conflicts with branch-level stock queries that use `branch_id`. Must be `UNIQUE(product_id, branch_id)`.
 
 ### 2.2 Money representation — SYSTEMIC P0 (§8 of audit)
-- **All ~37 monetary columns are `DOUBLE PRECISION`.** No `NUMERIC`/integer-cents anywhere. Required (approval-gated) migration to `NUMERIC(12,2)` or integer cents, plus JS decimal computation.
-- Tables: `products`, `orders`, `order_items`, `subscription_plans`, `provider_plan_assignments`, `invoices`, `order_invoices`, `repair_types`, `repair_tickets`, `repair_parts_used`, `purchase_order_items`, `quotes`, `quote_items`, `coupons`, `coupon_usage`, `price_history`, `credit_notes`, `credit_note_items`, `etims_sales_transactions`, `gift_cards`, `gift_card_redemptions`, `cart_recovery_reminders`, `refunds`.
+- **Phase 0 finding:** All ~37 monetary columns were `DOUBLE PRECISION` — no `NUMERIC`/integer-cents anywhere.
+- **Resolution:** `0002_money_numeric.sql` (applied) converted the original ~37 columns to `NUMERIC(12,2)`; `0020` converts the 7 remaining columns that were only ever created by the removed `runMigrations()` (`products.cost_price`/`sale_price`, `orders.vat_amount`/`tendered_amount`, `order_items.unit_cost`, `quotes.discount_value`, `quote_items.discount_value`). schema.sql now declares all of them as `NUMERIC(12,2)`, and the `pg` NUMERIC parser in `server/db-helpers.ts` keeps them flowing to JS as numbers.
 
 ### 2.3 Missing indexes (P1, DB-2)
 - `orders(status)`, `orders(branch_id)`, `orders(created_at)` — heavy list/report filters.
@@ -122,5 +121,11 @@ Every step must go through the versioned migration runner (step 1 of §2) so pro
 | 0012 | subscription expiry | branch_subscriptions expiry |
 | 0013 | branch attribution + repair link | per-branch columns (stock_movements, stock_take_sessions, quotes, purchase_orders, repair_tickets, warranty_claims); `warranty_claims.repair_ticket_id` → TEXT + FK |
 | 0014 | order branch + serial integrity | backfill single-branch POS orders, `idx_orders_branch_id`, reattribute order movements; BN2/BN3 |
+| 0015 | campaign attribution + loyalty order | `orders.campaign_id`, `loyalty_transactions.order_id` (+ indexes) |
+| 0016 | invoice number sequence | `order_invoice_number_seq` for monotonic INV-XXXXX numbers |
+| 0017 | pages | storefront pages tables |
+| 0018 | integrations | integrations + configuration tables |
+| 0019 | integrations indexes | lookup indexes on integration tables |
+| 0020 | legacy schema reconciler | the removed `runMigrations()` cumulative schema: `splashes`/`email_logs`/`notification_log`/`storefront_layouts`/`branch_subscriptions`, 29 legacy columns, 15 indexes, remaining 7 money columns → `NUMERIC(12,2)`, and the one-time backfills/seeds (VAT snapshot, unit cost, sort orders, source reclassification, plan pricing/features, settings defaults, repair types, layout seeds, sequence alignment) — all idempotent and exception-guarded |
 
-Current applied head: **0014**. Check `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;`.
+Current applied head: **0020**. Check `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;`.

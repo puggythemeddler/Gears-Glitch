@@ -2,7 +2,7 @@
 
 Current action points for the project, by priority. Copy into GitHub Issues or a project board with `major` / `medium` / `low` labels.
 
-> **STATUS (updated 2026-09-17):** items below predate the Phase 1–3 production-readiness remediation — see `PRODUCTION_READINESS_AUDIT_FULL.md` for the live register. Duplicate-risk: anything here about migrating to "formal SQL migrations" is done (versioned runner `0001`–`0014` live), CSRF/CSP is [x]-checked, and the Cloudinary/Neon/env tasks remain the operator-action items.
+> **STATUS (updated 2026-09-24):** items below predate the Phase 1–3 production-readiness remediation — see `PRODUCTION_READINESS_AUDIT_FULL.md` for the live register and `PRODUCTION_READINESS_CURRENT.md` for today's state. Duplicate-risk: anything here about migrating to "formal SQL migrations" is done (final reconciliation: `schema.sql` + versioned runner `0001`–`0020`, legacy boot-time `runMigrations()` **removed**, `0020_legacy_schema_reconciler` converges existing DBs), CSRF/CSP is [x]-checked, and the Cloudinary/Neon/env tasks remain the operator-action items. New queued item: control-plane secrets at rest (P1, below).
 
 ## Major — operator action required
 
@@ -15,6 +15,8 @@ These require access to external dashboards (Neon, Cloudinary, Render, Vercel). 
 - [ ] **Set `CONTROL_PLANE_SECRET` on your own store's Render service** and register the same value in the control plane if you want the CP to manage your store too.
 - [ ] **Change the control-plane default password** — set `CP_ADMIN_PASSWORD` in the control-plane Render env, redeploy, log in, then click the **2FA Off** badge → Set Up 2FA → scan QR → enable.
 - [ ] **Set store names on existing clients** — clients provisioned before the `STORE_NAME` fix are seeded with the "Gear&Glitch" default, so their browser tab title and og tags show the wrong brand. Each such client should set its name once in **Admin → Settings → Store Info** (or set `STORE_NAME` on its Render service + redeploy). New clients are handled automatically by provisioning.
+
+- [ ] **Encrypt control-plane secrets at rest (P1, queued)** — `clients.cp_secret` (tenant-admin keys) plus `smtp_config.pass` / `cloudinary_config.api_secret` are stored **plaintext** in the CP database (verified 2026-09-24). A DB read leaks live tenant-admin keys for every client. Queued remediation (non-breaking, requires coordinated rollout — do not ship mid-flight): deterministic AES-256-GCM via a dedicated `CP_SECRETS_KEY` CP env + `cp_secret_lookup` column + dual-read legacy plaintext during transition + rotate each secret through **Push Secret**; apply the same mechanism to SMTP/Cloudinary. Alternative accepted mitigation: platform-level encryption-at-rest for the CP DB + least-privilege DB access. See `SECURITY_MODEL.md` §5.
 
 ## Medium
 

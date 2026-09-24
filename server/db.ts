@@ -674,7 +674,7 @@ function getDb(): any {
 
 // Versioned migration runner. Tracks applied files in `schema_migrations` so
 // each migration runs exactly once, inside its own transaction, and fails
-// loudly (no silent catch{}) if a migration errors — leaving the DB unchanged.
+// loudly (no silent catch{}) if a migration errors â€” leaving the DB unchanged.
 // Migration files are `NNNN_name.sql` in server/migrations/, applied in order.
 async function runVersionedMigrations(): Promise<void> {
   const migrationsDir = path.join(__dirname, "..", "..", "server", "migrations");
@@ -713,10 +713,9 @@ async function initDb(): Promise<void> {
     console.warn("[db] schema.sql not found at", schemaPath);
   }
   console.log("[boot] initDb: schema applied");
-  await runMigrations();
-  console.log("[boot] initDb: migrations applied");
   await runVersionedMigrations();
   console.log("[boot] initDb: versioned migrations applied");
+  await initRolesAsync();
   await ensureDefaultSettings();
   await ensureDefaultCategories();
   await ensureAdminUser();
@@ -724,6 +723,9 @@ async function initDb(): Promise<void> {
   await seedProductsIfEmpty();
   await assignInitialRoles();
   await ensureDefaultSubscriptionPlans();
+  await seedGroupsFromCategories();
+  await seedClientsRow();
+  await curatePlanFeatures();
   await seedDemoProvider();
   await seedDemoCustomer();
   const settings = await getSettings();
@@ -738,373 +740,14 @@ async function initDb(): Promise<void> {
   console.log("[boot] initDb: completed");
 }
 
-async function runMigrations(): Promise<void> {
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS is_non_stock INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS is_hidden INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS taxable INTEGER NOT NULL DEFAULT 1`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS min_tier INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS has_warranty INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS warranty_duration INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'`); } catch {}
-  try { await query(`UPDATE users SET role = 'admin' WHERE role IS NULL OR role = ''`); } catch {}
-  try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`); } catch {}
-  try { await query(`UPDATE users SET email = username || '@gearandglitch.com' WHERE email IS NULL`); } catch {}
-  try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TEXT`); } catch {}
-  try { await query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS password_changed_at TEXT`); } catch {}
-  try { await query(`CREATE TABLE IF NOT EXISTS token_nonces (jti TEXT PRIMARY KEY, user_role TEXT NOT NULL, user_id INTEGER NOT NULL, used_at TEXT NOT NULL DEFAULT (NOW()::text))`); } catch {}
-  try { await query(`CREATE TABLE IF NOT EXISTS deleted_roles (id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL DEFAULT (NOW()::text))`); } catch {}
-  try { await query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS pin_hash TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS show_on_pos INTEGER NOT NULL DEFAULT 1`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS repair_type TEXT`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS hardware_value DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS labor_cost DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS parts_cost DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS software_install INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS software_license INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS total_cost DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS quote_sent_at TEXT`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS quote_responded_at TEXT`); } catch {}
-  try { await query(`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS quote_response TEXT`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_county TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_fee DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS staff_id INTEGER REFERENCES users(id)`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_id INTEGER REFERENCES coupons(id)`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS processed_by TEXT`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS idempotency_key TEXT`); } catch {}
-  try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS has_warranty INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS warranty_duration INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS taxable INTEGER NOT NULL DEFAULT 1`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS etims_invoice_number TEXT`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS control_code TEXT`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS kra_pin TEXT`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS serial_number INTEGER`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS internal_data TEXT`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS signature_data TEXT`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS receipt_date TEXT`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS receipt_counter INTEGER`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS total_receipts INTEGER`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS tax_type TEXT NOT NULL DEFAULT 'A'`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS payment_type TEXT NOT NULL DEFAULT '04'`); } catch {}
-  try { await query(`ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS vscu_receipt_no INTEGER`); } catch {}
-  try { await query(`ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS actor_role TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_login TEXT`); } catch {}
-  try { await query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_active INTEGER NOT NULL DEFAULT 1`); } catch {}
-  try { await query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS reason_code TEXT NOT NULL DEFAULT '13'`); } catch {}
-  try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_cn_number TEXT`); } catch {}
-  try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_control_code TEXT`); } catch {}
-  try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_serial_number INTEGER`); } catch {}
-  try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_internal_data TEXT`); } catch {}
-  try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_signature_data TEXT`); } catch {}
-  try { await query(`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS etims_submitted_at TEXT`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_on_hand INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_name TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS customer_phone TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS discount_type TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS discount_value DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS discount_type TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS discount_value DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_number TEXT`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_email TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cancelled INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try {
-    // Reporting cost basis (additive, nullable — a NULL means "not recorded", never 0).
-    const hasCost = await query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'order_items' AND column_name = 'unit_cost'`);
-    await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_cost DOUBLE PRECISION`);
-    await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price DOUBLE PRECISION`);
-    if ((hasCost.rowCount ?? 0) === 0) {
-      // One-time backfill of historical order lines from the best-known cost at
-      // the time of sale: prefer products.cost_price, else the average PO unit
-      // cost received before the order was placed. Runs only when the column is
-      // first created so later cost edits never rewrite historical COGS.
-      await query(
-        `UPDATE order_items oi
-         SET unit_cost = COALESCE(
-           (SELECT p.cost_price FROM products p WHERE p.id = oi.product_id),
-           (SELECT AVG(poi.unit_cost)
-              FROM purchase_order_items poi
-              JOIN purchase_orders po ON po.id = poi.purchase_order_id
-             WHERE poi.product_id = oi.product_id
-               AND poi.unit_cost IS NOT NULL
-               AND COALESCE(NULLIF(po.updated_at, ''), po.created_at)::timestamp
-                     <= (SELECT o.created_at::timestamp FROM orders o WHERE o.id = oi.order_id))
-         )
-         WHERE oi.unit_cost IS NULL AND oi.cancelled = 0`
-      );
-    }
-  } catch {}
-  try {
-    // VAT persistence + campaign attribution (additive, nullable).
-    await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_rate DOUBLE PRECISION`);
-    await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_amount DOUBLE PRECISION`);
-    await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_estimated INTEGER NOT NULL DEFAULT 0`);
-    await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS campaign_id INTEGER`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_orders_campaign ON orders(campaign_id)`);
-    await query(`ALTER TABLE loyalty_transactions ADD COLUMN IF NOT EXISTS order_id INTEGER`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_loyalty_tx_order ON loyalty_transactions(order_id)`);
-  } catch {}
-  try {
-    // One-time snapshot of historical VAT at the CURRENT configured rate. The
-    // render-time formula is lineTotal * rate/(100+rate); the snapshot is
-    // flagged vat_estimated so the tax report never presents it as recorded.
-    const rateRow = await queryOne("SELECT COALESCE(CAST(value AS DOUBLE PRECISION), 0) AS rate FROM settings WHERE key = 'taxRate'") as any;
-    const rate = Number(rateRow?.rate || 16);
-    await query(
-      `UPDATE orders SET
-         vat_rate = $1,
-         vat_amount = ROUND(COALESCE((SELECT SUM(ROUND(oi.line_total * $1 / (100 + $1), 2))
-            FROM order_items oi WHERE oi.order_id = orders.id AND oi.cancelled = 0 AND oi.taxable = 1), 0), 2),
-         vat_estimated = 1
-       WHERE vat_amount IS NULL`,
-      [rate]
-    );
-  } catch {}
-  try { await query(`INSERT INTO settings (key, value) SELECT 'logo_position', 'top-left' WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'logo_position')`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_price DOUBLE PRECISION`); } catch {}
-  // Serial number tracking (warranty lookups, PO intake, sale linking)
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS serial_tracking INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS serial_number TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS stock_deducted INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS serial_numbers TEXT NOT NULL DEFAULT '[]'`); } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS serial_numbers (
-      id SERIAL PRIMARY KEY,
-      serial_number TEXT NOT NULL UNIQUE,
-      product_id TEXT NOT NULL,
-      branch_id INTEGER,
-      status TEXT NOT NULL DEFAULT 'in_stock',
-      purchase_order_item_id INTEGER,
-      order_id INTEGER,
-      order_item_id INTEGER,
-      sold_at TEXT,
-      warranty_expires TEXT,
-      created_by INTEGER,
-      created_at TEXT NOT NULL DEFAULT (NOW()::text),
-      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-      FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL,
-      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,
-      FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE SET NULL
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_serial_numbers_status ON serial_numbers(status)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_serial_numbers_product ON serial_numbers(product_id)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_serial_numbers_number ON serial_numbers(serial_number)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS serial_sequences (
-      prefix TEXT PRIMARY KEY,
-      last_number INTEGER NOT NULL DEFAULT 0
-    )`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS splashes (
-      id SERIAL PRIMARY KEY,
-      title TEXT NOT NULL DEFAULT '',
-      text TEXT NOT NULL DEFAULT '',
-      bg_color TEXT NOT NULL DEFAULT '#f59e0b',
-      text_color TEXT NOT NULL DEFAULT '#ffffff',
-      is_marquee INTEGER NOT NULL DEFAULT 1,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      start_date TEXT,
-      end_date TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    )`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS product_views (
-      id SERIAL PRIMARY KEY,
-      product_id TEXT NOT NULL REFERENCES products(id),
-      viewer_type TEXT NOT NULL DEFAULT 'anonymous',
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_product_views_product ON product_views(product_id)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS stored_images (
-      id SERIAL PRIMARY KEY,
-      ref_id TEXT NOT NULL,
-      mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
-      image_data TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_stored_images_ref ON stored_images(ref_id)`);
-  } catch {}
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS email_logs (
-      id SERIAL PRIMARY KEY,
-      to_email TEXT NOT NULL,
-      from_email TEXT NOT NULL DEFAULT '',
-      subject TEXT NOT NULL DEFAULT '',
-      body_html TEXT NOT NULL DEFAULT '',
-      type TEXT NOT NULL DEFAULT 'general',
-      status TEXT NOT NULL DEFAULT 'sent',
-      error_message TEXT DEFAULT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_type ON email_logs(type)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS notification_log (
-      id SERIAL PRIMARY KEY,
-      event_type TEXT NOT NULL,
-      channel TEXT NOT NULL,
-      recipient TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'pending',
-      entity_type TEXT NOT NULL DEFAULT '',
-      entity_id TEXT NOT NULL DEFAULT '',
-      error_message TEXT DEFAULT NULL,
-      provider_message_id TEXT DEFAULT NULL,
-      subject TEXT DEFAULT NULL,
-      customer_id INTEGER DEFAULT NULL,
-      idempotency_key TEXT DEFAULT NULL,
-      sent_at TEXT DEFAULT NULL,
-      created_at TEXT DEFAULT NOW()::text
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_event ON notification_log(event_type)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_channel ON notification_log(channel)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_status ON notification_log(status)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_created ON notification_log(created_at)`);
-  } catch {}
-  // Enrich notification_log for customer messaging history + durable idempotency.
-  try { await query(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS subject TEXT DEFAULT NULL`); } catch {}
-  try { await query(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS customer_id INTEGER DEFAULT NULL`); } catch {}
-  try { await query(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS idempotency_key TEXT DEFAULT NULL`); } catch {}
-  try { await query(`ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS sent_at TEXT DEFAULT NULL`); } catch {}
-  try { await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_customer ON notification_log(customer_id)`); } catch {}
-  try { await query(`CREATE INDEX IF NOT EXISTS idx_notif_log_idem ON notification_log(idempotency_key)`); } catch {}
-  // Per-customer communication opt-outs (JSON, e.g. {"email":false}).
-  try { await query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS comm_prefs TEXT DEFAULT '{}'`); } catch {}
-  try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_annual DOUBLE PRECISION`); } catch {}
-  try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`); } catch {}
-  try { await query(`ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS sync_to_others INTEGER DEFAULT 1`); } catch {}
-  try { await query(`ALTER TABLE roles ADD COLUMN IF NOT EXISTS features TEXT NOT NULL DEFAULT '[]'`); } catch {}
-  // Product review indexes and constraints
-  try { await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_reviews_unique ON product_reviews (product_id, customer_id)`); } catch {}
-  try { await query(`CREATE INDEX IF NOT EXISTS idx_product_reviews_product_id ON product_reviews (product_id)`); } catch {}
-  try { await query(`CREATE INDEX IF NOT EXISTS idx_product_reviews_customer_id ON product_reviews (customer_id)`); } catch {}
-  try { await query(`ALTER TABLE product_reviews ADD CONSTRAINT chk_review_rating CHECK (rating >= 1 AND rating <= 5)`); } catch {}
-  try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS link_url TEXT DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE splashes ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE product_groups ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`); } catch {}
+// ─── One-time boot seeds (formerly part of the removed legacy runMigrations) ─
+// Schema DDL, money coercion, indexes and one-time SQL backfills now live in
+// migrations (schema.sql for fresh databases + 0020_legacy_schema_reconciler.sql
+// for existing ones). The seeds below are pure-DATA and depend on JS (slugify,
+// settings reads), so they stay here as named, guard-based boot functions. Each
+// is predicate/marker-guarded and so never rewrites data more than once.
 
-  // Backfill category sort order: assign sequential order by group then label to any
-  // categories that still share the default (tied) sort_order, so clients don't have
-  // to manually order pre-existing categories.
-  try {
-    const tieCount = await queryOne(`SELECT COUNT(*) AS cnt FROM (SELECT sort_order FROM categories GROUP BY sort_order HAVING COUNT(*) > 1) t`) as any;
-    if (Number(tieCount?.cnt || 0) > 0) {
-      await query(`UPDATE categories c SET sort_order = t.new_order FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY group_name, label) - 1 AS new_order FROM categories) t WHERE c.id = t.id`);
-    }
-  } catch { console.warn("[db] Category sort_order backfill skipped"); }
-
-  // Backfill product group sort order the same way: assign sequential order by name
-  // to any groups still sharing the default (tied) sort_order.
-  try {
-    const tieCount = await queryOne(`SELECT COUNT(*) AS cnt FROM (SELECT sort_order FROM product_groups GROUP BY sort_order HAVING COUNT(*) > 1) t`) as any;
-    if (Number(tieCount?.cnt || 0) > 0) {
-      await query(`UPDATE product_groups g SET sort_order = t.new_order FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY name) - 1 AS new_order FROM product_groups) t WHERE g.id = t.id`);
-    }
-  } catch { console.warn("[db] Product group sort_order backfill skipped"); }
-
-
-  // ============ Sales-by-channel, gift cards, campaigns, cart recovery, refunds ============
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'storefront'`); } catch {}
-  try { await query(`UPDATE orders SET source = 'pos' WHERE source = 'storefront' AND (branch_id IS NOT NULL OR processed_by LIKE 'POS%' OR notes LIKE 'POS sale%')`); } catch {}
-  try { await query(`UPDATE orders SET source = 'quote' WHERE source = 'storefront' AND notes LIKE 'Converted from quote%'`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_id INTEGER`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_amount DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount_refunded DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS gift_cards (
-      id SERIAL PRIMARY KEY,
-      code TEXT NOT NULL UNIQUE,
-      initial_value DOUBLE PRECISION NOT NULL DEFAULT 0,
-      balance DOUBLE PRECISION NOT NULL DEFAULT 0,
-      expires_at TEXT,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      notes TEXT NOT NULL DEFAULT '',
-      created_by INTEGER REFERENCES users(id),
-      created_at TEXT NOT NULL DEFAULT (NOW()::text),
-      updated_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_gift_cards_code ON gift_cards(code)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS gift_card_redemptions (
-      id SERIAL PRIMARY KEY,
-      gift_card_id INTEGER NOT NULL REFERENCES gift_cards(id) ON DELETE CASCADE,
-      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      customer_id INTEGER,
-      amount DOUBLE PRECISION NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_gift_redemptions_card ON gift_card_redemptions(gift_card_id)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_gift_redemptions_order ON gift_card_redemptions(order_id)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS campaigns (
-      id SERIAL PRIMARY KEY,
-      slug TEXT NOT NULL UNIQUE,
-      title TEXT NOT NULL,
-      subtitle TEXT NOT NULL DEFAULT '',
-      description TEXT NOT NULL DEFAULT '',
-      hero_image TEXT NOT NULL DEFAULT '',
-      banner_color TEXT NOT NULL DEFAULT '#111827',
-      product_ids TEXT NOT NULL DEFAULT '[]',
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (NOW()::text),
-      updated_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_campaigns_slug ON campaigns(slug)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS cart_recovery_reminders (
-      id SERIAL PRIMARY KEY,
-      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-      cart_total DOUBLE PRECISION NOT NULL DEFAULT 0,
-      channel TEXT NOT NULL DEFAULT 'email',
-      order_id INTEGER,
-      created_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_cart_recovery_customer ON cart_recovery_reminders(customer_id)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS refunds (
-      id SERIAL PRIMARY KEY,
-      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
-      product_id TEXT,
-      amount DOUBLE PRECISION NOT NULL DEFAULT 0,
-      reason TEXT NOT NULL DEFAULT '',
-      created_by INTEGER REFERENCES users(id),
-      created_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds(order_id)`);
-  } catch {}
-
-  // ============ Product groups ============
-  try { await query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS group_id TEXT NOT NULL DEFAULT ''`); } catch {}
-  try { await query(`CREATE INDEX IF NOT EXISTS idx_products_group ON products(group_id)`); } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS product_groups (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-  } catch {}
+async function seedGroupsFromCategories(): Promise<void> {
   try {
     // Seed groups from any existing category group_name values, then map categories to the group ids.
     const seedGroups = await queryAll(`SELECT DISTINCT group_name FROM categories WHERE group_name IS NOT NULL AND trim(group_name) <> ''`) as any[];
@@ -1125,69 +768,19 @@ async function runMigrations(): Promise<void> {
     // Backfill products with their category's group.
     await query(`UPDATE products SET group_id = c.group_name FROM categories c WHERE products.category = c.id AND products.group_id = '' AND c.group_name <> ''`);
   } catch {}
+}
 
-  // Update default plan pricing and features
-  try {
-    await query(`UPDATE subscription_plans SET price = 4999, price_annual = 47990 WHERE id = 'growth'`);
-    await query(`UPDATE subscription_plans SET price = 12999, price_annual = 124790 WHERE id = 'pro'`);
-    await query(`UPDATE subscription_plans SET price = 29999, price_annual = 287990 WHERE id = 'enterprise'`);
-    // Add Multi-currency support to plans that should have it
-    const growthPlan = await queryOne(`SELECT features FROM subscription_plans WHERE id = 'growth'`) as any;
-    if (growthPlan && !growthPlan.features.includes("Multi-currency support")) {
-      const updated = JSON.parse(growthPlan.features);
-      updated.push("Multi-currency support");
-      await query(`UPDATE subscription_plans SET features = $1 WHERE id = 'growth'`, [JSON.stringify(updated)]);
-    }
-    const proPlan = await queryOne(`SELECT features FROM subscription_plans WHERE id = 'pro'`) as any;
-    if (proPlan && !proPlan.features.includes("Multi-currency support")) {
-      const updated = JSON.parse(proPlan.features);
-      updated.push("Multi-currency support");
-      await query(`UPDATE subscription_plans SET features = $1 WHERE id = 'pro'`, [JSON.stringify(updated)]);
-    }
-    const entPlan = await queryOne(`SELECT features FROM subscription_plans WHERE id = 'enterprise'`) as any;
-    if (entPlan && !entPlan.features.includes("Multi-currency support")) {
-      const updated = JSON.parse(entPlan.features);
-      updated.push("Multi-currency support");
-      await query(`UPDATE subscription_plans SET features = $1 WHERE id = 'enterprise'`, [JSON.stringify(updated)]);
-    }
-    // Add Visitor analytics to Growth+ plans
-    for (const planId of ["growth", "pro", "enterprise"]) {
-      const plan = await queryOne(`SELECT features FROM subscription_plans WHERE id = $1`, [planId]) as any;
-      if (plan && !plan.features.includes("Visitor analytics")) {
-        const updated = JSON.parse(plan.features);
-        updated.push("Visitor analytics");
-        await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(updated), planId]);
-      }
-    }
-    // Add gift cards to Pro+ plans
-    for (const planId of ["pro", "enterprise"]) {
-      const plan = await queryOne(`SELECT features FROM subscription_plans WHERE id = $1`, [planId]) as any;
-      if (plan && !plan.features.includes("Gift cards")) {
-        const updated = JSON.parse(plan.features);
-        updated.push("Gift cards");
-        await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(updated), planId]);
-      }
-    }
-    // Add Campaign pages to Growth+ plans
-    for (const planId of ["growth", "pro", "enterprise"]) {
-      const plan = await queryOne(`SELECT features FROM subscription_plans WHERE id = $1`, [planId]) as any;
-      if (plan && !plan.features.includes("Campaign pages")) {
-        const updated = JSON.parse(plan.features);
-        updated.push("Campaign pages");
-        await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(updated), planId]);
-      }
-    }
-    // Add Cart recovery to Growth+ plans
-    for (const planId of ["growth", "pro", "enterprise"]) {
-      const plan = await queryOne(`SELECT features FROM subscription_plans WHERE id = $1`, [planId]) as any;
-      if (plan && !plan.features.includes("Cart recovery")) {
-        const updated = JSON.parse(plan.features);
-        updated.push("Cart recovery");
-        await query(`UPDATE subscription_plans SET features = $1 WHERE id = $2`, [JSON.stringify(updated), planId]);
-      }
-    }
-  } catch {}
+async function seedClientsRow(): Promise<void> {
+  const existingClientCount = await queryOne("SELECT COUNT(*) AS count FROM clients") as any;
+  if (!existingClientCount || Number(existingClientCount.count) === 0) {
+    const shopName = await getStoreSetting("storeName") || "My Shop";
+    const shopEmail = await getStoreSetting("email") || "";
+    const shopPhone = await getStoreSetting("phone") || "";
+    await query("INSERT INTO clients (name, email, phone, settings) VALUES ($1, $2, $3, $4)", [shopName, shopEmail, shopPhone, JSON.stringify({ migrated: true })]);
+  }
+}
 
+async function curatePlanFeatures(): Promise<void> {
   // One-time curation of the default plans' feature sets from the feature
   // catalog. Guarded by a settings marker so admin tweaks made afterwards are
   // never overwritten on subsequent startups.
@@ -1218,6 +811,7 @@ async function runMigrations(): Promise<void> {
           "Supplier management", "Purchase order management",
           "Credit notes", "WhatsApp integration", "Branch management",
           "Multi-currency support", "Analytics dashboard",
+          "Visitor analytics",
         ],
         pro: [
           "Unlimited products", "10 branches", "Premium support",
@@ -1268,229 +862,6 @@ async function runMigrations(): Promise<void> {
       await setStoreSetting("plan_features_curated_v2", "1");
     }
   } catch { console.warn("[db] plan feature curation skipped"); }
-
-  // Fix sequences after potential manual deletes or migrations
-  for (const seq of ["orders_id_seq", "order_items_id_seq"]) {
-    try {
-      await query(`SELECT setval('${seq}', COALESCE((SELECT MAX(id) FROM ${seq.replace('_id_seq', '')}), 1))`);
-    } catch {}
-  }
-
-  const existingTypes = await queryOne("SELECT COUNT(*) AS c FROM repair_types") as any;
-  if (existingTypes && Number(existingTypes.c) === 0) {
-    const types = [
-      { id: "keyboard", name: "Keyboard Repair", description: "Keyboard replacement or individual key fix", base_price: 1500 },
-      { id: "motherboard", name: "Motherboard Replacement", description: "Full motherboard replacement including labor", base_price: 3500 },
-      { id: "servicing", name: "Computer Servicing", description: "Full cleaning, thermal paste, fan check", base_price: 2000 },
-      { id: "screen", name: "Screen Replacement", description: "LCD/LED screen replacement", base_price: 2500 },
-      { id: "battery", name: "Battery Replacement", description: "Laptop battery replacement", base_price: 1000 },
-      { id: "software_install", name: "Software Installation", description: "OS or application installation", base_price: 800 },
-      { id: "software_license", name: "Software Installation + License", description: "Software installation with genuine license", base_price: 2500 },
-      { id: "data_recovery", name: "Data Recovery", description: "Hard drive data recovery service", base_price: 3000 },
-      { id: "upgrade_ram", name: "RAM Upgrade", description: "Memory module installation", base_price: 800 },
-      { id: "upgrade_storage", name: "Storage Upgrade", description: "HDD/SSD replacement or addition", base_price: 1200 },
-    ];
-    for (const t of types) {
-      await query("INSERT INTO repair_types (id, name, description, base_price) VALUES ($1, $2, $3, $4)", [t.id, t.name, t.description, t.base_price]);
-    }
-  }
-
-  const etimsMode = await queryOne("SELECT value FROM settings WHERE key = 'etims_mode'");
-  if (!etimsMode) {
-    await query("INSERT INTO settings (key, value) VALUES ('etims_mode', 'off')");
-  }
-  const settingDefaults: { [k: string]: string } = {
-    etims_branch_id: "00", etims_device_serial: "dvc001", etims_vscu_url: "http://localhost:8088",
-    etims_oscu_api_url: "https://etims.kra.go.ke/api", etims_oscu_consumer_key: "",
-    etims_oscu_consumer_secret: "", kra_pin: "P051234567Z", etims_serial_prefix: "01",
-    etims_last_serial: "1", etims_vscu_receipt_counter: "0", loyalty_rate: "10",
-    loyalty_redemption_rate: "1", store_layout: "original", store_banners: "[]",
-    store_features: "[]", store_theme_custom: "{}", shop_plan_id: "starter",
-  };
-  for (const [k, v] of Object.entries(settingDefaults)) {
-    const ex = await queryOne("SELECT value FROM settings WHERE key = $1", [k]);
-    if (!ex) await query("INSERT INTO settings (key, value) VALUES ($1, $2)", [k, v]);
-  }
-  const aboutUs = await queryOne("SELECT value FROM settings WHERE key = 'about_us'");
-  if (!aboutUs) {
-    await query("INSERT INTO settings (key, value) VALUES ('about_us', $1)", ['{"title":"About Us","content":"We are a leading retailer of computers, laptops, and accessories.","mission":"To provide quality tech products at affordable prices.","vision":"To be the most trusted tech retailer in the region.","missionTitle":"Our Mission","visionTitle":"Our Vision","image":"","address":"","hours":"","stats":[]}']);
-  }
-
-  await initRolesAsync();
-  await ensureTechnicianUser();
-
-  const existingClientCount = await queryOne("SELECT COUNT(*) AS count FROM clients") as any;
-  if (!existingClientCount || Number(existingClientCount.count) === 0) {
-    const shopName = await getStoreSetting("storeName") || "My Shop";
-    const shopEmail = await getStoreSetting("email") || "";
-    const shopPhone = await getStoreSetting("phone") || "";
-    await query("INSERT INTO clients (name, email, phone, settings) VALUES ($1, $2, $3, $4)", [shopName, shopEmail, shopPhone, JSON.stringify({ migrated: true })]);
-  }
-
-  // WhatsApp tables
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS whatsapp_conversations (
-      id SERIAL PRIMARY KEY,
-      phone_number TEXT NOT NULL,
-      entity_type TEXT NOT NULL DEFAULT 'customer',
-      entity_id INTEGER NOT NULL,
-      entity_name TEXT NOT NULL DEFAULT '',
-      last_incoming_at TEXT,
-      last_outgoing_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (NOW()::text),
-      updated_at TEXT NOT NULL DEFAULT (NOW()::text),
-      UNIQUE (phone_number)
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_wa_conv_phone ON whatsapp_conversations(phone_number)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_wa_conv_entity ON whatsapp_conversations(entity_type, entity_id)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS whatsapp_logs (
-      id SERIAL PRIMARY KEY,
-      phone_number TEXT NOT NULL,
-      direction TEXT NOT NULL,
-      message_type TEXT NOT NULL DEFAULT 'text',
-      content TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'sent',
-      wa_message_id TEXT,
-      error_message TEXT,
-      created_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_wa_logs_phone ON whatsapp_logs(phone_number)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_wa_logs_status ON whatsapp_logs(status)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS whatsapp_media (
-      id SERIAL PRIMARY KEY,
-      wa_message_id TEXT NOT NULL,
-      phone_number TEXT NOT NULL,
-      mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
-      media_data TEXT NOT NULL,
-      filename TEXT DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_wa_media_msg ON whatsapp_media(wa_message_id)`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS whatsapp_templates (
-      id SERIAL PRIMARY KEY,
-      name TEXT UNIQUE NOT NULL,
-      language TEXT NOT NULL DEFAULT 'en',
-      category TEXT NOT NULL DEFAULT 'UTILITY',
-      body_text TEXT NOT NULL,
-      header_type TEXT DEFAULT 'none',
-      header_text TEXT DEFAULT '',
-      footer_text TEXT DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT (NOW()::text),
-      updated_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-  } catch {}
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS page_views (
-      id SERIAL PRIMARY KEY,
-      branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
-      path TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      referrer TEXT DEFAULT '',
-      user_agent TEXT DEFAULT '',
-      device_type TEXT DEFAULT 'desktop',
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_page_views_created ON page_views(created_at)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_page_views_session ON page_views(session_id)`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_page_views_branch ON page_views(branch_id)`);
-  } catch {}
-
-  // Soft-delete support for purchase_orders
-  try {
-    await query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS deleted_at TEXT`);
-  } catch {}
-
-  // Storefront layouts table
-  try {
-    await query(`CREATE TABLE IF NOT EXISTS storefront_layouts (
-      id SERIAL PRIMARY KEY,
-      layout_key TEXT NOT NULL UNIQUE,
-      label TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      layout_type TEXT NOT NULL DEFAULT 'static',
-      config JSONB NOT NULL DEFAULT '{}',
-      is_active INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (NOW()::text),
-      updated_at TEXT NOT NULL DEFAULT (NOW()::text)
-    )`);
-  } catch {}
-
-  // Invoice enhancements: numbering, due dates, overdue tracking
-  try { await query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_number TEXT DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS due_date TEXT DEFAULT ''`); } catch {}
-  try { await query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`); } catch {}
-  try { await query(`CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`); } catch {}
-  try { await query(`CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date)`); } catch {}
-
-  // ─── PER-BRANCH SUBSCRIPTIONS ──────────────────────────────
-  try { await query(`ALTER TABLE branches ADD COLUMN IF NOT EXISTS plan_id TEXT REFERENCES subscription_plans(id)`); } catch {}
-
-  // Per-branch subscriptions table
-  await query(`
-    CREATE TABLE IF NOT EXISTS branch_subscriptions (
-      branch_id INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
-      plan_id TEXT NOT NULL REFERENCES subscription_plans(id),
-      activated_at TIMESTAMP DEFAULT NOW(),
-      expires_at TIMESTAMP,
-      status TEXT DEFAULT 'active'
-    )
-  `);
-
-  // ─── PER-BRANCH STOCK LEVELS ──────────────────────────────
-  try { await query(`ALTER TABLE stock_levels ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id)`); } catch {}
-  try { await query(`ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id)`); } catch {}
-
-  // Fix stock_levels UNIQUE constraint to be per-branch
-  try {
-    const constr = await queryOne(`SELECT conname FROM pg_constraint WHERE conrelid = 'stock_levels'::regclass AND contype = 'u'`) as any;
-    if (constr && constr.conname) {
-      await query(`ALTER TABLE stock_levels DROP CONSTRAINT ${constr.conname}`);
-    }
-    await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_levels_product_branch ON stock_levels(product_id, COALESCE(branch_id, 0))`);
-  } catch {}
-
-  // ─── 2FA / TOTP ──────────────────────────────────────────────
-  try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT`); } catch {}
-  try { await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false`); } catch {}
-
-  // ─── STOCK TAKE BRANCH SUPPORT ─────────────────────────────
-  try { await query(`ALTER TABLE stock_take_sessions ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id)`); } catch {}
-
-  // ─── M-Pesa order columns ──────────────────────────────────────
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS checkout_request_id TEXT`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS mpesa_receipt TEXT`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS mpesa_phone TEXT`); } catch {}
-  try { await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS tendered_amount DOUBLE PRECISION NOT NULL DEFAULT 0`); } catch {}
-  try { await query(`CREATE INDEX IF NOT EXISTS idx_orders_checkout_request ON orders(checkout_request_id)`); } catch {}
-
-  // Remove retired layouts (mobile, custom) from existing databases; clients using them fall back to Original
-  try { await query(`DELETE FROM storefront_layouts WHERE layout_key IN ('mobile', 'custom')`); } catch {}
-  try { await query(`UPDATE settings SET value = 'original' WHERE key = 'store_layout' AND value IN ('mobile', 'custom')`); } catch {}
-
-  // Seed default static layouts if none exist
-  try {
-    const count = await queryOne("SELECT COUNT(*) AS count FROM storefront_layouts") as { count: number } | undefined;
-    if (count && Number(count.count) === 0) {
-      const defaults = [
-        { key: "original", label: "Original", desc: "Clean default layout with premium hero section, animated glows, floating particles, product carousel, glassmorphism buttons, and wave transition.", sort: 1 },
-        { key: "amazon", label: "Amazon Style", desc: "Large search bar, horizontal categories, product recommendations, featured deals.", sort: 2 },
-        { key: "jumia", label: "Jumia Style", desc: "Promotional sliders, flash sales, daily deals, category icons.", sort: 3 },
-      ];
-      for (const d of defaults) {
-        await query(
-          "INSERT INTO storefront_layouts (layout_key, label, description, layout_type, config, is_active, sort_order) VALUES ($1, $2, $3, 'static', '{}', 0, $4)",
-          [d.key, d.label, d.desc, d.sort]
-        );
-      }
-    }
-  } catch {}
 }
 
 async function ensureDefaultSettings(): Promise<void> {
@@ -1526,7 +897,7 @@ async function ensureTechnicianUser(): Promise<void> {
   if (!password) {
     if (process.env.NODE_ENV === "production") { console.warn("TECH_PASSWORD not set"); return; }
     password = crypto.randomBytes(12).toString("hex");
-    console.warn(`[auth] TECH_PASSWORD not set — generated temporary dev password: ${password}`);
+    console.warn(`[auth] TECH_PASSWORD not set â€” generated temporary dev password: ${password}`);
   }
   const existing = await queryOne("SELECT id, email FROM users WHERE username = $1", [techUser]) as any;
   if (existing) {
@@ -1567,7 +938,7 @@ async function initRolesAsync(): Promise<void> {
     provider: ["repair:list", "repair:view", "repair:update", "product:list", "product:update", "stock:list", "stock:update", "stock:view_low", "calendar:view", "calendar:schedule", "order:view", "customer:view", "messaging:view", "messaging:send", "provider:view"],
     owner: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "quote:update", "order:view", "customer:view", "coupon:view", "giftcard:view", "campaign:view", "cart:view", "provider:view", "spec:view", "supplier:view", "branch:view", "subscription:view", "about:view", "positioning:view", "whatsapp:view", "review:view", "audit:view"],
   };
-  // deleted_roles is created by schema.sql / runMigrations. Guard anyway so a
+  // deleted_roles is created by schema.sql. Guard anyway so a
   // pre-existing database that somehow lacks it still boots successfully.
   let hasDeletedRoles = false;
   try {
@@ -1999,7 +1370,7 @@ async function deleteProduct(id: string): Promise<boolean> {
   try { deleteProductImages(id); } catch {}
   try {
     // RESTRICT foreign keys (order_items, stock_levels, serials, etc.) make a
-    // product with history or stock undeletable on purpose — deactivate instead.
+    // product with history or stock undeletable on purpose â€” deactivate instead.
     const result = await query("DELETE FROM products WHERE id = $1", [id]);
     return (result.rowCount ?? 0) > 0;
   } catch {
@@ -2152,7 +1523,7 @@ async function getStockLevel(productId: string, branchId?: number): Promise<Stoc
 }
 
 async function updateStockLevel(productId: string, quantityInStock: number, branchId?: number): Promise<void> {
-  // Atomic upsert — single statement, no read-then-write race. Conflict targets
+  // Atomic upsert â€” single statement, no read-then-write race. Conflict targets
   // match the partial unique indexes on stock_levels (branch_id IS NULL = global,
   // branch_id IS NOT NULL = per-branch).
   if (branchId !== undefined) {
@@ -2259,7 +1630,7 @@ async function completeStockTransfer(id: number): Promise<boolean> {
       [transfer.product_id, "transfer_in", qty, "stock_transfer", String(id), `Transfer #${id} in`, null, transfer.to_branch_id]
     );
 
-    // BN3: the transferred units physically move between branches — reattribute any
+    // BN3: the transferred units physically move between branches â€” reattribute any
     // still-in-stock serials so branch reports and POS branch checks follow the stock.
     await client.query(
       "UPDATE serial_numbers SET branch_id = $1 WHERE product_id = $2 AND branch_id = $3 AND status = 'in_stock'",
@@ -2430,7 +1801,7 @@ async function getBranchFeatures(branchId: number): Promise<string[]> {
   return sub.plan.features || [];
 }
 
-// SU-2: sweep job — mark any subscription with an explicit, already-passed expiry
+// SU-2: sweep job â€” mark any subscription with an explicit, already-passed expiry
 // as 'expired'. Returns the number of rows transitioned. NULL expiries are untouched.
 async function markExpiredSubscriptions(): Promise<number> {
   const res = await query(
@@ -2775,14 +2146,14 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
       await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable, unit_cost) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10)", [insertOrderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal, hasWarranty, warrantyDuration, wExp, unitCost]);
     }
     for (const item of quote.items) {
-      // I-1/I-4: guarded atomic decrement — if stock_on_hand is insufficient the
+      // I-1/I-4: guarded atomic decrement â€” if stock_on_hand is insufficient the
       // UPDATE matches no row (rowCount 0) and we fail the whole conversion loudly
       // instead of silently clamping/overselling. Throwing rolls back the order+items.
       const productRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.productId]);
       if ((productRes.rowCount ?? 0) === 0) {
         throw new Error(`Insufficient stock to convert quote: ${item.productName || item.productId}`);
       }
-      // Atomic decrement — no read-then-write race. Insert preserves an empty
+      // Atomic decrement â€” no read-then-write race. Insert preserves an empty
       // stock_levels row if absent; on conflict the current value is decremented
       // only while it can cover the quantity (guarded, no oversell).
       await client.query(
@@ -3137,7 +2508,7 @@ async function cancelOrderItemQuantity(orderItemId: number, quantity: number): P
     if (!row.cancelled) {
       await client.query("UPDATE order_items SET cancelled = 1 WHERE id = $1", [orderItemId]);
     } else {
-      return true; // already cancelled — avoid double stock/serial restore
+      return true; // already cancelled â€” avoid double stock/serial restore
     }
     if (!fullLineCancel) return true; // partial cancel: no stock or serial restore
     const order = (await client.query("SELECT branch_id FROM orders WHERE id = $1", [row.order_id])).rows?.[0] as any;
@@ -3162,7 +2533,7 @@ async function cancelOrderItemQuantity(orderItemId: number, quantity: number): P
 
 // VAT snapshot helper (shared by storefront createOrder and POS checkout so the
 // captured amount always matches what the invoice renderer displays: prices are
-// tax-inclusive, so VAT = lineTotal × rate/(100+rate), rounded per line).
+// tax-inclusive, so VAT = lineTotal Ã— rate/(100+rate), rounded per line).
 export function computeVatAmount(items: { price: number; quantity: number; taxable?: boolean }[], taxRate: number): number {
   const rate = Number(taxRate);
   if (!Number.isFinite(rate) || rate <= 0) return 0;
@@ -3174,10 +2545,10 @@ export function computeVatAmount(items: { price: number; quantity: number; taxab
   return total;
 }
 
-async function createOrder(data: { customerId: number; customerName: string; customerEmail: string; shippingName: string; shippingAddress: string; shippingCity: string; shippingCounty: string; shippingPostcode: string; shippingPhone: string; shippingFee: number; notes?: string; items: { productId: string; name: string; price: number; quantity: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean }[]; couponId?: number; discountAmount?: number; staffId?: number; branchId?: number; processedBy?: string; idempotencyKey?: string; source?: string; giftCardId?: number; giftCardAmount?: number; campaignId?: number }): Promise<Order> {
+async function createOrder(data: { customerId: number; customerName: string; customerEmail: string; shippingName: string; shippingAddress: string; shippingCity: string; shippingCounty: string; shippingPostcode: string; shippingPhone: string; shippingFee: number; notes?: string; items: { productId: string; name: string; price: number; quantity: number; hasWarranty?: boolean; warrantyDuration?: number; taxable?: boolean }[]; couponId?: number; discountAmount?: number; staffId?: number; branchId?: number; processedBy?: string; idempotencyKey?: string; source?: string; giftCardId?: number; giftCardAmount?: number; campaignId?: number; stock?: "none" | "hold" | "deduct" }): Promise<Order> {
   const subtotal = Math.round(data.items.reduce((sum, i) => sum + i.price * i.quantity, 0) * 100) / 100;
   // VAT snapshot at placement: same tax-inclusive formula the invoices render
-  // (lineTotal × rate/(100+rate)); later settings.taxRate changes can never
+  // (lineTotal Ã— rate/(100+rate)); later settings.taxRate changes can never
   // rewrite stored VAT. POS uses the shared computeVatAmount helper too.
   const settingsVat = await getSettings();
   const vatRate = Number(settingsVat.taxRate || 16);
@@ -3204,6 +2575,43 @@ async function createOrder(data: { customerId: number; customerName: string; cus
       // than deriving it later. computeWarrantyExpiry clamps to month-end (Jan 31 + 1mo -> Feb 28).
       const wExp = item.hasWarranty && item.warrantyDuration ? computeWarrantyExpiry(new Date().toISOString(), item.warrantyDuration) : null;
       await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, has_warranty, warranty_duration, warranty_expires, taxable, unit_cost) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", [oid, item.productId, item.name, Math.round(item.price * 100) / 100, item.quantity, item.hasWarranty ? 1 : 0, item.warrantyDuration || 0, wExp, item.taxable !== false ? 1 : 0, costMap[item.productId] ?? null]);
+    }
+    // Storefront stock integrity (P-3): a storefront order must never silently
+    // oversell. M-Pesa orders "hold" stock (products.stock_on_hand decremented,
+    // stock_levels.quantity_reserved incremented, matching the POS held-payment
+    // semantics) so an abandoned/unpaid order can later release it. Non-M-Pesa
+    // orders deduct immediately (the money is already with us â€” mirrored from
+    // the POS cash path). Both run guarded so a shortage aborts the whole
+    // transaction instead of overselling. Resolution is handled by the existing
+    // payment machinery (confirmOrderPayment/deductReservedStockForOrder) and
+    // the released/held sweep.
+    if (data.stock === "hold" || data.stock === "deduct") {
+      for (const item of data.items) {
+        const qty = Number(item.quantity);
+        const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [qty, item.productId]);
+        if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
+        if (data.stock === "hold") {
+          await client.query(
+            `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+             VALUES ($1, 0, $2, 0, 5)
+             ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_reserved = quantity_reserved + $2, updated_at = NOW()::text`,
+            [item.productId, qty]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+             VALUES ($1, 0, 0, 0, 5)
+             ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text
+             WHERE stock_levels.quantity_in_stock >= $2`,
+            [item.productId, qty]
+          );
+        }
+        await client.query(
+          "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, $2, $3, 'order', $4, $5, $6, $7)",
+          [item.productId, data.stock === "hold" ? "reserve" : "sale", -qty, String(oid),
+           data.stock === "hold" ? `Storefront order #${oid} (awaiting M-Pesa)` : `Storefront order #${oid}`, null, null]
+        );
+      }
     }
     return oid;
   });
@@ -3247,6 +2655,24 @@ async function listOrders(customerId?: number): Promise<Order[]> {
   return orders;
 }
 
+// An order's stock is "currently held" while it has a reserve movement (the hold
+// write) with no later consume movement (sale on payment, release on abandoned
+// payment, restock on cancel). Used to restore held vs deducted stock correctly
+// on cancel and to keep holds idempotent.
+const HAS_OPEN_RESERVATION_SQL = `SELECT EXISTS (
+    SELECT 1 FROM stock_movements m
+    WHERE m.movement_type = 'reserve'
+      AND m.reference_type = 'order'
+      AND m.reference_id = $1::text
+      AND NOT EXISTS (
+        SELECT 1 FROM stock_movements c
+        WHERE c.movement_type IN ('sale','release','restock')
+          AND c.reference_type = 'order'
+          AND c.reference_id = m.reference_id
+          AND c.created_at >= m.created_at
+      )
+  ) AS held`;
+
 async function updateOrderStatus(id: number, status: string): Promise<boolean> {
   if (status === "cancelled") {
     // Cancelling an order must return its stock and free its serials exactly
@@ -3259,13 +2685,28 @@ async function updateOrderStatus(id: number, status: string): Promise<boolean> {
       if (order.status !== "cancelled") {
         const items = (await client.query("SELECT id, product_id, quantity FROM order_items WHERE order_id = $1 AND cancelled = 0", [id])).rows || [];
         const lineIds: number[] = [];
+        // A reserved (unpaid hold) order is distinct from a deducted (paid) order:
+        // held stock only marked products.stock_on_hand down and bumped
+        // quantity_reserved â€” restoring quantity_in_stock for it would inflate
+        // inventory. Detect via stock_movements so all cancel paths (admin route,
+        // POS cancel, provider route) restore held vs deducted stock correctly.
+        const heldRes = (await client.query(HAS_OPEN_RESERVATION_SQL, [String(id)])) as any;
+        const held = !!heldRes?.rows?.[0]?.held;
         for (const it of items) {
           const qty = Number(it.quantity);
           await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, it.product_id]);
-          if (order.branch_id != null) {
-            await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, it.product_id, order.branch_id]);
+          if (held) {
+            const sl = order.branch_id != null
+              ? "UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3"
+              : "UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL";
+            const slp = order.branch_id != null ? [qty, it.product_id, order.branch_id] : [qty, it.product_id];
+            await client.query(sl, slp);
           } else {
-            await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, it.product_id]);
+            if (order.branch_id != null) {
+              await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, it.product_id, order.branch_id]);
+            } else {
+              await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, it.product_id]);
+            }
           }
           await client.query(
             "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'restock', $2, 'cancel', $3, $4, $5)",
@@ -3299,7 +2740,7 @@ async function deductReservedStockForOrder(client: { query(text: string, params?
     }
     await client.query(
       "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5, $6)",
-      [item.product_id, -qty, String(order.id), `POS sale confirmed #${order.id}`, null, order.branch_id ?? null]
+      [item.product_id, -qty, String(order.id), `Sale confirmed #${order.id}`, null, order.branch_id ?? null]
     );
   }
 }
@@ -3314,6 +2755,12 @@ async function releaseReservedStockForOrder(client: { query(text: string, params
     } else {
       await client.query("UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
     }
+    // Track the release so held-state detection (HAS_OPEN_RESERVATION_SQL) can
+    // correctly distinguish an open hold from one that was already released.
+    await client.query(
+      "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'release', $2, 'order', $3, $4, $5, $6)",
+      [item.product_id, qty, String(order.id), `Released held stock #${order.id}`, null, order.branch_id ?? null]
+    );
   }
   await client.query(
     "UPDATE serial_numbers SET status = 'in_stock', order_id = NULL, order_item_id = NULL, sold_at = NULL WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id = $1) AND status = 'sold'",
@@ -3339,6 +2786,43 @@ async function releaseOrderHeldStock(orderId: number): Promise<void> {
   });
 }
 
+// True when the order holds an open (unconsumed) stock reservation. Used by the
+// storefront PATCH-to-mpesa path to avoid double-holding on a repeated edit.
+async function isOrderStockHeld(client: { query(text: string, params?: any[]): Promise<any> }, orderId: number): Promise<boolean> {
+  const res = await client.query(HAS_OPEN_RESERVATION_SQL, [String(orderId)]);
+  return !!(res.rows?.[0]?.held);
+}
+
+// Hold an existing order's stock (storefront "create-pending" then PATCH sets
+// the M-Pesa phone). Mirrors the hold performed by createOrder(stock:"hold") and
+// the POS held path. Idempotent: an already-held order is left untouched so a
+// repeated PATCH cannot double-reserve.
+async function holdStockForOrder(orderId: number): Promise<void> {
+  await transaction(async (client) => {
+    const order = (await client.query("SELECT id, branch_id, status FROM orders WHERE id = $1 FOR UPDATE", [orderId])).rows?.[0] as any;
+    if (!order) throw new Error("Order not found");
+    if (order.status !== "pending" && order.status !== "pending_payment") throw new Error(`Order status ${order.status} cannot hold stock`);
+    if (await isOrderStockHeld(client, orderId)) return;
+    const items = (await client.query("SELECT id, name, product_id, quantity FROM order_items WHERE order_id = $1 AND cancelled = 0", [orderId])).rows as any[] || [];
+    if (items.length === 0) throw new Error("Order has no active items to hold");
+    for (const it of items) {
+      const qty = Number(it.quantity);
+      const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [qty, it.product_id]);
+      if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${it.name}.`);
+      await client.query(
+        `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+         VALUES ($1, 0, $2, 0, 5)
+         ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_reserved = quantity_reserved + $2, updated_at = NOW()::text`,
+        [it.product_id, qty]
+      );
+      await client.query(
+        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'reserve', $2, 'order', $3, $4, $5, $6)",
+        [it.product_id, -qty, String(orderId), `Storefront order #${orderId} (awaiting M-Pesa)`, null, null]
+      );
+    }
+  });
+}
+
 async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: number, mpesaReceipt?: string, callbackAmount?: number | null): Promise<{ applied: boolean; reason?: string }> {
   let outcome: { applied: boolean; reason?: string } = { applied: false, reason: "order not found" };
   await transaction(async (client) => {
@@ -3356,7 +2840,7 @@ async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: num
       // A-1: the order's stored total is authoritative for the STK amount.
       // Points redemptions aren't persisted on the order, so reconcile them from
       // loyalty_transactions (1 point = 1 currency unit). A mismatched callback
-      // is never marked paid — the order stays pending for manual reconciliation.
+      // is never marked paid â€” the order stays pending for manual reconciliation.
       if (mpesaReceipt) {
         if (callbackAmount != null) {
           const points = (await client.query(
@@ -3372,7 +2856,7 @@ async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: num
           }
         }
         if (alreadyPaid) {
-          // Duplicate success callback — refresh the receipt, never re-deduct.
+          // Duplicate success callback â€” refresh the receipt, never re-deduct.
           await client.query("UPDATE orders SET mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
           outcome = { applied: true };
         } else if (order.status === "pending" || order.status === "pending_payment") {
@@ -3382,12 +2866,12 @@ async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: num
         } else {
           outcome = { applied: false, reason: `order status ${order.status} not payable` };
         }
-        // 'cancelled' orders are left untouched — their stock was already released.
+        // 'cancelled' orders are left untouched â€” their stock was already released.
       } else {
         // Success callback WITHOUT a receipt number: money may or may not have
         // moved, but there is no proof to mark paid. Keep the order pending and
-        // do NOT cancel it — a later receipt/query can still reconcile.
-        outcome = { applied: false, reason: "success callback without receipt — left pending" };
+        // do NOT cancel it â€” a later receipt/query can still reconcile.
+        outcome = { applied: false, reason: "success callback without receipt â€” left pending" };
       }
     } else {
       if (alreadyPaid) return; // late failure must not undo an already-paid order
@@ -3617,7 +3101,7 @@ async function generateEtimsInvoiceNumber(): Promise<string> {
 async function createEtimsSalesTransaction(_data: { invoiceNumber: string; items: { name: string; quantity: number; unitPrice: number; taxAmount: number }[]; totalTax: number; totalAmount: number; paymentType: string }): Promise<any> {
   // eTIMS is DISABLED in this build (no production KRA adapter). This function
   // exists only so a future adapter can replace it; it never submits today.
-  console.warn("[etims] eTIMS is DISABLED in this build — no KRA submission performed (real adapter not enabled).");
+  console.warn("[etims] eTIMS is DISABLED in this build â€” no KRA submission performed (real adapter not enabled).");
   return { success: true, mode: "off", submitted: false, disabled: true };
 }
 
@@ -3663,9 +3147,9 @@ async function createCreditNote(data: { orderId: number; reason: string; reasonC
 }
 
 async function submitCreditNoteToEtims(_creditNoteId: number, _etimsData: { cnNumber: string; controlCode: string; serialNumber: number; internalData: string; signatureData: string }): Promise<boolean> {
-  // eTIMS is DISABLED — never fabricate a "submitted" credit note. No caller
+  // eTIMS is DISABLED â€” never fabricate a "submitted" credit note. No caller
   // may mark a credit note as KRA-submitted until a real adapter ships.
-  console.warn("[etims] eTIMS is DISABLED in this build — refusing to mark credit note as KRA-submitted.");
+  console.warn("[etims] eTIMS is DISABLED in this build â€” refusing to mark credit note as KRA-submitted.");
   return false;
 }
 
@@ -4860,7 +4344,7 @@ async function linkSerialsToOrderItem(orderItemId: number, serialNumbers: string
       if (w && w.has_warranty && w.warranty_duration) {
         expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), w.warranty_duration);
       }
-      // BN3: the unit leaves the till's branch on sale — reattribute the serial so
+      // BN3: the unit leaves the till's branch on sale â€” reattribute the serial so
       // branch reporting and future branch checks keep pointing at the selling branch.
       await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires), branch_id = COALESCE($5, branch_id) WHERE id = $4", [item.order_id, orderItemId, expires, serial.id, orderBranch]);
       list.push(sn);
@@ -4992,8 +4476,9 @@ async function deletePage(id: number): Promise<boolean> {
 }
 
 export {
-  initDb, runMigrations, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
+  initDb, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
   seedDemoProvider, seedDemoCustomer, assignInitialRoles, seedProductsIfEmpty, ensureDefaultSubscriptionPlans,
+  seedGroupsFromCategories, seedClientsRow, curatePlanFeatures,
   listCategories, listPosCategories, getCategory, createCategory, updateCategory, deleteCategory, isValidCategory,
   listSubcategories, getSubcategory, createSubcategory, updateSubcategory, deleteSubcategory, getSubcategoriesForCategory,
   findStaffByUsername, findStaffByEmail, findStaffById, listStaff, updateStaffDetails, createStaff, updateStaffRole, changeStaffPassword, deleteStaff, findAdminByUsername,
@@ -5022,7 +4507,7 @@ export {
   createCampaign, listCampaigns, getCampaign, getCampaignBySlug, updateCampaign, deleteCampaign,
   listAbandonedCarts, recordCartRecoveryReminder, listCartRecoveryReminders,
   createRefund, listRefunds, getRefundTotal, cancelOrderItemQuantity,
-  createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, updateOrderMpesaStatus, getOrderByCheckoutRequest, cancelOrderItem, confirmOrderPayment, releaseOrderHeldStock,
+  createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, updateOrderMpesaStatus, getOrderByCheckoutRequest, cancelOrderItem, confirmOrderPayment, releaseOrderHeldStock, holdStockForOrder, isOrderStockHeld,
   recordProductView, getPopularProducts, getTotalViews,
   createInvoice, getInvoice, listInvoices, markInvoicePaid, generateProviderInvoice, getInvoiceRevenue, searchInvoices, markOverdueInvoices, getOverdueInvoices, getInvoiceStats, exportInvoicesCsv,
   getEtimsMode, generateEtimsInvoiceNumber, createEtimsSalesTransaction,

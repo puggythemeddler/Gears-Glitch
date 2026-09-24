@@ -19,7 +19,8 @@ npm run dev             # http://localhost:4000
 |---|---|---|
 | `CONTROL_PLANE_DATABASE_URL` | Yes | Neon PostgreSQL connection string (separate from client DBs) |
 | `CONTROL_PLANE_API_KEY` | No (legacy) | Removed. No longer accepted for authentication — use per-user API keys from the `cp_users` table instead. |
-| `JWT_SECRET` | No | JWT signing secret (auto-generated if not set) |
+| `JWT_SECRET` | In production | JWT signing secret — the server hard-fails startup if unset or weak in production (dev fallback only outside production) |
+| `ALLOWED_ORIGINS` | No | Comma-separated browser-origin allowlist for the dashboard CORS policy (same-origin is always allowed; unspecified origins fail closed) |
 | `CP_ADMIN_PASSWORD` | No | Default admin password (defaults to `gearglitch2024`) |
 | `OPERATOR_ADMIN_EMAIL` | No | Default admin email for new clients (defaults to `admin@gearandglitch.com`) |
 | `RENDER_API_KEY` | Yes | Render API key for provisioning/suspending services |
@@ -170,6 +171,11 @@ The **Operations** tab (admin only) is the single pane for tenant health and inc
 
 - **Command injection hardening** — The backup `pg_dump` path runs via `spawn` with an argument array (no shell) piped to gzip (`control-plane/server/index.ts`), so the client DB URL can never be interpreted as a shell command.
 - **Secret handling** — `GET /api/clients/:id` never returns `cp_secret`/`neon_db_url` to viewer-role users, `GET /api/smtp` returns a masked password, and `GET /api/users` masks other users' API keys. The main dashboard admin password is never rendered into the DOM.
+- **CORS hardened** — The old permissive `cors({ origin: true, credentials: true })` is replaced by `corsPolicyMiddleware` (`control-plane/server/cors-policy.ts`): same-origin requests are always allowed, every other browser origin must be listed in `ALLOWED_ORIGINS` (normalized to `host[:port]`, fail-closed on unparseable config), and preflight permission headers are only answered when the origin is allowed. Tenant→CP calls are server-to-server and unaffected.
+- **Live role enforcement** — `requireAuth` re-reads `id, username, role` from `cp_users` on **every** request; JWT payload claims are never trusted. Deleting a user kills their sessions immediately; demoting an admin takes effect on their next request.
+- **`client`-role key scope** — `x-control-plane-key` authenticates tenant services to the `client` role only. `POST /api/plans/sync-up` requires that path — a browser session attempting it is rejected (403).
+- **Audit trail awaited** — All `auditLog(...)` call sites are awaited (no fire-and-forget tail risk), including the message-parse path.
+- **Secrets at rest (known, queued)** — `clients.cp_secret`, `smtp_config.pass`, and `cloudinary_config.api_secret` are stored plaintext in the CP database (P1). Verified positives: `cp_users.password_hash` is bcrypt(cost 12); app backups dump only tenant DBs (never the CP DB). Encryption-at-rest remediation is tracked in `SECURITY_MODEL.md` §5 and `ACTION_ITEMS.md` — do not rotate secrets mid-flight.
 - **API keys** — Mutual auth between the control plane and each client uses per-client `CONTROL_PLANE_SECRET` compared with `timingSafeEqual`. Programmatic access uses per-user API keys (`x-api-key`, from the `cp_users` table). The legacy global `CONTROL_PLANE_API_KEY` env value is no longer accepted. Deploy routes require a per-user key with the `admin` role.
 - **Content Security Policy** — See the dedicated CSP section above (keep `scriptSrcAttr` set).
 
@@ -178,7 +184,7 @@ The **Operations** tab (admin only) is the single pane for tenant health and inc
 Administrators can protect their control-plane accounts with TOTP two-factor authentication (Time-based One-Time Password), in addition to the standard username + password.
 
 - **Two-step login:** Enter username + password → if 2FA is enabled, the screen switches to a 6-digit code input → verify with your authenticator app (Google Authenticator, Authy, 1Password, etc.) → sign in.
-- **Setup:** Click the **2FA Off** badge in the dashboard header → **Set Up 2FA** → scan the QR code with your authenticator app → enter the 6-digit code to enable. The badge turns green (**2FA On**).
+- **Setup:** Click the **2FA Off** badge in the dashboard header → **Set Up 2FA** → scan the QR code with your authenticator app → enter the 6-digit code to enable. The badge turns green (**2FA On**). Setup requires your **current control-plane password** (`POST /api/auth/2fa/setup` rejects a missing/wrong password); the `totp_secret` is only rotated after the password checks out.
 - **Disable:** Click the badge → enter your password to confirm.
 - **API access bypasses 2FA:** Programmatic calls using `x-api-key` (per-user API key) skip the 2FA step so cron jobs, GitHub Actions, and other automation keep working.
 - **Database:** The `cp_users` table carries `totp_secret` (string) and `totp_enabled` (boolean) columns.
@@ -226,6 +232,8 @@ Clients without the secret configured reject all control-plane management calls.
 
 The reverse direction works too: every client gets a `CONTROL_PLANE_URL` env var (the control plane's public URL). A client can call the control plane with its own `x-control-plane-key` (its `CONTROL_PLANE_SECRET`), which the control plane matches against `clients.cp_secret` to identify the caller. This powers client-created plan sync-up (`POST /api/plans/sync-up`).
 
+> **At-rest note:** `clients.cp_secret` is matched via `WHERE cp_secret = $1` and stored **plaintext** in the control-plane database (P1 — a DB read leaks live tenant-admin keys). Encryption-at-rest with a dual-read transition is queued; do not rotate secrets outside the documented rollout. See `SECURITY_MODEL.md` §5.
+
 ## Client-Created Plan Sync
 
 Client admins can create/edit plans on their own backend. Each plan has a **"Sync to other clients"** checkbox (default on). When an admin saves a synced plan, the client backend calls `POST /api/plans/sync-up` on the control plane, which:
@@ -241,6 +249,8 @@ All endpoints require authentication via one of:
 - **Bearer JWT token** — `Authorization: Bearer <token>` (from login)
 - **Per-user API key** — `x-api-key: <key>` (each user gets a unique key; the role on the user's `cp_users` row determines what the route allows)
 - **Client control-plane secret** — `x-control-plane-key: <secret>` (authenticated client services only, treated as a `client`-role user)
+
+JWT sessions are re-validated against the DB on every request — the role on the `cp_users` row (not the JWT payload) decides authorization, so an account delete or role demotion takes effect immediately.
 
 ### Authentication
 | Method | Endpoint | Description |
@@ -295,7 +305,7 @@ All endpoints require authentication via one of:
 | PUT | `/api/plans/:id` | Update plan |
 | DELETE | `/api/plans/:id` | Delete plan |
 | POST | `/api/plans/sync-all` | Push plans to all active clients |
-| POST | `/api/plans/sync-up` | Receive a plan from a client (marked to sync) and distribute it to the other clients |
+| POST | `/api/plans/sync-up` | Receive a plan from a client (marked to sync) and distribute it to the other clients — **client key only** (`x-control-plane-key`); a browser session is rejected with 403 |
 
 ### Operations
 | Method | Endpoint | Description |

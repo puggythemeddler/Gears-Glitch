@@ -153,8 +153,10 @@ function getBearerToken(req: Request): string | null {
   const fromCookie = typeof req.cookies?.[SESSION_COOKIE] === "string" ? req.cookies[SESSION_COOKIE] : null;
   if (fromCookie) return fromCookie;
   // Opt-in query token for opening protected pages/receipts in a new tab.
-  if (req.query?.allowQueryToken === "1" && typeof req.query?.token === "string" && req.query.token) {
-    console.warn(`[auth] query-token auth used for ${req.method} ${req.path} (token never logged)`);
+  // GET-only: a token in the URL is meant for navigations, never for mutating
+  // requests, so it can't be swept into a POST/form edge case.
+  if (req.method === "GET" && req.query?.allowQueryToken === "1" && typeof req.query?.token === "string" && req.query.token) {
+    console.warn(`[auth] query-token auth used for GET ${req.path} (token never logged)`);
     return req.query.token;
   }
   return null;
