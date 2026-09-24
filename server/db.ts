@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { resolveServerAssetPaths } from "./asset-paths";
 import { imageUrlForProduct, deleteProductImages } from "./upload";
 import { CATEGORIES } from "./categories";
 import { query, queryOne, queryAll, transaction, runSchema, getPool } from "./db-helpers";
@@ -677,8 +678,7 @@ function getDb(): any {
 // loudly (no silent catch{}) if a migration errors â€” leaving the DB unchanged.
 // Migration files are `NNNN_name.sql` in server/migrations/, applied in order.
 async function runVersionedMigrations(): Promise<void> {
-  const migrationsDir = path.join(__dirname, "..", "..", "server", "migrations");
-  if (!fs.existsSync(migrationsDir)) { console.log("[migrations] directory not found, skipping"); return; }
+  const { migrationsDir } = resolveServerAssetPaths();
   await query(`CREATE TABLE IF NOT EXISTS schema_migrations (
     version TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (NOW()::text)
@@ -715,14 +715,15 @@ async function runVersionedMigrations(): Promise<void> {
 
 async function initDb(): Promise<void> {
   console.log("[boot] initDb: loading schema.sql");
-  // Create tables from schema.sql if they don't exist yet
-  const schemaPath = path.join(__dirname, "..", "..", "server", "schema.sql");
-  if (fs.existsSync(schemaPath)) {
-    const schemaSql = fs.readFileSync(schemaPath, "utf8");
-    await runSchema(schemaSql);
-  } else {
-    console.warn("[db] schema.sql not found at", schemaPath);
-  }
+  // Create tables from schema.sql if they don't exist yet.
+  // resolveServerAssetPaths() locates the canonical <repo>/server/schema.sql
+  // identically for SOURCE and COMPILED layouts and FAILS LOUDLY (full
+  // probe-chain diagnostic) if the asset genuinely cannot be found — never a
+  // silent boot into an empty database (that silent path is what left CI with
+  // `relation "roles" does not exist` and the server stuck unhealthy).
+  const { schemaPath } = resolveServerAssetPaths();
+  const schemaSql = fs.readFileSync(schemaPath, "utf8");
+  await runSchema(schemaSql);
   console.log("[boot] initDb: schema applied");
   await runVersionedMigrations();
   console.log("[boot] initDb: versioned migrations applied");
@@ -1164,7 +1165,8 @@ async function seedProductsIfEmpty(): Promise<void> {
   try {
     const fs = await import("fs");
     const path = await import("path");
-    const seedPath = path.join(__dirname, "..", "products.json");
+    const { productsPath } = resolveServerAssetPaths();
+    const seedPath = productsPath;
     if (!fs.existsSync(seedPath)) return;
     const catalog = JSON.parse(fs.readFileSync(seedPath, "utf8"));
     await transaction(async (client) => {

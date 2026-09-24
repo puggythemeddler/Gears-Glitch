@@ -1155,3 +1155,38 @@ npm start                # Serve production build
 11. Run with a process manager (PM2, systemd, etc.) or deploy to Render.com / Vercel
 12. Back up images — Cloudinary stores uploads in production; local `data/uploads/` is ephemeral on Render
 13. Optional: enable **database backup for images** in admin Settings → Image Storage (stores base64 in PostgreSQL `stored_images` table alongside Cloudinary)
+
+## Local development: DB boot asset resolution (Gears-Glitch isolation fix)
+
+The server locates its canonical database assets from runtime module location,
+NOT from `process.cwd()` or any hard-coded depth:
+
+- `server/asset-paths.ts` exports `resolveServerAssetPaths()` ??" a pure,
+  deterministic walk **up from `__dirname`** to the first ancestor containing
+  both `server/schema.sql` and `server/migrations/`. It resolves identically
+  from the SOURCE layout (`__dirname = <repo>\server`, CI boots via tsx) and
+  the COMPILED layout (`__dirname = <repo>\dist\server`, tsc outDir=dist).
+- It **fails loudly** with a full probe-chain diagnostic if the assets cannot
+  be found ??" never silently skips schema/migrations (a silent skip is what
+  caused `relation "roles" does not exist` and the cancelled PostgreSQL
+  isolation suite).
+- `server/db.ts` uses it for schema.sql, the migrations runner, and the
+  products.json seed.
+- `tests/asset-paths.test.ts` covers source layout, compiled layout,
+  CWD-independence, determinism, and the fail-loud path ??" all DB-free.
+
+### Running the PostgreSQL isolation suite (requires a real Postgres)
+
+The DB-gated tests (see `tests/*.test.ts` for the exact `DATABASE_URL` shape)
+need a running PostgreSQL. The CI workflow does this in `.github/workflows/ci.yml`
+by booting the server and running the isolation suite against a
+`postgres:17` service container. Locally, provide a Postgres reachable at
+`DATABASE_URL` (e.g. `postgres://test:test@localhost:5432/gears_test`) then run:
+
+```
+npm test
+```
+
+Suites gated on `DATABASE_URL` self-skip when it is unset, so the full
+DB-free unit suite (143 tests) runs on any machine; the PostgreSQL isolation
+suites only run when a database is actually reachable.
