@@ -19,7 +19,8 @@ npm run dev             # http://localhost:4000
 |---|---|---|
 | `CONTROL_PLANE_DATABASE_URL` | Yes | Neon PostgreSQL connection string (separate from client DBs) |
 | `CONTROL_PLANE_API_KEY` | No (legacy) | Removed. No longer accepted for authentication — use per-user API keys from the `cp_users` table instead. |
-| `JWT_SECRET` | In production | JWT signing secret — the server hard-fails startup if unset or weak in production (dev fallback only outside production) |
+| `JWT_SECRET` | In production | JWT signing secret — the server hard-fails startup if unset or weak in production (dev fallback only outside production). Also serves as the encryption-at-rest key source when `CP_SECRETS_KEY` is not set (must be ≥16 chars) |
+| `CP_SECRETS_KEY` | No (recommended) | Dedicated AES-256-GCM key for secrets at rest (≥16 chars). Overrides the `JWT_SECRET` fallback so at-rest encryption is independent of the session-signing key. Set BEFORE writing secrets, or re-enter secrets via the UI after changing it |
 | `ALLOWED_ORIGINS` | No | Comma-separated browser-origin allowlist for the dashboard CORS policy (same-origin is always allowed; unspecified origins fail closed) |
 | `CP_ADMIN_PASSWORD` | No | Default admin password (defaults to `gearglitch2024`) |
 | `OPERATOR_ADMIN_EMAIL` | No | Default admin email for new clients (defaults to `admin@gearandglitch.com`) |
@@ -175,7 +176,8 @@ The **Operations** tab (admin only) is the single pane for tenant health and inc
 - **Live role enforcement** — `requireAuth` re-reads `id, username, role` from `cp_users` on **every** request; JWT payload claims are never trusted. Deleting a user kills their sessions immediately; demoting an admin takes effect on their next request.
 - **`client`-role key scope** — `x-control-plane-key` authenticates tenant services to the `client` role only. `POST /api/plans/sync-up` requires that path — a browser session attempting it is rejected (403).
 - **Audit trail awaited** — All `auditLog(...)` call sites are awaited (no fire-and-forget tail risk), including the message-parse path.
-- **Secrets at rest (known, queued)** — `clients.cp_secret`, `smtp_config.pass`, and `cloudinary_config.api_secret` are stored plaintext in the CP database (P1). Verified positives: `cp_users.password_hash` is bcrypt(cost 12); app backups dump only tenant DBs (never the CP DB). Encryption-at-rest remediation is tracked in `SECURITY_MODEL.md` §5 and `ACTION_ITEMS.md` — do not rotate secrets mid-flight.
+- **Secrets at rest (encrypted)** — `clients.cp_secret`, `clients.neon_db_url`, `cp_users.api_key`, `cp_users.totp_secret`, `smtp_config.pass`, and `cloudinary_config.api_secret` are encrypted as deterministic `enc:v1:` AES-256-GCM ciphertext whenever a key is configured (`CP_SECRETS_KEY`, or `JWT_SECRET` ≥16 chars as fallback). `cp_users.password_hash` remains bcrypt(cost 12). Legacy plaintext rows keep working (dual-branch `col = $1 OR col = enc($1)` lookups; outbound headers are always plaintext). A missing/wrong key makes decrypts fail loudly (never silently forwarded as ciphertext). See `SECURITY_MODEL.md` §5. App backups dump only tenant DBs (never the CP DB).
+- **Secrets at rest (recovery)** — The effective key is `CP_SECRETS_KEY`, else `JWT_SECRET`. If you set or change `CP_SECRETS_KEY` after secrets were written under the `JWT_SECRET` fallback, decryption throws a descriptive error — re-enter those secrets through the UI (they are re-encrypted under the current key). Keep the effective key stable and rotate secrets through the UI/API rather than the key.
 - **API keys** — Mutual auth between the control plane and each client uses per-client `CONTROL_PLANE_SECRET` compared with `timingSafeEqual`. Programmatic access uses per-user API keys (`x-api-key`, from the `cp_users` table). The legacy global `CONTROL_PLANE_API_KEY` env value is no longer accepted. Deploy routes require a per-user key with the `admin` role.
 - **Content Security Policy** — See the dedicated CSP section above (keep `scriptSrcAttr` set).
 
@@ -232,7 +234,7 @@ Clients without the secret configured reject all control-plane management calls.
 
 The reverse direction works too: every client gets a `CONTROL_PLANE_URL` env var (the control plane's public URL). A client can call the control plane with its own `x-control-plane-key` (its `CONTROL_PLANE_SECRET`), which the control plane matches against `clients.cp_secret` to identify the caller. This powers client-created plan sync-up (`POST /api/plans/sync-up`).
 
-> **At-rest note:** `clients.cp_secret` is matched via `WHERE cp_secret = $1` and stored **plaintext** in the control-plane database (P1 — a DB read leaks live tenant-admin keys). Encryption-at-rest with a dual-read transition is queued; do not rotate secrets outside the documented rollout. See `SECURITY_MODEL.md` §5.
+> **At-rest note:** `clients.cp_secret` (and the other secret columns above) are stored **encrypted** (`enc:v1:` AES-256-GCM) when `CP_SECRETS_KEY` or a ≥16-char `JWT_SECRET` is present; legacy plaintext rows are read transparently via a dual-branch lookup and every outbound `x-control-plane-key` is plaintext. A failing decrypt is loud (500), never a silently-garbled header. See `SECURITY_MODEL.md` §5.
 
 ## Client-Created Plan Sync
 

@@ -5,6 +5,7 @@ import Icon from "@/components/icons";
 import { escapeHtml, Spinner } from "@/components/admin/shared";
 import { toast } from "@/components/Toast";
 import { confirmDialog } from "@/components/ConfirmDialog";
+import type { AdminView } from "@/pages/admin";
 
 interface HealthEntry {
   provider: "gmail" | "daraja" | "whatsapp" | "google";
@@ -67,7 +68,7 @@ function ProviderCard({ entry, gmail, onConnect }: { entry: HealthEntry; gmail?:
   }
 
   async function disconnect() {
-    const ok = await confirmDialog({ title: "Disconnect Gmail?", message: "Gmail will no longer be used for sending email. Notifications fall back to SMTP or are logged only.", confirmText: "Disconnect" });
+    const ok = await confirmDialog({ title: "Disconnect Gmail?", message: "Gmail will no longer be used for sending email. Notifications fall back to SMTP or are logged only.", confirmLabel: "Disconnect" });
     if (!ok) return;
     setDisconnecting(true);
     try {
@@ -119,7 +120,7 @@ function ProviderCard({ entry, gmail, onConnect }: { entry: HealthEntry; gmail?:
   );
 }
 
-export default function IntegrationsSettings({ onNavigate }: { onNavigate?: (view: string) => void }) {
+export default function IntegrationsSettings({ onNavigate }: { onNavigate?: (view: AdminView) => void }) {
   const [checks, setChecks] = useState<HealthEntry[] | null>(null);
   const [gmail, setGmail] = useState<GmailStatus | null>(null);
   const [loading, setLoading] = useState(true);

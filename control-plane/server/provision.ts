@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import os from "os";
 import { execSync } from "child_process";
 import { getCloudinaryConfig, getSmtpConfig } from "./db";
+import { decryptSecret } from "./cp-secrets";
 
 const NEON_API_KEY = process.env.NEON_API_KEY || "";
 const NEON_ORG_ID = process.env.NEON_ORG_ID || "";
@@ -516,10 +517,13 @@ export interface ProvisionResult {
   dns: boolean | null;
 }
 
-// Headers for authenticated control-plane → client backend calls
+// Headers for authenticated control-plane → client backend calls. The stored
+// secret may be an enc:v1: ciphertext (encryption-at-rest); always resolve it to
+// plaintext before sending so tenants receive the real key, and fail loudly
+// instead of forwarding ciphertext on a key mismatch.
 export function cpHeaders(cpSecret: string, extra?: Record<string, string>): Record<string, string> {
   const h: Record<string, string> = { ...(extra || {}) };
-  if (cpSecret) h["x-control-plane-key"] = cpSecret;
+  if (cpSecret) h["x-control-plane-key"] = decryptSecret(cpSecret);
   return h;
 }
 

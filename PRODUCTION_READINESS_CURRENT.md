@@ -1,12 +1,12 @@
 # PRODUCTION_READINESS_CURRENT.md
 
-**Hardened current state of Gears&Glitch — verified 2026-09-24 (final hardening pass).**
+**Hardened current state of Gears&Glitch — verified 2026-09-24 (final cleanup & security QA pass).**
 
 This is the point-in-time "current" deliverable. Phase-0 audit findings live in `AUDIT_REPORT.md` /
 `PRODUCTION_READINESS_AUDIT.md`; the living register is `PRODUCTION_READINESS_AUDIT_FULL.md`; the
 migration source of truth is `DATABASE_MIGRATIONS.md`; the secrets model is `SECURITY_MODEL.md` §5.
 Every claim below was re-verified against the working tree on this date (commands in the Verification
-section). **No commit or push was made — the working tree is summarized at the end.**
+section). **No commit or push was made in either pass — the working tree is summarized at the end.**
 
 ---
 
@@ -48,12 +48,19 @@ section). **No commit or push was made — the working tree is summarized at the
 - **Runtime:** `start()` is exported (`start(opts?: { background?: boolean })`), background jobs
   (auto-import plans/cloudinary, startup health check, auto-backup) are opt-out and auto-run only when
   `require.main === module`; `app` exported for tests.
-- **Secrets at rest (evaluated + documented, remediation QUEUED):** `clients.cp_secret`,
-  `smtp_config.pass`, `cloudinary_config.api_secret` are **plaintext** in the CP DB (P1). Verified
-  positives: `cp_users.password_hash` is bcrypt(cost 12); `/api/clients*` strip `cp_secret`; app backups
-  dump tenant DBs only (never the CP DB). Queued fix (non-breaking, coordinated): deterministic
-  AES-256-GCM via a dedicated `CP_SECRETS_KEY` env + `cp_secret_lookup` column + dual-read transition +
-  per-secret rotation through Push Secret. See `SECURITY_MODEL.md` §5 and `ACTION_ITEMS.md`.
+- **Secrets at rest — IMPLEMENTED (P1 resolved):** `clients.cp_secret`, `clients.neon_db_url`,
+  `cp_users.api_key`, `cp_users.totp_secret`, `smtp_config.pass`, and `cloudinary_config.api_secret` are
+  encrypted as deterministic `enc:v1:` AES-256-GCM (`control-plane/server/cp-secrets.ts`) whenever a key
+  is configured — `CP_SECRETS_KEY`, else the already-required `JWT_SECRET` (≥16 chars) as fallback, so
+  existing installs get encryption with zero config change. Legacy plaintext rows keep working via
+  dual-branch `col = $1 OR col = enc($1)` lookups (no schema change); outbound headers are always
+  plaintext (single `cpHeaders()` choke point); failures are loud, never forwarded as ciphertext.
+  Verified positives: `cp_users.password_hash` stays bcrypt(cost 12); `/api/clients*` strip secrets;
+  app backups dump tenant DBs only (never the CP DB). Tests: `cp-secrets.test.ts` (13) + DB-gated
+  encrypted-row/outbound cases in `cp-auth-gated.test.ts`. See `SECURITY_MODEL.md` §5.
+- **Rate limiting (present since `c1a8a9f`, docs claim was stale):** CP `authLimiter` (20 req/15 min on
+  login + 2FA) and `destructiveLimiter` (30 req/15 min on provisioning/destructive routes) at
+  `control-plane/server/index.ts`.
 
 ## 3. Tenant server — security hardening shipped
 
@@ -71,33 +78,34 @@ section). **No commit or push was made — the working tree is summarized at the
 | Suite | Result |
 | --- | --- |
 | Tenant unit tests (`server/`, root `npm test`) | **137 passed / 0 failed** (31 suites) |
-| Control plane unit tests (`control-plane/`) | **59 passed / 0 failed** (14 suites, incl. cors-policy + auth) |
+| Control plane unit tests (`control-plane/`) | **72 passed / 0 failed** (15 suites, incl. 13 new `cp-secrets`) |
 | Root typecheck (`npx tsc --noEmit` in `server/`) | pass |
 | Control plane typecheck + build | pass |
 | Tenant `npm run build` | pass |
-| Frontend (`frontend/`) | no test script; `npm run typecheck` has **2 pre-existing committed-baseline errors** (`IntegrationsSettings.tsx:70` `confirmText`, `pages/admin.tsx:679` view-setter type) — files untouched in this pass, flagged as a baseline known |
+| Frontend (`frontend/`) | no test script; `npm run typecheck` has **2 pre-existing committed-baseline errors** (`IntegrationsSettings.tsx:70` `confirmText`, `pages/admin.tsx:679` view-setter type) |
 
 - **DB-gated suites skip locally and run only in CI** (no local Postgres): `tests/legacy-reconciler.integration.test.ts`
   (needs `DATABASE_URL`), `tests/storefront-stock.integration.test.ts` (needs `DATABASE_URL`),
-  `control-plane/tests/cp-auth-gated.test.ts` (needs `CONTROL_PLANE_DATABASE_URL`).
-- Live external services (M-Pesa, Gmail, WhatsApp, CP provisioning) cannot be exercised locally.
+  `control-plane/tests/cp-auth-gated.test.ts` (needs `CONTROL_PLANE_DATABASE_URL`). The CP DB-gated suite now
+  also covers the encryption-at-rest lookups/outbound from this pass.
+- **Live external services** (M-Pesa, Gmail, WhatsApp, CP provisioning, pg_dump/psql client binaries) cannot be
+  exercised locally — validated via CI (`ci.yml` runs Postgres 17 service containers) and code review.
 
-## 5. Open knowns (unchanged, tracked)
+## 5. Open knowns (accurate as of this pass)
 
-- **P1** Control-plane secrets at rest — queued remediation (see §2 / `ACTION_ITEMS.md`).
+- **Operator action:** set `CP_SECRETS_KEY` (≥16 chars) on the CP Render service (or accept the
+  `JWT_SECRET` fallback); re-enter previously-written secrets via the UI if you switch sources later.
 - **P0/pass-gate** M-Pesa `SIM`-prefixed `checkoutRequestId` auto-confirm must stay production-gated.
-- **P1** CP lacks rate limiting; control-plane `trust proxy` / SSL-CA verify items in the register.
-- **P1** `/api/whatsapp/media/:id` unauthenticated (PII) — register.
+- **Frontend baseline:** the 2 committed typecheck errors are genuine defects (wrong `ConfirmOptions`
+  prop + view-setter type) — filed for the §5 fix in this pass.
+- **Restore procedure** is documented but not DR-verified (no `pg_dump`/`psql` locally; a restore dry-run
+  in CI/manual is the operator action).
+- **0020 exception handlers** under review this pass (§3) — report pending.
 - Full disposition matrix: `PRODUCTION_READINESS_AUDIT_FULL.md` (A–G addenda).
 
 ## 6. Working tree (uncommitted by instruction)
 
-- Modified: `server/{db,index,mpesa,auth,schema}.sql|ts`, `tests/{mpesa,query-token}.test.ts`,
-  `DATABASE_MIGRATIONS.md`, `SECURITY_MODEL.md`, `README.md`, `ACTION_ITEMS.md`,
-  `PRODUCTION_SCORECARD.md`, `PRODUCTION_READINESS_AUDIT.md`, `PRODUCTION_READINESS_AUDIT_FULL.md`,
-  `REPORTING_IMPLEMENTATION.md`, `control-plane/server/index.ts`.
-- Untracked (new): `server/migrations/0020_legacy_schema_reconciler.sql`,
-  `tests/legacy-reconciler.integration.test.ts`, `tests/storefront-stock.integration.test.ts`,
-  `control-plane/server/cors-policy.ts`, `control-plane/tests/cors-policy.test.ts`,
-  `control-plane/tests/cp-auth-gated.test.ts`.
-- Updates to five Phase-0 docs (G1/G2) and `PRODUCTION_READINESS_CURRENT.md` are reconciliation-doc-only.
+- Modified this pass: `control-plane/server/{index,db,provision}.ts`, `control-plane/server/cp-secrets.ts`,
+  `control-plane/tests/{cp-secrets,cp-auth-gated}.test.ts`, `control-plane/README.md`,
+  `control-plane/.env.example`, `ACTION_ITEMS.md`, `SECURITY_MODEL.md`, `PRODUCTION_READINESS_CURRENT.md`.
+- Prior pass (committed + pushed at `69a448c`): query-token GET-only gate, migration/docs reconciliation.

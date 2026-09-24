@@ -691,8 +691,19 @@ async function runVersionedMigrations(): Promise<void> {
     const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
     try {
       await transaction(async (client) => {
-        await client.query(sql);
-        await client.query(`INSERT INTO schema_migrations (version) VALUES ($1)`, [version]);
+        // Forward server-emitted NOTICE/WARNING (e.g. the 0020 reconciler
+        // backfill-issue summary) to boot logs so nothing is silently dropped.
+        const onNotice = (notice: any) => {
+          const msg = notice?.message ?? String(notice ?? "");
+          if (msg) console.warn(`[migrations] (${version}) ${msg}`);
+        };
+        client.on("notice", onNotice);
+        try {
+          await client.query(sql);
+          await client.query(`INSERT INTO schema_migrations (version) VALUES ($1)`, [version]);
+        } finally {
+          client.off("notice", onNotice);
+        }
       });
       console.log(`[migrations] applied ${version}`);
     } catch (e: any) {

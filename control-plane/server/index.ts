@@ -11,6 +11,7 @@ import { generateSecret, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
 import rateLimit from "express-rate-limit";
 import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
+import { encryptSecret, decryptSecret, lookupVariant, encryptionKeyConfigured, describeEncryptionSource } from "./cp-secrets";
 import { corsPolicyMiddleware, parseAllowedOrigins } from "./cors-policy";
 import { initOpsCenterDb, aggregateUsageForClients } from "./ops-db";
 import { evaluateForClient, expireSupportAndMaintenance } from "./ops";
@@ -58,6 +59,19 @@ const PORT = Number(process.env.PORT || 4000);
 // invalidate every session on restart and break pending auth tokens. Fail fast here
 // rather than silently rotating the signing key.
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? (() => { throw new Error("JWT_SECRET must be set in production (control plane). Set a stable secret in the environment."); })() : crypto.randomBytes(32).toString("hex"));
+
+// ─── SECRETS AT REST ─────────────────────────────────────
+// cp-secrets.ts encrypts stored secrets (cp_secret, neon_db_url, api_key,
+// totp_secret, SMTP pass, Cloudinary api_secret) as enc:v1: ciphertext whenever
+// a key source is configured. Surface loud, non-fatal state at boot so a
+// misconfigured deployment is immediately visible.
+{
+  const source = describeEncryptionSource();
+  console.log(`[startup] Secrets at rest: ${source === "none" ? "plaintext (no encryption key configured)" : `encrypted with key source ${source}`}.`);
+  if (!encryptionKeyConfigured()) {
+    console.warn("[startup] WARNING: no encryption key available (CP_SECRETS_KEY, or a >=16-char JWT_SECRET fallback). Stored control-plane secrets will be written as plaintext. Set an encryption key to enable at-rest encryption.");
+  }
+}
 
 // ─── RATE LIMITING ───────────────────────────────────────
 // Strict limit on credential/2FA entry points to blunt brute-force.
@@ -137,7 +151,9 @@ function requireAuth(
   // 2. Try x-control-plane-key (authenticated client services)
   const cpKey = req.headers["x-control-plane-key"];
   if (cpKey && typeof cpKey === "string") {
-    queryOne("SELECT id, name FROM clients WHERE cp_secret = $1", [cpKey])
+    // Dual-branch lookup: rows written before encryption-at-rest store the raw
+    // secret; rows written after store the deterministic enc:v1: ciphertext.
+    queryOne("SELECT id, name FROM clients WHERE cp_secret = $1 OR cp_secret = $2", [cpKey, lookupVariant(cpKey)])
       .then((client) => {
         if (client) {
           (req as any).authVia = "cp-key";
@@ -156,7 +172,7 @@ function requireAuth(
   const key = req.headers["x-api-key"];
   if (key && typeof key === "string") {
     // Look up the per-user API key (role is enforced by route middleware).
-    queryOne("SELECT id, username, role FROM cp_users WHERE api_key = $1", [key])
+    queryOne("SELECT id, username, role FROM cp_users WHERE api_key = $1 OR api_key = $2", [key, lookupVariant(key)])
       .then((user) => {
         if (user) {
           (req as any).authVia = "api-key";
@@ -224,17 +240,21 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) { res.status(401).json({ error: "Invalid credentials" }); return; }
 
+    // At-rest values may be enc:v1: ciphertext — resolve to plaintext for use.
+    const userApiKey = user.api_key ? decryptSecret(String(user.api_key)) : "";
+    const userTotpSecret = user.totp_secret ? decryptSecret(String(user.totp_secret)) : "";
+
     // Step 2: 2FA verification
     if (user.totp_enabled) {
       // Allow API-key login to bypass 2FA (programmatic access) only when the
       // caller presents THIS user's own per-user api_key — never a shared key.
-      const isApiKeyLogin = req.headers["x-api-key"] && (req.headers["x-api-key"] === user.api_key);
+      const isApiKeyLogin = req.headers["x-api-key"] && (req.headers["x-api-key"] === userApiKey);
       if (!isApiKeyLogin) {
         if (!totpCode) {
           res.json({ totpRequired: true });
           return;
         }
-        if (!verifyTotp(user.totp_secret, String(totpCode))) {
+        if (!verifyTotp(userTotpSecret, String(totpCode))) {
           res.status(401).json({ error: "Invalid 2FA code." });
           return;
         }
@@ -250,7 +270,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
         if (row?.admin_email) operatorEmail = row.admin_email;
       } catch { /* ignore */ }
     }
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role, api_key: user.api_key, totpEnabled: !!user.totp_enabled }, operatorEmail });
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, api_key: userApiKey, totpEnabled: !!user.totp_enabled }, operatorEmail });
   } catch (err: any) {
     console.error("[auth] Login error:", err.message);
     res.status(500).json({ error: "Login failed" });
@@ -273,7 +293,7 @@ app.post("/api/auth/2fa/setup", authLimiter, requireAuth, async (req, res) => {
     if (!valid) { res.status(401).json({ error: "Invalid password" }); return; }
     const { secret, otpauthUrl } = makeTotpSecret(user.username);
     // Store the pending secret temporarily — not enabled until verified
-    await query("UPDATE cp_users SET totp_secret = $1 WHERE id = $2", [secret, user.id]);
+    await query("UPDATE cp_users SET totp_secret = $1 WHERE id = $2", [encryptSecret(secret), user.id]);
     res.json({ secret, otpauthUrl, message: "Scan the QR code in your authenticator app, then verify with a 6-digit code to enable 2FA." });
   } catch (err: any) {
     console.error("[2fa] Setup error:", err.message);
@@ -289,7 +309,7 @@ app.post("/api/auth/2fa/enable", authLimiter, requireAuth, async (req, res) => {
     if (!totpCode) { res.status(400).json({ error: "2FA code required" }); return; }
     const row = await queryOne("SELECT totp_secret FROM cp_users WHERE id = $1", [user.id]);
     if (!row || !row.totp_secret) { res.status(400).json({ error: "Run setup first" }); return; }
-    if (!verifyTotp(row.totp_secret, String(totpCode))) {
+    if (!verifyTotp(decryptSecret(String(row.totp_secret)), String(totpCode))) {
       res.status(401).json({ error: "Invalid 2FA code. Try again." });
       return;
     }
@@ -340,7 +360,7 @@ app.post("/api/auth/register", authLimiter, requireAuth, requireAdmin, async (re
     const apiKey = generateApiKey();
     const result = await query(
       "INSERT INTO cp_users (username, password_hash, role, api_key) VALUES ($1, $2, $3, $4) RETURNING id",
-      [username, hash, role || "viewer", apiKey]
+      [username, hash, role || "viewer", encryptSecret(apiKey)]
     );
     res.status(201).json({ id: result.rows[0].id, username, role: role || "viewer", api_key: apiKey, message: `User "${username}" created.` });
   } catch (err: any) {
@@ -360,8 +380,9 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
     } catch { /* ignore */ }
   }
   if (user.id === 0) { res.json({ user: { id: 0, username: "system", role: "admin", totpEnabled: false }, operatorEmail }); return; }
-  const full = await queryOne("SELECT id, username, role, api_key, created_at, last_login, totp_enabled FROM cp_users WHERE id = $1", [user.id]);
-  res.json({ user: { ...full, totpEnabled: !!full?.totp_enabled }, operatorEmail });
+const full = await queryOne("SELECT id, username, role, api_key, created_at, last_login, totp_enabled FROM cp_users WHERE id = $1", [user.id]);
+    if (full?.api_key) full.api_key = decryptSecret(String(full.api_key));
+    res.json({ user: { ...full, totpEnabled: !!full?.totp_enabled }, operatorEmail });
 });
 
 app.get("/api/users", requireAuth, requireAdmin, async (req, res) => {
@@ -369,7 +390,7 @@ app.get("/api/users", requireAuth, requireAdmin, async (req, res) => {
     const selfId = ((req as any).user as AuthUser)?.id;
     const users = await queryAll("SELECT id, username, role, api_key, created_at, last_login FROM cp_users ORDER BY created_at DESC");
     const masked = (users as any[]).map((u) => {
-      const key: string = u.api_key || "";
+      const key: string = u.api_key ? decryptSecret(String(u.api_key)) : "";
       const isSelf = selfId != null && Number(u.id) === Number(selfId);
       // Reveal the full key only to the account that owns it; mask everyone else's.
       const api_key = isSelf ? key : (key ? `${key.slice(0, 8)}...${key.slice(-4)}` : "");
@@ -404,7 +425,7 @@ app.post("/api/users/:id/regenerate-key", requireAuth, requireAdmin, async (req,
   try {
     const id = Number(req.params.id);
     const newKey = generateApiKey();
-    await query("UPDATE cp_users SET api_key = $1 WHERE id = $2", [newKey, id]);
+    await query("UPDATE cp_users SET api_key = $1 WHERE id = $2", [encryptSecret(newKey), id]);
     res.json({ api_key: newKey, message: "API key regenerated." });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to regenerate key" });
@@ -433,7 +454,7 @@ async function seedDefaultAdmin() {
   const apiKey = generateApiKey();
   await query(
     "INSERT INTO cp_users (username, password_hash, role, api_key) VALUES ($1, $2, $3, $4)",
-    ["admin", hash, "admin", apiKey]
+    ["admin", hash, "admin", encryptSecret(apiKey)]
   );
   console.log(explicitPassword
     ? "[auth] Default admin user created. Username: admin (password from CP_ADMIN_PASSWORD)."
@@ -580,12 +601,12 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
             result.domain,
             result.neon.projectId,
             `db_${subdomain}`,
-            result.neon.dbUrl,
+            encryptSecret(result.neon.dbUrl),
             result.render.serviceId,
             result.render.serviceUrl,
             result.vercel.projectId,
             result.vercel.projectUrl,
-            result.cpSecret,
+            encryptSecret(result.cpSecret),
             clientId,
           ]
         );
@@ -659,7 +680,7 @@ app.post("/api/clients/existing", requireAdmin, async (req, res) => {
       `INSERT INTO clients (name, domain, admin_email, plan, status, render_service_id, render_service_url, vercel_project_url, health_status, cp_secret)
        VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, 'unknown', $8)
        RETURNING id`,
-      [name, uniqueDomain, adminEmail, plan || "growth", renderServiceId || "", backendUrl || "", frontendUrl || "", secret]
+      [name, uniqueDomain, adminEmail, plan || "growth", renderServiceId || "", backendUrl || "", frontendUrl || "", encryptSecret(secret)]
     );
 
     await auditLog(req, "add_existing_client", "client", result.rows[0].id, name);
@@ -685,10 +706,12 @@ app.post("/api/clients/:id/push-secret", requireAuth, requireAdmin, async (req, 
     if (!client.render_service_id) { res.status(400).json({ error: "Client has no Render service ID. Set it first (PUT /api/clients/:id) or configure CONTROL_PLANE_SECRET manually." }); return; }
 
     const rotate = Boolean(req.body?.rotate);
-    const secret = (!rotate && client.cp_secret) ? client.cp_secret : generateCpSecret();
+    // Re-encrypt path: reuse the existing secret (decrypted so the client keeps
+    // receiving the same key) or generate a fresh one.
+    const secret = (!rotate && client.cp_secret) ? decryptSecret(String(client.cp_secret)) : generateCpSecret();
 
     await pushControlPlaneSecret(client.render_service_id, secret);
-    await query("UPDATE clients SET cp_secret = $1 WHERE id = $2", [secret, client.id]);
+    await query("UPDATE clients SET cp_secret = $1 WHERE id = $2", [encryptSecret(secret), client.id]);
 
     await auditLog(req, "push_secret", "client", client.id, client.name, rotate ? "rotated" : "pushed");
     res.json({ message: `Control-plane secret ${rotate ? "rotated" : "pushed"} to "${client.name}". The service is redeploying.` });
@@ -1283,23 +1306,34 @@ const BACKUP_DIR = path.join(__dirname, "..", "..", "backups");
 // Safe pg_dump: runs pg_dump and gzip as separate child processes with an
 // argument array (NO shell), so a DB URL can never inject shell commands.
 // The DB URL is passed as a single argv element, never interpolated into a
-// shell string. Returns a promise that rejects if either process fails.
+// shell string. stderr is drained (a piped-but-unconsumed stderr can fill the
+// kernel pipe buffer and deadlock pg_dump) and its tail is included in errors so
+// failures are diagnosable. Returns a promise that rejects if either process fails.
 function runPgDump(dbUrl: string, filepath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
       const outStream = fs.createWriteStream(filepath);
       const gzip = spawn("gzip", [], { stdio: ["pipe", outStream, "ignore"] });
-      const dump = spawn("pg_dump", [dbUrl], { stdio: ["ignore", "pipe", "pipe"] });
+      const dump = spawn("pg_dump", [dbUrl], {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, PGPASSWORD: "" },
+      });
+      let stderrBuf = "";
+      dump.stderr.setEncoding("utf8");
+      dump.stderr.on("data", (chunk) => {
+        stderrBuf += String(chunk);
+        if (stderrBuf.length > 1024) stderrBuf = stderrBuf.slice(-1024);
+      });
       dump.stdout.pipe(gzip.stdin);
       dump.on("error", (e) => { try { gzip.kill(); } catch {} reject(e as Error); });
       gzip.on("error", (e) => reject(e as Error));
       gzip.on("close", (code) => {
         outStream.end();
-        if (code !== 0) { reject(new Error(`gzip exited with code ${code}`)); return; }
+        if (code !== 0) { reject(new Error(`gzip exited with code ${code}${stderrBuf ? ": " + stderrBuf.trim() : ""}`)); return; }
         resolve();
       });
       dump.on("close", (code) => {
-        if (code !== 0) { try { gzip.kill(); } catch {} reject(new Error(`pg_dump exited with code ${code}`)); }
+        if (code !== 0) { try { gzip.kill(); } catch {} reject(new Error(`pg_dump exited with code ${code}${stderrBuf ? ": " + stderrBuf.trim() : ""}`)); }
       });
     } catch (e) { reject(e as Error); }
   });
@@ -1318,7 +1352,7 @@ app.post("/api/backups/run", destructiveLimiter, requireAdmin, async (req, res) 
       const filepath = path.join(BACKUP_DIR, filename);
 
       try {
-        await runPgDump(c.neon_db_url, filepath);
+        await runPgDump(decryptSecret(String(c.neon_db_url)), filepath);
         const stats = fs.statSync(filepath);
         const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
 
@@ -1603,7 +1637,7 @@ app.post("/api/plans/sync-up", requireAuth, async (req, res) => {
     if (plan.syncToOthers === false) { res.json({ message: "Plan is not marked to sync to other clients." }); return; }
 
     const key = (req.headers["x-control-plane-key"] as string) || "";
-    const origin = await queryOne("SELECT id, name FROM clients WHERE cp_secret = $1", [key]);
+    const origin = await queryOne("SELECT id, name FROM clients WHERE cp_secret = $1 OR cp_secret = $2", [key, lookupVariant(key)]);
 
     await query(
       `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others)
@@ -2207,7 +2241,7 @@ function scheduleAutoBackup() {
         const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
         const filepath = path.join(BACKUP_DIR, `${slug}_${new Date().toISOString().split("T")[0]}.sql.gz`);
         try {
-          await runPgDump(c.neon_db_url, filepath);
+          await runPgDump(decryptSecret(String(c.neon_db_url)), filepath);
           await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup"]);
         } catch (e: any) {
           await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup_failed"]).catch(() => {});

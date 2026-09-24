@@ -103,6 +103,67 @@ Every step must go through the versioned migration runner (step 1 of §2) so pro
 
 ---
 
+## 6. Backups & restore runbook (operator, DR-verify pending)
+
+> **State:** the backup row of `PRODUCTION_SCORECARD.md` stays **0/3** — this
+> covers the operator **procedures only**. The control plane creates real
+> artifacts (`pg_dump --dburl | gzip` per active client, `control-plane/backups/`,
+> 7-day retention enforced by mtime prune, admin-only list/download) but there is
+> **no in-app restore endpoint and no DR verification run yet**. Restore today is
+> an **operator action** that replays the same logical dump the operator already
+> trusts for onboarding. This is deliberately the documented-but-not-DR-verified
+> gap flagged by PRODUCTION_READINESS_AUDIT_FULL.md (L56) and
+> PRODUCTION_READINESS_CURRENT.md (L101) -- restore remains the P0 DR follow-up.
+
+### 6.1 What the operator actually has
+
+| Artifact | Location | Format |
+|---|---|---|
+| Per-client dump | `control-plane/backups/<slug>.sql.gz` | `pg_dump \| gzip` (text SQL, gzip) |
+| Retention | 7 days | mtime prune on each `/api/backups/run` and boot |
+| Listing | `GET /api/backups` (admin) | `{ files: [{name,size,date}] }` JSON |
+| Download | `GET /api/backups/download/:filename` (admin) | `application/gzip` attachment |
+| Trigger | `POST /api/backups/run` (admin, guarded, rate-limited) | spawn `pg_dump <url> \| gzip` (argv, no shell) |
+
+### 6.2 Restore procedure (single client)
+
+1. **List** snapshots `GET /api/backups`; pick the newest `<slug>.sql.gz` for the
+   client being recovered.
+2. **Download** `GET /api/backups/download/<slug>.sql.gz` (admin) -- the filename
+   is `path.basename`-guarded so a `../` payload can never escape `backups/`.
+3. **Verify the archive before touching the DB** (integrity + no shell artifact):
+   - `gzip -t <slug>.sql.gz` (exit 0 = valid gzip stream)
+   - `gunzip -c <slug>.sql.gz | grep -c "INSERT INTO"` (sanity: non-empty logical dump)
+4. **Restore** into the client's Neon DB (operator shell, same `psql` the
+   control plane spawns for `pg_dump`):
+   ```
+   gunzip -c <slug>.sql.gz | psql "<client_neon_db_url>"
+   ```
+   `gzip`/`psql` are spawned as **argument arrays, never shell-interpolated**, so
+   the Neon URL can never inject a shell command (this is the same hardened path
+   as the backup creation: `C-2`/`T-0` remediation applied in 2026-09-24).
+5. **Verify the restore** -- the logical dump replays DDL (idempotent
+   `IF NOT EXISTS` everywhere) plus rows; confirm:
+   - `psql` exits 0 with **no** `ERROR:` lines in the tail of stderr
+   - a spot-check query returns rows: `SELECT count(*) FROM orders;`
+   - `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 8;`
+     shows the applied head (0020) post-restore
+
+### 6.3 Honest boundary
+
+- **Not DR-verified.** This runbook documents the restore mechanics that already
+  exist (real artifacts, hardened spawn, guarded download), but no automated
+  restore test or off-box restore-verify has been run -- exactly as
+  PRODUCTION_READINESS_CURRENT.md:101 states. Schedule a quarterly **DR restore
+  drill** that restores `/tmp` artifacts into a scratch Neon branch and confirms
+  the `schema_migrations` head before trusting this as verified.
+- **Single-client only.** There is no cross-tenant aggregate dump; each client is
+  backed up and restored independently, matching the per-tenant Neon-provisioning
+  model. `cp_users`/`clients` (the control plane's own metadata) are **not** part
+  of the tenant dumps -- restoring those means restoring the CP DB itself from a
+  Neon point-in-time or the CP's own Neon backup (operator procedure, same steps).
+
+---
 ## Update log (post-Phase 0)
 
 | Version | Migration | Purpose |

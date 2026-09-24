@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { encryptSecret, decryptSecret } from "./cp-secrets";
 
 // SSL is enforced with CA verification by default. Set
 // CONTROL_PLANE_SSL_VERIFY=false only for local dev against a self-signed DB.
@@ -56,12 +57,16 @@ export interface Client {
 
 export async function getCloudinaryConfig() {
   const row = await queryOne("SELECT * FROM cloudinary_config ORDER BY id DESC LIMIT 1");
-  return row || null;
+  if (!row) return null;
+  if (row.api_secret) row.api_secret = decryptSecret(String(row.api_secret));
+  return row;
 }
 
 export async function getSmtpConfig() {
   const row = await queryOne("SELECT * FROM smtp_config ORDER BY id DESC LIMIT 1");
-  return row || null;
+  if (!row) return null;
+  if (row.pass) row.pass = decryptSecret(String(row.pass));
+  return row;
 }
 
 export async function setSmtpConfig(host: string, port: number, user: string, pass: string, fromEmail: string, fromName: string) {
@@ -69,12 +74,12 @@ export async function setSmtpConfig(host: string, port: number, user: string, pa
   if (existing) {
     await query(
       'UPDATE smtp_config SET host = $1, port = $2, "user" = $3, pass = $4, from_email = $5, from_name = $6, updated_at = NOW() WHERE id = $7',
-      [host, port, user, pass, fromEmail, fromName, existing.id]
+      [host, port, user, encryptSecret(String(pass || "")), fromEmail, fromName, existing.id]
     );
   } else {
     await query(
       'INSERT INTO smtp_config (host, port, "user", pass, from_email, from_name) VALUES ($1, $2, $3, $4, $5, $6)',
-      [host, port, user, pass, fromEmail, fromName]
+      [host, port, user, encryptSecret(String(pass || "")), fromEmail, fromName]
     );
   }
 }
@@ -84,12 +89,12 @@ export async function setCloudinaryConfig(cloudName: string, apiKey: string, api
   if (existing) {
     await query(
       "UPDATE cloudinary_config SET cloud_name = $1, api_key = $2, api_secret = $3, folder = $4, updated_at = NOW() WHERE id = $5",
-      [cloudName, apiKey, apiSecret, folder, existing.id]
+      [cloudName, apiKey, encryptSecret(String(apiSecret || "")), folder, existing.id]
     );
   } else {
     await query(
       "INSERT INTO cloudinary_config (cloud_name, api_key, api_secret, folder) VALUES ($1, $2, $3, $4)",
-      [cloudName, apiKey, apiSecret, folder]
+      [cloudName, apiKey, encryptSecret(String(apiSecret || "")), folder]
     );
   }
 }

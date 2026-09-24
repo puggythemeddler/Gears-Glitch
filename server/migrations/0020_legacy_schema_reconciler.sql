@@ -15,8 +15,14 @@
 --   4. Adds the indexes the old runMigrations used to ensure.
 --   5. Applies the one-time data backfills/seeds that runMigrations repeated
 --      on every boot, wrapped in exception-guarded DO blocks to preserve the
---      legacy silent-failure semantics. They run exactly once (tracked in
---      schema_migrations) instead of on every startup.
+--      legacy tolerance of unusual pre-existing schemas. They run exactly once
+--      (tracked in schema_migrations) instead of on every startup.
+--
+--   Backfill failures are RECORDED, not silently dropped: each handler writes
+--   SQLERRM into `reconciler_issues` (created below) and the migration runner's
+--   notice forwarding surfaces a WARNING in boot logs. Failing the whole file
+--   would roll back the schema work and wedge any legacy DB that trips a
+--   backfill, so tolerance is kept — but the failure is visible and queryable.
 --
 -- Idempotent by construction: safe to apply on fresh (schema.sql-provided)
 -- databases too - everything here no-ops there. Applied inside its own
@@ -230,10 +236,20 @@ END $$;
 
 -- ===========================================================================
 -- 5. ONE-TIME DATA BACKFILLS / SEEDS
---    Each is wrapped in an exception-guarded DO block (legacy try/catch {}
---    semantics) and is predicate/marker-guarded, so it never clobbers admin
---    data after the migration has been recorded.
+--    Each is wrapped in an exception-guarded DO block. The exception handler
+--    RECORDS the failure in reconciler_issues (visible + surfaced in boot logs)
+--    instead of swallowing it, while still tolerating legacy schema variance.
+--    Predicate/marker-guarded, so it never clobbers admin data after the
+--    migration has been recorded.
 -- ===========================================================================
+
+-- Issues ledger for backfill failures (visible, queryable; see header note).
+CREATE TABLE IF NOT EXISTS reconciler_issues (
+  id SERIAL PRIMARY KEY,
+  migration_step TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
 
 -- 5.1 users: role + email backfill for pre-dating rows
 DO $$
@@ -241,7 +257,8 @@ BEGIN
   BEGIN
     UPDATE users SET role = 'admin' WHERE role IS NULL OR role = '';
     UPDATE users SET email = username || '@gearandglitch.com' WHERE email IS NULL;
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.1 users role/email backfill', SQLERRM);
   END;
 END $$;
 
@@ -263,7 +280,8 @@ BEGIN
                   <= (SELECT o.created_at::timestamp FROM orders o WHERE o.id = oi.order_id))
        )
      WHERE oi.unit_cost IS NULL AND oi.cancelled = 0;
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.2 reporting unit_cost backfill', SQLERRM);
   END;
 END $$;
 
@@ -281,7 +299,8 @@ BEGIN
           FROM order_items oi WHERE oi.order_id = orders.id AND oi.cancelled = 0 AND oi.taxable = 1), 0), 2),
       vat_estimated = 1
     WHERE vat_amount IS NULL;
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.3 VAT snapshot backfill', SQLERRM);
   END;
 END $$;
 
@@ -291,7 +310,8 @@ BEGIN
   BEGIN
     INSERT INTO settings (key, value) SELECT 'logo_position', 'top-left'
       WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'logo_position');
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.4 logo_position default', SQLERRM);
   END;
 END $$;
 
@@ -305,7 +325,8 @@ BEGIN
         FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY group_name, label) - 1 AS new_order FROM categories) t
        WHERE c.id = t.id;
     END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.5 category sort_order backfill', SQLERRM);
   END;
 END $$;
 
@@ -318,7 +339,8 @@ BEGIN
         FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY name) - 1 AS new_order FROM product_groups) t
        WHERE g.id = t.id;
     END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.6 product_groups sort_order backfill', SQLERRM);
   END;
 END $$;
 
@@ -330,7 +352,8 @@ BEGIN
       WHERE source = 'storefront' AND (branch_id IS NOT NULL OR processed_by LIKE 'POS%' OR notes LIKE 'POS sale%');
     UPDATE orders SET source = 'quote'
       WHERE source = 'storefront' AND notes LIKE 'Converted from quote%';
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.7 source reclassification', SQLERRM);
   END;
 END $$;
 
@@ -342,7 +365,8 @@ BEGIN
     DELETE FROM storefront_layouts WHERE layout_key IN ('mobile', 'custom');
     UPDATE settings SET value = 'original'
       WHERE key = 'store_layout' AND value IN ('mobile', 'custom');
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.8 retired layout cleanup', SQLERRM);
   END;
 END $$;
 
@@ -356,7 +380,8 @@ BEGIN
         ('amazon', 'Amazon Style', 'Large search bar, horizontal categories, product recommendations, featured deals.', 'static', '{}', 0, 2),
         ('jumia', 'Jumia Style', 'Promotional sliders, flash sales, daily deals, category icons.', 'static', '{}', 0, 3);
     END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.9 default layouts seed', SQLERRM);
   END;
 END $$;
 
@@ -367,7 +392,8 @@ BEGIN
     UPDATE subscription_plans SET price = 4999, price_annual = 47990 WHERE id = 'growth';
     UPDATE subscription_plans SET price = 12999, price_annual = 124790 WHERE id = 'pro';
     UPDATE subscription_plans SET price = 29999, price_annual = 287990 WHERE id = 'enterprise';
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.10 default plan pricing backfill', SQLERRM);
   END;
 END $$;
 
@@ -387,7 +413,8 @@ BEGIN
       WHERE id IN ('growth', 'pro', 'enterprise') AND NOT (features::jsonb @> '["Campaign pages"]'::jsonb);
     UPDATE subscription_plans SET features = (features::jsonb || '["Cart recovery"]'::jsonb)::text
       WHERE id IN ('growth', 'pro', 'enterprise') AND NOT (features::jsonb @> '["Cart recovery"]'::jsonb);
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.11 plan feature extras', SQLERRM);
   END;
 END $$;
 
@@ -433,7 +460,8 @@ BEGIN
       WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'shop_plan_id');
     INSERT INTO settings (key, value) SELECT 'about_us', '{"title":"About Us","content":"We are a leading retailer of computers, laptops, and accessories.","mission":"To provide quality tech products at affordable prices.","vision":"To be the most trusted tech retailer in the region.","missionTitle":"Our Mission","visionTitle":"Our Vision","image":"","address":"","hours":"","stats":[]}'
       WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'about_us');
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.12 settings defaults seed', SQLERRM);
   END;
 END $$;
 
@@ -454,7 +482,8 @@ BEGIN
         ('upgrade_ram', 'RAM Upgrade', 'Memory module installation', 800),
         ('upgrade_storage', 'Storage Upgrade', 'HDD/SSD replacement or addition', 1200);
     END IF;
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO reconciler_issues (migration_step, detail) VALUES ('5.13 repair_types seed', SQLERRM);
   END;
 END $$;
 
@@ -462,3 +491,15 @@ END $$;
 --      boot behaviour; now one-time instead of every boot).
 SELECT setval('orders_id_seq', COALESCE((SELECT MAX(id) FROM orders), 1));
 SELECT setval('order_items_id_seq', COALESCE((SELECT MAX(id) FROM order_items), 1));
+
+-- Surfaced in boot logs by the migration runner's notice forwarding
+-- (runVersionedMigrations attaches a 'notice' listener). Keeps any 0020
+-- backfill failures visible even though tolerance keeps the file non-wedging.
+DO $$
+DECLARE n INT;
+BEGIN
+  SELECT COUNT(*) INTO n FROM reconciler_issues;
+  IF n > 0 THEN
+    RAISE WARNING '0020 reconciler: % backfill issue(s) recorded in reconciler_issues (SELECT * FROM reconciler_issues)', n;
+  END IF;
+END $$;

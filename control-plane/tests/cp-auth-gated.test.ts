@@ -22,6 +22,7 @@ let cpServer: Server | null = null;
 let fakeBackend: Server | null = null;
 let fakeBackendUrl = "";
 let db: typeof import("../server/db") | null = null;
+let capturedControlPlaneKey = ""; // set by the fake backend's proxied handlers
 
 function fakeClientBackend(): Promise<{ server: Server; url: string }> {
   return new Promise((resolve) => {
@@ -31,7 +32,10 @@ function fakeClientBackend(): Promise<{ server: Server; url: string }> {
         res.end(JSON.stringify(obj));
       };
       const url = req.url || "";
-      if (url.startsWith("/api/shop/subscription/requests/")) return json(200, { plan: "growth" });
+      if (url.startsWith("/api/shop/subscription/requests/")) {
+        capturedControlPlaneKey = String(req.headers["x-control-plane-key"] || "");
+        return json(200, { plan: "growth" });
+      }
       if (url === "/api/admin/invoices/generate") return json(200, { id: 55, invoiceNumber: "INV-99", amount: 100 });
       if (url.startsWith("/api/admin/invoices/") && url.endsWith("/pay")) return json(200, { ok: true });
       if (url === "/api/admin/invoices") {
@@ -241,5 +245,59 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
     });
     assert.equal(res.status, 400);
     assert.match((await res.json() as any).error, /SMTP/i);
+  });
+
+  it("client auth resolves an at-rest ENCRYPTED cp_secret and sends the original plaintext outbound", async () => {
+    const sec = await import("../server/cp-secrets");
+    const enc = sec.encryptSecret(CLIENT_SECRET);
+    assert.ok(enc.startsWith("enc:v1:"), "encryption key must be active (JWT_SECRET fallback)");
+    await db!.query("UPDATE clients SET cp_secret = $1 WHERE domain = 'fake.example.com'", [enc]);
+
+    // Plaintext key presentation must match the encrypted row via the dual-branch lookup.
+    const sync = await fetch(`${baseUrl}/api/plans/sync-up`, {
+      method: "POST",
+      headers: { "x-control-plane-key": CLIENT_SECRET, "Content-Type": "application/json" },
+      body: JSON.stringify({ plan: { id: "enc-plan", name: "Encrypted Plan", syncToOthers: false } }),
+    });
+    assert.equal(sync.status, 200, "encrypted cp_secret row must still authenticate with the plaintext key");
+
+    // Proxied call must forward the ORIGINAL plaintext key, never ciphertext.
+    capturedControlPlaneKey = "";
+    const approve = await fetch(`${baseUrl}/api/clients/${clientId}/upgrade-requests/7`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "approved" }),
+    });
+    assert.equal(approve.status, 200);
+    assert.equal(capturedControlPlaneKey, CLIENT_SECRET, "outbound header must be the plaintext secret");
+
+    // Wrong key stays rejected against the encrypted row.
+    const bad = await fetch(`${baseUrl}/api/plans/sync-up`, {
+      method: "POST",
+      headers: { "x-control-plane-key": "cps_wrong_key", "Content-Type": "application/json" },
+      body: JSON.stringify({ plan: { id: "bad-plan", name: "Bad" } }),
+    });
+    assert.equal(bad.status, 401, "wrong key must be rejected even when the row is encrypted");
+
+    await db!.query("UPDATE clients SET cp_secret = $1 WHERE domain = 'fake.example.com'", [CLIENT_SECRET]);
+  });
+
+  it("login and api-key auth work against an at-rest ENCRYPTED api_key", async () => {
+    const sec = await import("../server/cp-secrets");
+    await db!.query("UPDATE cp_users SET api_key = $1 WHERE username = 'admin'", [sec.encryptSecret("cp_test_admin_key")]);
+
+    const res = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": "cp_test_admin_key" },
+      body: JSON.stringify({ username: "admin", password: ADMIN_PASSWORD }),
+    });
+    assert.equal(res.status, 200);
+    const body: any = await res.json();
+    assert.equal(body.user.api_key, "cp_test_admin_key", "login must return the decrypted plaintext key");
+
+    const clients = await fetch(`${baseUrl}/api/clients`, { headers: { "x-api-key": "cp_test_admin_key" } });
+    assert.equal(clients.status, 200, "api-key requireAuth must resolve against the encrypted row");
+
+    await db!.query("UPDATE cp_users SET api_key = 'cp_test_admin_key' WHERE username = 'admin'");
   });
 });

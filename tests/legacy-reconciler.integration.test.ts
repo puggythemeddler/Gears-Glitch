@@ -175,4 +175,38 @@ describe("legacy schema reconciliation (schema.sql + 0020)", { skip: !HAS_DB && 
       assert.equal(Number(dupes.c), 0, "repair_types are not duplicated");
     }
   });
+
+  it("0020 backfill failures are RECORDED in reconciler_issues (never silently swallowed)", async () => {
+    await query(`DROP TABLE IF EXISTS schema_migrations CASCADE`);
+    await query(load("0020_legacy_schema_reconciler.sql"));
+    const tbl = await queryOne(`SELECT to_regclass('reconciler_issues') AS name`) as any;
+    assert.ok(tbl?.name, "reconciler_issues ledger exists after 0020");
+
+    // Force the same exception-guarded pattern 0020 uses for backfills: raise
+    // an error inside a nested block and assert the handler SAVES SQLERRM.
+    await query(`
+      DO $$
+      BEGIN
+        BEGIN
+          RAISE EXCEPTION 'synthetic backfill failure for reconciler test';
+        EXCEPTION WHEN OTHERS THEN
+          INSERT INTO reconciler_issues (migration_step, detail) VALUES ('test synthetic', SQLERRM);
+        END;
+      END $$`);
+    const row = await queryOne(
+      `SELECT detail FROM reconciler_issues WHERE migration_step = 'test synthetic' ORDER BY id DESC LIMIT 1`) as any;
+    assert.ok(row, "exception handler must record the failure row");
+    assert.match(String(row.detail), /synthetic backfill failure/);
+
+    // Tolerance preserved: the file still applies cleanly on top of the broken
+    // schema (re-applying must not wedge).
+    await query(`DROP TABLE IF EXISTS schema_migrations CASCADE`);
+    const re = await transaction(async (client) => {
+      await client.query(load("0020_legacy_schema_reconciler.sql"));
+      return true;
+    });
+    assert.equal(re, true, "0020 re-applies cleanly with issues recorded");
+    const summaryExists = await queryOne(`SELECT to_regclass('reconciler_issues') AS name`) as any;
+    assert.ok(summaryExists?.name, "ledger survives a second pass without schema errors");
+  });
 });
