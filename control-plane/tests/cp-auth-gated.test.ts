@@ -16,6 +16,9 @@ const suite = HAS_DB ? describe : describe.skip;
 
 const ADMIN_PASSWORD = "TestAdminPass123!";
 const CLIENT_SECRET = "cp_test_client_secret";
+// >= 16 chars: getEncryptionKey() ignores a shorter JWT_SECRET, which would
+// silently disable enc:v1: at-rest encryption and fail the encrypted-secret test.
+const JWT_SECRET = "cp-test-secret-key-0123456789";
 
 let baseUrl = "";
 let cpServer: Server | null = null;
@@ -55,7 +58,7 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
     // Must be set BEFORE the app module is imported: index.ts captures env at
     // module load and server/db.ts builds its pool from CONTROL_PLANE_DATABASE_URL.
     process.env.PORT = "0";
-    process.env.JWT_SECRET = "cp-test-secret";
+    process.env.JWT_SECRET = JWT_SECRET;
     process.env.CP_ADMIN_PASSWORD = ADMIN_PASSWORD;
     process.env.NODE_ENV = "test";
 
@@ -127,13 +130,18 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
   });
 
   it("ends a session as soon as the account is deleted", async () => {
+    const row: any = await db!.queryOne("SELECT id FROM cp_users WHERE username = 'admin'");
+    const adminId = row.id;
     await db!.query("DELETE FROM cp_users WHERE username = 'admin'");
     const res = await fetch(`${baseUrl}/api/clients`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(res.status, 401, "deleted account must be rejected");
     const hash = await bcrypt.hash(ADMIN_PASSWORD, 4);
+    // Re-insert with the SAME id. requireAuth re-reads the account by the id
+    // embedded in the JWT, so a fresh autoincrement id would leave the
+    // still-valid token unresolvable and cascade 401s into every later test.
     await db!.query(
-      "INSERT INTO cp_users (username, password_hash, role, api_key) VALUES ('admin', $1, 'admin', 'cp_test_admin_key')",
-      [hash]
+      "INSERT INTO cp_users (id, username, password_hash, role, api_key) VALUES ($1, 'admin', $2, 'admin', 'cp_test_admin_key')",
+      [adminId, hash]
     );
     const back = await fetch(`${baseUrl}/api/clients`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(back.status, 200);
@@ -215,7 +223,7 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
     assert.equal(gen.status, 200);
 
     const audits: any[] = await db!.queryAll(
-      "SELECT action FROM audit_log WHERE client_id = $1 AND action IN ('approve_upgrade_request','reject_upgrade_request','mark_invoice_paid','generate_invoice')",
+      "SELECT action FROM audit_log WHERE target_type = 'client' AND target_id = $1 AND action IN ('approve_upgrade_request','reject_upgrade_request','mark_invoice_paid','generate_invoice')",
       [clientId]
     );
     const actions = audits.map((a) => a.action).sort();
@@ -231,7 +239,7 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
     assert.equal(rec.status, 200);
 
     const audits: any[] = await db!.queryAll(
-      "SELECT action FROM audit_log WHERE action = 'record_payment' AND client_id = $1 ORDER BY id DESC LIMIT 1",
+      "SELECT action FROM audit_log WHERE action = 'record_payment' AND target_type = 'client' AND target_id = $1 ORDER BY id DESC LIMIT 1",
       [clientId]
     );
     assert.equal(audits.length, 1, "the awaited record_payment audit must already be visible after the response");

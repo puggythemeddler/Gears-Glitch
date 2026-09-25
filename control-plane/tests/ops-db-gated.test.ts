@@ -242,14 +242,20 @@ describe("ops center (db)", { skip: !HAS_DB && "CONTROL_PLANE_DATABASE_URL not s
 
   it("maintenance windows progress scheduled -> active -> ended and end when past", async () => {
     const c = await seedClient();
-    const now = Date.now();
-    const future = new Date(now + 3600000).toISOString();
-    const justPast = new Date(now - 1000).toISOString();
-    const farPast = new Date(now - 5 * 3600000).toISOString();
+    // Anchor the window to the DATABASE clock, not the JS clock. starts_at/ends_at
+    // are TIMESTAMP (no zone) and the sweep compares them against NOW() cast in
+    // the session timezone, so JS-built ISO "...Z" strings skew by the server's
+    // UTC offset (e.g. +3h on EAT) and wrongly end an in-flight window.
+    const win: any = await queryOne(
+      `SELECT (NOW() - interval '5 hours')::timestamp::text AS far_past,
+              (NOW() - interval '1 second')::timestamp::text AS just_past,
+              (NOW() + interval '1 hour')::timestamp::text    AS future,
+              (NOW() + interval '2 hours')::timestamp::text   AS future2`
+    );
 
-    const ended = await createMaintenanceWindow({ clientId: c, reason: "past", startsAt: farPast, endsAt: justPast, approvedBy: "admin" });
-    const active = await createMaintenanceWindow({ clientId: c, reason: "in-flight", startsAt: justPast, endsAt: future, approvedBy: "admin" });
-    const scheduled = await createMaintenanceWindow({ clientId: c, reason: "upcoming", startsAt: future, endsAt: new Date(now + 2 * 3600000).toISOString(), approvedBy: "admin" });
+    const ended = await createMaintenanceWindow({ clientId: c, reason: "past", startsAt: win.far_past, endsAt: win.just_past, approvedBy: "admin" });
+    const active = await createMaintenanceWindow({ clientId: c, reason: "in-flight", startsAt: win.just_past, endsAt: win.future, approvedBy: "admin" });
+    const scheduled = await createMaintenanceWindow({ clientId: c, reason: "upcoming", startsAt: win.future, endsAt: win.future2, approvedBy: "admin" });
 
     await expireSupportAndMaintenance();
     assert.equal((await getMaintenanceWindow(ended) as any).status, "ended");
