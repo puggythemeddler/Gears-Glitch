@@ -2428,14 +2428,14 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
               await client.query(
                 `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
                  VALUES ($1, $2, 0, $3, 0, 5)
-                 ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_reserved = quantity_reserved + $3, updated_at = NOW()::text`,
+                 ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_reserved = stock_levels.quantity_reserved + $3, updated_at = NOW()::text`,
                 [item.id, bid, item.quantity]
               );
             } else {
               await client.query(
                 `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
                  VALUES ($1, 0, $2, 0, 5)
-                 ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_reserved = quantity_reserved + $2, updated_at = NOW()::text`,
+                 ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_reserved = stock_levels.quantity_reserved + $2, updated_at = NOW()::text`,
                 [item.id, item.quantity]
               );
             }
