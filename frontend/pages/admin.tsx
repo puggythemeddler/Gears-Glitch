@@ -182,7 +182,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "settings-content", label: "Content" },
       { key: "settings-system", label: "System" },
       { key: "storefront", label: "Storefront" },
-      { key: "layout-builder", label: "Layout Builder", feature: "Drag-and-drop storefront builder" },
+      { key: "layout-builder", label: "Website Studio" },
       { key: "pages", label: "Pages", feature: "Custom pages & landing pages" },
       { key: "email-settings", label: "Email", feature: "Email notifications" },
       { key: "settings-integrations", label: "Integrations" },
