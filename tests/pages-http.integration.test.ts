@@ -22,6 +22,8 @@ describe("pages API over real HTTP (DB)", { skip: !HAS_DB && "DATABASE_URL not s
   let base = "";
   let adminToken = "";
   let techToken = "";
+  let csrfCookie = "";
+  let csrfToken = "";
   const childLog: string[] = [];
 
   const runId = Date.now().toString(36).slice(-5);
@@ -57,8 +59,22 @@ describe("pages API over real HTTP (DB)", { skip: !HAS_DB && "DATABASE_URL not s
     return data.token;
   }
 
+  // Mutating routes run behind csrfProtection (x-csrf-token header must match the
+  // csrf_token cookie), so fetch the pair the same way the browser does. Without
+  // this every write here is rejected 403 before it ever reaches authorization.
+  async function loadCsrf(): Promise<void> {
+    const res = await fetch(`${base}/api/csrf-token`, { signal: AbortSignal.timeout(30000) });
+    assert.equal(res.status, 200, `csrf-token endpoint failed (${res.status})`);
+    const match = (res.headers.get("set-cookie") || "").match(/csrf_token=([^;]+)/);
+    assert.ok(match, "csrf_token cookie must be issued");
+    csrfCookie = `csrf_token=${match[1]}`;
+    const data: any = await res.json();
+    assert.ok(data.csrfToken, "csrf-token endpoint must return a token");
+    csrfToken = data.csrfToken;
+  }
+
   async function api(p: string, init: any = {}, token?: string) {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const headers: Record<string, string> = { "Content-Type": "application/json", "x-csrf-token": csrfToken, Cookie: csrfCookie };
     if (token) headers["Authorization"] = `Bearer ${token}`;
     const res = await fetch(`${base}${p}`, { ...init, headers: { ...headers, ...(init.headers || {}) }, signal: AbortSignal.timeout(30000) });
     const data = await res.json().catch(() => null);
@@ -93,6 +109,7 @@ describe("pages API over real HTTP (DB)", { skip: !HAS_DB && "DATABASE_URL not s
     const ready = await waitForHealth(`${base}/api/health`);
     assert.ok(ready, `server never became healthy.\nRecent child output:\n${childLog.slice(-40).join("\n")}`);
 
+    await loadCsrf();
     adminToken = await login("admin", "qa-Admin-Pass-2026!");
     techToken = await login("technician", "qa-Tech-Pass-2026!");
   });
@@ -149,11 +166,13 @@ describe("pages API over real HTTP (DB)", { skip: !HAS_DB && "DATABASE_URL not s
     const hidden = await api(`/api/pages/${qaSlug}`);
     assert.equal(hidden.res.status, 404, "draft must not be served publicly");
 
-    const published = await api(`/api/admin/pages/${qaSlug2}`, {
+    // Pages are created via POST /api/admin/pages with the slug in the body;
+    // there is no POST /api/admin/pages/:slug route (PUT/DELETE take :id).
+    const published = await api("/api/admin/pages", {
       method: "POST",
       body: JSON.stringify({ slug: qaSlug2, title: "To Publish", config: { sections: [], colors: { accent: "#0a0" } }, is_published: 0 }),
     }, adminToken);
-    assert.equal(published.res.status, 201);
+    assert.equal(published.res.status, 201, `publish-target create failed: ${JSON.stringify(published.data)}`);
     const id = published.data.id;
 
     const flip = await api(`/api/admin/pages/${id}`, { method: "PUT", body: JSON.stringify({ is_published: 1 }) }, adminToken);

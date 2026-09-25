@@ -97,6 +97,24 @@ CREATE TABLE IF NOT EXISTS cart_items (
 );
 CREATE INDEX IF NOT EXISTS idx_cart_customer ON cart_items(customer_id);
 
+-- subscription_plans must be declared before any table that references it
+-- (branches.plan_id); on a brand-new database an inline REFERENCES to a
+-- not-yet-created table aborts the whole schema load and the server cannot boot.
+CREATE TABLE IF NOT EXISTS subscription_plans (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  price DOUBLE PRECISION NOT NULL DEFAULT 0,
+  price_annual DOUBLE PRECISION,
+  tier_level INTEGER NOT NULL DEFAULT 0,
+  max_products INTEGER,
+  max_branches INTEGER NOT NULL DEFAULT 1,
+  features TEXT NOT NULL DEFAULT '[]',
+  is_active INTEGER NOT NULL DEFAULT 1,
+  sync_to_others INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text)
+);
+
 CREATE TABLE IF NOT EXISTS branches (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -225,21 +243,6 @@ CREATE TABLE IF NOT EXISTS stock_transfers (
   FOREIGN KEY (to_branch_id) REFERENCES branches(id),
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
   FOREIGN KEY (created_by) REFERENCES users(id)
-);
-
-CREATE TABLE IF NOT EXISTS subscription_plans (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  description TEXT NOT NULL DEFAULT '',
-  price DOUBLE PRECISION NOT NULL DEFAULT 0,
-  price_annual DOUBLE PRECISION,
-  tier_level INTEGER NOT NULL DEFAULT 0,
-  max_products INTEGER,
-  max_branches INTEGER NOT NULL DEFAULT 1,
-  features TEXT NOT NULL DEFAULT '[]',
-  is_active INTEGER NOT NULL DEFAULT 1,
-  sync_to_others INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 
 CREATE TABLE IF NOT EXISTS providers (
