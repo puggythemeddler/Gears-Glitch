@@ -1318,6 +1318,11 @@ app.get("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("
 
 app.put("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
   const { layout, banners, features, hero, theme, themeCustom } = req.body || {};
+  if (banners !== undefined && !isArr(banners)) { res.status(400).json({ error: "banners must be an array." }); return; }
+  if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "features must be an array." }); return; }
+  if (hero !== undefined && (typeof hero !== "object" || hero === null)) { res.status(400).json({ error: "hero must be an object." }); return; }
+  if (theme !== undefined && (typeof theme !== "string" || !STORE_THEMES.includes(theme))) { res.status(400).json({ error: "Invalid theme. Choose one of: " + STORE_THEMES.join(", ") + "." }); return; }
+  if (themeCustom !== undefined && (typeof themeCustom !== "object" || themeCustom === null)) { res.status(400).json({ error: "themeCustom must be an object." }); return; }
   if (layout) {
     const validLayout = await queryOne("SELECT id FROM storefront_layouts WHERE layout_key = $1", [layout]);
     if (!validLayout) { res.status(400).json({ error: "Invalid layout key." }); return; }
@@ -1325,11 +1330,6 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("
     await query("UPDATE storefront_layouts SET is_active = 0");
     await query("UPDATE storefront_layouts SET is_active = 1 WHERE layout_key = $1", [layout]);
   }
-  if (banners !== undefined && !isArr(banners)) { res.status(400).json({ error: "banners must be an array." }); return; }
-  if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "features must be an array." }); return; }
-  if (hero !== undefined && (typeof hero !== "object" || hero === null)) { res.status(400).json({ error: "hero must be an object." }); return; }
-  if (theme !== undefined && (typeof theme !== "string" || !STORE_THEMES.includes(theme))) { res.status(400).json({ error: "Invalid theme. Choose one of: " + STORE_THEMES.join(", ") + "." }); return; }
-  if (themeCustom !== undefined && (typeof themeCustom !== "object" || themeCustom === null)) { res.status(400).json({ error: "themeCustom must be an object." }); return; }
   if (banners !== undefined) await setStoreSetting("store_banners", JSON.stringify(banners));
   if (features !== undefined) await setStoreSetting("store_features", JSON.stringify(features));
   if (hero !== undefined) {
@@ -1387,6 +1387,7 @@ app.put("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settin
   const id = Number(req.params.id);
   const existing = await queryOne("SELECT * FROM storefront_layouts WHERE id = $1", [id]);
   if (!existing) { res.status(404).json({ error: "Layout not found." }); return; }
+  if ((existing as any).layout_type === "static") { res.status(409).json({ error: "Cannot edit built-in static layouts." }); return; }
   const { label, description, config } = req.body || {};
   const updates: string[] = [];
   const params: any[] = [];
@@ -1405,6 +1406,7 @@ app.delete("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("set
   const existing = await queryOne("SELECT * FROM storefront_layouts WHERE id = $1", [id]);
   if (!existing) { res.status(404).json({ error: "Layout not found." }); return; }
   if ((existing as any).layout_type === "static") { res.status(400).json({ error: "Cannot delete built-in static layouts." }); return; }
+  if (Number((existing as any).is_active) === 1) { res.status(409).json({ error: "Cannot delete the live layout. Publish a different layout first." }); return; }
   await query("DELETE FROM storefront_layouts WHERE id = $1", [id]);
   res.json({ ok: true });
 }));

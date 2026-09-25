@@ -267,8 +267,8 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
               <span style={{ fontSize: "1rem", fontWeight: 700, color: priceColor }}>{formatPrice(showSale && product.salePrice ? product.salePrice : product.price)}</span>
               {showSale && product.salePrice && <span style={{ fontSize: "0.8rem", color: "var(--text-tertiary)", textDecoration: "line-through" }}>{formatPrice(product.price)}</span>}
             </div>
-            {showRating && (
-              <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginTop: 4 }}>{"â˜…"} {(product as any).avgRating ? Number((product as any).avgRating).toFixed(1) : "â€”"}</div>
+            {showRating && product.rating && product.rating.count > 0 && (
+              <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginTop: 4 }}>{"…"} {Number(product.rating.average).toFixed(1)}</div>
             )}
           </div>
         </div>
@@ -287,8 +287,8 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
             <span style={{ fontSize: "1rem", fontWeight: 700, color: priceColor }}>{formatPrice(showSale && product.salePrice ? product.salePrice : product.price)}</span>
             {showSale && product.salePrice && <span style={{ fontSize: "0.8rem", color: "var(--text-tertiary)", textDecoration: "line-through" }}>{formatPrice(product.price)}</span>}
           </div>
-          {showRating && (
-            <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginTop: 4 }}>{"â˜…"} {(product as any).avgRating ? Number((product as any).avgRating).toFixed(1) : "â€”"}</div>
+          {showRating && product.rating && product.rating.count > 0 && (
+            <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginTop: 4 }}>{"…"} {Number(product.rating.average).toFixed(1)}</div>
           )}
         </div>
       </div>
@@ -404,8 +404,8 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
           {(section.items || []).map((item, j) => (
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{item.icon}</div>}
-              <div style={{ fontSize: "1.8rem", fontWeight: 700, color: colors?.accent || "var(--primary)" }}>{item.value}</div>
-              <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 4 }}>{item.label}</div>
+              <div style={{ fontSize: "1.8rem", fontWeight: 700, color: colors?.accent || "var(--primary)" }} data-fid={fid ? `${fid}.items.${j}.value` : undefined}>{item.value}</div>
+              <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 4 }} data-fid={fid ? `${fid}.items.${j}.label` : undefined}>{item.label}</div>
             </div>
           ))}
         </div>
@@ -469,8 +469,8 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
           {(section.items || []).map((item, j) => (
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ padding: "1.5rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, textAlign: "center", ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.8rem", marginBottom: "0.6rem" }}>{item.icon}</div>}
-              {item.title && <div style={{ fontWeight: 700, marginBottom: "0.4rem" }}>{item.title}</div>}
-              {item.text && <div style={{ fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>{item.text}</div>}
+              {item.title && <div style={{ fontWeight: 700, marginBottom: "0.4rem" }} data-fid={fid ? `${fid}.items.${j}.title` : undefined}>{item.title}</div>}
+              {item.text && <div style={{ fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.6 }} data-fid={fid ? `${fid}.items.${j}.text` : undefined}>{item.text}</div>}
             </div>
           ))}
         </div>
@@ -479,7 +479,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
   }
 
   if (section.type === "spacer") {
-    return <div style={{ height: section.height || 40 }} />;
+    return <div style={{ height: section.height ?? 40 }} />;
   }
 
   return null;
