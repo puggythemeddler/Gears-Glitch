@@ -2201,7 +2201,13 @@ app.put("/api/clients/:id/branches/:branchId/plan", requireAuth, requireAdmin, a
 });
 
 // ─── AUTO HEALTH CHECK (every 5 min) ─────────────────────
-setInterval(async () => {
+// Unref'd deliberately: this module-level timer must not, by itself, keep the
+// process alive. start({ background: false }) is documented to boot the API
+// "without the background jobs or module side effects", but a plain setInterval
+// fires on import regardless of that flag, so an importing test process would
+// never exit. Unref'ing leaves production unchanged (the listening socket keeps
+// the process up) while letting test processes terminate.
+const autoHealthTimer = setInterval(async () => {
   try {
     const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active'");
     for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
@@ -2225,6 +2231,7 @@ setInterval(async () => {
     console.error("[auto-health] Error:", err.message);
   }
 }, 5 * 60 * 1000);
+autoHealthTimer.unref();
 
 // ─── AUTO BACKUP (daily at 3 AM) ────────────────────────────
 function scheduleAutoBackup() {

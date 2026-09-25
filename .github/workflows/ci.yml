@@ -67,6 +67,9 @@ jobs:
   control-plane-test:
     name: Control plane (ops tests vs Postgres)
     runs-on: ubuntu-latest
+    # Safety net: a lingering handle in the app module would otherwise wedge
+    # this job until GitHub's 6-hour default.
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:17
