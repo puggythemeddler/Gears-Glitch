@@ -30,12 +30,24 @@ describe("legacy schema reconciliation (schema.sql + 0020)", { skip: !HAS_DB && 
     return Promise.resolve();
   });
 
+  // schema_migrations is created by the production runner (runVersionedMigrations in
+  // server/db.ts), NOT by schema.sql and not by any migration file. This suite drops
+  // the ledger and then re-applies every migration while recording each version, so it
+  // has to recreate the table with the same DDL production uses -- otherwise the first
+  // `INSERT INTO schema_migrations` fails with "relation does not exist", the before
+  // hook throws, and every test in the suite is cancelled.
+  const MIGRATION_LEDGER_DDL = `CREATE TABLE IF NOT EXISTS schema_migrations (
+    version TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (NOW()::text)
+  )`;
+
   before(async () => {
     const schema = fs.readFileSync(path.join(__dirname, "..", "server", "schema.sql"), "utf8");
     await query(`DROP TABLE IF EXISTS schema_migrations CASCADE`);
     // schema.sql must be idempotent (re-apply must not throw).
     await runSchema(schema);
     await runSchema(schema);
+    await query(MIGRATION_LEDGER_DDL);
     // Apply every versioned migration in order, each in its own transaction,
     // mirroring runVersionedMigrations (fails loudly, no silent catches).
     for (const file of migrations) {

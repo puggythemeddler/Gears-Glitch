@@ -56,8 +56,8 @@ export async function initOpsCenterDb(): Promise<void> {
     severity TEXT DEFAULT 'info',
     title TEXT NOT NULL,
     description TEXT DEFAULT '',
-    state TEXT DEFAULT 'open',
-    dedupe_key TEXT UNIQUE,
+  state TEXT DEFAULT 'open',
+  dedupe_key TEXT,
     detected_at TIMESTAMP DEFAULT NOW(),
     last_occurrence TIMESTAMP DEFAULT NOW(),
     occurrence_count INTEGER DEFAULT 1,
@@ -74,6 +74,14 @@ export async function initOpsCenterDb(): Promise<void> {
   )`);
   try { await query("CREATE INDEX IF NOT EXISTS idx_alerts_client ON alerts (client_id, state)"); } catch {}
   try { await query("CREATE INDEX IF NOT EXISTS idx_alerts_state ON alerts (state, severity)"); } catch {}
+  // Alert dedupe must be per tenant, not global. `dedupe_key TEXT UNIQUE` made the
+  // key unique across every client, so one tenant's alert key silently deduped into
+  // another tenant's alert row (upsertAlert returned the other tenant's alert id).
+  // Dedupe is now unique per (client_id, dedupe_key), which is also what upsertDrift
+  // already did. The old index is dropped first so the composite can be created;
+  // existing rows already satisfy it because the old constraint was strictly stronger.
+  try { await query("DROP INDEX IF EXISTS alerts_dedupe_key_key"); } catch {}
+  try { await query("CREATE UNIQUE INDEX IF NOT EXISTS uq_alerts_client_dedupe ON alerts (client_id, dedupe_key)"); } catch {}
 
   await query(`CREATE TABLE IF NOT EXISTS incidents (
     id SERIAL PRIMARY KEY,
@@ -252,7 +260,9 @@ export interface AlertInput {
 // alert did not previously exist (fresh detection). Suppressed alerts stay
 // quiet. Resolved alerts only reopen after the configured cooldown.
 export async function upsertAlert(a: AlertInput): Promise<{ id: number; created: boolean }> {
-  const existing = await queryOne("SELECT id, state, last_occurrence FROM alerts WHERE dedupe_key = $1", [a.key]);
+  // Scope the dedupe lookup to the owning client. Looking up by dedupe_key alone let
+  // one client's alert key resolve to (and increment) another client's alert row.
+  const existing = await queryOne("SELECT id, state, last_occurrence FROM alerts WHERE client_id = $1 AND dedupe_key = $2", [a.clientId, a.key]);
   if (!existing) {
     const r = await query(
       `INSERT INTO alerts (client_id, category, severity, title, description, dedupe_key)
@@ -283,12 +293,12 @@ export async function upsertAlert(a: AlertInput): Promise<{ id: number; created:
   return { id: Number(existing.id), created: false };
 }
 
-export async function resolveAlertsByDedupeKey(keys: string[], resolver: string, resolution: string): Promise<void> {
+export async function resolveAlertsByDedupeKey(clientId: number, keys: string[], resolver: string, resolution: string): Promise<void> {
   if (!keys.length) return;
   await query(
     `UPDATE alerts SET state = 'resolved', resolved_at = NOW(), resolved_by = $2, resolution = $3, updated_at = NOW()
-     WHERE dedupe_key = ANY($1) AND state IN ('open', 'acknowledged', 'investigating')`,
-    [keys, resolver, resolution]
+     WHERE client_id = $4 AND dedupe_key = ANY($1) AND state IN ('open', 'acknowledged', 'investigating')`,
+    [keys, resolver, resolution, clientId]
   );
 }
 

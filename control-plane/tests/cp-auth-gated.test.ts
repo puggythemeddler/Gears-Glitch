@@ -87,6 +87,13 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
       "INSERT INTO clients (name, domain, admin_email, render_service_url, cp_secret, status, plan) VALUES ('Fake Co', 'fake.example.com', 'owner@fake.example.com', $1, $2, 'active', 'starter') ON CONFLICT (domain) DO UPDATE SET render_service_url = $1, cp_secret = $2",
       [fakeBackendUrl, CLIENT_SECRET]
     );
+    // Clear this client's audit rows so the proxy-audit assertions below measure only
+    // the writes made by this run. The client is keyed on a fixed domain and two tests
+    // in this file write the same audited actions for it, so without this a second run
+    // against the same database sees the previous run's rows and over-counts.
+    await dbMod.query(
+      "DELETE FROM audit_log WHERE target_type = 'client' AND target_id = (SELECT id FROM clients WHERE domain = 'fake.example.com')"
+    );
   });
 
   after(async () => {

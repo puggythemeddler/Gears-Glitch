@@ -163,7 +163,7 @@ export async function evaluateForClient(clientId: number): Promise<void> {
   const autoResolvableKeys = conditions
     .filter((x) => !x.on)
     .map((x) => x.key);
-  await resolveAlertsByDedupeKey(autoResolvableKeys, "system", "Condition cleared");
+  await resolveAlertsByDedupeKey(c.id, autoResolvableKeys, "system", "Condition cleared");
 
   // ── Drift ──
   const checks = parseChecks(c.latest_checks);

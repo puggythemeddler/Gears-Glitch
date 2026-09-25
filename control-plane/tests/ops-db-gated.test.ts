@@ -110,7 +110,7 @@ describe("ops center (db)", { skip: !HAS_DB && "CONTROL_PLANE_DATABASE_URL not s
   it("keeps resolved alerts resolved within the reopen cooldown, then reopens them after", async () => {
     const c = await seedClient();
     const { id } = await upsertAlert({ clientId: c, key: "alert:cooldown", category: "availability", severity: "danger", title: "Down", description: "d" });
-    await resolveAlertsByDedupeKey(["alert:cooldown"], "tests", "resolved for test");
+    await resolveAlertsByDedupeKey(c, ["alert:cooldown"], "tests", "resolved for test");
 
     const withinCooldown = await upsertAlert({ clientId: c, key: "alert:cooldown", category: "availability", severity: "danger", title: "Down", description: "d" });
     assert.equal(withinCooldown.created, false);
@@ -135,6 +135,44 @@ describe("ops center (db)", { skip: !HAS_DB && "CONTROL_PLANE_DATABASE_URL not s
     const a = await getAlert(id) as any;
     assert.equal(a.state, "suppressed");
     assert.equal(a.occurrence_count, 1, "suppressed alerts do not accumulate occurrences");
+  });
+
+  it("keeps alert dedupe scoped to the owning client (tenant isolation)", async () => {
+    // Regression: dedupe_key used to be globally UNIQUE and upsertAlert looked it up
+    // without client_id, so two tenants using the same alert key resolved to the SAME
+    // alert row -- one tenant's alert id, occurrence_count and state were visible and
+    // mutable from the other. Production keys embed the client id, which hid this, but
+    // the invariant belongs to the database, not to caller discipline.
+    const a = await seedClient();
+    const b = await seedClient();
+
+    const first = await upsertAlert({ clientId: a, key: "shared-key", category: "availability", severity: "danger", title: "A down", description: "d" });
+    const second = await upsertAlert({ clientId: b, key: "shared-key", category: "availability", severity: "warning", title: "B degraded", description: "d" });
+
+    assert.equal(first.created, true, "tenant A creates its own alert");
+    assert.equal(second.created, true, "tenant B must create a separate alert, not dedupe into tenant A's");
+    assert.notEqual(second.id, first.id, "the two tenants must not share an alert id");
+
+    const alertA = await getAlert(first.id) as any;
+    const alertB = await getAlert(second.id) as any;
+    assert.equal(alertA.client_id, a, "alert A belongs to tenant A");
+    assert.equal(alertB.client_id, b, "alert B belongs to tenant B");
+    assert.equal(alertA.title, "A down", "tenant B must not overwrite tenant A's title");
+    assert.equal(alertB.title, "B degraded");
+    assert.equal(alertA.occurrence_count, 1, "tenant B's alert must not increment tenant A's counter");
+    assert.equal(alertB.occurrence_count, 1);
+
+    // Each tenant still dedupes its own repeated key.
+    const againA = await upsertAlert({ clientId: a, key: "shared-key", category: "availability", severity: "danger", title: "A down", description: "d" });
+    assert.equal(againA.created, false, "the same tenant still dedupes");
+    assert.equal(againA.id, first.id);
+    assert.equal(alertA.occurrence_count, 1);
+    assert.equal(Number((await getAlert(first.id) as any).occurrence_count), 2, "only tenant A's own repeat increments");
+
+    // Resolving for one tenant must not resolve the other's alert.
+    await resolveAlertsByDedupeKey(a, ["shared-key"], "tests", "resolved for A");
+    assert.equal((await getAlert(first.id) as any).state, "resolved", "tenant A's alert resolved");
+    assert.equal((await getAlert(second.id) as any).state, "open", "tenant B's alert must stay open");
   });
 
   it("evaluateForClient raises a stale-heartbeat alert and auto-resolves it once the heartbeat returns", async () => {

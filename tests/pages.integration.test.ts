@@ -74,8 +74,11 @@ describe("page builder CMS lifecycle (DB)", { skip: !HAS_DB && "DATABASE_URL not
     const byId = await getPageById(row.id);
     assert.equal(bySlug?.id, row.id);
     assert.equal(byId?.slug, "find-me");
-    assert.equal(await getPageBySlug("does-not-exist"), undefined);
-    assert.equal(await getPageById(999999), undefined);
+    // getPageBySlug/getPageById are declared `Promise<PageRow | null>` and return
+    // null (not undefined) for a miss. Pin the exact sentinel so a silent
+    // contract change is caught; every API caller branches on truthiness.
+    assert.equal(await getPageBySlug("does-not-exist"), null);
+    assert.equal(await getPageById(999999), null);
   });
 
   it("publishes and unpublishes through partial updates", async () => {
@@ -110,15 +113,17 @@ describe("page builder CMS lifecycle (DB)", { skip: !HAS_DB && "DATABASE_URL not
     const earlierUpdated = row.updated_at;
     await new Promise((r) => setTimeout(r, 25));
     const updated = await updatePage(row.id, { title: "T2" }) as any;
-    assert.equal(updated.created_at, row.created_at);
+    // created_at/updated_at are mapped to Date instances, so compare instants.
+    // assert.equal is strictEqual from node:assert/strict and would compare the
+    // two Date objects by reference, which is never true for distinct instances.
+    assert.equal(new Date(updated.created_at).getTime(), new Date(row.created_at).getTime(), "created_at is preserved");
     assert.notEqual(new Date(updated.updated_at).getTime(), new Date(earlierUpdated).getTime());
   });
 
   it("deletes a page and reports missing pages", async () => {
     const row = await createPage({ slug: "bye", title: "Bye" });
     assert.equal(await deletePage(row.id), true, "existing page deletes");
-    assert.equal(await getPageById(row.id), undefined, "deleted page no longer resolves");
-    assert.equal(await getPageById(row.id), undefined);
+    assert.equal(await getPageById(row.id), null, "deleted page no longer resolves");
     assert.equal(await deletePage(row.id), false, "second delete reports not-found");
     assert.equal(await deletePage(999999), false, "deleting a missing id reports not-found");
   });
