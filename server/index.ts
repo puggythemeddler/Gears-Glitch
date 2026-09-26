@@ -481,9 +481,15 @@ app.use(cors({
 }));
 
 // Rate limiting
+// A single storefront page load issues ~24 API calls and an admin view ~19, so
+// the cap is per-IP across a shared window. The default is unchanged; these
+// overrides exist so a deployment behind carrier-grade NAT (many mobile users on
+// one public IP) or a busy admin can be tuned without a code change.
+const RATE_WINDOW_MIN = Number(process.env.API_RATE_WINDOW_MIN) || 15;
+const RATE_MAX = Number(process.env.API_RATE_MAX) || 200;
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
+  windowMs: RATE_WINDOW_MIN * 60 * 1000,
+  max: RATE_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
