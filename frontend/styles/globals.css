@@ -79,6 +79,10 @@
   --text-tertiary: #716d68;
   --primary: #c2410c;
   --primary-hover: #9a3412;
+  /* Readable text/icon colour on top of --primary. Flips per theme because
+     a bright accent needs dark text (7.06:1) while a deep accent needs
+     white (5.18:1). Always pair primary surfaces with this, never #fff. */
+  --on-primary: #ffffff;
   --primary-light: #ffedd5;
   --primary-subtle: rgba(234, 88, 12, 0.08);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
@@ -102,6 +106,14 @@
     --info-text: #1e40af;
   --neutral-light: #e7e5e4;
   --neutral-text: #44403c;
+
+  /* Readable text on solid semantic fills (see --on-primary above).
+     Light theme: white clears AA on warning/danger/info, but not on
+     success (3.3:1), so success takes ink in both themes. */
+  --on-success: #0b0a09;
+  --on-warning: #ffffff;
+  --on-danger: #ffffff;
+  --on-info: #ffffff;
 
   /* Secondary brand accent (repair cards, highlights) */
   --accent: #f59e0b;
@@ -152,6 +164,7 @@
   --text-tertiary: #87817a;
   --primary: #f97316;
   --primary-hover: #fb923c;
+  --on-primary: #0b0a09;
   --primary-light: #381703;
   --primary-subtle: rgba(249, 115, 22, 0.12);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
@@ -175,6 +188,12 @@
     --info-text: #93c5fd;
   --neutral-light: #1c1917;
   --neutral-text: #d6d3d1;
+
+  /* Dark-theme semantic fills are all bright, so ink wins on every one. */
+  --on-success: #0b0a09;
+  --on-warning: #0b0a09;
+  --on-danger: #0b0a09;
+  --on-info: #0b0a09;
 
   --accent: #fbbf24;
   --accent-subtle: rgba(251, 191, 36, 0.14);
@@ -219,6 +238,7 @@
 [data-brand-theme="kenyan"] {
   --primary: #15803d;
   --primary-hover: #166534;
+  --on-primary: #ffffff;
   --primary-light: #dcfce7;
   --primary-subtle: rgba(21, 128, 61, 0.1);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
@@ -239,6 +259,7 @@
 [data-brand-theme="kenyan"][data-theme="dark"] {
   --primary: #4ade80;
   --primary-hover: #22c55e;
+  --on-primary: #0b0a09;
   --primary-light: #14532d;
   --primary-subtle: rgba(74, 222, 128, 0.12);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
@@ -259,6 +280,7 @@
 [data-brand-theme="modern"] {
   --primary: #6d28d9;
   --primary-hover: #5b21b6;
+  --on-primary: #ffffff;
   --primary-light: #ede9fe;
   --primary-subtle: rgba(109, 40, 217, 0.08);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
@@ -279,6 +301,7 @@
 [data-brand-theme="modern"][data-theme="dark"] {
   --primary: #a78bfa;
   --primary-hover: #8b5cf6;
+  --on-primary: #0b0a09;
   --primary-light: #2e1065;
   --primary-subtle: rgba(167, 139, 250, 0.12);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
@@ -301,6 +324,9 @@
 [data-brand-theme="custom"] {
   --primary: var(--brand-primary, #c2410c);
   --primary-hover: var(--brand-primary-hover, #9a3412);
+  /* Correct for the default Till Orange. A merchant-picked brand colour may
+     need a runtime contrast pick instead - see DESIGN.md "Known limits". */
+  --on-primary: #ffffff;
   --primary-light: #ffedd5;
   --primary-subtle: color-mix(in srgb, var(--brand-primary, #c2410c) 10%, transparent);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
@@ -336,6 +362,7 @@
 [data-brand-theme="custom"][data-theme="dark"] {
   --primary: var(--brand-primary, #f97316);
   --primary-hover: color-mix(in srgb, var(--brand-primary, #f97316) 80%, #fff);
+  --on-primary: #0b0a09;
   --primary-light: color-mix(in srgb, var(--brand-primary, #f97316) 18%, #1c1917);
   --primary-subtle: color-mix(in srgb, var(--brand-primary, #f97316) 12%, transparent);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
@@ -412,10 +439,10 @@ a:focus:not(:focus-visible) { outline: none; }
 
 .skip-link {
   position: absolute;
-  top: -100%;
-  left: var(--space-2);
-  background: var(--primary);
-  color: #fff;
+      top: -100%;
+      left: var(--space-2);
+      background: var(--primary);
+      color: var(--on-primary);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-md);
   z-index: 1000;
@@ -683,8 +710,8 @@ code, pre {
   height: 18px;
   padding: 0 5px;
   border-radius: var(--radius-full);
-  background: var(--danger);
-  color: #fff;
+      background: var(--danger);
+      color: var(--on-danger);
   font-size: 0.65rem;
   font-weight: var(--font-bold);
   line-height: 1;
@@ -1213,8 +1240,8 @@ code, pre {
 }
 
 .btn-primary {
-  background: var(--primary);
-  color: #fff;
+      background: var(--primary);
+      color: var(--on-primary);
   border-color: var(--primary);
 }
 
@@ -1223,11 +1250,8 @@ code, pre {
   border-color: var(--primary-hover);
 }
 
-/* Dark theme: black-on-orange keeps primary buttons at ~8:1 contrast */
-[data-theme="dark"] .btn-primary,
-[data-theme="dark"] .skip-link {
-  color: #0b0a09;
-}
+/* Primary-surface text colour now comes from --on-primary, which flips with
+   the theme, so this per-component override is no longer needed. */
 
 .btn-secondary {
   background: transparent;
@@ -1252,8 +1276,8 @@ code, pre {
 }
 
 .btn-danger {
-  background: var(--danger);
-  color: #fff;
+      background: var(--danger);
+      color: var(--on-danger);
   border-color: var(--danger);
 }
 
@@ -2111,8 +2135,8 @@ textarea:not(.input)::placeholder {
 }
 
 .auth-tab.active {
-  background: var(--primary);
-  color: #fff;
+      background: var(--primary);
+      color: var(--on-primary);
 }
 
 .auth-tab:hover:not(.active) {
@@ -2271,8 +2295,8 @@ textarea:not(.input)::placeholder {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-full);
-  background: var(--danger);
-  color: #fff;
+      background: var(--danger);
+      color: var(--on-danger);
   font-size: 0.65rem;
   font-weight: var(--font-bold);
   line-height: 1;
@@ -2500,8 +2524,8 @@ a.order-item:hover {
   height: 18px;
   padding: 0 var(--space-1);
   border-radius: var(--radius-full);
-  background: var(--danger);
-  color: #fff;
+      background: var(--danger);
+      color: var(--on-danger);
   font-size: 11px;
   font-weight: var(--font-bold);
   line-height: 1;
@@ -2913,8 +2937,8 @@ a.order-item:hover {
   position: absolute;
   top: -4px;
   right: -4px;
-  background: var(--danger);
-  color: #fff;
+      background: var(--danger);
+      color: var(--on-danger);
   border-radius: var(--radius-full);
   font-size: 0.65rem;
   font-weight: var(--font-bold);
@@ -3244,8 +3268,8 @@ a.order-item:hover {
   z-index: 3;
   padding: 0.15rem 0.6rem;
   border-radius: var(--radius-full);
-  background: #dc2626;
-  color: #fff;
+  background: var(--danger);
+  color: var(--on-danger);
   font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -4023,8 +4047,8 @@ a.about-contact-card:hover {
   box-shadow: 0 0 0 3px var(--primary-subtle);
 }
 .dy-hero-btn--primary {
-  background: var(--primary);
-  color: #fff;
+      background: var(--primary);
+      color: var(--on-primary);
 }
 .dy-hero-btn--primary:hover { background: var(--primary-hover); }
 .dy-hero-btn--secondary {

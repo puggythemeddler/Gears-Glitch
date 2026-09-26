@@ -16,13 +16,13 @@ export function LayoutStyles() {
     .jum-brand { font-weight: 700; font-size: 1.3rem; color: var(--text); text-decoration: none; }
     .jum-search { flex: 1; min-width: 180px; display: flex; border: 2px solid var(--primary); border-radius: 8px; overflow: hidden; }
     .jum-search input { flex: 1; border: none; padding: 0.5rem 0.8rem; font-size: 0.95rem; background: var(--bg); color: var(--text); outline: none; }
-    .jum-search button { background: var(--primary); color: #fff; border: none; padding: 0.5rem 1rem; cursor: pointer; font-weight: 600; }
+    .jum-search button { background: var(--primary); color: var(--on-primary); border: none; padding: 0.5rem 1rem; cursor: pointer; font-weight: 600; }
     .jum-cat-icons { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; display: flex; gap: 0.75rem; overflow-x: auto; flex-wrap: nowrap; }
     .jum-cat-icon { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; text-decoration: none; color: var(--text); font-size: 0.8rem; min-width: 80px; padding: 0.5rem; border-radius: 10px; transition: background 0.15s; }
-    .jum-cat-icon:hover { background: var(--primary); color: #fff; }
+    .jum-cat-icon:hover { background: var(--primary); color: var(--on-primary); }
     .jum-cat-icon .icon { font-size: 1.6rem; }
     .jum-slider { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; border-radius: 12px; overflow: hidden; position: relative; }
-    .jum-slide { background: linear-gradient(135deg, var(--primary), var(--brand-gradient-b, #f97316)); color: #fff; padding: 3rem 2rem; min-height: 280px; display: flex; flex-direction: column; justify-content: center; border-radius: 12px; }
+    .jum-slide { background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: var(--on-primary); padding: 3rem 2rem; min-height: 280px; display: flex; flex-direction: column; justify-content: center; border-radius: 12px; }
     .jum-slide h2 { font-size: 2rem; margin: 0 0 0.5rem; }
     .jum-slide p { font-size: 1.1rem; margin: 0 0 1rem; opacity: 0.9; }
     .jum-dots { display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
@@ -41,7 +41,7 @@ export function LayoutStyles() {
     .jum-card-body h3 { margin: 0 0 0.3rem; font-size: 0.85rem; line-height: 1.3; }
     .jum-card-price { font-weight: 700; color: var(--primary); }
     .jum-card-old { font-size: 0.75rem; color: var(--text-secondary); text-decoration: line-through; margin-left: 0.3rem; }
-    .jum-discount { position: absolute; top: 8px; left: 8px; background: var(--danger); color: #fff; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 600; }
+    .jum-discount { position: absolute; top: 8px; left: 8px; background: var(--danger); color: var(--on-danger); font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 600; }
     .jum-sponsored { font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.3rem; }
     @media (max-width: 768px) {
       .jum-slide { min-height: 200px; padding: 2rem 1.5rem; }
@@ -83,7 +83,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
             )}
             <a href="/about" style={{ fontSize: "0.9rem", color: "var(--text)", textDecoration: "none" }}>About</a>
             <a href="/cart" style={{ fontSize: "0.9rem", color: "var(--text)", textDecoration: "none", position: "relative" }}>
-              Cart{cartCount ? <span style={{ background: "var(--primary)", color: "#fff", fontSize: "0.7rem", borderRadius: "50%", padding: "0.1rem 0.4rem", marginLeft: "0.25rem" }}>{cartCount}</span> : null}
+              Cart{cartCount ? <span style={{ background: "var(--primary)", color: "var(--on-primary)", fontSize: "0.7rem", borderRadius: "50%", padding: "0.1rem 0.4rem", marginLeft: "0.25rem" }}>{cartCount}</span> : null}
             </a>
           </div>
         </div>

@@ -194,7 +194,7 @@ function InlineEditOverlay({ fid, rect }: { fid: string; rect: { top: number; le
         data-sb-overlay
         style={{
           position: "absolute", top: -22, left: -1.5,
-          background: "var(--primary)", color: "#fff",
+          background: "var(--primary)", color: "var(--on-primary)",
           fontSize: "0.62rem", fontWeight: 600, letterSpacing: "0.04em",
           padding: "0.15rem 0.5rem", borderRadius: "6px 6px 0 0",
           whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis",
@@ -789,8 +789,8 @@ export default function StorefrontBuilder() {
         .sb-section:hover { outline: 1px dashed var(--border-hover); outline-offset: 2px; }
         .sb-section.selected { border-color: var(--primary); border-style: solid; border-width: 2px; border-radius: 10px; }
         .sb-section.selected .sb-section-bar { display: flex; }
-        .sb-section-bar { display: none; position: absolute; top: 6px; left: 6px; z-index: 20; align-items: center; gap: 0.3rem; background: var(--primary); color: #fff; border-radius: 6px; padding: 0.15rem 0.4rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-        .sb-section-bar button { background: none; border: none; color: #fff; cursor: pointer; font-size: 0.75rem; padding: 0 0.2rem; line-height: 1; }
+        .sb-section-bar { display: none; position: absolute; top: 6px; left: 6px; z-index: 20; align-items: center; gap: 0.3rem; background: var(--primary); color: var(--on-primary); border-radius: 6px; padding: 0.15rem 0.4rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .sb-section-bar button { background: none; border: none; color: var(--on-primary); cursor: pointer; font-size: 0.75rem; padding: 0 0.2rem; line-height: 1; }
         .sb-section-bar .sb-grip { cursor: grab; }
         .sb-canvas { min-height: 300px; border: 1px solid var(--border); border-radius: 12px; overflow: auto; background: var(--bg); }
         .sb-empty { padding: 3rem 2rem; text-align: center; color: var(--text-tertiary); }
@@ -879,7 +879,7 @@ export default function StorefrontBuilder() {
               <RippleButton size="small" variant={showPreview ? "primary" : "secondary"} onClick={() => { setShowPreview(true); setSelectedSection(null); setEditField(null); setEditRect(null); }}>Preview</RippleButton>
               <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
                 {DEVICES.map((d) => (
-                  <button key={d.id} type="button" onClick={() => { setDevice(d.id); setEditField(null); setEditRect(null); }} aria-pressed={device === d.id} style={{ padding: "0.4rem 0.8rem", fontSize: "0.78rem", fontWeight: 600, border: "none", cursor: "pointer", background: device === d.id ? "var(--primary)" : "transparent", color: device === d.id ? "#fff" : "var(--text-secondary)" }}>{d.label}</button>
+                  <button key={d.id} type="button" onClick={() => { setDevice(d.id); setEditField(null); setEditRect(null); }} aria-pressed={device === d.id} style={{ padding: "0.4rem 0.8rem", fontSize: "0.78rem", fontWeight: 600, border: "none", cursor: "pointer", background: device === d.id ? "var(--primary)" : "transparent", color: device === d.id ? "var(--on-primary)" : "var(--text-secondary)" }}>{d.label}</button>
                 ))}
               </div>
               <span style={{ fontSize: "0.78rem", color: "var(--text-tertiary)" }}>Ctrl/Cmd+Z undo · Ctrl/Cmd+Shift+Z redo</span>

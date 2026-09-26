@@ -26,6 +26,18 @@ colors:
   info-light: "#dbeafe"
   workbench-amber: "#f59e0b"
   muted: "#716d68"
+on-colors:
+  # Text/icon colour to place ON a solid brand or semantic fill. Never use a
+  # literal #fff on a fill - these flip per theme and per accent.
+  on-primary-light: "#ffffff"
+  on-primary-dark: "#0b0a09"
+  on-success: "#0b0a09"
+  on-warning-light: "#ffffff"
+  on-warning-dark: "#0b0a09"
+  on-danger-light: "#ffffff"
+  on-danger-dark: "#0b0a09"
+  on-info-light: "#ffffff"
+  on-info-dark: "#0b0a09"
 typography:
   display:
     fontFamily: "Archivo, Sora, system-ui, sans-serif"
@@ -153,6 +165,24 @@ The palette is a warm-neutral canvas with one purposeful orange accent. Semantic
 
 **The No-Gray Rule.** Neutral text is always warm-tinted (stone family), never generic gray. A workshop has warm light, not fluorescent.
 
+### Text on Solid Fills
+
+Any text or icon placed on a **solid** brand or semantic fill must use the matching `--on-*` token, never a literal `#fff`:
+
+| Fill | Token | Light theme | Dark theme |
+| --- | --- | --- | --- |
+| `--primary` | `--on-primary` | `#ffffff` (5.18:1) | `#0b0a09` (7.06:1) |
+| `--success` | `--on-success` | `#0b0a09` (6.0:1) | `#0b0a09` (8.68:1) |
+| `--warning` | `--on-warning` | `#ffffff` (4.92:1) | `#0b0a09` (12.92:1) |
+| `--danger` | `--on-danger` | `#ffffff` (4.83:1) | `#0b0a09` (5.26:1) |
+| `--info` | `--on-info` | `#ffffff` (5.17:1) | `#0b0a09` (7.78:1) |
+
+**Why a token and not a literal.** Till Orange is `#c2410c` in light but `#f97316` in dark. White text is correct on the first and fails at **2.8:1** on the second. Because the accent is also themeable (orange / green / purple / merchant brand), the correct text colour is a property of the fill, not of the component — so it is expressed once as a token and inherited. The same holds for the semantic set: every dark-theme semantic fill is bright enough that ink wins.
+
+Verified by rendering all four accent themes in both modes: `--on-*` clears 4.5:1 on both the base fill and its hover state.
+
+**Gradients are not tokens.** `--brand-gradient-b` is deliberately bright (`#fbbf24`, `#a3e635`, `#22d3ee`) and white text over it fails in *every* theme. A gradient hero therefore spans `--primary` → `--primary-hover` (a range where one text colour works) rather than reaching for the decorative gradient stop. Reserve `--brand-gradient-*` for non-text decoration.
+
 ## Typography
 
 **Display Font:** Archivo (with Sora, system-ui fallback)
@@ -207,11 +237,11 @@ Inputs use a 3px focus ring (`box-shadow: 0 0 0 3px var(--primary-subtle)`) — 
 
 ### Buttons
 - **Shape:** gently rounded (8px radius).
-- **Primary:** Till Orange fill, surface-color text. Padding 0.5rem 1.25rem. Dark theme: black text on orange for ~8:1 contrast.
+- **Primary:** Till Orange fill, `--on-primary` text. Padding 0.5rem 1.25rem. The token flips to ink in dark theme, which is what keeps the button at ~7:1 instead of 2.8:1.
 - **Hover/Focus:** deepens to Till Orange Deep; 3px focus ring in primary-subtle.
 - **Secondary:** transparent fill, Ink text, Hairline Hover border. Hover: surface-hover background.
 - **Ghost:** transparent, Ink Secondary text, no border. Hover: surface-hover background, Ink text.
-- **Danger:** Danger fill, white text. Hover: #b91c1c.
+- **Danger:** Danger fill, `--on-danger` text. Hover: #b91c1c.
 - **Subtle:** primary-subtle background, Till Orange text. Hover: primary-light.
 
 **The Tactile Rule.** Buttons feel confident — solid fills on primary, hairline borders on secondary, clear focus rings on all. No ghost borders that vanish on dark themes.
@@ -231,12 +261,12 @@ Inputs use a 3px focus ring (`box-shadow: 0 0 0 3px var(--primary-subtle)`) — 
 
 ### Navigation
 - **Sidebar rail (admin):** full-viewport, sticky, 232px, card with filter search. Group labels are uppercase 0.68rem. Active items: primary-subtle background + Till Orange text + semibold. aria-current on active.
-- **Category bar (POS):** 160px rail, flat buttons. Active: Till Orange fill, surface text. aria-pressed on active.
+- **Category bar (POS):** 160px rail, flat buttons. Active: Till Orange fill, `--on-primary` text. aria-pressed on active.
 - **Top nav (storefront):** sticky header, springboard category dropdown, search, cart badge.
 
 ### Chips / Badges
-- **Filter chips:** pill (full radius), Hairline border, Ink Secondary text. Active: Till Orange fill, surface text.
-- **Count badges:** full radius, Danger fill, white text (cart, notification counts).
+- **Filter chips:** pill (full radius), Hairline border, Ink Secondary text. Active: Till Orange fill, `--on-primary` text.
+- **Count badges:** full radius, Danger fill, `--on-danger` text (cart, notification counts).
 - **Status pills:** semantic light background + semantic text color (success/warning/danger/info).
 
 ### Stat Cards
@@ -251,6 +281,7 @@ Inputs use a 3px focus ring (`box-shadow: 0 0 0 3px var(--primary-subtle)`) — 
 - **Do** use Till Orange on ≤10% of any screen — its rarity is its force.
 - **Do** use warm stone neutrals, never generic gray, in both themes.
 - **Do** use `tabular-nums` on all monetary values so digits don't jitter.
+- **Do** pair a solid fill with its `--on-*` token; never hardcode `#fff` on a fill.
 - **Do** keep touch targets ≥32px on Operate surfaces, ≥44px on customer-facing surfaces.
 - **Do** pair Archivo for display/headlines with Sora for body — never swap them.
 - **Do** design dark mode as a composed warm-black world, not a mechanical inversion.
@@ -262,3 +293,10 @@ Inputs use a 3px focus ring (`box-shadow: 0 0 0 3px var(--primary-subtle)`) — 
 - **Don't** use emoji as icons — draw SVGs with one stroke and one weight.
 - **Don't** animate every section entrance — one authored moment per page, reduced-motion safe.
 - **Don't** use Sora for display headlines — that's Archivo's role; Sora is the body voice.
+- **Don't** put white text on `--primary` or a semantic fill — use the `--on-*` token.
+
+## Known Limits
+
+- **Merchant brand colours are not contrast-solved.** The dynamic brand theme sets `--on-primary` from the theme (white in light, ink in dark), which is correct for the Till Orange default but only a heuristic for an arbitrary merchant-picked hue. A merchant who selects a pale brand colour in light theme, or a deep one in dark, can still produce a sub-AA pairing. The real fix is to resolve the on-colour at runtime from the chosen hex (WCAG relative-luminance pick, as used for the values tabulated above) when the brand is saved, rather than inferring it from the theme. Not yet implemented.
+- **Gradient heroes cannot use `--on-*`.** A multi-hue gradient has no single correct text colour; the amazon/jumia heroes were constrained to `--primary` → `--primary-hover` to stay AA-safe instead of using `--brand-gradient-b`.
+- **Contrast is verified by rendered-DOM audit, not by unit test.** The numbers in this document come from a Playwright pass that walks computed styles across both themes. There is no CI job enforcing them, so a future token edit can regress silently.
