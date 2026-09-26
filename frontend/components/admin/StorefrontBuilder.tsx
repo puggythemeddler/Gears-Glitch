@@ -10,6 +10,7 @@ import Icon from "@/components/icons";
 import { Spinner, ErrorMsg } from "./shared";
 import MotionPanel from "./MotionPanel";
 import { createHistory, pushHistory, undoHistory, redoHistory, canUndo, canRedo } from "@/lib/history";
+import { promptDialog, confirmDialog } from "@/components/ConfirmDialog";
 import type { HistoryState } from "@/lib/history";
 import { isSafeHref } from "@/lib/links";
 
@@ -347,10 +348,16 @@ export default function StorefrontBuilder() {
     finally { setSaving(false); }
   }
 
-  function selectLayout(id: number) {
+  async function selectLayout(id: number) {
     if (id === selectedId) return;
     if (dirty) {
-      if (!window.confirm("You have unsaved changes. Discard them?")) return;
+      const discard = await confirmDialog({
+        title: "Discard unsaved changes?",
+        message: "You have unsaved changes that will be lost.",
+        confirmLabel: "Discard changes",
+        danger: true,
+      });
+      if (!discard) return;
     }
     loadSelected(id);
   }
@@ -426,7 +433,14 @@ export default function StorefrontBuilder() {
   }
 
   async function createLayout() {
-    const baseLabel = window.prompt("Name your new layout:", "My Custom Layout");
+    const baseLabel = await promptDialog({
+      title: "New layout",
+      message: "Name your layout. You can change this later.",
+      label: "Layout name",
+      placeholder: "My Custom Layout",
+      defaultValue: "My Custom Layout",
+      confirmLabel: "Create layout",
+    });
     if (!baseLabel) return;
     const slug = baseLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40);
     const key = "custom-" + (slug || "layout");
@@ -478,7 +492,13 @@ export default function StorefrontBuilder() {
 
   async function deleteLayout() {
     if (!selectedId) return;
-    if (!window.confirm("Delete this layout? This cannot be undone.")) return;
+    const confirmed = await confirmDialog({
+      title: "Delete this layout?",
+      message: "This cannot be undone.",
+      confirmLabel: "Delete layout",
+      danger: true,
+    });
+    if (!confirmed) return;
     setSaving(true); setMsg("");
     try {
       await api(`/api/admin/layouts/${selectedId}`, { method: "DELETE" });
