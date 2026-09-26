@@ -257,7 +257,7 @@ describe("Website Studio layouts API over real HTTP + PostgreSQL (DB)", { skip: 
     const anonList = await api("/api/layouts");
     assert.equal(anonList.res.status, 401, `expected 401 for an anonymous layout list, got ${anonList.res.status}`);
     assert.ok(
-      !JSON.stringify(anonList.data || {}).includes(configFor("A").hero.headline),
+      !JSON.stringify(anonList.data || {}).includes(configFor("A").hero.title),
       "an anonymous response must not leak draft layout config",
     );
 
