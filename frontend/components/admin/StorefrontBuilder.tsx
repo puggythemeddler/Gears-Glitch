@@ -894,7 +894,9 @@ export default function StorefrontBuilder() {
                   maxWidth: deviceWidth ?? "100%",
                   maxHeight: "70vh",
                   position: "relative",
-                  transition: "max-width 0.25s ease",
+                  // No width transition: the Desktop/Tablet/Mobile toggle resizes a
+                  // canvas full of product cards, so animating it re-runs layout on
+                  // every frame. The switch is discrete and reads fine as a jump.
                 }}
               >
                 {showPreview ? (

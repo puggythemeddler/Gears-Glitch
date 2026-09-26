@@ -4124,18 +4124,21 @@ a.about-contact-card:hover {
   padding-top: 1.5rem;
 }
 .dy-hero-dot {
-  width: 28px;
+  width: 40px;
   height: 4px;
   padding: 0;
   border: 0;
   border-radius: 9999px;
   background: var(--border-hover);
   cursor: pointer;
-  transition: background 0.25s ease, width 0.25s ease;
+  /* The active dot is wider, but animating `width` re-runs layout every frame.
+     A fixed 40px box scaled on the compositor gives the same 28px/40px result. */
+  transform: scaleX(0.7);
+  transition: background 0.25s ease, transform 0.25s ease;
 }
 .dy-hero-dot.is-active {
   background: var(--primary);
-  width: 40px;
+  transform: scaleX(1);
 }
 
 /* Original-layout extras (reuses the editorial hero structure) */
