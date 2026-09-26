@@ -661,6 +661,8 @@ code, pre {
   white-space: nowrap;
   flex-shrink: 0;
   min-width: 0;
+  /* keep the header logo a comfortable touch target */
+  min-height: 24px;
 }
 
 @media (max-width: 768px) {
@@ -1155,6 +1157,14 @@ code, pre {
   align-items: center;
   gap: var(--space-2);
   color: var(--text-tertiary);
+}
+
+/* Each crumb is a link; give it a 24px touch target without moving the
+   surrounding breadcrumb row. */
+.breadcrumbs li a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 
 .breadcrumbs li:not(:last-child)::after {

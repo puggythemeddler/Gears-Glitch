@@ -412,7 +412,18 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                   <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>{col.title}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
                     {(col.links || []).map((link: any, li: number) => (
-                      <a key={li} href={link.href} style={{ fontSize: "0.85rem" }}>{link.label}</a>
+                      // minHeight/padding keep each link at a 24px+ tap target on
+                      // touch, without changing the footer's visual rhythm.
+                      <a
+                        key={li}
+                        href={link.href}
+                        style={{
+                          fontSize: "0.85rem",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          minHeight: 24,
+                        }}
+                      >{link.label}</a>
                     ))}
                   </div>
                 </div>

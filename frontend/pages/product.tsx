@@ -295,7 +295,7 @@ export default function ProductPage() {
           ) : null}
           {product.specs && product.specs.length > 0 && (
             <div className="product-detail__specs">
-              <h3>Specifications</h3>
+              <h2>Specifications</h2>
               <table>
                 <tbody>
                   {product.specs.map((s, i) => {

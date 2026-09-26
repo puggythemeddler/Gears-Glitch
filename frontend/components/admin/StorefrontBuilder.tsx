@@ -803,7 +803,12 @@ export default function StorefrontBuilder() {
       <div className="sb-toolbar">
         <div className="sb-toolbar-left">
           <h1 style={{ margin: 0 }}>Website Studio</h1>
-          <select value={selectedId ?? ""} onChange={(e) => selectLayout(Number(e.target.value))} style={{ ...inputStyle, width: 220 }}>
+          <select
+            value={selectedId ?? ""}
+            onChange={(e) => selectLayout(Number(e.target.value))}
+            aria-label="Layout to edit"
+            style={{ ...inputStyle, width: 220 }}
+          >
             <option value="" disabled>Select a custom layout…</option>
             {dynamicLayouts.map((l) => <option key={l.id} value={l.id}>{l.label}{l.is_active === 1 ? " (live)" : ""}</option>)}
           </select>

@@ -38,7 +38,7 @@ export default function RepairsPage() {
           const booking = p.booking;
           const inner = (
             <>
-              <h3>{p.title}</h3>
+              <h2>{p.title}</h2>
               <p>{p.description}</p>
               {booking && (
                 <div style={{ marginTop: "0.75rem" }}>

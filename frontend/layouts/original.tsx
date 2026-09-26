@@ -337,7 +337,7 @@ export function HomePage({ products, categories, hero }: {
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
           </div>
           <div>
-            <h3>Shop premium tech</h3>
+            <h2>Shop premium tech</h2>
             <p>Gaming PCs, laptops, graphics cards, servers and printers with nationwide delivery.</p>
           </div>
           <Link href="/pc" className="btn btn-primary btn-sm">Shop now</Link>
@@ -347,7 +347,7 @@ export function HomePage({ products, categories, hero }: {
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
           </div>
           <div>
-            <h3>Need a repair?</h3>
+            <h2>Need a repair?</h2>
             <p>Expert laptop, PC and device repairs with real-time tracking. Most repairs in 24-48h.</p>
           </div>
           <Link href="/repairs" className="btn btn-secondary btn-sm">Book a repair</Link>
