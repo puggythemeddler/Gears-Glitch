@@ -280,6 +280,8 @@ describe("Website Studio layouts API over real HTTP + PostgreSQL (DB)", { skip: 
     editedText.content = "Rewritten body copy";
     edited.theme = "kenyan";
 
+    const publishedBefore = (await rowFor(layoutA.id)).config;
+
     const saved = await api(`/api/admin/layouts/${layoutA.id}`, {
       method: "PUT",
       body: JSON.stringify({ label: `QA Layout A edited ${runId}`, description: "Edited description", config: edited }),
@@ -290,17 +292,21 @@ describe("Website Studio layouts API over real HTTP + PostgreSQL (DB)", { skip: 
     const row = await rowFor(layoutA.id);
     assert.equal(row.label, `QA Layout A edited ${runId}`, "label persisted in the database");
     assert.equal(row.description, "Edited description");
-    assert.deepEqual(row.config, edited, "design + reordered sections persisted");
-    assert.equal(row.config.theme, "kenyan");
-    assert.equal(row.config.sections.find((s: any) => s.type === "text").content, "Rewritten body copy");
-    assert.equal(row.config.sections.find((s: any) => s.type === "spacer").height, 0, "spacer height 0 is not silently defaulted");
+    // Saving stages the edit as a draft. The published config is what the
+    // storefront renders, so it must be untouched until publish.
+    assert.deepEqual(row.draft_config, edited, "design + reordered sections persisted as a draft");
+    assert.equal(row.draft_config.theme, "kenyan");
+    assert.equal(row.draft_config.sections.find((s: any) => s.type === "text").content, "Rewritten body copy");
+    assert.equal(row.draft_config.sections.find((s: any) => s.type === "spacer").height, 0, "spacer height 0 is not silently defaulted");
+    assert.deepEqual(row.config, publishedBefore, "saving must not mutate the published config the storefront renders");
 
     const refetched = await api(`/api/admin/layouts/${layoutA.id}`, {}, adminToken);
-    assert.deepEqual(refetched.data.config, edited, "reload returns the updated values");
+    assert.equal(refetched.data.has_unpublished, true, "the client is told it has unpublished edits");
+    assert.deepEqual(refetched.data.editing, edited, "reload returns the draft for editing");
     assert.equal(refetched.data.label, `QA Layout A edited ${runId}`);
-    assert.equal(refetched.data.config.sections.find((s: any) => s.type === "text").content, "Rewritten body copy");
-    assert.ok(!JSON.stringify(refetched.data.config).includes("Original body copy A-edited"), "the pre-edit copy is not restored");
-    assert.equal(refetched.data.config.sections[0].type, "spacer", "the new section order is what reload returns");
+    assert.equal(refetched.data.editing.sections.find((s: any) => s.type === "text").content, "Rewritten body copy");
+    assert.ok(!JSON.stringify(refetched.data.editing).includes("Original body copy A-edited"), "the pre-edit copy is not restored");
+    assert.equal(refetched.data.editing.sections[0].type, "spacer", "the new section order is what reload returns");
   });
 
   it("publishes Layout A and the database marks it as the live layout", async () => {
@@ -433,6 +439,71 @@ describe("Website Studio layouts API over real HTTP + PostgreSQL (DB)", { skip: 
     assert.ok(row, "the live layout still exists");
     assert.equal(row.is_active, 1, "the live layout is still live");
     assert.equal(await setting("store_layout"), keyB);
+  });
+
+  it("keeps edits to the live layout off the storefront until publish", async () => {
+    // Guards the original defect: saving used to write straight into `config`,
+    // so an edit to the active layout became public on save while the builder
+    // still labelled it "SAVED DRAFT".
+    const liveKey = await setting("store_layout");
+    const liveRow = await queryOne("SELECT * FROM storefront_layouts WHERE layout_key = $1", [liveKey]);
+    assert.ok(liveRow, `no row for the live layout key ${liveKey}`);
+    assert.equal(liveRow.layout_type, "dynamic", "this regression needs a dynamic live layout");
+
+    const canary = `UNPUBLISHED_${runId}_${Date.now().toString(36)}`;
+    const edited = configFor(canary, 0);
+    const template = edited.sections.find((s: any) => s.type === "text") as any;
+    assert.ok(template, "configFor() produces a text section to clone");
+    edited.sections = [{ ...template, title: canary, content: "This must not be public yet" }];
+
+    const publishedBefore = liveRow.config;
+
+    const saved = await api(`/api/admin/layouts/${liveRow.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ config: edited }),
+    }, adminToken);
+    assert.equal(saved.res.status, 200, `save failed: ${JSON.stringify(saved.data)}`);
+    assert.equal(saved.data.has_unpublished, true, "saving an edit must be reported as unpublished");
+
+    // The storefront must not have moved.
+    const liveCfg = await queryOne("SELECT config, is_active FROM storefront_layouts WHERE id = $1", [liveRow.id]);
+    assert.equal(liveCfg.is_active, 1, "the layout is still live");
+    assert.deepEqual(liveCfg.config, publishedBefore, "saving an edit to the live layout must not change the published config");
+
+    const publicConfig = await (await fetch(`${base}/api/storefront-config`)).json();
+    assert.ok(
+      !JSON.stringify(publicConfig).includes(canary),
+      "an unpublished edit must not appear in the public storefront config",
+    );
+
+    // Publishing is what makes it public.
+    const published = await api(`/api/admin/layouts/${liveRow.id}/activate`, { method: "PUT" }, adminToken);
+    assert.equal(published.res.status, 200, `publish failed: ${JSON.stringify(published.data)}`);
+
+    const afterRow = await rowFor(liveRow.id);
+    assert.equal(afterRow.draft_config, null, "publishing consumes the staged draft");
+    assert.ok(
+      JSON.stringify(afterRow.config).includes(canary),
+      "publishing promotes the draft into the published config",
+    );
+
+    const publicAfter = await (await fetch(`${base}/api/storefront-config`)).json();
+    assert.ok(
+      JSON.stringify(publicAfter).includes(canary),
+      "the published edit is now visible on the storefront",
+    );
+
+    // Leave no trace: restore the published config through the same public path
+    // so the suite's final single-live-layout invariant still holds.
+    await api(`/api/admin/layouts/${liveRow.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ config: publishedBefore }),
+    }, adminToken);
+    await api(`/api/admin/layouts/${liveRow.id}/activate`, { method: "PUT" }, adminToken);
+
+    const restored = await rowFor(liveRow.id);
+    assert.deepEqual(restored.config, publishedBefore, "the live layout is back to its published config");
+    assert.equal(restored.draft_config, null, "no draft is left behind");
   });
 
   it("refuses to mutate or delete built-in and static layouts", async () => {
