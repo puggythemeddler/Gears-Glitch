@@ -401,6 +401,20 @@ html {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   overflow-x: clip;
+  /* Set the stack on the root so nothing can fall back to the UA default
+     (Times) - body alone leaves portals and stray nodes unprotected. */
+  font-family: var(--font-sans);
+}
+
+/* Form controls do not inherit font-family from the UA stylesheet, so they
+   default to Arial unless told otherwise. Without this the header search
+   button, the Categories springboard and the mobile menu button render in a
+   different typeface from the rest of the product. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 body {
@@ -989,6 +1003,8 @@ code, pre {
   color: var(--text);
   border-radius: var(--radius-md);
   line-height: 1;
+  /* was inheriting the UA button default of 13.33px, which is off-scale */
+  font-size: var(--text-sm);
 }
 
 .mobile-menu-toggle:hover { background: var(--surface-hover); }
@@ -1011,6 +1027,43 @@ code, pre {
 }
 
 .main-nav-mobile.open { display: flex; }
+
+/* These must live AFTER the base .mobile-menu-toggle / .main-nav-mobile rules
+   above. The responsive block near the top of this file sets
+   `.mobile-menu-toggle { display: block }` at the same specificity but earlier
+   in source order, so the base `display: none` always won and the mobile nav
+   button never rendered. Keep the override here, below the base rule. */
+@media (max-width: 768px) {
+  .mobile-menu-toggle { display: block; }
+
+  /* The search form carries `flex-basis: 100%; order: 4` at this width, which
+     only takes effect once the header row is allowed to wrap. Without this it
+     stayed inline, squeezed to ~92px, and header-right overlapped the brand
+     and Categories button - making category navigation untappable. */
+  .header-inner { flex-wrap: wrap; }
+}
+
+/* Below 480px the brand, Categories, cart, wishlist, sign-in and the menu
+   button no longer fit on one row, and a third band pushed the sticky header
+   to 130px on a phone. Shed the settings button here - its theme and currency
+   controls are mirrored into the mobile nav panel - so the header stays two
+   rows. Cart, wishlist, sign-in and the menu button are kept. */
+@media (max-width: 480px) {
+  .header-settings-wrap { display: none; }
+}
+
+.mobile-nav-settings {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  color: var(--text);
+}
+
+.mobile-nav-settings-value {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
 
 .main-nav-mobile a,
 .main-nav-mobile button.nav-btn {
@@ -3692,7 +3745,12 @@ a.about-contact-card:hover {
 
   .auth-tabs { flex-direction: column; }
 
-  .header-left { gap: var(--space-3); }
+  .header-left { gap: var(--space-2); }
+
+  /* Row 1 needs 339px (brand 54 + Categories 52 + icon links 92 + sign-in 71
+     + menu 34). Tightening both clusters by 12px brings it to 327px so common
+     360px phones keep a two-row header instead of wrapping to three. */
+  .header-right { gap: var(--space-1); }
 
   .pos-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 

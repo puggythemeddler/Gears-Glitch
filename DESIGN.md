@@ -263,6 +263,8 @@ Inputs use a 3px focus ring (`box-shadow: 0 0 0 3px var(--primary-subtle)`) — 
 - **Sidebar rail (admin):** full-viewport, sticky, 232px, card with filter search. Group labels are uppercase 0.68rem. Active items: primary-subtle background + Till Orange text + semibold. aria-current on active.
 - **Category bar (POS):** 160px rail, flat buttons. Active: Till Orange fill, `--on-primary` text. aria-pressed on active.
 - **Top nav (storefront):** sticky header, springboard category dropdown, search, cart badge.
+- **Top nav under 768px:** the header wraps to two bands - brand + Categories / cart + wishlist + sign-in + menu on row one, full-width search on row two. The mobile menu button and the springboard must be declared *after* their base `display: none` rules in the cascade, otherwise the later base rule wins and the button never renders.
+- **Top nav under 480px:** the settings button is dropped from the header and its theme and currency controls are mirrored into the mobile nav panel, so the header stays two bands instead of three. At 320px row one still needs ~327px and the header becomes three bands - accepted, since the controls remain reachable and nothing overlaps.
 
 ### Chips / Badges
 - **Filter chips:** pill (full radius), Hairline border, Ink Secondary text. Active: Till Orange fill, `--on-primary` text.

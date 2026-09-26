@@ -274,7 +274,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           <div className="header-settings-wrap" style={{ position: "relative" }}>
             <button
               type="button"
-              className="btn btn-sm btn-ghost"
+              className="btn btn-sm btn-ghost header-settings-btn"
               onClick={() => setSettingsOpen((o) => !o)}
               aria-expanded={settingsOpen}
               aria-label="Display settings"
@@ -357,6 +357,30 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             )}
           </Link>
         ))}
+        <div className="mobile-nav-divider" />
+        {/* On phones the header sheds the settings button to keep itself two
+            rows tall, so theme and currency have to live here instead. */}
+        <div className="mobile-nav-settings">
+          <span className="header-settings-label">Theme</span>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleDark}
+            aria-pressed={isDark}
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            <span className="theme-toggle-track">
+              <span className="theme-toggle-thumb" />
+            </span>
+          </button>
+          <span className="mobile-nav-settings-value">{isDark ? "Dark" : "Light"}</span>
+        </div>
+        {multiCurrencyEnabled && (
+          <div className="mobile-nav-settings">
+            <span className="header-settings-label">Currency</span>
+            <CurrencySelector />
+          </div>
+        )}
         <div className="mobile-nav-divider" />
         {isLoggedIn ? (
           <>
