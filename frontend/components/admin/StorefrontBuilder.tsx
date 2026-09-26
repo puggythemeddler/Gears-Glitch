@@ -22,6 +22,9 @@ interface LayoutRow {
   description: string;
   layout_type: "static" | "dynamic";
   config: any;
+  draft_config: any;
+  has_unpublished: boolean;
+  editing: any;
   is_active: number;
 }
 
@@ -222,6 +225,8 @@ export default function StorefrontBuilder() {
   const [showPreview, setShowPreview] = useState(false);
   const [previewAnim, setPreviewAnim] = useState<number | "hero" | null>(null);
   const [dirty, setDirty] = useState(false);
+  // True when the staged draft has edits that are not live yet.
+  const [unpublished, setUnpublished] = useState(false);
   const [device, setDevice] = useState<Device>("desktop");
   const [paletteQuery, setPaletteQuery] = useState("");
   const [tab, setTab] = useState<"content" | "design" | "layout">("content");
@@ -329,10 +334,13 @@ export default function StorefrontBuilder() {
     setSaving(true);
     try {
       const row = await api<LayoutRow>(`/api/admin/layouts/${id}`);
-      const newConfig = row.config && typeof row.config === "object" ? row.config : DEFAULT_CONFIG;
+      // Edit the staged draft when one exists, otherwise the published config.
+      const source = row.editing ?? row.draft_config ?? row.config;
+      const newConfig = source && typeof source === "object" ? source : DEFAULT_CONFIG;
       setLabel(row.label);
       setDescription(row.description || "");
       setConfig(newConfig);
+      setUnpublished(!!row.has_unpublished);
       setDirty(false);
       resetHistory({ label: row.label, description: row.description || "", config: newConfig });
     } catch (e: any) { setError(e.message || "Failed to load layout."); }
@@ -441,8 +449,9 @@ export default function StorefrontBuilder() {
     try {
       await api(`/api/admin/layouts/${selectedId}`, { method: "PUT", body: JSON.stringify({ label, description, config }) });
       setDirty(false);
+      setUnpublished(true);
       setHist((h) => pushHistory(h, { label, description, config }));
-      setMsg("Draft saved.");
+      setMsg("Draft saved. Your storefront is unchanged until you publish.");
       refreshLayouts();
     } catch (e: any) { setMsg("Failed: " + e.message); }
     finally { setSaving(false); }
@@ -459,6 +468,7 @@ export default function StorefrontBuilder() {
       }
       await api(`/api/admin/layouts/${selectedId}/activate`, { method: "PUT" });
       await loadLayouts();
+      setUnpublished(false);
       refreshLayouts();
       refreshConfig();
       setMsg("Layout published — it's now live on your storefront.");
@@ -781,11 +791,11 @@ export default function StorefrontBuilder() {
         </div>
         {selectedId && (
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-            {isActive
+            {isActive && !dirty && !unpublished
               ? <span className="sb-status" style={{ background: "var(--success-light)", color: "var(--success-text)" }}>LIVE</span>
               : dirty
                 ? <span className="sb-status" style={{ background: "var(--warning-light)", color: "var(--warning-text)" }}>UNSAVED DRAFT</span>
-                : <span className="sb-status" style={{ background: "var(--surface-hover)", color: "var(--text-secondary)" }}>SAVED DRAFT</span>}
+                : <span className="sb-status" style={{ background: "var(--warning-light)", color: "var(--warning-text)" }}>{isActive ? "LIVE + UNPUBLISHED EDITS" : "SAVED DRAFT"}</span>}
             <RippleButton onClick={saveLayout} loading={saving} variant={dirty ? "primary" : "secondary"}>{!dirty ? "Saved" : "Save Draft"}</RippleButton>
             <RippleButton onClick={publishLayout} loading={saving} variant={isActive ? "secondary" : "primary"}>{isActive ? "Published ✓" : "Publish to Storefront"}</RippleButton>
             <RippleButton onClick={deleteLayout} loading={saving} variant="danger">Delete</RippleButton>

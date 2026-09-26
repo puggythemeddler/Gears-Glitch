@@ -1113,7 +1113,15 @@ CREATE TABLE IF NOT EXISTS storefront_layouts (
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
-);
+  );
+
+-- Draft/publish separation for the Website Studio.
+--   config       = the published config the storefront renders
+--   draft_config = the working copy an admin is editing
+-- Saving a layout writes draft_config; publishing copies it over config. NULL
+-- means "no unpublished edits", so existing rows keep rendering from config
+-- and nothing changes until an admin actually saves a draft.
+ALTER TABLE storefront_layouts ADD COLUMN IF NOT EXISTS draft_config JSONB;
 
 CREATE TABLE IF NOT EXISTS branch_subscriptions (
   branch_id INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,

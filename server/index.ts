@@ -1333,6 +1333,9 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("
     const validLayout = await queryOne("SELECT id FROM storefront_layouts WHERE layout_key = $1", [layout]);
     if (!validLayout) { res.status(400).json({ error: "Invalid layout key." }); return; }
     await setStoreSetting("store_layout", layout);
+    // Same publish semantics as /api/admin/layouts/:id/activate, so switching
+    // layouts here never strands a staged draft or serves a stale config.
+    await query("UPDATE storefront_layouts SET config = COALESCE(draft_config, config), draft_config = NULL, updated_at = NOW()::text WHERE id = $1", [validLayout.id]);
     await query("UPDATE storefront_layouts SET is_active = 0");
     await query("UPDATE storefront_layouts SET is_active = 1 WHERE layout_key = $1", [layout]);
   }
@@ -1369,15 +1372,31 @@ app.get("/api/layouts", adminAuthMiddleware, requirePermission("settings:view"),
   res.json(rows.map((r: any) => ({ ...r, config: typeof r.config === "string" ? JSON.parse(r.config) : r.config })));
 }));
 
+// Present a layout row to the client, surfacing the staged draft (if any) plus
+// an explicit has_unpublished flag so the builder can label its own state
+// honestly instead of guessing from is_active.
+const presentLayout = (row: any) => {
+  if (!row) return row;
+  const published = typeof row.config === "string" ? JSON.parse(row.config) : row.config;
+  const draft = typeof row.draft_config === "string" ? JSON.parse(row.draft_config) : row.draft_config;
+  return {
+    ...row,
+    config: published,
+    draft_config: draft ?? null,
+    has_unpublished: draft != null,
+    editing: draft ?? published,
+  };
+};
+
 app.get("/api/admin/layouts", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
   const rows = await queryAll("SELECT * FROM storefront_layouts ORDER BY sort_order ASC, id ASC");
-  res.json(rows.map((r: any) => ({ ...r, config: typeof r.config === "string" ? JSON.parse(r.config) : r.config })));
+  res.json(rows.map((r: any) => presentLayout(r)));
 }));
 
 app.get("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (req: Request, res: Response) => {
   const row = await queryOne("SELECT * FROM storefront_layouts WHERE id = $1", [Number(req.params.id)]);
   if (!row) { res.status(404).json({ error: "Layout not found." }); return; }
-  res.json({ ...row, config: typeof row.config === "string" ? JSON.parse(row.config) : row.config });
+  res.json(presentLayout(row));
 }));
 
 app.post("/api/admin/layouts", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
@@ -1391,7 +1410,7 @@ app.post("/api/admin/layouts", adminAuthMiddleware, requirePermission("settings:
     `INSERT INTO storefront_layouts (layout_key, label, description, layout_type, config, sort_order) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
     [String(layoutKey).trim(), String(label).trim(), String(description || "").trim(), layoutType === "dynamic" ? "dynamic" : "static", JSON.stringify(config || {}), (maxOrder?.mx || 0) + 1]
   );
-  res.status(201).json({ ...row, config: typeof row.config === "string" ? JSON.parse(row.config) : row.config });
+  res.status(201).json(presentLayout(row));
 }));
 
 app.put("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
@@ -1405,11 +1424,15 @@ app.put("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settin
   let idx = 1;
   if (label !== undefined) { updates.push(`label = $${idx}`); params.push(String(label).trim()); idx++; }
   if (description !== undefined) { updates.push(`description = $${idx}`); params.push(String(description).trim()); idx++; }
-  if (config !== undefined) { updates.push(`config = $${idx}`); params.push(JSON.stringify(config)); idx++; }
+  // Stage the edit in draft_config rather than config. config is what the
+  // storefront renders, so writing there would push an in-progress change live
+  // the moment it was saved - including for the currently active layout, which
+  // the builder used to label "SAVED DRAFT" while it was already public.
+  if (config !== undefined) { updates.push(`draft_config = $${idx}`); params.push(JSON.stringify(config)); idx++; }
   updates.push(`updated_at = NOW()::text`);
   params.push(id);
   const row = await queryOne(`UPDATE storefront_layouts SET ${updates.join(", ")} WHERE id = $${idx} RETURNING *`, params);
-  res.json({ ...row, config: typeof row.config === "string" ? JSON.parse(row.config) : row.config });
+  res.json(presentLayout(row));
 }));
 
 app.delete("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
@@ -1426,6 +1449,9 @@ app.put("/api/admin/layouts/:id/activate", adminAuthMiddleware, requirePermissio
   const id = Number(req.params.id);
   const existing = await queryOne("SELECT * FROM storefront_layouts WHERE id = $1", [id]);
   if (!existing) { res.status(404).json({ error: "Layout not found." }); return; }
+  // Publishing promotes the staged draft over the published config, then flips
+  // the active pointer. This is the only path that makes an edit public.
+  await query("UPDATE storefront_layouts SET config = COALESCE(draft_config, config), draft_config = NULL, updated_at = NOW()::text WHERE id = $1", [id]);
   await query("UPDATE storefront_layouts SET is_active = 0");
   await query("UPDATE storefront_layouts SET is_active = 1 WHERE id = $1", [id]);
   await setStoreSetting("store_layout", (existing as any).layout_key);
