@@ -251,7 +251,24 @@ function adoptSession(role: "customer" | "staff" | "provider", staffRole: string
 // A-1: bootstrap the session from the httpOnly cookie (server-side truth). Call on
 // app mount. Falls back to legacy localStorage JWT so existing sessions survive
 // the rollout; once a cookie session is confirmed we purge the legacy token.
-export async function bootstrapSession(): Promise<void> {
+//
+// Concurrent callers share a single in-flight request: several providers mount in
+// the same commit and React runs child effects before parent effects, so without
+// this the session would be fetched more than once and a caller could read a
+// half-initialised session. The memo is dropped as soon as it settles so a later
+// call (e.g. after login/logout without a reload) still re-reads the server.
+let sessionBootstrapInFlight: Promise<void> | null = null;
+
+export function bootstrapSession(): Promise<void> {
+  if (!sessionBootstrapInFlight) {
+    sessionBootstrapInFlight = runSessionBootstrap().finally(() => {
+      sessionBootstrapInFlight = null;
+    });
+  }
+  return sessionBootstrapInFlight;
+}
+
+async function runSessionBootstrap(): Promise<void> {
   try {
     const data = await api<{ role?: string | null; staffRole?: string; roleName?: string; username?: string; email?: string; name?: string; permissions?: string[] }>("/api/auth/session");
     if (data?.role) {

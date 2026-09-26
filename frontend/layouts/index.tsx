@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { Product } from "@/lib/types";
-import { api } from "@/lib/api";
+import { api, bootstrapSession, hasStaffSession } from "@/lib/api";
 import * as original from "./original";
 import * as amazon from "./amazon";
 import * as jumia from "./jumia";
@@ -123,8 +123,20 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
   }
 
   function refreshLayouts() {
-    api<LayoutMeta[]>("/api/layouts")
-      .then((d) => { if (d) setAllLayouts(d); })
+    // /api/layouts is an admin-only feed (full config for every layout, drafts
+    // included). Wait for the session bootstrap so the staff check is accurate,
+    // then skip the request entirely for visitors — otherwise every public page
+    // view would fire a guaranteed 401 and burn API rate-limit budget.
+    bootstrapSession()
+      .then(() => {
+        if (!hasStaffSession()) {
+          setAllLayouts([]);
+          return null;
+        }
+        return api<LayoutMeta[]>("/api/layouts").then((d) => {
+          if (d) setAllLayouts(d);
+        });
+      })
       .catch(() => {});
   }
 

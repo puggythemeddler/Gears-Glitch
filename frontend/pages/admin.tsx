@@ -2936,7 +2936,13 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
 
   useEffect(() => { load(); }, []);
 
-  const { allLayouts, refreshConfig } = useLayout();
+  const { allLayouts, refreshConfig, refreshLayouts } = useLayout();
+  // The provider skips the admin-only /api/layouts call for anonymous visitors,
+  // and it does not remount on client-side navigation into /admin. Re-fetch here
+  // so the layout switcher shows saved custom/dynamic layouts instead of silently
+  // falling back to the built-in static list. Mount-once: refreshLayouts is not
+  // referentially stable, so it must stay out of the dependency array.
+  useEffect(() => { refreshLayouts(); }, []);
   const layouts = allLayouts.length > 0
     ? allLayouts.map((l) => ({ key: l.layout_key, label: l.label, desc: l.description, type: l.layout_type, id: l.id, isActive: l.is_active }))
     : getLayoutList().map((l) => ({ ...l, type: "static" as const, id: 0, isActive: 0 }));

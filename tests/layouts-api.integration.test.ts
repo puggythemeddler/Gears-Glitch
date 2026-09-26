@@ -240,7 +240,7 @@ describe("Website Studio layouts API over real HTTP + PostgreSQL (DB)", { skip: 
     ], "section order is preserved");
   });
 
-  it("retrieves the layout through the admin and public endpoints without losing fields", async () => {
+  it("retrieves the layout through the admin and staff endpoints without losing fields, and refuses anonymous reads", async () => {
     const byId = await api(`/api/admin/layouts/${layoutA.id}`, {}, adminToken);
     assert.equal(byId.res.status, 200);
     assert.deepEqual(byId.data.config, configFor("A"));
@@ -251,11 +251,21 @@ describe("Website Studio layouts API over real HTTP + PostgreSQL (DB)", { skip: 
     assert.ok(found, "admin list includes the created layout");
     assert.equal(found.id, layoutA.id);
 
-    const publicList = await api("/api/layouts");
+    // /api/layouts feeds the Website Studio builder and returns every layout's
+    // full config (drafts included), so it is staff-only. An anonymous visitor
+    // must never be able to read unpublished draft content.
+    const anonList = await api("/api/layouts");
+    assert.equal(anonList.res.status, 401, `expected 401 for an anonymous layout list, got ${anonList.res.status}`);
+    assert.ok(
+      !JSON.stringify(anonList.data || {}).includes(configFor("A").hero.headline),
+      "an anonymous response must not leak draft layout config",
+    );
+
+    const publicList = await api("/api/layouts", {}, adminToken);
     assert.equal(publicList.res.status, 200);
     const pub = (publicList.data || []).find((l: any) => l.layout_key === keyA);
-    assert.ok(pub, "public layout list includes the created layout");
-    assert.deepEqual(pub.config, configFor("A"), "public config matches what was saved");
+    assert.ok(pub, "staff layout list includes the created layout");
+    assert.deepEqual(pub.config, configFor("A"), "returned config matches what was saved");
     assert.equal(pub.is_active, 0);
 
     const ordered = (adminList.data || []).map((l: any) => l.sort_order);
@@ -409,7 +419,8 @@ describe("Website Studio layouts API over real HTTP + PostgreSQL (DB)", { skip: 
 
     assert.equal(await rowFor(id), undefined, "the row is gone from PostgreSQL");
 
-    const publicList = await api("/api/layouts");
+    const publicList = await api("/api/layouts", {}, adminToken);
+    assert.equal(publicList.res.status, 200);
     assert.ok(!(publicList.data || []).some((l: any) => l.layout_key === keyDraft), "deleted draft does not reappear");
   });
 

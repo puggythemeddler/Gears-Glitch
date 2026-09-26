@@ -1353,7 +1353,12 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("
 
 // ============ STOREFRONT LAYOUTS REGISTRY ============
 
-app.get("/api/layouts", asyncHandler(async (_req: Request, res: Response) => {
+// Admin-only: this feeds the Website Studio builder and the admin layout
+// switcher, and returns every layout's full config JSONB — including drafts
+// that were never activated. It must never be readable by an anonymous
+// visitor, so it sits behind the same guard as /api/admin/layouts. The public
+// storefront renders from /api/storefront-config and never calls this.
+app.get("/api/layouts", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
   const rows = await queryAll("SELECT id, layout_key, label, description, layout_type, config, is_active, sort_order FROM storefront_layouts ORDER BY sort_order ASC, id ASC");
   res.json(rows.map((r: any) => ({ ...r, config: typeof r.config === "string" ? JSON.parse(r.config) : r.config })));
 }));
