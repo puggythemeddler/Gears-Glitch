@@ -348,21 +348,31 @@ export default function AdminPage() {
   // ---- URL sync: deep-linkable views (?view=repairs) with working Back ----
   const ALL_VIEW_KEYS = useMemo(() => new Set<string>(["dashboard", ...NAV_GROUPS.flatMap((g) => g.items.map((i) => i.key))]), []);
 
+  // router.query is empty until the router hydrates, so an incoming ?view= has to
+  // be read before the URL is written back. urlReady gates the write effect:
+  // without it the two effects race on a cold load and the write strips the deep
+  // link before the read can apply it, bouncing ?view=layout-builder to the
+  // dashboard. A warm sidebar click works only because the query arrives later.
+  const [urlReady, setUrlReady] = useState(false);
+
   useEffect(() => {
+    if (!router.isReady) return;
+    setUrlReady(true);
     const q = router.query.view;
     if (typeof q !== "string") return;
     if (q === "pos") { window.location.assign("/pos"); return; }
     if (ALL_VIEW_KEYS.has(q) && q !== view) setView(q as AdminView);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.query.view]);
+  }, [router.isReady, router.query.view]);
 
   useEffect(() => {
+    if (!urlReady) return;
     const current = typeof router.query.view === "string" ? router.query.view : "";
     if (current !== view) {
       router.replace({ pathname: "/admin", query: view === "dashboard" ? {} : { view } }, undefined, { shallow: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+  }, [urlReady, view]);
 
   const viewLabel = useMemo(() => {
     if (view === "dashboard") return "Dashboard";
