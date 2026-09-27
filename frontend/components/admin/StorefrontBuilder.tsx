@@ -839,7 +839,7 @@ export default function StorefrontBuilder() {
             reorder them, double-click any text on the canvas to edit it in place, then <strong>Publish</strong> to make it live.
             Built-in layouts (Original, Amazon, Jumia) are shown under <strong>Storefront</strong> and can't be edited here.
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "0.75rem", marginTop: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(180px, 100%), 1fr))", gap: "0.75rem", marginTop: "1rem" }}>
             {dynamicLayouts.map((l) => (
               <div key={l.id} className="panel" role="button" tabIndex={0} style={{ cursor: "pointer", margin: 0, border: l.is_active === 1 ? "2px solid var(--primary)" : "1px solid var(--border)" }} onClick={() => loadSelected(l.id)} onKeyDown={(e) => { if (e.key === "Enter") loadSelected(l.id); }}>
                 <div style={{ height: 80, borderRadius: 8, background: "var(--bg)", marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-tertiary)" }}><Icon name="layout" size={32} /></div>

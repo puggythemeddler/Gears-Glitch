@@ -46,7 +46,7 @@ export function ProductCard({ product }: ProductCardProps) {
         )}
       </div>
       {product.salePrice && (
-        <span style={{ display: "inline-block", background: "var(--danger)", color: "#fff", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, marginBottom: "0.5rem", textTransform: "uppercase" }}>
+        <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--on-danger)", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, marginBottom: "0.5rem", textTransform: "uppercase" }}>
           Sale
         </span>
       )}

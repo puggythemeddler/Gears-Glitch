@@ -426,7 +426,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
       ) : (
         <footer className="site-footer">
           <div className="footer-inner">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "1.5rem", width: "100%", padding: "0 var(--space-5)" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: "1.5rem", width: "100%", padding: "0 var(--space-5)" }}>
               <div>
                 <div style={{ fontWeight: 700, marginBottom: "0.5rem", fontSize: "var(--text-base)" }}>{settings?.storeName || "My Shop"}</div>
                 <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>Kenya&apos;s trusted tech platform for gaming PCs, laptops, and accessories.</p>

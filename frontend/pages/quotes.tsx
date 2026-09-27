@@ -122,7 +122,7 @@ export default function QuotesPage() {
       </div>
 
       {isStaff && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(150px, 100%), 1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
           {(["pending", "waiting_for_approval", "cancelled", "approved"] as const).map((s) => {
             const cfg = STATUS_CONFIG[s];
             return (

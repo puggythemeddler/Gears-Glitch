@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    Gear&Glitch â€” Marketing Site Styles
    Editorial, product-led design built on the app design tokens
    (globals.css). Display voice: Archivo; body: Sora.
@@ -840,7 +840,7 @@
 }
 .mk-control-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-8);
 }

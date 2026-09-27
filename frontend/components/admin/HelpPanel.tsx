@@ -45,7 +45,7 @@ export default function HelpPanel() {
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
         <h3 style={{ marginTop: 0 }}>Keyboard shortcuts</h3>
-        <div style={{ display: "grid", gap: "0.4rem", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+        <div style={{ display: "grid", gap: "0.4rem", gridTemplateColumns: "repeat(auto-fill, minmax(min(240px, 100%), 1fr))" }}>
           {SHORTCUTS.map((s) => (
             <div key={s.keys} style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
               <span className="plan-status" style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{s.keys}</span>

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import { api, getStaffToken, getStaffRole, getStaffPermissions, hasStaffSession, downloadPdf, obtainStepUpToken } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
@@ -498,7 +498,7 @@ export default function AdminPage() {
           {loginError && <p className="error">{loginError}</p>}
           <RippleButton type="submit" className="btn-block" loading={loginLoading}>Sign in</RippleButton>
           <p style={{ textAlign: "center", marginTop: "0.75rem" }}>
-            <button type="button" onClick={() => { setShowForgotPw(true); setForgotMsg(""); setForgotEmail(""); }} style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: "0.85rem", textDecoration: "underline" }}>
+            <button type="button" onClick={() => { setShowForgotPw(true); setForgotMsg(""); setForgotEmail(""); }} style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: "0.85rem", textDecoration: "underline", padding: "0.25rem 0" }}>
               Forgot password?
             </button>
           </p>
@@ -737,7 +737,7 @@ function AdminAuditLog() {
   return (
     <>
       <h1>Audit Log</h1>
-      <div className="field-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
+      <div className="field-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
         <div className="field" style={{ margin: 0 }}><label>User<input value={user} onChange={(e) => setUser(e.target.value)} placeholder="Any user" list="audit-users" style={{ fontSize: "0.85rem" }} /><datalist id="audit-users">{distinctUsers.map((u) => <option key={u} value={u} />)}</datalist></label></div>
         <div className="field" style={{ margin: 0 }}><label>Action<input value={action} onChange={(e) => setAction(e.target.value)} placeholder="Any action" list="audit-actions" style={{ fontSize: "0.85rem" }} /><datalist id="audit-actions">{distinctActions.map((a) => <option key={a} value={a} />)}</datalist></label></div>
         <div className="field" style={{ margin: 0 }}><label>Entity type<input value={entityType} onChange={(e) => setEntityType(e.target.value)} placeholder="e.g. plan, order" style={{ fontSize: "0.85rem" }} /></label></div>
@@ -1864,7 +1864,7 @@ function AdminRoles() {
         <RippleButton size="small" onClick={openNew}>+ New role</RippleButton>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "1rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(300px, 100%), 1fr))", gap: "1rem" }}>
         {allRoles.map((r: any) => (
           <div key={r.id} className="panel" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -2030,7 +2030,7 @@ function AdminPlans() {
         <h1 style={{ margin: 0 }}>Subscription Plans</h1>
         <RippleButton size="small" onClick={openNew}>+ Add plan</RippleButton>
       </div>
-      <div className="product-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+      <div className="product-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(240px, 100%), 1fr))" }}>
         {plans.map((p) => {
           const features = parseFeatures(p.features);
           return (
@@ -3045,7 +3045,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(260px, 100%), 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         {layouts.map((l) => (
           <div key={l.key} className="panel" role="button" tabIndex={0} style={{ border: cfg?.layout === l.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer" }} onClick={() => switchLayout(l.key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchLayout(l.key); } }}>
             <div style={{ height: 120, borderRadius: 8, background: "var(--bg)", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-tertiary)" }}>
@@ -3064,7 +3064,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
       <div className="panel" style={{ marginBottom: "1rem" }}>
         <h2 style={{ marginTop: 0 }}>Store Theme</h2>
         <p className="muted" style={{ fontSize: "0.85rem" }}>Pick a color theme for the whole storefront. Applied instantly to your live site.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(200px, 100%), 1fr))", gap: "1rem", marginTop: "1rem" }}>
           {THEME_CARDS.map((t) => (
             <div key={t.key} className="panel" role="button" tabIndex={0} style={{ border: theme === t.key ? "2px solid var(--primary)" : "1px solid var(--border)", cursor: "pointer", margin: 0 }} onClick={() => saveTheme(t.key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); saveTheme(t.key); } }}>
               <div style={{ display: "flex", gap: "0.35rem", height: 36, borderRadius: 8, overflow: "hidden", marginBottom: "0.75rem" }}>
@@ -3089,7 +3089,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
             </div>
             <RippleButton onClick={saveCustomTheme} loading={saving}>Apply Brand Colors</RippleButton>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(180px, 100%), 1fr))", gap: "1rem", marginTop: "1rem" }}>
             {[
               { key: "primary", label: "Primary color" },
               { key: "accent", label: "Accent color" },
@@ -3248,7 +3248,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
 
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Marketing Boosters</label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.5rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: "0.5rem" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.85rem" }}>
                 <input type="checkbox" checked={heroForm.showTrustStrip} onChange={(e) => setHeroForm({ ...heroForm, showTrustStrip: e.target.checked })} style={{ width: 17, height: 17 }} />
                 Payment &amp; delivery trust strip

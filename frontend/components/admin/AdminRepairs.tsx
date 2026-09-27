@@ -318,7 +318,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
             {statusBadge(detail.status)}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.5rem 1.5rem", marginTop: "1.25rem", padding: "0.75rem 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: "0.5rem 1.5rem", marginTop: "1.25rem", padding: "0.75rem 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
             <div>
               <div className="input-label">Customer</div>
               <div>{escapeHtml(detail.customerName)}</div>
@@ -345,7 +345,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0 0.75rem", marginTop: "1.25rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: "0 0.75rem", marginTop: "1.25rem" }}>
             <div className="field"><label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>{STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}</select></label></div>
             <div className="field"><label>Technician<select value={form.assignedTo} onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}><option value="">Unassigned</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.username}</option>)}</select></label></div>
             <div className="field"><label>ETA date<input type="date" value={form.etaAt} onChange={(e) => setForm({ ...form, etaAt: e.target.value })} /></label></div>
@@ -354,7 +354,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
 
           <div className="field"><label>Diagnosis<textarea rows={3} value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} /></label></div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0 0.75rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: "0 0.75rem" }}>
             <div className="field"><label>Hardware value (KES)<input type="number" min={0} value={form.hardwareValue} onChange={(e) => setForm({ ...form, hardwareValue: e.target.value })} /></label></div>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", alignSelf: "end", marginBottom: "1rem", cursor: "pointer" }}>
               <input type="checkbox" checked={form.softwareInstall} onChange={(e) => setForm({ ...form, softwareInstall: e.target.checked })} />
@@ -519,7 +519,7 @@ function CalendarTab({ onOpenTicket }: { onOpenTicket: (id: string) => void }) {
       </div>
 
       {loading ? <Spinner /> : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: "0.75rem" }}>
           {days.map((d) => {
             const key = localISODate(d);
             const dayTickets = byDay[key] || [];
@@ -641,7 +641,7 @@ function ContentTab() {
 
               {enabled && (
                 <div style={{ borderTop: "1px dashed var(--border)", marginTop: "0.6rem", paddingTop: "0.6rem" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: "0.75rem" }}>
                     <div className="field"><label>Repair type (sets the base price)<select value={booking.repairTypeId || ""} onChange={(e) => updatePanel(i, { booking: { ...booking, repairTypeId: e.target.value } })}><option value="">No repair type</option>{repairTypes.map((t) => <option key={t.id} value={t.id}>{t.name} — {formatPrice(t.basePrice)}</option>)}</select></label></div>
                     <div className="field"><label>Pre-fill device type<select value={booking.deviceType || ""} onChange={(e) => updatePanel(i, { booking: { ...booking, deviceType: e.target.value } })}><option value="">Don't pre-fill</option>{BOOKING_DEVICE_TYPES.map((d) => <option key={d} value={d}>{d}</option>)}</select></label></div>
                   </div>

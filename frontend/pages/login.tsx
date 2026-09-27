@@ -3,11 +3,14 @@ import { useRouter } from "next/router";
 import { api, setCustomerSession, setStaffSession, setProviderSession, clearCustomerSession, clearStaffSession, clearProviderSession, migrateGuestCartToServer } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { PageHead } from "@/components/ui";
+import { safeRedirectPath } from "@/lib/sanitize";
 
 export default function LoginPage() {
   const { login: contextLogin, refreshCartCount } = useApp();
   const router = useRouter();
   const { redirect } = router.query;
+  // `?redirect=` is user input - never navigate straight to it.
+  const redirectTo = safeRedirectPath(redirect);
   const [tab, setTab] = useState<"customer" | "staff">("customer");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,7 +45,7 @@ export default function LoginPage() {
           body: JSON.stringify({ email, password }),
         });
         await finishCustomerLogin(data.token, data.name || "Customer");
-        router.push((redirect as string) || "/dashboard");
+        router.push(redirectTo);
       } else {
         clearCustomerSession();
         clearProviderSession();
@@ -164,7 +167,7 @@ export default function LoginPage() {
           <>
             <div style={{ textAlign: "center", margin: "var(--space-4) 0", color: "var(--text-tertiary)", fontSize: "var(--text-sm)" }}>or</div>
             <a
-              href={`/api/auth/google?mode=customer${redirect ? `&redirect=${encodeURIComponent(String(redirect))}` : ""}`}
+              href={`/api/auth/google?mode=customer${redirectTo !== "/dashboard" ? `&redirect=${encodeURIComponent(redirectTo)}` : ""}`}
               className="google-signin-btn"
             >
               <svg className="google-signin-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">

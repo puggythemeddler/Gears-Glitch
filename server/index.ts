@@ -510,6 +510,9 @@ app.use("/api/provider/login", authLimiter);
 app.use("/api/provider/register", authLimiter);
 app.use("/api/auth/request-password-reset", authLimiter);
 app.use("/api/auth/request-admin-password-reset", authLimiter);
+// Magic links are 1h, single-use and mailed to a real inbox, so this endpoint
+// is an email-bombing vector. Rate limit it like the other mail-sending routes.
+app.use("/api/auth/magic-request", authLimiter);
 
 // Anonymous analytics/tracking endpoints are latency-tolerant and spam-prone —
 // tighter per-IP windows than the general /api limiter (200/15m).
@@ -1609,9 +1612,20 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
     res.status(400).json({ error: "Store name is required." });
     return;
   }
+  // storeName and currency are interpolated into invoice/receipt/credit-note
+  // HTML, which is also rendered by the PDF pipeline and emailed as an
+  // attachment - neither is covered by the browser CSP. Reject markup at the
+  // door rather than relying on escaping at each of the many render sites.
+  if (storeName !== undefined) {
+    const name = String(storeName).trim();
+    if (!okLen(name, 1, 100)) { res.status(400).json({ error: "Store name must be 1-100 characters." }); return; }
+    // Reject only the characters that can break out of markup. "&" stays legal
+    // (the default name is "Gear&Glitch"); render sites escape it to &amp;.
+    if (/[<>"'\\]/.test(name)) { res.status(400).json({ error: "Store name cannot contain < > \" ' or \\." }); return; }
+  }
   if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
   if (taxRate !== undefined && !isNonNegNum(Number(taxRate))) { res.status(400).json({ error: "Tax rate must be a non-negative number." }); return; }
-  if (currency !== undefined && !isStr(currency, 10)) { res.status(400).json({ error: "Currency must be a valid string." }); return; }
+  if (currency !== undefined && !/^[A-Za-z]{3}$/.test(String(currency || "").trim())) { res.status(400).json({ error: "Currency must be a 3-letter code, e.g. KES." }); return; }
   const settings = await updateSettings({ storeName, phone, email, currency, taxRate, paymentMethods: req.body.paymentMethods, cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret, cloudinaryFolder }) as any;
   if (googleClientId !== undefined) {
     await setStoreSetting("google_client_id", String(googleClientId).trim());
@@ -2741,7 +2755,7 @@ app.get("/api/pos/receipt/:orderId", requirePdfAuth("pos-receipt", "orderId", "o
     }).join("");
     const title = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
     const subtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${escapeHtml(String(store))}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
   ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
@@ -2803,7 +2817,7 @@ app.get("/api/pos/receipt/:orderId", requirePdfAuth("pos-receipt", "orderId", "o
     }).join("");
     const title = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
     const subtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
-    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${escapeHtml(String(store))}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
   ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
@@ -3465,7 +3479,7 @@ app.get("/api/admin/orders/:id/invoice", asyncHandler(async (req: Request, res: 
   const changeAmt = tenderedAmt > total ? tenderedAmt - total : 0;
   const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
   const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${escapeHtml(String(store))}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
   ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
@@ -3603,7 +3617,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
   const changeAmt = tenderedAmt > total ? tenderedAmt - total : 0;
   const invoiceTitle = hasEtims ? "E-TIMS TAX INVOICE / RECEIPT" : "TAX INVOICE / RECEIPT";
   const invoiceSubtitle = hasEtims ? `Invoice #${order.id} | ${escapeHtml(modeLabel)} Receipt #${escapeHtml(vscuReceiptNo)}` : `Invoice #${order.id}`;
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${escapeHtml(String(store))}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
   ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
@@ -3979,7 +3993,7 @@ app.get("/api/admin/credit-notes/:id/view", staffAuthMiddleware, requirePermissi
     `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${currency} ${i.lineTotal.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`
   ).join("");
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Credit Note #${cn.id} — ${store}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Credit Note #${cn.id} — ${escapeHtml(String(store))}</title>
 <style>${CREDIT_NOTE_CSS}</style></head><body>
 <div class="cn">
   ${renderStoreLogo(settings.storeLogo || "", settings.logoPosition || "top-left", store, baseUrl)}
@@ -5051,8 +5065,20 @@ function frontendUrl(req: Request): string {
 
 function safeRedirectPath(raw: unknown, fallback: string): string {
   const value = Array.isArray(raw) ? raw[0] : raw;
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return fallback;
-  return value;
+  if (typeof value !== "string" || !value.startsWith("/")) return fallback;
+  if (value.startsWith("//") || value.startsWith("/\\")) return fallback;
+  // Reject values that only *decode* into an absolute or scheme-relative URL,
+  // e.g. "/%2f%2fevil.com" - browsers treat the decoded form as the target.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    return fallback;
+  }
+  if (!decoded.startsWith("/")) return fallback;
+  if (decoded.startsWith("//") || decoded.startsWith("/\\")) return fallback;
+  if (/^\s*[a-z][a-z0-9+.-]*:/i.test(decoded)) return fallback;
+  return decoded;
 }
 
 // Resolve the store's notification email (settings.emailSender, falling back to
@@ -5390,6 +5416,11 @@ app.post("/api/auth/magic-login", asyncHandler(async (req: Request, res: Respons
     // epoch seconds; changedAt is a PG timestamp string.
     if (changedAt && payload.iat && payload.iat < Math.floor(Date.parse(String(changedAt)) / 1000)) { res.status(400).json({ error: "Token no longer valid." }); return; }
     const sessionToken = signToken({ sub: payload.sub, email: payload.email, name: payload.name, role: "customer" });
+    // The cookie is the only credential the client keeps (setCustomerSession
+    // stores display metadata only, and runSessionBootstrap purges legacy
+    // localStorage tokens), so without this the magic link authenticates
+    // nothing. Every other login route sets it here too.
+    setSessionCookie(res, sessionToken);
     try { await logAudit(null, (payload as any).name || (payload as any).email || "customer", "customer_login", "auth", null, { method: "magic" }, "customer"); } catch { console.warn("[audit] Failed to write audit log"); }
     res.json({ token: sessionToken, name: payload.name });
   } catch (_err) {

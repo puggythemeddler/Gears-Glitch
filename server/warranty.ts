@@ -105,7 +105,12 @@ router.get("/:id", staffAuthMiddleware, asyncHandler(async (req: Request, res: R
 router.put("/:id/status", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!id || Number.isNaN(id)) { res.status(400).json({ error: "Invalid claim id." }); return; }
-  const { status, notes, approvedBy } = req.body || {};
+  const { status, notes } = req.body || {};
+  // The approver is the authenticated actor, never a client-supplied id -
+  // otherwise the audit trail can be forged to implicate another user.
+  const actor = (req as any).user;
+  const actorId = Number(actor?.sub);
+  const approvedBy = Number.isFinite(actorId) && actorId > 0 ? actorId : null;
   const allowed = ["submitted", "approved", "rejected", "resolved"];
   const newStatus = String(status || "").trim();
   if (!allowed.includes(newStatus)) { res.status(400).json({ error: "Invalid status." }); return; }
@@ -118,7 +123,7 @@ router.put("/:id/status", staffAuthMiddleware, asyncHandler(async (req: Request,
          approved_by = COALESCE($3, approved_by)
      WHERE id = $4
      RETURNING *`,
-    [newStatus, notes ? String(notes) : "", approvedBy != null && !Number.isNaN(Number(approvedBy)) ? Number(approvedBy) : null, id]
+    [newStatus, notes ? String(notes) : "", approvedBy, id]
   );
   if (!result.rows[0]) { res.status(404).json({ error: "Warranty claim not found." }); return; }
   const claim = result.rows[0];

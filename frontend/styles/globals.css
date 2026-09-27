@@ -1448,25 +1448,25 @@ code, pre {
 
 .badge-success {
   background: var(--success-light);
-  color: var(--success);
+  color: var(--success-text);
   border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
 }
 
 .badge-danger {
   background: var(--danger-light);
-  color: var(--danger);
+  color: var(--danger-text);
   border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .badge-warning {
   background: var(--warning-light);
-  color: var(--warning);
+  color: var(--warning-text);
   border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
 }
 
 .badge-info {
   background: var(--info-light);
-  color: var(--info);
+  color: var(--info-text);
   border: 1px solid color-mix(in srgb, var(--info) 20%, transparent);
 }
 
@@ -1720,7 +1720,7 @@ textarea:not(.input)::placeholder {
 /* ----- Stat Grid ----- */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
   gap: var(--space-4);
   margin: var(--space-4) 0;
 }
@@ -1804,7 +1804,7 @@ textarea:not(.input)::placeholder {
 
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
   gap: var(--space-5);
 }
 
@@ -2429,7 +2429,7 @@ textarea:not(.input)::placeholder {
 
 .dash-cols {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   gap: var(--space-4);
   margin-top: var(--space-2);
 }
@@ -2617,7 +2617,7 @@ a.order-item:hover {
   flex: 1;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
   gap: 0.5rem;
   padding: 0.75rem;
   min-height: 0;
@@ -3449,7 +3449,7 @@ a.order-item:hover {
 
 .about-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-8);
 }
@@ -3474,7 +3474,7 @@ a.order-item:hover {
 
 .about-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: var(--space-5);
   margin-bottom: var(--space-8);
 }
@@ -3503,7 +3503,7 @@ a.order-item:hover {
 
 .about-contact-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: var(--space-3);
 }
 .about-contact-card {
@@ -3588,7 +3588,7 @@ a.about-contact-card:hover {
   }
 
   .pos-product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
   }
 
   .product-detail {
@@ -3630,7 +3630,7 @@ a.about-contact-card:hover {
   }
 
   .pos-product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(130px, 100%), 1fr));
     gap: 0.4rem;
     padding: 0.5rem;
   }
@@ -3686,7 +3686,7 @@ a.about-contact-card:hover {
   .cart-item__actions { width: 100%; justify-content: flex-end; }
 
   .pos-product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(110px, 100%), 1fr));
     gap: 0.35rem;
     padding: 0.4rem;
   }
@@ -4272,7 +4272,7 @@ a.about-contact-card:hover {
 .dy-hero-metrics {
   margin-top: 1.5rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);

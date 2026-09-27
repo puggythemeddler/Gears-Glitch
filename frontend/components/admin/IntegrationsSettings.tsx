@@ -162,7 +162,7 @@ export default function IntegrationsSettings({ onNavigate }: { onNavigate?: (vie
       {loading ? (
         <div className="panel" style={{ padding: "2rem", textAlign: "center" }}><Spinner /></div>
       ) : (
-        <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+        <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))" }}>
           {byProvider("gmail") && <ProviderCard entry={byProvider("gmail")!} gmail={gmail || undefined} onConnect={connectGmail} />}
           {byProvider("whatsapp") && (
             <div className="panel" style={{ padding: "1rem" }}>

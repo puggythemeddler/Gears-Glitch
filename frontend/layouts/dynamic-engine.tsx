@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { Product } from "@/lib/types";
 import { formatPrice } from "./shared";
 import { Motion } from "@/components/motion/Motion";
@@ -327,7 +327,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
         ) : (
           <div
             className={grid ? grid.className : undefined}
-            style={grid ? grid.style : { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${section.columns && section.columns > 3 ? 240 : 280}px, 1fr))`, gap: "1rem" }}
+            style={grid ? grid.style : { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(${section.columns && section.columns > 3 ? 240 : 280}px, 100%), 1fr))`, gap: "1rem" }}
           >
             {filtered.map((p, j) => stagger ? (
               <div key={p.id} className="motion-child" style={motionGroupItemVars(j) as React.CSSProperties}>
@@ -358,7 +358,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
         ) : (
           <div
             className={grid ? grid.className : undefined}
-            style={grid ? grid.style : { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${section.style === "icons" ? 120 : 220}px, 1fr))`, gap: "1rem" }}
+            style={grid ? grid.style : { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(${section.style === "icons" ? 120 : 220}px, 100%), 1fr))`, gap: "1rem" }}
           >
             {categories.map((cat, j) => (
               <a key={cat.id} href={`/${cat.id}`} className={stagger ? "motion-child" : undefined} style={stagger ? { ...cellStyle, ...motionGroupItemVars(j) } : cellStyle}>
@@ -381,14 +381,14 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
               {(section.text || section.buttonLabel) && (
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.75rem", background: "rgba(0,0,0,0.35)", color: "#fff" }}>
                   {section.text && <div style={{ fontSize: "1.2rem", fontWeight: 700 }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
-                  {section.buttonLabel && <span style={{ background: "var(--primary)", color: "#fff", padding: "0.5rem 1.4rem", borderRadius: 8, fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
+                  {section.buttonLabel && <span style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "0.5rem 1.4rem", borderRadius: 8, fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
                 </div>
               )}
             </div>
           ) : (
             <div style={{ padding: "2rem", textAlign: "center", color: section.textColor || "var(--text)", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
               {section.text && <div style={{ fontSize: "1.2rem", fontWeight: 600 }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
-              {section.buttonLabel && <span style={{ background: "var(--primary)", color: "#fff", padding: "0.5rem 1.4rem", borderRadius: 8, fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
+              {section.buttonLabel && <span style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "0.5rem 1.4rem", borderRadius: 8, fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
             </div>
           )}
         </DyLink>
@@ -400,7 +400,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     const stagger = section.animation?.preset === "stagger";
     return (
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(160px, 100%), 1fr))", gap: "1rem" }}>
           {(section.items || []).map((item, j) => (
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{item.icon}</div>}
@@ -433,7 +433,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
       ? { ...base, border: `1.5px solid var(--primary)`, color: "var(--primary)", background: "transparent" }
       : section.variant === "secondary"
         ? { ...base, border: "1px solid var(--border)", color: "var(--text)", background: "var(--surface)" }
-        : { ...base, border: "1px solid var(--primary)", color: "#fff", background: "var(--primary)" };
+        : { ...base, border: "1px solid var(--primary)", color: "var(--on-primary)", background: "var(--primary)" };
     return (
       <div style={{ padding: "1rem 2rem", maxWidth: 1440, margin: "0 auto", textAlign: section.align || "center" }} data-fid={fid}>
         {section.label ? <DyLink href={section.link} style={style} fid={fid ? `${fid}.label` : undefined}>{section.label}</DyLink> : <span style={{ color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Button â€” set a label</span>}
@@ -464,7 +464,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
         {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem", textAlign: "center" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         <div
           className={grid ? grid.className : undefined}
-          style={grid ? grid.style : { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${section.columns && section.columns > 3 ? 200 : 260}px, 1fr))`, gap: "1rem" }}
+          style={grid ? grid.style : { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(${section.columns && section.columns > 3 ? 200 : 260}px, 100%), 1fr))`, gap: "1rem" }}
         >
           {(section.items || []).map((item, j) => (
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ padding: "1.5rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, textAlign: "center", ...(stagger ? motionGroupItemVars(j) : {}) }}>

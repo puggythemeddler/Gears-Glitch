@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
@@ -29,7 +29,7 @@ export function LayoutStyles() {
     .amz-hero-side-item p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); }
     .amz-section { max-width: 1440px; margin: 2rem auto; padding: 0 1rem; }
     .amz-section h2 { font-size: 1.4rem; margin: 0 0 1rem; display: flex; align-items: center; gap: 0.5rem; }
-    .amz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+    .amz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 1rem; }
     .amz-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
     .amz-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
     .amz-card-img { height: 180px; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 700; color: var(--border); }

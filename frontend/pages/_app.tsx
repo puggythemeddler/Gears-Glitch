@@ -1,6 +1,6 @@
 import React, { Component, useState, useEffect } from "react";
 import type { AppProps } from "next/app";
-import { Sora, Archivo } from "next/font/google";
+import localFont from "next/font/local";
 import { AppProvider } from "@/lib/app-context";
 import { LayoutProvider, LayoutStyles } from "@/layouts";
 import Layout from "@/components/Layout";
@@ -11,18 +11,30 @@ import "@/styles/globals.css";
 import "@/styles/animations.css";
 import "@/styles/marketing.css";
 
-const sora = Sora({
-  weight: ["400", "500", "600", "700", "800"],
-  subsets: ["latin"],
+// Sora and Archivo are variable fonts, so one file covers the whole weight
+// range. They are vendored under frontend/fonts/ and loaded with next/font/local
+// rather than next/font/google: the Google loader downloads the binaries at
+// build time, which made `next build` hang on a cold cache (no .next/cache) when
+// fonts.gstatic.com stalled. Vendoring keeps builds deterministic and offline,
+// and it is what the CSP in next.config.js already assumes (font-src 'self').
+const sora = localFont({
+  src: "../fonts/sora-var.woff2",
+  weight: "300 800",
+  style: "normal",
   variable: "--font-sora-next",
   display: "swap",
+  fallback: ["system-ui", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"],
+  adjustFontFallback: false,
 });
 
-const archivo = Archivo({
-  weight: ["500", "600", "700", "800"],
-  subsets: ["latin"],
+const archivo = localFont({
+  src: "../fonts/archivo-var.woff2",
+  weight: "100 900",
+  style: "normal",
   variable: "--font-archivo-next",
   display: "swap",
+  fallback: ["system-ui", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"],
+  adjustFontFallback: false,
 });
 
 function getActiveNav(path: string): string {

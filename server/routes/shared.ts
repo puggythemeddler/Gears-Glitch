@@ -237,7 +237,7 @@ export function generateInvoiceHtml(data: InvoiceData): string {
   const qrData = JSON.stringify({ inv: etims.number, dc: etims.controlCode, pin: etims.kraPin, amt: total, dt: order.createdAt, ri: etims.vscuReceiptNo });
   const qrUrl = etims.enabled ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrData)}` : "";
 
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${store.name}</title>
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice #${order.id} — ${escapeHtml(String(store.name))}</title>
 <style>${INVOICE_CSS}</style></head><body>
 <div class="invoice">
   ${renderStoreLogo(store.logo, store.logoPosition, store.name, store.baseUrl)}

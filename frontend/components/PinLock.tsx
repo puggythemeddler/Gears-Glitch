@@ -140,7 +140,7 @@ export default function PinLock({ storageKey, title = "PIN", onUnlock, verifyPin
           disabled={pin.length < 6 || verifying}
           style={{
             marginTop: "1rem", width: "100%", padding: "0.75rem", fontSize: "1rem", fontWeight: 600,
-            border: "none", borderRadius: 10, background: "var(--primary)", color: "#fff", cursor: "pointer",
+            border: "none", borderRadius: 10, background: "var(--primary)", color: "var(--on-primary)", cursor: "pointer",
             opacity: pin.length < 6 || verifying ? 0.5 : 1,
           }}
         >

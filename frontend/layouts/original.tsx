@@ -404,7 +404,7 @@ export function HomePage({ products, categories, hero }: {
                         <>
                           <span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.8em" }}>{formatPrice(p.price)}</span>
                           <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span>
-                          <span style={{ display: "inline-block", background: "var(--danger)", color: "#fff", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
+                          <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--on-danger)", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
                         </>
                       ) : (
                         formatPrice(p.price)

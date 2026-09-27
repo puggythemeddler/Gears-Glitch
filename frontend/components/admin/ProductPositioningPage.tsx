@@ -51,7 +51,7 @@ export default function ProductPositioningPage() {
         <RippleButton onClick={saveOrder} loading={saving}>Save Order</RippleButton>
       </div>
       {msg && <div className="panel" style={{ marginBottom: "1rem", padding: "0.75rem 1rem", borderRadius: 8, background: msg.startsWith("Failed") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Failed") ? "var(--danger-text)" : "var(--success-text)", fontSize: "0.85rem" }}>{msg}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0.75rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(200px, 100%), 1fr))", gap: "0.75rem" }}>
         {products.map((p, idx) => (
           <div
             key={p.id}

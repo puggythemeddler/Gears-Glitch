@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
@@ -32,7 +32,7 @@ export function LayoutStyles() {
     .jum-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
     .jum-section-header h2 { margin: 0; font-size: 1.3rem; }
     .jum-timer { font-size: 0.85rem; color: var(--primary); font-weight: 600; }
-    .jum-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; }
+    .jum-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 0.75rem; }
     .jum-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; text-decoration: none; color: inherit; position: relative; transition: transform 0.2s; }
     .jum-card:hover { transform: translateY(-2px); }
     .jum-card-img { height: 160px; background: var(--bg); display: flex; align-items: center; justify-content: center; }
