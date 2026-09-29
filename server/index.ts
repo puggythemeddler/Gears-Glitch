@@ -417,7 +417,8 @@ import { startNotificationQueueWorker } from "./notification-service";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile, validateImageMagicBytes } from "./upload";
+import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus, callbackBaseUrl } from "./mpesa";
 import bcrypt from "bcryptjs";
@@ -843,7 +844,27 @@ app.get("/api/csrf-token", (req: Request, res: Response) => {
   res.json({ csrfToken: token });
 });
 
-// DB image backup helper — stores image as base64 in stored_images table
+// Streams the body of a network response up to `max` bytes; returns null when
+// the body is absent or exceeds the cap so a Cloudinary-sized image never lands
+// in a base64 TEXT column.
+async function readBodyCapped(body: any, max: number): Promise<Buffer | null> {
+  if (!body) return null;
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of body as AsyncIterable<Uint8Array>) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+    size += buf.length;
+    if (size > max) return null;
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
+}
+
+// DB image backup helper — stores image as base64 in stored_images table.
+// The remote-fetch branch is SSRF-hardened: the origin must be on the media
+// allowlist (same hosts the browser CSP permits), DNS must not answer with a
+// private/reserved address, redirects are refused, and the payload is capped,
+// content-type checked, and magic-byte verified like any other upload.
 async function backupImageToDb(refId: string, imageUrl: string): Promise<void> {
   try {
     const settings = await getSettings();
@@ -851,15 +872,25 @@ async function backupImageToDb(refId: string, imageUrl: string): Promise<void> {
     if (!imageUrl) return;
     let buffer: Buffer;
     let contentType: string;
-    if (imageUrl.startsWith("http")) {
-      const resp = await fetch(imageUrl);
+    if (/^https?:\/\//i.test(imageUrl)) {
+      if (!isAllowedRemoteImageUrl(imageUrl) || !(await assertPublicImageHost(imageUrl))) {
+        console.warn("[Image Backup] Blocked off-policy remote URL for ref:", refId);
+        return;
+      }
+      const resp = await fetch(imageUrl, { redirect: "manual", signal: AbortSignal.timeout(15000) });
       if (!resp.ok) return;
-      contentType = resp.headers.get("content-type") || "image/jpeg";
-      buffer = Buffer.from(await resp.arrayBuffer());
+      const declaredType = String(resp.headers.get("content-type") || "").toLowerCase();
+      if (!declaredType.startsWith("image/")) return;
+      const declaredLength = Number(resp.headers.get("content-length"));
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_BACKUP_IMAGE_BYTES) return;
+      const capped = await readBodyCapped(resp.body, MAX_BACKUP_IMAGE_BYTES);
+      if (!capped || !validateImageMagicBytes(capped)) return;
+      buffer = capped;
+      contentType = declaredType.split(";")[0] || "image/jpeg";
     } else {
-      // Path-confinement: only allow an in-upload relative filename. Resolve and
-      // verify the target stays inside the data directory, so "../../etc/passwd"
-      // or absolute paths cannot read arbitrary local files.
+      // Local disk: only an in-upload relative filename. Resolve and verify the
+      // target stays inside the data directory, so "../../etc/passwd" or
+      // absolute paths cannot read arbitrary local files.
       const dataDir = path.resolve(__dirname, "..", "data");
       const cleanName = imageUrl.replace(/^[/\\]+/, "");
       const localPath = path.resolve(dataDir, cleanName);
@@ -870,7 +901,7 @@ async function backupImageToDb(refId: string, imageUrl: string): Promise<void> {
       if (!fs.existsSync(localPath)) return;
       buffer = fs.readFileSync(localPath);
       const ext = path.extname(localPath).toLowerCase();
-      contentType = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml" }[ext] || "image/jpeg";
+      contentType = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif" }[ext] || "image/jpeg";
     }
     await storeImage(refId, contentType, buffer.toString("base64"));
   } catch (err: any) {

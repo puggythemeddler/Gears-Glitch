@@ -73,7 +73,7 @@ function makeCloudinaryStorage(folder: string, filenameFn?: (req: any, file: Exp
     cloudinary,
     params: (_req: any, file: Express.Multer.File) => {
       const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
-      const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico", ".svg"].includes(ext) ? ext : ".jpg";
+      const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"].includes(ext) ? ext : ".jpg";
       const base = filenameFn ? filenameFn(_req, file) : `file-${Date.now()}`;
       return {
         folder: `${cloudinaryFolder}/${folder}`,
@@ -95,6 +95,13 @@ function makeLocalDiskStorage(filenameFn: (req: any, file: Express.Multer.File) 
 function imageFileFilter(_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) {
   if (!file.mimetype.startsWith("image/") && file.mimetype !== "image/x-icon" && file.mimetype !== "image/vnd.microsoft.icon") {
     return cb(new Error("Only image files are allowed."));
+  }
+  // SVG is scriptable and is deliberately not an upload format (the magic-byte
+  // table omits it too). Reject it at the filter so local-disk and Cloudinary
+  // stores behave identically - previously Cloudinary accepted it while
+  // local-disk silently failed the magic-byte check.
+  if (file.mimetype === "image/svg+xml") {
+    return cb(new Error("SVG files are not supported. Use PNG, JPEG, WebP, GIF, or ICO."));
   }
   cb(null, true);
 }
@@ -263,4 +270,4 @@ async function deleteCloudinaryImage(imageUrl: string): Promise<void> {
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile, validateImageMagicBytes };

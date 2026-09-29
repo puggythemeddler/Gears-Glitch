@@ -109,9 +109,9 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 
 ## 7. File uploads
 
-- `server/upload.ts`: magic-byte validation (not just extension), server-generated filenames, 5MB cap, `.svg` dropped locally — positive.
-- **P1:** `backupImageToDb` path traversal (`server/index.ts:556-579`) — arbitrary local file read via user-controlled image URL.
-- **P2:** `/uploads` served unauthenticated, no CSP/nosniff; SVG magic bytes accepted upstream.
+- `server/upload.ts`: magic-byte validation (not just extension), server-generated filenames, 5MB cap, SVG rejected at the mimetype filter (both storage modes) — positive.
+- ~**P1:** `backupImageToDb` path traversal~ **RESOLVED** — local branch path-confinement plus remote-branch SSRF hardening (`server/media-policy.ts`): https-only origin allowlist, DNS private/loopback block, `redirect:"manual"`, 15s timeout, 8MB cap, magic-byte payload check; `tests/media-policy.test.ts`.
+- ~**P2:** `/uploads` unauthenticated, no CSP/nosniff; SVG accepted upstream~ **RESOLVED** — nosniff on `/uploads`; SVG disallowed consistently in both storage modes (`tests/upload-policy.test.ts`); control-plane `img-src` narrowed from `https:` to the one origin the dashboard uses (`control-plane/tests/csp.test.ts`).
 
 ---
 
@@ -150,8 +150,8 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 - [ ] P0: M-Pesa simulation gated to non-production
 - [ ] P0: `pg_dump` shell-interpolation command injection removed
 - [ ] P0: irreversible client delete guarded
-- [ ] P1: WhatsApp media endpoint authenticated
-- [ ] P1: `backupImageToDb` path traversal fixed
+- [x] P1: WhatsApp media endpoint authenticated
+- [x] P1: `backupImageToDb` path traversal fixed (local path-confinement + remote SSRF allowlist/DNS block, 2026-09-29)
 - [ ] P1: CP rate limiting + SSL CA verify + stable JWT_SECRET
 - [ ] P1: reset/magic tokens made single-use
 - [ ] P1: redact M-Pesa config

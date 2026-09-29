@@ -20,14 +20,14 @@ Each finding classified against current code. **RESOLVED** = fix present and ver
 |---|---|---|---|
 | S-1 | P0 | **RESOLVED** | `index.ts:1997` — SIM auto-confirm gated behind `NODE_ENV !== "production"` |
 | S-2 | P1 | **RESOLVED** | `index.ts:6346` — WhatsApp media now has `adminAuthMiddleware` |
-| S-3 | P1 | **RESOLVED** | `index.ts:575-584` — path-confinement asserts `localPath.startsWith(dataDir + path.sep)` |
+| S-3 | P1 | **RESOLVED** | `index.ts:575-584` — path-confinement asserts `localPath.startsWith(dataDir + path.sep)` AND `media-policy.ts` — remote branch SSRF-hardened (allowlist + private-IP DNS block + `redirect:"manual"` + 8MB cap + magic bytes) |
 | S-4/A-3 | P1/P3 | **RESOLVED** | `index.ts:4289-4385` — single-use `jti` + `consumeAuthToken()` on all magic/reset flows |
 | S-5 | P2 | **RESOLVED** | `index.ts:2047-2069` — `requirePdfAuth` accepts purpose tokens via header only; session JWTs via query string rejected |
 | S-6/P-4 | P2 | **RESOLVED** | `index.ts:767-768` — `consumerSecret`/`passkey` redacted in `GET /api/mpesa/config` |
 | S-7 | P2 | **PARTIAL** | `index.ts:406` — `trust proxy: 1` kept (Render-recommended single hop); no broader scoping |
 | S-8 | P2 | **RESOLVED** | `index.ts:3398-3420` — message read scoped to customer/provider ownership |
 | S-9 | P3 | **RESOLVED** | `index.ts:4471` — `requirePermission("staff:update")` on staff reset; plans/all filters inactive |
-| S-10 | P3 | **RESOLVED** | `index.ts:481` — nosniff on `/uploads`; `upload.ts:106-123` — SVG not in magic-byte list |
+| S-10 | P3 | **RESOLVED** | `index.ts:481` — nosniff on `/uploads`; `upload.ts:106-123` — SVG not in magic-byte list; `upload.ts:95` — `image/svg+xml` now rejected at the multer filter in BOTH storage modes |
 
 ### Authentication
 | ID | Sev | Status | Evidence |
@@ -180,14 +180,14 @@ Gears&Glitch is a feature-rich SaaS platform combining e-commerce, POS, inventor
 |---|-----|----------|---------|-----|
 | S-1 | **P0** | `server/index.ts:1976-1979` | When a POS M-Pesa `checkoutRequestId` starts with `"SIM"`, the order is **auto-confirmed as paid** without contacting Safaricom. This dev/sandbox simulation path is reachable if env vars are misconfigured in production → every M-Pesa order paid without real money. | Gate simulation behind a strict non-production flag; reject `SIM` prefixed IDs in production; never auto-confirm without reconciling with the M-Pesa API. |
 | S-2 | **P1** | `server/index.ts:6213-6223` | `GET /api/whatsapp/media/:id` serves base64-decoded WhatsApp media (customer PII: chats, order refs, phone numbers) with **no auth**, enumerable by numeric `id`. | Require admin auth or a signed short-lived media token; use unguessable IDs; per-tenant ownership checks. |
-| S-3 | **P1** | `server/index.ts:556-579` | `backupImageToDb` does `path.join(__dirname, "..", "data", imageUrl.replace(/^\//,""))` — user-supplied image URL can contain `..\\`/`../`, enabling **arbitrary local file read** via base64 import. | Resolve path and assert it stays under the upload dir (`path.resolve(...).startsWith(...)`); only accept upload-layer filenames. |
+| S-3 | **P1** | **RESOLVED** | `backupImageToDb` — local branch path-confinement asserts the target stays under the data dir (`path.resolve(...).startsWith(...)`); remote branch is SSRF-hardened: https-only origin allowlist (`server/media-policy.ts`, pinned to the browser CSP host set), DNS private/reserved/loopback/link-local block (rebinding defense), `redirect:"manual"`, 15s timeout, 8MB streamed cap, image/`*` content-type + magic-byte payload check. Regression cover: `tests/media-policy.test.ts`. |
 | S-4 | **P1** | `server/index.ts:4164-4256` | Password-reset / magic-link JWTs are replayable (no one-time consumption) within 1–2h windows and are delivered in URL query strings. | Add single-use `jti`/nonce consumed on first use; rotate signing on password change. |
 | S-5 | **P2** | `server/auth.ts:66-69` + several frontend files | Full session JWTs passed via `?token=` query for receipts/invoices/quotes → leak via logs, Referer, history. | Use short-lived, single-purpose "open link" tokens instead of the session JWT. |
 | S-6 | **P2** | `server/index.ts:750-752` | `GET /api/mpesa/config` returns full `consumerKey`/`consumerSecret`/`passkey` unredacted to any admin (contrast `/api/settings` which blanks secrets, `index.ts:767-774`). | Redact secrets in the GET response; encrypt at rest. |
 | S-7 | **P2** | `server/index.ts:403,431-453` | `trust proxy:1` lets a direct client spoof `X-Forwarded-For` and bypass IP-based API/auth rate limits. | Restrict trust proxy to the known proxy hop. |
 | S-8 | **P2** | `server/index.ts:3310-3321` | `PATCH /api/messages/:id/read` verifies any valid token but **no ownership** — any authenticated user can mark any message read. | Scope to the message owner (customer/staff/provider). |
 | S-9 | **P3** | `server/index.ts:4356-4361`, `1330` | `staff:update` permission not enforced on admin reset-password; `/api/plans/all` exposes inactive plans. | Add `requirePermission("staff:update")`; filter inactive plans. |
-| S-10 | **P3** | `server/upload.ts` + `server/index.ts:470-479` | `/uploads` served without auth; SVG magic bytes accepted upstream though local `safeExt` drops `.svg`. | Add restrictive CSP/`nosniff` on uploads; sanitize or fully disallow SVG. |
+| S-10 | **P3** | **RESOLVED** | `/uploads` served with nosniff; SVG fully disallowed — not in the magic-byte table AND rejected at the multer filter (`server/upload.ts` `imageFileFilter`) in both local-disk and Cloudinary storage, so behavior no longer depends on storage mode. Regression cover: `tests/upload-policy.test.ts`. |
 
 **Positive controls (verified):** parameterized SQL throughout (no SQL injection); global `helmet` + CORS + CSRF double-submit + body limit 1MB + per-route rate limits; `escapeHtml()` applied to all HTML templates; global error handler returns generic message (no stack leak); upload magic-byte + server-generated filename validation; `requirePermission` re-reads permissions from the DB (not the JWT).
 
@@ -409,8 +409,8 @@ See dedicated §13 in audit; summarized P0/P1:
 
 | # | Sev | Finding | Fix |
 |---|-----|---------|-----|
-| F-1 | P1 | Path traversal in `backupImageToDb` (S-3). | Path-confinement check. |
-| F-2 | P2 | `/uploads` served unauthenticated with no CSP/nosniff; SVG magic bytes accepted upstream. | CSP/nosniff; drop SVG or sanitize. |
+| F-1 | P1 | **RESOLVED** | Path traversal (S-3) closed on both branches of `backupImageToDb` — local path-confinement + remote SSRF hardening (`tests/media-policy.test.ts`). |
+| F-2 | P2 | **RESOLVED** | `/uploads` nosniff; SVG rejected at the mimetype filter in both storage modes (`tests/upload-policy.test.ts`); control-plane `img-src` narrowed from `https:` to the QR origin (`control-plane/tests/csp.test.ts`). |
 | F-3 | P3 | Prefix-based filename matching in `imageUrlForProduct`/`deleteProductImages` (`upload.ts:223,236`) could match unintended files. | Exact filename matching with delimiters. |
 
 **Positive:** magic-byte validation, server-generated filenames, 5MB cap, `.svg` dropped locally.
