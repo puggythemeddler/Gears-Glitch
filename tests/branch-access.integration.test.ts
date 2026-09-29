@@ -150,6 +150,15 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
         ADMIN_USERNAME: `qa-branch-owner-${runId}`,
         ADMIN_EMAIL: `qa-branch-owner-${runId}@qa.local`,
         ADMIN_PASSWORD: "qa-Branch-Owner-2026!",
+        // Boot seeds are keyed by username, and ensureTechnicianUser only ever
+        // sets the password when it CREATES the account. The default "technician"
+        // is a shared fixture that tests/layouts-api.integration.test.ts also
+        // relies on, so whichever suite boots first on a clean database would mint
+        // it with its own password and lock the other suite out of its before
+        // hook. Claim a suite-private identity instead of competing for it.
+        TECH_USERNAME: `qa-branch-tech-${runId}`,
+        TECH_EMAIL: `qa-branch-tech-${runId}@qa.local`,
+        TECH_PASSWORD: "qa-Branch-Tech-2026!",
       } as any,
       stdio: ["ignore", "pipe", "pipe"],
     });
