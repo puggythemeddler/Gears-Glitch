@@ -44,7 +44,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - Product rating & review system (1–5 stars, one review per customer, admin moderation, rating distribution charts)
 - Dark/light theme toggle, responsive design (mobile, tablet, desktop), full-width storefront (no side gutters)
 - Promotional banners / splashes with quick presets (Black Friday, Christmas, etc.) and auto-displayed Kenyan public holiday banners
-- Springboard category menu (admin-toggleable collapsible dropdown)
+- Springboard category menu (admin-toggleable collapsible dropdown) with visitor pin — pin the categories panel into a persistent left sidebar on desktop or a full-height overlay on mobile (preference persisted per-browser, so it survives navigation and revisits)
 - Marketing landing page (problems, solutions, industries, features, testimonials, FAQ, CTA)
 - Gift cards — issue gift cards with unique codes, balance, and optional expiry; customers redeem them automatically at checkout before payment, with a full redemption audit trail
 - Campaign landing pages — create promotional campaigns from the admin (title, slug, hero image, banner color, curated products) served on public `/campaign/[slug]` pages
@@ -114,6 +114,8 @@ A complete multi-branch sales & management system with product catalog, customer
 - **Layout control is admin-only.** The Storefront view is only shown to admin users in the staff portal; the API behind layout changes (`PUT /api/admin/storefront-layout`) requires admin auth server-side.
 
 ## Recent highlights
+
+- **Springboard pin/overlay sidebar (2026-09-29)** — The storefront Categories springboard can now be pinned by any visitor into a persistent navigation surface, closing the last deferred storefront item. The pin toggle (pushpin, `aria-pressed`) lives in the panel header and writes `gg-springboard-pinned` to `localStorage`, so the choice restores across visits. Unpinned behaviour is unchanged (click-outside / Escape / route change close the flyout). Pinned, the panel becomes a fixed left sidebar under the header (desktop) or a full-height overlay with a dimming scrim (≤768px); navigation no longer dismisses it, Escape and the scrim close the overlay without dropping the pin, and focus returns to the Categories toggle. Mobile overlay opening moves focus to the first category link; the slide-in/slide-down animations are disabled under `prefers-reduced-motion`. Covered by `tests/springboard-pin.test.ts` (15 DB-free assertions across `Layout.tsx`, `globals.css`, `icons.tsx`).
 
 - **Deferred security items closed (SSRF, SVG, control-plane CSP)** — Three audit debt items shipped (see `PRODUCTION_READINESS_AUDIT.md` S-3/S-10/F-1/F-2):
   - **`backupImageToDb` is no longer an SSRF primitive.** The DB-backup helper's remote branch fetched any http(s) URL. It now refuses everything except https origins on the media allowlist (`server/media-policy.ts`, pinned byte-identical to the frontend allowlist), refuses redirects (`redirect: "manual"`), refuses hosts whose DNS answers with a private/reserved/loopback/link-local/IPv6-local address (DNS-rebinding defense), enforces a 15s timeout and an 8MB streamed cap, and only stores image/`*`, magic-byte-validated payloads — the same checks a real upload passes.
@@ -506,6 +508,7 @@ The main `Layout.tsx` now uses a responsive header with two modes:
 - `.springboard-dropdown` — animated dropdown panel with all category links
 - Click-outside to close, arrow rotates on open
 - On mobile: label hides, only hamburger icon shows
+- **Pin (visitor-facing, persisted):** a pushpin control in the panel header toggles a pinned state saved to `localStorage` (`gg-springboard-pinned`). Pinned, the panel survives click-outside, route changes and page reloads — a fixed left sidebar under the header on desktop, and a full-height overlay with a dimming scrim on mobile. The scrim or Escape closes the overlay (pin stays on); Escape returns focus to the Categories toggle.
 
 Both modes share:
 - `.mobile-menu-toggle` — hamburger button (visible on mobile)

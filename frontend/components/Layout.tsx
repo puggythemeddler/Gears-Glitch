@@ -32,6 +32,8 @@ const NAV_LINKS = [
 const STATIC_NAV_IDS = new Set(["repairs", "cart", "wishlist", "about", "contact"]);
 const RIGHT_NAV_IDS = new Set(["repairs", "about", "contact"]);
 
+const SPRINGBOARD_PIN_KEY = "gg-springboard-pinned";
+
 const STATIC_NAV_LINKS = [
   { id: "repairs", label: "Repairs", href: "/repairs" },
   { id: "cart", label: "Cart", href: "/cart" },
@@ -48,6 +50,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [springboardOpen, setSpringboardOpen] = useState(false);
+  const [springboardPinned, setSpringboardPinned] = useState(false);
   const [openSubMenu, setOpenSubMenu] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { configLoading, layout } = useLayout();
@@ -56,6 +59,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [footerConfig, setFooterConfig] = useState<any>(null);
   const router = useRouter();
   const sessionIdRef = useRef<string>("");
+  const springboardBtnRef = useRef<HTMLButtonElement>(null);
+  const springboardPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let sid = sessionStorage.getItem("wa_sid");
@@ -91,6 +96,12 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     }).catch(() => { setCategoriesLoaded(true); });
   }, []);
 
+  useEffect(() => {
+    let pinned = false;
+    try { pinned = window.localStorage.getItem(SPRINGBOARD_PIN_KEY) === "1"; } catch { /* ignore storage errors */ }
+    setSpringboardPinned(pinned);
+  }, []);
+
   const resolvedNavLinks = (() => {
     const normalized = navLinks.map((l: any) => ({ id: l.id, label: l.label, href: l.href || "/" + l.id }));
     if (!categoriesLoaded) return normalized;
@@ -115,39 +126,58 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const leftNavLinks = filteredNavLinks.filter((l: any) => !RIGHT_NAV_IDS.has(l.id));
   const rightNavLinks = filteredNavLinks.filter((l: any) => RIGHT_NAV_IDS.has(l.id));
 
-  function closeAllMenus() { setMobileOpen(false); setSpringboardOpen(false); setOpenSubMenu(null); }
+  function closeTransientMenus() {
+    setMobileOpen(false);
+    setSettingsOpen(false);
+    setOpenSubMenu(null);
+    if (!springboardPinned) setSpringboardOpen(false);
+  }
 
   useEffect(() => {
-    const handler = () => { closeAllMenus(); };
+    const handler = () => { closeTransientMenus(); };
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);
-  }, []);
+  }, [springboardPinned]);
 
   useEffect(() => {
-    const handler = () => closeAllMenus();
+    const handler = () => closeTransientMenus();
     router.events.on("routeChangeStart", handler);
     return () => router.events.off("routeChangeStart", handler);
-  }, [router.events]);
+  }, [router.events, springboardPinned]);
 
   useEffect(() => {
     if (!springboardOpen && !settingsOpen) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest(".springboard-wrap")) setSpringboardOpen(false);
+      if (!springboardPinned && !target.closest(".springboard-wrap")) setSpringboardOpen(false);
       if (!target.closest(".header-settings-wrap")) setSettingsOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [springboardOpen, settingsOpen]);
+  }, [springboardOpen, settingsOpen, springboardPinned]);
 
   useEffect(() => {
     if (!springboardOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { setSpringboardOpen(false); setOpenSubMenu(null); }
+      if (e.key === "Escape") {
+        setSpringboardOpen(false);
+        setOpenSubMenu(null);
+        if (springboardPinned) springboardBtnRef.current?.focus();
+      }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [springboardOpen]);
+  }, [springboardOpen, springboardPinned]);
+
+  useEffect(() => {
+    if (!springboardOpen || !springboardPinned) return;
+    if (window.innerWidth <= 768) {
+      requestAnimationFrame(() => {
+        const first = springboardPanelRef.current?.querySelector<HTMLElement>(".springboard-item");
+        first?.focus();
+      });
+    }
+  }, [springboardOpen, springboardPinned]);
 
   useEffect(() => {
     fetch("/api/settings/nav-order").then(r => r.json()).then(d => {
@@ -167,7 +197,15 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
   const isThemedLayout = isPublicStorefront && !configLoading && (layout === "amazon" || layout === "jumia");
 
-  function closeMobile() { setMobileOpen(false); setSpringboardOpen(false); setOpenSubMenu(null); }
+  function closeMobile() { setMobileOpen(false); setOpenSubMenu(null); if (!springboardPinned) setSpringboardOpen(false); }
+
+  function toggleSpringboardPin() {
+    setSpringboardPinned((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem(SPRINGBOARD_PIN_KEY, next ? "1" : "0"); } catch { /* ignore storage errors */ }
+      return next;
+    });
+  }
 
   if (hideHeader) return <>{children}</>;
 
@@ -181,8 +219,9 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             )}
             <span>{settings?.storeName || "My Shop"}</span>
           </Link>
-          <div className="springboard-wrap">
+          <div className={`springboard-wrap${springboardPinned ? " pinned" : ""}`}>
             <button
+              ref={springboardBtnRef}
               type="button"
               className={`springboard-btn${springboardOpen ? " open" : ""}`}
               onClick={() => { setSpringboardOpen((o) => !o); setOpenSubMenu(null); }}
@@ -194,8 +233,28 @@ export default function Layout({ children, activeNav }: LayoutProps) {
               <span className="springboard-label">Categories</span>
               <span className={`springboard-arrow${springboardOpen ? " open" : ""}`}><Icon name="chevronDown" size={12} /></span>
             </button>
+            {springboardOpen && springboardPinned && (
+              <div
+                className="springboard-scrim"
+                onClick={() => { setSpringboardOpen(false); setOpenSubMenu(null); springboardBtnRef.current?.focus(); }}
+                aria-hidden="true"
+              />
+            )}
             {springboardOpen && (
-              <div className="springboard-dropdown">
+              <div className="springboard-dropdown" ref={springboardPanelRef}>
+                <div className="springboard-head">
+                  <span className="springboard-head-label">Categories</span>
+                  <button
+                    type="button"
+                    className="springboard-pin"
+                    onClick={toggleSpringboardPin}
+                    aria-pressed={springboardPinned}
+                    aria-label={springboardPinned ? "Unpin categories panel" : "Pin categories panel"}
+                    title={springboardPinned ? "Unpin categories panel" : "Pin categories panel"}
+                  >
+                    <Icon name="mapPin" size={14} />
+                  </button>
+                </div>
                 {categories.map((cat) => {
                   const subs = subcategories.filter((s) => Array.isArray(s.category_ids) && s.category_ids.includes(cat.id));
                   const isOpen = openSubMenu === cat.id;
