@@ -3,6 +3,8 @@ import { useRouter } from "next/router";
 import { api, setCustomerSession, setStaffSession, setProviderSession, clearCustomerSession, clearStaffSession, clearProviderSession, migrateGuestCartToServer } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { PageHead } from "@/components/ui";
+import BranchPicker from "@/components/BranchPicker";
+import { setBranchState, type BranchOption } from "@/lib/branches";
 import { safeRedirectPath } from "@/lib/sanitize";
 
 export default function LoginPage() {
@@ -20,6 +22,63 @@ export default function LoginPage() {
   const [googleClientId, setGoogleClientId] = useState("");
   const [totpRequired, setTotpRequired] = useState(false);
   const [totpCode, setTotpCode] = useState("");
+  // Staff accounts that work at more than one branch stop here and say which
+  // branch they are in before the server issues a session.
+  const [pendingBranch, setPendingBranch] = useState<{
+    token: string;
+    branches: BranchOption[];
+    lastBranchId: number | null;
+    username: string;
+    role: string;
+  } | null>(null);
+  const [branchBusy, setBranchBusy] = useState(false);
+  const [branchError, setBranchError] = useState("");
+
+  // `?redirect=` only ever applies to the customer journey. safeRedirectPath
+  // falls back to "/dashboard", so letting staff fall through to it would send an
+  // admin/technician into the customer area, which bounces them straight back to
+  // this page. Staff always land in the portal.
+  function destinationFor(role: string): string {
+    if (role === "provider") return "/admin";
+    const portal = ["admin", "owner", "technician", "manager", "staff"];
+    return portal.includes(role) ? "/admin" : redirectTo || routeForRole(role);
+  }
+
+  function routeForRole(role: string): string {
+    if (role === "admin" || role === "owner" || role === "technician" || role === "manager" || role === "staff" || role === "provider") return "/admin";
+    return "/dashboard";
+  }
+
+  async function completeBranchSelection(branchId: number) {
+    if (!pendingBranch) return;
+    setBranchBusy(true);
+    setBranchError("");
+    try {
+      const res = await fetch("/api/auth/select-branch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // The short-lived branch-select token authorizes only this call.
+          Authorization: `Bearer ${pendingBranch.token}`,
+        },
+        body: JSON.stringify({ branchId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not set your branch.");
+      setBranchState(data.activeBranchId ?? null, data.branches || pendingBranch.branches);
+      const role = data.role || pendingBranch.role;
+      const displayName = data.username || pendingBranch.username || "Staff";
+      if (role === "provider") setProviderSession(data.token, displayName);
+      else setStaffSession(data.token, displayName, role, data.permissions || []);
+      const dest = destinationFor(role);
+      setPendingBranch(null);
+      router.push(dest);
+    } catch (err: any) {
+      setBranchError(err.message || "Could not set your branch.");
+    } finally {
+      setBranchBusy(false);
+    }
+  }
 
   async function finishCustomerLogin(token: string, displayName: string) {
     setCustomerSession(token, displayName);
@@ -31,6 +90,48 @@ export default function LoginPage() {
   useEffect(() => {
     api<{ googleClientId: string }>("/api/public-settings").then((d) => setGoogleClientId(d.googleClientId || "")).catch(() => {});
   }, []);
+
+  // Google staff OAuth is a redirect, so it cannot run the JSON handshake the
+  // password form does. When the account works at more than one branch the server
+  // bounces here with a short-lived, purpose-scoped select token; decode it and
+  // render the same picker. The token carries no session authority, and it is
+  // stripped from the URL so it cannot linger in history or a referrer.
+  useEffect(() => {
+    if (!router.isReady) return;
+    const raw = router.query.staff_branch_select;
+    const token = Array.isArray(raw) ? raw[0] : raw;
+    if (typeof token !== "string" || !token) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/branch-options", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) throw new Error(data.error || "Your sign-in link has expired.");
+        setTab("staff");
+        setError("");
+        setPendingBranch({
+          token,
+          branches: data.branches || [],
+          lastBranchId: data.lastBranchId ?? null,
+          username: data.username || "Staff",
+          role: data.role || "staff",
+        });
+      } catch (err: any) {
+        if (cancelled) return;
+        setError(err.message || "Your sign-in link has expired. Please sign in again.");
+      } finally {
+        // Drop the token from the address bar either way.
+        if (window.history.replaceState) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [router.isReady, router.query.staff_branch_select]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,13 +171,27 @@ export default function LoginPage() {
         setTotpCode("");
         const role = data.role || "";
         const displayName = data.username || data.email || "Staff";
+        // Server stopped at the branch picker; hold the short-lived token and
+        // render the chooser instead of a session.
+        if (data.requiresBranch) {
+          setPendingBranch({
+            token: data.branchSelectToken,
+            branches: Array.isArray(data.branches) ? data.branches : [],
+            lastBranchId: data.lastBranchId ?? null,
+            username: displayName,
+            role,
+          });
+          setBranchError("");
+          setLoading(false);
+          return;
+        }
+        setBranchState(data.activeBranchId ?? null, Array.isArray(data.branches) ? data.branches : []);
         if (role === "provider") {
           setProviderSession(data.token, displayName);
         } else {
           setStaffSession(data.token, displayName, role, data.permissions || []);
         }
-        if (role === "admin" || role === "owner" || role === "technician" || role === "manager" || role === "staff" || role === "provider") router.push("/admin");
-        else router.push("/dashboard");
+        router.push(destinationFor(role));
       }
     } catch (err: any) {
       setError(err.message || "Login failed");
@@ -98,6 +213,17 @@ export default function LoginPage() {
         </button>
       </div>
 
+      {pendingBranch ? (
+        <BranchPicker
+          branches={pendingBranch.branches}
+          initialBranchId={pendingBranch.lastBranchId}
+          busy={branchBusy}
+          error={branchError}
+          submitLabel="Start session"
+          onSubmit={completeBranchSelection}
+          onCancel={() => { setPendingBranch(null); setBranchError(""); }}
+        />
+      ) : (
       <form onSubmit={handleSubmit} className="auth-form">
         <div className="field">
           <label htmlFor="email" className="input-label">{tab === "customer" ? "Email" : "Username or email"}</label>
@@ -181,6 +307,18 @@ export default function LoginPage() {
           </>
         )}
       </form>
+      )}
+
+      {tab === "customer" && !pendingBranch && (
+        <button
+          type="button"
+          className="btn btn-ghost btn-block"
+          onClick={() => { setTab("staff"); setError(""); }}
+          style={{ marginTop: "var(--space-3)" }}
+        >
+          Staff or provider sign-in
+        </button>
+      )}
     </div>
   );
 }

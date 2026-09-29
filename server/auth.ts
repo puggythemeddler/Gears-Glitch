@@ -49,7 +49,7 @@ function isAccountLocked(login: string): boolean {
   return accountLockoutMs(login) > 0;
 }
 
-interface JwtPayload {
+export interface JwtPayload {
   sub: number;
   username?: string;
   email?: string;
@@ -57,6 +57,10 @@ interface JwtPayload {
   role: string;
   purpose?: string;
   permissions?: string[];
+  // Branch this session is scoped to. Set once the account has told us where it
+  // is working (login picker, or a mid-session switch) and enforced on every
+  // branch-sensitive write, e.g. POS checkout. See server/branch-access.ts.
+  activeBranchId?: number | null;
   jti?: string;
   iat?: number;
 }
@@ -79,6 +83,9 @@ interface AuthResult {
   ok: boolean;
   error?: string;
   token?: string;
+  /** Staff account id. Present on successful staff logins so the caller can
+   *  resolve branch access before minting the session. */
+  sub?: number;
   username?: string;
   name?: string;
   email?: string;
@@ -110,6 +117,11 @@ function verifyToken(token: string): JwtPayload {
 // seconds, changedAt is a PG timestamp string.
 async function verifySessionToken(token: string): Promise<JwtPayload> {
   const payload = verifyToken(token);
+  // A purpose-scoped token (today: the branch-select token minted mid-login) is
+  // signed with the same secret, so without this check it would pass as an
+  // ordinary session and unlock every authenticated route. Only the one
+  // purpose-scoped endpoint accepts it, and it calls verifyToken directly.
+  if (payload.purpose) throw new Error("not a session token");
   const changedAt = await getPasswordChangedAt(payload.role, payload.sub);
   if (changedAt && payload.iat) {
     const changedSec = Math.floor(Date.parse(String(changedAt)) / 1000);
@@ -257,7 +269,7 @@ async function loginStaff(login: string, password: string, totpCode?: string): P
   const { getUserPermissions } = require("./permissions");
   const permissions = await getUserPermissions(user.id);
   const token = signToken({ sub: user.id, username: user.username, email: userEmail, role, permissions });
-  return { ok: true, token, username: user.username, email: userEmail, role, permissions };
+  return { ok: true, token, sub: user.id, username: user.username, email: userEmail, role, permissions };
 }
 
 async function registerCustomer({ name, email, password }: { name: string; email: string; password: string }): Promise<AuthResult> {
@@ -572,6 +584,48 @@ function verifyTotp(secret: string, token: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Purpose claim for the short-lived token minted after a successful password
+ * check when the account still has to say which branch it is working at. It is
+ * deliberately NOT a session: it cannot be used for any API call, it only
+ * unlocks POST /api/auth/select-branch. Without it the branch picker would force
+ * the user to re-enter their password.
+ */
+export const BRANCH_SELECT_PURPOSE = "branch-select";
+const BRANCH_SELECT_TTL = "10m";
+
+export interface StaffSessionClaims {
+  sub: number;
+  username: string;
+  email: string;
+  role: string;
+  permissions: string[];
+  activeBranchId: number | null;
+}
+
+export function issueBranchSelectToken(claims: Omit<StaffSessionClaims, "activeBranchId">): string {
+  return signToken(
+    { sub: claims.sub, username: claims.username, email: claims.email, role: claims.role, permissions: claims.permissions, purpose: BRANCH_SELECT_PURPOSE },
+    BRANCH_SELECT_TTL
+  );
+}
+
+/**
+ * Mint the real staff session, carrying the branch the account is working at.
+ * Re-issuing on a branch switch is deliberate: the claim is the single source of
+ * truth for branch-sensitive writes, so switching has to rotate the token.
+ */
+export function issueStaffSession(claims: StaffSessionClaims): string {
+  return signToken({
+    sub: claims.sub,
+    username: claims.username,
+    email: claims.email,
+    role: claims.role,
+    permissions: claims.permissions,
+    activeBranchId: claims.activeBranchId ?? null,
+  });
 }
 
 export {

@@ -1,7 +1,9 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { api, getRole, downloadPdf } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import PinLock from "@/components/PinLock";
+import BranchSwitcher from "@/components/BranchSwitcher";
+import { getActiveBranchId, setBranchState } from "@/lib/branches";
 import { useApp } from "@/lib/app-context";
 import { usePageTitle } from "@/lib/use-page-title";
 import { escapeHtml } from "@/lib/sanitize";
@@ -88,6 +90,30 @@ export default function POSPage() {
   const pmtConfig = paymentMethods.find((m) => m.id === paymentMethod);
   const needsTender = pmtConfig?.needsTender ?? false;
 
+  // Re-fetch everything that is branch-scoped: catalogue, categories and the
+  // allowed-branch list. Called on mount and after a mid-session branch switch.
+  const reloadCatalog = useCallback(() => {
+    api<{ products: Product[] }>("/api/products?includeHidden=1").then((d) => {
+      setProducts(d.products || []);
+      setFiltered(d.products || []);
+    }).catch(() => {});
+    api<{ categories: { id: string; label: string }[] }>("/api/pos/categories").then((d) => {
+      setCategories(d.categories || []);
+    }).catch(() => {});
+    api<{ branches: { id: number; name: string }[] }>("/api/pos/branches").then((d) => {
+      const list = d.branches || [];
+      setBranches(list);
+      // The session branch is authoritative (set at login or via the switcher).
+      // /api/pos/branches is already scoped to it, so this is only a sanity
+      // check; the server rejects any checkout whose branchId is not the claim.
+      const saved = getActiveBranchId();
+      const match = list.find((b) => b.id === saved);
+      const resolved = match ? match.id : list.length === 1 ? list[0].id : (saved ?? null);
+      setBranchState(resolved, list);
+      setSelectedBranchId(resolved);
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     const role = getRole();
     setLoggedIn(!!role);
@@ -96,30 +122,13 @@ export default function POSPage() {
     else if (role && role !== "customer") setPinUnlocked(true);
     const savedCat = sessionStorage.getItem("posCategory");
     if (savedCat) setSelectedCategory(savedCat);
-    api<{ products: Product[] }>("/api/products?includeHidden=1").then((d) => {
-      setProducts(d.products || []);
-      setFiltered(d.products || []);
-    }).catch(() => {});
     api<{ methods: PaymentMethod[] }>("/api/pos/payment-methods").then((d) => {
       const methods = d.methods || [];
       setPaymentMethods(methods);
       if (methods.length > 0 && !paymentMethod) setPaymentMethod(methods[0].id);
     }).catch(() => {});
-    api<{ categories: { id: string; label: string }[] }>("/api/pos/categories").then((d) => {
-      setCategories(d.categories || []);
-    }).catch(() => {});
-    api<{ branches: { id: number; name: string }[] }>("/api/pos/branches").then((d) => {
-      const list = d.branches || [];
-      setBranches(list);
-      if (list.length > 1) {
-        const saved = Number(sessionStorage.getItem("posBranch"));
-        const match = list.find((b) => b.id === saved);
-        setSelectedBranchId(match ? match.id : list[0].id);
-      } else {
-        setSelectedBranchId(null);
-      }
-    }).catch(() => {});
-  }, []);
+    reloadCatalog();
+  }, [reloadCatalog]);
 
   useEffect(() => {
     const q = search.toLowerCase().trim();
@@ -499,7 +508,7 @@ export default function POSPage() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <button onClick={() => setShowHelp(!showHelp)} aria-label="Help and keyboard shortcuts" title="Help & keyboard shortcuts" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.45rem 0.75rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700, minHeight: 32 }}>?</button>
-            <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); sessionStorage.removeItem("posBranch"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline", padding: "0.45rem 0.3rem", minHeight: 32 }}>Lock till</button>
+            <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline", padding: "0.45rem 0.3rem", minHeight: 32 }}>Lock till</button>
           </div>
         </div>
         {showHelp && (
@@ -560,10 +569,18 @@ export default function POSPage() {
           <div style={{ padding: "0.5rem 0.75rem", borderTop: "1px solid var(--border)", fontSize: "0.85rem" }}>
             {branches.length > 1 && (
               <div style={{ marginBottom: "0.4rem" }}>
-                <label htmlFor="pos-branch-select" style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, marginBottom: "0.2rem" }}>Branch</label>
-                <select id="pos-branch-select" className="input" value={selectedBranchId ?? ""} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setSelectedBranchId(v); if (v) sessionStorage.setItem("posBranch", String(v)); }} style={{ width: "100%", fontSize: "0.85rem" }}>
-                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+                <label id="pos-branch-label" style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, marginBottom: "0.2rem" }}>Branch</label>
+                <BranchSwitcher
+                  branches={branches}
+                  onSwitched={() => {
+                    // Re-read the scoped branch list and reload the catalogue so
+                    // stock, pricing and tax reflect the new branch.
+                    setSelectedBranchId(getActiveBranchId());
+                    setCart([]);
+                    setSelectedCategory("");
+                    reloadCatalog();
+                  }}
+                />
               </div>
             )}
             <div ref={customerRef} style={{ position: "relative", marginBottom: "0.5rem" }}>

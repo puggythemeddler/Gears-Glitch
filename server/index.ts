@@ -350,7 +350,23 @@ import {
   clearSessionCookie,
   generateTotpSecret,
   verifyTotp,
+  BRANCH_SELECT_PURPOSE,
+  issueBranchSelectToken,
+  issueStaffSession,
 } from "./auth";
+import {
+  getUserBranches,
+  getLastBranchId,
+  setLastBranchId,
+  gateStaffBranchAccess,
+  resolveBranchContext,
+  requireBranchContext,
+  setUserBranches,
+  getUserBranchIds,
+  listActiveBranches,
+  isUnrestrictedBranchRole,
+  BranchAccessError,
+} from "./branch-access";
 import {
   getAllPermissions,
   listRoles,
@@ -421,6 +437,11 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) { next(); return; }
   // Skip for login/register endpoints (no session yet)
   if (req.path.startsWith("/api/auth/login") || req.path.startsWith("/api/auth/register") || req.path.startsWith("/api/customer/login") || req.path.startsWith("/api/customer/register") || req.path.startsWith("/api/provider/login")) { next(); return; }
+  // Branch selection is the second half of the staff login handshake and runs
+  // before a session cookie exists. It is authorized by a purpose-scoped
+  // branch-select token (not by a cookie), so there is no ambient authority for a
+  // cross-site request to borrow; the caller must already have proven the password.
+  if (req.path.startsWith("/api/auth/select-branch")) { next(); return; }
   // Skip for M-Pesa callback (external webhook)
   if (req.path === "/api/mpesa/callback") { next(); return; }
   // Skip for WhatsApp webhook (external webhook, raw-body signed by Meta)
@@ -496,9 +517,16 @@ const apiLimiter = rateLimit({
 });
 app.use("/api", apiLimiter);
 
+// Login/register throttling. The default is deliberately tight (10 attempts per
+// window per IP) because these endpoints are the credential-stuffing surface.
+// AUTH_RATE_MAX exists for the same reason as API_RATE_MAX above: a shop behind
+// carrier-grade NAT, or an integration suite that legitimately logs in more than
+// a handful of times, can raise it without a code change. Leave it unset in
+// production.
+const AUTH_RATE_MAX = Number(process.env.AUTH_RATE_MAX) || 10;
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: AUTH_RATE_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many login attempts. Please try again in 15 minutes." },
@@ -2064,6 +2092,53 @@ app.delete("/api/admin/branches/:id", ownerAuthMiddleware, requireStepUp, asyncH
   res.status(204).end();
 }));
 
+// ============ STAFF BRANCH ASSIGNMENTS ============
+// Controls which branches a staff account may work at, which in turn decides the
+// login branch picker and the POS scope. admin/owner ignore these rows (they
+// resolve to every active branch); see server/branch-access.ts.
+
+app.get("/api/admin/staff/:id/branches", ownerAuthMiddleware, requirePermission("staff:list"), asyncHandler(async (req: Request, res: Response) => {
+  const userId = parseInt(String(req.params.id), 10);
+  if (isNaN(userId)) { res.status(400).json({ error: "Invalid user ID." }); return; }
+  const account: any = await queryOne("SELECT id, username, role FROM users WHERE id = $1", [userId]);
+  if (!account) { res.status(404).json({ error: "User not found." }); return; }
+  const [branchIds, effective, allBranches] = await Promise.all([
+    getUserBranchIds(userId),
+    getUserBranches(userId, String(account.role || "")),
+    listActiveBranches(),
+  ]);
+  res.json({
+    userId,
+    username: account.username,
+    role: account.role,
+    branchIds,
+    // What the account can actually reach right now, which differs from the raw
+    // assignment rows for admin/owner and for single-branch shops.
+    effectiveBranchIds: effective.map((b) => b.id),
+    unrestricted: isUnrestrictedBranchRole(account.role),
+    branches: allBranches,
+  });
+}));
+
+app.put("/api/admin/staff/:id/branches", ownerAuthMiddleware, requirePermission("staff:update"), asyncHandler(async (req: Request, res: Response) => {
+  const userId = parseInt(String(req.params.id), 10);
+  if (isNaN(userId)) { res.status(400).json({ error: "Invalid user ID." }); return; }
+  const branchIds = (req.body || {}).branchIds;
+  if (!Array.isArray(branchIds)) { res.status(400).json({ error: "branchIds must be an array." }); return; }
+  const account: any = await queryOne("SELECT id, username, role FROM users WHERE id = $1", [userId]);
+  if (!account) { res.status(404).json({ error: "User not found." }); return; }
+  let assigned: { id: number; name: string }[];
+  try {
+    await setUserBranches(userId, branchIds.map((n: any) => Number(n)));
+    assigned = await getUserBranches(userId, String(account.role || ""));
+  } catch (err) {
+    if (err instanceof BranchAccessError) { res.status(400).json({ error: err.message }); return; }
+    throw err;
+  }
+  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "staff_branches", String(userId), { branchIds }, (req as any).user.role);
+  res.json({ ok: true, userId, branchIds: await getUserBranchIds(userId), effectiveBranchIds: assigned.map((b) => b.id) });
+}));
+
 // ============ BRANCH SUBSCRIPTIONS ============
 
 app.get("/api/admin/branches/:id/subscription", allowControlPlane(ownerAuthMiddleware), requirePermission("subscription:view"), asyncHandler(async (req, res) => {
@@ -2287,9 +2362,16 @@ app.get("/api/pos/categories", asyncHandler(async (_req: Request, res: Response)
   res.json({ categories: await listPosCategories() });
 }));
 
-app.get("/api/pos/branches", posAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-  const branches = await listBranches();
-  res.json({ branches: branches.map((b: any) => ({ id: b.id, name: b.name })) });
+// The till only ever offers the branches this account may sell at, not the whole
+// shop. Selecting a branch here is presentation: the authoritative scope is the
+// activeBranchId claim enforced on checkout.
+app.get("/api/pos/branches", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const branches = await getUserBranches(Number(user.sub), String(user.role || ""));
+  res.json({
+    branches,
+    activeBranchId: user.activeBranchId == null ? null : Number(user.activeBranchId),
+  });
 }));
 
 async function pushPosStk(req: Request, orderId: number, amount: number, mpesaPhone: string): Promise<{ status: "pending" | "failed"; checkoutRequestId?: string | null }> {
@@ -2323,17 +2405,31 @@ async function pushPosStk(req: Request, orderId: number, amount: number, mpesaPh
 app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey, branchId: branchIdInput, mpesaPhone } = req.body || {};
+    const pmt = paymentMethod || "cash";
+    // BN2 + account-scoped branch: the session's activeBranchId claim is the
+    // authoritative scope. The client no longer chooses freely — a till that
+    // sends a different branchId than its session is rejected rather than
+    // silently overridden, so a tampered payload cannot misattribute a sale.
+    //
+    // Resolved before the payload is validated so an out-of-scope till gets the
+    // same refusal whatever it sends, rather than learning about the cart first.
+    let branchId: number | null;
+    try {
+      branchId = await requireBranchContext(
+        Number((req as any).user.sub),
+        String((req as any).user.role || ""),
+        (req as any).user.activeBranchId,
+        branchIdInput
+      );
+    } catch (err) {
+      if (err instanceof BranchAccessError) {
+        res.status(403).json({ error: err.message, branches: err.branches, requiresBranch: err.branches.length > 1 });
+        return;
+      }
+      throw err;
+    }
     if (!items || !Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "Items are required." }); return; }
     if (items.length > 100) { res.status(400).json({ error: "Too many items (max 100)." }); return; }
-    const pmt = paymentMethod || "cash";
-    // BN2: attribute every POS sale to a branch. Use the explicit branch when the
-    // till sends one; otherwise fall back to the single branch (a one-branch shop
-    // has no ambiguity), so sales are never silently bucketed as global/NULL.
-    let branchId: number | null = branchIdInput == null || branchIdInput === "" ? null : Number(branchIdInput);
-    if (branchId == null || Number.isNaN(branchId)) {
-      const lone = await queryOne("SELECT COUNT(*) AS c, MIN(id) AS id FROM branches") as any;
-      branchId = lone && Number(lone.c) === 1 ? Number(lone.id) : null;
-    }
     if (idempotencyKey) {
       const existing = await queryOne("SELECT id FROM orders WHERE idempotency_key = $1", [idempotencyKey]) as any;
       if (existing) {
@@ -4973,9 +5069,225 @@ app.post("/api/auth/login", asyncHandler(async (req: Request, res: Response) => 
     res.status(401).json({ error: result.error });
     return;
   }
+  // Branch scoping: an account that may work at more than one branch has to say
+  // which one it is in before it gets a session, so every later write is
+  // attributed without the client having to remember to say it again. A short
+  // branch-select token is issued instead of a session so the user is not asked
+  // for their password twice. See server/branch-access.ts.
+  const staffSub = Number((result as any).sub);
+  if (Number.isFinite(staffSub)) {
+    const branches = await getUserBranches(staffSub, String(result.role || ""));
+    if (branches.length > 1) {
+      const lastBranchId = await getLastBranchId(staffSub);
+      const selectToken = issueBranchSelectToken({
+        sub: staffSub,
+        username: String(result.username || ""),
+        email: String(result.email || ""),
+        role: String(result.role || ""),
+        permissions: result.permissions || [],
+      });
+      try {
+        await logAudit(null, result.username || login || "staff", "login", "auth", null, { method: "password", stage: "branch_required" }, result.role || "staff");
+      } catch { console.warn("[audit] Failed to write audit log"); }
+      res.json({
+        requiresBranch: true,
+        branchSelectToken: selectToken,
+        branches,
+        lastBranchId: lastBranchId && branches.some((b) => b.id === lastBranchId) ? lastBranchId : null,
+        username: result.username,
+        role: result.role,
+      });
+      return;
+    }
+    // Zero branches. Two different situations hide behind this, so ask the shared
+    // gate rather than guessing: a multi-branch shop that has not assigned this
+    // account anywhere is a permissions problem and gets refused, while a shop
+    // with no branches at all is a fresh install that must still be reachable
+    // enough to create its first branch.
+    const gate = await gateStaffBranchAccess(staffSub, String(result.role || ""));
+    if (gate.kind === "denied") {
+      try {
+        await logAudit(null, result.username || login || "staff", "login_blocked", "auth", null, { method: "password", reason: "no_branch_assignment" }, result.role || "staff");
+      } catch { console.warn("[audit] Failed to write audit log"); }
+      res.status(403).json({
+        error: "Your account is not assigned to any branch. Ask an owner or admin to assign you to a branch before signing in.",
+        branches: [],
+        requiresBranch: false,
+      });
+      return;
+    }
+    if (gate.kind === "unscoped") {
+      // No branch exists yet anywhere in the shop. Issue the session unscoped so
+      // the account can sign in and set the shop up; requireBranchContext still
+      // blocks branch-scoped work like the POS until a branch is created.
+      const unscoped = issueStaffSession({
+        sub: staffSub,
+        username: String(result.username || ""),
+        email: String(result.email || ""),
+        role: String(result.role || ""),
+        permissions: result.permissions || [],
+        activeBranchId: null,
+      });
+      setSessionCookie(res, unscoped);
+      try {
+        await logAudit(null, result.username || login || "staff", "login", "auth", null, { method: "password", branchState: "shop_has_no_branches" }, result.role || "staff");
+      } catch { console.warn("[audit] Failed to write audit log"); }
+      res.json({ token: unscoped, username: result.username, email: result.email, role: result.role, permissions: result.permissions || [], activeBranchId: null, branches: [] });
+      return;
+    }
+    // Exactly one branch: no prompt, and the session is pinned to it.
+    const branchId = gate.kind === "pinned" ? gate.branchId : branches[0].id;
+    if (branchId) await setLastBranchId(staffSub, branchId);
+    const token = issueStaffSession({
+      sub: staffSub,
+      username: String(result.username || ""),
+      email: String(result.email || ""),
+      role: String(result.role || ""),
+      permissions: result.permissions || [],
+      activeBranchId: branchId,
+    });
+    setSessionCookie(res, token);
+    try { await logAudit(null, result.username || login || "staff", "login", "auth", null, { method: "password", branchId }, result.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
+    res.json({
+      token,
+      username: result.username,
+      email: result.email,
+      role: result.role,
+      permissions: result.permissions || [],
+      branches,
+      activeBranchId: branchId,
+    });
+    return;
+  }
   setSessionCookie(res, result.token);
   try { await logAudit(null, result.username || login || "staff", "login", "auth", null, { method: "password" }, result.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
   res.json({ token: result.token, username: result.username, email: result.email, role: result.role, permissions: result.permissions || [] });
+}));
+
+// The branch picker needs the option list before it can render. A redirect-based
+// sign-in (Google OAuth) cannot carry the list through the URL, so it fetches it
+// here with the same purpose-scoped select token. Read-only: it hands out no
+// authority, so it is exempt from CSRF but must never accept a real session.
+app.get("/api/auth/branch-options", asyncHandler(async (req: Request, res: Response) => {
+  const token = getBearerToken(req);
+  if (!token) { res.status(401).json({ error: "Sign in again to choose a branch." }); return; }
+  try {
+    const payload = verifyToken(token);
+    // Unlike select-branch, this must not accept a live session: it is the step
+    // that happens *before* one exists.
+    if (payload.purpose !== BRANCH_SELECT_PURPOSE) {
+      res.status(401).json({ error: "Invalid or expired sign-in link." });
+      return;
+    }
+    const sub = Number(payload.sub);
+    if (!Number.isFinite(sub)) { res.status(401).json({ error: "Invalid sign-in link." }); return; }
+    const role = String(payload.role || "");
+    const branches = await getUserBranches(sub, role);
+    const last = await getLastBranchId(sub);
+    res.json({
+      branches,
+      lastBranchId: last !== null && branches.some((b) => b.id === last) ? last : null,
+      username: payload.username,
+      role,
+    });
+  } catch {
+    res.status(401).json({ error: "Invalid or expired sign-in link." });
+  }
+}));
+
+// Completes a login that stopped at the branch picker. Accepts the short-lived
+// branch-select token (normal path) or an existing staff session (re-picking).
+app.post("/api/auth/select-branch", asyncHandler(async (req: Request, res: Response) => {
+  const token = getBearerToken(req);
+  const branchIdRaw = (req.body || {}).branchId;
+  if (!token) { res.status(401).json({ error: "Sign in again to choose a branch." }); return; }
+  if (branchIdRaw === undefined || branchIdRaw === null || branchIdRaw === "") {
+    res.status(400).json({ error: "branchId is required." });
+    return;
+  }
+  const branchId = Number(branchIdRaw);
+  if (!Number.isFinite(branchId)) { res.status(400).json({ error: "Invalid branch." }); return; }
+
+  let claims: { sub: number; username?: string; email?: string; role: string; permissions: string[] };
+  try {
+    const payload = verifyToken(token);
+    if (payload.purpose && payload.purpose !== BRANCH_SELECT_PURPOSE) {
+      res.status(400).json({ error: "Invalid branch selection token." });
+      return;
+    }
+    claims = {
+      sub: Number(payload.sub),
+      username: payload.username,
+      email: payload.email,
+      role: String(payload.role || ""),
+      permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+    };
+  } catch {
+    res.status(401).json({ error: "Branch selection expired. Please sign in again." });
+    return;
+  }
+  if (!Number.isFinite(claims.sub)) { res.status(401).json({ error: "Invalid session." }); return; }
+
+  // The picker must not be able to install a branch the account cannot use.
+  const branches = await getUserBranches(claims.sub, claims.role);
+  if (!branches.some((b) => b.id === branchId)) {
+    res.status(403).json({ error: "You are not assigned to that branch.", branches });
+    return;
+  }
+
+  await setLastBranchId(claims.sub, branchId);
+  const sessionToken = issueStaffSession({
+    sub: claims.sub,
+    username: String(claims.username || ""),
+    email: String(claims.email || ""),
+    role: claims.role,
+    permissions: claims.permissions,
+    activeBranchId: branchId,
+  });
+  setSessionCookie(res, sessionToken);
+  try {
+    await logAudit(claims.sub, claims.username || "staff", "select_branch", "auth", String(branchId), { branchId }, claims.role);
+  } catch { console.warn("[audit] Failed to write audit log"); }
+  res.json({
+    ok: true,
+    token: sessionToken,
+    username: claims.username,
+    email: claims.email,
+    role: claims.role,
+    permissions: claims.permissions,
+    branches,
+    activeBranchId: branchId,
+  });
+}));
+
+// Mid-session branch switch. Re-issues the session so activeBranchId rotates.
+app.post("/api/auth/switch-branch", staffAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const branchId = Number((req.body || {}).branchId);
+  if (!Number.isFinite(branchId)) { res.status(400).json({ error: "Invalid branch." }); return; }
+  const branches = await getUserBranches(Number(user.sub), String(user.role || ""));
+  if (!branches.some((b) => b.id === branchId)) {
+    res.status(403).json({ error: "You are not assigned to that branch.", branches });
+    return;
+  }
+  await setLastBranchId(Number(user.sub), branchId);
+  const { getUserPermissions } = require("./permissions");
+  const permissions = Array.isArray(user.permissions) && user.permissions.length > 0
+    ? user.permissions
+    : await getUserPermissions(Number(user.sub));
+  const sessionToken = issueStaffSession({
+    sub: Number(user.sub),
+    username: String(user.username || ""),
+    email: String(user.email || ""),
+    role: String(user.role || ""),
+    permissions,
+    activeBranchId: branchId,
+  });
+  setSessionCookie(res, sessionToken);
+  try {
+    await logAudit(Number(user.sub), user.username || "staff", "switch_branch", "auth", String(branchId), { branchId }, user.role);
+  } catch { console.warn("[audit] Failed to write audit log"); }
+  res.json({ ok: true, activeBranchId: branchId, branches, token: sessionToken });
 }));
 
 // A-1: lightweight session introspection. Lets the SPA bootstrap its login state
@@ -4989,17 +5301,33 @@ app.get("/api/auth/session", asyncHandler(async (req: Request, res: Response) =>
   if (!token) { res.json({ role: null }); return; }
   try {
     const user = verifyToken(token);
+    // A purpose-scoped token (the branch-select token) is not a session. It is
+    // only good for POST /api/auth/select-branch, so it must not make this
+    // endpoint report an authenticated user.
+    if ((user as any).purpose) { res.json({ role: null }); return; }
     const base = { role: (user as any).role || null, sub: (user as any).sub };
     if (user.role === "customer" || user.role === "provider") {
       res.json({ role: user.role, name: (user as any).name || (user as any).email, email: (user as any).email });
       return;
     }
     const staff: any = await queryOne("SELECT username FROM users WHERE id = $1", [(user as any).sub]);
+    // Expose the session's branch plus the full list the account may switch to,
+    // so the SPA can render the switcher without a second round trip.
+    let branches: { id: number; name: string }[] = [];
+    let activeBranchId: number | null = (user as any).activeBranchId == null ? null : Number((user as any).activeBranchId);
+    try {
+      branches = await getUserBranches(Number((user as any).sub), String(user.role || ""));
+      if (activeBranchId !== null && !branches.some((b) => b.id === activeBranchId)) activeBranchId = null;
+    } catch {
+      branches = [];
+    }
     res.json({
       role: user.role,
       username: staff?.username || (user as any).username,
       email: (user as any).email,
       permissions: Array.isArray((user as any).permissions) ? (user as any).permissions : [],
+      activeBranchId,
+      branches,
     });
   } catch {
     res.json({ role: null });
@@ -5215,10 +5543,58 @@ app.get("/api/auth/google/callback", asyncHandler(async (req: Request, res: Resp
       return;
     }
     const permissions = await getUserPermissions(staff.id);
-    const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: staff.role, permissions });
+    const staffId = Number(staff.id);
+
+    // Branch gate, same rules as the password route. A redirect flow cannot do a
+    // JSON handshake, so the multi-branch case hands the short-lived, purpose-scoped
+    // select token to the login page, which renders the same picker. It cannot be
+    // used as a session, so the hop through the browser is not a way in.
+    const gate = await gateStaffBranchAccess(staffId, String(staff.role || ""));
+    if (gate.kind === "denied") {
+      try { await logAudit(staffId, staff.username, "login_blocked", "auth", null, { method: "google", reason: "no_branch_assignment" }, staff.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
+      res.redirect(303, `${base}/login?error=no_branch_assignment`);
+      return;
+    }
+    if (gate.kind === "unscoped") {
+      const unscoped = issueStaffSession({
+        sub: staffId,
+        username: String(staff.username || ""),
+        email: String(staff.email || ""),
+        role: String(staff.role || ""),
+        permissions,
+        activeBranchId: null,
+      });
+      setSessionCookie(res, unscoped, 7 * 24 * 3600);
+      try { await upsertOauthAccount({ provider: "google", subject: profile.email, email: staff.email, name: staff.username, user_id: staffId, customer_id: null }); } catch { console.warn("[auth] Google account link (staff) failed"); }
+      try { await logAudit(staffId, staff.username, "login", "auth", null, { method: "google", branchState: "shop_has_no_branches" }, staff.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
+      res.redirect(303, `${base}${postLogin}`);
+      return;
+    }
+    if (gate.kind === "picker") {
+      const selectToken = issueBranchSelectToken({
+        sub: staffId,
+        username: String(staff.username || ""),
+        email: String(staff.email || ""),
+        role: String(staff.role || ""),
+        permissions,
+      });
+      try { await logAudit(staffId, staff.username, "login", "auth", null, { method: "google", stage: "branch_required" }, staff.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
+      const handoff = new URLSearchParams({ staff_branch_select: selectToken, next: postLogin });
+      res.redirect(303, `${base}/login?${handoff.toString()}`);
+      return;
+    }
+
+    const token = issueStaffSession({
+      sub: staffId,
+      username: String(staff.username || ""),
+      email: String(staff.email || ""),
+      role: String(staff.role || ""),
+      permissions,
+      activeBranchId: gate.branchId,
+    });
     setSessionCookie(res, token, 7 * 24 * 3600);
-    try { await upsertOauthAccount({ provider: "google", subject: profile.email, email: profile.email, name: profile.name, user_id: staff.id, customer_id: null }); } catch { console.warn("[auth] Google account link (staff) failed"); }
-    try { await logAudit(staff.id, staff.username, "login", "auth", null, { method: "google" }, staff.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
+    try { await upsertOauthAccount({ provider: "google", subject: profile.email, email: staff.email, name: staff.username, user_id: staffId, customer_id: null }); } catch { console.warn("[auth] Google account link (staff) failed"); }
+    try { await logAudit(staffId, staff.username, "login", "auth", null, { method: "google" }, staff.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
     res.redirect(303, `${base}${postLogin}`);
     return;
   }
@@ -5479,9 +5855,65 @@ app.post("/api/auth/google-admin-login", asyncHandler(async (req: Request, res: 
     const staff = await findStaffByEmail(email);
     if (!staff) { res.status(403).json({ error: "Login failed." }); return; }
     const permissions = await getUserPermissions(staff.id);
-    const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: staff.role, permissions });
-    try { await logAudit(staff.id, staff.username, "login", "auth", null, { method: "google" }, staff.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
-    res.json({ token, username: staff.username, email: staff.email, role: staff.role, permissions });
+    const staffId = Number(staff.id);
+
+    // Same branch gate as the password route: a staff session must never be
+    // issued without the branch it is scoped to.
+    const gate = await gateStaffBranchAccess(staffId, String(staff.role || ""));
+    if (gate.kind === "denied") {
+      try { await logAudit(staffId, staff.username, "login_blocked", "auth", null, { method: "google", reason: "no_branch_assignment" }, staff.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
+      res.status(403).json({
+        error: "Your account is not assigned to any branch. Ask an owner or admin to assign you to a branch before signing in.",
+        branches: [],
+        requiresBranch: false,
+      });
+      return;
+    }
+    if (gate.kind === "unscoped") {
+      const unscoped = issueStaffSession({
+        sub: staffId,
+        username: String(staff.username || ""),
+        email: String(staff.email || ""),
+        role: String(staff.role || ""),
+        permissions,
+        activeBranchId: null,
+      });
+      setSessionCookie(res, unscoped);
+      try { await logAudit(staffId, staff.username, "login", "auth", null, { method: "google", branchState: "shop_has_no_branches" }, staff.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
+      res.json({ token: unscoped, username: staff.username, email: staff.email, role: staff.role, permissions, activeBranchId: null, branches: [] });
+      return;
+    }
+    if (gate.kind === "picker") {
+      const selectToken = issueBranchSelectToken({
+        sub: staffId,
+        username: String(staff.username || ""),
+        email: String(staff.email || ""),
+        role: String(staff.role || ""),
+        permissions,
+      });
+      try { await logAudit(staffId, staff.username, "login", "auth", null, { method: "google", stage: "branch_required" }, staff.role || "staff"); } catch { console.warn("[audit] Failed to write audit log"); }
+      res.json({
+        requiresBranch: true,
+        branchSelectToken: selectToken,
+        branches: gate.branches,
+        lastBranchId: gate.lastBranchId,
+        username: staff.username,
+        role: staff.role,
+      });
+      return;
+    }
+
+    const token = issueStaffSession({
+      sub: staffId,
+      username: String(staff.username || ""),
+      email: String(staff.email || ""),
+      role: String(staff.role || ""),
+      permissions,
+      activeBranchId: gate.branchId,
+    });
+    setSessionCookie(res, token);
+    try { await logAudit(staffId, staff.username, "login", "auth", null, { method: "google" }, staff.role || "admin"); } catch { console.warn("[audit] Failed to write audit log"); }
+    res.json({ token, username: staff.username, email: staff.email, role: staff.role, permissions, activeBranchId: gate.branchId });
   } catch (_err) {
     res.status(400).json({ error: "Google login failed." });
   }
@@ -5569,6 +6001,17 @@ app.post("/api/staff", adminAuthMiddleware, requirePermission("staff:create"), a
     }
 
     const staff = await createStaff({ username, email: email || undefined, password, role });
+    // A new account with no user_branches rows cannot sign in at all: login
+    // refuses an unassigned account whenever the shop has more than one active
+    // branch (see server/branch-access.ts). Default new staff to every active
+    // branch so creating someone never produces an account that is locked out,
+    // and let the owner narrow it from the Users page afterwards.
+    try {
+      const active = await listActiveBranches();
+      if (active.length > 0) await setUserBranches(Number((staff as any).id), active.map((b) => b.id));
+    } catch (err) {
+      console.warn("[staff create] could not seed branch grants:", (err as any)?.message || err);
+    }
     const user = (req as any).user;
     try { await recordAuditLog(user.sub, user.username || "", "staff_created", "staff", String(staff.id), JSON.stringify({ username, role }), user.role); } catch { console.warn("[audit] Failed to write audit log"); }
     res.status(201).json(staff);

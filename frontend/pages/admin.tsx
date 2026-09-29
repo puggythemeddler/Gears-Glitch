@@ -1567,9 +1567,20 @@ function AdminUsers() {
   const [pwForm, setPwForm] = useState({ password: "", confirm: "" });
   const [savingPw, setSavingPw] = useState(false);
   const [msg, setMsg] = useState("");
+  const [allBranches, setAllBranches] = useState<{ id: number; name: string }[]>([]);
+  const [userBranchIds, setUserBranchIds] = useState<number[]>([]);
+  const [userEffectiveBranchIds, setUserEffectiveBranchIds] = useState<number[]>([]);
+  const [userUnrestricted, setUserUnrestricted] = useState(false);
+  const [savingBranches, setSavingBranches] = useState(false);
 
   const allRoles = rolesData?.roles || [];
   const allPermissions = permsData?.permissions || {};
+
+  useEffect(() => {
+    api<{ branches: { id: number; name: string }[] }>("/api/admin/branches")
+      .then((d) => setAllBranches(d.branches || []))
+      .catch(() => setAllBranches([]));
+  }, []);
 
   async function addStaff(e: React.FormEvent) {
     e.preventDefault();
@@ -1590,15 +1601,43 @@ function AdminUsers() {
     setEditEmail(user.email || "");
     setPwForm({ password: "", confirm: "" });
     setMsg("");
+    setUserBranchIds([]);
+    setUserEffectiveBranchIds([]);
+    setUserUnrestricted(false);
     try {
-      const [rolesRes, permsRes] = await Promise.all([
+      const [rolesRes, permsRes, branchRes] = await Promise.all([
         api<{ roles: any[] }>(`/api/staff/${user.id}/roles`),
         api<{ effective: string[]; direct: string[] }>(`/api/staff/${user.id}/permissions`),
+        api<{ branchIds: number[]; effectiveBranchIds: number[]; unrestricted: boolean; branches: { id: number; name: string }[] }>(`/api/admin/staff/${user.id}/branches`),
       ]);
       setUserRoles(rolesRes.roles || []);
       setUserEffectivePerms(permsRes.effective || []);
       setUserDirectPerms(permsRes.direct || []);
+      setUserBranchIds(branchRes.branchIds || []);
+      setUserEffectiveBranchIds(branchRes.effectiveBranchIds || []);
+      setUserUnrestricted(!!branchRes.unrestricted);
+      if ((branchRes.branches || []).length > 0) setAllBranches(branchRes.branches);
     } catch { setUserRoles([]); setUserEffectivePerms([]); setUserDirectPerms([]); }
+  }
+
+  function toggleBranch(branchId: number) {
+    setUserBranchIds((prev) =>
+      prev.includes(branchId) ? prev.filter((b) => b !== branchId) : [...prev, branchId]
+    );
+  }
+
+  async function saveBranches() {
+    if (!selectedUser) return;
+    setSavingBranches(true);
+    try {
+      const res = await api<{ effectiveBranchIds: number[] }>(`/api/admin/staff/${selectedUser.id}/branches`, {
+        method: "PUT",
+        body: JSON.stringify({ branchIds: userBranchIds }),
+      });
+      setUserEffectiveBranchIds(res.effectiveBranchIds || []);
+      toast("success", "Branch access updated.");
+    } catch (err: any) { toast("error", err.message || "Could not update branch access."); }
+    finally { setSavingBranches(false); }
   }
 
   async function resetPassword(e: React.FormEvent) {
@@ -1701,6 +1740,39 @@ function AdminUsers() {
               <div className="field" style={{ margin: 0 }}><label>Confirm<input type="password" value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })} required /></label></div>
               <RippleButton type="submit" size="small" loading={savingPw}>Reset</RippleButton>
             </form>
+          </div>
+
+          <div className="panel" style={{ marginBottom: "1rem", maxWidth: 500 }}>
+            <h3 style={{ marginTop: 0, marginBottom: "0.5rem" }}>Branch Access</h3>
+            {userUnrestricted ? (
+              <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
+                This account has an unrestricted role, so it can work at every active branch
+                automatically. Ticking branches below is unnecessary.
+              </p>
+            ) : allBranches.length === 0 ? (
+              <p className="muted">No branches configured yet.</p>
+            ) : (
+              <>
+                <p className="muted" style={{ fontSize: "0.85rem" }}>
+                  Tick every branch this person may work at. With more than one ticked they are
+                  asked which branch they are in at sign-in, and the POS records sales against it.
+                  With exactly one they skip the prompt; with none they cannot use the POS in a
+                  multi-branch store.
+                </p>
+                {allBranches.map((b) => {
+                  const has = userBranchIds.includes(b.id);
+                  return (
+                    <label key={b.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0", cursor: "pointer", fontSize: "0.9rem" }}>
+                      <input type="checkbox" checked={has} onChange={() => toggleBranch(b.id)} />
+                      <span>{escapeHtml(b.name)}</span>
+                    </label>
+                  );
+                })}
+                <div style={{ marginTop: "0.75rem" }}>
+                  <RippleButton size="small" loading={savingBranches} onClick={saveBranches}>Save branch access</RippleButton>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="panel" style={{ marginBottom: "1rem", maxWidth: 500 }}>

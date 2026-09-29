@@ -127,6 +127,17 @@ CREATE TABLE IF NOT EXISTS branches (
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 
+-- Which staff accounts may operate at which branches. branches.manager_id is a
+-- single "manager of record", not an access grant, so it cannot scope POS work.
+-- Resolution rules (admin/owner see all active branches, single-branch shops
+-- resolve to their only branch) live in server/branch-access.ts.
+CREATE TABLE IF NOT EXISTS user_branches (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text),
+  PRIMARY KEY (user_id, branch_id)
+);
+
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
   customer_id INTEGER NOT NULL,
@@ -863,6 +874,9 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'storef
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_id INTEGER;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_amount DOUBLE PRECISION NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount_refunded DOUBLE PRECISION NOT NULL DEFAULT 0;
+-- Remembers the branch an account last worked at so the login picker can
+-- pre-select it. Kept as a SET NULL FK so deleting a branch just forgets it.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS gift_cards (
   id SERIAL PRIMARY KEY,
@@ -1137,5 +1151,6 @@ CREATE INDEX IF NOT EXISTS idx_loyalty_tx_order ON loyalty_transactions(order_id
 CREATE INDEX IF NOT EXISTS idx_products_group ON products(group_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date);
-CREATE INDEX IF NOT EXISTS idx_orders_checkout_request ON orders(checkout_request_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_levels_product_branch ON stock_levels(product_id, COALESCE(branch_id, 0));
+  CREATE INDEX IF NOT EXISTS idx_orders_checkout_request ON orders(checkout_request_id);
+  CREATE INDEX IF NOT EXISTS idx_user_branches_branch ON user_branches (branch_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_levels_product_branch ON stock_levels(product_id, COALESCE(branch_id, 0));

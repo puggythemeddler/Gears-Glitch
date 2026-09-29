@@ -914,10 +914,35 @@ async function ensureTechnicianUser(): Promise<void> {
   const existing = await queryOne("SELECT id, email FROM users WHERE username = $1", [techUser]) as any;
   if (existing) {
     if (existing.email !== techEmail) await query("UPDATE users SET email = $1 WHERE id = $2", [techEmail, existing.id]);
+    await grantAllActiveBranches(existing.id);
     return;
   }
   const passwordHash = await bcrypt.hash(password, 10);
-  await query("INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'technician')", [techUser, techEmail, passwordHash]);
+  const inserted = await query("INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'technician') RETURNING id", [techUser, techEmail, passwordHash]) as any;
+  await grantAllActiveBranches(inserted.rows[0].id);
+}
+
+/**
+ * Give an account every active branch.
+ *
+ * Boot-seeded accounts have to be able to sign in: login refuses an unassigned
+ * account whenever the shop has more than one active branch (see
+ * server/branch-access.ts), so a freshly seeded user with no user_branches rows
+ * would be locked out of its own install. The owner can narrow access from the
+ * admin Users page afterwards.
+ */
+async function grantAllActiveBranches(userId: number): Promise<void> {
+  try {
+    const branches = (await queryAll("SELECT id FROM branches WHERE is_active = 1")) as { id: number }[];
+    if (branches.length === 0) return;
+    for (const b of branches) {
+      await query("INSERT INTO user_branches (user_id, branch_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [userId, b.id]);
+    }
+  } catch (err: any) {
+    // user_branches may not exist yet on a database that has not run migration
+    // 0021; a missing grant is a locked-out user, so say so loudly.
+    console.warn(`[auth] could not grant branch access to user ${userId}: ${err?.message || err}`);
+  }
 }
 
 async function seedDemoProvider(): Promise<void> {

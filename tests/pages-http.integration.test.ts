@@ -55,6 +55,22 @@ describe("pages API over real HTTP (DB)", { skip: !HAS_DB && "DATABASE_URL not s
     });
     const data: any = await res.json().catch(() => ({}));
     assert.equal(res.status, 200, `login as "${username}" failed (${res.status}): ${JSON.stringify(data)}`);
+    // An account that may work at more than one branch is stopped at the picker
+    // and gets a short-lived branch-select token instead of a session. These
+    // suites are not branch-scoped, so take the first offered branch.
+    if (data.requiresBranch) {
+      assert.ok(data.branchSelectToken, "picker must return a branchSelectToken");
+      assert.ok(data.branches?.length, "picker must offer at least one branch");
+      const pick = await fetch(`${base}/api/auth/select-branch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.branchSelectToken}` },
+        body: JSON.stringify({ branchId: data.branches[0].id }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const picked: any = await pick.json().catch(() => ({}));
+      assert.equal(pick.status, 200, `select-branch failed (${pick.status}): ${JSON.stringify(picked)}`);
+      return picked.token;
+    }
     assert.ok(data.token, `login as "${username}" returned no token`);
     return data.token;
   }
