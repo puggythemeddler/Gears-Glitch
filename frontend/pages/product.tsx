@@ -8,6 +8,7 @@ import { toast } from "@/components/Toast";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { PageHead } from "@/components/ui";
 import Icon from "@/components/icons";
+import { Media } from "@/components/Media";
 
 function productInitials(name: string) {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
@@ -235,22 +236,30 @@ export default function ProductPage() {
         <div className="product-detail__media">
           {product.imageUrl ? (
             <div className="product-gallery">
-              <img
+              <Media
                 className="product-gallery__main"
                 src={currentImage?.imageUrl || product.imageUrl}
                 alt={alt}
+                width={800}
+                height={350}
+                loading="eager"
+                fit="cover"
+                fallbackLabel={product.name}
                 onClick={() => setLbOpen(true)}
               />
               {images.length > 1 && (
                 <div className="product-gallery__thumbs">
                   {images.map((img, i) => (
-                    <img
+                    <button
                       key={img.id}
-                      className={`product-gallery__thumb ${i === currentIndex ? "active" : ""}`}
-                      src={img.imageUrl}
-                      alt=""
+                      type="button"
+                      className={`product-gallery__thumb-btn ${i === currentIndex ? "active" : ""}`}
                       onClick={() => showImage(i)}
-                    />
+                      aria-label={`Show image ${i + 1} of ${images.length}`}
+                      aria-current={i === currentIndex ? "true" : undefined}
+                    >
+                      <Media className="product-gallery__thumb" src={img.imageUrl} alt="" width={56} height={56} fit="cover" />
+                    </button>
                   ))}
                 </div>
               )}
@@ -264,7 +273,7 @@ export default function ProductPage() {
 
           <div className={`product-gallery__lightbox ${lbOpen ? "open" : ""}`} onClick={(e) => { if (e.target === e.currentTarget) setLbOpen(false); }}>
             <button className="product-gallery__lb-close" aria-label="Close image viewer" onClick={() => setLbOpen(false)}>&times;</button>
-            <img className="product-gallery__lb-img" src={currentImage?.imageUrl || product.imageUrl} alt={alt} />
+            <Media className="product-gallery__lb-img" src={currentImage?.imageUrl || product.imageUrl} alt={alt} width={1400} height={1000} loading="eager" fit="contain" />
             <div className="product-gallery__lb-nav">
               <button className="btn btn-ghost" onClick={() => showImage(currentIndex - 1)}>Previous</button>
               <button className="btn btn-ghost" onClick={() => showImage(currentIndex + 1)}>Next</button>

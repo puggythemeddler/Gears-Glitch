@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
 import CurrencySelector from "@/components/CurrencySelector";
 import { formatPrice, escapeHtml } from "./shared";
+import { Media } from "@/components/Media";
 
 export const LAYOUT_KEY = "jumia";
 export const LAYOUT_LABEL = "Jumia Style";
@@ -63,7 +64,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
       <div className="jum-header">
         <div className="jum-header-inner">
           <Link href="/" className="jum-brand">
-            {settings?.storeLogo ? <img src={settings.storeLogo} alt="Store" style={{ height: 80 }} /> : settings?.storeName || "Store"}
+            {settings?.storeLogo ? <Media src={settings.storeLogo} alt="Store" width={200} height={80} loading="eager" fit="contain" style={{ height: 80 }} /> : settings?.storeName || "Store"}
           </Link>
           <form className="jum-search" onSubmit={submitSearch} role="search">
             <input type="text" placeholder="Search products..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search products" />
@@ -168,7 +169,7 @@ export function HomePage({ products, categories, banners, hero }: {
             <Link key={p.id} href={`/product?id=${encodeURIComponent(p.id)}`} className="jum-card">
               <div className="jum-discount">-{Math.floor(Math.random() * 30 + 10)}%</div>
               <div className="jum-card-img">
-                {p.imageUrl ? <img src={p.imageUrl} alt={p.imageAlt || p.name} loading="lazy" /> : p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+                {p.imageUrl ? <Media src={p.imageUrl} alt={p.imageAlt || p.name} width={300} height={300} fit="contain" fallbackLabel={p.name} /> : p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
               </div>
               <div className="jum-card-body">
                 <h3>{p.name}</h3>
@@ -187,7 +188,7 @@ export function HomePage({ products, categories, banners, hero }: {
           {deals.slice(0, 8).map((p) => (
             <Link key={p.id} href={`/product?id=${encodeURIComponent(p.id)}`} className="jum-card">
               <div className="jum-card-img">
-                {p.imageUrl ? <img src={p.imageUrl} alt={p.imageAlt || p.name} loading="lazy" /> : p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+                {p.imageUrl ? <Media src={p.imageUrl} alt={p.imageAlt || p.name} width={300} height={300} fit="contain" fallbackLabel={p.name} /> : p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
               </div>
               <div className="jum-card-body">
                 <h3>{p.name}</h3>

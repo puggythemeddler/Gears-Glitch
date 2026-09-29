@@ -6,6 +6,7 @@ import EmptyState from "@/components/EmptyState";
 import { useFetch, Spinner, ErrorMsg, formatPrice, escapeHtml } from "./shared";
 import { toast } from "@/components/Toast";
 import { confirmDialog } from "@/components/ConfirmDialog";
+import { Media } from "@/components/Media";
 
 export default function AdminProducts() {
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
@@ -247,7 +248,7 @@ export default function AdminProducts() {
           <form onSubmit={saveProduct} className="auth-form">
             {!creating && (
               <div style={{ marginBottom: "0.75rem", textAlign: "center" }}>
-                {editing?.imageUrl && <img src={editing.imageUrl} alt="" style={{ maxWidth: 300, maxHeight: 180, borderRadius: 8, objectFit: "cover", marginBottom: "0.5rem" }} />}
+                {editing?.imageUrl && <Media src={editing.imageUrl} alt="" width={300} height={180} fit="cover" fallbackLabel="Primary image" style={{ maxWidth: 300, maxHeight: 180, borderRadius: 8, objectFit: "cover", marginBottom: "0.5rem" }} />}
                 <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
                   <label style={{ fontSize: "0.85rem", cursor: "pointer" }}>Replace primary image<input type="file" accept="image/*" style={{ display: "block", margin: "0.25rem auto" }} onChange={(e) => { const f = e.target.files?.[0]; if (f && editing) uploadPrimaryImage(editing.id, f); }} /></label>
                   {editing?.imageUrl && <RippleButton size="small" variant="danger" type="button" onClick={async () => { if (!editing || !(await confirmDialog({ message: "Remove primary image?", confirmLabel: "Remove", danger: true }))) return; try { await api(`/api/products/${encodeURIComponent(editing.id)}/image`, { method: "DELETE" }); refetch(); } catch (err: any) { toast("error", "Failed: " + err.message); } }}>Remove image</RippleButton>}
@@ -348,7 +349,7 @@ export default function AdminProducts() {
                       transition: "opacity 0.15s",
                     }}
                   >
-                    <img src={img.imageUrl} alt="" style={{ width: 80, height: 80, borderRadius: 6, objectFit: "cover", border: img.isPrimary ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
+                    <Media src={img.imageUrl} alt="" width={80} height={80} fit="cover" style={{ width: 80, height: 80, borderRadius: 6, objectFit: "cover", border: img.isPrimary ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
                     <div style={{ marginTop: 2 }}>
                       {!img.isPrimary && <RippleButton size="small" variant="ghost" onClick={() => setPrimary(editing!.id, img.id)}>Set primary</RippleButton>}
                     </div>
@@ -383,7 +384,7 @@ export default function AdminProducts() {
             {filteredProducts.map((p) => (
               <tr key={p.id}>
                 <td><input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} /></td>
-                <td>{p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} /> : <span style={{ opacity: 0.3 }}>{'\u200B'}</span>}</td>
+                <td>{p.imageUrl ? <Media src={p.imageUrl} alt="" width={40} height={40} fit="cover" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} /> : <span style={{ opacity: 0.3 }}>{'\u200B'}</span>}</td>
                 <td>{escapeHtml(p.name)} {p.isHidden && <span style={{ marginLeft: "0.35rem", fontSize: "0.72rem", fontWeight: 600, color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.35rem", verticalAlign: "middle" }}>Hidden</span>}</td>
                 <td>{p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--danger)", fontWeight: 600 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}</td>
                 <td>{p.category || "—"}</td>

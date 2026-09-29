@@ -483,7 +483,13 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "https://accounts.google.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      imgSrc: ["'self'", "data:", "blob:"],
+      // Product/repair/gallery/logo media is NOT proxied. server/upload.ts stores
+      // the absolute URL that multer-storage-cloudinary returns, so rows in
+      // products.image_url, product_images, repair_images and the logo/favicon
+      // settings point straight at res.cloudinary.com. Only that one vendor host
+      // is allowed - no wildcard, no arbitrary origins. Local-disk mode serves
+      // /uploads and the DB backup serves /api/images, both covered by 'self'.
+      imgSrc: ["'self'", "data:", "blob:", "https://res.cloudinary.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       connectSrc: ["'self'", "ws:"],
       frameSrc: ["https://accounts.google.com"],
@@ -894,8 +900,17 @@ app.get("/api/cloudinary-config", controlPlaneAuthMiddleware, asyncHandler(async
   });
 }));
 
-// Serve DB-backed-up images
-app.get("/api/images/:refId", asyncHandler(async (req: Request, res: Response) => {
+// Serve DB-backed-up images.
+//
+// This is a restore path, not a public media path. Public media is served from
+// Cloudinary (or /uploads in local-disk mode); nothing in the storefront or
+// admin requests this route. ref_id values are short and guessable
+// ("about", "logo", "product:123", "repair:7:before:2") and the table has no
+// tenant column, so leaving this unauthenticated exposed every store's product
+// and repair images to anyone who enumerated IDs. It now requires an
+// authenticated staff session with settings:view, which is what an operator
+// restoring a backup actually has.
+app.get("/api/images/:refId", staffAuthMiddleware, requirePermissionShared("settings:view"), asyncHandler(async (req: Request, res: Response) => {
   const img = await getImage(String(req.params.refId));
   if (!img) { res.status(404).json({ error: "Image not found." }); return; }
   const buffer = Buffer.from(img.imageData, "base64");

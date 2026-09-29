@@ -4,6 +4,7 @@ import type { Product } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { formatPrice } from "./shared";
+import { Media } from "@/components/Media";
 import { Pagination } from "@/components/ui";
 import { normalizeHref } from "@/lib/links";
 
@@ -237,7 +238,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
               <span className="dy-hero-panel-tag">Featured</span>
               <div className="dy-hero-panel-media">
                 {panel.imageUrl ? (
-                  <img src={panel.imageUrl} alt={panel.name} />
+                  <Media src={panel.imageUrl} alt={panel.name} width={640} height={360} fit="cover" fallbackLabel={panel.name} />
                 ) : (
                   <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem", textAlign: "center" }}>
                     {panel.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
@@ -392,7 +393,7 @@ export function HomePage({ products, categories, hero }: {
                 return (
                   <Link key={p.id} href={`/product?id=${encodeURIComponent(p.id)}`} className="product-card">
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.imageAlt || p.name} loading="lazy" />
+                      <Media src={p.imageUrl} alt={p.imageAlt || p.name} width={400} height={300} fit="cover" fallbackLabel={p.name} />
                     ) : (
                       <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: 10, fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>
                         {initials}

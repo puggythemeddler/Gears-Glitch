@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import type { Product } from "@/lib/types";
 import { formatPrice } from "./shared";
 import { Motion } from "@/components/motion/Motion";
+import { Media } from "@/components/Media";
 import { motionGroupItemVars } from "@/lib/motion";
 import type { MotionConfig, MotionTrigger } from "@/lib/motion";
 import { normalizeHref } from "@/lib/links";
@@ -117,7 +118,7 @@ function ProductPanel({ item }: { item?: Product }) {
       <span className="dy-hero-panel-tag">Featured</span>
       <div className="dy-hero-panel-media">
         {item.imageUrl ? (
-          <img src={item.imageUrl} alt={item.name} />
+          <Media src={item.imageUrl} alt={item.name} width={640} height={360} fit="cover" fallbackLabel={item.name} />
         ) : (
           <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem" }}>{item.name}</span>
         )}
@@ -244,7 +245,7 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
     return (
       <a href={`/product?id=${product.id}`} style={{ display: "block", textDecoration: "none", color: "var(--text)" }}>
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", transition: "transform 0.2s, box-shadow 0.2s" }}>
-          {product.imageUrl && <img src={product.imageUrl} alt={product.name} loading="lazy" style={{ width: "100%", height: 140, objectFit: "contain", background: "var(--surface)" }} />}
+          {product.imageUrl && <Media src={product.imageUrl} alt={product.name} width={200} height={140} fit="contain" fallbackLabel={product.name} style={{ width: "100%", height: 140, objectFit: "contain", background: "var(--surface)" }} />}
           <div style={{ padding: "0.6rem" }}>
             <div style={{ fontSize: "0.8rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.name}</div>
             <div style={{ fontSize: "0.85rem", fontWeight: 700, color: priceColor }}>{formatPrice(showSale && product.salePrice ? product.salePrice : product.price)}</div>
@@ -259,7 +260,7 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
     return (
       <a href={`/product?id=${product.id}`} style={{ display: "block", textDecoration: "none", color: "var(--text)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: "0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", padding: "0.75rem", transition: "transform 0.2s, box-shadow 0.2s", alignItems: "center" }}>
-          {product.imageUrl && <img src={product.imageUrl} alt={product.name} loading="lazy" style={{ width: "100%", height: 120, objectFit: "contain", background: "var(--surface)", borderRadius: 8 }} />}
+          {product.imageUrl && <Media src={product.imageUrl} alt={product.name} width={200} height={120} fit="contain" fallbackLabel={product.name} style={{ width: "100%", height: 120, objectFit: "contain", background: "var(--surface)", borderRadius: 8 }} />}
           <div>
             <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 4 }}>{product.category}</div>
             <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: 6, lineHeight: 1.3 }}>{product.name}</div>
@@ -279,7 +280,7 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
   return (
     <a href={`/product?id=${product.id}`} style={{ display: "block", textDecoration: "none", color: "var(--text)" }}>
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", transition: "transform 0.2s, box-shadow 0.2s" }}>
-        {product.imageUrl && <img src={product.imageUrl} alt={product.name} loading="lazy" style={{ width: "100%", height: 200, objectFit: "contain", background: "var(--surface)" }} />}
+        {product.imageUrl && <Media src={product.imageUrl} alt={product.name} width={300} height={200} fit="contain" fallbackLabel={product.name} style={{ width: "100%", height: 200, objectFit: "contain", background: "var(--surface)" }} />}
         <div style={{ padding: "1rem" }}>
           <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 4 }}>{product.category}</div>
           <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: 6 }}>{product.name}</div>
@@ -377,7 +378,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
         <DyLink href={section.link} style={{ display: "block", background: section.bgColor || "var(--primary-subtle)", borderRadius: 12, overflow: "hidden", textDecoration: "none", color: "inherit" }}>
           {section.imageUrl ? (
             <div style={{ position: "relative" }}>
-              <img src={section.imageUrl} alt={section.text || ""} loading="lazy" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
+              <Media src={section.imageUrl} alt={section.text || ""} width={1200} height={200} fit="cover" fallbackLabel="Section image" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
               {(section.text || section.buttonLabel) && (
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.75rem", background: "rgba(0,0,0,0.35)", color: "#fff" }}>
                   {section.text && <div style={{ fontSize: "1.2rem", fontWeight: 700 }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
@@ -446,7 +447,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
       <div style={{ padding: "1.5rem 2rem", maxWidth: 1440, margin: "0 auto", textAlign: "center" }} data-fid={fid}>
         {section.imageUrl ? (
           <DyLink href={section.link} style={{ textDecoration: "none", color: "inherit", display: "inline-block" }}>
-            <img src={section.imageUrl} alt={section.alt || section.caption || ""} loading="lazy" style={{ maxWidth: "100%", maxHeight: 480, width: section.maxWidth ? section.maxWidth : undefined, borderRadius: section.rounded ? 14 : 0, objectFit: "contain" }} />
+            <Media src={section.imageUrl} alt={section.alt || section.caption || ""} width={1200} height={480} fit="contain" fallbackLabel="Image" style={{ maxWidth: "100%", maxHeight: 480, width: section.maxWidth ? section.maxWidth : undefined, borderRadius: section.rounded ? 14 : 0, objectFit: "contain" }} />
           </DyLink>
         ) : (
           <div style={{ border: "2px dashed var(--border)", borderRadius: 12, padding: "3rem", color: "var(--text-tertiary)" }}>Image â€” add an image URL</div>

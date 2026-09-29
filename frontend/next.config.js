@@ -20,8 +20,15 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   // Fonts are self-hosted by next/font, so no external font origins are needed.
   "font-src 'self' data:",
-  // Product media is proxied through /uploads, so images stay same-origin.
-  "img-src 'self' data: blob:",
+  // Product media is NOT proxied. server/upload.ts stores the absolute URL
+  // that multer-storage-cloudinary returns, so products.image_url,
+  // product_images, repair_images and the logo/favicon settings point straight
+  // at res.cloudinary.com. That one vendor host has to be allowed or every
+  // Cloudinary-backed image is silently blocked in the browser. No wildcard and
+  // no arbitrary origins: merchant-entered hosts outside this list are rejected
+  // by <Media> and render a labelled fallback instead. Local-disk mode uses
+  // /uploads and the DB backup uses /api/images, both covered by 'self'.
+  "img-src 'self' data: blob: https://res.cloudinary.com",
   "connect-src 'self' ws: wss:",
   "object-src 'none'",
   "base-uri 'self'",

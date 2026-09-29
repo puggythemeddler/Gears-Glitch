@@ -8,6 +8,7 @@ import { useApp } from "@/lib/app-context";
 import { usePageTitle } from "@/lib/use-page-title";
 import { escapeHtml } from "@/lib/sanitize";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
+import { Media } from "@/components/Media";
 
 const PRODUCTS_PER_PAGE = 12;
 
@@ -476,7 +477,7 @@ export default function POSPage() {
             const outOfStock = typeof p.stockOnHand === "number" && p.stockOnHand <= 0;
             return (
             <button key={p.id} type="button" className="panel" disabled={outOfStock || !!mpesaPending} style={{ cursor: outOfStock ? "not-allowed" : "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", opacity: outOfStock ? 0.5 : 1 }} onClick={() => addToCart(p)} aria-disabled={outOfStock}>
-              {p.imageUrl ? <img src={p.imageUrl} alt={p.name} loading="lazy" style={{ width: "100%", height: 116, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 116, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
+              {p.imageUrl ? <Media src={p.imageUrl} alt={p.name} width={240} height={116} fit="cover" fallbackLabel={p.name} className="pos-tile__img" style={{ width: "100%", height: 116, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 116, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
               <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{escapeHtml(p.name)}</div>
               <div style={{ fontSize: "1rem", color: "var(--primary)" }}>
                 {p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--success-text)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}
@@ -507,8 +508,8 @@ export default function POSPage() {
             <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{cart.length} {cart.length === 1 ? "item" : "items"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <button onClick={() => setShowHelp(!showHelp)} aria-label="Help and keyboard shortcuts" title="Help & keyboard shortcuts" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0.45rem 0.75rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700, minHeight: 32 }}>?</button>
-            <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline", padding: "0.45rem 0.3rem", minHeight: 32 }}>Lock till</button>
+            <button onClick={() => setShowHelp(!showHelp)} aria-label="Help and keyboard shortcuts" title="Help & keyboard shortcuts" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0 0.9rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700, minHeight: 44, minWidth: 44, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>?</button>
+            <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline", padding: "0 0.75rem", minHeight: 44 }}>Lock till</button>
           </div>
         </div>
         {showHelp && (
@@ -520,7 +521,7 @@ export default function POSPage() {
               <li><strong>Esc</strong> — close serial modal, return to search</li>
               <li><strong>+ / &minus;</strong> — adjust cart quantity</li>
             </ul>
-            <button onClick={() => setShowHelp(false)} style={{ background: "none", border: "none", color: "var(--primary)", fontSize: "0.75rem", cursor: "pointer", padding: 0, marginTop: "0.3rem" }}>Close help</button>
+            <button onClick={() => setShowHelp(false)} style={{ background: "none", border: "none", color: "var(--primary)", fontSize: "0.75rem", cursor: "pointer", padding: "0.75rem 0", minHeight: 44, textAlign: "left" }}>Close help</button>
           </div>
         )}
         <div style={{ flex: 1, overflowY: "auto", padding: "0.5rem" }}>
@@ -537,7 +538,7 @@ export default function POSPage() {
                     {(item.serials || []).map((sn) => (
                       <span key={sn} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.4rem", fontSize: "0.72rem", marginRight: "0.25rem", marginBottom: "0.25rem" }}>
                         {sn}
-                        <button type="button" onClick={() => removeSerial(item.productId, sn)} disabled={!!mpesaPending} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: 700, padding: "0.2rem 0.35rem", margin: "-0.2rem -0.15rem", minHeight: 32, minWidth: 32, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1, borderRadius: 4 }} title="Remove serial" aria-label={`Remove serial ${sn}`}>&times;</button>
+                        <button type="button" onClick={() => removeSerial(item.productId, sn)} disabled={!!mpesaPending} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: 700, padding: "0 0.6rem", margin: "-0.4rem -0.3rem", minHeight: 40, minWidth: 40, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1, borderRadius: 4 }} title="Remove serial" aria-label={`Remove serial ${sn}`}>&times;</button>
                       </span>
                     ))}
                     {(item.serials || []).length === 0 && <span style={{ fontSize: "0.75rem", color: "var(--danger)" }}>Scan serial number(s)</span>}

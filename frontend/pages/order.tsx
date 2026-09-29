@@ -9,6 +9,7 @@ import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
 import OrderCelebrationAnimation from "@/components/OrderCelebrationAnimation";
+import { Media } from "@/components/Media";
 
 export default function OrderDetailPage() {
   const router = useRouter();
@@ -285,7 +286,7 @@ export default function OrderDetailPage() {
               <tr key={i.id}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                    {img && <img src={img} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />}
+                    {img && <Media src={img} alt="" width={36} height={36} fit="cover" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />}
                     <a href={`/product?id=${encodeURIComponent(i.productId)}`} style={{ color: "var(--text)", textDecoration: "none" }}>
                       <span style={{ fontWeight: 500 }}>{escapeHtml(i.name)}</span>
                     </a>
@@ -304,7 +305,7 @@ export default function OrderDetailPage() {
               <tr key={i.id} style={{ opacity: 0.5, textDecoration: "line-through" }}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                    {img && <img src={img} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />}
+                    {img && <Media src={img} alt="" width={36} height={36} fit="cover" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />}
                     <span>{escapeHtml(i.name)}</span>
                   </div>
                 </td>

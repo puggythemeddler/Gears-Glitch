@@ -1,5 +1,5 @@
-﻿/* ============================================================
-   Gear&Glitch â€” Design System
+/* ============================================================
+   Gear&Glitch Ã¢â‚¬â€ Design System
    ============================================================
    A unified design token system. Every visual property
    is defined here and consumed across all components.
@@ -41,11 +41,14 @@
   --leading-relaxed: 1.625;
 
   /* Border radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-full: 9999px;
+
+  /* Touch */
+  --control-min-height: 44px;
 
   /* Shadows */
   --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
@@ -70,7 +73,7 @@
 
 /* ----- Color Schemes ----- */
 :root {
-  /* Warm neutrals â€” matches the warm-black dark theme */
+  /* Warm neutrals Ã¢â‚¬â€ matches the warm-black dark theme */
   --bg: #fafaf9;
   --surface: #ffffff;
   --surface-hover: #f5f5f4;
@@ -129,7 +132,7 @@
   --brand-placeholder-bg: rgba(234, 88, 12, 0.1);
   --brand-placeholder-border: rgba(234, 88, 12, 0.2);
 
-  /* Hero section â€” light theme. Follows the visitor's device theme automatically. */
+  /* Hero section Ã¢â‚¬â€ light theme. Follows the visitor's device theme automatically. */
   --hero-bg-gradient: #fafaf9;
   --hero-text: #1c1917;
   --hero-text-secondary: #57534e;
@@ -155,7 +158,7 @@
 }
 
 [data-theme="dark"] {
-  /* Warm-black neutrals â€” intentional departure from default slate */
+  /* Warm-black neutrals Ã¢â‚¬â€ intentional departure from default slate */
   --bg: #0b0a09;
   --surface: #161311;
   --surface-hover: #201c19;
@@ -206,7 +209,7 @@
   --brand-placeholder-bg: rgba(249, 115, 22, 0.1);
   --brand-placeholder-border: rgba(249, 115, 22, 0.18);
 
-  /* Hero section â€” dark theme. */
+  /* Hero section Ã¢â‚¬â€ dark theme. */
   --hero-bg-gradient: #0b0a09;
   --hero-text: #f4f1ec;
   --hero-text-secondary: #a8a29b;
@@ -233,7 +236,7 @@
 
 /* ----- Storefront brand themes -----
    data-brand-theme is set on <html> from the storefront config.
-   "default" needs no override â€” the base palettes above apply. */
+   "default" needs no override Ã¢â‚¬â€ the base palettes above apply. */
 
 [data-brand-theme="kenyan"] {
   --primary: #15803d;
@@ -1270,6 +1273,7 @@ code, pre {
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-5);
+  min-height: var(--control-min-height);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
@@ -1349,13 +1353,51 @@ code, pre {
   background: var(--primary-light);
 }
 
-.btn-sm { padding: var(--space-2) var(--space-3); font-size: var(--text-xs); min-height: 32px; }
-.btn-lg { padding: var(--space-3) var(--space-6); font-size: var(--text-base); }
+.btn-sm { padding: var(--space-2) var(--space-3); font-size: var(--text-xs); min-height: var(--control-min-height); }
+.btn-lg { padding: var(--space-3) var(--space-6); font-size: var(--text-base); min-height: var(--control-min-height); }
 .btn-block { width: 100%; display: flex; }
 
 .btn.loading {
   color: transparent !important;
   pointer-events: none;
+}
+
+/* Touch: on coarse pointers every control a customer taps needs the full
+   44px target. Buttons already carry it at all widths; the rest of the header,
+   nav and form controls were sized for a mouse and get the floor here. The
+   scope keeps dense desktop admin tables compact where the pointer is fine. */
+@media (pointer: coarse) {
+  .header-search-form,
+  .input,
+  .filter-select,
+  .springboard-btn,
+  .mobile-menu-toggle,
+  .auth-tab,
+  .skip-link,
+  .brand,
+  .breadcrumbs li a {
+    min-height: var(--control-min-height);
+  }
+  .header-search-form {
+    align-items: stretch;
+  }
+  .header-search-form input,
+  .header-search-form button {
+    height: var(--control-min-height);
+  }
+  .header-search-form button {
+    min-width: var(--control-min-height);
+  }
+  .mobile-menu-toggle {
+    min-width: var(--control-min-height);
+  }
+  .brand,
+  .breadcrumbs li a {
+    display: inline-flex;
+    align-items: center;
+    min-width: var(--control-min-height);
+    justify-content: center;
+  }
 }
 
 .btn.loading::after {
@@ -1559,7 +1601,7 @@ textarea:not(.input)::placeholder {
 
 .input-error {
   font-size: var(--text-xs);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .input-hint {
@@ -1569,7 +1611,7 @@ textarea:not(.input)::placeholder {
 
 /* Local error paragraph (e.g. contact page) */
 .error {
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: var(--text-sm);
   margin: var(--space-2) 0;
   text-align: left;
@@ -1578,7 +1620,7 @@ textarea:not(.input)::placeholder {
 /* Field error text (used by ui/Input component) */
 .field-error {
   font-size: var(--text-xs);
-  color: var(--danger);
+  color: var(--danger-text);
   margin-top: var(--space-1);
   text-align: left;
 }
@@ -1621,19 +1663,19 @@ textarea:not(.input)::placeholder {
 
 .form-status.success {
   background: var(--success-light);
-  color: var(--success);
+  color: var(--success-text);
   border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
 }
 
 .form-status.error {
   background: var(--danger-light);
-  color: var(--danger);
+  color: var(--danger-text);
   border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .form-status.info {
   background: var(--info-light);
-  color: var(--info);
+  color: var(--info-text);
   border: 1px solid color-mix(in srgb, var(--info) 20%, transparent);
 }
 
@@ -1938,23 +1980,42 @@ textarea:not(.input)::placeholder {
   padding-bottom: var(--space-1);
 }
 
+/* Gallery thumbs are buttons, not clickable <img>, so the active/hover/focus
+   ring lives on the button and the image is a passive child. The old markup
+   put onClick on the <img>, which was unreachable by keyboard. */
+.product-gallery__thumb-btn {
+  flex-shrink: 0;
+  padding: 0;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  line-height: 0;
+  transition: border-color var(--duration-fast) ease;
+}
+
+.product-gallery__thumb-btn:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+
 .product-gallery__thumb {
   width: 56px;
   height: 56px;
   object-fit: cover;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  opacity: 0.5;
-  transition: opacity var(--duration-fast) ease, border-color var(--duration-fast) ease;
-  flex-shrink: 0;
-  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  opacity: 0.55;
+  transition: opacity var(--duration-fast) ease;
+  display: block;
 }
 
-.product-gallery__thumb:hover,
-.product-gallery__thumb.active {
+.product-gallery__thumb-btn:hover .product-gallery__thumb,
+.product-gallery__thumb-btn.active .product-gallery__thumb {
   opacity: 1;
-  border-color: var(--primary);
 }
+
+.product-gallery__thumb-btn.active { border-color: var(--primary); }
 
 .product-gallery__counter {
   position: absolute;
@@ -2039,6 +2100,42 @@ textarea:not(.input)::placeholder {
   font-size: 3rem;
   color: var(--text-tertiary);
 }
+
+/* ----- Media fallback -----
+   <Media> swaps a failed or CSP-blocked <img> for a div carrying the same
+   classes, so it has to fill whatever box the img would have occupied. It must
+   never grow: object-fit does not apply to a div, so the label is hidden by
+   default and only shown when the box is big enough to hold it. */
+.media-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  overflow: hidden;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  text-align: center;
+  padding: var(--space-2);
+}
+
+.media-fallback__icon { flex-shrink: 0; opacity: 0.7; }
+
+.media-fallback__label {
+  display: none;
+  font-size: var(--text-xs);
+  line-height: 1.3;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Only reveal the label where there is genuinely room for it - a 40px admin
+   table thumb should stay a bare glyph rather than three lines of clipped text. */
+.media-fallback--labelled { border-style: solid; }
+.media-fallback--labelled .media-fallback__label { display: block; }
 
 /* ----- Cart ----- */
 .cart-item {
@@ -2651,8 +2748,8 @@ a.order-item:hover {
 .text-center { text-align: center; }
 .text-right { text-align: right; }
 
-.in-stock { color: var(--success); }
-.out-of-stock { color: var(--danger); }
+.in-stock { color: var(--success-text); }
+.out-of-stock { color: var(--danger-text); }
 
 .features-list {
   list-style: none;
@@ -2799,7 +2896,7 @@ a.order-item:hover {
   margin-bottom: var(--space-4);
   border-radius: var(--radius-full);
   background: var(--danger-light);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .error-state-title {
@@ -2938,7 +3035,7 @@ a.order-item:hover {
   color: var(--text);
   border-radius: var(--radius-sm);
   padding: 0.3rem 0.6rem;
-  min-height: 32px;
+  min-height: var(--control-min-height);
   cursor: pointer;
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
@@ -3028,7 +3125,6 @@ a.order-item:hover {
 .timeline-item.pending .timeline-title { color: var(--text-tertiary); font-weight: var(--font-medium); }
 
 /* ----- POS touch targets ----- */
-.pos-cart-panel .btn-sm { min-height: 32px; min-width: 32px; }
 
 /* ----- Status progression (repairs) ----- */
 .status-steps {
@@ -3100,8 +3196,8 @@ a.order-item:hover {
   border-radius: var(--radius-sm);
   color: var(--text);
   padding: 0.4rem;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: var(--control-min-height);
+  min-height: var(--control-min-height);
   cursor: pointer;
 }
 
@@ -3424,7 +3520,7 @@ a.order-item:hover {
   gap: var(--space-2);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  color: var(--warning);
+  color: var(--warning-text);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -3910,7 +4006,7 @@ a.about-contact-card:hover {
 /* ----- Input Error Text ----- */
 .input-error-text {
   font-size: var(--text-xs);
-  color: var(--danger);
+  color: var(--danger-text);
   margin-top: var(--space-1);
 }
 
@@ -4127,7 +4223,7 @@ a.about-contact-card:hover {
 }
 
 /* ============================================================
-   Visual Website Studio — editorial hero (dynamic engine)
+   Visual Website Studio â€” editorial hero (dynamic engine)
    Replaces the former glass/gradient AI-SaaS hero. Flat surfaces,
    hairline structure, Archivo display type, Till Orange used as
    the single accent (per DESIGN.md). Theme-aware via tokens.
@@ -4442,7 +4538,7 @@ a.about-contact-card:hover {
   .dy-hero-panel-media img { max-height: 220px; }
 }
 
-/* Studio responsive grid (dynamic engine) — column count per breakpoint */
+/* Studio responsive grid (dynamic engine) â€” column count per breakpoint */
 .sb-responsive-grid {
   --cols-d: 1;
   --cols-t: var(--cols-d);
@@ -4474,4 +4570,17 @@ a.about-contact-card:hover {
   .dy-hero-inner { grid-template-columns: 1fr; }
   .dy-hero-panel-media { min-height: 220px; }
   .dy-hero-panel-media img { max-height: 220px; }
+}
+
+/* Reduced motion is a site-wide accessibility requirement, not per-effect.
+   The targeted blocks above calm specific large animations; this kills the
+   long tail of small transitions (hover fades, focus rings, panel slides)
+   that the WCAG 2.3.3 requirement covers. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

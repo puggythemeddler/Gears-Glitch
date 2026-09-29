@@ -13,6 +13,7 @@ import { createHistory, pushHistory, undoHistory, redoHistory, canUndo, canRedo 
 import { promptDialog, confirmDialog } from "@/components/ConfirmDialog";
 import type { HistoryState } from "@/lib/history";
 import { isSafeHref } from "@/lib/links";
+import { isAllowedImageSrc, ALLOWED_IMAGE_ORIGINS } from "@/lib/image-allowlist";
 
 type Section = NonNullable<DynamicLayoutConfig["sections"]>[number];
 
@@ -171,6 +172,17 @@ function LinkHint({ value }: { value: string }) {
   return (
     <span style={{ display: "block", fontSize: "0.7rem", color: "var(--danger)", marginTop: "0.25rem" }}>
       This link will be blocked for safety. Use /page, #anchor, https://, wa.me, mailto: or tel:.
+    </span>
+  );
+}
+
+function MediaUrlWarn({ value }: { value?: string }) {
+  const v = (value || "").trim();
+  if (!v || isAllowedImageSrc(v)) return null;
+  return (
+    <span role="note" style={{ display: "block", fontSize: "0.72rem", color: "var(--warning-text)", marginTop: "0.25rem", lineHeight: 1.4 }}>
+      This image host is not on the safe list ({ALLOWED_IMAGE_ORIGINS.join(" • ")} or a local path),
+      so it will be blocked in the storefront and replaced with a placeholder. Use a Cloudinary URL or an /uploads/… path.
     </span>
   );
 }
@@ -585,7 +597,7 @@ export default function StorefrontBuilder() {
         </>);
       case "image":
         return (<>
-          <Field label="Image URL"><Text value={s.imageUrl || ""} onChange={(v) => updateSection(idx, { imageUrl: v })} placeholder="https://...jpg" /></Field>
+          <Field label="Image URL"><Text value={s.imageUrl || ""} onChange={(v) => updateSection(idx, { imageUrl: v })} placeholder="https://...jpg" /><MediaUrlWarn value={s.imageUrl} /></Field>
           <Field label="Alt text"><Text value={s.alt || ""} onChange={(v) => updateSection(idx, { alt: v })} /></Field>
           <Field label="Caption"><Text value={s.caption || ""} onChange={(v) => updateSection(idx, { caption: v })} /></Field>
           <Field label="Link (optional)"><Text value={s.link || ""} onChange={(v) => updateSection(idx, { link: v })} /><LinkHint value={s.link || ""} /></Field>
@@ -603,7 +615,7 @@ export default function StorefrontBuilder() {
       case "banner":
         return (<>
           <Field label="Text"><Text value={s.text || ""} onChange={(v) => updateSection(idx, { text: v })} /></Field>
-          <Field label="Image URL (optional)"><Text value={s.imageUrl || ""} onChange={(v) => updateSection(idx, { imageUrl: v })} /></Field>
+          <Field label="Image URL (optional)"><Text value={s.imageUrl || ""} onChange={(v) => updateSection(idx, { imageUrl: v })} /><MediaUrlWarn value={s.imageUrl} /></Field>
           <Field label="Banner link"><Text value={s.link || ""} onChange={(v) => updateSection(idx, { link: v })} /><LinkHint value={s.link || ""} /></Field>
           <Field label="Button label"><Text value={s.buttonLabel || ""} onChange={(v) => updateSection(idx, { buttonLabel: v })} /></Field>
           <Field label="Button link"><Text value={s.buttonLink || ""} onChange={(v) => updateSection(idx, { buttonLink: v })} /><LinkHint value={s.buttonLink || ""} /></Field>
@@ -733,7 +745,7 @@ export default function StorefrontBuilder() {
               <RippleButton size="small" variant="danger" aria-label="Remove button" onClick={() => updateHero({ buttons: (hero.buttons || []).filter((_, k) => k !== j) })}>✕</RippleButton>
             </div>
           ))}
-          <Field label="Background image (optional)"><Text value={hero.backgroundImage || ""} onChange={(v) => updateHero({ backgroundImage: v })} placeholder="https://...jpg" /></Field>
+          <Field label="Background image (optional)"><Text value={hero.backgroundImage || ""} onChange={(v) => updateHero({ backgroundImage: v })} placeholder="https://...jpg" /><MediaUrlWarn value={hero.backgroundImage} /></Field>
         </>)}
       </>)}
 

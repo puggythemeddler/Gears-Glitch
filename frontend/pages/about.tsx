@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import Icon from "@/components/icons";
+import { Media } from "@/components/Media";
 
 interface Stat { value: string; label: string; }
 interface AboutData {
@@ -90,7 +91,7 @@ export default function AboutPage() {
 
         {showImage && (
           <div className="about-banner">
-            <img src={image} alt={data.title || "About us"} onError={() => setImgError(true)} />
+            <Media src={image} alt={data.title || "About us"} width={1200} height={400} fit="cover" loading="eager" fallbackLabel="About banner" onError={() => setImgError(true)} />
           </div>
         )}
 

@@ -9,6 +9,7 @@ import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
 import EmptyWishlistAnimation from "@/components/EmptyWishlistAnimation";
+import { Media } from "@/components/Media";
 
 export default function WishlistPage() {
   const { formatPrice } = useApp();
@@ -117,7 +118,7 @@ export default function WishlistPage() {
           items.map((item) => (
             <div key={item.productId} className="wishlist-item">
               {item.productImage ? (
-                <img src={item.productImage} alt={item.productName || ""} />
+                <Media src={item.productImage} alt={item.productName || ""} width={72} height={72} fit="cover" className="wishlist-item__img" />
               ) : (
                 <div style={{ width: 72, height: 72, background: "var(--surface)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem", fontWeight: 700, color: "var(--border)" }}>
                   {initials(item.productName || "")}

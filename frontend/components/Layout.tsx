@@ -8,6 +8,7 @@ import { hasStaffSession, api } from "@/lib/api";
 import CurrencySelector from "./CurrencySelector";
 import MarqueeBanner from "./MarqueeBanner";
 import Icon from "./icons";
+import { Media } from "./Media";
 import { useFeature } from "@/lib/features";
 
 interface LayoutProps {
@@ -176,7 +177,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
         <div className="header-left">
           <Link className="brand" href="/" onClick={closeMobile}>
             {settings?.storeLogo && (
-              <img src={settings.storeLogo} alt={settings.storeName || "Store"} className="site-logo" />
+              <Media src={settings.storeLogo} alt={settings.storeName || "Store"} width={160} height={40} loading="eager" fit="contain" className="site-logo" />
             )}
             <span>{settings?.storeName || "My Shop"}</span>
           </Link>
@@ -436,8 +437,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                   <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>{col.title}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
                     {(col.links || []).map((link: any, li: number) => (
-                      // minHeight/padding keep each link at a 24px+ tap target on
-                      // touch, without changing the footer's visual rhythm.
+                      // minHeight keeps the whole row tappable at the 44px
+                      // control floor, without changing the footer's rhythm.
                       <a
                         key={li}
                         href={link.href}
@@ -445,7 +446,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                           fontSize: "0.85rem",
                           display: "inline-flex",
                           alignItems: "center",
-                          minHeight: 24,
+                          minHeight: 44,
                         }}
                       >{link.label}</a>
                     ))}

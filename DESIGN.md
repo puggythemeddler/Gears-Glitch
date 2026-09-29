@@ -70,10 +70,10 @@ typography:
     lineHeight: 1.4
     letterSpacing: "normal"
 rounded:
-  sm: "6px"
-  md: "8px"
-  lg: "12px"
-  xl: "16px"
+  sm: "10px"
+  md: "12px"
+  lg: "14px"
+  xl: "18px"
   full: "9999px"
 spacing:
   xs: "4px"
@@ -225,18 +225,21 @@ The system uses **tonal layering**, not heavy shadows. Surfaces elevate by stepp
 
 Corner strategy is gently rounded — not pill-soft, not sharp. Borders are 1px hairlines, not thick frames.
 
-- **SM** (6px): small controls, badges, chips.
-- **MD** (8px): buttons, inputs, search fields.
-- **LG** (12px): cards, panels, stat cards.
-- **XL** (16px): modals, large containers.
+- **SM** (10px): small controls, badges, chips.
+- **MD** (12px): buttons, inputs, search fields.
+- **LG** (14px): cards, panels, stat cards.
+- **XL** (18px): modals, large containers, hero surfaces.
 - **Full** (9999px): pills, count badges, avatar circles.
+
+Controls occupy the 10–14px band and prominent surfaces the 14–18px band. The floor moved up from 6px because small-radius controls read as cramped once they also carry a 44px touch target, and the 2px step keeps the scale from fragmenting into a value per component.
 
 Inputs use a 3px focus ring (`box-shadow: 0 0 0 3px var(--primary-subtle)`) — the Till Orange glow that confirms attention without shouting.
 
 ## Components
 
 ### Buttons
-- **Shape:** gently rounded (8px radius).
+- **Shape:** gently rounded (12px radius, `{rounded.md}`).
+- **Touch target:** 44px minimum height for any control a customer taps. Icon-only buttons keep a 44×44px hit area even when the glyph is smaller, via transparent padding rather than a padded box that shifts the layout.
 - **Primary:** Till Orange fill, `--on-primary` text. Padding 0.5rem 1.25rem. The token flips to ink in dark theme, which is what keeps the button at ~7:1 instead of 2.8:1.
 - **Hover/Focus:** deepens to Till Orange Deep; 3px focus ring in primary-subtle.
 - **Secondary:** transparent fill, Ink text, Hairline Hover border. Hover: surface-hover background.
@@ -247,14 +250,14 @@ Inputs use a 3px focus ring (`box-shadow: 0 0 0 3px var(--primary-subtle)`) — 
 **The Tactile Rule.** Buttons feel confident — solid fills on primary, hairline borders on secondary, clear focus rings on all. No ghost borders that vanish on dark themes.
 
 ### Cards / Containers
-- **Corner Style:** 12px radius.
+- **Corner Style:** 14px radius (`{rounded.lg}`).
 - **Background:** Warm Paper Surface (one tone above canvas).
 - **Shadow Strategy:** flat at rest; Shadow LG on hover lift.
 - **Border:** 1px Hairline.
 - **Internal Padding:** 16–20px.
 
 ### Inputs / Fields
-- **Style:** 1px Hairline border, Warm Paper Surface background, 8px radius.
+- **Style:** 1px Hairline border, Warm Paper Surface background, 12px radius.
 - **Focus:** border shifts to Till Orange + 3px primary-subtle ring.
 - **Error:** border shifts to Danger, error text below in Danger color.
 - **Disabled:** 0.5 opacity, not-allowed cursor.

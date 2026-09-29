@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
 import CurrencySelector from "@/components/CurrencySelector";
 import { formatPrice, escapeHtml } from "./shared";
+import { Media } from "@/components/Media";
 
 export const LAYOUT_KEY = "amazon";
 export const LAYOUT_LABEL = "Amazon Style";
@@ -64,7 +65,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
     <div className="amz-top">
       <div className="amz-top-inner">
         <Link href="/" style={{ fontWeight: 700, fontSize: "1.3rem", color: "var(--text)", textDecoration: "none", whiteSpace: "nowrap" }}>
-          {settings?.storeLogo ? <img src={settings.storeLogo} alt="Store" style={{ height: 80 }} /> : settings?.storeName || "Store"}
+          {settings?.storeLogo ? <Media src={settings.storeLogo} alt="Store" width={200} height={80} loading="eager" fit="contain" style={{ height: 80 }} /> : settings?.storeName || "Store"}
         </Link>
         <form className="amz-search" onSubmit={submitSearch} role="search">
           <input type="text" placeholder="Search products..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search products" />
@@ -182,12 +183,12 @@ function AmazonCard({ product }: { product: Product }) {
   return (
     <Link href={`/product?id=${encodeURIComponent(product.id)}`} className="amz-card">
       <div className="amz-card-img">
-        {product.imageUrl ? <img src={product.imageUrl} alt={product.imageAlt || product.name} loading="lazy" /> : initials}
+        {product.imageUrl ? <Media src={product.imageUrl} alt={product.imageAlt || product.name} width={300} height={300} fit="contain" fallbackLabel={product.name} /> : initials}
       </div>
       <div className="amz-card-body">
         {rating ? (
           <div className="amz-card-rating">
-            <span style={{ color: "var(--accent)", fontSize: "0.85rem" }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating.average) ? "★" : "☆").join("")}</span>
+            <span style={{ color: "var(--accent)", fontSize: "0.85rem" }}>{Array.from({ length: 5 }).map((_, i) => i < Math.round(rating.average) ? "â˜…" : "â˜†").join("")}</span>
             <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginLeft: 4 }}>({rating.count})</span>
           </div>
         ) : null}

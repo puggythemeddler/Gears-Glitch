@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import { Spinner } from "./shared";
 import { toast } from "@/components/Toast";
+import { Media } from "@/components/Media";
 
 interface Stat { value: string; label: string; }
 interface AboutData {
@@ -129,7 +130,7 @@ export default function AboutUsPage() {
             <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={uploadImage} />
             <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap" }}>
               {data.image ? (
-                <img src={data.image} alt="About banner" style={{ width: 160, height: 90, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />
+                <Media src={data.image} alt="About banner" width={160} height={90} fit="cover" fallbackLabel="About banner" style={{ width: 160, height: 90, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />
               ) : (
                 <div style={{ width: 160, height: 90, borderRadius: "var(--radius-md)", border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-tertiary)", fontSize: "var(--text-xs)", textAlign: "center", padding: "var(--space-2)" }}>No banner image</div>
               )}

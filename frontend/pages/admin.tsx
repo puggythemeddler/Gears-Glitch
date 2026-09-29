@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { api, getStaffToken, getStaffRole, getStaffPermissions, hasStaffSession, downloadPdf, obtainStepUpToken } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
+import { Media } from "@/components/Media";
 import Icon from "@/components/icons";
 import { SkeletonStats, SkeletonTable } from "@/components/Skeleton";
 import EmptyState from "@/components/EmptyState";
@@ -628,7 +629,7 @@ export default function AdminPage() {
         <div className="dash-content">
           <div className="admin-topbar">
             <div className="admin-topbar-left">
-              {settings?.storeLogo && <img src={settings.storeLogo} alt="" className="admin-topbar-logo" />}
+              {settings?.storeLogo && <Media src={settings.storeLogo} alt="" width={120} height={32} loading="eager" fit="contain" className="admin-topbar-logo" />}
               <span className="admin-topbar-store">{settings?.storeName || "Store"}</span>
               <span className="admin-topbar-role">{staffRole}</span>
             </div>
@@ -3697,7 +3698,7 @@ function AdminSplashes() {
                     </div>
                   </td>
                   <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{escapeHtml(s.title || s.text)}</td>
-                  <td>{s.imageUrl ? <img src={s.imageUrl} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4 }} /> : <span className="muted">—</span>}</td>
+                  <td>{s.imageUrl ? <Media src={s.imageUrl} alt="" width={40} height={40} fit="cover" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4 }} /> : <span className="muted">—</span>}</td>
                   <td>{s.isMarquee ? "Marquee" : "Static"}</td>
                   <td style={{ fontSize: "0.8rem" }}>{s.sortOrder ?? 0}</td>
                   <td style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>{s.startDate || "—"} to {s.endDate || "—"}</td>
@@ -3867,7 +3868,7 @@ function AdminStoreInfo() {
           <div className="field" style={{ gap: "0.75rem", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
               {settings?.storeFavicon ? (
-                <img src={settings.storeFavicon} alt="Current favicon" style={{ width: 48, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid var(--border)" }} />
+                <Media src={settings.storeFavicon} alt="Current favicon" width={48} height={48} fit="contain" fallbackLabel="Favicon" style={{ width: 48, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid var(--border)" }} />
               ) : (
                 <div style={{ width: 48, height: 48, borderRadius: 8, background: "var(--surface-hover)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>default</span>
@@ -3888,7 +3889,7 @@ function AdminStoreInfo() {
           <div className="field" style={{ gap: "0.75rem", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
               {settings?.storeLogo ? (
-                <img src={settings.storeLogo} alt="Current logo" style={{ width: 80, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid var(--border)" }} />
+                <Media src={settings.storeLogo} alt="Current logo" width={80} height={48} fit="contain" fallbackLabel="Store logo" style={{ width: 80, height: 48, borderRadius: 8, objectFit: "contain", border: "1px solid var(--border)" }} />
               ) : (
                 <div style={{ width: 80, height: 48, borderRadius: 8, background: "var(--surface-hover)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>no logo</span>

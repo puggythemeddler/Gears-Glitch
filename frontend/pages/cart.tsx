@@ -3,6 +3,7 @@ import { api, isCustomerLoggedIn, getGuestCart, updateGuestCartQuantity, removeG
 import { useApp } from "@/lib/app-context";
 import type { CartItem, County, Product } from "@/lib/types";
 import { PageHead } from "@/components/ui";
+import { Media } from "@/components/Media";
 import EmptyCartAnimation from "@/components/EmptyCartAnimation";
 import SantaGearAnimation from "@/components/SantaGearAnimation";
 
@@ -232,7 +233,7 @@ export default function CartPage() {
         <>
           {items.map((item) => (
             <div key={item.productId} className="cart-item">
-              {item.imageUrl ? <img src={item.imageUrl} alt={item.name} /> : <div style={{ width: 72, height: 72, background: "var(--surface)", borderRadius: 8 }} />}
+              {item.imageUrl ? <Media src={item.imageUrl} alt={item.name} width={72} height={72} fit="cover" className="cart-item__img" /> : <div style={{ width: 72, height: 72, background: "var(--surface)", borderRadius: 8 }} />}
               <div className="cart-item__info">
                 <div className="cart-item__name">{escapeHtml(item.name)}</div>
                 <div className="cart-item__price">{formatPrice(item.price)}</div>

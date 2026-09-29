@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { ProductCard } from "@/components/ProductCard";
+import { Media } from "@/components/Media";
 import Icon from "@/components/icons";
 import type { Product } from "@/lib/types";
 
@@ -72,7 +73,7 @@ export default function CampaignPage() {
           <div className="card" style={{ background: `linear-gradient(135deg, ${heroBg}, ${heroBg}dd)`, color: "#fff", marginBottom: "1.5rem", overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "1.5rem", flexWrap: "wrap", padding: "1.5rem" }}>
               {heroImg && (
-                <img src={heroImg} alt={campaign.title} style={{ width: 220, maxHeight: 140, objectFit: "cover", borderRadius: "var(--radius-lg)", flexShrink: 0 }} />
+                <Media src={heroImg} alt={campaign.title} width={220} height={140} fit="cover" loading="eager" fallbackLabel="campaign hero" className="campaign-hero__img" style={{ width: 220, maxHeight: 140, objectFit: "cover", borderRadius: "var(--radius-lg)", flexShrink: 0 }} />
               )}
               <div style={{ flex: 1, minWidth: 240 }}>
                 <h1 style={{ margin: 0, color: "#fff" }}>{campaign.title}</h1>

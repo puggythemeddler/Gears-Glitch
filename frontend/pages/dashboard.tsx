@@ -8,6 +8,7 @@ import { usePageTitle } from "@/lib/use-page-title";
 import { useApp } from "@/lib/app-context";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { Media } from "@/components/Media";
 
 type Section = "overview" | "orders" | "repairs" | "wishlist" | "messages" | "notifications" | "profile";
 
@@ -217,7 +218,7 @@ export default function DashboardPage() {
                           const img = productImages[i.productId];
                           return (
                             <div key={i.id} style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.2rem 0.4rem", background: "var(--surface-hover)", borderRadius: "var(--radius-md)", fontSize: "0.75rem" }}>
-                              {img && <img src={img} alt="" style={{ width: 18, height: 18, objectFit: "cover", borderRadius: 3 }} />}
+                              {img && <Media src={img} alt="" width={18} height={18} fit="cover" style={{ width: 18, height: 18, objectFit: "cover", borderRadius: 3 }} />}
                               <span>{escapeHtml(i.name)}</span>
                             </div>
                           );

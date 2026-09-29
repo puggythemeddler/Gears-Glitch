@@ -6,6 +6,7 @@ import { escapeHtml } from "@/lib/sanitize";
 import { toast } from "@/components/Toast";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { usePageTitle } from "@/lib/use-page-title";
+import { Media } from "@/components/Media";
 interface QuoteItem {
   id: number;
   quoteId: number;
@@ -322,7 +323,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
               return (
                 <button key={p.id} onClick={() => toggleEditProduct(p)}
                   style={{ display: "flex", alignItems: "center", gap: "0.5rem", width: "100%", textAlign: "left", padding: "0.5rem", marginBottom: "0.25rem", border: selected ? "2px solid var(--primary)" : "1px solid var(--border)", borderRadius: 8, background: selected ? "var(--primary-subtle)" : "var(--bg)", cursor: "pointer", color: "var(--text)" }}>
-                  {p.imageUrl && <img src={p.imageUrl} alt="" style={{ width: 36, height: 36, borderRadius: 4, objectFit: "cover" }} />}
+                  {p.imageUrl && <Media src={p.imageUrl} alt="" width={36} height={36} fit="cover" style={{ width: 36, height: 36, borderRadius: 4, objectFit: "cover" }} />}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
                     <div style={{ fontSize: "0.8rem", color: "var(--primary)" }}>{formatPrice(p.salePrice && p.salePrice > 0 ? p.salePrice : p.price)}</div>
@@ -596,7 +597,7 @@ function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; 
                 return (
                   <button key={p.id} onClick={() => toggleProduct(p)}
                     style={{ display: "flex", alignItems: "center", gap: "0.5rem", width: "100%", textAlign: "left", padding: "0.5rem", marginBottom: "0.25rem", border: selected ? "2px solid var(--primary)" : "1px solid var(--border)", borderRadius: 8, background: selected ? "var(--primary-subtle)" : "var(--bg)", cursor: "pointer", color: "var(--text)" }}>
-                    {p.imageUrl && <img src={p.imageUrl} alt="" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} />}
+                    {p.imageUrl && <Media src={p.imageUrl} alt="" width={40} height={40} fit="cover" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} />}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
                       <div style={{ fontSize: "0.8rem", color: "var(--primary)" }}>{formatPrice(p.price)}</div>
