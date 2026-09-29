@@ -62,6 +62,9 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-bounce: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-press: cubic-bezier(0.2, 0, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-micro: 80ms;
   --duration-fast: 150ms;
   --duration-normal: 250ms;
   --duration-slow: 350ms;
@@ -117,10 +120,30 @@
   --on-warning: #ffffff;
   --on-danger: #ffffff;
   --on-info: #ffffff;
+  --success-hover: #179a4e;
+  --warning-hover: #854d0e;
+  --danger-hover: #b91c1c;
+  --info-hover: #1d4ed8;
 
   /* Secondary brand accent (repair cards, highlights) */
   --accent: #f59e0b;
+  --accent-hover: #d97706;
   --accent-subtle: rgba(245, 158, 11, 0.14);
+  --on-accent: #0b0a09;
+
+  /* Functional accents — technical (repairs, diagnostics, tools) teal and
+     analytics (reports, dashboards, insights) indigo. Paired with --on-*
+     so a solid fill never takes a literal #fff/. */
+  --technical: #0f766e;
+  --technical-hover: #115e59;
+  --technical-subtle: rgba(15, 118, 110, 0.12);
+  --technical-text: #0f766e;
+  --on-technical: #ffffff;
+  --analytics: #4338ca;
+  --analytics-hover: #3730a3;
+  --analytics-subtle: rgba(67, 56, 202, 0.12);
+  --analytics-text: #4338ca;
+  --on-analytics: #ffffff;
 
   /* Hero brand accents (glows, particles, gradient headline, glass CTA) */
   --brand-hero-accent: #f97316;
@@ -197,9 +220,27 @@
   --on-warning: #0b0a09;
   --on-danger: #0b0a09;
   --on-info: #0b0a09;
+  --success-hover: #4ade80;
+  --warning-hover: #fde047;
+  --danger-hover: #f87171;
+  --info-hover: #93c5fd;
 
   --accent: #fbbf24;
+  --accent-hover: #f59e0b;
   --accent-subtle: rgba(251, 191, 36, 0.14);
+  --on-accent: #0b0a09;
+
+  /* Functional accents — dark theme fills are bright enough that ink wins. */
+  --technical: #2dd4bf;
+  --technical-hover: #5eead4;
+  --technical-subtle: rgba(45, 212, 191, 0.14);
+  --technical-text: #5eead4;
+  --on-technical: #0b0a09;
+  --analytics: #818cf8;
+  --analytics-hover: #a5b4fc;
+  --analytics-subtle: rgba(129, 140, 248, 0.14);
+  --analytics-text: #a5b4fc;
+  --on-analytics: #0b0a09;
   --brand-hero-accent: #fb923c;
   --brand-gradient-a: #fb923c;
   --brand-gradient-b: #f97316;
@@ -1374,7 +1415,13 @@ code, pre {
   font-weight: var(--font-medium);
   font-family: inherit;
   cursor: pointer;
-  transition: all var(--duration-fast) ease;
+  /* Animate only composite properties (transform/shadow/color) — never
+     width/padding, so the 44px target never visibly resizes on state change. */
+  transition: transform var(--duration-normal) var(--ease-press),
+    box-shadow var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
   text-decoration: none;
   line-height: 1.4;
   white-space: nowrap;
@@ -1383,6 +1430,19 @@ code, pre {
 }
 
 .btn:hover { text-decoration: none; }
+
+/* Press: quick settle-in, not a bounce. Reduced elevation on the pressed
+   state so hierarchy reads at the point of contact. */
+.btn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: none;
+}
+
+/* Design language: controls carry a 3px Till Orange ring, not a 2px outline. */
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 .btn:disabled {
   opacity: 0.5;
@@ -1433,8 +1493,30 @@ code, pre {
 }
 
 .btn-danger:hover {
-  background: #b91c1c;
-  border-color: #b91c1c;
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+
+/* Success action (pay, save, confirm). Fill flips its --on-success token
+   per theme; hover lifts rather than darkening so ink never drops below AA. */
+.btn-success {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--on-success);
+}
+
+.btn-success:hover {
+  background: var(--success-hover);
+  border-color: var(--success-hover);
+}
+
+/* Filled buttons lift 1px on hover — deepen the fill and gain a whisper of
+   depth so the press that follows reads as an audible click. */
+.btn-primary:hover,
+.btn-danger:hover,
+.btn-success:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-subtle {
@@ -1499,20 +1581,31 @@ code, pre {
   position: absolute;
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(255,255,255,0.3);
-  border-top-color: #fff;
+  border: 2px solid color-mix(in srgb, var(--on-primary) 30%, transparent);
+  border-top-color: var(--on-primary);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
 
 [data-theme="dark"] .btn-primary.loading::after {
-  border-color: rgba(11, 10, 9, 0.25);
-  border-top-color: #0b0a09;
+  border-color: color-mix(in srgb, var(--on-primary) 25%, transparent);
+  border-top-color: var(--on-primary);
+}
+
+.btn-danger.loading::after {
+  border-color: color-mix(in srgb, var(--on-danger) 30%, transparent);
+  border-top-color: var(--on-danger);
+}
+
+.btn-success.loading::after {
+  border-color: color-mix(in srgb, var(--on-success) 30%, transparent);
+  border-top-color: var(--on-success);
 }
 
 .btn-secondary.loading::after,
-.btn-ghost.loading::after {
-  border-color: rgba(0,0,0,0.15);
+.btn-ghost.loading::after,
+.btn-subtle.loading::after {
+  border-color: color-mix(in srgb, currentColor 25%, transparent);
   border-top-color: var(--primary);
 }
 
@@ -2954,6 +3047,80 @@ a.order-item:hover {
   flex-direction: column;
   background: var(--surface);
   min-width: 0;
+}
+
+/* POS interaction — subtle feedback only: speed, touch and readability
+   first. Category rail, product tiles and the customer dropdown get a quiet
+   press/lift; nothing bounces at the till. */
+.pos-cat-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 400;
+  border-radius: var(--radius-sm);
+  min-height: var(--control-min-height);
+  transition: transform var(--duration-micro) var(--ease-press),
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.pos-cat-btn:hover:not(:disabled) {
+  background: var(--primary-subtle);
+  border-color: var(--border-hover);
+}
+
+.pos-cat-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.pos-cat-btn[aria-pressed="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
+.pos-cat-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.pos-product-grid button.panel {
+  transition: transform var(--duration-micro) var(--ease-press),
+    box-shadow var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.pos-product-grid button.panel:hover:not(:disabled) {
+  border-color: var(--primary) !important;
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.pos-product-grid button.panel:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: none;
+}
+
+.pos-customer-option:hover {
+  background: var(--surface-hover) !important;
+}
+
+.pos-customer-option:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.pos-serial-remove:hover {
+  background: var(--danger-light) !important;
+  color: var(--danger-text) !important;
 }
 
 /* Sale-completed moment: one soft success pulse on the totals panel */

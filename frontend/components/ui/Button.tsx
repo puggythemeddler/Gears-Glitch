@@ -48,10 +48,10 @@ export function Button({
     <button
       className={classes}
       disabled={disabled || loading}
+      aria-busy={loading ? "true" : undefined}
       {...rest}
     >
-      {loading && <span className="btn-spinner" />}
-      <span className={loading ? "btn-text" : ""}>{children}</span>
+      {children}
     </button>
   );
 }

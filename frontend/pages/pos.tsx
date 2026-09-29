@@ -450,18 +450,20 @@ export default function POSPage() {
       {/* Category sidebar */}
       <div className="pos-category-bar">
         <button
+          type="button"
+          className="pos-cat-btn"
           onClick={() => { setSelectedCategory(""); sessionStorage.removeItem("posCategory"); }}
           aria-pressed={!selectedCategory}
-          style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: !selectedCategory ? "var(--primary)" : "transparent", color: !selectedCategory ? "var(--surface)" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: !selectedCategory ? 600 : 400 }}
         >
           All
         </button>
         {categories.map((cat) => (
           <button
             key={cat.id}
+            type="button"
+            className="pos-cat-btn"
             onClick={() => { setSelectedCategory(cat.id); sessionStorage.setItem("posCategory", cat.id); }}
             aria-pressed={selectedCategory === cat.id}
-            style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: selectedCategory === cat.id ? "var(--primary)" : "transparent", color: selectedCategory === cat.id ? "var(--surface)" : "var(--text)", cursor: "pointer", fontSize: "0.82rem", fontWeight: selectedCategory === cat.id ? 600 : 400 }}
           >
             {cat.label}
           </button>
@@ -508,8 +510,8 @@ export default function POSPage() {
             <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{cart.length} {cart.length === 1 ? "item" : "items"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <button onClick={() => setShowHelp(!showHelp)} aria-label="Help and keyboard shortcuts" title="Help & keyboard shortcuts" style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "0 0.9rem", cursor: "pointer", fontSize: "0.85rem", color: "var(--text)", lineHeight: 1, fontWeight: 700, minHeight: 44, minWidth: 44, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>?</button>
-            <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} style={{ background: "none", border: "none", color: "var(--text-secondary)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline", padding: "0 0.75rem", minHeight: 44 }}>Lock till</button>
+            <button onClick={() => setShowHelp(!showHelp)} aria-label="Help and keyboard shortcuts" title="Help & keyboard shortcuts" className="btn btn-ghost" style={{ padding: "0 0.9rem", minWidth: 44 }}>?</button>
+            <button onClick={async () => { const ok = await confirmDialog({ title: "Lock till", message: "Lock the till? You'll need the POS PIN to reopen it. The cart will be cleared.", confirmLabel: "Lock till" }); if (ok) { localStorage.removeItem("posPin"); sessionStorage.removeItem("posUnlocked"); sessionStorage.removeItem("posCategory"); setPinUnlocked(false); setSelectedCategory(""); setCart([]); } }} className="btn btn-ghost" style={{ padding: "0 0.75rem", fontSize: "0.75rem" }}>Lock till</button>
           </div>
         </div>
         {showHelp && (
@@ -521,7 +523,7 @@ export default function POSPage() {
               <li><strong>Esc</strong> — close serial modal, return to search</li>
               <li><strong>+ / &minus;</strong> — adjust cart quantity</li>
             </ul>
-            <button onClick={() => setShowHelp(false)} style={{ background: "none", border: "none", color: "var(--primary)", fontSize: "0.75rem", cursor: "pointer", padding: "0.75rem 0", minHeight: 44, textAlign: "left" }}>Close help</button>
+            <button onClick={() => setShowHelp(false)} className="btn btn-ghost" style={{ textAlign: "left" }}>Close help</button>
           </div>
         )}
         <div style={{ flex: 1, overflowY: "auto", padding: "0.5rem" }}>
@@ -538,7 +540,7 @@ export default function POSPage() {
                     {(item.serials || []).map((sn) => (
                       <span key={sn} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.4rem", fontSize: "0.72rem", marginRight: "0.25rem", marginBottom: "0.25rem" }}>
                         {sn}
-                        <button type="button" onClick={() => removeSerial(item.productId, sn)} disabled={!!mpesaPending} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: 700, padding: "0 0.6rem", margin: "-0.4rem -0.3rem", minHeight: 40, minWidth: 40, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1, borderRadius: 4 }} title="Remove serial" aria-label={`Remove serial ${sn}`}>&times;</button>
+                        <button type="button" onClick={() => removeSerial(item.productId, sn)} disabled={!!mpesaPending} className="pos-serial-remove" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontWeight: 700, padding: "0 0.6rem", margin: "-0.4rem -0.3rem", minHeight: 40, minWidth: 40, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1, borderRadius: "var(--radius-sm)" }} title="Remove serial" aria-label={`Remove serial ${sn}`}>&times;</button>
                       </span>
                     ))}
                     {(item.serials || []).length === 0 && <span style={{ fontSize: "0.75rem", color: "var(--danger)" }}>Scan serial number(s)</span>}
@@ -588,9 +590,9 @@ export default function POSPage() {
               <input type="text" className="input" placeholder="Search customer (optional)..." aria-label="Search customer" value={customerQuery} onChange={(e) => { setCustomerQuery(e.target.value); setShowCustomerDropdown(true); setSelectedCustomer(null); }} onFocus={() => setShowCustomerDropdown(true)} style={{ width: "100%", fontSize: "0.85rem" }} />
               {selectedCustomer && <div style={{ fontSize: "0.8rem", color: "var(--primary)", marginTop: 2 }}>{selectedCustomer.name} — {selectedCustomer.phone || selectedCustomer.email}</div>}
               {showCustomerDropdown && customers.length > 0 && (
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, maxHeight: 160, overflowY: "auto", boxShadow: "var(--shadow-lg)" }}>
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", maxHeight: 160, overflowY: "auto", boxShadow: "var(--shadow-lg)" }}>
                   {customers.map((c) => (
-                    <button key={c.id} type="button" style={{ display: "block", width: "100%", textAlign: "left", padding: "0.4rem 0.6rem", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.85rem", borderBottom: "1px solid var(--border)" }} onMouseDown={() => { setSelectedCustomer(c); setCustomerQuery(c.name); setShowCustomerDropdown(false); }}>
+                    <button key={c.id} type="button" className="pos-customer-option" style={{ display: "block", width: "100%", textAlign: "left", padding: "0.4rem 0.6rem", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.85rem", borderBottom: "1px solid var(--border)" }} onMouseDown={() => { setSelectedCustomer(c); setCustomerQuery(c.name); setShowCustomerDropdown(false); }}>
                       <strong>{c.name}</strong> {c.phone ? `· ${c.phone}` : ""} <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>{c.email}</span>
                     </button>
                   ))}
@@ -633,7 +635,7 @@ export default function POSPage() {
           )}
           {status && <p role="status" style={{ fontSize: "0.85rem", marginBottom: "0.5rem", color: status.kind === "error" ? "var(--danger)" : status.kind === "info" ? "var(--text-secondary)" : "var(--success)" }}>{status.text}</p>}
           {mpesaPending && !lastOrderId && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.6rem 0.75rem", marginBottom: "0.5rem", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg)" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.6rem 0.75rem", marginBottom: "0.5rem", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", background: "var(--bg)" }}>
               <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>{mpesaPending.failed ? `M-Pesa push failed — Order #${mpesaPending.orderId}` : `Awaiting M-Pesa payment — Order #${mpesaPending.orderId}`}</div>
               <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
                 {mpesaPending.failed
