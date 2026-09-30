@@ -56,6 +56,7 @@ export default function ProductPositioningPage() {
         {products.map((p, idx) => (
           <div
             key={p.id}
+            className="drag-handle"
             draggable
             onDragStart={() => onDragStart(idx)}
             onDragOver={(e) => onDragOver(e, idx)}
@@ -63,7 +64,7 @@ export default function ProductPositioningPage() {
             onDrop={() => onDrop(idx)}
             style={{
               display: "flex", alignItems: "center", gap: "0.75rem",
-              padding: "0.75rem", borderRadius: 8,
+              padding: "0.75rem", borderRadius: "var(--radius-sm)",
               background: "var(--surface)", border: "1px solid var(--border)",
               cursor: "grab", opacity: dragIdx === idx ? 0.4 : 1,
               outline: dropIdx === idx ? "2px solid var(--accent)" : "none",

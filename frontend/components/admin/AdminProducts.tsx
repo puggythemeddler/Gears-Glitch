@@ -335,6 +335,7 @@ export default function AdminProducts() {
                 {gallery.map((img: any, idx: number) => (
                   <div
                     key={img.id}
+                    className="drag-handle"
                     draggable
                     onDragStart={() => onDragStart(idx)}
                     onDragOver={(e) => onDragOver(e, idx)}
@@ -345,7 +346,7 @@ export default function AdminProducts() {
                       opacity: dragIdx === idx ? 0.4 : 1,
                       outline: dropIdx === idx ? "2px solid var(--accent)" : "none",
                       outlineOffset: 2,
-                      borderRadius: 8,
+                      borderRadius: "var(--radius-sm)",
                       transition: "opacity 0.15s",
                     }}
                   >
