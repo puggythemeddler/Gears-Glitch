@@ -197,10 +197,10 @@ export default function WhatsAppSettings() {
         <h3 style={{ marginTop: 0 }}>Connection</h3>
         {config && (
           <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "0.8rem", padding: "4px 10px", borderRadius: 6, background: config.enabled ? "var(--success-light, #d1fae5)" : "var(--border)", color: config.enabled ? "var(--success, #065f46)" : "var(--text-secondary)" }}>
+            <span style={{ fontSize: "0.8rem", padding: "4px 10px", borderRadius: "var(--radius-sm)", background: config.enabled ? "var(--success-light)" : "var(--border)", color: config.enabled ? "var(--success-text)" : "var(--text-secondary)" }}>
               {config.enabled ? "Enabled" : "Disabled"}
             </span>
-            <span style={{ fontSize: "0.8rem", padding: "4px 10px", borderRadius: 6, background: config.configured ? "var(--success-light, #d1fae5)" : "var(--warning-light, #fef3c7)", color: config.configured ? "var(--success, #065f46)" : "var(--warning, #92400e)" }}>
+            <span style={{ fontSize: "0.8rem", padding: "4px 10px", borderRadius: "var(--radius-sm)", background: config.configured ? "var(--success-light)" : "var(--warning-light)", color: config.configured ? "var(--success-text)" : "var(--warning-text)" }}>
               {config.configured ? "Configured" : "Not Configured"}
             </span>
           </div>
@@ -259,7 +259,7 @@ export default function WhatsAppSettings() {
           Register this URL in Meta Developer Dashboard → WhatsApp → Configuration → Webhook:
         </p>
         <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginBottom: "0.75rem" }}>
-          <code style={{ display: "block", padding: "0.5rem 0.75rem", background: "var(--surface, #f8fafc)", border: "1px solid var(--border)", borderRadius: 6, fontSize: "0.8rem", wordBreak: "break-all", flex: 1 }}>
+          <code style={{ display: "block", padding: "0.5rem 0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: "0.8rem", wordBreak: "break-all", flex: 1 }}>
             {typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"}
           </code>
           <RippleButton size="small" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"); toast("success", "Webhook URL copied."); } catch {} }} aria-label="Copy webhook URL">Copy</RippleButton>
@@ -291,8 +291,8 @@ export default function WhatsAppSettings() {
                 {logs.map((l: any) => (
                   <tr key={l.id}>
                     <td>{escapeHtml(l.phone_number)}</td>
-                    <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: 4, background: l.direction === "outbound" ? "var(--primary-light, #e0e7ff)" : "var(--success-light, #d1fae5)" }}>{l.direction}</span></td>
-                    <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: 4, background: "var(--border)" }}>{l.message_type}</span></td>
+                    <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: "var(--radius-sm)", background: l.direction === "outbound" ? "var(--primary-light)" : "var(--success-light)" }}>{l.direction}</span></td>
+                    <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: "var(--radius-sm)", background: "var(--border)" }}>{l.message_type}</span></td>
                     <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       <MediaPreview content={l.content} logs={logs} />
                     </td>
@@ -387,7 +387,7 @@ export default function WhatsAppSettings() {
             <div>
               <div className="field"><label>List Button Text <input value={intListBtn} onChange={e => setIntListBtn(e.target.value)} placeholder="Options" /></label></div>
               {intSections.map((s, si) => (
-                <div key={si} style={{ marginBottom: "0.75rem", padding: "0.5rem", border: "1px solid var(--border)", borderRadius: 6 }}>
+                <div key={si} style={{ marginBottom: "0.75rem", padding: "0.5rem", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
                   <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
                     <input style={{ flex: 1 }} value={s.title} onChange={e => { const a = [...intSections]; a[si] = { ...a[si], title: e.target.value }; setIntSections(a); }} placeholder="Section title" />
                     {intSections.length > 1 && <RippleButton variant="ghost" size="small" onClick={() => setIntSections(intSections.filter((_, j) => j !== si))}>X</RippleButton>}

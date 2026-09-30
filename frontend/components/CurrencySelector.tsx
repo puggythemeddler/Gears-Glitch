@@ -22,7 +22,7 @@ export default function CurrencySelector() {
         value={selectedCurrency || "KES"}
         onChange={(e) => { setCurrency(e.target.value); window.location.reload(); }}
         style={{
-          fontSize: "0.8rem", padding: "0.2rem 0.4rem", borderRadius: 6,
+          fontSize: "0.8rem", padding: "0.2rem 0.4rem", borderRadius: "var(--radius-sm)",
           border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)",
           cursor: "pointer", maxWidth: 160,
         }}

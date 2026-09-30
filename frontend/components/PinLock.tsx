@@ -89,7 +89,7 @@ export default function PinLock({ storageKey, title = "PIN", onUnlock, verifyPin
       minHeight: "60vh", padding: "2rem",
     }}>
       <div style={{
-        background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16,
+        background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)",
         padding: "2rem", maxWidth: 360, width: "100%", textAlign: "center",
       }}>
         <h2 style={{ margin: "0 0 0.25rem" }}>

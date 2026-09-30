@@ -190,7 +190,7 @@ export function LayoutEngine({
 export function LayoutStyles() {
   const { layout, layoutConfig } = useLayout();
   if (layoutConfig?.type === "dynamic") {
-    return <DynamicLayoutStyles colors={layoutConfig.config?.colors} />;
+    return <DynamicLayoutStyles tokens={layoutConfig.config?.tokens} />;
   }
   const mod = getLayout(layout);
   return <mod.LayoutStyles />;

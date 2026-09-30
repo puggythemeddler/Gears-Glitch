@@ -52,8 +52,8 @@ export function SkeletonStats() {
     <div className="stat-grid">
       {Array.from({ length: 4 }).map((_, i) => (
         <div key={i} className="stat-card" style={{ padding: "1.5rem" }}>
-          <div className="skeleton" style={{ height: "2.5rem", width: "60%", margin: "0 auto 0.75rem", borderRadius: "6px" }} />
-          <div className="skeleton" style={{ height: "1rem", width: "40%", margin: "0 auto", borderRadius: "6px" }} />
+          <div className="skeleton" style={{ height: "2.5rem", width: "60%", margin: "0 auto 0.75rem", borderRadius: "var(--radius-sm)" }} />
+          <div className="skeleton" style={{ height: "1rem", width: "40%", margin: "0 auto", borderRadius: "var(--radius-sm)" }} />
         </div>
       ))}
     </div>

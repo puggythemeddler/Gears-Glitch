@@ -5,6 +5,8 @@ import {
   MOTION_TRIGGERS,
   MOTION_EASINGS,
   MOTION_DIRECTIONS,
+  MOTION_INTENSITIES,
+  MOTION_INTENSITY_LABELS,
   MOTION_LIMITS,
   PRESET_LABELS,
   PRESET_CATEGORY,
@@ -23,7 +25,7 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 );
 
 const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "0.5rem 0.6rem", fontSize: "0.85rem", borderRadius: 6,
+  width: "100%", padding: "0.5rem 0.6rem", fontSize: "0.85rem", borderRadius: "var(--radius-sm)",
   border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)",
 };
 
@@ -133,6 +135,12 @@ export default function MotionPanel({
         <input type="checkbox" checked={conf.mobile !== false} onChange={(e) => set({ mobile: e.target.checked })} />
         Animate on small screens
       </label>
+
+      <Field label="Intensity">
+        <select style={inputStyle} value={conf.intensity} onChange={(e) => set({ intensity: e.target.value as MotionConfig["intensity"] })}>
+          {MOTION_INTENSITIES.map((i) => <option key={i} value={i}>{MOTION_INTENSITY_LABELS[i]}</option>)}
+        </select>
+      </Field>
 
       <Field label="Reduced motion">
         <select style={inputStyle} value={conf.reducedMotion} onChange={(e) => set({ reducedMotion: e.target.value as MotionConfig["reducedMotion"] })}>

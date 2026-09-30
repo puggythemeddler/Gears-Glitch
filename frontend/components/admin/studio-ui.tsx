@@ -11,7 +11,7 @@ export function Field({ label, children }: { label: string; children: React.Reac
 }
 
 export const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "0.5rem 0.6rem", fontSize: "0.85rem", borderRadius: 6,
+  width: "100%", padding: "0.5rem 0.6rem", fontSize: "0.85rem", borderRadius: "var(--radius-sm)",
   border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)",
 };
 
@@ -24,7 +24,7 @@ export function Num({ value, onChange, min, max }: { value: number; onChange: (v
 }
 
 export function Color({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return <input type="color" style={{ width: "100%", height: 36, borderRadius: 6, border: "1px solid var(--border)", background: "none", cursor: "pointer", padding: 2 }} value={value || "#c2410c"} onChange={(e) => onChange(e.target.value)} />;
+  return <input type="color" style={{ width: "100%", height: 36, borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", background: "none", cursor: "pointer", padding: 2 }} value={value || "#c2410c"} onChange={(e) => onChange(e.target.value)} />;
 }
 
 export function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {

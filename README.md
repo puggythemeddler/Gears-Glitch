@@ -445,12 +445,51 @@ A comprehensive token-based design system with CSS custom properties:
 |----------------|---------|
 | **Spacing** | `--space-1` through `--space-12` (4px–48px scale) |
 | **Typography** | `--text-xs` through `--text-3xl`, `--font-*` weights, `--leading-*` line heights |
-| **Colors** | `--text`, `--text-secondary`, `--text-tertiary`, `--bg`, `--bg-secondary`, `--surface`, `--border`, `--primary` (Till Orange: `#c2410c` light / `#f97316` dark), `--primary-subtle`, semantic colors (`--success`, `--danger`, `--warning`, `--info`) with light variants and `-text` contrast variants (`--success-text`, `--warning-text`, `--danger-text`), plus warm-stone `--muted` and a reusable `--focus-ring` outline token |
+| **Colors** | `--text`, `--text-secondary`, `--text-tertiary`, `--bg`, `--bg-secondary`, `--surface`, `--border`, `--primary` (Till Orange: `#c2410c` light / `#f97316` dark), `--primary-subtle`, semantic colors (`--success`, `--danger`, `--warning`, `--info`) with light variants and `-text` contrast variants (`--success-text`, `--warning-text`, `--danger-text`), plus warm-stone `--muted` and a reusable `--focus-ring` outline token. Every semantic role also ships a `-hover` fill, an `--on-*` colour for text/icon sitting **on** the solid fill, and light/dark parity is enforced by tests |
+| **Accent roles** | `--accent` / `--accent-hover` / `--accent-subtle` / `--on-accent` (secondary brand, Workbench Amber), `--technical` (repairs, diagnostics — teal), `--analytics` (reports, dashboards — indigo). Text/icon colour on a solid fill must always come from the matching `--on-*`, never a literal `#fff` |
 | **Shadows** | `--shadow-sm` through `--shadow-2xl` |
 | **Radii** | `--radius-sm` through `--radius-full` |
-| **Animation** | `--duration-fast`, `--duration-normal`, `--duration-slow`, `--ease-out`, `--ease-bounce` |
+| **Animation** | `--duration-micro` (80ms), `--duration-fast`, `--duration-normal`, `--duration-slow`, `--ease-out`, `--ease-press`, `--ease-spring`, `--ease-bounce` |
 
 Dark/light themes use `[data-theme="dark"]` / `[data-theme="light"]` selectors, persisted in `localStorage`.
+
+### Interaction language
+
+One set of control states is shared by the storefront, admin, POS and the control plane:
+
+| State | Behaviour |
+|-------|-----------|
+| **Idle** | Tokenised fill, `--radius-md` (12px), `min-height: var(--control-min-height)` (44px) |
+| **Hover** | Fill moves to the role's `-hover` token; primary/danger/success lift 1–2px with a subtle shadow |
+| **Focus-visible** | `box-shadow: var(--focus-ring)` — a 3px ring in the primary tint, never a 2px outline |
+| **Pressed** | `translateY(1px) scale(0.98)` with elevation removed — settles in, no bounce |
+| **Disabled** | 50% opacity, `not-allowed`, no pointer events |
+| **Loading** | Label hides, a spinner draws its ink from the variant's own `--on-*` via `color-mix` |
+| **Success** | `.btn-success` modifier for confirmations (green fill, ink label) |
+
+Only `transform`, `box-shadow` and colour properties transition — `transition: all` is banned by
+`tests/design-tokens.test.ts`, so a control can never re-run layout when it changes state.
+
+### Motion intensity scale
+
+Motion is tuned by one dial (`intensity` on every `MotionConfig`) rather than per-effect guesswork:
+
+| Intensity | Duration factor | Travel distance | Used by |
+|-----------|-----------------|-----------------|---------|
+| `subtle` | ×0.7 | 8px | Admin, POS — speed and clarity first |
+| `standard` | ×1.0 | 16px | The app by default (a no-op, so existing configs render unchanged) |
+| `expressive` | ×1.15 | 24px | Website Studio and storefronts |
+
+`prefers-reduced-motion` remains a global kill switch (`transition-duration: 0.01ms`,
+`animation-iteration-count: 1`) regardless of the chosen intensity.
+
+### Storefront design tokens (Website Studio)
+
+The Studio **Design** tab exposes storefront-wide tokens: corner radius (px), store accent,
+text-on-accent and motion intensity. On save they are normalised, and the layout engine
+re-validates them before emitting scoped CSS custom properties on `.dynamic-layout`
+(`--radius-sm/md/lg`, `--primary`, `--on-primary`), so a merchant setting can never leak into
+the admin chrome and a malformed value can never reach a `<style>` tag.
 
 ### Animation System (`animations.css`)
 

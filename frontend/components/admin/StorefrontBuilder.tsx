@@ -9,6 +9,9 @@ import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
 import { Spinner, ErrorMsg } from "./shared";
 import MotionPanel from "./MotionPanel";
+import { Field, inputStyle, Text, Num, Color, Select, Check } from "./studio-ui";
+import { MOTION_INTENSITIES, MOTION_INTENSITY_LABELS, isMotionIntensity } from "@/lib/motion";
+import type { MotionIntensity } from "@/lib/motion";
 import { createHistory, pushHistory, undoHistory, redoHistory, canUndo, canRedo } from "@/lib/history";
 import { promptDialog, confirmDialog } from "@/components/ConfirmDialog";
 import type { HistoryState } from "@/lib/history";
@@ -123,47 +126,19 @@ function setAtPath(obj: any, path: string, value: unknown): any {
   return { ...obj, [head]: nextChild };
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: "block", marginBottom: "0.75rem" }}>
-      <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.25rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "0.5rem 0.6rem", fontSize: "0.85rem", borderRadius: 6,
-  border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)",
-};
-
-function Text({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return <input style={inputStyle} value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />;
-}
-
-function Num({ value, onChange, min, max }: { value: number; onChange: (v: number) => void; min?: number; max?: number }) {
-  return <input type="number" style={inputStyle} value={value ?? ""} min={min} max={max} onChange={(e) => onChange(parseInt(e.target.value || "0", 10))} />;
-}
-
-function Color({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return <input type="color" style={{ width: "100%", height: 36, borderRadius: 6, border: "1px solid var(--border)", background: "none", cursor: "pointer", padding: 2 }} value={value || "#c2410c"} onChange={(e) => onChange(e.target.value)} />;
-}
-
-function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
-  return (
-    <select style={inputStyle} value={value || ""} onChange={(e) => onChange(e.target.value)}>
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
-}
-
-function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      {label}
-    </label>
-  );
+// Storefront design tokens are re-validated before they are persisted, and the
+// engine re-validates them again when it emits them as CSS custom properties.
+// Anything unrecognised is dropped so a bad value can never reach a <style> tag.
+function normalizeTokens(input: DynamicLayoutConfig["tokens"]): DynamicLayoutConfig["tokens"] {
+  if (!input || typeof input !== "object") return undefined;
+  const out: NonNullable<DynamicLayoutConfig["tokens"]> = {};
+  const radius = Number(input.radius);
+  if (Number.isFinite(radius)) out.radius = Math.max(0, Math.min(24, Math.round(radius)));
+  const hex = /^#[0-9a-fA-F]{3,8}$/;
+  if (typeof input.accent === "string" && hex.test(input.accent)) out.accent = input.accent;
+  if (typeof input.onAccent === "string" && hex.test(input.onAccent)) out.onAccent = input.onAccent;
+  if (isMotionIntensity(input.motionIntensity)) out.motionIntensity = input.motionIntensity;
+  return Object.keys(out).length ? out : undefined;
 }
 
 function LinkHint({ value }: { value: string }) {
@@ -243,6 +218,25 @@ export default function StorefrontBuilder() {
   const [device, setDevice] = useState<Device>("desktop");
   const [paletteQuery, setPaletteQuery] = useState("");
   const [tab, setTab] = useState<"content" | "design" | "layout">("content");
+
+  // Live preview of the design tokens. The engine emits the same custom
+  // properties on `.dynamic-layout` for the published storefront; scoping them
+  // to the canvas keeps the admin chrome itself untouched.
+  const tokenPreviewStyle = useMemo(() => {
+    const tokens = config.tokens;
+    const style: Record<string, string> = {};
+    const radius = Number(tokens?.radius);
+    if (Number.isFinite(radius) && tokens?.radius !== undefined) {
+      const r = Math.max(0, Math.min(24, Math.round(radius)));
+      style["--radius-sm"] = `${r}px`;
+      style["--radius-md"] = `${r + 2}px`;
+      style["--radius-lg"] = `${r + 4}px`;
+    }
+    const hex = /^#[0-9a-fA-F]{3,8}$/;
+    if (tokens?.accent && hex.test(tokens.accent)) style["--primary"] = tokens.accent;
+    if (tokens?.onAccent && hex.test(tokens.onAccent)) style["--on-primary"] = tokens.onAccent;
+    return style as React.CSSProperties;
+  }, [config.tokens]);
   const [editField, setEditField] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [editOriginal, setEditOriginal] = useState("");
@@ -434,6 +428,14 @@ export default function StorefrontBuilder() {
     mutateConfig({ ...configRef.current, colors: { ...(configRef.current.colors || {}), ...patch } });
   }
 
+  function updateTokens(patch: Partial<NonNullable<DynamicLayoutConfig["tokens"]>>) {
+    mutateConfig({ ...configRef.current, tokens: { ...(configRef.current.tokens || {}), ...patch } });
+  }
+
+  function configForSave() {
+    return { ...config, tokens: normalizeTokens(config.tokens) };
+  }
+
   function updateCard(patch: Partial<NonNullable<DynamicLayoutConfig["productCard"]>>) {
     mutateConfig({ ...configRef.current, productCard: { ...(configRef.current.productCard || {}), ...patch } });
   }
@@ -473,7 +475,7 @@ export default function StorefrontBuilder() {
     if (!selectedId) return;
     setSaving(true); setMsg("");
     try {
-      await api(`/api/admin/layouts/${selectedId}`, { method: "PUT", body: JSON.stringify({ label, description, config }) });
+      await api(`/api/admin/layouts/${selectedId}`, { method: "PUT", body: JSON.stringify({ label, description, config: configForSave() }) });
       setDirty(false);
       setUnpublished(true);
       setHist((h) => pushHistory(h, { label, description, config }));
@@ -488,7 +490,7 @@ export default function StorefrontBuilder() {
     setSaving(true); setMsg("");
     try {
       if (dirty) {
-        await api(`/api/admin/layouts/${selectedId}`, { method: "PUT", body: JSON.stringify({ label, description, config }) });
+        await api(`/api/admin/layouts/${selectedId}`, { method: "PUT", body: JSON.stringify({ label, description, config: configForSave() }) });
         setDirty(false);
         setHist((h) => pushHistory(h, { label, description, config }));
       }
@@ -759,6 +761,19 @@ export default function StorefrontBuilder() {
         <Field label="Hero text"><Color value={config.colors?.heroText || ""} onChange={(v) => updateColors({ heroText: v })} /></Field>
         <Field label="Accent"><Color value={config.colors?.accent || ""} onChange={(v) => updateColors({ accent: v })} /></Field>
         <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: "0.5rem 0 0" }}>Tip: to match the whole site to your brand (header, buttons, footer), use <strong>Storefront → My Brand Colors</strong>.</p>
+        <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.85rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>Design tokens</h4>
+        <Field label="Corner radius (px)">
+          <div style={{ display: "flex", gap: "0.4rem" }}>
+            <Num value={config.tokens?.radius ?? 10} min={0} max={24} onChange={(v) => updateTokens({ radius: v })} />
+            <button type="button" onClick={() => updateTokens({ radius: undefined })} style={{ ...inputStyle, width: "auto", cursor: "pointer" }}>Default</button>
+          </div>
+        </Field>
+        <Field label="Store accent"><Color value={config.tokens?.accent || ""} onChange={(v) => updateTokens({ accent: v })} /></Field>
+        <Field label="Text on accent"><Color value={config.tokens?.onAccent || ""} onChange={(v) => updateTokens({ onAccent: v })} /></Field>
+        <Field label="Motion intensity">
+          <Select value={config.tokens?.motionIntensity || "standard"} onChange={(v) => updateTokens({ motionIntensity: v as MotionIntensity })} options={MOTION_INTENSITIES.map((i) => ({ value: i, label: MOTION_INTENSITY_LABELS[i] }))} />
+        </Field>
+        <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: "0.5rem 0 0" }}>Radius replaces the storefront corner scale (10–14px reads best). Accent repaints buttons and links, so pick a text colour that stays high contrast. Motion intensity sets the default dial for sections that animate.</p>
         <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.85rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>Product cards</h4>
         <Field label="Style"><Select value={config.productCard?.style || "default"} onChange={(v) => updateCard({ style: v as any })} options={[{ value: "default", label: "Default" }, { value: "compact", label: "Compact" }, { value: "detailed", label: "Detailed" }]} /></Field>
         <Check label="Show ratings" checked={config.productCard?.showRating !== false} onChange={(v) => updateCard({ showRating: v })} />
@@ -793,22 +808,24 @@ export default function StorefrontBuilder() {
         .sb-toolbar-left { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
         .sb-grid { display: grid; grid-template-columns: 220px 1fr 300px; gap: 1rem; align-items: start; }
         @media (max-width: 1200px) { .sb-grid { grid-template-columns: 1fr; } }
-        .sb-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
-        .sb-palette-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 8px; cursor: grab; margin-bottom: 0.5rem; font-size: 0.85rem; background: var(--bg); transition: border-color 0.15s; }
+        .sb-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; }
+        .sb-palette-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: grab; margin-bottom: 0.5rem; font-size: 0.85rem; background: var(--bg); transition: border-color var(--duration-fast) ease; }
         .sb-palette-item:hover { border-color: var(--primary); }
-        .sb-palette-icon { width: 26px; height: 26px; border-radius: 6px; background: var(--primary-subtle); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; flex-shrink: 0; }
+        .sb-palette-item:active { cursor: grabbing; }
+        .sb-palette-icon { width: 26px; height: 26px; border-radius: var(--radius-sm); background: var(--primary-subtle); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; flex-shrink: 0; }
         .sb-section { position: relative; border: 1px solid transparent; }
         .sb-section:hover { outline: 1px dashed var(--border-hover); outline-offset: 2px; }
-        .sb-section.selected { border-color: var(--primary); border-style: solid; border-width: 2px; border-radius: 10px; }
+        .sb-section.selected { border-color: var(--primary); border-style: solid; border-width: 2px; border-radius: var(--radius-sm); }
         .sb-section.selected .sb-section-bar { display: flex; }
-        .sb-section-bar { display: none; position: absolute; top: 6px; left: 6px; z-index: 20; align-items: center; gap: 0.3rem; background: var(--primary); color: var(--on-primary); border-radius: 6px; padding: 0.15rem 0.4rem; font-size: 0.7rem; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .sb-section-bar { display: none; position: absolute; top: 6px; left: 6px; z-index: 20; align-items: center; gap: 0.3rem; background: var(--primary); color: var(--on-primary); border-radius: var(--radius-sm); padding: 0.15rem 0.4rem; font-size: 0.7rem; font-weight: 600; box-shadow: var(--shadow-md); }
         .sb-section-bar button { background: none; border: none; color: var(--on-primary); cursor: pointer; font-size: 0.75rem; padding: 0 0.2rem; line-height: 1; }
         .sb-section-bar .sb-grip { cursor: grab; }
-        .sb-canvas { min-height: 300px; border: 1px solid var(--border); border-radius: 12px; overflow: auto; background: var(--bg); }
+        .sb-section-bar .sb-grip:active { cursor: grabbing; }
+        .sb-canvas { min-height: 300px; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: auto; background: var(--bg); }
         .sb-empty { padding: 3rem 2rem; text-align: center; color: var(--text-tertiary); }
-        .sb-msg { padding: 0.5rem 0.75rem; border-radius: 8px; margin-bottom: 0.75rem; font-size: 0.82rem; }
-        .sb-msg-ok { background: #d1fae5; color: #065f46; }
-        .sb-msg-err { background: #fee2e2; color: #991b1b; }
+        .sb-msg { padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); margin-bottom: 0.75rem; font-size: 0.82rem; }
+        .sb-msg-ok { background: var(--success-light); color: var(--success-text); }
+        .sb-msg-err { background: var(--danger-light); color: var(--danger-text); }
         .sb-status { font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; letter-spacing: 0.03em; }
       `}</style>
 
@@ -902,6 +919,7 @@ export default function StorefrontBuilder() {
                 ref={canvasRef}
                 onClickCapture={onCanvasClickCapture}
                 style={{
+                  ...tokenPreviewStyle,
                   width: "100%",
                   maxWidth: deviceWidth ?? "100%",
                   maxHeight: "70vh",

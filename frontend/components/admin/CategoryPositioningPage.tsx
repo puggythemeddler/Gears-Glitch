@@ -53,10 +53,10 @@ export default function CategoryPositioningPage() {
             onDragEnd={handleDragEnd}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(idx, e)}
-            style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.6rem 0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, cursor: "grab" }}
+            style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.6rem 0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", cursor: "grab" }}
           >
             <span style={{ color: "var(--muted)", fontSize: "0.85rem", minWidth: 20, textAlign: "right" }}>{idx + 1}</span>
-            <span style={{ cursor: "grab", fontSize: "1.1rem", color: "var(--muted)" }}>&#9776;</span>
+            <span className="drag-handle" style={{ cursor: "grab", fontSize: "1.1rem", color: "var(--muted)" }}>&#9776;</span>
             <span style={{ fontWeight: 500 }}>{cat.label}</span>
           </div>
         ))}

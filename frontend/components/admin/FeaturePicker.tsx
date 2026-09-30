@@ -123,14 +123,14 @@ export default function FeaturePicker({ selected, onChange }: FeaturePickerProps
               <span style={{ display: "inline-flex", color: "var(--primary)" }}><Icon name={grp.icon} size={16} /></span>
               <span style={{ flex: 1 }}>{grp.group}</span>
               <span style={{ fontSize: "0.75rem", fontWeight: 400, opacity: 0.6 }}>{grp.features.filter((f) => selected.includes(f)).length}/{grp.features.length}</span>
-              <label style={{ fontSize: "0.75rem", fontWeight: 400, padding: "0.1rem 0.4rem", borderRadius: 4, background: allOn ? "var(--primary)" : "var(--border)", color: allOn ? "var(--surface)" : "var(--text)", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); }}>
+              <label style={{ fontSize: "0.75rem", fontWeight: 400, padding: "0.1rem 0.4rem", borderRadius: "var(--radius-sm)", background: allOn ? "var(--primary)" : "var(--border)", color: allOn ? "var(--on-primary)" : "var(--text)", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); }}>
                 <input type="checkbox" checked={allOn} onChange={() => toggleGroup(grp.features, allOn)} style={{ display: "none" }} />
                 {allOn ? "All" : "Select all"}
               </label>
             </summary>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", padding: "0.5rem 0.75rem 0.75rem" }}>
               {grp.features.map((f) => (
-                <label key={f} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.82rem", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 6, background: selected.includes(f) ? "var(--primary)" : "var(--bg)", color: selected.includes(f) ? "var(--surface)" : "var(--text)", border: "1px solid " + (selected.includes(f) ? "var(--primary)" : "var(--border)") }}>
+                <label key={f} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.82rem", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: "var(--radius-sm)", background: selected.includes(f) ? "var(--primary)" : "var(--bg)", color: selected.includes(f) ? "var(--on-primary)" : "var(--text)", border: "1px solid " + (selected.includes(f) ? "var(--primary)" : "var(--border)") }}>
                   <input type="checkbox" checked={selected.includes(f)} onChange={() => toggle(f)} style={{ display: "none" }} />
                   {f}
                 </label>

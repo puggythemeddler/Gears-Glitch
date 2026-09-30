@@ -4,7 +4,7 @@ import { formatPrice } from "./shared";
 import { Motion } from "@/components/motion/Motion";
 import { Media } from "@/components/Media";
 import { motionGroupItemVars } from "@/lib/motion";
-import type { MotionConfig, MotionTrigger } from "@/lib/motion";
+import type { MotionConfig, MotionIntensity, MotionTrigger } from "@/lib/motion";
 import { normalizeHref } from "@/lib/links";
 
 // Render a builder-supplied link as an anchor only when it actually points
@@ -57,6 +57,15 @@ export interface DynamicLayoutConfig {
     heroBg?: string;
     heroText?: string;
     accent?: string;
+  };
+  // Storefront-wide design tokens exposed by the Studio Design panel. Radius is
+  // in px; accent/onAccent are hex colours; motionIntensity is the default dial
+  // applied to sections that enable motion without specifying their own.
+  tokens?: {
+    radius?: number;
+    accent?: string;
+    onAccent?: string;
+    motionIntensity?: MotionIntensity;
   };
 }
 
@@ -244,7 +253,7 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
   if (style === "compact") {
     return (
       <a href={`/product?id=${product.id}`} style={{ display: "block", textDecoration: "none", color: "var(--text)" }}>
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", transition: "transform 0.2s, box-shadow 0.2s" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", overflow: "hidden", transition: "transform 0.2s, box-shadow 0.2s" }}>
           {product.imageUrl && <Media src={product.imageUrl} alt={product.name} width={200} height={140} fit="contain" fallbackLabel={product.name} style={{ width: "100%", height: 140, objectFit: "contain", background: "var(--surface)" }} />}
           <div style={{ padding: "0.6rem" }}>
             <div style={{ fontSize: "0.8rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.name}</div>
@@ -259,8 +268,8 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
   if (style === "detailed") {
     return (
       <a href={`/product?id=${product.id}`} style={{ display: "block", textDecoration: "none", color: "var(--text)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: "0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", padding: "0.75rem", transition: "transform 0.2s, box-shadow 0.2s", alignItems: "center" }}>
-          {product.imageUrl && <Media src={product.imageUrl} alt={product.name} width={200} height={120} fit="contain" fallbackLabel={product.name} style={{ width: "100%", height: 120, objectFit: "contain", background: "var(--surface)", borderRadius: 8 }} />}
+        <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: "0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", overflow: "hidden", padding: "0.75rem", transition: "transform 0.2s, box-shadow 0.2s", alignItems: "center" }}>
+          {product.imageUrl && <Media src={product.imageUrl} alt={product.name} width={200} height={120} fit="contain" fallbackLabel={product.name} style={{ width: "100%", height: 120, objectFit: "contain", background: "var(--surface)", borderRadius: "var(--radius-sm)" }} />}
           <div>
             <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 4 }}>{product.category}</div>
             <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: 6, lineHeight: 1.3 }}>{product.name}</div>
@@ -279,7 +288,7 @@ function ProductCard({ product, cardConfig }: { product: Product; cardConfig?: D
 
   return (
     <a href={`/product?id=${product.id}`} style={{ display: "block", textDecoration: "none", color: "var(--text)" }}>
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", transition: "transform 0.2s, box-shadow 0.2s" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", overflow: "hidden", transition: "transform 0.2s, box-shadow 0.2s" }}>
         {product.imageUrl && <Media src={product.imageUrl} alt={product.name} width={300} height={200} fit="contain" fallbackLabel={product.name} style={{ width: "100%", height: 200, objectFit: "contain", background: "var(--surface)" }} />}
         <div style={{ padding: "1rem" }}>
           <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 4 }}>{product.category}</div>
@@ -348,7 +357,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     const grid = responsiveGridProps(section);
     const cellStyle: React.CSSProperties = {
       display: "block", textDecoration: "none", color: "var(--text)", background: "var(--surface)",
-      border: "1px solid var(--border)", borderRadius: 10, padding: section.style === "icons" ? "1.25rem" : "1.5rem",
+      border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: section.style === "icons" ? "1.25rem" : "1.5rem",
       textAlign: "center", transition: "transform 0.2s, border-color 0.2s",
     };
     return (
@@ -375,21 +384,21 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
   if (section.type === "banner") {
     return (
       <div style={{ margin: "1.5rem auto", maxWidth: 1440, padding: "0 2rem" }} data-fid={fid}>
-        <DyLink href={section.link} style={{ display: "block", background: section.bgColor || "var(--primary-subtle)", borderRadius: 12, overflow: "hidden", textDecoration: "none", color: "inherit" }}>
+        <DyLink href={section.link} style={{ display: "block", background: section.bgColor || "var(--primary-subtle)", borderRadius: "var(--radius-md)", overflow: "hidden", textDecoration: "none", color: "inherit" }}>
           {section.imageUrl ? (
             <div style={{ position: "relative" }}>
               <Media src={section.imageUrl} alt={section.text || ""} width={1200} height={200} fit="cover" fallbackLabel="Section image" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
               {(section.text || section.buttonLabel) && (
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.75rem", background: "rgba(0,0,0,0.35)", color: "#fff" }}>
                   {section.text && <div style={{ fontSize: "1.2rem", fontWeight: 700 }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
-                  {section.buttonLabel && <span style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "0.5rem 1.4rem", borderRadius: 8, fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
+                  {section.buttonLabel && <span style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "0.5rem 1.4rem", borderRadius: "var(--radius-sm)", fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
                 </div>
               )}
             </div>
           ) : (
             <div style={{ padding: "2rem", textAlign: "center", color: section.textColor || "var(--text)", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
               {section.text && <div style={{ fontSize: "1.2rem", fontWeight: 600 }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
-              {section.buttonLabel && <span style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "0.5rem 1.4rem", borderRadius: 8, fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
+              {section.buttonLabel && <span style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "0.5rem 1.4rem", borderRadius: "var(--radius-sm)", fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
             </div>
           )}
         </DyLink>
@@ -403,7 +412,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(160px, 100%), 1fr))", gap: "1rem" }}>
           {(section.items || []).map((item, j) => (
-            <div key={j} className={stagger ? "motion-child" : undefined} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, ...(stagger ? motionGroupItemVars(j) : {}) }}>
+            <div key={j} className={stagger ? "motion-child" : undefined} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{item.icon}</div>}
               <div style={{ fontSize: "1.8rem", fontWeight: 700, color: colors?.accent || "var(--primary)" }} data-fid={fid ? `${fid}.items.${j}.value` : undefined}>{item.value}</div>
               <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 4 }} data-fid={fid ? `${fid}.items.${j}.label` : undefined}>{item.label}</div>
@@ -427,7 +436,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     const sizePad = section.size === "lg" ? "0.9rem 2.4rem" : section.size === "sm" ? "0.5rem 1.2rem" : "0.7rem 1.8rem";
     const sizeFont = section.size === "lg" ? "1.05rem" : section.size === "sm" ? "0.82rem" : "0.95rem";
     const base: React.CSSProperties = {
-      display: "inline-block", padding: sizePad, borderRadius: 8, fontWeight: 600, textDecoration: "none", fontSize: sizeFont,
+      display: "inline-block", padding: sizePad, borderRadius: "var(--radius-sm)", fontWeight: 600, textDecoration: "none", fontSize: sizeFont,
       cursor: "pointer",
     };
     const style = section.variant === "outline"
@@ -447,10 +456,10 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
       <div style={{ padding: "1.5rem 2rem", maxWidth: 1440, margin: "0 auto", textAlign: "center" }} data-fid={fid}>
         {section.imageUrl ? (
           <DyLink href={section.link} style={{ textDecoration: "none", color: "inherit", display: "inline-block" }}>
-            <Media src={section.imageUrl} alt={section.alt || section.caption || ""} width={1200} height={480} fit="contain" fallbackLabel="Image" style={{ maxWidth: "100%", maxHeight: 480, width: section.maxWidth ? section.maxWidth : undefined, borderRadius: section.rounded ? 14 : 0, objectFit: "contain" }} />
+            <Media src={section.imageUrl} alt={section.alt || section.caption || ""} width={1200} height={480} fit="contain" fallbackLabel="Image" style={{ maxWidth: "100%", maxHeight: 480, width: section.maxWidth ? section.maxWidth : undefined, borderRadius: section.rounded ? "var(--radius-lg)" : 0, objectFit: "contain" }} />
           </DyLink>
         ) : (
-          <div style={{ border: "2px dashed var(--border)", borderRadius: 12, padding: "3rem", color: "var(--text-tertiary)" }}>Image â€” add an image URL</div>
+          <div style={{ border: "2px dashed var(--border)", borderRadius: "var(--radius-md)", padding: "3rem", color: "var(--text-tertiary)" }}>Image â€” add an image URL</div>
         )}
         {section.caption && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.5rem" }} data-fid={fid ? `${fid}.caption` : undefined}>{section.caption}</p>}
       </div>
@@ -468,7 +477,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
           style={grid ? grid.style : { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(${section.columns && section.columns > 3 ? 200 : 260}px, 100%), 1fr))`, gap: "1rem" }}
         >
           {(section.items || []).map((item, j) => (
-            <div key={j} className={stagger ? "motion-child" : undefined} style={{ padding: "1.5rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, textAlign: "center", ...(stagger ? motionGroupItemVars(j) : {}) }}>
+            <div key={j} className={stagger ? "motion-child" : undefined} style={{ padding: "1.5rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", textAlign: "center", ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.8rem", marginBottom: "0.6rem" }}>{item.icon}</div>}
               {item.title && <div style={{ fontWeight: 700, marginBottom: "0.4rem" }} data-fid={fid ? `${fid}.items.${j}.title` : undefined}>{item.title}</div>}
               {item.text && <div style={{ fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.6 }} data-fid={fid ? `${fid}.items.${j}.text` : undefined}>{item.text}</div>}
@@ -511,8 +520,13 @@ export function DynamicSectionView({ section, products, categories, colors, card
 
 export function DynamicHomePage({ products, categories, banners, config }: { products: Product[]; categories: { id: string; label: string }[]; banners: any[]; config: DynamicLayoutConfig }) {
   const colors = config.colors;
-  const sections = config.sections || [];
   const cardConfig = config.productCard;
+  const defaultIntensity = config.tokens?.motionIntensity;
+  const sections = (config.sections || []).map((section) =>
+    section.animation && defaultIntensity
+      ? { ...section, animation: { ...section.animation, intensity: section.animation.intensity || defaultIntensity } }
+      : section
+  );
 
   return (
     <div className="dynamic-layout">
@@ -526,9 +540,26 @@ export function DynamicHomePage({ products, categories, banners, config }: { pro
   );
 }
 
-export function DynamicLayoutStyles({ colors }: { colors?: DynamicLayoutConfig["colors"] }) {
+// Scoped storefront design tokens. Emitted as CSS custom properties on
+// `.dynamic-layout` so the engine's `var(--radius-*)` / `var(--primary)` values
+// pick them up without leaking to the rest of the app. Values are re-validated
+// here because this string is injected into a <style> tag.
+export function DynamicLayoutStyles({ tokens }: { tokens?: DynamicLayoutConfig["tokens"] }) {
+  const radius = typeof tokens?.radius === "number" ? Math.max(0, Math.min(24, Math.round(tokens.radius))) : undefined;
+  const hex = /^#[0-9a-fA-F]{3,8}$/;
+  const accent = tokens?.accent && hex.test(tokens.accent) ? tokens.accent : undefined;
+  const onAccent = tokens?.onAccent && hex.test(tokens.onAccent) ? tokens.onAccent : undefined;
+  const decls: string[] = [];
+  if (radius !== undefined) {
+    decls.push(`--radius-sm: ${radius}px;`, `--radius-md: ${radius + 2}px;`, `--radius-lg: ${radius + 4}px;`);
+  }
+  if (accent) decls.push(`--primary: ${accent};`);
+  if (onAccent) decls.push(`--on-primary: ${onAccent};`);
+  const scope = decls.length ? `.dynamic-layout { ${decls.join(" ")} }` : "";
+
   return (
     <style>{`
+      ${scope}
       .dynamic-layout a:hover { opacity: 0.9; }
       @media (max-width: 768px) {
         .dynamic-layout [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }

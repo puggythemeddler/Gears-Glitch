@@ -56,7 +56,7 @@ function PageRowItem({ row, active, onSelect }: { row: PageRow; active: boolean;
       onKeyDown={(e) => { if (e.key === "Enter") onSelect(); }}
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem",
-        padding: "0.6rem 0.7rem", borderRadius: 10, cursor: "pointer", fontSize: "0.85rem",
+        padding: "0.6rem 0.7rem", borderRadius: "var(--radius-sm)", cursor: "pointer", fontSize: "0.85rem",
         border: active ? "1px solid var(--primary)" : "1px solid var(--border)",
         background: active ? "var(--primary-subtle)" : "var(--surface)",
       }}
@@ -339,7 +339,7 @@ export default function PagesManager() {
             ))}
             <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
               {(["desktop", "tablet", "mobile"] as const).map((d) => (
-                <button key={d} type="button" onClick={() => setDevice(d)} aria-pressed={device === d} style={{ padding: "0.4rem 0.7rem", fontSize: "0.75rem", border: "none", cursor: "pointer", fontWeight: 600, background: device === d ? "var(--primary)" : "transparent", color: device === d ? "#fff" : "var(--text-secondary)" }}>{d}</button>
+                <button key={d} type="button" onClick={() => setDevice(d)} aria-pressed={device === d} style={{ padding: "0.4rem 0.7rem", fontSize: "0.75rem", border: "none", cursor: "pointer", fontWeight: 600, background: device === d ? "var(--primary)" : "transparent", color: device === d ? "var(--on-primary)" : "var(--text-secondary)" }}>{d}</button>
               ))}
             </div>
           </div>
@@ -405,7 +405,7 @@ export default function PagesManager() {
                     onDrop={(e) => { e.preventDefault(); onDropSection(i); }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.4rem" }}>
-                      <span style={{ cursor: "grab", color: "var(--text-tertiary)" }}>⋮⋮</span>
+                      <span className="drag-handle" style={{ cursor: "grab", color: "var(--text-tertiary)" }}>⋮⋮</span>
                       <strong style={{ fontSize: "0.78rem", textTransform: "capitalize" }}>{s.type}</strong>
                       <span style={{ flex: 1 }} />
                       <button type="button" aria-label="Move up" onClick={() => moveSection(i, -1)} style={{ border: "none", background: "none", cursor: "pointer" }}>↑</button>

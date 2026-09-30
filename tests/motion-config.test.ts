@@ -6,8 +6,11 @@ import {
   clampNumber,
   motionCssVars,
   isMotionPreset,
+  isMotionIntensity,
   PRESET_CATEGORY,
   MOTION_LIMITS,
+  MOTION_INTENSITIES,
+  MOTION_INTENSITY_FACTORS,
 } from "../frontend/lib/motion";
 
 describe("motion config normalization", () => {
@@ -24,6 +27,7 @@ describe("motion config normalization", () => {
     assert.equal(conf.stagger, 0);
     assert.equal(conf.mobile, true);
     assert.equal(conf.reducedMotion, "respect");
+    assert.equal(conf.intensity, "standard");
   });
 
   it("keeps valid explicit values", () => {
@@ -38,6 +42,7 @@ describe("motion config normalization", () => {
       stagger: 150,
       mobile: false,
       reducedMotion: "disable",
+      intensity: "subtle",
     });
     assert.ok(conf);
     assert.deepEqual(conf, {
@@ -51,6 +56,7 @@ describe("motion config normalization", () => {
       stagger: 150,
       mobile: false,
       reducedMotion: "disable",
+      intensity: "subtle",
     });
   });
 
@@ -142,6 +148,54 @@ describe("motion config normalization", () => {
     assert.equal(PRESET_CATEGORY["lift-hover"], "interaction");
     assert.equal(PRESET_CATEGORY["pulse"], "infinite");
     for (const key of Object.keys(PRESET_CATEGORY)) assert.ok(isMotionPreset(key));
+  });
+});
+
+describe("motion intensity scale", () => {
+  it("accepts only the three allowlisted intensities", () => {
+    for (const value of MOTION_INTENSITIES) assert.ok(isMotionIntensity(value));
+    for (const bad of ["", "loud", "STANDARD", 3, null, undefined, {}]) {
+      assert.equal(isMotionIntensity(bad), false);
+    }
+  });
+
+  it("falls back to standard for unknown or missing intensities", () => {
+    assert.equal(normalizeMotionConfig({ preset: "fade", intensity: "loud" })?.intensity, "standard");
+    assert.equal(normalizeMotionConfig({ preset: "fade" })?.intensity, "standard");
+    assert.equal(normalizeMotionConfig({ preset: "fade", intensity: "expressive" })?.intensity, "expressive");
+  });
+
+  it("keeps standard a no-op so existing configs render unchanged", () => {
+    assert.equal(MOTION_INTENSITY_FACTORS.standard.duration, 1);
+    assert.equal(MOTION_INTENSITY_FACTORS.standard.distance, 16);
+    const conf = normalizeMotionConfig({ preset: "fade-up", duration: 600 });
+    assert.ok(conf);
+    const vars = motionCssVars(conf);
+    assert.equal(vars["--motion-duration"], "0.6s");
+    assert.equal(vars["--motion-distance"], "16px");
+  });
+
+  it("scales duration and travel distance with the chosen intensity", () => {
+    const base = { preset: "fade-up" as const, duration: 600 };
+    const subtle = motionCssVars(normalizeMotionConfig({ ...base, intensity: "subtle" })!);
+    const standard = motionCssVars(normalizeMotionConfig({ ...base, intensity: "standard" })!);
+    const expressive = motionCssVars(normalizeMotionConfig({ ...base, intensity: "expressive" })!);
+
+    const secs = (v: string) => parseFloat(v) * 1000;
+    const px = (v: string) => parseFloat(v);
+
+    assert.ok(secs(subtle["--motion-duration"]) < secs(standard["--motion-duration"]));
+    assert.ok(secs(standard["--motion-duration"]) < secs(expressive["--motion-duration"]));
+    assert.ok(px(subtle["--motion-distance"]) < px(standard["--motion-distance"]));
+    assert.ok(px(standard["--motion-distance"]) < px(expressive["--motion-distance"]));
+  });
+
+  it("does not change delay or stagger when intensity changes", () => {
+    const base = { preset: "stagger" as const, duration: 600, delay: 250, stagger: 150 };
+    const subtle = motionCssVars(normalizeMotionConfig({ ...base, intensity: "subtle" })!);
+    const expressive = motionCssVars(normalizeMotionConfig({ ...base, intensity: "expressive" })!);
+    assert.equal(subtle["--motion-delay"], expressive["--motion-delay"]);
+    assert.equal(subtle["--motion-stagger"], expressive["--motion-stagger"]);
   });
 });
 

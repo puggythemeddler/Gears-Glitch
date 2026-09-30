@@ -2,6 +2,10 @@ export type MotionTrigger = "viewport" | "load";
 export type MotionEasing = "ease" | "ease-in" | "ease-out" | "ease-in-out" | "linear" | "spring";
 export type MotionDirection = "normal" | "reverse";
 export type MotionCategory = "entrance" | "interaction" | "infinite" | "editorial";
+// Motion intensity is the shared dial for how pronounced an animation feels.
+// Admin/POS default to Subtle, general app surfaces to Standard, and the
+// Studio/storefront surface can opt into Expressive.
+export type MotionIntensity = "subtle" | "standard" | "expressive";
 
 export type MotionPreset =
   | "fade"
@@ -34,6 +38,7 @@ export interface MotionConfig {
   stagger: number;
   mobile: boolean;
   reducedMotion: "respect" | "disable";
+  intensity: MotionIntensity;
 }
 
 export const MOTION_PRESETS: ReadonlyArray<MotionPreset> = [
@@ -47,6 +52,21 @@ export const MOTION_PRESETS: ReadonlyArray<MotionPreset> = [
 export const MOTION_TRIGGERS: ReadonlyArray<MotionTrigger> = ["viewport", "load"];
 export const MOTION_EASINGS: ReadonlyArray<MotionEasing> = ["ease", "ease-in", "ease-out", "ease-in-out", "linear", "spring"];
 export const MOTION_DIRECTIONS: ReadonlyArray<MotionDirection> = ["normal", "reverse"];
+export const MOTION_INTENSITIES: ReadonlyArray<MotionIntensity> = ["subtle", "standard", "expressive"];
+
+// Multipliers applied to a config's authored duration and travel distance.
+// "standard" is a no-op so existing configs render unchanged.
+export const MOTION_INTENSITY_FACTORS: Record<MotionIntensity, { duration: number; distance: number }> = {
+  subtle: { duration: 0.7, distance: 8 },
+  standard: { duration: 1, distance: 16 },
+  expressive: { duration: 1.15, distance: 24 },
+};
+
+export const MOTION_INTENSITY_LABELS: Record<MotionIntensity, string> = {
+  subtle: "Subtle",
+  standard: "Standard",
+  expressive: "Expressive",
+};
 
 export const MOTION_LIMITS = {
   duration: { min: 100, max: 2000, def: 600 },
@@ -66,6 +86,7 @@ export const MOTION_DEFAULT: MotionConfig = {
   stagger: 0,
   mobile: true,
   reducedMotion: "respect",
+  intensity: "standard",
 };
 
 export const PRESET_CATEGORY: Record<MotionPreset, MotionCategory> = {
@@ -166,6 +187,10 @@ export function isMotionDirection(v: unknown): v is MotionDirection {
   return typeof v === "string" && (MOTION_DIRECTIONS as ReadonlyArray<string>).includes(v);
 }
 
+export function isMotionIntensity(v: unknown): v is MotionIntensity {
+  return typeof v === "string" && (MOTION_INTENSITIES as ReadonlyArray<string>).includes(v);
+}
+
 export function motionCategory(preset: MotionConfig["preset"]): MotionCategory {
   return PRESET_CATEGORY[preset];
 }
@@ -189,6 +214,7 @@ export function normalizeMotionConfig(input: unknown): MotionConfig | null {
 
   out.mobile = typeof input.mobile === "boolean" ? input.mobile : true;
   out.reducedMotion = input.reducedMotion === "disable" ? "disable" : "respect";
+  out.intensity = isMotionIntensity(input.intensity) ? input.intensity : MOTION_DEFAULT.intensity;
 
   return out;
 }
@@ -198,14 +224,15 @@ export function normalizeMotionConfigSafe(input: unknown, fallbackPreset: Motion
 }
 
 export function motionCssVars(config: MotionConfig): Record<string, string> {
+  const factor = MOTION_INTENSITY_FACTORS[config.intensity] || MOTION_INTENSITY_FACTORS.standard;
   return {
     "--motion-name": PRESET_KEYFRAME[config.preset] || "fadeIn",
-    "--motion-duration": `${config.duration / 1000}s`,
+    "--motion-duration": `${(config.duration / 1000) * factor.duration}s`,
     "--motion-delay": `${config.delay / 1000}s`,
     "--motion-ease": EASING_CSS[config.easing],
     "--motion-direction": config.direction,
     "--motion-repeat": String(config.repeat),
-    "--motion-distance": "16px",
+    "--motion-distance": `${factor.distance}px`,
     "--motion-stagger": `${config.stagger / 1000}s`,
   };
 }
