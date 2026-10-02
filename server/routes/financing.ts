@@ -8,8 +8,10 @@ import { Router, Request, Response } from "express";
 import { staffAuthMiddleware, customerAuthMiddleware } from "../auth";
 import { asyncHandler, requirePermission, isPosInt, isStr } from "./shared";
 import { callbackBaseUrl } from "../mpesa";
-import { getProduct } from "../db";
+import { getProduct, findCustomerById } from "../db";
+import { htmlToPdf } from "../pdf";
 import { getFinancingConfig, saveFinancingConfig, isFrequency } from "../financing/config";
+import { getDocumentBranding, agreementHtml, scheduleHtml, statementHtml, receiptHtml } from "../financing/documents";
 import { calculateFinancing, resolveDeposit } from "../financing/calculator";
 import { toCents } from "../financing/types";
 import type { FinancingPaymentMethod } from "../financing/types";
@@ -30,7 +32,9 @@ import {
   recordAdjustment,
   reversePayment,
   getFinancingStats,
+  getFinancingReport,
   refreshOverdueStatuses,
+  getPaymentById,
   type Actor,
 } from "../financing/service";
 
@@ -52,6 +56,20 @@ function parsePositiveIntCents(v: unknown): number {
   const n = typeof v === "string" ? Number(v) : v;
   if (typeof n !== "number" || !Number.isFinite(n)) throw new Error("Invalid amount");
   return Math.round(n);
+}
+
+// Render a printable financing document as HTML (default) or PDF (?format=pdf).
+async function sendDocument(req: Request, res: Response, html: string, filenameBase: string): Promise<void> {
+  const safe = filenameBase.replace(/[^a-zA-Z0-9._-]/g, "_");
+  if (String(req.query.format || "").toLowerCase() === "pdf") {
+    const pdf = await htmlToPdf(html, { format: "A4" });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${safe}.pdf"`);
+    res.send(pdf);
+    return;
+  }
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
 }
 
 // ---------------------------------------------------------------- public options
@@ -117,6 +135,15 @@ router.put("/config", staffAuthMiddleware, requirePermission("financing:manage")
 router.get("/stats", staffAuthMiddleware, requirePermission("financing:view"), asyncHandler(async (req: Request, res: Response) => {
   const branchId = req.query.branchId ? Number(req.query.branchId) : null;
   res.json(await getFinancingStats(branchId && Number.isFinite(branchId) ? branchId : null));
+}));
+
+router.get("/report", staffAuthMiddleware, requirePermission("financing:view"), asyncHandler(async (req: Request, res: Response) => {
+  const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
+  res.json(await getFinancingReport({
+    from: typeof req.query.from === "string" ? req.query.from : undefined,
+    to: typeof req.query.to === "string" ? req.query.to : undefined,
+    branchId: branchId && Number.isFinite(branchId) ? branchId : null,
+  }));
 }));
 
 router.post("/refresh-overdue", staffAuthMiddleware, requirePermission("financing:manage"), asyncHandler(async (_req: Request, res: Response) => {
@@ -339,6 +366,64 @@ router.post("/my/agreements/:id/mpesa", customerAuthMiddleware, asyncHandler(asy
     source: "portal",
   }, customerActor(req), callbackBaseUrl(req));
   res.status(201).json(result);
+}));
+
+// ------------------------------------------------------- printable documents
+
+router.get("/agreements/:id/agreement", staffAuthMiddleware, requirePermission("financing:view"), asyncHandler(async (req: Request, res: Response) => {
+  const agr = await getAgreement(Number(req.params.id));
+  if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
+  const [customer, branding] = await Promise.all([findCustomerById(agr.customerId), getDocumentBranding()]);
+  await sendDocument(req, res, agreementHtml(agr, customer, branding), `agreement-${agr.agreementNumber}`);
+}));
+
+router.get("/agreements/:id/schedule", staffAuthMiddleware, requirePermission("financing:view"), asyncHandler(async (req: Request, res: Response) => {
+  const agr = await getAgreement(Number(req.params.id));
+  if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
+  const [customer, branding] = await Promise.all([findCustomerById(agr.customerId), getDocumentBranding()]);
+  await sendDocument(req, res, scheduleHtml(agr, customer, branding), `schedule-${agr.agreementNumber}`);
+}));
+
+router.get("/agreements/:id/statement", staffAuthMiddleware, requirePermission("financing:view"), asyncHandler(async (req: Request, res: Response) => {
+  const agr = await getAgreement(Number(req.params.id));
+  if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
+  const [customer, branding] = await Promise.all([findCustomerById(agr.customerId), getDocumentBranding()]);
+  await sendDocument(req, res, statementHtml(agr, customer, branding), `statement-${agr.agreementNumber}`);
+}));
+
+router.get("/payments/:id/receipt", staffAuthMiddleware, requirePermission("financing:view"), asyncHandler(async (req: Request, res: Response) => {
+  const payment = await getPaymentById(Number(req.params.id));
+  if (!payment) { res.status(404).json({ error: "Payment not found" }); return; }
+  const agr = await getAgreement(payment.agreementId);
+  if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
+  const [customer, branding] = await Promise.all([findCustomerById(agr.customerId), getDocumentBranding()]);
+  await sendDocument(req, res, receiptHtml(payment, agr, customer, branding), `receipt-${payment.paymentRef}`);
+}));
+
+router.get("/my/agreements/:id/agreement", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const customerId = Number((req as any).customer?.sub);
+  const agr = await getAgreement(Number(req.params.id));
+  if (!agr || agr.customerId !== customerId) { res.status(404).json({ error: "Agreement not found" }); return; }
+  const [customer, branding] = await Promise.all([findCustomerById(agr.customerId), getDocumentBranding()]);
+  await sendDocument(req, res, agreementHtml(agr, customer, branding), `agreement-${agr.agreementNumber}`);
+}));
+
+router.get("/my/agreements/:id/statement", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const customerId = Number((req as any).customer?.sub);
+  const agr = await getAgreement(Number(req.params.id));
+  if (!agr || agr.customerId !== customerId) { res.status(404).json({ error: "Agreement not found" }); return; }
+  const [customer, branding] = await Promise.all([findCustomerById(agr.customerId), getDocumentBranding()]);
+  await sendDocument(req, res, statementHtml(agr, customer, branding), `statement-${agr.agreementNumber}`);
+}));
+
+router.get("/my/payments/:id/receipt", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const customerId = Number((req as any).customer?.sub);
+  const payment = await getPaymentById(Number(req.params.id));
+  if (!payment || payment.customerId !== customerId) { res.status(404).json({ error: "Payment not found" }); return; }
+  const agr = await getAgreement(payment.agreementId);
+  if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
+  const [customer, branding] = await Promise.all([findCustomerById(agr.customerId), getDocumentBranding()]);
+  await sendDocument(req, res, receiptHtml(payment, agr, customer, branding), `receipt-${payment.paymentRef}`);
 }));
 
 export default router;

@@ -4552,7 +4552,7 @@ type ReportTabId =
   | "sales" | "employee-sales" | "tech-performance" | "purchases" | "stock" | "visitors"
   | "gross-profit" | "payments" | "receivables" | "repairs" | "warranty" | "customers"
   | "valuation" | "stock-take" | "suppliers" | "quotes" | "tax" | "serial" | "loyalty"
-  | "gift-cards" | "campaigns" | "cart-recovery";
+  | "gift-cards" | "campaigns" | "cart-recovery" | "financing";
 
 const REPORT_CATEGORIES: { key: string; label: string; tabs: { id: ReportTabId; label: string }[] }[] = [
   { key: "sales", label: "Sales", tabs: [
@@ -4565,6 +4565,7 @@ const REPORT_CATEGORIES: { key: string; label: string; tabs: { id: ReportTabId; 
   { key: "money", label: "Money", tabs: [
     { id: "payments", label: "Payments" },
     { id: "receivables", label: "Receivables" },
+    { id: "financing", label: "Lipa Mdogo Mdogo" },
     { id: "tax", label: "Tax (eTIMS)" },
   ]},
   { key: "operations", label: "Operations", tabs: [
@@ -4623,6 +4624,7 @@ function AdminReports() {
       {activeTab === "gross-profit" && <ReportGrossProfit />}
       {activeTab === "payments" && <ReportPayments />}
       {activeTab === "receivables" && <ReportReceivables />}
+      {activeTab === "financing" && <ReportFinancing />}
       {activeTab === "repairs" && <ReportRepairs />}
       {activeTab === "warranty" && <ReportWarranty />}
       {activeTab === "customers" && <ReportCustomers />}
@@ -7279,6 +7281,78 @@ function ReportReceivables() {
               { key: "created_at", label: "Created", sortable: true, value: (row: any) => row.created_at, render: (row: any) => new Date(row.created_at).toLocaleDateString("en-GB") },
             ]}
             rows={r.items}
+          />
+        </>
+      )}
+    </ReportScreen>
+  );
+}
+
+// ----- Lipa Mdogo Mdogo (hire purchase) -----
+function ReportFinancing() {
+  const cents = (v: any) => formatPrice((Number(v) || 0) / 100);
+  return (
+    <ReportScreen
+      title="Lipa Mdogo Mdogo"
+      endpoint="/api/financing/report"
+      withBranch
+      note="Hire-purchase agreements created in the selected period. Outstanding and aging cover all active agreements; amounts are financing cents converted to shillings."
+    >
+      {(r) => (
+        <>
+          <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+            <ReportStat value={r.summary.agreements} label="Agreements" />
+            <ReportStat value={r.summary.active} label="Active" />
+            <ReportStat value={cents(r.summary.hpCents)} label="HP value" />
+            <ReportStat value={cents(r.summary.depositCents)} label="Deposits" />
+            <ReportStat value={cents(r.summary.collectedCents)} label="Collected" />
+            <ReportStat value={cents(r.summary.outstandingCents)} label="Outstanding" />
+            <ReportStat value={r.summary.overdueAgreements} label="In arrears" />
+            <ReportStat value={cents(r.summary.overdueCents)} label="Arrears amount" />
+          </div>
+          <ReportTable
+            title="Aging"
+            ariaLabel="Financing aging"
+            rowKey={(row: any) => row.bucket}
+            columns={[
+              { key: "bucket", label: "Bucket", value: (row: any) => row.bucket, render: (row: any) => escapeHtml(row.bucket) },
+              { key: "amount", label: "Amount", align: "right", value: (row: any) => row.amount, render: (row: any) => cents(row.amount) },
+            ]}
+            rows={[
+              { bucket: "Current (not yet due)", amount: r.aging.currentCents },
+              { bucket: "1\u20137 days overdue", amount: r.aging.overdue1to7Cents },
+              { bucket: "8\u201330 days overdue", amount: r.aging.overdue8to30Cents },
+              { bucket: "31+ days overdue", amount: r.aging.overdue31PlusCents },
+            ]}
+          />
+          <ReportTable
+            title="By status"
+            ariaLabel="Financing by status"
+            rowKey={(row: any) => row.status}
+            columns={[
+              { key: "status", label: "Status", value: (row: any) => row.status, render: (row: any) => <StatusBadge status={row.status} domain="financingAgreement" /> },
+              { key: "count", label: "Agreements", align: "right", sortable: true, value: (row: any) => row.count },
+              { key: "financed", label: "Financed", align: "right", sortable: true, value: (row: any) => row.financedCents, render: (row: any) => cents(row.financedCents) },
+              { key: "outstanding", label: "Outstanding", align: "right", sortable: true, value: (row: any) => row.outstandingCents, render: (row: any) => cents(row.outstandingCents) },
+            ]}
+            rows={r.statuses || []}
+          />
+          <ReportTable
+            title="Accounts in arrears"
+            ariaLabel="Financing arrears"
+            rowKey={(row: any) => String(row.id)}
+            columns={[
+              { key: "agreement", label: "Agreement", value: (row: any) => row.agreementNumber, render: (row: any) => escapeHtml(row.agreementNumber) },
+              { key: "customer", label: "Customer", value: (row: any) => row.customer, render: (row: any) => escapeHtml(row.customer || "\u2014") },
+              { key: "overdue", label: "Overdue", align: "right", sortable: true, value: (row: any) => row.overdueCents, render: (row: any) => cents(row.overdueCents) },
+              { key: "count", label: "Instalments", align: "right", sortable: true, value: (row: any) => row.overdueCount },
+              { key: "oldest", label: "Oldest due", value: (row: any) => row.oldestDue || "", render: (row: any) => row.oldestDue ? new Date(row.oldestDue).toLocaleDateString("en-GB") : "\u2014" },
+              { key: "outstanding", label: "Outstanding", align: "right", sortable: true, value: (row: any) => row.outstandingCents, render: (row: any) => cents(row.outstandingCents) },
+              { key: "actions", label: "", render: (row: any) => (
+                <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/financing/agreements/${row.id}/statement`, `statement-${row.agreementNumber}.pdf`).catch((e: any) => toast("error", e.message))}>Statement</RippleButton>
+              )},
+            ]}
+            rows={r.arrears || []}
           />
         </>
       )}

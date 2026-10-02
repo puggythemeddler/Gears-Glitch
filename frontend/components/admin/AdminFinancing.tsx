@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api, getStaffRole, getStaffPermissions } from "@/lib/api";
+import { api, getStaffRole, getStaffPermissions, downloadPdf } from "@/lib/api";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import EmptyState from "@/components/EmptyState";
@@ -591,8 +591,10 @@ function AgreementDetail({ agreement, config, canManage, canPay, onClose, onChan
             {money(agreement.instalmentCents)} / {FREQ_LABEL[agreement.frequency] || agreement.frequency} · {agreement.termCount} instalments · first due {fmtDate(agreement.firstDueDate)}
           </p>
         </div>
-        <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
           <StatusBadge status={agreement.status} domain="financingAgreement" />
+          <RippleButton size="small" variant="ghost" disabled={busy} onClick={() => downloadPdf(`/api/financing/agreements/${agreement.id}/agreement`, `agreement-${agreement.agreementNumber}.pdf`).catch((e) => toast("error", e.message))}>Agreement PDF</RippleButton>
+          <RippleButton size="small" variant="ghost" disabled={busy} onClick={() => downloadPdf(`/api/financing/agreements/${agreement.id}/statement`, `statement-${agreement.agreementNumber}.pdf`).catch((e) => toast("error", e.message))}>Statement PDF</RippleButton>
           <RippleButton size="small" variant="ghost" onClick={onClose}>Close</RippleButton>
         </div>
       </div>
@@ -666,13 +668,18 @@ function AgreementDetail({ agreement, config, canManage, canPay, onClose, onChan
           { key: "status", label: "Status", render: (p) => <StatusBadge status={p.status} domain="financingPayment" /> },
           { key: "created", label: "Date", value: (p) => p.createdAt || "", render: (p) => fmtDate(p.createdAt) },
           {
-            key: "actions", label: "", render: (p) => canPay && p.status === "succeeded" ? (
-              <RippleButton size="small" variant="ghost" disabled={busy} onClick={async () => {
-                const reason = await promptDialog({ title: "Reverse payment", label: "Reason", message: "This reverses the allocation and restores the outstanding balance.", confirmLabel: "Reverse", danger: true });
-                if (reason === null) return;
-                run(() => api(`/api/financing/payments/${p.id}/reverse`, { method: "POST", body: JSON.stringify({ reason }) }), "Payment reversed.");
-              }}>Reverse</RippleButton>
-            ) : null,
+            key: "actions", label: "", render: (p) => (p.status === "succeeded" ? (
+              <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end" }}>
+                <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/financing/payments/${p.id}/receipt`, `receipt-${p.paymentRef}.pdf`).catch((e) => toast("error", e.message))}>Receipt</RippleButton>
+                {canPay && (
+                  <RippleButton size="small" variant="ghost" disabled={busy} onClick={async () => {
+                    const reason = await promptDialog({ title: "Reverse payment", label: "Reason", message: "This reverses the allocation and restores the outstanding balance.", confirmLabel: "Reverse", danger: true });
+                    if (reason === null) return;
+                    run(() => api(`/api/financing/payments/${p.id}/reverse`, { method: "POST", body: JSON.stringify({ reason }) }), "Payment reversed.");
+                  }}>Reverse</RippleButton>
+                )}
+              </div>
+            ) : null),
           },
         ]}
         empty={<EmptyState icon="invoices" title="No payments" description="Payments recorded against this agreement appear here." />}

@@ -518,6 +518,30 @@ export async function listPayments(agreementId: number): Promise<any[]> {
   }));
 }
 
+export async function getPaymentById(id: number): Promise<any | undefined> {
+  const r = await queryOne("SELECT * FROM financing_payments WHERE id = $1", [id]) as any;
+  if (!r) return undefined;
+  return {
+    id: r.id,
+    paymentRef: r.payment_ref,
+    agreementId: r.agreement_id,
+    customerId: r.customer_id,
+    branchId: r.branch_id,
+    amountCents: Number(r.amount_cents),
+    method: r.method,
+    status: r.status,
+    source: r.source,
+    checkoutRequestId: r.checkout_request_id,
+    mpesaReceipt: r.mpesa_receipt,
+    mpesaPhone: r.mpesa_phone,
+    transactionRef: r.transaction_ref,
+    notes: r.notes,
+    initiatedAt: r.initiated_at,
+    completedAt: r.completed_at,
+    createdAt: r.created_at,
+  };
+}
+
 interface RecalcResult { totalPaidCents: number; outstandingCents: number; waivedCents: number; creditCents: number; }
 
 async function recalcAgreement(client: any, agreementId: number): Promise<RecalcResult> {
@@ -798,6 +822,115 @@ export async function getFinancingStats(branchId?: number | null): Promise<Finan
     applications: { total: Number(apps.total), pending: Number(apps.pending), approved: Number(apps.approved), rejected: Number(apps.rejected) },
     agreements: { active: Number(agr.active), completed: Number(agr.completed), cancelled: Number(agr.cancelled), overdue: Number(overdue.c) },
     totals: { financedCents: Number(agr.financed), collectedCents: Number(agr.collected), outstandingCents: Number(agr.outstanding), overdueCents: Number(overdue.amt) },
+  };
+}
+
+export interface FinancingReport {
+  currency: string;
+  period: { from: string; to: string };
+  summary: {
+    agreements: number; active: number; completed: number; cancelled: number;
+    hpCents: number; depositCents: number; collectedCents: number; outstandingCents: number;
+    overdueAgreements: number; overdueCents: number;
+  };
+  statuses: { status: string; count: number; financedCents: number; outstandingCents: number }[];
+  frequencies: { frequency: string; count: number; instalmentCents: number }[];
+  aging: { currentCents: number; overdue1to7Cents: number; overdue8to30Cents: number; overdue31PlusCents: number };
+  arrears: { id: number; agreementNumber: string; customer: string; outstandingCents: number; overdueCents: number; overdueCount: number; oldestDue: string | null }[];
+}
+
+export async function getFinancingReport(filters: { from?: string; to?: string; branchId?: number | null } = {}): Promise<FinancingReport> {
+  const config = await getFinancingConfig();
+  const isDate = (v: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(v));
+  const from = isDate(filters.from) ? String(filters.from) : "1900-01-01";
+  const to = isDate(filters.to) ? String(filters.to) : todayIso();
+  const branchId = filters.branchId && Number.isFinite(Number(filters.branchId)) ? Number(filters.branchId) : null;
+  const today = todayIso();
+
+  const summary = (await queryOne(
+    `SELECT COUNT(*) AS agreements,
+       COUNT(*) FILTER (WHERE status = 'active') AS active,
+       COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+       COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled,
+       COALESCE(SUM(hp_price_cents),0) AS hp,
+       COALESCE(SUM(deposit_cents),0) AS deposits,
+       COALESCE(SUM(total_paid_cents),0) AS collected,
+       COALESCE(SUM(outstanding_cents),0) AS outstanding
+     FROM financing_agreements
+     WHERE created_at::date BETWEEN $1 AND $2${branchId ? " AND branch_id = $3" : ""}`,
+    branchId ? [from, to, branchId] : [from, to]
+  )) as any;
+
+  const statuses = (await queryAll(
+    `SELECT status, COUNT(*) AS count, COALESCE(SUM(financed_balance_cents),0) AS financed, COALESCE(SUM(outstanding_cents),0) AS outstanding
+     FROM financing_agreements
+     WHERE created_at::date BETWEEN $1 AND $2${branchId ? " AND branch_id = $3" : ""}
+     GROUP BY status ORDER BY count DESC`,
+    branchId ? [from, to, branchId] : [from, to]
+  )) as any[];
+
+  const frequencies = (await queryAll(
+    `SELECT frequency, COUNT(*) AS count, COALESCE(SUM(instalment_cents),0) AS instalment
+     FROM financing_agreements
+     WHERE created_at::date BETWEEN $1 AND $2${branchId ? " AND branch_id = $3" : ""}
+     GROUP BY frequency ORDER BY count DESC`,
+    branchId ? [from, to, branchId] : [from, to]
+  )) as any[];
+
+  const bal = "(s.amount_cents - s.amount_paid_cents - s.waived_cents)";
+  const aging = (await queryOne(
+    `SELECT
+       COALESCE(SUM(CASE WHEN s.due_date::date >= $1::date THEN ${bal} END),0) AS current,
+       COALESCE(SUM(CASE WHEN s.due_date::date < $1::date AND s.due_date::date >= $1::date - 7 THEN ${bal} END),0) AS o1,
+       COALESCE(SUM(CASE WHEN s.due_date::date < $1::date - 7 AND s.due_date::date >= $1::date - 30 THEN ${bal} END),0) AS o2,
+       COALESCE(SUM(CASE WHEN s.due_date::date < $1::date - 30 THEN ${bal} END),0) AS o3
+     FROM financing_schedules s JOIN financing_agreements a ON a.id = s.agreement_id
+     WHERE a.status = 'active' AND s.status NOT IN ('paid','waived','cancelled')${branchId ? " AND a.branch_id = $2" : ""}`,
+    branchId ? [today, branchId] : [today]
+  )) as any;
+
+  const overdueAgreements = (await queryOne(
+    `SELECT COUNT(DISTINCT a.id) AS c
+     FROM financing_agreements a JOIN financing_schedules s ON s.agreement_id = a.id
+     WHERE a.status = 'active' AND s.due_date < $1 AND s.status NOT IN ('paid','waived','cancelled')${branchId ? " AND a.branch_id = $2" : ""}`,
+    branchId ? [today, branchId] : [today]
+  )) as any;
+
+  const arrears = (await queryAll(
+    `SELECT a.id, a.agreement_number, COALESCE(c.name,'') AS customer, a.outstanding_cents,
+       COALESCE(SUM(${bal}),0) AS overdue_cents, COUNT(*) AS overdue_count, MIN(s.due_date) AS oldest_due
+     FROM financing_agreements a
+     JOIN financing_schedules s ON s.agreement_id = a.id
+     LEFT JOIN customers c ON c.id = a.customer_id
+     WHERE a.status = 'active' AND s.due_date < $1 AND s.status NOT IN ('paid','waived','cancelled')${branchId ? " AND a.branch_id = $2" : ""}
+     GROUP BY a.id, a.agreement_number, c.name, a.outstanding_cents
+     ORDER BY overdue_cents DESC LIMIT 100`,
+    branchId ? [today, branchId] : [today]
+  )) as any[];
+
+  return {
+    currency: config.currency,
+    period: { from, to },
+    summary: {
+      agreements: Number(summary.agreements),
+      active: Number(summary.active),
+      completed: Number(summary.completed),
+      cancelled: Number(summary.cancelled),
+      hpCents: Number(summary.hp),
+      depositCents: Number(summary.deposits),
+      collectedCents: Number(summary.collected),
+      outstandingCents: Number(summary.outstanding),
+      overdueAgreements: Number(overdueAgreements.c),
+      overdueCents: Number(aging.o1) + Number(aging.o2) + Number(aging.o3),
+    },
+    statuses: statuses.map((r) => ({ status: r.status, count: Number(r.count), financedCents: Number(r.financed), outstandingCents: Number(r.outstanding) })),
+    frequencies: frequencies.map((r) => ({ frequency: r.frequency, count: Number(r.count), instalmentCents: Number(r.instalment) })),
+    aging: { currentCents: Number(aging.current), overdue1to7Cents: Number(aging.o1), overdue8to30Cents: Number(aging.o2), overdue31PlusCents: Number(aging.o3) },
+    arrears: arrears.map((r) => ({
+      id: r.id, agreementNumber: r.agreement_number, customer: r.customer,
+      outstandingCents: Number(r.outstanding_cents), overdueCents: Number(r.overdue_cents),
+      overdueCount: Number(r.overdue_count), oldestDue: r.oldest_due || null,
+    })),
   };
 }
 

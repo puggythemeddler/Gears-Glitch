@@ -12,6 +12,14 @@ import { Media } from "@/components/Media";
 
 const PRODUCTS_PER_PAGE = 12;
 
+const FIN_FREQ_LABEL: Record<string, string> = {
+  daily: "Daily",
+  weekly: "Weekly",
+  biweekly: "Every 2 weeks",
+  monthly: "Monthly",
+  custom: "Custom",
+};
+
 type StatusKind = "error" | "success" | "info";
 
 interface StatusMessage {
@@ -80,6 +88,15 @@ export default function POSPage() {
   const [serialMsg, setSerialMsg] = useState<StatusMessage | null>(null);
   const [showReceiptOptions, setShowReceiptOptions] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [finOptions, setFinOptions] = useState<{ enabled: boolean; currency: string; permittedFrequencies: string[]; minTerm: number; maxTerm: number; minDepositCents: number; depositPercentMin: number | null } | null>(null);
+  const [showFinance, setShowFinance] = useState(false);
+  const [finFrequency, setFinFrequency] = useState("weekly");
+  const [finTerm, setFinTerm] = useState("12");
+  const [finDeposit, setFinDeposit] = useState("");
+  const [finBusy, setFinBusy] = useState(false);
+  const [finPreview, setFinPreview] = useState<any>(null);
+  const [finMsg, setFinMsg] = useState<string | null>(null);
+  const [finApp, setFinApp] = useState<{ applicationNumber: string; id: number } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
   const serialInputRef = useRef<HTMLInputElement>(null);
@@ -127,6 +144,11 @@ export default function POSPage() {
       const methods = d.methods || [];
       setPaymentMethods(methods);
       if (methods.length > 0 && !paymentMethod) setPaymentMethod(methods[0].id);
+    }).catch(() => {});
+    api<any>("/api/financing/options").then((d) => {
+      setFinOptions(d);
+      if (Array.isArray(d?.permittedFrequencies) && d.permittedFrequencies.length) setFinFrequency(d.permittedFrequencies[0]);
+      if (d?.minTerm) setFinTerm(String(d.minTerm));
     }).catch(() => {});
     reloadCatalog();
   }, [reloadCatalog]);
@@ -395,6 +417,64 @@ export default function POSPage() {
       completeSale(mpesaPending.orderId, res.change || 0);
     } catch (e: any) { setStatus({ text: e.message || "Could not switch to cash.", kind: "error" }); }
     finally { setProcessing(false); }
+  }
+
+  function openFinance() {
+    setFinMsg(null);
+    setFinPreview(null);
+    setFinApp(null);
+    if (!selectedCustomer) setFinMsg("Select a customer in the cart before creating a financing plan.");
+    setShowFinance(true);
+  }
+
+  async function previewFinance() {
+    setFinMsg(null);
+    try {
+      const q = await api<any>("/api/financing/quote", {
+        method: "POST",
+        body: JSON.stringify({
+          cashPriceCents: Math.round(subtotal * 100),
+          frequency: finFrequency,
+          termCount: Number(finTerm) || (finOptions?.minTerm || 1),
+          depositCents: finDeposit ? Math.round(Number(finDeposit) * 100) : 0,
+        }),
+      });
+      setFinPreview(q);
+    } catch (e: any) {
+      setFinPreview(null);
+      setFinMsg(e.message || "Could not preview the plan.");
+    }
+  }
+
+  async function submitFinance() {
+    if (cart.length === 0) { setFinMsg("The cart is empty."); return; }
+    if (!selectedCustomer) { setFinMsg("Select a customer in the cart before creating a financing plan."); return; }
+    setFinBusy(true); setFinMsg(null);
+    try {
+      const single = cart.length === 1 ? cart[0] : null;
+      const summary = cart.map((i) => `${i.name} x${i.quantity}`).join(", ");
+      const body: any = {
+        customerId: selectedCustomer.id,
+        frequency: finFrequency,
+        termCount: Number(finTerm) || (finOptions?.minTerm || 1),
+        productId: single ? single.productId : undefined,
+        productName: single ? single.name : summary,
+        serialNumber: single && single.serials && single.serials[0] ? single.serials[0] : undefined,
+        depositCents: finDeposit ? Math.round(Number(finDeposit) * 100) : 0,
+        branchId: selectedBranchId || undefined,
+        consent: true,
+        submit: true,
+        notes: `Created from POS. Cart: ${summary}`,
+      };
+      if (!single) body.cashPriceCents = Math.round(subtotal * 100);
+      const app = await api<any>("/api/financing/applications", { method: "POST", body: JSON.stringify(body) });
+      setFinApp({ applicationNumber: app.applicationNumber, id: app.id });
+      setFinPreview(null);
+    } catch (e: any) {
+      setFinMsg(e.message || "Could not create the financing plan.");
+    } finally {
+      setFinBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -709,9 +789,16 @@ export default function POSPage() {
               )}
             </div>
           ) : (
-            <button className="btn btn-primary btn-block" onClick={requestCheckout} disabled={cart.length === 0 || processing || !!mpesaPending} style={{ fontSize: "1.25rem", padding: "1rem", fontWeight: 700 }}>
-              {processing ? "Processing..." : `Charge ${formatPrice(subtotal)}`}
-            </button>
+            <>
+              <button className="btn btn-primary btn-block" onClick={requestCheckout} disabled={cart.length === 0 || processing || !!mpesaPending} style={{ fontSize: "1.25rem", padding: "1rem", fontWeight: 700 }}>
+                {processing ? "Processing..." : `Charge ${formatPrice(subtotal)}`}
+              </button>
+              {finOptions?.enabled && (
+                <button className="btn btn-ghost btn-block" onClick={openFinance} disabled={cart.length === 0 || processing || !!mpesaPending} style={{ fontSize: "0.9rem", padding: "0.55rem", marginTop: "0.5rem" }}>
+                  Lipa Mdogo Mdogo
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -759,6 +846,73 @@ export default function POSPage() {
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={submitSerial}>Add serial</button>
               <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setSerialModal(null)}>Done</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showFinance && finOptions?.enabled && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="fin-dialog-title"
+          style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setShowFinance(false)}
+          onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setShowFinance(false); } }}
+        >
+          <div className="panel" style={{ width: "min(480px, 94vw)", padding: "1.25rem", maxHeight: "90vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <h3 id="fin-dialog-title" style={{ marginTop: 0, marginBottom: "0.25rem" }}>Lipa Mdogo Mdogo</h3>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
+              Hire-purchase plan for this cart. Cart total <strong>{formatPrice(subtotal)}</strong>. The plan is submitted for approval; approving the application in the Financing console creates the agreement.
+            </p>
+            {selectedCustomer ? (
+              <p style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>Customer: <strong>{escapeHtml(selectedCustomer.name)}</strong></p>
+            ) : (
+              <p style={{ fontSize: "0.85rem", color: "var(--danger)", marginBottom: "0.75rem" }}>Select a customer in the cart first.</p>
+            )}
+
+            {finApp ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                <p role="status" style={{ color: "var(--success)", fontWeight: 700, margin: 0 }}>Application {escapeHtml(finApp.applicationNumber)} created.</p>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>It now appears in the Financing console as pending. Approve it there to generate the instalment schedule and agreement.</p>
+                <button className="btn btn-primary" onClick={() => { setShowFinance(false); setFinApp(null); }}>Done</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.8rem" }}>
+                    Frequency
+                    <select className="input" value={finFrequency} onChange={(e) => { setFinFrequency(e.target.value); setFinPreview(null); }}>
+                      {(finOptions.permittedFrequencies || ["weekly"]).map((f) => <option key={f} value={f}>{FIN_FREQ_LABEL[f] || f}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.8rem" }}>
+                    Instalments
+                    <input type="number" className="input" min={finOptions.minTerm} max={finOptions.maxTerm} value={finTerm} onChange={(e) => { setFinTerm(e.target.value); setFinPreview(null); }} style={{ width: 110 }} />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.8rem" }}>
+                    Deposit (KES)
+                    <input type="number" className="input" min={0} value={finDeposit} onChange={(e) => { setFinDeposit(e.target.value); setFinPreview(null); }} placeholder={String((finOptions.minDepositCents || 0) / 100)} style={{ width: 130 }} />
+                  </label>
+                </div>
+
+                {finPreview && (
+                  <div style={{ marginTop: "0.75rem", fontSize: "0.85rem", padding: "0.6rem 0.75rem", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", background: "var(--bg)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>HP price</span><strong>{formatPrice(finPreview.hpPriceCents / 100)}</strong></div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>Instalment</span><strong>{formatPrice(finPreview.instalmentCents / 100)} × {finPreview.termCount}</strong></div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>Financing charge</span><strong>{formatPrice(finPreview.chargeCents / 100)}</strong></div>
+                  </div>
+                )}
+                {finMsg && <p role="status" style={{ fontSize: "0.85rem", color: "var(--danger)", marginTop: "0.6rem" }}>{finMsg}</p>}
+
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.9rem", flexWrap: "wrap" }}>
+                  <button className="btn btn-ghost" onClick={previewFinance} disabled={finBusy || cart.length === 0}>Preview</button>
+                  <button className="btn btn-primary" onClick={submitFinance} disabled={finBusy || !selectedCustomer || cart.length === 0} style={{ flex: 1 }}>
+                    {finBusy ? "Submitting..." : "Create plan"}
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => setShowFinance(false)} disabled={finBusy}>Cancel</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

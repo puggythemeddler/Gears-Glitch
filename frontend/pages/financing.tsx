@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { api, isCustomerLoggedIn } from "@/lib/api";
+import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import { escapeHtml } from "@/lib/sanitize";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -243,6 +243,11 @@ function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChang
         </span>
       </div>
 
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "var(--space-3)" }}>
+        <button className="btn btn-secondary" onClick={() => downloadPdf(`/api/financing/my/agreements/${agreement.id}/agreement`, `agreement-${agreement.agreementNumber}.pdf`).catch((e) => toast("error", e.message))}>Download agreement</button>
+        <button className="btn btn-secondary" onClick={() => downloadPdf(`/api/financing/my/agreements/${agreement.id}/statement`, `statement-${agreement.agreementNumber}.pdf`).catch((e) => toast("error", e.message))}>Download statement</button>
+      </div>
+
       {agreement.status === "active" && agreement.outstandingCents > 0 && (
         <div className="card" style={{ padding: "var(--space-4)", marginTop: "var(--space-3)" }}>
           <strong>Pay by M-Pesa</strong>
@@ -284,7 +289,7 @@ function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChang
           <h4 style={{ marginTop: "var(--space-4)" }}>Payments</h4>
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th>Reference</th><th style={{ textAlign: "right" }}>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr></thead>
+              <thead><tr><th>Reference</th><th style={{ textAlign: "right" }}>Amount</th><th>Method</th><th>Status</th><th>Date</th><th></th></tr></thead>
               <tbody>
                 {(agreement.payments || []).map((p) => (
                   <tr key={p.id}>
@@ -293,6 +298,7 @@ function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChang
                     <td>{p.method}</td>
                     <td><StatusBadge status={p.status} domain="financingPayment" /></td>
                     <td>{fmtDate(p.createdAt)}</td>
+                    <td>{p.status === "succeeded" ? <button className="btn btn-ghost" style={{ fontSize: "0.8rem" }} onClick={() => downloadPdf(`/api/financing/my/payments/${p.id}/receipt`, `receipt-${p.paymentRef}.pdf`).catch((e) => toast("error", e.message))}>Receipt</button> : null}</td>
                   </tr>
                 ))}
               </tbody>

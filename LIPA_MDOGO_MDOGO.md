@@ -35,6 +35,7 @@ shown to the customer before the plan is created.
 | Date helpers | `server/financing/date-utils.ts` |
 | Config (stored setting `financing_config`) | `server/financing/config.ts` |
 | Database service layer | `server/financing/service.ts` |
+| Printable documents (HTML/PDF) | `server/financing/documents.ts` |
 | HTTP routes (`/api/financing`) | `server/routes/financing.ts` |
 | Admin console | `frontend/components/admin/AdminFinancing.tsx` |
 | Customer portal | `frontend/pages/financing.tsx` |
@@ -135,6 +136,47 @@ Customers sign in and open **/financing** ("My financing"). They can:
 The product page shows a **"Lipa Mdogo Mdogo: from KES x / week"** callout with a
 frequency/term selector, powered by the read-only public quote endpoint.
 
+## Point of sale (POS)
+
+Cashiers can start a plan straight from the till without switching screens:
+
+1. Build the cart in **POS**.
+2. Press **Lipa Mdogo Mdogo** under the totals.
+3. Choose the frequency, number of instalments and deposit, then **Preview**.
+4. **Create plan** submits an application referencing the cart (customer,
+   product, branch) via the normal financing API, so the same consent,
+   approval and pricing rules apply.
+
+The POS panel is a front-end convenience over `POST /api/financing/applications`;
+there is no separate POS-only financing endpoint. Staff still approve the
+application in the financing console unless auto-approval is configured.
+
+## Documents (print / PDF)
+
+Every agreement and payment can be printed or downloaded as a PDF. The admin
+console and the customer portal link to the endpoints below; appending
+`?format=pdf` renders the same HTML to PDF server-side (headless Chromium),
+otherwise the HTML is returned for browser printing.
+
+| Document | Staff route | Customer route |
+| --- | --- | --- |
+| Agreement | `GET .../agreements/:id/agreement` | `.../my/agreements/:id/agreement` |
+| Instalment schedule | `GET .../agreements/:id/schedule` | — |
+| Statement | `GET .../agreements/:id/statement` | `.../my/agreements/:id/statement` |
+| Payment receipt | `GET .../payments/:id/receipt` | `.../my/payments/:id/receipt` |
+
+Each document carries the store's branding (name, address, contact details,
+currency) from store settings. Customer routes enforce agreement/payment
+ownership, so a customer can only download their own documents.
+
+## Reports
+
+**Admin → Reports → Money → Lipa Mdogo Mdogo** renders `GET
+/api/financing/report` with an optional date range and branch filter. It shows
+the number of agreements by status, amounts financed/collected/outstanding,
+instalment-frequency mix, an aging breakdown of overdue instalments and a
+per-agreement arrears table.
+
 ## M-Pesa
 
 Financing reuses the existing Daraja client (`server/mpesa.ts`). The account
@@ -198,6 +240,7 @@ GET    /api/financing/public/quote            # public read-only (productId)
 GET    /api/financing/config
 PUT    /api/financing/config
 GET    /api/financing/stats
+GET    /api/financing/report
 POST   /api/financing/refresh-overdue
 POST   /api/financing/quote
 GET    /api/financing/applications
@@ -208,14 +251,21 @@ POST   /api/financing/applications/:id/submit
 POST   /api/financing/applications/:id/approve
 GET    /api/financing/agreements
 GET    /api/financing/agreements/:id
+GET    /api/financing/agreements/:id/agreement    # printable (add ?format=pdf)
+GET    /api/financing/agreements/:id/schedule     # printable (add ?format=pdf)
+GET    /api/financing/agreements/:id/statement    # printable (add ?format=pdf)
 POST   /api/financing/agreements/:id/release
 POST   /api/financing/agreements/:id/cancel
 POST   /api/financing/agreements/:id/payments
 POST   /api/financing/agreements/:id/adjustments
 POST   /api/financing/agreements/:id/mpesa
 POST   /api/financing/payments/:id/reverse
+GET    /api/financing/payments/:id/receipt        # printable (add ?format=pdf)
 GET    /api/financing/my/agreements           # customer
 GET    /api/financing/my/agreements/:id       # customer
+GET    /api/financing/my/agreements/:id/agreement # customer
+GET    /api/financing/my/agreements/:id/statement # customer
+GET    /api/financing/my/payments/:id/receipt # customer
 GET    /api/financing/my/applications         # customer
 POST   /api/financing/my/applications         # customer
 POST   /api/financing/my/agreements/:id/mpesa # customer
@@ -235,8 +285,8 @@ POST   /api/financing/my/agreements/:id/mpesa # customer
 
 ## Current limitations / not yet included
 
-- Printable financing PDFs (agreement, schedule, receipt, statement) are not yet
-  generated; the data needed for them is available on the agreement record.
-- Dedicated financing reports beyond the console stats are not yet built.
-- POS does not yet start a financing plan directly from a cart; staff create the
-  application from the financing console.
+- A financing plan started from POS still needs staff approval in the financing
+  console unless auto-approval is configured.
+- DB-backed integration tests for the financing service are gated on
+  `DATABASE_URL` and skip locally; they run in the CI/isolated-database
+  environment.
