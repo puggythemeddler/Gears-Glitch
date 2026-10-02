@@ -70,6 +70,10 @@ const PERMISSIONS: PermissionMap = {
   "whatsapp:view": "View WhatsApp settings",
   "review:view": "View product reviews",
   "audit:view": "View audit log",
+  "financing:view": "View financing applications and agreements",
+  "financing:manage": "Create and edit financing applications and agreements",
+  "financing:approve": "Approve or reject financing applications",
+  "financing:payment": "Record and reverse financing payments",
 };
 
 interface DefaultRoles {
@@ -94,6 +98,7 @@ const DEFAULT_ROLES: DefaultRoles = {
     "campaign:view", "cart:view", "provider:view", "spec:view",
     "supplier:view", "branch:view", "subscription:view", "about:view",
     "positioning:view", "whatsapp:view", "review:view", "audit:view",
+    "financing:view", "financing:manage", "financing:approve", "financing:payment",
   ],
   technician: [
     "repair:list", "repair:view", "repair:update",
@@ -115,6 +120,7 @@ const DEFAULT_ROLES: DefaultRoles = {
     "credit_note:view", "credit_note:create",
     "quote:view", "quote:create",
     "order:view", "customer:view",
+    "financing:view", "financing:manage", "financing:payment",
   ],
   provider: [
     "repair:list", "repair:view", "repair:update",
@@ -142,6 +148,7 @@ const DEFAULT_ROLES: DefaultRoles = {
     "campaign:view", "cart:view", "provider:view", "spec:view",
     "supplier:view", "branch:view", "subscription:view", "about:view",
     "positioning:view", "whatsapp:view", "review:view", "audit:view",
+    "financing:view", "financing:manage", "financing:approve", "financing:payment",
   ],
 };
 

@@ -44,6 +44,10 @@ export default function ProductPage() {
   const [subcategories, setSubcategories] = useState<{ id: string; name: string }[]>([]);
   const [categoryLabel, setCategoryLabel] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const [finOptions, setFinOptions] = useState<any>(null);
+  const [finQuote, setFinQuote] = useState<any>(null);
+  const [finFreq, setFinFreq] = useState("weekly");
+  const [finTerm, setFinTerm] = useState(0);
   const userInteractedRef = useRef(false);
 
   useEffect(() => {
@@ -79,6 +83,17 @@ export default function ProductPage() {
       setInWishlist(d.inWishlist);
     }).catch(() => {});
   }, [id]);
+
+  useEffect(() => {
+    api<any>("/api/financing/options").then((o) => { setFinOptions(o); setFinFreq(o?.permittedFrequencies?.[0] || "weekly"); }).catch(() => setFinOptions({ enabled: false }));
+  }, []);
+
+  useEffect(() => {
+    if (!id || !finOptions?.enabled) return;
+    const term = finTerm || finOptions.minTerm || 4;
+    api<any>(`/api/financing/public/quote?productId=${encodeURIComponent(id as string)}&frequency=${encodeURIComponent(finFreq)}&termCount=${term}`)
+      .then(setFinQuote).catch(() => setFinQuote(null));
+  }, [id, finOptions, finFreq, finTerm]);
 
   const showImage = useCallback((index: number) => {
     const len = images.length;
@@ -302,6 +317,29 @@ export default function ProductPage() {
               &#x1F6E1;&#xFE0F; {product.warrantyDuration} month warranty
             </p>
           ) : null}
+          {finOptions?.enabled && finQuote && (
+            <div className="panel" style={{ margin: "0.75rem 0", padding: "var(--space-3)" }}>
+              <p style={{ margin: 0, fontWeight: 600 }}>
+                Lipa Mdogo Mdogo: from {formatPrice(finQuote.instalmentCents / 100)} / {finQuote.frequency === "biweekly" ? "2 weeks" : finQuote.frequency}
+              </p>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center", marginTop: "0.5rem" }}>
+                <select value={finFreq} onChange={(e) => setFinFreq(e.target.value)} aria-label="Instalment frequency">
+                  {(finOptions.permittedFrequencies || ["weekly"]).map((f: string) => (
+                    <option key={f} value={f}>{f === "biweekly" ? "Every 2 weeks" : f.charAt(0).toUpperCase() + f.slice(1)}</option>
+                  ))}
+                </select>
+                <select value={finTerm || finOptions.minTerm || 4} onChange={(e) => setFinTerm(Number(e.target.value))} aria-label="Number of instalments">
+                  {Array.from({ length: Math.max(1, (finOptions.maxTerm || 12) - (finOptions.minTerm || 1) + 1) }, (_, i) => (finOptions.minTerm || 1) + i).map((n) => (
+                    <option key={n} value={n}>{n} instalments</option>
+                  ))}
+                </select>
+                <a className="btn btn-sm btn-secondary" href="/financing">Start a plan</a>
+              </div>
+              <p className="muted" style={{ fontSize: "0.8rem", margin: "0.5rem 0 0" }}>
+                Deposit from {formatPrice(finQuote.depositCents / 100)} · total {formatPrice(finQuote.hpPriceCents / 100)}. Approval required.
+              </p>
+            </div>
+          )}
           {product.specs && product.specs.length > 0 && (
             <div className="product-detail__specs">
               <h2>Specifications</h2>

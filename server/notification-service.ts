@@ -37,7 +37,11 @@ export type NotificationEvent =
   | "invoice.overdue"
   | "subscription.changed"
   | "subscription.expiring"
-  | "subscription.expired";
+  | "subscription.expired"
+  | "financing.agreement.created"
+  | "financing.agreement.completed"
+  | "financing.payment.received"
+  | "financing.payment.overdue";
 
 // ─── Notification Channel ─────────────────────────────────────────────────────
 export type NotificationChannel = "email" | "whatsapp";
@@ -78,6 +82,10 @@ const DEFAULT_PREFERENCES: Record<NotificationEvent, { email: boolean; whatsapp:
   "subscription.changed":   { email: true, whatsapp: false },
   "subscription.expiring":  { email: true, whatsapp: false },
   "subscription.expired":   { email: true, whatsapp: true },
+  "financing.agreement.created":   { email: true, whatsapp: true },
+  "financing.agreement.completed": { email: true, whatsapp: true },
+  "financing.payment.received":    { email: true, whatsapp: true },
+  "financing.payment.overdue":     { email: true, whatsapp: true },
 };
 
 // ─── Audience ─────────────────────────────────────────────────────────────────

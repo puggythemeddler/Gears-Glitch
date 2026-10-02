@@ -33,9 +33,10 @@ import StorefrontBuilder from "@/components/admin/StorefrontBuilder";
 import PagesManager from "@/components/admin/PagesManager";
 import FeaturePicker from "@/components/admin/FeaturePicker";
 import AdminWarranties from "@/components/admin/AdminWarranties";
+import AdminFinancing from "@/components/admin/AdminFinancing";
 import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help";
+export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 
@@ -72,6 +73,7 @@ const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   quotations: "quote:view",
   repairs: "repair:list",
   warranties: "order:view",
+  financing: "financing:view",
   coupons: "coupon:view",
   "gift-cards": "giftcard:view",
   campaigns: "campaign:view",
@@ -159,6 +161,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   {
     label: "Finance",
     items: [
+      { key: "financing", label: "Lipa Mdogo Mdogo" },
       { key: "providers", label: "Providers" },
       { key: "shop-subscription", label: "Subscription" },
       { key: "plans", label: "Subscription Plans" },
@@ -230,6 +233,7 @@ const NAV_ICONS: Partial<Record<AdminView, string>> = {
   branches: "store",
   invoices: "receipt",
   "credit-notes": "file",
+  financing: "card",
   providers: "briefcase",
   reports: "chart",
   messages: "messageCircle",
@@ -693,6 +697,7 @@ export default function AdminPage() {
             {view === "category-positioning" && <CategoryPositioningPage />}
             {view === "repairs" && <AdminRepairs adminOnly={staffRole === "admin"} />}
             {view === "warranties" && <AdminWarranties />}
+            {view === "financing" && <AdminFinancing />}
             {view === "help" && <HelpPanel />}
           </div>
       </div>

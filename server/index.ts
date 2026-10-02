@@ -404,6 +404,8 @@ import {
 } from "./repairs";
 import warrantyRouter from "./warranty";
 import reportRouter from "./report-routes";
+import financingRouter from "./routes/financing";
+import { applyMpesaCallback } from "./financing/service";
 import * as notifier from "./notify";
 import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail } from "./email";
@@ -802,6 +804,7 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
 
 app.use("/api/warranty", warrantyRouter);
 app.use("/api/reports", reportRouter);
+app.use("/api/financing", financingRouter);
 
 app.post("/api/control-plane/suspend", controlPlaneAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   await setStoreSetting("store_suspended", "true");
@@ -1111,6 +1114,21 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
   // can report the last M-Pesa callback. Best-effort — never breaks acknowledgment.
   const okEventKey = () => `stk:${checkoutId}`;
   try { await acquireWebhookEvent("mpesa", okEventKey(), { checkoutRequestId: checkoutId, merchantRequestId, resultCode, resultDesc: resultDesc.slice(0, 500) }); } catch (err: any) { console.warn("[M-Pesa] Webhook ledger insert failed:", err?.message); }
+
+  // Financing (Lipa Mdogo Mdogo): a financing checkout is never an order
+  // checkout, so route it to the financing ledger first. Idempotent on the
+  // CheckoutRequestID; only a verified callback ever marks an instalment paid.
+  try {
+    const fin = await applyMpesaCallback(checkoutId, resultCode, mpesaReceipt || null, paidAmount);
+    if (fin.handled) {
+      try { await markWebhookProcessed("mpesa", okEventKey(), 0); } catch { /* ledger is best-effort */ }
+      return res.json({ ResultCode: 0, ResultDesc: "Success" });
+    }
+  } catch (err: any) {
+    console.error("[M-Pesa] Financing callback processing failed — acknowledging retryable failure:", err.message);
+    try { await markWebhookFailed("mpesa", okEventKey(), err.message); } catch { /* ledger is best-effort */ }
+    return res.status(500).json({ ResultCode: 1, ResultDesc: "Temporary processing failure — retry" });
+  }
 
   // Update order in database — atomic amount verification + state transition.
   try {
