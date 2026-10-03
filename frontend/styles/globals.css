@@ -1258,7 +1258,7 @@ code, pre {
   width: 36px;
   height: 20px;
   background: var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   transition: background var(--duration-fast) ease;
 }
 
@@ -4534,7 +4534,7 @@ a.about-contact-card:hover {
   gap: 0.5rem;
   padding: 0.4rem 0.85rem;
   margin-bottom: 1.25rem;
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   background: var(--primary-subtle);
   border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
   color: var(--primary);
@@ -4635,7 +4635,7 @@ a.about-contact-card:hover {
   left: 0.75rem;
   z-index: 2;
   padding: 0.25rem 0.6rem;
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-secondary);
@@ -4690,7 +4690,7 @@ a.about-contact-card:hover {
   height: 4px;
   padding: 0;
   border: 0;
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   background: var(--border-hover);
   cursor: pointer;
   /* The active dot is wider, but animating `width` re-runs layout every frame.
@@ -4726,7 +4726,7 @@ a.about-contact-card:hover {
   align-items: center;
   padding: 0.45rem 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   background: var(--surface);
   color: var(--hero-text-secondary, var(--text-secondary));
   font-size: 0.8rem;
@@ -4756,7 +4756,7 @@ a.about-contact-card:hover {
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 .dy-hero-metric {

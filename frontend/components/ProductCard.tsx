@@ -25,7 +25,7 @@ export function ProductCard({ product }: ProductCardProps) {
           <Media src={product.imageUrl} alt={product.imageAlt || product.name} width={400} height={300} fit="cover" fallbackLabel={product.name} className="product-card__img" />
         </div>
       ) : (
-        <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: 10, fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>
+        <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: "var(--radius-sm)", fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>
           {initials}
         </div>
       )}
@@ -47,7 +47,7 @@ export function ProductCard({ product }: ProductCardProps) {
         )}
       </div>
       {product.salePrice && (
-        <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--on-danger)", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, marginBottom: "0.5rem", textTransform: "uppercase" }}>
+        <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--on-danger)", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: "var(--radius-full)", marginBottom: "0.5rem", textTransform: "uppercase" }}>
           Sale
         </span>
       )}

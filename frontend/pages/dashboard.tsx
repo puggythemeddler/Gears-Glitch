@@ -346,7 +346,7 @@ export default function DashboardPage() {
                             {c.unread > 0 && <span style={{
                               background: selectedMsgKey === c.key ? "var(--surface)" : "var(--primary)",
                               color: selectedMsgKey === c.key ? "var(--primary)" : "var(--surface)",
-                              borderRadius: 999, padding: "0.1rem 0.5rem", fontSize: "0.75rem", fontWeight: 600
+                              borderRadius: "var(--radius-full)", padding: "0.1rem 0.5rem", fontSize: "0.75rem", fontWeight: 600
                             }}>{c.unread}</span>}
                           </div>
                           <div style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: "0.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

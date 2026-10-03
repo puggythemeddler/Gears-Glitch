@@ -103,7 +103,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const applyTheme = useCallback((dark: boolean) => {
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
     const meta = document.getElementById("themeColorMeta") as HTMLMetaElement | null;
-    if (meta) meta.content = dark ? "#0b1120" : "#f8fafc";
+    if (meta) {
+      // Follow the resolved --bg so merchant brand themes tint the browser chrome
+      // correctly; the literal fallback matches the base warm-black tokens.
+      const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+      meta.content = bg || (dark ? "#0b0a09" : "#fafaf9");
+    }
   }, []);
 
   useEffect(() => {

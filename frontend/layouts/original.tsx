@@ -395,7 +395,7 @@ export function HomePage({ products, categories, hero }: {
                     {p.imageUrl ? (
                       <Media src={p.imageUrl} alt={p.imageAlt || p.name} width={400} height={300} fit="cover" fallbackLabel={p.name} />
                     ) : (
-                      <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: 10, fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>
+                      <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: "var(--radius-sm)", fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>
                         {initials}
                       </div>
                     )}
@@ -405,7 +405,7 @@ export function HomePage({ products, categories, hero }: {
                         <>
                           <span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.8em" }}>{formatPrice(p.price)}</span>
                           <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span>
-                          <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--on-danger)", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
+                          <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--on-danger)", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: "var(--radius-full)", textTransform: "uppercase" }}>Sale</span>
                         </>
                       ) : (
                         formatPrice(p.price)

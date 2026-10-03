@@ -826,7 +826,7 @@ export default function StorefrontBuilder() {
         .sb-msg { padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); margin-bottom: 0.75rem; font-size: 0.82rem; }
         .sb-msg-ok { background: var(--success-light); color: var(--success-text); }
         .sb-msg-err { background: var(--danger-light); color: var(--danger-text); }
-        .sb-status { font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; letter-spacing: 0.03em; }
+        .sb-status { font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: var(--radius-full); letter-spacing: 0.03em; }
       `}</style>
 
       <div className="sb-toolbar">

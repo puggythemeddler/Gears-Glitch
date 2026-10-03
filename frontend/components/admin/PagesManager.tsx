@@ -62,7 +62,7 @@ function PageRowItem({ row, active, onSelect }: { row: PageRow; active: boolean;
       }}
     >
       <span style={{ fontWeight: 600 }}>{row.title || row.slug}</span>
-      <span style={{ fontSize: "0.68rem", color: row.is_published === 1 ? "var(--success-text)" : "var(--text-secondary)", background: row.is_published === 1 ? "var(--success-light)" : "var(--surface-hover)", padding: "0.15rem 0.5rem", borderRadius: 999, fontWeight: 700 }}>
+      <span style={{ fontSize: "0.68rem", color: row.is_published === 1 ? "var(--success-text)" : "var(--text-secondary)", background: row.is_published === 1 ? "var(--success-light)" : "var(--surface-hover)", padding: "0.15rem 0.5rem", borderRadius: "var(--radius-full)", fontWeight: 700 }}>
         {row.is_published === 1 ? "LIVE" : "draft"}
       </span>
     </div>
@@ -287,7 +287,7 @@ export default function PagesManager() {
     <div style={{ display: "grid", gridTemplateColumns: "230px 1fr", gap: "1rem", alignItems: "start" }}>
       <style>{`
         .sb-edit-field { margin-bottom: 0.5rem; }
-        .sb-item-card { border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem; margin-bottom: 0.5rem; }
+        .sb-item-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.5rem; margin-bottom: 0.5rem; }
       `}</style>
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
@@ -308,7 +308,7 @@ export default function PagesManager() {
       </div>
 
       {!selectedId ? (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "0.75rem", color: "var(--text-tertiary)", fontSize: "0.85rem" }}>
+        <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "0.75rem", color: "var(--text-tertiary)", fontSize: "0.85rem" }}>
           Select a page on the left to edit it, or create a new one.
         </div>
       ) : (
@@ -429,7 +429,7 @@ export default function PagesManager() {
           )}
 
           {tab === "preview" && (
-            <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
               <div style={{ background: "var(--surface-hover)", padding: "0.4rem 0.75rem", fontSize: "0.75rem", color: "var(--text-secondary)" }}>/pages/{slug} · {device}</div>
               <div style={{ maxHeight: "65vh", overflow: "auto" }}>
                 {(config.sections || []).length === 0 && !heroActive && <p style={{ padding: "2rem", textAlign: "center", color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Nothing to preview yet.</p>}

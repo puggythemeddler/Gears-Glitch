@@ -19,11 +19,11 @@ export function LayoutStyles() {
     .jum-search input { flex: 1; border: none; padding: 0.5rem 0.8rem; font-size: 0.95rem; background: var(--bg); color: var(--text); outline: none; }
     .jum-search button { background: var(--primary); color: var(--on-primary); border: none; padding: 0.5rem 1rem; cursor: pointer; font-weight: 600; }
     .jum-cat-icons { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; display: flex; gap: 0.75rem; overflow-x: auto; flex-wrap: nowrap; }
-    .jum-cat-icon { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; text-decoration: none; color: var(--text); font-size: 0.8rem; min-width: 80px; padding: 0.5rem; border-radius: 10px; transition: background 0.15s; }
+    .jum-cat-icon { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; text-decoration: none; color: var(--text); font-size: 0.8rem; min-width: 80px; padding: 0.5rem; border-radius: var(--radius-sm); transition: background 0.15s; }
     .jum-cat-icon:hover { background: var(--primary); color: var(--on-primary); }
     .jum-cat-icon .icon { font-size: 1.6rem; }
-    .jum-slider { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; border-radius: 12px; overflow: hidden; position: relative; }
-    .jum-slide { background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: var(--on-primary); padding: 3rem 2rem; min-height: 280px; display: flex; flex-direction: column; justify-content: center; border-radius: 12px; }
+    .jum-slider { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; border-radius: var(--radius-md); overflow: hidden; position: relative; }
+    .jum-slide { background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: var(--on-primary); padding: 3rem 2rem; min-height: 280px; display: flex; flex-direction: column; justify-content: center; border-radius: var(--radius-md); }
     .jum-slide h2 { font-size: 2rem; margin: 0 0 0.5rem; }
     .jum-slide p { font-size: 1.1rem; margin: 0 0 1rem; opacity: 0.9; }
     .jum-dots { display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
@@ -34,7 +34,7 @@ export function LayoutStyles() {
     .jum-section-header h2 { margin: 0; font-size: 1.3rem; }
     .jum-timer { font-size: 0.85rem; color: var(--primary); font-weight: 600; }
     .jum-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 0.75rem; }
-    .jum-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; text-decoration: none; color: inherit; position: relative; transition: transform 0.2s; }
+    .jum-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; text-decoration: none; color: inherit; position: relative; transition: transform 0.2s; }
     .jum-card:hover { transform: translateY(-2px); }
     .jum-card-img { height: 160px; background: var(--bg); display: flex; align-items: center; justify-content: center; }
     .jum-card-img img { width: 100%; height: 100%; object-fit: contain; }

@@ -211,7 +211,7 @@ export default function AdminSerials() {
       )}
 
       {showGenerate && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setShowGenerate(false); setGenResult([]); }}>
+        <div style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setShowGenerate(false); setGenResult([]); }}>
           <div className="panel" style={{ width: "min(480px, 92vw)", padding: "1.25rem" }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0 }}>Generate Serials</h3>
             <div className="field"><label>Product
@@ -239,7 +239,7 @@ export default function AdminSerials() {
       )}
 
       {showCreate && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowCreate(false)}>
+        <div style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowCreate(false)}>
           <div className="panel" style={{ width: "min(460px, 92vw)", padding: "1.25rem" }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0 }}>Add Serial Manually</h3>
             <div className="field"><label>Serial number<input className="input" value={createSerialNumber} onChange={(e) => setCreateSerialNumber(e.target.value)} placeholder="e.g. SN-000001" /></label></div>

@@ -128,14 +128,14 @@ export default function QuotesPage() {
             const cfg = STATUS_CONFIG[s];
             return (
               <button key={s} onClick={() => setFilter(filter === s ? "" : s)}
-                style={{ padding: "1rem", borderRadius: 10, border: filter === s ? `2px solid ${cfg.color}` : "2px solid var(--border)", background: filter === s ? cfg.bg : "var(--surface)", color: "var(--text)", cursor: "pointer", textAlign: "center" }}>
+                style={{ padding: "1rem", borderRadius: "var(--radius-sm)", border: filter === s ? `2px solid ${cfg.color}` : "2px solid var(--border)", background: filter === s ? cfg.bg : "var(--surface)", color: "var(--text)", cursor: "pointer", textAlign: "center" }}>
                 <div style={{ fontSize: "1.5rem", fontWeight: 700, color: cfg.color }}>{stats[s] || 0}</div>
                 <div style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>{cfg.label}</div>
               </button>
             );
           })}
           <button onClick={() => setFilter(filter === "" ? "__none__" : "")}
-            style={{ padding: "1rem", borderRadius: 10, border: "2px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer", textAlign: "center" }}>
+            style={{ padding: "1rem", borderRadius: "var(--radius-sm)", border: "2px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer", textAlign: "center" }}>
             <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{stats.total || quotes.length}</div>
             <div style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>All Quotes</div>
           </button>
@@ -173,7 +173,7 @@ export default function QuotesPage() {
                     <td>{q.items.length}</td>
                     <td style={{ fontWeight: 600 }}>{formatPrice(q.total)}</td>
                     <td>
-                      <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 999, fontSize: "0.75rem", fontWeight: 600, color: cfg.color, background: cfg.bg }}>
+                      <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: "var(--radius-full)", fontSize: "0.75rem", fontWeight: 600, color: cfg.color, background: cfg.bg }}>
                         {cfg.label}
                       </span>
                     </td>
@@ -406,7 +406,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
         <button className="btn btn-sm btn-ghost" onClick={onBack}>&larr; Back</button>
         <h1 style={{ margin: 0 }}>{escapeHtml(quote.quoteNumber)}</h1>
-        <span style={{ display: "inline-block", padding: "3px 12px", borderRadius: 999, fontSize: "0.8rem", fontWeight: 600, color: cfg.color, background: cfg.bg }}>{cfg.label}</span>
+        <span style={{ display: "inline-block", padding: "3px 12px", borderRadius: "var(--radius-full)", fontSize: "0.8rem", fontWeight: 600, color: cfg.color, background: cfg.bg }}>{cfg.label}</span>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>

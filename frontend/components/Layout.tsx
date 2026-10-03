@@ -521,8 +521,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
       )}
       <div style={{ textAlign: "center", padding: "0.5rem", fontSize: "0.75rem", background: "var(--text)", color: "var(--bg)" }}>
         <span style={{ color: "var(--text)", background: "var(--bg)", padding: "0 4px" }}>Made</span>{" "}
-        <span style={{ color: "#fff", background: "#c62828", padding: "0 4px" }}>in</span>{" "}
-        <span style={{ color: "#fff", background: "#2e7d32", padding: "0 4px" }}>Kenya</span>
+        <span style={{ color: "var(--on-danger)", background: "var(--danger)", padding: "0 4px" }}>in</span>{" "}
+        <span style={{ color: "var(--on-success)", background: "var(--success)", padding: "0 4px" }}>Kenya</span>
       </div>
     </>
   );

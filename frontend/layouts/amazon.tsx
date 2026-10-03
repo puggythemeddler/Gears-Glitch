@@ -21,17 +21,17 @@ export function LayoutStyles() {
     .amz-nav a { padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; color: var(--text); text-decoration: none; }
     .amz-nav a:hover { background: var(--primary); color: var(--on-primary); }
     .amz-hero { max-width: 1440px; margin: 1rem auto; padding: 0 1rem; display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
-    .amz-hero-main { border-radius: 12px; overflow: hidden; position: relative; background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: var(--on-primary); padding: 3rem; min-height: 300px; display: flex; flex-direction: column; justify-content: center; }
+    .amz-hero-main { border-radius: var(--radius-md); overflow: hidden; position: relative; background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: var(--on-primary); padding: 3rem; min-height: 300px; display: flex; flex-direction: column; justify-content: center; }
     .amz-hero-main h2 { font-size: 2rem; margin: 0 0 0.5rem; }
     .amz-hero-main p { font-size: 1.1rem; margin: 0 0 1.5rem; opacity: 0.9; }
     .amz-hero-side { display: flex; flex-direction: column; gap: 1rem; }
-    .amz-hero-side-item { border-radius: 12px; padding: 1.5rem; flex: 1; background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; }
+    .amz-hero-side-item { border-radius: var(--radius-md); padding: 1.5rem; flex: 1; background: var(--surface); border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; }
     .amz-hero-side-item h3 { margin: 0 0 0.25rem; font-size: 1.1rem; }
     .amz-hero-side-item p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); }
     .amz-section { max-width: 1440px; margin: 2rem auto; padding: 0 1rem; }
     .amz-section h2 { font-size: 1.4rem; margin: 0 0 1rem; display: flex; align-items: center; gap: 0.5rem; }
     .amz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 1rem; }
-    .amz-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
+    .amz-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
     .amz-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
     .amz-card-img { height: 180px; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 700; color: var(--border); }
     .amz-card-img img { width: 100%; height: 100%; object-fit: contain; }
@@ -41,7 +41,7 @@ export function LayoutStyles() {
     .amz-card-rating { font-size: 0.8rem; color: var(--accent); margin-bottom: 0.3rem; }
     .amz-card-badge { display: inline-block; background: var(--danger); color: var(--on-danger); font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; margin-bottom: 0.4rem; align-self: flex-start; }
     .amz-banner-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; max-width: 1440px; margin: 1.5rem auto; padding: 0 1rem; }
-    .amz-banner-item { border-radius: 10px; padding: 1.5rem; background: var(--surface); border: 1px solid var(--border); text-align: center; }
+    .amz-banner-item { border-radius: var(--radius-sm); padding: 1.5rem; background: var(--surface); border: 1px solid var(--border); text-align: center; }
     .amz-banner-item h3 { margin: 0 0 0.25rem; font-size: 1rem; }
     .amz-banner-item p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); }
     @media (max-width: 768px) {

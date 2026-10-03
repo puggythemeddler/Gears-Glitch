@@ -1047,7 +1047,7 @@
   color: var(--surface);
   background: var(--primary);
   padding: 0.5rem 1.6rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   white-space: nowrap;
   max-width: 90vw;

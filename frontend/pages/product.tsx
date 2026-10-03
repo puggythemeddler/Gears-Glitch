@@ -303,7 +303,7 @@ export default function ProductPage() {
               <>
                 <span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.8em" }}>{formatPrice(product.price)}</span>
                 <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(product.salePrice)}</span>
-                <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--surface)", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: 999, textTransform: "uppercase" }}>Sale</span>
+                <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--surface)", fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: "var(--radius-full)", textTransform: "uppercase" }}>Sale</span>
               </>
             ) : (
               formatPrice(product.price)

@@ -2085,7 +2085,7 @@ function AdminPlans() {
               {form.features.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.5rem" }}>
                   {form.features.map((f) => (
-                    <span key={f} role="button" tabIndex={0} onClick={() => toggleFeature(f)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFeature(f); } }} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.8rem", padding: "0.35rem 0.65rem", borderRadius: 999, background: "var(--border)", color: "var(--text)", cursor: "pointer" }}>
+                    <span key={f} role="button" tabIndex={0} onClick={() => toggleFeature(f)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFeature(f); } }} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.8rem", padding: "0.35rem 0.65rem", borderRadius: "var(--radius-full)", background: "var(--border)", color: "var(--text)", cursor: "pointer" }}>
                       {f} &times;
                     </span>
                   ))}
@@ -2903,7 +2903,7 @@ function AdminMessages() {
                 style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", cursor: "pointer", background: selectedConversation === key ? "var(--bg-secondary)" : "transparent", transition: "background 0.15s" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <strong style={{ fontSize: "0.85rem" }}>{conv.partner}</strong>
-                  {conv.unread > 0 && <span style={{ background: "var(--primary)", color: "var(--surface)", borderRadius: 999, fontSize: "0.7rem", padding: "0.1rem 0.5rem", fontWeight: 600 }}>{conv.unread}</span>}
+                  {conv.unread > 0 && <span style={{ background: "var(--primary)", color: "var(--surface)", borderRadius: "var(--radius-full)", fontSize: "0.7rem", padding: "0.1rem 0.5rem", fontWeight: 600 }}>{conv.unread}</span>}
                 </div>
                 <p style={{ margin: "0.25rem 0 0", fontSize: "0.78rem", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {conv.messages[conv.messages.length - 1]?.body}
@@ -2924,7 +2924,7 @@ function AdminMessages() {
                 {activeMsgs.map((m: any) => {
                   const isMe = m.sender_role === "admin";
                   return (
-                    <div key={m.id} style={{ maxWidth: "75%", alignSelf: isMe ? "flex-end" : "flex-start", background: isMe ? "var(--primary)" : "var(--bg-secondary)", color: isMe ? "var(--surface)" : "var(--text)", borderRadius: 12, padding: "0.6rem 0.9rem", fontSize: "0.85rem" }}>
+                    <div key={m.id} style={{ maxWidth: "75%", alignSelf: isMe ? "flex-end" : "flex-start", background: isMe ? "var(--primary)" : "var(--bg-secondary)", color: isMe ? "var(--surface)" : "var(--text)", borderRadius: "var(--radius-md)", padding: "0.6rem 0.9rem", fontSize: "0.85rem" }}>
                       {!isMe && <div style={{ fontSize: "0.7rem", fontWeight: 600, marginBottom: "0.2rem", opacity: 0.7 }}>{m.sender_role === "customer" ? (m.customerName || "Customer") : (m.providerName || "Provider")}</div>}
                       <div>{m.body}</div>
                       <div style={{ fontSize: "0.65rem", opacity: 0.6, marginTop: "0.2rem", textAlign: isMe ? "right" : "left" }}>
@@ -6584,7 +6584,7 @@ function AdminPurchases() {
                               {(receiveSerials[i.id] || []).length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
                                   {(receiveSerials[i.id] || []).map((s, idx) => (
-                                    <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "var(--primary-light)", color: "var(--primary)", padding: "0.1rem 0.5rem", borderRadius: 999, fontSize: "0.75rem", fontFamily: "monospace" }}>
+                                    <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "var(--primary-light)", color: "var(--primary)", padding: "0.1rem 0.5rem", borderRadius: "var(--radius-full)", fontSize: "0.75rem", fontFamily: "monospace" }}>
                                       {s}
                                       <button type="button" onClick={() => setReceiveSerials({ ...receiveSerials, [i.id]: (receiveSerials[i.id] || []).filter((_, i2) => i2 !== idx) })} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, lineHeight: 1 }}>&times;</button>
                                     </span>
@@ -6610,7 +6610,7 @@ function AdminPurchases() {
           const cur = receiveSerials[serialModalItem.id] || [];
           const closeModal = () => { setSerialModalItem(null); setSerialInput(""); setSerialMsg(""); };
           return (
-            <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200 }} onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
+            <div style={{ position: "fixed", inset: 0, background: "var(--overlay)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200 }} onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
               <div className="panel" style={{ width: 460, maxWidth: "94vw", maxHeight: "80vh", overflowY: "auto" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.35rem" }}>
                   <h3 style={{ margin: 0 }}>Serials — {escapeHtml(serialModalItem.productName)}</h3>
@@ -6642,7 +6642,7 @@ function AdminPurchases() {
                 {cur.length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.6rem" }}>
                     {cur.map((s, idx) => (
-                      <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "var(--primary-light)", color: "var(--primary)", padding: "0.15rem 0.55rem", borderRadius: 999, fontSize: "0.78rem", fontFamily: "monospace" }}>
+                      <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", background: "var(--primary-light)", color: "var(--primary)", padding: "0.15rem 0.55rem", borderRadius: "var(--radius-full)", fontSize: "0.78rem", fontFamily: "monospace" }}>
                         {s}
                         <button type="button" onClick={() => setReceiveSerials({ ...receiveSerials, [serialModalItem.id]: cur.filter((_, i2) => i2 !== idx) })} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, lineHeight: 1 }}>&times;</button>
                       </span>
