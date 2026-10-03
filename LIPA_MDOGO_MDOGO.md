@@ -46,6 +46,36 @@ All amounts are stored and computed as **integer cents** (minor units). The
 browser may submit a *preview* (`/api/financing/public/quote`) but every number
 that is persisted is produced server-side by `calculator.ts`.
 
+## Access model: entitlement, activation and rights
+
+Financing sits behind several independent gates. They are deliberately kept
+separate and are never collapsed into one check.
+
+| Layer | Question it answers | Resolved by |
+| --- | --- | --- |
+| **Entitlement** | Does this shop's plan include financing? | `PLAN_FEATURES` + per-shop feature overrides (`server/db.ts`, `server/feature-access.ts`) |
+| **Activation** | Has the operator switched the module on? | `financing_config.enabled` (`server/financing/config.ts`) |
+| **Rights** | May this user act on financing? | `financing:view/manage/approve/payment` permissions (`server/index.ts`) |
+| **Branch access** | May this branch use it? | branch feature overrides (`branchFeatureOverrides`) |
+
+The feature key is the human-readable **`"Lipa Mdogo Mdogo"`** (constant
+`FINANCING_FEATURE` in `server/financing/config.ts`). Entitlement matching is
+case-insensitive on this name, and the plan editor, Control Plane and storefront
+all use the same string.
+
+New-financing endpoints (`POST`/`PATCH`/submit/approve applications and the
+customer `POST /my/applications`) require the shop to be **entitled and
+activated**. Servicing endpoints (release, cancel, record/reverse payments,
+adjustments, M-Pesa on an existing agreement, statements and receipts) do
+**not** check activation. **Deactivating financing stops new plans but never
+blocks an existing agreement, its payments or its history** — a customer
+mid-plan can always pay and staff can always service the account.
+
+Entitlement is not activation: granting the feature makes the module
+*available*; activation is the explicit operator switch below. The Control
+Plane shows both states separately so "not in your plan" is distinguishable
+from "in your plan, switched off".
+
 ## Enabling financing
 
 1. Sign in as an admin/owner.
@@ -150,6 +180,21 @@ Cashiers can start a plan straight from the till without switching screens:
 The POS panel is a front-end convenience over `POST /api/financing/applications`;
 there is no separate POS-only financing endpoint. Staff still approve the
 application in the financing console unless auto-approval is configured.
+
+## Website Studio (storefront block)
+
+The page builder (**Admin → Storefront → Website Studio**, component
+`StorefrontBuilder`) offers a **Financing** block in a *Financing* palette
+group. The group and its block are only shown when financing is entitled and
+activated.
+
+- Adding it drops a `financing-promo` section with a heading, text and a CTA
+  button (default link `/financing`).
+- The block is a **render-time gate**: on the live storefront it renders
+  nothing unless `GET /api/financing/options` reports `enabled: true`. It shows
+  no amount, so nothing is fabricated for a shop without access.
+- Deactivating financing hides the block but leaves the saved section in the
+  layout, so reactivating restores it unchanged.
 
 ## Documents (print / PDF)
 

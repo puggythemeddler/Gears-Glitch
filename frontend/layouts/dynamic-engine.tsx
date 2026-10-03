@@ -6,6 +6,7 @@ import { Media } from "@/components/Media";
 import { motionGroupItemVars } from "@/lib/motion";
 import type { MotionConfig, MotionIntensity, MotionTrigger } from "@/lib/motion";
 import { normalizeHref } from "@/lib/links";
+import { api } from "@/lib/api";
 
 // Render a builder-supplied link as an anchor only when it actually points
 // somewhere. Empty, "#", or unsafe links render as inert styled content so the
@@ -78,7 +79,8 @@ export type DynamicSection =
   | { type: "button"; id?: string; label?: string; link?: string; variant?: "primary" | "secondary" | "outline"; align?: "left" | "center"; size?: "sm" | "md" | "lg"; hideOnMobile?: boolean; animation?: MotionConfig | null }
   | { type: "image"; id?: string; imageUrl?: string; alt?: string; caption?: string; link?: string; maxWidth?: number; rounded?: boolean; hideOnMobile?: boolean; animation?: MotionConfig | null }
   | { type: "features"; id?: string; title?: string; columns?: number; columnsTablet?: number; columnsMobile?: number; hideOnMobile?: boolean; items?: { icon?: string; title?: string; text?: string }[]; animation?: MotionConfig | null }
-  | { type: "spacer"; id?: string; height?: number; hideOnMobile?: boolean; animation?: MotionConfig | null };
+  | { type: "spacer"; id?: string; height?: number; hideOnMobile?: boolean; animation?: MotionConfig | null }
+  | { type: "financing-promo"; id?: string; title?: string; content?: string; ctaText?: string; ctaLink?: string; hideOnMobile?: boolean; animation?: MotionConfig | null };
 
 const DEFAULT_HERO_BG = "var(--bg)";
 
@@ -320,6 +322,31 @@ function responsiveGridProps(
   };
 }
 
+// Feature-gated storefront block. It only renders when the shop both owns the
+// "Lipa Mdogo Mdogo" entitlement and has financing activated (the server
+// resolves effective access at /api/financing/options). No amounts are shown,
+// so nothing is fabricated if the block is viewed without financing.
+function FinancingPromo({ section, fid }: { section: Extract<DynamicSection, { type: "financing-promo" }>; fid?: string }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api<{ enabled?: boolean }>("/api/financing/options")
+      .then((o) => { if (alive) setEnabled(!!o?.enabled); })
+      .catch(() => { if (alive) setEnabled(false); });
+    return () => { alive = false; };
+  }, []);
+  if (!enabled) return null;
+  return (
+    <div style={{ padding: "2rem 1rem", maxWidth: 1000, margin: "0 auto" }}>
+      <div style={{ background: "var(--primary-subtle)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "1.75rem", textAlign: "center" }}>
+        {section.title && <h2 style={{ fontSize: "1.35rem", fontWeight: 700, margin: "0 0 0.5rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
+        {section.content && <p style={{ color: "var(--text-secondary)", margin: "0 0 1rem", lineHeight: 1.6 }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
+        {section.ctaText && <DyLink className="btn btn-primary" href={section.ctaLink || "/financing"} fid={fid ? `${fid}.ctaText` : undefined}>{section.ctaText}</DyLink>}
+      </div>
+    </div>
+  );
+}
+
 function DynamicSectionInner({ section, products, categories, colors, cardConfig, fid }: { section: DynamicSection; products: Product[]; categories: { id: string; label: string }[]; colors?: DynamicLayoutConfig["colors"]; cardConfig?: DynamicLayoutConfig["productCard"]; fid?: string }) {
   if (section.type === "product-grid") {
     let filtered = [...products];
@@ -490,6 +517,10 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
 
   if (section.type === "spacer") {
     return <div style={{ height: section.height ?? 40 }} />;
+  }
+
+  if (section.type === "financing-promo") {
+    return <FinancingPromo section={section} fid={fid} />;
   }
 
   return null;

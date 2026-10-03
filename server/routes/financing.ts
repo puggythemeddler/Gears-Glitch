@@ -60,9 +60,11 @@ function parsePositiveIntCents(v: unknown): number {
   return Math.round(n);
 }
 
-// Activation gate for a specific branch: the tenant switch must be on and the
-// branch must not be disabled. Entitlement is enforced separately by
-// requireShopFeature. Returns an operator-facing message, or null when allowed.
+// Activation gate for NEW financing at a specific branch: the tenant switch
+// must be on and the branch must not be disabled. Entitlement is enforced
+// separately by requireShopFeature. Returns an operator-facing message, or null
+// when allowed. Servicing routes (payments, reversals, release, cancel) do NOT
+// call this: deactivation must never stop an existing customer from paying.
 async function financingBlocked(branchId: number | null | undefined): Promise<string | null> {
   const config = await getFinancingConfig();
   if (!config.enabled) return "Financing is not enabled for this store.";
@@ -299,16 +301,12 @@ router.get("/agreements/:id", staffAuthMiddleware, requirePermission("financing:
 router.post("/agreements/:id/release", staffAuthMiddleware, requirePermission("financing:manage"), requireShopFeature(FINANCING_FEATURE), asyncHandler(async (req: Request, res: Response) => {
   const agr = await getAgreement(Number(req.params.id));
   if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
-  const blocked = await financingBlocked(agr.branchId);
-  if (blocked) { res.status(403).json({ error: blocked }); return; }
   res.json(await releaseProduct(Number(req.params.id), staffActor(req)));
 }));
 
 router.post("/agreements/:id/cancel", staffAuthMiddleware, requirePermission("financing:manage"), requireShopFeature(FINANCING_FEATURE), asyncHandler(async (req: Request, res: Response) => {
   const agr = await getAgreement(Number(req.params.id));
   if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
-  const blocked = await financingBlocked(agr.branchId);
-  if (blocked) { res.status(403).json({ error: blocked }); return; }
   res.json(await cancelAgreement(Number(req.params.id), staffActor(req), String(req.body?.reason || "")));
 }));
 
@@ -316,9 +314,6 @@ router.post("/agreements/:id/payments", staffAuthMiddleware, requirePermission("
   const b = req.body || {};
   const agr = await getAgreement(Number(req.params.id));
   if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
-  const targetBranch = b.branchId != null ? Number(b.branchId) : agr.branchId;
-  const blocked = await financingBlocked(targetBranch);
-  if (blocked) { res.status(403).json({ error: blocked }); return; }
   const method: FinancingPaymentMethod = PAYMENT_METHODS.includes(b.method) ? b.method : "cash";
   const result = await recordPayment(Number(req.params.id), {
     amountCents: parsePositiveIntCents(b.amountCents),
@@ -338,8 +333,6 @@ router.post("/agreements/:id/adjustments", staffAuthMiddleware, requirePermissio
   if (!isStr(b.kind, 40) || !isStr(b.reason, 1000)) { res.status(400).json({ error: "kind and reason are required" }); return; }
   const agr = await getAgreement(Number(req.params.id));
   if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
-  const blocked = await financingBlocked(agr.branchId);
-  if (blocked) { res.status(403).json({ error: blocked }); return; }
   res.status(201).json(await recordAdjustment(Number(req.params.id), b.kind, parsePositiveIntCents(b.amountCents), b.reason, staffActor(req)));
 }));
 
@@ -347,8 +340,6 @@ router.post("/agreements/:id/mpesa", staffAuthMiddleware, requirePermission("fin
   const b = req.body || {};
   const agr = await getAgreement(Number(req.params.id));
   if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
-  const blocked = await financingBlocked(agr.branchId);
-  if (blocked) { res.status(403).json({ error: blocked }); return; }
   const result = await initiateMpesaPayment(Number(req.params.id), {
     phone: String(b.phone || ""),
     amountCents: parsePositiveIntCents(b.amountCents),
@@ -362,8 +353,6 @@ router.post("/payments/:id/reverse", staffAuthMiddleware, requirePermission("fin
   if (!payment) { res.status(404).json({ error: "Payment not found" }); return; }
   const agr = await getAgreement(payment.agreementId);
   if (!agr) { res.status(404).json({ error: "Agreement not found" }); return; }
-  const blocked = await financingBlocked(agr.branchId);
-  if (blocked) { res.status(403).json({ error: blocked }); return; }
   res.json(await reversePayment(Number(req.params.id), String(req.body?.reason || ""), staffActor(req)));
 }));
 
@@ -417,8 +406,6 @@ router.post("/my/agreements/:id/mpesa", customerAuthMiddleware, requireShopFeatu
   const customerId = Number((req as any).customer?.sub);
   const agr = await getAgreement(Number(req.params.id));
   if (!agr || agr.customerId !== customerId) { res.status(404).json({ error: "Agreement not found" }); return; }
-  const blocked = await financingBlocked(agr.branchId);
-  if (blocked) { res.status(403).json({ error: blocked }); return; }
   const b = req.body || {};
   const result = await initiateMpesaPayment(agr.id, {
     phone: String(b.phone || ""),

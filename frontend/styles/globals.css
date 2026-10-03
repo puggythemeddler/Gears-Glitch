@@ -520,6 +520,13 @@ a:focus:not(:focus-visible) { outline: none; }
   border: 0;
 }
 
+/* Feature picker chips keep the native checkbox reachable by keyboard
+   (sr-only child) while showing focus on the chip itself. */
+.feature-chip:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 /* ----- Typography ----- */
 h1, h2, h3, h4, h5, h6 {
   line-height: var(--leading-tight);

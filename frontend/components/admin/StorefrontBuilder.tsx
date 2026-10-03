@@ -77,11 +77,13 @@ const SECTION_TEMPLATES: PaletteTemplate[] = [
   { type: "spacer", label: "Spacer", group: "Sections", keywords: "spacer space gap padding", icon: "S", defaults: { height: 48 } },
   { type: "product-grid", label: "Products", group: "Commerce", keywords: "products grid catalog shop items", icon: "P", defaults: { title: "Featured Products", productFilter: "all", columns: 4, limit: 8 } },
   { type: "category-grid", label: "Categories", group: "Commerce", keywords: "categories categories shop links", icon: "C", defaults: { title: "Shop by Category", columns: 4, style: "cards" } },
+  { type: "financing-promo", label: "Financing", group: "Financing", keywords: "financing lipa mdogo mdogo instalments hire purchase credit", icon: "%", defaults: { title: "Pay in easy instalments", content: "Take it home today and pay weekly or monthly with Lipa Mdogo Mdogo.", ctaText: "Apply for financing", ctaLink: "/financing" } },
 ];
 
 const SECTION_LABELS: Record<string, string> = {
   "product-grid": "Products", "category-grid": "Categories", banner: "Banner", stats: "Stats",
   text: "Text", button: "Button", image: "Image", features: "Features", spacer: "Spacer",
+  "financing-promo": "Financing",
 };
 
 const EDITABLE_FIDS = [
@@ -90,6 +92,7 @@ const EDITABLE_FIDS = [
   /^sections\.\d+\.text$/, /^sections\.\d+\.buttonLabel$/, /^sections\.\d+\.caption$/,
   /^sections\.\d+\.items\.\d+\.title$/, /^sections\.\d+\.items\.\d+\.text$/,
   /^sections\.\d+\.items\.\d+\.value$/, /^sections\.\d+\.items\.\d+\.label$/,
+  /^sections\.\d+\.ctaText$/,
 ];
 
 type Device = "desktop" | "tablet" | "mobile";
@@ -218,6 +221,7 @@ export default function StorefrontBuilder() {
   const [device, setDevice] = useState<Device>("desktop");
   const [paletteQuery, setPaletteQuery] = useState("");
   const [tab, setTab] = useState<"content" | "design" | "layout">("content");
+  const [financingEnabled, setFinancingEnabled] = useState(false);
 
   // Live preview of the design tokens. The engine emits the same custom
   // properties on `.dynamic-layout` for the published storefront; scoping them
@@ -252,6 +256,17 @@ export default function StorefrontBuilder() {
   useEffect(() => { configRef.current = config; }, [config]);
   useEffect(() => { labelRef.current = label; }, [label]);
   useEffect(() => { descRef.current = description; }, [description]);
+
+  // Only offer the financing block when the shop owns the entitlement and has
+  // financing activated. The renderer re-checks server-side, so stale state
+  // here can never publish an active block to a shop without access.
+  useEffect(() => {
+    let alive = true;
+    api<{ enabled?: boolean }>("/api/financing/options")
+      .then((o) => { if (alive) setFinancingEnabled(!!o?.enabled); })
+      .catch(() => { if (alive) setFinancingEnabled(false); });
+    return () => { alive = false; };
+  }, []);
 
   async function loadLayouts() {
     try {
@@ -658,6 +673,13 @@ export default function StorefrontBuilder() {
         return (<>
           <Field label="Height (px)"><Num value={s.height || 40} min={0} max={200} onChange={(v) => updateSection(idx, { height: v })} /></Field>
         </>);
+      case "financing-promo":
+        return (<>
+          <Field label="Heading"><Text value={s.title || ""} onChange={(v) => updateSection(idx, { title: v })} /></Field>
+          <Field label="Text"><textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={s.content || ""} onChange={(e) => updateSection(idx, { content: e.target.value })} /></Field>
+          <Field label="Button label"><Text value={s.ctaText || ""} onChange={(v) => updateSection(idx, { ctaText: v })} /></Field>
+          <Field label="Button link"><Text value={s.ctaLink || ""} onChange={(v) => updateSection(idx, { ctaLink: v })} placeholder="/financing" /><LinkHint value={s.ctaLink || ""} /></Field>
+        </>);
       default:
         return null;
     }
@@ -884,7 +906,7 @@ export default function StorefrontBuilder() {
           <div className="sb-panel">
             <h3 style={{ marginTop: 0, fontSize: "0.95rem" }}>Add a section</h3>
             <Field label="Search"><Text value={paletteQuery} onChange={setPaletteQuery} placeholder="Products, banner, stats…" /></Field>
-            {(["Sections", "Commerce"]).map((group) => {
+            {(["Sections", "Commerce", ...(financingEnabled ? ["Financing"] : [])]).map((group) => {
               const items = SECTION_TEMPLATES.filter((t) => t.group === group && (t.label + " " + t.keywords).toLowerCase().includes(paletteQuery.trim().toLowerCase()));
               if (!items.length) return null;
               return (
