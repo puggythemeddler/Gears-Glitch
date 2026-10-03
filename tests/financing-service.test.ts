@@ -139,6 +139,43 @@ describe("financing service integration (DB)", { skip: !HAS_DB && "DATABASE_URL 
     assert.equal(reversed.ownershipStatus, "seller");
   });
 
+  it("clears derived credit when an overpaying payment is reversed (C1)", async () => {
+    const agr = await makeAgreement({ cashPriceCents: 10000, termCount: 2 });
+    const paid = await recordPayment(agr.id, { amountCents: 10500, method: "cash" }, actor);
+    assert.equal(paid.outstandingCents, 0);
+    assert.equal(paid.creditCents, 500);
+
+    const payment = paid.payments.find((p: any) => p.status === "succeeded");
+    const reversed = await reversePayment(payment.id, "reverse overpayment", actor);
+    assert.equal(reversed.creditCents, 0);
+    assert.equal(reversed.outstandingCents, 10000);
+  });
+
+  it("approves an application idempotently, creating one agreement (C2)", async () => {
+    const app = await createApplication(
+      {
+        customerId,
+        productName: "Duplicate Guard",
+        cashPriceCents: 10000,
+        depositCents: 0,
+        frequency: "weekly",
+        termCount: 2,
+        startDate: "2020-01-01",
+        consent: true,
+        branchId: 9001,
+        status: "draft",
+      } as any,
+      actor
+    );
+    await submitApplication(app.id, actor);
+    const first = await approveApplication(app.id, actor);
+    const second = await approveApplication(app.id, actor);
+    assert.equal(second.id, first.id);
+
+    const count = (await queryOne("SELECT COUNT(*) AS c FROM financing_agreements WHERE application_id = $1", [app.id])) as any;
+    assert.equal(Number(count.c), 1);
+  });
+
   it("applies a waiver to the oldest instalment and reduces the outstanding balance", async () => {
     const agr = await makeAgreement({ cashPriceCents: 9000, termCount: 3 });
     const waived = await recordAdjustment(agr.id, "waiver", 3000, "goodwill", actor);

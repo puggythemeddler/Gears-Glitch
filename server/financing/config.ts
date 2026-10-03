@@ -13,6 +13,10 @@ import {
 
 const SETTING_KEY = "financing_config";
 
+// Canonical feature key for the financing capability. Matched case-insensitively
+// against subscription-plan features and control-plane overrides.
+export const FINANCING_FEATURE = "Lipa Mdogo Mdogo";
+
 const FREQUENCIES: FinancingFrequency[] = ["daily", "weekly", "biweekly", "monthly", "custom"];
 const CHARGE_MODELS: FinancingChargeModel[] = ["fixed", "percentage"];
 const POSSESSION_MODELS: FinancingPossessionModel[] = ["immediate", "threshold", "on_full_payment"];

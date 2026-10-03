@@ -330,7 +330,15 @@ export async function approveApplication(id: number, actor: Actor, opts: { order
   });
   const agreementNumber = await generateAgreementNumber();
 
-  const agreementId = await transaction(async (client) => {
+  const result = await transaction(async (client) => {
+    // Lock the application row so concurrent approvals cannot both create an
+    // agreement, and short-circuit if one already exists (idempotent retry).
+    const locked = (await client.query("SELECT status FROM financing_applications WHERE id = $1 FOR UPDATE", [id])).rows[0];
+    if (!locked) throw new Error("Application not found");
+    if (locked.status === "cancelled" || locked.status === "expired") throw new Error(`Cannot approve a ${locked.status} application`);
+    const existing = (await client.query("SELECT id FROM financing_agreements WHERE application_id = $1 ORDER BY id LIMIT 1", [id])).rows[0];
+    if (existing) return { id: Number(existing.id), created: false };
+
     const ins = await client.query(
       `INSERT INTO financing_agreements (
          agreement_number, application_id, customer_id, branch_id, order_id, product_id, product_name, serial_number, currency,
@@ -358,13 +366,15 @@ export async function approveApplication(id: number, actor: Actor, opts: { order
       [agrId, app.productId, app.productName || "Item", quote.cashPriceCents, app.serialNumber]
     );
     await client.query("UPDATE financing_applications SET status = 'approved', reviewed_by = $1, reviewed_at = NOW()::text, updated_at = NOW()::text WHERE id = $2", [actor.id, id]);
-    return agrId;
+    return { id: Number(agrId), created: true };
   });
 
-  await recordEvent("agreement_created", { agreementId, applicationId: id, actor, detail: { agreementNumber } });
-  await audit(actor, "financing.agreement.create", "financing_agreement", agreementId, `Created agreement ${agreementNumber}`);
-  await notifyCustomer(app, "financing.agreement.created", `Your ${config.currency} hire-purchase agreement ${agreementNumber} has been created.`);
-  return (await getAgreement(agreementId))!;
+  if (result.created) {
+    await recordEvent("agreement_created", { agreementId: result.id, applicationId: id, actor, detail: { agreementNumber } });
+    await audit(actor, "financing.agreement.create", "financing_agreement", result.id, `Created agreement ${agreementNumber}`);
+    await notifyCustomer(app, "financing.agreement.created", `Your ${config.currency} hire-purchase agreement ${agreementNumber} has been created.`);
+  }
+  return (await getAgreement(result.id))!;
 }
 
 // ------------------------------------------------------------------ agreements
@@ -551,9 +561,15 @@ async function recalcAgreement(client: any, agreementId: number): Promise<Recalc
   )).rows[0];
   const totalPaidCents = Number(r.paid);
   const waivedCents = Number(r.waived);
-  const a = (await client.query("SELECT financed_balance_cents, credit_cents FROM financing_agreements WHERE id = $1", [agreementId])).rows[0];
+  const a = (await client.query("SELECT financed_balance_cents FROM financing_agreements WHERE id = $1", [agreementId])).rows[0];
   const outstanding = Math.max(0, Number(a.financed_balance_cents) - totalPaidCents - waivedCents);
-  const creditCents = Number(a.credit_cents);
+  // Credit is derived from the ledger (received cash minus applied allocations),
+  // never read back from the row: reversing a payment must drop its overpayment.
+  const received = (await client.query(
+    "SELECT COALESCE(SUM(amount_cents),0) AS received FROM financing_payments WHERE agreement_id = $1 AND status = 'succeeded'",
+    [agreementId]
+  )).rows[0];
+  const creditCents = Math.max(0, Number(received.received) - totalPaidCents);
   return { totalPaidCents, outstandingCents: outstanding, waivedCents, creditCents };
 }
 
@@ -598,7 +614,7 @@ async function applySucceededPayment(client: any, paymentId: number): Promise<{ 
   const completed = rec.outstandingCents <= 0;
   await client.query(
     "UPDATE financing_agreements SET total_paid_cents = $1, outstanding_cents = $2, credit_cents = $3, status = CASE WHEN $2 <= 0 AND status = 'active' THEN 'completed' ELSE status END, ownership_status = CASE WHEN $2 <= 0 THEN 'transferred' ELSE ownership_status END, completed_at = CASE WHEN $2 <= 0 THEN COALESCE(completed_at, NOW()::text) ELSE completed_at END, updated_at = NOW()::text WHERE id = $4",
-    [rec.totalPaidCents, rec.outstandingCents, alloc.unappliedCents, pay.agreement_id]
+    [rec.totalPaidCents, rec.outstandingCents, rec.creditCents, pay.agreement_id]
   );
   return { status: completed ? "completed" : "succeeded", outstandingCents: rec.outstandingCents };
 }
@@ -785,8 +801,8 @@ export async function reversePayment(paymentId: number, reason: string, actor: A
     await client.query("UPDATE financing_payments SET status = 'reversed' WHERE id = $1", [paymentId]);
     const rec = await recalcAgreement(client, pay.agreement_id);
     await client.query(
-      "UPDATE financing_agreements SET total_paid_cents = $1, outstanding_cents = $2, status = CASE WHEN status = 'completed' THEN 'active' ELSE status END, ownership_status = CASE WHEN $2 > 0 THEN 'seller' ELSE ownership_status END, updated_at = NOW()::text WHERE id = $3",
-      [rec.totalPaidCents, rec.outstandingCents, pay.agreement_id]
+      "UPDATE financing_agreements SET total_paid_cents = $1, outstanding_cents = $2, credit_cents = $3, status = CASE WHEN status = 'completed' THEN 'active' ELSE status END, ownership_status = CASE WHEN $2 > 0 THEN 'seller' ELSE ownership_status END, updated_at = NOW()::text WHERE id = $4",
+      [rec.totalPaidCents, rec.outstandingCents, rec.creditCents, pay.agreement_id]
     );
   });
   await recordEvent("payment_reversed", { agreementId: pay.agreement_id, actor, detail: { paymentId, reason } });

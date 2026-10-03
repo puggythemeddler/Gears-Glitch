@@ -406,6 +406,8 @@ import warrantyRouter from "./warranty";
 import reportRouter from "./report-routes";
 import financingRouter from "./routes/financing";
 import { applyMpesaCallback } from "./financing/service";
+import { getFinancingConfig, saveFinancingConfig } from "./financing/config";
+import { getEffectiveFeatures, requireShopFeature, getBranchFeatureOverrides, saveBranchFeatureOverrides } from "./feature-access";
 import * as notifier from "./notify";
 import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail } from "./email";
@@ -7395,54 +7397,6 @@ app.put("/api/shop/subscription/requests/:id", allowControlPlane(ownerAuthMiddle
   res.json({ ok: true, plan: typeof result === "string" ? result : null });
 }));
 
-// Resolve the effective feature set for the current request: plan features,
-// intersected with featureOverrides, then intersected with the caller's role
-// features (staff). Customers and the public always see plan features; a role
-// with no features configured is unrestricted (see getUserRoleFeatures).
-async function getEffectiveFeatures(req: Request): Promise<string[]> {
-  const plan = await getShopPlan();
-  const baseFeatures: string[] = plan?.features || [];
-  const overridesRaw = await getStoreSetting("featureOverrides");
-  let overrides: Record<string, boolean> = {};
-  try { if (overridesRaw) overrides = JSON.parse(overridesRaw); } catch {}
-  let effective = overrides ? baseFeatures.filter(f => overrides[f] !== false) : baseFeatures;
-  for (const [key, val] of Object.entries(overrides)) {
-    if (val === true && !effective.includes(key)) effective.push(key);
-  }
-  const token = getBearerToken(req);
-  if (token) {
-    try {
-      const user = verifyToken(token);
-      if (user.role === "admin" || user.role === "owner" || user.role === "technician" || user.role === "manager" || user.role === "staff") {
-        const roleFeatures = await getUserRoleFeatures(user.sub);
-        if (roleFeatures) {
-          effective = effective.filter((f) => roleFeatures.includes(f));
-        }
-      }
-    } catch { /* invalid/expired token — fall through to plan features */ }
-  }
-  return effective;
-}
-
-// Server-side feature gate (Z-4). Rejects the request when the tenant's plan
-// (as resolved for the caller) does not include the named feature.
-function requireShopFeature(feature: string) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const features = await getEffectiveFeatures(req);
-      const name = feature.toLowerCase().trim();
-      if (!features.some((f) => String(f).toLowerCase().trim() === name)) {
-        res.status(403).json({ error: "This feature is not included in your plan." });
-        return;
-      }
-      next();
-    } catch (err: any) {
-      console.error("[requireShopFeature]", err?.message || err);
-      next(err);
-    }
-  };
-}
-
 app.get("/api/shop/features", asyncHandler(async (req: Request, res: Response) => {
   const effective = await getEffectiveFeatures(req);
   res.json({ features: effective });
@@ -7461,6 +7415,44 @@ app.get("/api/admin/features/overrides", allowControlPlane(adminAuthMiddleware),
   let overrides: Record<string, boolean> = {};
   try { if (raw) overrides = JSON.parse(raw); } catch {}
   res.json({ overrides });
+}));
+
+// Control-plane requests carry a synthetic user (sub 0) that holds no DB
+// permissions, so a plain requirePermission would reject them. This wrapper
+// admits the control plane and otherwise defers to the permission check.
+function cpOrPermission(permission: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (isControlPlaneRequest(req)) { next(); return; }
+    requirePermission(permission)(req, res, next);
+  };
+}
+
+// Per-branch feature activation. Entitlement stays in the plan/overrides; this
+// only switches an entitled feature off/on for specific branches.
+app.get("/api/admin/features/branch-overrides", allowControlPlane(adminAuthMiddleware), cpOrPermission("subscription:view"), asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ overrides: await getBranchFeatureOverrides() });
+}));
+
+app.post("/api/admin/features/branch-overrides", allowControlPlane(adminAuthMiddleware), cpOrPermission("subscription:view"), asyncHandler(async (req: Request, res: Response) => {
+  const { overrides } = req.body || {};
+  if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) { res.status(400).json({ error: "overrides object required" }); return; }
+  const saved = await saveBranchFeatureOverrides(overrides);
+  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "branch_feature_overrides_changed", "feature_overrides", "branch", { overrides: saved }, (req as any).user.role);
+  res.json({ ok: true, overrides: saved });
+}));
+
+// Financing tenant-wide activation (the entitlement + permission layers are
+// enforced elsewhere; this is the on/off switch an operator flips).
+app.get("/api/admin/financing/activation", allowControlPlane(adminAuthMiddleware), cpOrPermission("financing:view"), asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ enabled: (await getFinancingConfig()).enabled });
+}));
+
+app.put("/api/admin/financing/activation", allowControlPlane(adminAuthMiddleware), cpOrPermission("financing:manage"), asyncHandler(async (req: Request, res: Response) => {
+  const { enabled } = req.body || {};
+  if (typeof enabled !== "boolean") { res.status(400).json({ error: "enabled boolean required" }); return; }
+  const config = await saveFinancingConfig({ enabled });
+  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", enabled ? "financing_enabled" : "financing_disabled", "financing_config", "enabled", { enabled }, (req as any).user.role);
+  res.json({ enabled: config.enabled });
 }));
 
 app.get("/api/audit-log", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {

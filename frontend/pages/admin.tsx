@@ -161,7 +161,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   {
     label: "Finance",
     items: [
-      { key: "financing", label: "Lipa Mdogo Mdogo" },
+      { key: "financing", label: "Lipa Mdogo Mdogo", feature: "Lipa Mdogo Mdogo" },
       { key: "providers", label: "Providers" },
       { key: "shop-subscription", label: "Subscription" },
       { key: "plans", label: "Subscription Plans" },
@@ -313,6 +313,7 @@ export default function AdminPage() {
     "Gift cards": useFeature("Gift cards"),
     "Campaign pages": useFeature("Campaign pages"),
     "Cart recovery": useFeature("Cart recovery"),
+    "Lipa Mdogo Mdogo": useFeature("Lipa Mdogo Mdogo"),
   };
   const hasFeature = (f?: string) => !f || featureFlags[f] === true;
   // A nav item gated by `features: [...]` is visible if ANY listed feature is enabled

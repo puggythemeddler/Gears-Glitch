@@ -1231,7 +1231,7 @@ CREATE TABLE IF NOT EXISTS financing_agreements (
 CREATE INDEX IF NOT EXISTS idx_fin_agr_customer ON financing_agreements(customer_id);
 CREATE INDEX IF NOT EXISTS idx_fin_agr_branch ON financing_agreements(branch_id);
 CREATE INDEX IF NOT EXISTS idx_fin_agr_status ON financing_agreements(status);
-CREATE INDEX IF NOT EXISTS idx_fin_agr_application ON financing_agreements(application_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fin_agr_application ON financing_agreements(application_id) WHERE application_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_fin_agr_order ON financing_agreements(order_id);
 
 CREATE TABLE IF NOT EXISTS financing_agreement_items (

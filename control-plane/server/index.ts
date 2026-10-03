@@ -2144,8 +2144,69 @@ app.post("/api/clients/:id/features", requireAuth, requireAdmin, async (req, res
     if (!r.ok) { res.status(r.status).json({ error: "Failed to set overrides" }); return; }
     // Also store in control-plane local DB for reference
     await query("UPDATE clients SET feature_flags = $1 WHERE id = $2", [JSON.stringify(req.body.overrides || {}), client.id]);
+    await auditLog(req, "set_client_features", "client", client.id, client.name, JSON.stringify(req.body.overrides || {}).slice(0, 500));
     res.json(await r.json());
   } catch { res.status(500).json({ error: "Failed to set feature overrides" }); }
+});
+
+// Enable/disable financing for a client (the tenant activation switch).
+app.get("/api/clients/:id/financing-activation", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.json({ enabled: false }); return; }
+    const r = await fetch(`${client.render_service_url}/api/admin/financing/activation`, { headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(15000) });
+    if (!r.ok) { res.json({ enabled: false }); return; }
+    res.json(await r.json());
+  } catch { res.status(500).json({ error: "Failed to get financing activation" }); }
+});
+
+app.put("/api/clients/:id/financing-activation", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+    const enabled = req.body?.enabled === true;
+    const r = await fetch(`${client.render_service_url}/api/admin/financing/activation`, {
+      method: "PUT",
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ enabled }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) { res.status(r.status).json({ error: "Failed to set financing activation" }); return; }
+    await auditLog(req, enabled ? "enable_financing" : "disable_financing", "client", client.id, client.name, enabled ? "enabled" : "disabled");
+    res.json(await r.json());
+  } catch { res.status(500).json({ error: "Failed to set financing activation" }); }
+});
+
+// Per-branch feature activation for a client.
+app.get("/api/clients/:id/branch-features", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.json({ overrides: {} }); return; }
+    const r = await fetch(`${client.render_service_url}/api/admin/features/branch-overrides`, { headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(15000) });
+    if (!r.ok) { res.json({ overrides: {} }); return; }
+    res.json(await r.json());
+  } catch { res.status(500).json({ error: "Failed to get branch feature overrides" }); }
+});
+
+app.post("/api/clients/:id/branch-features", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+    const overrides = req.body?.overrides || {};
+    const r = await fetch(`${client.render_service_url}/api/admin/features/branch-overrides`, {
+      method: "POST",
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ overrides }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) { res.status(r.status).json({ error: "Failed to set branch feature overrides" }); return; }
+    await auditLog(req, "set_branch_features", "client", client.id, client.name, JSON.stringify(overrides).slice(0, 500));
+    res.json(await r.json());
+  } catch { res.status(500).json({ error: "Failed to set branch feature overrides" }); }
 });
 
 // ─── CLIENT BRANCHES ─────────────────────────────────────

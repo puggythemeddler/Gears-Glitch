@@ -927,6 +927,7 @@
       { group: "Core Commerce", icon: "💳", features: ["Product listing","Order management","POS integration","Payment method configuration","M-Pesa integration","Discount/coupon management","Returns management","Customer management","Gift cards"] },
       { group: "Inventory & Stock", icon: "📦", features: ["Low stock alerts","Stock take","Stock control","Stock transfers","Supplier management","Purchase order management","Barcode scanning","Bulk import/export","Bulk product edit","Inventory forecasting"] },
       { group: "Invoicing & Finance", icon: "🧾", features: ["Tax invoices with VAT breakdown","Invoice/quote PDF downloads","Credit notes","Quotations","Price history tracking"] },
+      { group: "Financing", icon: "🤝", features: ["Lipa Mdogo Mdogo"] },
       { group: "Repairs & Service", icon: "🔧", features: ["Repair ticketing","Technician accounts"] },
       { group: "Customer Engagement", icon: "💬", features: ["Messaging","Admin messaging","Email notifications","SMS notifications","Product reviews & ratings","Customer reviews","Loyalty program"] },
       { group: "WhatsApp & Communication", icon: "📱", features: ["WhatsApp integration"] },
@@ -3578,38 +3579,79 @@
       el.innerHTML = '<div style="padding:1rem;color:var(--text-muted)">Loading branches...</div>';
       try {
         const branches = await api("/api/clients/" + clientId + "/branches");
+        let activation = { enabled: false };
+        try { activation = await api("/api/clients/" + clientId + "/financing-activation"); } catch {}
+        let branchFeatures = { overrides: {} };
+        try { branchFeatures = await api("/api/clients/" + clientId + "/branch-features"); } catch {}
         if (!Array.isArray(branches) || !branches.length) {
           el.innerHTML = '';
           return;
         }
-        let html = `
+        const finPerBranch = (branchFeatures && branchFeatures.overrides && branchFeatures.overrides["Lipa Mdogo Mdogo"]) || {};
+        const rows = branches.map(b => {
+          const id = String(b.id != null ? b.id : (b.branchId != null ? b.branchId : ''));
+          const has = Object.prototype.hasOwnProperty.call(finPerBranch, id);
+          const on = has ? finPerBranch[id] === true : undefined;
+          const label = on === true ? 'Enabled' : on === false ? 'Disabled' : 'Inherit';
+          const cls = on === true ? 'badge-active' : on === false ? 'badge-failed' : 'badge';
+          const state = on === true ? 'true' : on === false ? 'false' : 'inherit';
+          return `<tr>
+            <td><strong>${esc(b.name || 'Unknown')}</strong></td>
+            <td><span class="badge badge-active">${esc(b.planId || b.plan_id || 'No plan')}</span></td>
+            <td><span class="badge ${b.isActive !== false && b.is_active !== false ? 'badge-active' : 'badge-failed'}">${b.isActive !== false && b.is_active !== false ? 'Active' : 'Inactive'}</span></td>
+            <td><button type="button" class="chip-btn" title="Cycle: Enable / Disable / Inherit" onclick="toggleBranchFinancing(${Number(clientId)}, ${Number(id) || 0}, '${state}')"><span class="badge ${cls}" style="margin-right:0.35rem">${label}</span>Lipa Mdogo Mdogo</button></td>
+          </tr>`;
+        }).join('');
+        el.innerHTML = `
           <div class="detail-panel">
-            <h3 style="margin-bottom:0.75rem">Branches & Subscriptions</h3>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-bottom:0.75rem">
+              <h3 style="margin:0">Branches & Subscriptions</h3>
+              <button type="button" class="chip-btn" onclick="toggleFinancingActivation(${Number(clientId)}, ${activation && activation.enabled ? 'true' : 'false'})">
+                Client financing: <strong>${activation && activation.enabled ? 'Enabled' : 'Disabled'}</strong>
+              </button>
+            </div>
             <table style="margin:0">
               <thead>
                 <tr>
                   <th>Branch</th>
                   <th>Plan</th>
                   <th>Status</th>
+                  <th>Lipa Mdogo Mdogo</th>
                 </tr>
               </thead>
-              <tbody>
-                ${branches.map(b => `
-                  <tr>
-                    <td><strong>${esc(b.name || 'Unknown')}</strong></td>
-                    <td><span class="badge badge-active">${esc(b.planId || b.plan_id || 'No plan')}</span></td>
-                    <td><span class="badge ${b.isActive !== false && b.is_active !== false ? 'badge-active' : 'badge-failed'}">${b.isActive !== false && b.is_active !== false ? 'Active' : 'Inactive'}</span></td>
-                  </tr>
-                `).join('')}
-              </tbody>
+              <tbody>${rows}</tbody>
             </table>
-          </div>
-        `;
-        el.innerHTML = html;
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.5rem">
+              "Inherit" follows plan entitlement. "Disabled" blocks financing for that branch only; existing agreements stay payable.
+            </div>
+          </div>`;
       } catch (e) {
         el.innerHTML = '';
       }
     }
+
+    window.toggleFinancingActivation = async function(clientId, current) {
+      try {
+        await api("/api/clients/" + clientId + "/financing-activation", { method: "PUT", body: JSON.stringify({ enabled: !current }) });
+        toast("Financing " + (!current ? "enabled" : "disabled") + " for client");
+        loadClientBranches(clientId);
+      } catch (e) { toast(e.message || "Failed to update financing", "error"); }
+    };
+
+    window.toggleBranchFinancing = async function(clientId, branchId, state) {
+      try {
+        const data = await api("/api/clients/" + clientId + "/branch-features");
+        const overrides = Object.assign({}, (data && data.overrides) || {});
+        const per = Object.assign({}, overrides["Lipa Mdogo Mdogo"] || {});
+        if (state === "inherit") per[String(branchId)] = true;
+        else if (state === "true") per[String(branchId)] = false;
+        else delete per[String(branchId)];
+        overrides["Lipa Mdogo Mdogo"] = per;
+        await api("/api/clients/" + clientId + "/branch-features", { method: "POST", body: JSON.stringify({ overrides }) });
+        toast("Branch financing updated");
+        loadClientBranches(clientId);
+      } catch (e) { toast(e.message || "Failed to update branch financing", "error"); }
+    };
   </script>
 </body>
 </html>

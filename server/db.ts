@@ -738,6 +738,7 @@ async function initDb(): Promise<void> {
   await seedGroupsFromCategories();
   await seedClientsRow();
   await curatePlanFeatures();
+  await grantFinancingEntitlementToLegacy();
   await seedDemoProvider();
   await seedDemoCustomer();
   const settings = await getSettings();
@@ -874,6 +875,30 @@ async function curatePlanFeatures(): Promise<void> {
       await setStoreSetting("plan_features_curated_v2", "1");
     }
   } catch { console.warn("[db] plan feature curation skipped"); }
+}
+
+// Migration safety: installs that already had Lipa Mdogo Mdogo switched on
+// before entitlement became a real gate must keep working. If financing was
+// enabled but the feature was never explicitly granted, record an override so
+// the tenant stays entitled. Fresh installs are untouched (the feature stays an
+// optional add-on), and the marker makes this a one-time transition.
+async function grantFinancingEntitlementToLegacy(): Promise<void> {
+  try {
+    const marker = await getStoreSetting("financing_entitlement_migrated_v1");
+    if (marker) return;
+    const raw = await getStoreSetting("financing_config");
+    let enabled = false;
+    try { if (raw) enabled = JSON.parse(raw).enabled === true; } catch {}
+    if (enabled) {
+      let overrides: Record<string, boolean> = {};
+      try { const o = await getStoreSetting("featureOverrides"); if (o) overrides = JSON.parse(o); } catch {}
+      if (overrides["Lipa Mdogo Mdogo"] === undefined) {
+        overrides["Lipa Mdogo Mdogo"] = true;
+        await setStoreSetting("featureOverrides", JSON.stringify(overrides));
+      }
+    }
+    await setStoreSetting("financing_entitlement_migrated_v1", "1");
+  } catch { console.warn("[db] financing entitlement migration skipped"); }
 }
 
 async function ensureDefaultSettings(): Promise<void> {
