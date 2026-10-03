@@ -15,6 +15,8 @@ import {
   recordAdjustment,
   getFinancingReport,
   getPaymentById,
+  listAgreements,
+  listAgreementsForCustomer,
 } from "../server/financing/service";
 
 const HAS_DB = !!process.env.DATABASE_URL;
@@ -197,5 +199,38 @@ describe("financing service integration (DB)", { skip: !HAS_DB && "DATABASE_URL 
     assert.equal(report.arrears.length, 1);
     assert.equal(report.arrears[0].agreementNumber, agr.agreementNumber);
     assert.equal(report.arrears[0].overdueCount, 2);
+  });
+
+  // D1 regression: listAgreements built a parameter array but called queryAll
+  // without passing it, so any filtered query (including the customer portal's
+  // customerId filter) raised "there is no parameter $1" / HTTP 500.
+  it("lists agreements for a customer without raising a missing-parameter error", async () => {
+    const agr = await makeAgreement({ cashPriceCents: 10000, termCount: 2 });
+    const mine = await listAgreementsForCustomer(customerId);
+    assert.equal(mine.length, 1);
+    assert.equal(mine[0].id, agr.id);
+  });
+
+  it("filters agreements by status, customer and branch (parameterized)", async () => {
+    const agr = await makeAgreement({ cashPriceCents: 10000, termCount: 2 });
+
+    const active = await listAgreements({ status: "active" });
+    assert.equal(active.length, 1);
+    assert.equal(active[0].id, agr.id);
+
+    const byCustomer = await listAgreements({ customerId });
+    assert.equal(byCustomer.length, 1);
+    assert.equal(byCustomer[0].id, agr.id);
+
+    const byBranch = await listAgreements({ branchId: 9001 });
+    assert.equal(byBranch.length, 1);
+    assert.equal(byBranch[0].id, agr.id);
+
+    const combined = await listAgreements({ status: "active", customerId, branchId: 9001 });
+    assert.equal(combined.length, 1);
+    assert.equal(combined[0].id, agr.id);
+
+    const none = await listAgreements({ status: "completed" });
+    assert.equal(none.length, 0);
   });
 });

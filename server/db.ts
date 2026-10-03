@@ -8,6 +8,7 @@ import { CATEGORIES } from "./categories";
 import { query, queryOne, queryAll, transaction, runSchema, getPool } from "./db-helpers";
 import { encryptSecret, decryptSecret, isEncrypted } from "./secret-store";
 import { provisionAdminUser } from "./admin-provisioning";
+import { DEFAULT_ROLES } from "./permissions";
 
 // Settings keys whose values are secrets and must be encrypted at rest. Values
 // written through the settings layer are stored as `enc:v1:` ciphertext and
@@ -992,14 +993,6 @@ async function seedDemoCustomer(): Promise<void> {
 }
 
 async function initRolesAsync(): Promise<void> {
-  const DEFAULT_ROLES: { [key: string]: string[] } = {
-    admin: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "quote:update", "order:view", "customer:view", "coupon:view", "giftcard:view", "campaign:view", "cart:view", "provider:view", "spec:view", "supplier:view", "branch:view", "subscription:view", "about:view", "positioning:view", "whatsapp:view", "review:view", "audit:view"],
-    technician: ["repair:list", "repair:view", "repair:update", "calendar:view", "calendar:schedule", "product:list"],
-    staff: ["repair:list", "repair:view", "repair:update", "calendar:view", "calendar:schedule", "product:list"],
-    manager: ["staff:list", "repair:list", "repair:view", "repair:update", "repair:assign", "product:list", "product:update", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "order:view", "customer:view"],
-    provider: ["repair:list", "repair:view", "repair:update", "product:list", "product:update", "stock:list", "stock:update", "stock:view_low", "calendar:view", "calendar:schedule", "order:view", "customer:view", "messaging:view", "messaging:send", "provider:view"],
-    owner: ["staff:list", "staff:create", "staff:update", "staff:delete", "repair:list", "repair:create", "repair:view", "repair:update", "repair:assign", "repair:cancel", "product:list", "product:create", "product:update", "product:delete", "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "settings:view", "settings:update", "calendar:view", "calendar:schedule", "reports:view", "reports:export", "messaging:view", "messaging:send", "invoice:view", "invoice:download", "credit_note:view", "credit_note:create", "quote:view", "quote:create", "quote:update", "order:view", "customer:view", "coupon:view", "giftcard:view", "campaign:view", "cart:view", "provider:view", "spec:view", "supplier:view", "branch:view", "subscription:view", "about:view", "positioning:view", "whatsapp:view", "review:view", "audit:view"],
-  };
   // deleted_roles is created by schema.sql. Guard anyway so a
   // pre-existing database that somehow lacks it still boots successfully.
   let hasDeletedRoles = false;
@@ -4539,7 +4532,7 @@ async function deletePage(id: number): Promise<boolean> {
 }
 
 export {
-  initDb, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
+  initDb, initRolesAsync, ensureDefaultSettings, ensureDefaultCategories, ensureAdminUser, ensureTechnicianUser,
   seedDemoProvider, seedDemoCustomer, assignInitialRoles, seedProductsIfEmpty, ensureDefaultSubscriptionPlans,
   seedGroupsFromCategories, seedClientsRow, curatePlanFeatures,
   listCategories, listPosCategories, getCategory, createCategory, updateCategory, deleteCategory, isValidCategory,
