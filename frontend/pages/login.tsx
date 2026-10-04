@@ -141,11 +141,31 @@ export default function LoginPage() {
       if (tab === "customer") {
         clearStaffSession();
         clearProviderSession();
-        const data = await api("/api/customer/login", {
-          method: "POST",
-          body: JSON.stringify({ email, password }),
-        });
-        await finishCustomerLogin(data.token, data.name || "Customer");
+        try {
+          const data = await api("/api/customer/login", {
+            method: "POST",
+            body: JSON.stringify({ email, password }),
+          });
+          await finishCustomerLogin(data.token, data.name || "Customer");
+        } catch (loginErr: any) {
+          // This form doubles as sign-up ("No account? Enter a name and we'll
+          // create one"). The name used to be dropped on the floor, so a new
+          // customer only ever got a bare 401 and no account was ever created.
+          if (!name.trim()) throw loginErr;
+          let created: any;
+          try {
+            created = await api("/api/customer/register", {
+              method: "POST",
+              body: JSON.stringify({ name: name.trim(), email, password }),
+            });
+          } catch {
+            // Registration can fail because the address is already taken. Report
+            // the original login failure instead so a wrong password on an
+            // existing account never reveals that the address is registered.
+            throw loginErr;
+          }
+          await finishCustomerLogin(created.token, created.name || name.trim());
+        }
         router.push(redirectTo);
       } else {
         clearCustomerSession();
