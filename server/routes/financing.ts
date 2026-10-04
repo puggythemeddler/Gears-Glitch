@@ -42,6 +42,18 @@ import {
 
 const router = Router();
 
+// Every :id below is interpolated straight into a numeric SQL comparison, so a
+// non-numeric value used to reach Postgres as NaN and surface as HTTP 500.
+// Reject it as a client error instead. router.param runs once the route has
+// matched but before its handler stack, so this covers all id-bearing routes.
+router.param("id", (req: Request, res: Response, next: () => void, value: string) => {
+  if (!isPosInt(Number(value))) {
+    res.status(400).json({ error: "Invalid id." });
+    return;
+  }
+  next();
+});
+
 const PAYMENT_METHODS: FinancingPaymentMethod[] = ["mpesa", "cash", "card", "bank", "adjustment", "other"];
 
 function staffActor(req: Request): Actor {
