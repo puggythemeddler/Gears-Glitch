@@ -1020,6 +1020,7 @@ CREATE TABLE IF NOT EXISTS notification_deliveries (
   customer_id INTEGER,
   idempotency_key TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   sent_at TIMESTAMPTZ,
   UNIQUE (event_id, channel, recipient)
 );

@@ -335,7 +335,7 @@ export async function markDeliveryAttempt(
 ): Promise<void> {
   await query(
     `UPDATE notification_deliveries
-     SET status = $2, last_error = $3, next_attempt_at = $4,
+     SET status = $2, last_error = $3, next_attempt_at = COALESCE($4, next_attempt_at),
          provider_message_id = $5, last_attempt_at = NOW(), updated_at = NOW()
      WHERE id = $1`,
     [id, attempt.status, attempt.error ?? null, attempt.nextAttemptAt ?? null, attempt.providerMessageId ?? null]
