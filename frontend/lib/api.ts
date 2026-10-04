@@ -342,6 +342,19 @@ export function clearAllSessions() {
   clearSessionMeta();
 }
 
+// Carries the HTTP status alongside the server's message so callers can tell a
+// genuine rejection apart from an infrastructure failure. Previously the status
+// was discarded, which left "the server said no" indistinguishable from "the
+// server broke" - a distinction the customer sign-up fallback depends on.
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 export async function api<T = any>(
   path: string,
   options: RequestInit = {},
@@ -393,7 +406,7 @@ export async function api<T = any>(
     }
   }
   if (!res.ok) {
-    throw new Error(data?.error || `Request failed (${res.status})`);
+    throw new ApiError(data?.error || `Request failed (${res.status})`, res.status);
   }
   return data as T;
 }

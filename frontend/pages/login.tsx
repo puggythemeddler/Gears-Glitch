@@ -6,6 +6,7 @@ import { PageHead } from "@/components/ui";
 import BranchPicker from "@/components/BranchPicker";
 import { setBranchState, type BranchOption } from "@/lib/branches";
 import { safeRedirectPath } from "@/lib/sanitize";
+import { shouldAttemptCustomerRegistration } from "@/lib/customer-signup";
 
 export default function LoginPage() {
   const { login: contextLogin, refreshCartCount } = useApp();
@@ -151,7 +152,16 @@ export default function LoginPage() {
           // This form doubles as sign-up ("No account? Enter a name and we'll
           // create one"). The name used to be dropped on the floor, so a new
           // customer only ever got a bare 401 and no account was ever created.
-          if (!name.trim()) throw loginErr;
+          //
+          // Only a genuine credential rejection may fall through to sign-up.
+          // /api/customer/login answers 401 for "Invalid email or password." and
+          // nothing else: bad input is 400, a missing CSRF token is 403, rate
+          // limiting is 429, and a database or server fault surfaces as 5xx.
+          // Anything that is not that 401 - including a network failure, which
+          // never reaches the server and therefore has no status at all - is an
+          // infrastructure problem and must be reported as-is, never "retried"
+          // by creating an account the customer did not ask for.
+          if (!shouldAttemptCustomerRegistration(loginErr, name)) throw loginErr;
           let created: any;
           try {
             created = await api("/api/customer/register", {

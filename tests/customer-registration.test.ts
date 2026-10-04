@@ -119,7 +119,13 @@ describe("customer login form wiring", () => {
 
   it("only registers after a failed sign-in and only when a name was given", () => {
     assert.match(loginPage, /catch \(loginErr: any\)/, "registration must hang off the failed sign-in");
-    assert.match(loginPage, /if \(!name\.trim\(\)\) throw loginErr;/, "a blank name must not trigger registration");
+    // The gate is the shared predicate: a non-blank name *and* a credential
+    // rejection. See customer-signup-fallback.test.ts for the status matrix.
+    assert.match(
+      loginPage,
+      /if \(!shouldAttemptCustomerRegistration\(loginErr, name\)\) throw loginErr;/,
+      "a blank name or a non-401 failure must not trigger registration"
+    );
   });
 
   it("reports the original sign-in error instead of leaking that the address exists", () => {
