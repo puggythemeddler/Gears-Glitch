@@ -17,6 +17,7 @@ import {
   getPaymentById,
   listAgreements,
   listAgreementsForCustomer,
+  listApplications,
 } from "../server/financing/service";
 
 const HAS_DB = !!process.env.DATABASE_URL;
@@ -209,6 +210,57 @@ describe("financing service integration (DB)", { skip: !HAS_DB && "DATABASE_URL 
     const mine = await listAgreementsForCustomer(customerId);
     assert.equal(mine.length, 1);
     assert.equal(mine[0].id, agr.id);
+  });
+
+  // Sibling of the D1 regression: listApplications built a parameter array but
+  // never passed it to queryAll. Because /my/applications is always filtered by
+  // customerId, the whole customer portal returned HTTP 500 ("there is no
+  // parameter $1"), and so did the admin Applications status filter.
+  it("lists applications for a customer without raising a missing-parameter error", async () => {
+    const makeApp = (productName: string, cashPriceCents: number) =>
+      createApplication(
+        {
+          customerId,
+          productName,
+          cashPriceCents,
+          depositCents: 0,
+          frequency: "weekly",
+          termCount: 2,
+          startDate: "2020-01-01",
+          consent: true,
+          branchId: 9001,
+          status: "draft",
+        } as any,
+        actor
+      );
+
+    const approvedApp = await makeApp("Approved Item", 10000);
+    await submitApplication(approvedApp.id, actor);
+    await approveApplication(approvedApp.id, actor);
+    const pendingApp = await makeApp("Pending Item", 5000);
+    await submitApplication(pendingApp.id, actor);
+
+    const all = await listApplications();
+    assert.equal(all.length, 2);
+
+    const mine = await listApplications({ customerId });
+    assert.equal(mine.length, 2);
+    assert.ok(mine.every((a: any) => a.customerId === customerId));
+
+    const byStatus = await listApplications({ status: "approved" });
+    assert.equal(byStatus.length, 1);
+    assert.equal(byStatus[0].id, approvedApp.id);
+
+    const submitted = await listApplications({ status: "submitted" });
+    assert.equal(submitted.length, 1);
+    assert.equal(submitted[0].id, pendingApp.id);
+
+    const combined = await listApplications({ status: "submitted", customerId });
+    assert.equal(combined.length, 1);
+    assert.equal(combined[0].id, pendingApp.id);
+
+    const none = await listApplications({ status: "rejected" });
+    assert.equal(none.length, 0);
   });
 
   it("filters agreements by status, customer and branch (parameterized)", async () => {

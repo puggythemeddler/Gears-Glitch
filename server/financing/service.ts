@@ -246,7 +246,7 @@ export async function listApplications(filters: { status?: string; customerId?: 
   if (filters.branchId) { params.push(filters.branchId); conds.push(`branch_id = $${params.length}`); }
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const limit = Math.min(Math.max(filters.limit || 200, 1), 1000);
-  const rows = await queryAll(`SELECT * FROM financing_applications ${where} ORDER BY created_at DESC LIMIT ${limit}`);
+  const rows = await queryAll(`SELECT * FROM financing_applications ${where} ORDER BY created_at DESC LIMIT ${limit}`, params);
   return rows.map(mapApplication);
 }
 
