@@ -321,7 +321,7 @@ export async function settleDelivery(
   await query(
     `UPDATE notification_deliveries
      SET status = $2, last_error = $3, provider_message_id = $4,
-         sent_at = $5, updated_at = NOW()
+         sent_at = $5, attempts = attempts + 1, updated_at = NOW()
      WHERE id = $1`,
     [id, outcome.status, outcome.error ?? null, outcome.providerMessageId ?? null, outcome.sentAt ?? null]
   );
@@ -329,6 +329,11 @@ export async function settleDelivery(
 
 // Records a non-terminal attempt (retry scheduled) or a terminal one; used by
 // the outbound worker after each send attempt.
+//
+// attempts is incremented here so the counter actually advances. It used to be
+// only ever computed in memory as row.attempts + 1, so a delivery that kept
+// failing stayed at 0: the "attemptsAfter >= maxAttempts" dead-letter test could
+// never become true and the queue retried forever instead of giving up.
 export async function markDeliveryAttempt(
   id: number,
   attempt: { status: string; error?: string | null; nextAttemptAt?: string | null; providerMessageId?: string | null }
@@ -336,7 +341,7 @@ export async function markDeliveryAttempt(
   await query(
     `UPDATE notification_deliveries
      SET status = $2, last_error = $3, next_attempt_at = COALESCE($4, next_attempt_at),
-         provider_message_id = $5, last_attempt_at = NOW(), updated_at = NOW()
+         provider_message_id = $5, last_attempt_at = NOW(), attempts = attempts + 1, updated_at = NOW()
      WHERE id = $1`,
     [id, attempt.status, attempt.error ?? null, attempt.nextAttemptAt ?? null, attempt.providerMessageId ?? null]
   );

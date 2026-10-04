@@ -410,7 +410,7 @@ import { getFinancingConfig, saveFinancingConfig } from "./financing/config";
 import { getEffectiveFeatures, requireShopFeature, getBranchFeatureOverrides, saveBranchFeatureOverrides } from "./feature-access";
 import * as notifier from "./notify";
 import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
-import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail } from "./email";
+import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail, logEmailTransportStatus } from "./email";
 import { getGmailConfig, getGmailStatus, buildGmailAuthUrl, signGmailState, verifyGmailState, getOAuthStateSecret, exchangeGmailCode, saveGmailConnection, testGmailConnection, recordGmailTestResult, disconnectGmail } from "./gmail";
 import { getIntegrationsHealth } from "./integrations-health";
 import { upsertOauthAccount, acquireWebhookEvent, markWebhookProcessed, markWebhookFailed } from "./integrations-store";
@@ -8473,6 +8473,12 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       warmPdf();
+
+      // Report whether outbound email can actually be delivered. Never fatal:
+      // an unconfigured or unreachable mail provider must not stop the server
+      // from booting. Prints only booleans and configuration names - never a
+      // password or API key.
+      void logEmailTransportStatus();
 
       // Control-plane heartbeat reporter (client → control plane managed push)
       startHeartbeatReporter();

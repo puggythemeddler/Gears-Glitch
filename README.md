@@ -1119,10 +1119,13 @@ eTIMS is **disabled in this build**. The VSCU/OSCU integration described in `eTI
 | `TECH_PASSWORD` | `tech123` (dev) | **Required in production** — skips tech creation if unset |
 | `NODE_ENV` | — | Set to `production` to disable demo accounts and weak-password fallbacks |
 | `CORS_ORIGIN` | `true` (allow all) | Allowed origin(s) for CORS. Set to your frontend URL in production. |
+| `EMAIL_PROVIDER` | `auto` | Mail provider: `auto` (Gmail if connected, else SMTP), `gmail`, `smtp`, or `none` to send nothing |
 | `SMTP_HOST` | (blank) | SMTP server |
 | `SMTP_PORT` | 587 | SMTP port |
-| `SMTP_USER` | | SMTP username |
-| `SMTP_PASS` | | SMTP password |
+| `SMTP_SECURE` | 0 | `1` for implicit TLS (port 465), `0` for STARTTLS (port 587) |
+| `SMTP_USER` | | SMTP username (the mailbox to authenticate as, not the From: address) |
+| `SMTP_PASSWORD` | | SMTP password. `SMTP_PASS` is accepted as an alias |
+| `EMAIL_FROM` | no-reply@… | Default From: address. The `emailSender` store setting overrides it; `FROM_EMAIL` is honoured as an older alias |
 | `SITE_NAME` | Gear&Glitch | Brand name in emails |
 | `GOOGLE_CLIENT_ID` | | Google OAuth client ID (also settable via the `google_client_id` store setting) |
 | `GOOGLE_CLIENT_SECRET` | | Google OAuth client secret (server-side exchange) |
@@ -1199,7 +1202,7 @@ npm start                # Serve production build
 4. **Set `ADMIN_PASSWORD` and `TECH_PASSWORD`** — initial provisioning only: they create the accounts on first boot, and the server skips creation if they are unset in production. Existing admins/technicians are never re-hashed from these vars on later boots
 5. **Set `NODE_ENV=production`** — disables demo accounts, disables weak-password fallbacks
 6. **Set `CORS_ORIGIN`** to your frontend URL (e.g. `https://mystore.com`)
-7. **Configure `SMTP_*`** for real email
+7. **Configure `SMTP_*`** for real email - set `EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` and `EMAIL_FROM`. The boot log prints `[Email] transport configured=true|false ...` (never a password). Unset, the server still boots and mail is logged rather than sent; queued notifications then retry and dead-letter after `max_attempts`, so requeue them once a provider is configured
 8. **Create a free [Cloudinary](https://cloudinary.com) account** — set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in Render env vars. Images uploaded without Cloudinary fall back to local disk (lost on Render redeploy).
 9. **Use HTTPS** behind a reverse proxy (nginx, Caddy, Cloudflare) — all traffic (passwords, tokens, M-Pesa data) is unprotected without TLS
 10. **Marketing page** (operator only) — set `NEXT_PUBLIC_MARKETING_ENABLED=true` on your main Vercel deployment to enable the `/marketing` landing page. Client deployments created via the control plane don't set this, so their `/marketing` renders a "not available" page.

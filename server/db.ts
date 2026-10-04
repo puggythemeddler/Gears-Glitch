@@ -1238,7 +1238,9 @@ async function getSettings(): Promise<Settings> {
     cloudinaryApiSecret: s.cloudinaryApiSecret || process.env.CLOUDINARY_API_SECRET || "",
     cloudinaryFolder: s.cloudinaryFolder || process.env.CLOUDINARY_FOLDER || "gear-glitch",
     logoPosition: s.logoPosition || "top-left",
-    emailSender: s.emailSender || process.env.FROM_EMAIL || "",
+    // EMAIL_FROM is the documented name; FROM_EMAIL is the older alias and is
+    // still honoured. A store setting always wins over both.
+    emailSender: s.emailSender || process.env.EMAIL_FROM || process.env.FROM_EMAIL || "",
     emailSenderName: s.emailSenderName || process.env.STORE_NAME || process.env.SITE_NAME || "Gear&Glitch",
     emailNotificationsEnabled: s.emailNotificationsEnabled !== "false",
     whatsappEnabled: s.whatsappEnabled === "true",

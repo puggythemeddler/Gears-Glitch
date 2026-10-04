@@ -5,6 +5,66 @@ let transporter: any = null;
 let transportKind: "gmail" | "smtp" | null = null;
 let nodemailer: any = null;
 
+// ─── Provider configuration (environment only) ───────────────────────────────
+//
+// Which transport sends mail is decided entirely by environment variables:
+//
+//   EMAIL_PROVIDER  auto (default) | gmail | smtp | none
+//   SMTP_HOST       SMTP server hostname          (required for smtp)
+//   SMTP_PORT       SMTP port, default 587        (required for smtp)
+//   SMTP_SECURE     1/true for implicit TLS (465); unset/0 = STARTTLS (587)
+//   SMTP_USER       SMTP auth username            (required for smtp)
+//   SMTP_PASS       SMTP auth password            (required for smtp)
+//                   SMTP_PASSWORD is accepted as an alias
+//   EMAIL_FROM      default From: address         (alias: FROM_EMAIL)
+//
+// No credential is ever hardcoded, and none is ever written to the database:
+// SMTP settings are read from the process environment only. Secrets are
+// referenced by name in diagnostics, never by value.
+export type EmailProviderSetting = "auto" | "gmail" | "smtp" | "none";
+
+export function resolveEmailProvider(): EmailProviderSetting {
+  const raw = String(process.env.EMAIL_PROVIDER || "").trim().toLowerCase();
+  if (raw === "smtp") return "smtp";
+  if (raw === "gmail") return "gmail";
+  if (raw === "none" || raw === "off" || raw === "disabled") return "none";
+  // Unknown values fall back to auto rather than silently disabling delivery.
+  return "auto";
+}
+
+function smtpPassword(): string {
+  // SMTP_PASS is the long-standing name in .env.example; SMTP_PASSWORD is
+  // accepted because that is the name most SMTP providers document.
+  return String(process.env.SMTP_PASSWORD || process.env.SMTP_PASS || "");
+}
+
+interface SmtpEnvStatus {
+  ok: boolean;
+  missing: string[];
+  host: string;
+  port: number;
+  secure: boolean;
+  hasPassword: boolean;
+}
+
+function smtpEnvStatus(): SmtpEnvStatus {
+  const host = String(process.env.SMTP_HOST || "").trim();
+  const user = String(process.env.SMTP_USER || "").trim();
+  const hasPassword = !!smtpPassword();
+  const missing: string[] = [];
+  if (!host) missing.push("SMTP_HOST");
+  if (!user) missing.push("SMTP_USER");
+  if (!hasPassword) missing.push("SMTP_PASSWORD/SMTP_PASS");
+  return {
+    ok: missing.length === 0,
+    missing,
+    host,
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: /^(1|true|yes)$/i.test(String(process.env.SMTP_SECURE || "")),
+    hasPassword,
+  };
+}
+
 function esc(s: string): string {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -15,29 +75,38 @@ try {
 
 // Gmail OAuth (connected via Integrations) is preferred over SMTP so stores
 // with a Gmail connection stop depending on an external SMTP server. Fails over
-// to SMTP when Gmail is not connected or its token could not be refreshed.
+// to SMTP when Gmail is not connected or its token could not be refreshed, and
+// honours an explicit EMAIL_PROVIDER=smtp|none so the operator can pin it.
 async function getTransporter(): Promise<any> {
   if (transporter) return transporter;
   if (!nodemailer) return null;
 
-  const gmail = await getGmailTransporter();
-  if (gmail) {
-    transporter = gmail;
-    transportKind = "gmail";
-    return transporter;
+  const provider = resolveEmailProvider();
+  // EMAIL_PROVIDER=none is an explicit "do not send", so never probe Gmail or
+  // build an SMTP transport. Delivery degrades to the log, never to a crash.
+  if (provider === "none") return null;
+
+  if (provider === "gmail" || provider === "auto") {
+    const gmail = await getGmailTransporter();
+    if (gmail) {
+      transporter = gmail;
+      transportKind = "gmail";
+      return transporter;
+    }
+    // An explicit EMAIL_PROVIDER=gmail must not silently fall through to SMTP.
+    if (provider === "gmail") return null;
   }
 
-  const s = await getSettings();
-  const host = process.env.SMTP_HOST || "";
-  const user = process.env.SMTP_USER || "";
-  const pass = process.env.SMTP_PASS || "";
-  const smtpUser = s.emailSender || user;
-  if (!host || !smtpUser) return null;
+  const cfg = smtpEnvStatus();
+  if (!cfg.ok) return null;
+  // Authenticate as the SMTP_USER mailbox. This used to fall back to the store's
+  // emailSender setting, which is a From: address and not an SMTP account, so a
+  // store with a sender configured would fail to authenticate.
   transporter = nodemailer.createTransport({
-    host,
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === "1" || false,
-    auth: { user: smtpUser, pass },
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: { user: String(process.env.SMTP_USER || "").trim(), pass: smtpPassword() },
   });
   transportKind = "smtp";
   return transporter;
@@ -48,18 +117,118 @@ export function resetTransporter(): void {
   transportKind = null;
 }
 
+// ─── Startup diagnostics ─────────────────────────────────────────────────────
+//
+// Reports whether mail can actually be sent, and why not when it cannot. Used
+// at boot so an operator sees "email transport configured = false" instead of
+// discovering it from a queue full of dead deliveries.
+//
+// Every value printed here is either a boolean or a configuration *name*.
+// The SMTP password, the Gmail refresh token and the API secret are never
+// interpolated into the message, and the function never throws so an
+// unconfigured or unreachable mail provider cannot stop the server booting.
+export interface EmailTransportStatus {
+  provider: EmailProviderSetting;
+  configured: boolean;
+  active: "gmail" | "smtp" | null;
+  from: string;
+  detail: string;
+}
+
+export async function emailTransportStatus(): Promise<EmailTransportStatus> {
+  const provider = resolveEmailProvider();
+  let from = "";
+  try {
+    const s = await getSettings();
+    from = s.emailSender || "";
+  } catch {
+    // Settings are a nicety for this report, not a requirement.
+  }
+
+  if (!nodemailer) {
+    return { provider, configured: false, active: null, from, detail: "nodemailer is not installed" };
+  }
+  if (provider === "none") {
+    return { provider, configured: false, active: null, from, detail: "disabled by EMAIL_PROVIDER=none" };
+  }
+
+  const smtp = smtpEnvStatus();
+  if (provider === "smtp") {
+    return {
+      provider,
+      configured: smtp.ok,
+      active: smtp.ok ? "smtp" : null,
+      from,
+      detail: smtp.ok
+        ? `smtp ${smtp.host}:${smtp.port} ${smtp.secure ? "tls" : "starttls"} auth=configured`
+        : `missing ${smtp.missing.join(", ")}`,
+    };
+  }
+
+  // gmail / auto: prefer Gmail, but resolving it means a token refresh, so a
+  // failure here is a reason to fall back rather than a boot failure.
+  let gmailConnected = false;
+  try {
+    gmailConnected = !!(await getGmailTransporter());
+  } catch {
+    gmailConnected = false;
+  }
+  if (provider === "gmail") {
+    return {
+      provider,
+      configured: gmailConnected,
+      active: gmailConnected ? "gmail" : null,
+      from,
+      detail: gmailConnected ? "gmail oauth connected" : "gmail is not connected (Integrations -> Gmail)",
+    };
+  }
+
+  if (gmailConnected) {
+    return { provider, configured: true, active: "gmail", from, detail: "gmail oauth connected (preferred)" };
+  }
+  if (smtp.ok) {
+    return {
+      provider,
+      configured: true,
+      active: "smtp",
+      from,
+      detail: `smtp ${smtp.host}:${smtp.port} ${smtp.secure ? "tls" : "starttls"} auth=configured`,
+    };
+  }
+  return {
+    provider,
+    configured: false,
+    active: null,
+    from,
+    detail: `gmail not connected and smtp missing ${smtp.missing.join(", ")}`,
+  };
+}
+
+export async function logEmailTransportStatus(): Promise<void> {
+  try {
+    const s = await emailTransportStatus();
+    const line = `[Email] transport configured=${s.configured} provider=${s.provider} active=${s.active || "none"} detail="${s.detail}"`;
+    if (s.configured) console.log(line);
+    else console.warn(`${line} - outbound email will be logged, not sent`);
+  } catch (err: any) {
+    // Never let diagnostics break boot.
+    console.warn(`[Email] transport status unavailable: ${err?.message || err}`);
+  }
+}
+
 export async function sendEmail(to: string, subject: string, html: string, type: string = "general"): Promise<boolean> {
   const s = await getSettings();
   if (s.emailNotificationsEnabled === false) {
     await logEmail(to, s.emailSender || "", subject, html, type, "disabled");
     return false;
   }
-  const from = s.emailSender || process.env.FROM_EMAIL || "no-reply@example.com";
+  const from = s.emailSender || process.env.EMAIL_FROM || process.env.FROM_EMAIL || "no-reply@example.com";
   const fromName = s.emailSenderName || s.storeName || "Gear&Glitch";
   const fromField = `"${fromName}" <${from}>`;
   const transport = await getTransporter();
   if (!transport) {
-    console.log(`[Email] No email transport configured. Would send to=${to} subject="${subject}" type=${type}`);
+    const provider = resolveEmailProvider();
+    console.log(`[Email] No email transport configured (provider=${provider}). Would send to=${to} subject="${subject}" type=${type}`);
     await logEmail(to, from, subject, html, type, "no_smtp");
     return false;
   }
