@@ -8,8 +8,9 @@
 //
 // The refresh token is persisted as an encrypted secret (secret-store) in the
 // integrations table (provider='gmail'), never logged, never returned by any
-// API. Sending then uses a nodemailer OAuth2 transporter (XOAUTH2) that asks
-// Google for fresh access tokens on demand.
+// API. Sending goes through the Gmail REST API over HTTPS, minting a short-lived
+// access token from that refresh token on demand — see "Sending" below for why
+// it is not nodemailer's SMTP path.
 //
 // For userless/test connections we refresh directly against the token endpoint
 // (no email is sent by the test button).
@@ -32,9 +33,6 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke";
 const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
-
-let nodemailer: any = null;
-try { nodemailer = require("nodemailer"); } catch {}
 
 export const GMAIL_STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -179,24 +177,139 @@ export async function saveGmailConnection(creds: { email: string; refreshToken: 
 }
 
 // ─── Sending ──────────────────────────────────────────────────────────────────
+//
+// Sending goes over the Gmail REST API rather than nodemailer's SMTP transport.
+// Render's free instances block outbound SMTP, so smtp.gmail.com:465 times out
+// ("Connection timeout") while an HTTPS call to Google succeeds — which is
+// exactly why the test-connection button reported healthy while every real send
+// failed: the refresh is HTTPS, the send was not. The REST API reuses the same
+// OAuth token and the same gmail.send scope, so it needs no new credentials.
+//
+// The returned object exposes nodemailer's sendMail() shape, so the call sites
+// in email.ts are unchanged.
 
-// Returns a nodemailer OAuth2 transporter that uses XOAUTH2 for the connected
-// Gmail account. Callers must call resetTransporter() after a failed send so a
-// stale/expired token is not reused.
+const GMAIL_SEND_ENDPOINT = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
+
+export interface GmailAddress {
+  name: string;
+  email: string;
+}
+
+// Splits `"Shop Name" <a@b.com>` into its parts; a bare address has no name.
+// CR/LF is stripped because these values reach us from store settings and would
+// otherwise let a setting inject extra headers into the outgoing message.
+export function parseGmailAddress(raw: unknown): GmailAddress {
+  const value = String(raw ?? "").replace(/[\r\n]+/g, " ").trim();
+  const angled = value.match(/^(.*)<([^>]+)>$/);
+  if (angled) {
+    return { name: angled[1].trim().replace(/^"(.*)"$/, "$1").trim(), email: angled[2].trim() };
+  }
+  return { name: "", email: value };
+}
+
+// RFC 2047 encoded-word. Needed because store names and subjects are routinely
+// non-ASCII, and an unencoded 8-bit header is rejected by Gmail.
+function encodeHeaderText(value: unknown): string {
+  const text = String(value ?? "").replace(/[\r\n]+/g, " ");
+  if (/^[\x20-\x7E]*$/.test(text)) return text;
+  return `=?UTF-8?B?${Buffer.from(text, "utf8").toString("base64")}?=`;
+}
+
+function formatAddress(addr: GmailAddress): string {
+  return addr.name ? `${encodeHeaderText(addr.name)} <${addr.email}>` : addr.email;
+}
+
+// Builds the RFC 5322 message that messages.send expects in its `raw` field.
+// The body is base64 so HTML containing 8-bit characters or bare CR/LF cannot
+// corrupt the headers.
+export function buildGmailRawMessage(input: {
+  from: string;
+  to: string | string[];
+  subject: string;
+  html: string;
+}): string {
+  const recipients = (Array.isArray(input.to) ? input.to : [input.to])
+    .map((entry) => parseGmailAddress(entry).email)
+    .filter(Boolean);
+  if (!recipients.length) throw new Error("Gmail send requires at least one recipient.");
+  const headers = [
+    `From: ${formatAddress(parseGmailAddress(input.from))}`,
+    `To: ${recipients.join(", ")}`,
+    `Subject: ${encodeHeaderText(input.subject)}`,
+    "MIME-Version: 1.0",
+    `Content-Type: text/html; charset="UTF-8"`,
+    "Content-Transfer-Encoding: base64",
+  ];
+  const body = Buffer.from(String(input.html ?? ""), "utf8").toString("base64");
+  return `${headers.join("\r\n")}\r\n\r\n${body}`;
+}
+
+// Google's error bodies use camelCase reasons ("insufficientPermissions") while
+// isGmailOAuthError() matches the snake_case spellings it has always reported,
+// so normalise before the message reaches the status/error handling.
+function normalizeGoogleError(body: string): string {
+  return String(body || "").replace(/([a-z0-9])([A-Z])/g, "$1_$2");
+}
+
+export async function refreshGmailAccessToken(creds: { clientId: string; clientSecret: string; refreshToken: string }): Promise<string> {
+  const body = new URLSearchParams({
+    refresh_token: creds.refreshToken,
+    client_id: creds.clientId,
+    client_secret: creds.clientSecret,
+    grant_type: "refresh_token",
+  });
+  const res = await fetch(TOKEN_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Gmail token refresh failed (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  const json = (await res.json()) as { access_token?: string };
+  if (!json.access_token) throw new Error("Gmail token refresh returned no access_token.");
+  return json.access_token;
+}
+
+export async function sendGmailMessageViaApi(
+  input: { from: string; to: string | string[]; subject: string; html: string },
+  accessToken: string,
+): Promise<{ id?: string; threadId?: string }> {
+  const raw = Buffer.from(buildGmailRawMessage(input), "utf8").toString("base64url");
+  const res = await fetch(GMAIL_SEND_ENDPOINT, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw }),
+  });
+  if (!res.ok) {
+    const detail = normalizeGoogleError(await res.text().catch(() => ""));
+    throw new Error(`Gmail API send failed (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  return (await res.json().catch(() => ({}))) as { id?: string; threadId?: string };
+}
+
+// Returns a transport that speaks the Gmail REST API. Callers must still call
+// resetTransporter() after a failed send so a stale credential is not reused.
 export async function getGmailTransporter(): Promise<any> {
   const creds = await getGmailSendingCreds();
-  if (!creds || !nodemailer) return null;
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      type: "OAuth2",
-      user: creds.email,
-      clientId: creds.clientId,
-      clientSecret: creds.clientSecret,
-      refreshToken: creds.refreshToken,
-      accessUrl: TOKEN_ENDPOINT,
+  if (!creds) return null;
+  return {
+    async sendMail(opts: { from?: string; to?: string | string[]; subject?: string; html?: string }) {
+      const message = {
+        from: String(opts?.from || creds.email),
+        to: opts?.to ?? "",
+        subject: String(opts?.subject ?? ""),
+        html: String(opts?.html ?? ""),
+      };
+      const accessToken = await refreshGmailAccessToken(creds);
+      try {
+        return await sendGmailMessageViaApi(message, accessToken);
+      } catch (err: any) {
+        // A 401 here means the access token was revoked or went stale between
+        // the refresh and the send. Retry once with a freshly minted token,
+        // then let the error propagate so email.ts can fail over to SMTP.
+        if (!/\(401\)/.test(String(err?.message || ""))) throw err;
+        return await sendGmailMessageViaApi(message, await refreshGmailAccessToken(creds));
+      }
     },
-  });
+  };
 }
 
 // Reliable detection of an OAuth credential failure so we can surface

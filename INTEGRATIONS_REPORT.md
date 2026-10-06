@@ -131,7 +131,10 @@ RISKS/REMAINING: live consent + send requires real Google credentials (documente
 ## 7. Email transport routing (`server/email.ts`)
 
 WHAT CHANGED
-- Transport order: Gmail (XOAUTH2) → SMTP → log-only `no_smtp`.
+- Transport order: Gmail (REST API over HTTPS) → SMTP → log-only `no_smtp`.
+- Gmail sending uses `gmail.users.messages.send` rather than SMTP, because
+  Render blocks outbound SMTP: the token refresh (HTTPS) succeeded while every
+  SMTP send timed out, so Test connection read healthy while delivery failed.
 - One transient-retry on Gmail send; `invalid_grant` marks `token_expired` and
   clears the cached transporter (no stale-token reuse); SMTP fallback only for
   non-OAuth failures so a dead token is never silently masked as success.
