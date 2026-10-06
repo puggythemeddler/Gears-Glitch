@@ -4,12 +4,13 @@ import localFont from "next/font/local";
 import { AppProvider } from "@/lib/app-context";
 import { LayoutProvider, LayoutStyles } from "@/layouts";
 import Layout from "@/components/Layout";
-import { ToastProvider } from "@/components/Toast";
+import { FeedbackProvider } from "@/components/feedback/FeedbackProvider";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import OfflinePage from "@/components/OfflinePage";
 import "@/styles/globals.css";
 import "@/styles/animations.css";
 import "@/styles/marketing.css";
+import "@/styles/feedback.css";
 
 // Sora and Archivo are variable fonts, so one file covers the whole weight
 // range. They are vendored under frontend/fonts/ and loaded with next/font/local
@@ -114,7 +115,7 @@ export default function MyApp({ Component, pageProps, router }: AppProps) {
     <div className={`${sora.variable} ${archivo.variable}`} style={{ minHeight: "100vh" }}>
       <AppProvider>
         <ErrorBoundary>
-          <ToastProvider>
+          <FeedbackProvider>
             <ConfirmProvider>
               <LayoutProvider>
                 <LayoutStyles />
@@ -125,7 +126,7 @@ export default function MyApp({ Component, pageProps, router }: AppProps) {
                 </Layout>
               </LayoutProvider>
             </ConfirmProvider>
-          </ToastProvider>
+          </FeedbackProvider>
         </ErrorBoundary>
         {offline && <OfflinePage dismissing={offline === "dismissing"} />}
       </AppProvider>
