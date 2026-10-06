@@ -766,7 +766,7 @@ function AdminAuditLog() {
               {entries.map((e: any) => (
                 <tr key={e.id}>
                   <td style={{ whiteSpace: "nowrap", fontSize: "0.8rem" }}>{new Date(e.createdAt).toLocaleString()}</td>
-                  <td>{escapeHtml(e.userName || "?")}</td>
+                  <td>{e.userName || "?"}</td>
                   <td style={{ fontSize: "0.85rem" }}>{e.actorRole || "-"}</td>
                   <td><span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{e.action}</span></td>
                   <td style={{ fontSize: "0.85rem" }}>{e.entityType}:{e.entityId}</td>
@@ -1049,7 +1049,7 @@ function AdminCategories() {
       <>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
           <button className="btn btn-sm btn-ghost" onClick={() => setDetail(null)}>&larr; Back</button>
-          <h1 style={{ margin: 0 }}>{isNew ? "New Category" : `Edit: ${escapeHtml(detail.cat.label)}`}</h1>
+          <h1 style={{ margin: 0 }}>{isNew ? "New Category" : `Edit: ${detail.cat.label}`}</h1>
         </div>
         <div className="panel" style={{ maxWidth: 600, marginBottom: "1.5rem" }}>
           <div className="field"><label>Label<input value={formLabel} onChange={(e) => setFormLabel(e.target.value)} placeholder="Laptops" /></label></div>
@@ -1090,7 +1090,7 @@ function AdminCategories() {
                 return (
                   <tr key={s.id}>
                     <td><code>{s.id}</code></td>
-                    <td>{escapeHtml(s.name)}</td>
+                    <td>{s.name}</td>
                     <td style={{ fontSize: "0.85rem" }}>{otherCats.join(", ") || "—"}</td>
                     <td>
                       <RippleButton size="small" variant="ghost" onClick={() => { setEditSubId(s.id); setEditSubName(s.name); }}>Edit</RippleButton>
@@ -1122,7 +1122,7 @@ function AdminCategories() {
               return (
                 <tr key={c.id}>
                   <td><code>{c.id}</code></td>
-                  <td>{escapeHtml(c.label)}</td>
+                  <td>{c.label}</td>
                   <td style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{groups.find((g: any) => g.id === c.group)?.name || "—"}</td>
                   <td style={{ fontSize: "0.85rem", textAlign: "center" }}>{c.showOnPos !== false ? "✓" : "✗"}</td>
                   <td style={{ fontSize: "0.85rem" }}>{subs.map((s: any) => s.name).join(", ") || "—"}</td>
@@ -1213,7 +1213,7 @@ function AdminGroups() {
           <tbody>
             {groups.map((g: any) => (
               <tr key={g.id}>
-                <td>{editingId === g.id ? <input value={editName} onChange={(e) => setEditName(e.target.value)} /> : escapeHtml(g.name)}</td>
+                <td>{editingId === g.id ? <input value={editName} onChange={(e) => setEditName(e.target.value)} /> : g.name}</td>
                 <td>{editingId === g.id ? <input type="number" value={editSort} onChange={(e) => setEditSort(Number(e.target.value))} style={{ width: 70 }} /> : g.sortOrder}</td>
                 <td>{g.productCount}</td>
                 <td>
@@ -1350,11 +1350,11 @@ function AdminOrders() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
           <div className="panel">
             <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>Customer</h3>
-            <p style={{ margin: "0.2rem 0" }}><strong>{escapeHtml(o.customerName || o.shippingName || "—")}</strong></p>
-            <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>{escapeHtml(o.customerEmail || "")}</p>
+            <p style={{ margin: "0.2rem 0" }}><strong>{o.customerName || o.shippingName || "—"}</strong></p>
+            <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>{o.customerEmail || ""}</p>
             {customerDetail && (
               <>
-                {customerDetail.phone && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Phone: {escapeHtml(customerDetail.phone)}</p>}
+                {customerDetail.phone && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Phone: {customerDetail.phone}</p>}
                 <p style={{ margin: "0.2rem 0", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
                   Status: <span style={{ color: customerDetail.is_active ? "var(--success)" : "var(--danger)" }}>{customerDetail.is_active ? "Active" : "Inactive"}</span>
                   {customerDetail.last_login && <> &middot; Last login: {new Date(customerDetail.last_login).toLocaleDateString("en-GB")}</>}
@@ -1367,11 +1367,11 @@ function AdminOrders() {
           </div>
           <div className="panel">
             <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>Shipping</h3>
-            <p style={{ margin: "0.2rem 0" }}>{escapeHtml(o.shippingName || "—")}</p>
+            <p style={{ margin: "0.2rem 0" }}>{o.shippingName || "—"}</p>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>
               {[o.shippingAddress, o.shippingCity, o.shippingCounty, o.shippingPostcode].filter(Boolean).join(", ") || "—"}
             </p>
-            {o.shippingPhone && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>{escapeHtml(o.shippingPhone)}</p>}
+            {o.shippingPhone && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>{o.shippingPhone}</p>}
           </div>
           <div className="panel">
             <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>Status</h3>
@@ -1387,7 +1387,7 @@ function AdminOrders() {
           <div className="panel">
             <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>Order Info</h3>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Date: {new Date(o.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
-            <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Channel: <span style={{ textTransform: "capitalize" }}>{escapeHtml(o.source || "storefront")}</span></p>
+            <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Channel: <span style={{ textTransform: "capitalize" }}>{o.source || "storefront"}</span></p>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Subtotal: {formatPrice(activeSubtotal)}</p>
             <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>Shipping: {formatPrice(o.shippingFee || 0)}</p>
             {o.discountAmount > 0 && <p style={{ margin: "0.2rem 0", fontSize: "0.9rem", color: "var(--success)" }}>Coupon: -{formatPrice(o.discountAmount)}</p>}
@@ -1400,7 +1400,7 @@ function AdminOrders() {
         {o.notes && (
           <div className="panel" style={{ marginBottom: "1rem" }}>
             <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>Notes</h3>
-            <p style={{ margin: 0, fontSize: "0.9rem" }}>{escapeHtml(o.notes)}</p>
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>{o.notes}</p>
           </div>
         )}
 
@@ -1440,7 +1440,7 @@ function AdminOrders() {
             <tbody>
               {(o.items || []).map((item: any, i: number) => (
                 <tr key={item.id || i}>
-                  <td>{escapeHtml(item.name)}{!!item.cancelled && <span style={{ marginLeft: "0.4rem", fontSize: "0.75rem", color: "var(--danger)" }}>(refunded)</span>}</td>
+                  <td>{item.name}{!!item.cancelled && <span style={{ marginLeft: "0.4rem", fontSize: "0.75rem", color: "var(--danger)" }}>(refunded)</span>}</td>
                   <td>{formatPrice(item.price)}</td>
                   <td>{item.quantity}</td>
                   <td>{formatPrice(item.lineTotal)}</td>
@@ -1466,7 +1466,7 @@ function AdminOrders() {
                   </td>
                   <td>
                     {item.serialNumber ? (
-                      <div style={{ fontSize: "0.82rem", fontFamily: "monospace", color: "var(--primary)" }}>{escapeHtml(item.serialNumber)}</div>
+                      <div style={{ fontSize: "0.82rem", fontFamily: "monospace", color: "var(--primary)" }}>{item.serialNumber}</div>
                     ) : (
                       <div style={{ display: "flex", gap: "0.3rem", alignItems: "center" }}>
                         <input
@@ -1509,7 +1509,7 @@ function AdminOrders() {
                   {refunds.map((r: any) => (
                     <tr key={r.id}>
                       <td style={{ color: "var(--danger)" }}>-{formatPrice(r.amount)}</td>
-                      <td>{escapeHtml(r.reason || "—")}</td>
+                      <td>{r.reason || "—"}</td>
                       <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                     </tr>
                   ))}
@@ -1533,9 +1533,9 @@ function AdminOrders() {
             {orders.map((o) => (
               <tr key={o.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => openOrder(o.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openOrder(o.id); } }}>
                 <td>{o.id}</td>
-                <td>{escapeHtml(o.shippingName || "—")}</td>
+                <td>{o.shippingName || "—"}</td>
                 <td>{formatPrice((o.activeSubtotal ?? o.subtotal) + o.shippingFee)}</td>
-                <td><span style={{ textTransform: "capitalize" }}>{escapeHtml((o as any).source || "storefront")}</span></td>
+                <td><span style={{ textTransform: "capitalize" }}>{(o as any).source || "storefront"}</span></td>
                 <td>{o.shippingCounty || "—"}</td>
                 <td><span className="plan-status">{o.status}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>{new Date(o.createdAt).toLocaleDateString("en-GB")}</td>
@@ -1728,7 +1728,7 @@ function AdminUsers() {
         <>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
             <button className="btn btn-sm btn-ghost" onClick={() => setSelectedUser(null)}>&larr; Back</button>
-            <h1 style={{ margin: 0 }}>{escapeHtml(selectedUser.username)}</h1>
+            <h1 style={{ margin: 0 }}>{selectedUser.username}</h1>
           </div>
           {msg && <p style={{ padding: "0.5rem 1rem", borderRadius: 8, background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", marginBottom: "0.75rem", fontSize: "0.85rem" }}>{msg}</p>}
 
@@ -1772,7 +1772,7 @@ function AdminUsers() {
                   return (
                     <label key={b.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0", cursor: "pointer", fontSize: "0.9rem" }}>
                       <input type="checkbox" checked={has} onChange={() => toggleBranch(b.id)} />
-                      <span>{escapeHtml(b.name)}</span>
+                      <span>{b.name}</span>
                     </label>
                   );
                 })}
@@ -1791,7 +1791,7 @@ function AdminUsers() {
               return (
                 <label key={r.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0", cursor: "pointer", fontSize: "0.9rem" }}>
                   <input type="checkbox" checked={has} onChange={() => toggleRole(r.id, !has)} />
-                  <span>{escapeHtml(r.name)}</span>
+                  <span>{r.name}</span>
                   <span className="muted" style={{ fontSize: "0.8rem" }}>{r.isCustom ? "(custom)" : ""}</span>
                 </label>
               );
@@ -1839,8 +1839,8 @@ function AdminUsers() {
             <tbody>
               {staff.map((s: any) => (
                 <tr key={s.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => selectUser(s)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectUser(s); } }}>
-                  <td>{escapeHtml(s.username)}</td>
-                  <td>{s.email ? escapeHtml(s.email) : <span className="muted">—</span>}</td>
+                  <td>{s.username}</td>
+                  <td>{s.email ? s.email : <span className="muted">—</span>}</td>
                   <td><span className="plan-status">{s.role}</span></td>
                   <td><RippleButton size="small" variant="danger" onClick={(e) => { e.stopPropagation(); deleteStaff(s.id); }}>Remove</RippleButton></td>
                 </tr>
@@ -1904,7 +1904,7 @@ function AdminRoles() {
       <div style={{ maxWidth: 600 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
           <RippleButton size="small" variant="ghost" onClick={() => { setNewRole(false); setEditingRole(null); }}>&larr; Back</RippleButton>
-          <h2 style={{ margin: 0 }}>{newRole ? "New Role" : "Edit: " + escapeHtml(editingRole.name)}</h2>
+          <h2 style={{ margin: 0 }}>{newRole ? "New Role" : "Edit: " + editingRole.name}</h2>
         </div>
         <div className="panel">
           <form onSubmit={saveRole}>
@@ -1948,13 +1948,13 @@ function AdminRoles() {
         {allRoles.map((r: any) => (
           <div key={r.id} className="panel" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <h3 style={{ margin: 0, fontSize: "1rem" }}>{escapeHtml(r.name)}</h3>
+              <h3 style={{ margin: 0, fontSize: "1rem" }}>{r.name}</h3>
               <div style={{ display: "flex", gap: "0.25rem", flexShrink: 0 }}>
                 <RippleButton size="small" variant="ghost" onClick={() => openEdit(r)}>Edit</RippleButton>
                 {r.id !== "admin" && <RippleButton size="small" variant="danger" onClick={() => deleteRole(r.id)}>Delete</RippleButton>}
               </div>
             </div>
-            {r.description && <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>{escapeHtml(r.description)}</p>}
+            {r.description && <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>{r.description}</p>}
             <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-secondary)" }}>{r.permissions.length} permission{r.permissions.length !== 1 ? "s" : ""} · {r.features && r.features.length > 0 ? `${r.features.length} feature${r.features.length !== 1 ? "s" : ""} restricted` : "All plan features"}</p>
             {r.permissions.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
@@ -2058,7 +2058,7 @@ function AdminPlans() {
       <>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
           <RippleButton size="small" variant="ghost" onClick={() => { setShowForm(false); setEditing(null); }}>&larr; Back</RippleButton>
-          <h1 style={{ margin: 0 }}>{editing ? "Edit: " + escapeHtml(editing.name) : "New Plan"}</h1>
+          <h1 style={{ margin: 0 }}>{editing ? "Edit: " + editing.name : "New Plan"}</h1>
         </div>
         <div className="panel" style={{ maxWidth: 600 }}>
           <form onSubmit={savePlan}>
@@ -2123,7 +2123,7 @@ function AdminPlans() {
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                <h3 style={{ marginTop: 0 }}>{escapeHtml(p.name)}</h3>
+                <h3 style={{ marginTop: 0 }}>{p.name}</h3>
                 <span style={{ fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 4, background: p.isActive === false ? "var(--border)" : "var(--success)", color: p.isActive === false ? "var(--text-secondary)" : "var(--surface)", fontWeight: 600 }}>{p.isActive === false ? "Inactive" : "Active"}</span>
               </div>
               <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--primary)", margin: "0 0 0.25rem" }}>{formatPrice(p.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>
@@ -2276,12 +2276,12 @@ function AdminClients() {
       <>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
           <RippleButton size="small" variant="ghost" onClick={() => { setSelectedClient(null); }}>&larr; Back</RippleButton>
-          <h1 style={{ margin: 0 }}>{escapeHtml(selectedClient.name)}</h1>
+          <h1 style={{ margin: 0 }}>{selectedClient.name}</h1>
         </div>
         <div className="panel" style={{ maxWidth: 500, marginBottom: "1.5rem" }}>
-          <p><strong>Email:</strong> {escapeHtml(selectedClient.email || "—")}</p>
-          <p><strong>Phone:</strong> {escapeHtml(selectedClient.phone || "—")}</p>
-          <p><strong>Address:</strong> {escapeHtml(selectedClient.address || "—")}</p>
+          <p><strong>Email:</strong> {selectedClient.email || "—"}</p>
+          <p><strong>Phone:</strong> {selectedClient.phone || "—"}</p>
+          <p><strong>Address:</strong> {selectedClient.address || "—"}</p>
           <p><strong>Status:</strong> <span style={{ color: selectedClient.isActive ? "var(--success)" : "var(--danger)" }}>{selectedClient.isActive ? "Active" : "Inactive"}</span></p>
         </div>
 
@@ -2314,10 +2314,10 @@ function AdminClients() {
               <tbody>
                 {branches.map((b) => (
                   <tr key={b.id}>
-                    <td><strong>{escapeHtml(b.name)}</strong></td>
-                    <td>{escapeHtml(b.address || "—")}</td>
-                    <td>{escapeHtml(b.phone || "—")}</td>
-                    <td>{escapeHtml(b.email || "—")}</td>
+                    <td><strong>{b.name}</strong></td>
+                    <td>{b.address || "—"}</td>
+                    <td>{b.phone || "—"}</td>
+                    <td>{b.email || "—"}</td>
                     <td>
                       <div style={{ display: "flex", gap: "0.25rem" }}>
                         <RippleButton size="small" onClick={() => openEditBranch(b)}>Edit</RippleButton>
@@ -2348,9 +2348,9 @@ function AdminClients() {
           <tbody>
             {clients.map((c) => (
               <tr key={c.id}>
-                <td><strong>{escapeHtml(c.name)}</strong></td>
-                <td>{escapeHtml(c.email || "—")}</td>
-                <td>{escapeHtml(c.phone || "—")}</td>
+                <td><strong>{c.name}</strong></td>
+                <td>{c.email || "—"}</td>
+                <td>{c.phone || "—"}</td>
                 <td><span style={{ color: c.isActive ? "var(--success)" : "var(--danger)", fontSize: "0.85rem" }}>{c.isActive ? "Active" : "Inactive"}</span></td>
                 <td>
                   <div style={{ display: "flex", gap: "0.25rem" }}>
@@ -2455,7 +2455,7 @@ function AdminBranches() {
       <>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
           <RippleButton size="small" variant="ghost" onClick={() => { setShowForm(false); setEditing(null); }}>&larr; Back</RippleButton>
-          <h1 style={{ margin: 0 }}>{editing ? "Edit: " + escapeHtml(editing.name) : "New Branch"}</h1>
+          <h1 style={{ margin: 0 }}>{editing ? "Edit: " + editing.name : "New Branch"}</h1>
         </div>
         <div className="panel" style={{ maxWidth: 500 }}>
           <form onSubmit={saveBranch}>
@@ -2469,7 +2469,7 @@ function AdminBranches() {
               <label>Assigned Owner
                 <select value={form.managerId} onChange={(e) => setForm({ ...form, managerId: e.target.value })}>
                   <option value="">— No owner assigned —</option>
-                  {owners.map((o) => <option key={o.id} value={o.id}>{escapeHtml(o.username)}</option>)}
+                  {owners.map((o) => <option key={o.id} value={o.id}>{o.username}</option>)}
                 </select>
               </label>
               {owners.length === 0 && <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>No owner users found. Create an owner user in Users first.</p>}
@@ -2498,11 +2498,11 @@ function AdminBranches() {
               const currentPlan = allPlans.find((p: any) => p.id === b.planId);
               return (
                 <tr key={b.id}>
-                  <td><strong>{escapeHtml(b.name)}</strong></td>
-                  <td>{escapeHtml(b.address || "—")}</td>
-                  <td>{escapeHtml(b.phone || "—")}</td>
-                  <td>{escapeHtml(b.email || "—")}</td>
-                  <td>{b.managerName ? escapeHtml(b.managerName) : <span className="muted">Unassigned</span>}</td>
+                  <td><strong>{b.name}</strong></td>
+                  <td>{b.address || "—"}</td>
+                  <td>{b.phone || "—"}</td>
+                  <td>{b.email || "—"}</td>
+                  <td>{b.managerName ? b.managerName : <span className="muted">Unassigned</span>}</td>
                   <td>
                     {branchPlanEditId === b.id ? (
                       <select
@@ -2513,14 +2513,14 @@ function AdminBranches() {
                         style={{ fontSize: "0.8rem", padding: "2px 4px" }}
                       >
                         <option value="">None</option>
-                        {allPlans.map((p: any) => <option key={p.id} value={p.id}>{escapeHtml(p.name)}</option>)}
+                        {allPlans.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     ) : (
                       <span
                         onClick={() => setBranchPlanEditId(b.id)}
                         style={{ cursor: "pointer", color: currentPlan ? "var(--primary)" : "var(--text-secondary)", fontSize: "0.85rem", textDecoration: "underline dotted" }}
                       >
-                        {currentPlan ? escapeHtml(currentPlan.name) : "No plan"}
+                        {currentPlan ? currentPlan.name : "No plan"}
                       </span>
                     )}
                   </td>
@@ -2649,9 +2649,9 @@ function SubscriptionInvoices() {
               <tbody>
                 {invoices.map((inv: any) => (
                   <tr key={inv.id}>
-                    <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{escapeHtml(inv.invoiceNumber || `INV-${inv.id}`)}</td>
-                    <td>{escapeHtml(inv.providerName || "Provider #" + inv.providerId)}</td>
-                    <td>{escapeHtml(inv.planName || inv.planId)}</td>
+                    <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{inv.invoiceNumber || `INV-${inv.id}`}</td>
+                    <td>{inv.providerName || "Provider #" + inv.providerId}</td>
+                    <td>{inv.planName || inv.planId}</td>
                     <td>{formatPrice(inv.amount)}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString("en-GB") : "—"}</td>
                     <td><span className="plan-status" style={{ background: inv.status === "paid" ? "var(--success-light)" : inv.status === "overdue" ? "var(--danger-light)" : "var(--warning-light)", color: inv.status === "paid" ? "var(--success-text)" : inv.status === "overdue" ? "var(--danger-text)" : "var(--warning-text)" }}>{inv.status}</span></td>
@@ -2727,7 +2727,7 @@ function AdminInvoices() {
                   <tr key={inv.id}>
                     <td>{inv.id}</td>
                     <td>#{inv.orderId}</td>
-                    <td>{escapeHtml(inv.customer_name || "—")}</td>
+                    <td>{inv.customer_name || "—"}</td>
                     <td>{formatPrice(inv.amount)}</td>
                     <td><span className="plan-status" style={{ background: inv.status === "paid" ? "var(--success-light)" : "var(--warning-light)", color: inv.status === "paid" ? "var(--success-text)" : "var(--warning-text)" }}>{inv.status}</span></td>
                     <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
@@ -3708,7 +3708,7 @@ function AdminSplashes() {
                       {s.title ? `${s.title}: ` : ""}{s.text}
                     </div>
                   </td>
-                  <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{escapeHtml(s.title || s.text)}</td>
+                  <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.title || s.text}</td>
                   <td>{s.imageUrl ? <Media src={s.imageUrl} alt="" width={40} height={40} fit="cover" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4 }} /> : <span className="muted">—</span>}</td>
                   <td>{s.isMarquee ? "Marquee" : "Static"}</td>
                   <td style={{ fontSize: "0.8rem" }}>{s.sortOrder ?? 0}</td>
@@ -4388,7 +4388,7 @@ function AdminShopSubscription() {
 
       <div className="stat-grid">
         <div className="stat-card">
-          <div className="stat-card__value">{currentPlan ? escapeHtml(currentPlan.name) : "—"}</div>
+          <div className="stat-card__value">{currentPlan ? currentPlan.name : "—"}</div>
           <div className="stat-card__label">Current Plan</div>
           {currentPlan && <p style={{ fontSize: "1.1rem", fontWeight: 600, color: "var(--primary)", margin: "0.5rem 0 0" }}>{formatPrice(currentPlan.price)}<span style={{ fontSize: "0.8rem", fontWeight: 400, opacity: 0.6 }}>/mo</span></p>}
         </div>
@@ -4407,7 +4407,7 @@ function AdminShopSubscription() {
 
       <div className="panel" style={{ marginBottom: "1rem", maxWidth: 400 }}>
         <h3 style={{ marginTop: 0 }}>Activate Plan</h3>
-        <div className="field"><label>Plan<select value={selectedPlan} onChange={(e) => setSelectedPlan(e.target.value)}><option value="">Select...</option>{allPlans.map((p) => <option key={p.id} value={p.id}>{escapeHtml(p.name)}</option>)}</select></label></div>
+        <div className="field"><label>Plan<select value={selectedPlan} onChange={(e) => setSelectedPlan(e.target.value)}><option value="">Select...</option>{allPlans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div>
         <RippleButton onClick={activatePlan} loading={saving} disabled={!selectedPlan}>Activate</RippleButton>
       </div>
 
@@ -4421,9 +4421,9 @@ function AdminShopSubscription() {
                 {requests.map((r: any) => (
                   <tr key={r.id}>
                     <td>{r.id}</td>
-                    <td>{escapeHtml(r.plan_name)}</td>
+                    <td>{r.plan_name}</td>
                     <td><span className="plan-status" style={{ background: r.status === "pending" ? "var(--warning-light)" : r.status === "approved" ? "var(--success-light)" : "var(--danger-light)", color: r.status === "pending" ? "var(--warning-text)" : r.status === "approved" ? "var(--success-text)" : "var(--danger-text)" }}>{r.status}</span></td>
-                    <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{escapeHtml(r.notes || "—")}</td>
+                    <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.notes || "—"}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleDateString("en-GB")}</td>
                     <td>{r.status === "pending" && <div style={{ display: "flex", gap: "0.35rem" }}><RippleButton size="small" style={{ background: "var(--success)", borderColor: "var(--success)" }} onClick={() => handleRequest(r.id, "approved")}>Approve</RippleButton><RippleButton size="small" variant="danger" onClick={() => handleRequest(r.id, "rejected")}>Reject</RippleButton></div>}</td>
                   </tr>
@@ -4799,7 +4799,7 @@ function AdminCoupons() {
           <tbody>
             {coupons.map((c) => (
               <tr key={c.id}>
-                <td><code>{escapeHtml(c.code)}</code></td>
+                <td><code>{c.code}</code></td>
                 <td>{c.type}</td>
                 <td>{c.type === "percentage" ? `${c.value}%` : formatPrice(c.value)}</td>
                 <td>{formatPrice(c.min_order_amount)}</td>
@@ -4884,7 +4884,7 @@ function AdminGiftCards() {
       {redemptionCard && (
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-            <h3 style={{ margin: 0 }}>Redemptions — {escapeHtml(redemptionCard.code)}</h3>
+            <h3 style={{ margin: 0 }}>Redemptions — {redemptionCard.code}</h3>
             <RippleButton size="small" variant="ghost" onClick={() => { setRedemptionCard(null); setRedemptions(null); }}>Close</RippleButton>
           </div>
           {redemptions && redemptions.length === 0 ? <p className="muted" style={{ margin: 0 }}>No redemptions yet.</p> : (
@@ -4905,7 +4905,7 @@ function AdminGiftCards() {
           <tbody>
             {cards.map((c) => (
               <tr key={c.id}>
-                <td><code>{escapeHtml(c.code)}</code></td>
+                <td><code>{c.code}</code></td>
                 <td>{formatPrice(c.initial_value)}</td>
                 <td>{formatPrice(c.balance)}</td>
                 <td>{c.expires_at ? new Date(c.expires_at).toLocaleDateString("en-GB") : "Never"}</td>
@@ -5001,7 +5001,7 @@ function AdminCampaigns() {
               {productList.map((p) => (
                 <label key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", fontSize: "0.9rem" }}>
                   <input type="checkbox" checked={selected.includes(p.id)} onChange={() => toggleProduct(p.id)} />
-                  {escapeHtml(p.name)}
+                  {p.name}
                 </label>
               ))}
               {productList.length === 0 && <span className="muted">No products found.</span>}
@@ -5009,7 +5009,7 @@ function AdminCampaigns() {
           </div>
           <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><input name="is_active" type="checkbox" defaultChecked={editing ? editing.is_active : true} /> Active</label></div>
           <RippleButton type="submit" loading={saving}>Save</RippleButton>
-          {editing && <span className="muted" style={{ marginLeft: "0.75rem" }}>Preview: /campaign/{escapeHtml(editing.slug)}</span>}
+          {editing && <span className="muted" style={{ marginLeft: "0.75rem" }}>Preview: /campaign/{editing.slug}</span>}
         </form>
       )}
       {loading && <Spinner />}
@@ -5023,8 +5023,8 @@ function AdminCampaigns() {
               try { count = (JSON.parse(c.product_ids || "[]") || []).length; } catch {}
               return (
                 <tr key={c.id}>
-                  <td>{escapeHtml(c.title)}</td>
-                  <td><code>/campaign/{escapeHtml(c.slug)}</code></td>
+                  <td>{c.title}</td>
+                  <td><code>/campaign/{c.slug}</code></td>
                   <td>{count}</td>
                   <td>{c.is_active ? "Yes" : "No"}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{new Date(c.created_at).toLocaleDateString("en-GB")}</td>
@@ -5101,9 +5101,9 @@ function AdminAbandonedCarts() {
           <tbody>
             {carts.map((c) => (
               <tr key={c.customer_id}>
-                <td>{escapeHtml(c.name || "—")}</td>
-                <td>{escapeHtml(c.email || "—")}</td>
-                <td>{escapeHtml(c.phone || "—")}</td>
+                <td>{c.name || "—"}</td>
+                <td>{c.email || "—"}</td>
+                <td>{c.phone || "—"}</td>
                 <td>{formatPrice(c.cart_total)}</td>
                 <td>{c.item_count}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{new Date(c.last_activity).toLocaleString("en-GB")}</td>
@@ -5126,7 +5126,7 @@ function AdminAbandonedCarts() {
               <tbody>
                 {reminders.map((r) => (
                   <tr key={r.id}>
-                    <td>{escapeHtml(r.customer_name || "—")}</td>
+                    <td>{r.customer_name || "—"}</td>
                     <td>{formatPrice(r.cart_total)}</td>
                     <td>{r.channel}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleString("en-GB")}</td>
@@ -5165,10 +5165,10 @@ function AdminSuppliers() {
         <DataTable
           ariaLabel="Suppliers"
           columns={[
-            { key: "name", label: "Name", sortable: true, value: (s) => s.name, render: (s) => escapeHtml(s.name) },
-            { key: "contact", label: "Contact", value: (s) => s.contact_name || "", render: (s) => escapeHtml(s.contact_name || "—") },
-            { key: "email", label: "Email", value: (s) => s.email || "", render: (s) => escapeHtml(s.email || "—") },
-            { key: "phone", label: "Phone", value: (s) => s.phone || "", render: (s) => escapeHtml(s.phone || "—") },
+            { key: "name", label: "Name", sortable: true, value: (s) => s.name, render: (s) => s.name },
+            { key: "contact", label: "Contact", value: (s) => s.contact_name || "", render: (s) => s.contact_name || "—" },
+            { key: "email", label: "Email", value: (s) => s.email || "", render: (s) => s.email || "—" },
+            { key: "phone", label: "Phone", value: (s) => s.phone || "", render: (s) => s.phone || "—" },
             { key: "active", label: "Active", value: (s) => (s.is_active ? "Yes" : "No"), render: (s) => (s.is_active ? "Yes" : "No") },
             {
               key: "actions",
@@ -5303,7 +5303,7 @@ function AdminVisitorsReport() {
             <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
               <option value="">All Branches</option>
               {(branches?.branches || []).filter((b: any) => b.isActive).map((b: any) => (
-                <option key={b.id} value={b.id}>{escapeHtml(b.name)}</option>
+                <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
           </label>
@@ -5328,7 +5328,7 @@ function AdminVisitorsReport() {
                   <thead><tr><th>Page</th><th>Visits</th></tr></thead>
                   <tbody>
                     {stats.topPages.map((p: any, i: number) => (
-                      <tr key={i}><td>{escapeHtml(p.path)}</td><td>{p.count}</td></tr>
+                      <tr key={i}><td>{p.path}</td><td>{p.count}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -5343,7 +5343,7 @@ function AdminVisitorsReport() {
                   <thead><tr><th>Referrer</th><th>Visits</th></tr></thead>
                   <tbody>
                     {stats.topReferrers.map((r: any, i: number) => (
-                      <tr key={i}><td>{escapeHtml(r.referrer)}</td><td>{r.count}</td></tr>
+                      <tr key={i}><td>{r.referrer}</td><td>{r.count}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -5358,7 +5358,7 @@ function AdminVisitorsReport() {
                   <thead><tr><th>Device</th><th>Visits</th></tr></thead>
                   <tbody>
                     {stats.deviceBreakdown.map((d: any, i: number) => (
-                      <tr key={i}><td>{escapeHtml(d.device_type)}</td><td>{d.count}</td></tr>
+                      <tr key={i}><td>{d.device_type}</td><td>{d.count}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -5456,7 +5456,7 @@ function AdminSalesReport() {
             <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
               <option value="">All Branches</option>
               {(branches?.branches || []).filter((b) => b.isActive).map((b) => (
-                <option key={b.id} value={b.id}>{escapeHtml(b.name)}</option>
+                <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
           </label>
@@ -5466,7 +5466,7 @@ function AdminSalesReport() {
             <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
               <option value="">All Groups</option>
               {(groups?.groups || []).map((g) => (
-                <option key={g.id} value={g.id}>{escapeHtml(g.name)}</option>
+                <option key={g.id} value={g.id}>{g.name}</option>
               ))}
             </select>
           </label>
@@ -5502,7 +5502,7 @@ function AdminSalesReport() {
                       const share = report.totalRevenue > 0 ? ((c.revenue / report.totalRevenue) * 100).toFixed(1) : "0";
                       return (
                         <tr key={i}>
-                          <td style={{ textTransform: "capitalize" }}>{escapeHtml(c.channel)}</td>
+                          <td style={{ textTransform: "capitalize" }}>{c.channel}</td>
                           <td>{c.orders}</td>
                           <td>{formatPrice(c.revenue)}</td>
                           <td>{share}%</td>
@@ -5522,7 +5522,7 @@ function AdminSalesReport() {
                   <thead><tr><th>Product</th><th>Sold</th><th>Revenue</th></tr></thead>
                   <tbody>
                     {report.topProducts.map((p: any) => (
-                      <tr key={p.productId}><td>{escapeHtml(p.name)}</td><td>{p.totalSold}</td><td>{formatPrice(p.revenue)}</td></tr>
+                      <tr key={p.productId}><td>{p.name}</td><td>{p.totalSold}</td><td>{formatPrice(p.revenue)}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -5537,7 +5537,7 @@ function AdminSalesReport() {
                   <thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
                   <tbody>
                     {report.orders.map((o: any) => (
-                      <tr key={o.id}><td>{o.id}</td><td>{escapeHtml(o.customer_name || "—")}</td><td>{formatPrice((o.subtotal || 0) + (o.shipping_fee || 0))}</td><td><span className="plan-status">{o.status}</span></td><td style={{ whiteSpace: "nowrap" }}>{new Date(o.created_at).toLocaleDateString("en-GB")}</td></tr>
+                      <tr key={o.id}><td>{o.id}</td><td>{o.customer_name || "—"}</td><td>{formatPrice((o.subtotal || 0) + (o.shipping_fee || 0))}</td><td><span className="plan-status">{o.status}</span></td><td style={{ whiteSpace: "nowrap" }}>{new Date(o.created_at).toLocaleDateString("en-GB")}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -5586,7 +5586,7 @@ function AdminEmployeeSales() {
             <tbody>
               {rows.map((r: any) => (
                 <tr key={r.staffId}>
-                  <td>{escapeHtml(r.staffName || "—")}</td>
+                  <td>{r.staffName || "—"}</td>
                   <td>{r.totalOrders}</td>
                   <td>{formatPrice(r.totalRevenue)}</td>
                 </tr>
@@ -5644,7 +5644,7 @@ function AdminTechPerformance() {
             <tbody>
               {rows.map((r: any) => (
                 <tr key={r.staffId}>
-                  <td>{escapeHtml(r.staffName || "—")}</td>
+                  <td>{r.staffName || "—"}</td>
                   <td>{r.ticketsAssigned}</td>
                   <td>{r.ticketsCompleted}</td>
                   <td>{formatPrice(r.totalEarned)}</td>
@@ -5709,7 +5709,7 @@ function AdminPurchasesReport() {
                 {(data.orders || []).map((o: any) => (
                   <tr key={o.id}>
                     <td>{o.id}</td>
-                    <td>{escapeHtml(o.supplier_name || o.supplierName || "—")}</td>
+                    <td>{o.supplier_name || o.supplierName || "—"}</td>
                     <td>{o.item_count || 0}</td>
                     <td>{formatPrice(o.total_cost || 0)}</td>
                     <td><span className="plan-status">{o.status}</span></td>
@@ -5750,7 +5750,7 @@ function AdminStockSummary() {
             <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
               <option value="">All Groups</option>
               {(groups?.groups || []).map((g) => (
-                <option key={g.id} value={g.id}>{escapeHtml(g.name)}</option>
+                <option key={g.id} value={g.id}>{g.name}</option>
               ))}
             </select>
           </label>
@@ -5767,7 +5767,7 @@ function AdminStockSummary() {
         <DataTable<any>
           ariaLabel="Stock summary"
           columns={[
-            { key: "product", label: "Product", sortable: true, value: (i) => i.name, render: (i) => escapeHtml(i.name) },
+            { key: "product", label: "Product", sortable: true, value: (i) => i.name, render: (i) => i.name },
             { key: "category", label: "Category", sortable: true, value: (i) => i.category || "", render: (i) => i.category || "—" },
             { key: "qty", label: "Qty", sortable: true, align: "right", value: (i) => i.quantityInStock ?? i.quantity_in_stock ?? 0, render: (i) => i.quantityInStock ?? i.quantity_in_stock ?? 0 },
             { key: "price", label: "Price", sortable: true, align: "right", value: (i) => i.price, render: (i) => formatPrice(i.price) },
@@ -5859,9 +5859,9 @@ function AdminStockTransfers() {
         <div className="panel" style={{ marginBottom: "1rem", maxWidth: 500 }}>
           <h3 style={{ marginTop: 0 }}>New Stock Transfer</h3>
           <form onSubmit={createTransfer}>
-            <div className="field"><label>From Branch<select value={form.fromBranchId} onChange={(e) => setForm({ ...form, fromBranchId: e.target.value })} required><option value="">Select source branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{escapeHtml(b.name)}</option>)}</select></label></div>
-            <div className="field"><label>To Branch<select value={form.toBranchId} onChange={(e) => setForm({ ...form, toBranchId: e.target.value })} required><option value="">Select destination branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{escapeHtml(b.name)}</option>)}</select></label></div>
-            <div className="field"><label>Product<select value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })} required><option value="">Select product</option>{productList.map((p: any) => <option key={p.id} value={p.id}>{escapeHtml(p.name)}</option>)}</select></label></div>
+            <div className="field"><label>From Branch<select value={form.fromBranchId} onChange={(e) => setForm({ ...form, fromBranchId: e.target.value })} required><option value="">Select source branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
+            <div className="field"><label>To Branch<select value={form.toBranchId} onChange={(e) => setForm({ ...form, toBranchId: e.target.value })} required><option value="">Select destination branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
+            <div className="field"><label>Product<select value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })} required><option value="">Select product</option>{productList.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div>
             <div className="field"><label>Quantity<input type="number" min="1" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} required /></label></div>
             {form.fromBranchId && form.productId && (
               <div style={{ display: "flex", gap: "1rem", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
@@ -5896,9 +5896,9 @@ function AdminStockTransfers() {
           ariaLabel="Stock transfers"
           columns={[
             { key: "id", label: "ID", value: (t) => `#${t.id}`, render: (t) => <span>#{t.id}</span> },
-            { key: "from", label: "From", sortable: true, value: (t) => branchList.find((b: any) => b.id === t.fromBranchId)?.name || `#${t.fromBranchId}`, render: (t) => escapeHtml(branchList.find((b: any) => b.id === t.fromBranchId)?.name || `#${t.fromBranchId}`) },
-            { key: "to", label: "To", sortable: true, value: (t) => branchList.find((b: any) => b.id === t.toBranchId)?.name || `#${t.toBranchId}`, render: (t) => escapeHtml(branchList.find((b: any) => b.id === t.toBranchId)?.name || `#${t.toBranchId}`) },
-            { key: "product", label: "Product", sortable: true, value: (t) => productList.find((p: any) => p.id === t.productId)?.name || t.productId, render: (t) => escapeHtml(productList.find((p: any) => p.id === t.productId)?.name || t.productId) },
+            { key: "from", label: "From", sortable: true, value: (t) => branchList.find((b: any) => b.id === t.fromBranchId)?.name || `#${t.fromBranchId}`, render: (t) => branchList.find((b: any) => b.id === t.fromBranchId)?.name || `#${t.fromBranchId}` },
+            { key: "to", label: "To", sortable: true, value: (t) => branchList.find((b: any) => b.id === t.toBranchId)?.name || `#${t.toBranchId}`, render: (t) => branchList.find((b: any) => b.id === t.toBranchId)?.name || `#${t.toBranchId}` },
+            { key: "product", label: "Product", sortable: true, value: (t) => productList.find((p: any) => p.id === t.productId)?.name || t.productId, render: (t) => productList.find((p: any) => p.id === t.productId)?.name || t.productId },
             { key: "qty", label: "Qty", sortable: true, align: "right", value: (t) => t.quantity, render: (t) => <span style={{ textAlign: "right" }}>{t.quantity}</span> },
             {
               key: "status",
@@ -6098,9 +6098,9 @@ function AdminCustomers() {
           ariaLabel="Customer accounts"
           columns={[
             { key: "id", label: "#", value: (c) => c.id, render: (c) => <span>{c.id}</span> },
-            { key: "name", label: "Name", sortable: true, value: (c) => c.name, render: (c) => escapeHtml(c.name) },
-            { key: "email", label: "Email", sortable: true, value: (c) => c.email, render: (c) => escapeHtml(c.email) },
-            { key: "phone", label: "Phone", value: (c) => c.phone || "", render: (c) => escapeHtml(c.phone || "-") },
+            { key: "name", label: "Name", sortable: true, value: (c) => c.name, render: (c) => c.name },
+            { key: "email", label: "Email", sortable: true, value: (c) => c.email, render: (c) => c.email },
+            { key: "phone", label: "Phone", value: (c) => c.phone || "", render: (c) => c.phone || "-" },
             {
               key: "status",
               label: "Status",
@@ -6175,9 +6175,9 @@ function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: ()
     <div className="panel" style={{ marginTop: "1.25rem", marginBottom: "1rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
         <div>
-          <h3 style={{ margin: 0 }}>Customer #{customer.id} — {escapeHtml(customer.name)}</h3>
+          <h3 style={{ margin: 0 }}>Customer #{customer.id} — {customer.name}</h3>
           <p className="muted" style={{ margin: "0.25rem 0 0" }}>
-            {escapeHtml(customer.email || "")}{customer.phone ? ` · ${escapeHtml(customer.phone)}` : ""}
+            {customer.email || ""}{customer.phone ? ` · ${customer.phone}` : ""}
           </p>
         </div>
         <RippleButton variant="ghost" size="small" onClick={onClose}>Close</RippleButton>
@@ -6218,8 +6218,8 @@ function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: ()
               <DataTable<any>
                 ariaLabel="Customer serialised assets"
                 columns={[
-                  { key: "sn", label: "Serial", value: (s) => s.serial_number, render: (s) => <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{escapeHtml(s.serial_number)}</span> },
-                  { key: "product", label: "Product", value: (s) => s.product_name || "", render: (s) => escapeHtml(s.product_name || "—") },
+                  { key: "sn", label: "Serial", value: (s) => s.serial_number, render: (s) => <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{s.serial_number}</span> },
+                  { key: "product", label: "Product", value: (s) => s.product_name || "", render: (s) => s.product_name || "—" },
                   { key: "sold", label: "Sold", value: (s) => s.sold_at ? new Date(s.sold_at).toISOString() : "", render: (s) => <span style={{ whiteSpace: "nowrap" }}>{s.sold_at ? new Date(s.sold_at).toLocaleDateString("en-GB") : "—"}</span> },
                   { key: "warranty", label: "Warranty", value: (s) => s.warranty_expires ? new Date(s.warranty_expires).toISOString() : "", render: (s) => <span style={{ whiteSpace: "nowrap" }}>{s.warranty_expires ? new Date(s.warranty_expires).toLocaleDateString("en-GB") : "—"}</span> },
                 ]}
@@ -6234,7 +6234,7 @@ function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: ()
                 ariaLabel="Customer repairs"
                 columns={[
                   { key: "id", label: "#", value: (r) => r.id, render: (r) => <span>#{r.id}</span> },
-                  { key: "device", label: "Device", value: (r) => `${r.deviceType || ""} ${r.deviceModel || ""}`.trim(), render: (r) => escapeHtml(`${r.deviceType || ""}${r.deviceModel ? " " + r.deviceModel : ""}`.trim() || "—") },
+                  { key: "device", label: "Device", value: (r) => `${r.deviceType || ""} ${r.deviceModel || ""}`.trim(), render: (r) => `${r.deviceType || ""}${r.deviceModel ? " " + r.deviceModel : ""}`.trim() || "—" },
                   { key: "date", label: "Created", value: (r) => new Date(r.createdAt).toISOString(), render: (r) => <span style={{ whiteSpace: "nowrap" }}>{new Date(r.createdAt).toLocaleDateString("en-GB")}</span> },
                   { key: "status", label: "Status", value: (r) => r.status, render: (r) => <StatusBadge status={r.status} domain="repairs" /> },
                 ]}
@@ -6248,8 +6248,8 @@ function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: ()
               <DataTable<any>
                 ariaLabel="Customer warranties"
                 columns={[
-                  { key: "product", label: "Product", value: (w) => w.productName, render: (w) => escapeHtml(w.productName) },
-                  { key: "serial", label: "Serial", value: (w) => w.serialNumber || "", render: (w) => w.serialNumber ? <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{escapeHtml(w.serialNumber)}</span> : "—" },
+                  { key: "product", label: "Product", value: (w) => w.productName, render: (w) => w.productName },
+                  { key: "serial", label: "Serial", value: (w) => w.serialNumber || "", render: (w) => w.serialNumber ? <span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{w.serialNumber}</span> : "—" },
                   { key: "start", label: "Start", value: (w) => w.startDate || "", render: (w) => <span style={{ whiteSpace: "nowrap" }}>{w.startDate || "—"}</span> },
                   { key: "expiry", label: "Expires", value: (w) => w.expiryDate || "", render: (w) => <span style={{ whiteSpace: "nowrap" }}>{w.expiryDate || "—"}</span> },
                   { key: "status", label: "Status", value: (w) => w.status, render: (w) => <StatusBadge status={w.status} domain="warranty" /> },
@@ -6298,7 +6298,7 @@ function AdminStockControl() {
             {items.map((i: any) => (
               <tr key={i.productId} style={checked.has(i.productId) ? { background: "var(--surface)" } : {}}>
                 <td><input type="checkbox" checked={checked.has(i.productId)} onChange={() => toggle(i.productId)} /></td>
-                <td>{escapeHtml(i.name)}</td>
+                <td>{i.name}</td>
                 <td>{i.category || "—"}</td>
                 <td>{i.quantityInStock}</td>
                 <td>{i.lowStockThreshold}</td>
@@ -6541,7 +6541,7 @@ function AdminPurchases() {
     return (
       <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-          <h1 style={{ margin: 0 }}>PO #{viewing.id} — {escapeHtml(viewing.supplierName)}</h1>
+          <h1 style={{ margin: 0 }}>PO #{viewing.id} — {viewing.supplierName}</h1>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(viewing.id)}>Download PDF</RippleButton>
             <RippleButton size="small" variant="ghost" onClick={() => setViewing(null)}>&larr; Back</RippleButton>
@@ -6553,7 +6553,7 @@ function AdminPurchases() {
             <p><strong>Status:</strong> <span className="plan-status" style={{ background: viewing.status === "received" ? "var(--success-light)" : viewing.status === "cancelled" ? "var(--danger-light)" : viewing.status === "ordered" ? "var(--primary-light)" : "var(--warning-light)", color: viewing.status === "received" ? "var(--success-text)" : viewing.status === "cancelled" ? "var(--danger-text)" : viewing.status === "ordered" ? "var(--primary)" : "var(--warning-text)" }}>{viewing.status}</span></p>
             <p><strong>Date:</strong> {formatDate(viewing.orderDate || viewing.order_date)}</p>
             <p><strong>Created:</strong> {formatDate(viewing.createdAt || viewing.created_at)}</p>
-            {viewing.notes && <p><strong>Notes:</strong> {escapeHtml(viewing.notes)}</p>}
+            {viewing.notes && <p><strong>Notes:</strong> {viewing.notes}</p>}
           </div>
           <div className="panel">
             <div className="stat-grid">
@@ -6594,7 +6594,7 @@ function AdminPurchases() {
                 const inputVal = receiveInputs[i.id] !== undefined ? receiveInputs[i.id] : maxReceive;
                 return (
                   <tr key={i.id}>
-                    <td>{escapeHtml(i.productName)}</td>
+                    <td>{i.productName}</td>
                     <td style={{ textAlign: "right" }}>{i.quantityOrdered}</td>
                     <td style={{ textAlign: "right", fontWeight: 600 }}>{i.quantityReceived}</td>
                     <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost)}</td>
@@ -6664,7 +6664,7 @@ function AdminPurchases() {
             <div style={{ position: "fixed", inset: 0, background: "var(--overlay)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200 }} onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
               <div className="panel" style={{ width: 460, maxWidth: "94vw", maxHeight: "80vh", overflowY: "auto" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.35rem" }}>
-                  <h3 style={{ margin: 0 }}>Serials — {escapeHtml(serialModalItem.productName)}</h3>
+                  <h3 style={{ margin: 0 }}>Serials — {serialModalItem.productName}</h3>
                   <RippleButton size="small" variant="ghost" onClick={closeModal}>&times;</RippleButton>
                 </div>
                 <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0 0 0.75rem" }}>
@@ -6725,7 +6725,7 @@ function AdminPurchases() {
             <label>Supplier</label>
             <select value={form.supplierName} onChange={(e) => setForm({ ...form, supplierName: e.target.value })}>
               <option value="">Select supplier...</option>
-              {suppliers.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.name}>{escapeHtml(s.name)}</option>)}
+              {suppliers.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
           </div>
           <div className="field">
@@ -6739,7 +6739,7 @@ function AdminPurchases() {
               <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, zIndex: 20, maxHeight: 200, overflowY: "auto" }}>
                 {filteredSearch.map((p) => (
                   <div key={p.id} role="button" tabIndex={0} onClick={() => addFormItem(p)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); addFormItem(p); } }} style={{ padding: "0.4rem 0.6rem", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
-                    {escapeHtml(p.name)} — {formatPrice(Number(p.price) || 0)}
+                    {p.name} — {formatPrice(Number(p.price) || 0)}
                   </div>
                 ))}
               </div>
@@ -6752,7 +6752,7 @@ function AdminPurchases() {
                 <tbody>
                   {formItems.map((item, idx) => (
                     <tr key={idx}>
-                      <td>{escapeHtml(item.productName)}</td>
+                      <td>{item.productName}</td>
                       <td><input type="number" min="1" value={item.quantity} onChange={(e) => updateFormItem(idx, "quantity", e.target.value)} style={{ width: 60 }} /></td>
                       <td><input type="number" min="0" step="0.01" value={item.unitCost} onChange={(e) => updateFormItem(idx, "unitCost", e.target.value)} style={{ width: 100 }} /></td>
                       <td><RippleButton size="small" variant="danger" aria-label="Remove item" onClick={() => removeFormItem(idx)}>✕</RippleButton></td>
@@ -6794,7 +6794,7 @@ function AdminPurchases() {
             {orders.filter((o: any) => !listSearch.trim() || String(o.id).includes(listSearch.trim().toLowerCase()) || (o.supplierName || "").toLowerCase().includes(listSearch.trim().toLowerCase())).map((o: any) => (
               <tr key={o.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => loadOrder(o.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); loadOrder(o.id); } }}>
                 <td>{o.id}</td>
-                <td>{escapeHtml(o.supplierName)}</td>
+                <td>{o.supplierName}</td>
                 <td>{(o.items || []).length}</td>
                 <td><span className="plan-status" style={{ background: o.status === "received" ? "var(--success-light)" : o.status === "cancelled" ? "var(--danger-light)" : o.status === "ordered" ? "var(--primary-light)" : "var(--warning-light)", color: o.status === "received" ? "var(--success-text)" : o.status === "cancelled" ? "var(--danger-text)" : o.status === "ordered" ? "var(--primary)" : "var(--warning-text)" }}>{o.status}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>{formatDate(o.orderDate || o.order_date)}</td>
@@ -6861,13 +6861,13 @@ function AdminReviews() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem", flexWrap: "wrap" }}>
                     <span style={{ fontSize: "0.85rem", color: "var(--accent)" }}>{Array.from({ length: 5 }).map((_, i) => i < r.rating ? "★" : "☆").join("")}</span>
-                    <strong style={{ fontSize: "0.85rem" }}>{escapeHtml(r.customer_name || "Anonymous")}</strong>
+                    <strong style={{ fontSize: "0.85rem" }}>{r.customer_name || "Anonymous"}</strong>
                     <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>on</span>
-                    <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{escapeHtml(r.product_name || r.product_id)}</span>
+                    <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{r.product_name || r.product_id}</span>
                     <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{new Date(r.created_at).toLocaleDateString("en-GB")}</span>
                   </div>
-                  {r.title && <p style={{ fontWeight: 600, margin: "0.15rem 0", fontSize: "0.9rem" }}>{escapeHtml(r.title)}</p>}
-                  {r.comment && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0.15rem 0" }}>{escapeHtml(r.comment)}</p>}
+                  {r.title && <p style={{ fontWeight: 600, margin: "0.15rem 0", fontSize: "0.9rem" }}>{r.title}</p>}
+                  {r.comment && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "0.15rem 0" }}>{r.comment}</p>}
                 </div>
                 <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)", whiteSpace: "nowrap" }} onClick={() => deleteReview(r.id, r.product_id)} disabled={deletingId === r.id}>{deletingId === r.id ? "..." : "Delete"}</button>
               </div>
@@ -6975,8 +6975,8 @@ function AdminEmailSettings() {
               <tbody>
                 {logs.map((l: any) => (
                   <tr key={l.id}>
-                    <td>{escapeHtml(l.to_email)}</td>
-                    <td>{escapeHtml(l.subject)}</td>
+                    <td>{l.to_email}</td>
+                    <td>{l.subject}</td>
                     <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: 4, background: "var(--border)" }}>{l.type}</span></td>
                     <td><span style={{ color: l.status === "sent" ? "var(--success)" : l.status === "failed" ? "var(--danger)" : "var(--text-secondary)" }}>{l.status}</span></td>
                     <td>{new Date(l.created_at).toLocaleString("en-GB")}</td>
@@ -7058,11 +7058,11 @@ function AdminDeliveryFees() {
       <div className="panel" style={{ maxWidth: 720 }}>
         {Object.entries(regions).map(([region, cs]) => (
           <div key={region} style={{ marginBottom: "1.5rem" }}>
-            <h3 style={{ marginTop: 0, marginBottom: "0.5rem", fontSize: "0.85rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>{escapeHtml(region)}</h3>
+            <h3 style={{ marginTop: 0, marginBottom: "0.5rem", fontSize: "0.85rem", textTransform: "uppercase", color: "var(--text-secondary)" }}>{region}</h3>
             <div className="form-grid" style={{ gap: "0.75rem" }}>
               {cs.map((c) => (
                 <div className="field" key={c.id} style={{ marginBottom: 0 }}>
-                  <label>{escapeHtml(c.name)}
+                  <label>{c.name}
                     <input
                       type="number"
                       min={0}
@@ -7141,7 +7141,7 @@ function ReportScreen({ title, endpoint, note, withBranch, withGroup, byOptions,
               <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
                 <option value="">All Branches</option>
                 {(branches?.branches || []).filter((b: any) => b.isActive).map((b: any) => (
-                  <option key={b.id} value={String(b.id)}>{escapeHtml(b.name)}</option>
+                  <option key={b.id} value={String(b.id)}>{b.name}</option>
                 ))}
               </select>
             </label>
@@ -7153,7 +7153,7 @@ function ReportScreen({ title, endpoint, note, withBranch, withGroup, byOptions,
               <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
                 <option value="">All Groups</option>
                 {(groups?.groups || []).map((g: any) => (
-                  <option key={g.id} value={String(g.id)}>{escapeHtml(g.name)}</option>
+                  <option key={g.id} value={String(g.id)}>{g.name}</option>
                 ))}
               </select>
             </label>
@@ -7182,7 +7182,7 @@ function ReportScreen({ title, endpoint, note, withBranch, withGroup, byOptions,
         )}
       </div>
       {error && <ErrorMsg msg={error} />}
-      {note && <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginBottom: "1rem" }}>{escapeHtml(note)}</p>}
+      {note && <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginBottom: "1rem" }}>{note}</p>}
       {loading && !report && <Spinner />}
       {report && children(report, { from, to })}
     </>
@@ -7201,7 +7201,7 @@ function ReportTable({ columns, rows, rowKey, ariaLabel, title }: {
 }) {
   return (
     <>
-      {title && <h3>{escapeHtml(title)}</h3>}
+      {title && <h3>{title}</h3>}
       <div className="table-wrap" style={{ marginBottom: "1rem" }}>
         <DataTable<any>
           ariaLabel={ariaLabel}
@@ -7246,7 +7246,7 @@ function ReportGrossProfit() {
             ariaLabel="Gross profit breakdown"
             rowKey={(row) => String(row.id ?? row.label)}
             columns={[
-              { key: "label", label: "Item", sortable: true, value: (row: any) => row.label, render: (row: any) => escapeHtml(String(row.label)) },
+              { key: "label", label: "Item", sortable: true, value: (row: any) => row.label, render: (row: any) => String(row.label) },
               { key: "units", label: "Units", align: "right", sortable: true, value: (row: any) => row.units },
               { key: "revenue", label: "Revenue", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
               { key: "cost", label: "COGS", align: "right", sortable: true, value: (row: any) => row.cost, render: (row: any) => formatPrice(row.cost) },
@@ -7286,7 +7286,7 @@ function ReportPayments() {
             ariaLabel="Payments by method"
             rowKey={(row) => row.method}
             columns={[
-              { key: "method", label: "Method", sortable: true, value: (row: any) => row.method, render: (row: any) => <span style={{ textTransform: "capitalize" }}>{escapeHtml(row.method)}</span> },
+              { key: "method", label: "Method", sortable: true, value: (row: any) => row.method, render: (row: any) => <span style={{ textTransform: "capitalize" }}>{row.method}</span> },
               { key: "orders", label: "Orders", align: "right", sortable: true, value: (row: any) => row.orders },
               { key: "revenue", label: "Revenue", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
               { key: "refunds", label: "Refunds", align: "right", sortable: true, value: (row: any) => row.refunds, render: (row: any) => formatPrice(row.refunds) },
@@ -7326,8 +7326,8 @@ function ReportReceivables() {
             rowKey={(row) => String(row.id)}
             columns={[
               { key: "id", label: "Order", align: "right", sortable: true, value: (row: any) => row.id },
-              { key: "customer", label: "Customer", sortable: true, value: (row: any) => row.customer || "", render: (row: any) => escapeHtml(row.customer || "\u2014") },
-              { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{escapeHtml(row.status)}</span> },
+              { key: "customer", label: "Customer", sortable: true, value: (row: any) => row.customer || "", render: (row: any) => row.customer || "\u2014" },
+              { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{row.status}</span> },
               { key: "total", label: "Total", align: "right", sortable: true, value: (row: any) => row.total, render: (row: any) => formatPrice(row.total) },
               { key: "age_days", label: "Age (days)", align: "right", sortable: true, value: (row: any) => row.age_days },
               { key: "created_at", label: "Created", sortable: true, value: (row: any) => row.created_at, render: (row: any) => new Date(row.created_at).toLocaleDateString("en-GB") },
@@ -7367,7 +7367,7 @@ function ReportFinancing() {
             ariaLabel="Financing aging"
             rowKey={(row: any) => row.bucket}
             columns={[
-              { key: "bucket", label: "Bucket", value: (row: any) => row.bucket, render: (row: any) => escapeHtml(row.bucket) },
+              { key: "bucket", label: "Bucket", value: (row: any) => row.bucket, render: (row: any) => row.bucket },
               { key: "amount", label: "Amount", align: "right", value: (row: any) => row.amount, render: (row: any) => cents(row.amount) },
             ]}
             rows={[
@@ -7394,8 +7394,8 @@ function ReportFinancing() {
             ariaLabel="Financing arrears"
             rowKey={(row: any) => String(row.id)}
             columns={[
-              { key: "agreement", label: "Agreement", value: (row: any) => row.agreementNumber, render: (row: any) => escapeHtml(row.agreementNumber) },
-              { key: "customer", label: "Customer", value: (row: any) => row.customer, render: (row: any) => escapeHtml(row.customer || "\u2014") },
+              { key: "agreement", label: "Agreement", value: (row: any) => row.agreementNumber, render: (row: any) => row.agreementNumber },
+              { key: "customer", label: "Customer", value: (row: any) => row.customer, render: (row: any) => row.customer || "\u2014" },
               { key: "overdue", label: "Overdue", align: "right", sortable: true, value: (row: any) => row.overdueCents, render: (row: any) => cents(row.overdueCents) },
               { key: "count", label: "Instalments", align: "right", sortable: true, value: (row: any) => row.overdueCount },
               { key: "oldest", label: "Oldest due", value: (row: any) => row.oldestDue || "", render: (row: any) => row.oldestDue ? new Date(row.oldestDue).toLocaleDateString("en-GB") : "\u2014" },
@@ -7435,7 +7435,7 @@ function ReportRepairs() {
             ariaLabel="Repairs by status"
             rowKey={(row) => row.status}
             columns={[
-              { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{escapeHtml(row.status)}</span> },
+              { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{row.status}</span> },
               { key: "tickets", label: "Tickets", align: "right", sortable: true, value: (row: any) => row.tickets },
               { key: "revenue", label: "Revenue", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
             ]}
@@ -7470,7 +7470,7 @@ function ReportWarranty() {
             ariaLabel="Claims by status"
             rowKey={(row) => String(row.status)}
             columns={[
-              { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{escapeHtml(row.status)}</span> },
+              { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{row.status}</span> },
               { key: "cnt", label: "Claims", align: "right", sortable: true, value: (row: any) => row.cnt },
             ]}
             rows={r.statuses || []}
@@ -7507,7 +7507,7 @@ function ReportCustomers() {
             ariaLabel="Top customers"
             rowKey={(row) => row.name}
             columns={[
-              { key: "name", label: "Customer", sortable: true, value: (row: any) => row.name, render: (row: any) => escapeHtml(row.name) },
+              { key: "name", label: "Customer", sortable: true, value: (row: any) => row.name, render: (row: any) => row.name },
               { key: "orders", label: "Orders", align: "right", sortable: true, value: (row: any) => row.orders },
               { key: "revenue", label: "Gross", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
               { key: "net", label: "Net", align: "right", sortable: true, value: (row: any) => row.net, render: (row: any) => formatPrice(row.net) },
@@ -7550,7 +7550,7 @@ function ReportValuation() {
             ariaLabel="Stock valuation breakdown"
             rowKey={(row) => String(row.id)}
             columns={[
-              { key: "label", label: r.by === "product" ? "Product ID" : "Segment", sortable: true, value: (row: any) => row.label, render: (row: any) => escapeHtml(String(row.label)) },
+              { key: "label", label: r.by === "product" ? "Product ID" : "Segment", sortable: true, value: (row: any) => row.label, render: (row: any) => String(row.label) },
               { key: "products", label: "Products", align: "right", sortable: true, value: (row: any) => row.products },
               { key: "units", label: "Units", align: "right", sortable: true, value: (row: any) => row.units },
               { key: "retail_value", label: "Retail", align: "right", sortable: true, value: (row: any) => row.retail_value, render: (row: any) => formatPrice(row.retail_value) },
@@ -7576,7 +7576,7 @@ function ReportStockTake() {
           rowKey={(row) => String(row.id)}
           columns={[
             { key: "id", label: "Session", align: "right", sortable: true, value: (row: any) => row.id },
-            { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{escapeHtml(row.status)}</span> },
+            { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{row.status}</span> },
             { key: "items", label: "Items", align: "right", sortable: true, value: (row: any) => row.items },
             { key: "net_variance_units", label: "Net variance", align: "right", sortable: true, value: (row: any) => row.net_variance_units },
             { key: "gross_variance_units", label: "Gross variance", align: "right", sortable: true, value: (row: any) => row.gross_variance_units },
@@ -7606,7 +7606,7 @@ function ReportSuppliers() {
           ariaLabel="Suppliers"
           rowKey={(row) => row.supplier}
           columns={[
-            { key: "supplier", label: "Supplier", sortable: true, value: (row: any) => row.supplier, render: (row: any) => escapeHtml(row.supplier) },
+            { key: "supplier", label: "Supplier", sortable: true, value: (row: any) => row.supplier, render: (row: any) => row.supplier },
             { key: "purchase_orders", label: "POs", align: "right", sortable: true, value: (row: any) => row.purchase_orders },
             { key: "received_orders", label: "Received POs", align: "right", sortable: true, value: (row: any) => row.received_orders },
             { key: "ordered_value", label: "Ordered", align: "right", sortable: true, value: (row: any) => row.ordered_value, render: (row: any) => formatPrice(row.ordered_value) },
@@ -7693,7 +7693,7 @@ function ReportSerial() {
             ariaLabel="Serials by product"
             rowKey={(row) => String(row.product_id)}
             columns={[
-              { key: "product", label: "Product", sortable: true, value: (row: any) => row.product, render: (row: any) => escapeHtml(row.product) },
+              { key: "product", label: "Product", sortable: true, value: (row: any) => row.product, render: (row: any) => row.product },
               { key: "total", label: "Total", align: "right", sortable: true, value: (row: any) => row.total },
               { key: "in_stock", label: "In stock", align: "right", sortable: true, value: (row: any) => row.in_stock },
               { key: "sold_in_period", label: "Sold in period", align: "right", sortable: true, value: (row: any) => row.sold_in_period },
@@ -7724,7 +7724,7 @@ function ReportLoyalty() {
             ariaLabel="Loyalty activity"
             rowKey={(row) => row.type}
             columns={[
-              { key: "type", label: "Type", sortable: true, value: (row: any) => row.type, render: (row: any) => <span style={{ textTransform: "capitalize" }}>{escapeHtml(row.type)}</span> },
+              { key: "type", label: "Type", sortable: true, value: (row: any) => row.type, render: (row: any) => <span style={{ textTransform: "capitalize" }}>{row.type}</span> },
               { key: "count", label: "Transactions", align: "right", sortable: true, value: (row: any) => row.count },
               { key: "points", label: "Points", align: "right", sortable: true, value: (row: any) => row.points },
             ]}
@@ -7736,7 +7736,7 @@ function ReportLoyalty() {
               ariaLabel="Top loyalty members"
               rowKey={(row) => row.name}
               columns={[
-                { key: "name", label: "Member", sortable: true, value: (row: any) => row.name, render: (row: any) => escapeHtml(row.name) },
+                { key: "name", label: "Member", sortable: true, value: (row: any) => row.name, render: (row: any) => row.name },
                 { key: "points", label: "Points", align: "right", sortable: true, value: (row: any) => row.points },
                 { key: "lifetime_earned", label: "Lifetime earned", align: "right", sortable: true, value: (row: any) => row.lifetime_earned },
               ]}
@@ -7796,7 +7796,7 @@ function ReportCampaigns() {
             ariaLabel="Campaigns"
             rowKey={(row) => String(row.id)}
             columns={[
-              { key: "title", label: "Campaign", sortable: true, value: (row: any) => row.title, render: (row: any) => escapeHtml(row.title) },
+              { key: "title", label: "Campaign", sortable: true, value: (row: any) => row.title, render: (row: any) => row.title },
               { key: "is_active", label: "Status", sortable: true, value: (row: any) => row.is_active, render: (row: any) => <span className="plan-status">{row.is_active ? "active" : "inactive"}</span> },
               { key: "orders", label: "Orders", align: "right", sortable: true, value: (row: any) => row.orders },
               { key: "units", label: "Units", align: "right", sortable: true, value: (row: any) => row.units },
