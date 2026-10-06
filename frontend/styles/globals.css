@@ -3479,6 +3479,15 @@ a.order-item:hover {
 
 .bell-btn.pulse { animation: bellPulse 0.5s ease-in-out 3; }
 
+/* Backend unreachable: the bell reads "unavailable" instead of silently
+   claiming zero notifications. A warm warning tint so the state is visible
+   without a loud badge the user might misread as "new message". */
+.bell-btn.bell-unavailable {
+  border-color: var(--warning);
+  color: var(--warning-text);
+  background: var(--warning-light);
+}
+
 .bell-badge {
   position: absolute;
   top: -4px;
