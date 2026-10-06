@@ -7,10 +7,6 @@ import { Media } from "@/components/Media";
 import EmptyCartAnimation from "@/components/EmptyCartAnimation";
 import SantaGearAnimation from "@/components/SantaGearAnimation";
 
-function escapeHtml(text: string) {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-
 export default function CartPage() {
   const { formatPrice, refreshCartCount } = useApp();
   const [items, setItems] = useState<CartItem[]>([]);
@@ -235,7 +231,7 @@ export default function CartPage() {
             <div key={item.productId} className="cart-item">
               {item.imageUrl ? <Media src={item.imageUrl} alt={item.name} width={72} height={72} fit="cover" className="cart-item__img" /> : <div style={{ width: 72, height: 72, background: "var(--surface)", borderRadius: 8 }} />}
               <div className="cart-item__info">
-                <div className="cart-item__name">{escapeHtml(item.name)}</div>
+                <div className="cart-item__name">{item.name}</div>
                 <div className="cart-item__price">{formatPrice(item.price)}</div>
                 {item.hasWarranty && item.warrantyDuration ? (
                   <div style={{ fontSize: "0.8rem", color: "var(--primary)", marginTop: "0.25rem" }}>&#x1F6E1;&#xFE0F; {item.warrantyDuration}mo warranty</div>
@@ -325,15 +321,15 @@ export default function CartPage() {
               <div style={{ marginBottom: "1rem" }}>
                 {items.map((item) => (
                   <div key={item.productId} style={{ display: "flex", justifyContent: "space-between", gap: "1rem", padding: "0.5rem 0", borderBottom: "1px solid var(--border)", fontSize: "0.9rem" }}>
-                    <span style={{ flex: 1 }}>{escapeHtml(item.name)} <span style={{ color: "var(--text-secondary)" }}>&times; {item.quantity}</span></span>
+                    <span style={{ flex: 1 }}>{item.name} <span style={{ color: "var(--text-secondary)" }}>&times; {item.quantity}</span></span>
                     <span style={{ whiteSpace: "nowrap" }}>{formatPrice(item.lineTotal)}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="cart-summary__row"><span>Shipping to</span><span style={{ textAlign: "right" }}>{escapeHtml(shippingName)}<br />{escapeHtml(shippingAddress)}, {escapeHtml(shippingCountyLabel)}</span></div>
-              {shippingPhone.trim() && <div className="cart-summary__row"><span>Phone</span><span>{escapeHtml(shippingPhone)}</span></div>}
-              {mpesaPhone.trim() && <div className="cart-summary__row"><span>M-Pesa number</span><span>{escapeHtml(mpesaPhone)}</span></div>}
+              <div className="cart-summary__row"><span>Shipping to</span><span style={{ textAlign: "right" }}>{shippingName}<br />{shippingAddress}, {shippingCountyLabel}</span></div>
+              {shippingPhone.trim() && <div className="cart-summary__row"><span>Phone</span><span>{shippingPhone}</span></div>}
+              {mpesaPhone.trim() && <div className="cart-summary__row"><span>M-Pesa number</span><span>{mpesaPhone}</span></div>}
               {couponDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Coupon discount</span><span style={{ color: "var(--success)" }}>-{formatPrice(couponDiscount)}</span></div>}
               {giftCardDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Gift card</span><span style={{ color: "var(--success)" }}>-{formatPrice(giftCardDiscount)}</span></div>}
               {pointsDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Points discount</span><span style={{ color: "var(--success)" }}>-{formatPrice(pointsDiscount)}</span></div>}

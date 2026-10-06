@@ -3,7 +3,6 @@ import { useRouter } from "next/router";
 import { api, isCustomerLoggedIn, requireCustomerLogin, addGuestCartItem } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import type { Product, ProductImage } from "@/lib/types";
-import { escapeHtml } from "@/lib/sanitize";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { PageHead } from "@/components/ui";
@@ -462,8 +461,8 @@ export default function ProductPage() {
               </div>
             </div>
             <div style={{ marginBottom: "0.25rem" }}>{renderStars(userReview.rating)}</div>
-            {userReview.title && <p style={{ fontWeight: 600, margin: "0.25rem 0" }}>{escapeHtml(userReview.title)}</p>}
-            {userReview.comment && <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)" }}>{escapeHtml(userReview.comment)}</p>}
+            {userReview.title && <p style={{ fontWeight: 600, margin: "0.25rem 0" }}>{userReview.title}</p>}
+            {userReview.comment && <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)" }}>{userReview.comment}</p>}
           </div>
         )}
 
@@ -491,12 +490,12 @@ export default function ProductPage() {
         {reviews.length === 0 ? <p className="muted">No reviews yet. Be the first to review this product!</p> : reviews.map((r: any) => (
           <div key={r.id} style={{ padding: "0.75rem 0", borderBottom: "1px solid var(--border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-              <strong>{escapeHtml(r.customer_name || "Anonymous")}</strong>
+              <strong>{r.customer_name || "Anonymous"}</strong>
               {renderStars(r.rating)}
               <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{new Date(r.created_at).toLocaleDateString("en-GB")}</span>
             </div>
-            {r.title && <p style={{ fontWeight: 600, margin: "0.25rem 0" }}>{escapeHtml(r.title)}</p>}
-            {r.comment && <p style={{ fontSize: "0.9rem", margin: "0.25rem 0 0", color: "var(--text-secondary)" }}>{escapeHtml(r.comment)}</p>}
+            {r.title && <p style={{ fontWeight: 600, margin: "0.25rem 0" }}>{r.title}</p>}
+            {r.comment && <p style={{ fontSize: "0.9rem", margin: "0.25rem 0 0", color: "var(--text-secondary)" }}>{r.comment}</p>}
           </div>
         ))}
 

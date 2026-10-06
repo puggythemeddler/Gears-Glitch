@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
 import CurrencySelector from "@/components/CurrencySelector";
-import { formatPrice, escapeHtml } from "./shared";
+import { formatPrice } from "./shared";
 import { Media } from "@/components/Media";
 
 export const LAYOUT_KEY = "jumia";

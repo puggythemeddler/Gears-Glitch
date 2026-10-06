@@ -3,7 +3,6 @@ import { useRouter } from "next/router";
 import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import type { Order } from "@/lib/types";
-import { escapeHtml } from "@/lib/sanitize";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -178,7 +177,7 @@ export default function OrderDetailPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <StatusBadge status={order.status} domain="orders" />
-            {order.paymentMethod && <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Payment: {escapeHtml(order.paymentMethod)}</span>}
+            {order.paymentMethod && <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Payment: {order.paymentMethod}</span>}
           </div>
           <span className="muted">{createdDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
         </div>
@@ -256,11 +255,11 @@ export default function OrderDetailPage() {
                 <h3>Shipping details</h3>
                 <table className="data-table">
                   <tbody>
-                    <tr><td>Name</td><td>{escapeHtml(order.shippingName || "")}</td></tr>
-                    <tr><td>Address</td><td>{escapeHtml(order.shippingAddress || "")}</td></tr>
-                    {order.shippingCity && <tr><td>City</td><td>{escapeHtml(order.shippingCity)}</td></tr>}
-                    <tr><td>County</td><td>{escapeHtml(order.shippingCounty || "")}</td></tr>
-                    {order.shippingPhone && <tr><td>Phone</td><td>{escapeHtml(order.shippingPhone)}</td></tr>}
+                    <tr><td>Name</td><td>{order.shippingName || ""}</td></tr>
+                    <tr><td>Address</td><td>{order.shippingAddress || ""}</td></tr>
+                    {order.shippingCity && <tr><td>City</td><td>{order.shippingCity}</td></tr>}
+                    <tr><td>County</td><td>{order.shippingCounty || ""}</td></tr>
+                    {order.shippingPhone && <tr><td>Phone</td><td>{order.shippingPhone}</td></tr>}
                   </tbody>
                 </table>
               </>
@@ -268,7 +267,7 @@ export default function OrderDetailPage() {
             {order.notes && (
               <>
                 <h3>Notes</h3>
-                <p>{escapeHtml(order.notes)}</p>
+                <p>{order.notes}</p>
               </>
             )}
           </>
@@ -289,7 +288,7 @@ export default function OrderDetailPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
                     {img && <Media src={img} alt="" width={36} height={36} fit="cover" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />}
                     <a href={`/product?id=${encodeURIComponent(i.productId)}`} style={{ color: "var(--text)", textDecoration: "none" }}>
-                      <span style={{ fontWeight: 500 }}>{escapeHtml(i.name)}</span>
+                      <span style={{ fontWeight: 500 }}>{i.name}</span>
                     </a>
                   </div>
                 </td>
@@ -307,7 +306,7 @@ export default function OrderDetailPage() {
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
                     {img && <Media src={img} alt="" width={36} height={36} fit="cover" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />}
-                    <span>{escapeHtml(i.name)}</span>
+                    <span>{i.name}</span>
                   </div>
                 </td>
                 <td>{i.quantity}</td>

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { api, hasStaffSession } from "@/lib/api";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { escapeHtml } from "@/lib/sanitize";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
 import { usePageTitle } from "@/lib/use-page-title";
@@ -170,7 +169,7 @@ export default function StockTakeSessionPage() {
                   <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, zIndex: 20, maxHeight: 250, overflowY: "auto" }}>
                     {filteredProducts.slice(0, 20).map((p) => (
                       <div key={p.id} onClick={() => addProduct(p.id)} style={{ padding: "0.5rem 0.75rem", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
-                        {escapeHtml(p.name)} — {formatPrice(p.price)}
+                        {p.name} — {formatPrice(p.price)}
                       </div>
                     ))}
                   </div>
@@ -184,7 +183,7 @@ export default function StockTakeSessionPage() {
           <DataTable<any>
             ariaLabel="Stock take counting table"
             columns={[
-              { key: "product", label: "Product", sortable: true, value: (r) => r.productName, render: (r) => escapeHtml(r.productName) },
+              { key: "product", label: "Product", sortable: true, value: (r) => r.productName, render: (r) => r.productName },
               { key: "system", label: "System Qty", sortable: true, align: "right", value: (r) => r.systemQuantity, render: (r) => <span style={{ textAlign: "right" }}>{r.systemQuantity}</span> },
               {
                 key: "counted",
@@ -252,7 +251,7 @@ export default function StockTakeSessionPage() {
               <DataTable<any>
                 ariaLabel="Stock take completion report"
                 columns={[
-                  { key: "product", label: "Product", sortable: true, value: (r) => r.productName, render: (r) => escapeHtml(r.productName) },
+                  { key: "product", label: "Product", sortable: true, value: (r) => r.productName, render: (r) => r.productName },
                   { key: "system", label: "System", sortable: true, align: "right", value: (r) => r.systemQuantity, render: (r) => <span style={{ textAlign: "right" }}>{r.systemQuantity}</span> },
                   { key: "counted", label: "Counted", sortable: true, align: "right", value: (r) => r.countedQuantity, render: (r) => <span style={{ textAlign: "right" }}>{r.countedQuantity}</span> },
                   {

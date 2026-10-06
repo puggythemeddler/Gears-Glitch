@@ -27,5 +27,3 @@ export function formatPrice(amount: number) {
     return `${sym} ${converted.toFixed(2)}`;
   }
 }
-
-export { escapeHtml } from "@/lib/sanitize";

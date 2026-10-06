@@ -1,7 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { api, isCustomerLoggedIn } from "@/lib/api";
-import { escapeHtml } from "@/lib/sanitize";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
@@ -95,8 +94,8 @@ export default function RepairTicketPage() {
         </div>
         <table className="data-table">
           <tbody>
-            <tr><td>Device</td><td>{escapeHtml(ticket.deviceType)} {ticket.deviceModel ? `(${escapeHtml(ticket.deviceModel)})` : ""}</td></tr>
-            <tr><td>Issue</td><td>{escapeHtml(ticket.issueDescription)}</td></tr>
+            <tr><td>Device</td><td>{ticket.deviceType} {ticket.deviceModel ? `(${ticket.deviceModel})` : ""}</td></tr>
+            <tr><td>Issue</td><td>{ticket.issueDescription}</td></tr>
             {ticket.etaAt && <tr><td>Estimated completion</td><td>{formatDate(ticket.etaAt)}</td></tr>}
           </tbody>
         </table>
@@ -141,7 +140,7 @@ export default function RepairTicketPage() {
               <span className="timeline-dot" aria-hidden="true" />
               <div className="timeline-title">{u.updateType === "customer_note" ? "You" : u.staffName || "Staff"}</div>
               <div className="timeline-meta">{formatDate(u.createdAt)}</div>
-              <div className="timeline-body">{escapeHtml(u.message)}</div>
+              <div className="timeline-body">{u.message}</div>
             </li>
           ))}
         </ul>

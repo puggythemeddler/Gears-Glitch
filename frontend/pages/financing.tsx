@@ -1,6 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
 import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
-import { escapeHtml } from "@/lib/sanitize";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
@@ -170,8 +169,8 @@ export default function FinancingPage() {
           <div key={a.id} className="order-item" style={{ display: "block" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
               <div>
-                <strong>{escapeHtml(a.productName || a.agreementNumber)}</strong>
-                <span className="muted" style={{ display: "block", fontSize: "0.8rem" }}>{escapeHtml(a.agreementNumber)} {"\u00b7"} {money(a.instalmentCents)} / {FREQ_LABEL[a.frequency] || a.frequency} {"\u00b7"} {a.termCount} instalments</span>
+                <strong>{a.productName || a.agreementNumber}</strong>
+                <span className="muted" style={{ display: "block", fontSize: "0.8rem" }}>{a.agreementNumber} {"\u00b7"} {money(a.instalmentCents)} / {FREQ_LABEL[a.frequency] || a.frequency} {"\u00b7"} {a.termCount} instalments</span>
               </div>
               <StatusBadge status={a.status} domain="financingAgreement" />
             </div>
@@ -194,7 +193,7 @@ export default function FinancingPage() {
           <ul style={{ listStyle: "none", padding: 0 }}>
             {applications.map((a) => (
               <li key={a.id} className="order-item" style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
-                <span>{escapeHtml(a.productName || a.applicationNumber)} <span className="muted">{"\u00b7"} {escapeHtml(a.applicationNumber)}</span></span>
+                <span>{a.productName || a.applicationNumber} <span className="muted">{"\u00b7"} {a.applicationNumber}</span></span>
                 <span style={{ display: "inline-flex", gap: "0.5rem", alignItems: "center" }}>
                   <StatusBadge status={a.status} domain="financingApplication" />
                   <span className="muted">{fmtDate(a.createdAt)}</span>
@@ -236,8 +235,8 @@ function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChang
     <section className="panel" style={{ marginTop: "var(--space-4)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", flexWrap: "wrap", gap: "0.5rem" }}>
         <div>
-          <h3 style={{ margin: 0 }}>{escapeHtml(agreement.productName || agreement.agreementNumber)}</h3>
-          <p className="muted" style={{ margin: "0.25rem 0 0" }}>{escapeHtml(agreement.agreementNumber)} {"\u00b7"} {money(agreement.hpPriceCents)} total</p>
+          <h3 style={{ margin: 0 }}>{agreement.productName || agreement.agreementNumber}</h3>
+          <p className="muted" style={{ margin: "0.25rem 0 0" }}>{agreement.agreementNumber} {"\u00b7"} {money(agreement.hpPriceCents)} total</p>
         </div>
         <span style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
           <StatusBadge status={agreement.status} domain="financingAgreement" />
@@ -295,7 +294,7 @@ function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChang
               <tbody>
                 {(agreement.payments || []).map((p) => (
                   <tr key={p.id}>
-                    <td>{escapeHtml(p.paymentRef)}{p.mpesaReceipt ? ` \u00b7 ${escapeHtml(p.mpesaReceipt)}` : ""}</td>
+                    <td>{p.paymentRef}{p.mpesaReceipt ? ` \u00b7 ${p.mpesaReceipt}` : ""}</td>
                     <td style={{ textAlign: "right" }}>{money(p.amountCents)}</td>
                     <td>{p.method}</td>
                     <td><StatusBadge status={p.status} domain="financingPayment" /></td>

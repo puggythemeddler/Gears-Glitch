@@ -8,8 +8,6 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
 import { Media } from "@/components/Media";
 
-function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
-
 export default function OrdersPage() {
   const feedback = useFeedback();
   const { formatPrice } = useApp();
@@ -106,14 +104,14 @@ export default function OrdersPage() {
                     return (
                       <div key={i.id} style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.25rem 0.5rem", background: "var(--surface-hover)", borderRadius: "var(--radius-md)", fontSize: "0.8rem" }}>
                         {img && <Media src={img} alt="" width={22} height={22} fit="cover" style={{ width: 22, height: 22, objectFit: "cover", borderRadius: 4 }} />}
-                        <span>{escapeHtml(i.name)}</span>
+                        <span>{i.name}</span>
                       </div>
                     );
                   })}
                   {(items.length > 0 || activeCount > 0) && items.length < activeCount && <span className="muted" style={{ fontSize: "0.8rem", alignSelf: "center" }}>+{activeCount - items.length} more</span>}
                 </div>
               )}
-              {o.shippingName && <p style={{ fontSize: "0.85rem", marginTop: "0.4rem" }}>{escapeHtml(o.shippingName)}{o.shippingCounty ? ` — ${escapeHtml(o.shippingCounty)}` : ""}</p>}
+              {o.shippingName && <p style={{ fontSize: "0.85rem", marginTop: "0.4rem" }}>{o.shippingName}{o.shippingCounty ? ` — ${o.shippingCounty}` : ""}</p>}
             </div>
           );
         })

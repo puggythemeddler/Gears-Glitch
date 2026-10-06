@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef } from "react";
 import { api, getRole } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { useApp } from "@/lib/app-context";
-import { escapeHtml } from "@/lib/sanitize";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { usePageTitle } from "@/lib/use-page-title";
@@ -169,8 +168,8 @@ export default function QuotesPage() {
                 const cfg = STATUS_CONFIG[q.status] || STATUS_CONFIG.pending;
                 return (
                   <tr key={q.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => setViewQuote(q)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setViewQuote(q); } }}>
-                    <td style={{ fontWeight: 600 }}>{escapeHtml(q.quoteNumber)}</td>
-                    <td>{escapeHtml(q.customerName || "—")}</td>
+                    <td style={{ fontWeight: 600 }}>{q.quoteNumber}</td>
+                    <td>{q.customerName || "—"}</td>
                     <td>{q.items.length}</td>
                     <td style={{ fontWeight: 600 }}>{formatPrice(q.total)}</td>
                     <td>
@@ -312,7 +311,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
           <button className="btn btn-sm btn-ghost" onClick={() => setEditing(false)}>&larr; Cancel Edit</button>
-          <h1 style={{ margin: 0 }}>Edit: {escapeHtml(quote.quoteNumber)}</h1>
+          <h1 style={{ margin: 0 }}>Edit: {quote.quoteNumber}</h1>
         </div>
         <div className="panel" style={{ padding: "1rem", marginBottom: "1rem" }}>
           <input className="input" placeholder="Search products to add..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} style={{ width: "100%" }} />
@@ -327,7 +326,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
                   style={{ display: "flex", alignItems: "center", gap: "0.5rem", width: "100%", textAlign: "left", padding: "0.5rem", marginBottom: "0.25rem", border: selected ? "2px solid var(--primary)" : "1px solid var(--border)", borderRadius: 8, background: selected ? "var(--primary-subtle)" : "var(--bg)", cursor: "pointer", color: "var(--text)" }}>
                   {p.imageUrl && <Media src={p.imageUrl} alt="" width={36} height={36} fit="cover" style={{ width: 36, height: 36, borderRadius: 4, objectFit: "cover" }} />}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
                     <div style={{ fontSize: "0.8rem", color: "var(--primary)" }}>{formatPrice(p.salePrice && p.salePrice > 0 ? p.salePrice : p.price)}</div>
                   </div>
                   {selected && <span style={{ color: "var(--success)", fontWeight: 700 }}>✓</span>}
@@ -341,7 +340,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
             {editItems.map((item) => (
               <div key={item.productId} style={{ padding: "0.5rem 0", borderBottom: "1px solid var(--border)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{escapeHtml(item.productName)}</span>
+                  <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{item.productName}</span>
                   <button className="btn btn-sm btn-ghost" aria-label="Remove item" onClick={() => setEditItems((prev) => prev.filter((i) => i.productId !== item.productId))}>&times;</button>
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.25rem", flexWrap: "wrap" }}>
@@ -407,21 +406,21 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
         <button className="btn btn-sm btn-ghost" onClick={onBack}>&larr; Back</button>
-        <h1 style={{ margin: 0 }}>{escapeHtml(quote.quoteNumber)}</h1>
+        <h1 style={{ margin: 0 }}>{quote.quoteNumber}</h1>
         <span style={{ display: "inline-block", padding: "3px 12px", borderRadius: "var(--radius-full)", fontSize: "0.8rem", fontWeight: 600, color: cfg.color, background: cfg.bg }}>{cfg.label}</span>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
         <div className="panel" style={{ padding: "1rem" }}>
           <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", color: "var(--text-secondary)" }}>Customer</h3>
-          <div style={{ fontWeight: 600 }}>{escapeHtml(quote.customerName || "—")}</div>
-          {quote.customerPhone && <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{escapeHtml(quote.customerPhone)}</div>}
+          <div style={{ fontWeight: 600 }}>{quote.customerName || "—"}</div>
+          {quote.customerPhone && <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{quote.customerPhone}</div>}
         </div>
         <div className="panel" style={{ padding: "1rem" }}>
           <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", color: "var(--text-secondary)" }}>Details</h3>
           <div style={{ fontSize: "0.85rem" }}>Created: {quote.createdAt ? new Date(quote.createdAt).toLocaleString("en-GB") : "—"}</div>
           <div style={{ fontSize: "0.85rem" }}>Updated: {quote.updatedAt ? new Date(quote.updatedAt).toLocaleString("en-GB") : "—"}</div>
-          {quote.notes && <div style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>Notes: {escapeHtml(quote.notes)}</div>}
+          {quote.notes && <div style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>Notes: {quote.notes}</div>}
         </div>
       </div>
 
@@ -441,7 +440,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
               const hasDiscount = item.discountType && item.discountValue > 0;
               return (
                 <tr key={item.id}>
-                  <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border)" }}>{escapeHtml(item.productName)}</td>
+                  <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border)" }}>{item.productName}</td>
                   <td style={{ padding: "0.5rem", textAlign: "center", borderBottom: "1px solid var(--border)" }}>{item.quantity}</td>
                   <td style={{ padding: "0.5rem", textAlign: "right", borderBottom: "1px solid var(--border)" }}>{formatPrice(item.unitPrice)}</td>
                   <td style={{ padding: "0.5rem", textAlign: "center", borderBottom: "1px solid var(--border)", color: hasDiscount ? "var(--success)" : "var(--text-secondary)" }}>
@@ -602,7 +601,7 @@ function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; 
                     style={{ display: "flex", alignItems: "center", gap: "0.5rem", width: "100%", textAlign: "left", padding: "0.5rem", marginBottom: "0.25rem", border: selected ? "2px solid var(--primary)" : "1px solid var(--border)", borderRadius: 8, background: selected ? "var(--primary-subtle)" : "var(--bg)", cursor: "pointer", color: "var(--text)" }}>
                     {p.imageUrl && <Media src={p.imageUrl} alt="" width={40} height={40} fit="cover" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} />}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
+                      <div style={{ fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
                       <div style={{ fontSize: "0.8rem", color: "var(--primary)" }}>{formatPrice(p.price)}</div>
                     </div>
                     {selected && <span style={{ color: "var(--success)", fontWeight: 700 }}>✓</span>}
@@ -616,7 +615,7 @@ function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; 
               {selectedItems.map((item) => (
                 <div key={item.productId} style={{ padding: "0.5rem 0", borderBottom: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{escapeHtml(item.productName)}</span>
+                    <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{item.productName}</span>
                     <button className="btn btn-sm btn-ghost" aria-label="Remove item" onClick={() => setSelectedItems((prev) => prev.filter((i) => i.productId !== item.productId))}>&times;</button>
                   </div>
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.25rem", flexWrap: "wrap" }}>
@@ -662,8 +661,8 @@ function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
               <div>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Customer</div>
-                <div style={{ fontWeight: 600 }}>{escapeHtml(customerName)}</div>
-                {customerPhone && <div style={{ fontSize: "0.85rem" }}>{escapeHtml(customerPhone)}</div>}
+                <div style={{ fontWeight: 600 }}>{customerName}</div>
+                {customerPhone && <div style={{ fontSize: "0.85rem" }}>{customerPhone}</div>}
               </div>
               <div>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Items</div>
@@ -686,7 +685,7 @@ function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; 
                   const hasDisc = item.discountType && item.discountValue > 0;
                   return (
                     <tr key={item.productId}>
-                      <td style={{ padding: "0.4rem", borderBottom: "1px solid var(--border)" }}>{escapeHtml(item.productName)}</td>
+                      <td style={{ padding: "0.4rem", borderBottom: "1px solid var(--border)" }}>{item.productName}</td>
                       <td style={{ padding: "0.4rem", textAlign: "center", borderBottom: "1px solid var(--border)" }}>{item.quantity}</td>
                       <td style={{ padding: "0.4rem", textAlign: "right", borderBottom: "1px solid var(--border)" }}>{formatPrice(item.unitPrice)}</td>
                       <td style={{ padding: "0.4rem", textAlign: "center", borderBottom: "1px solid var(--border)", color: hasDisc ? "var(--success)" : "var(--text-secondary)" }}>
@@ -721,7 +720,7 @@ function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; 
               <div style={{ fontSize: "1.25rem", fontWeight: 700 }}>Grand Total: {formatPrice(grandTotal)}</div>
             </div>
 
-            {notes && <p style={{ marginTop: "0.75rem", fontSize: "0.85rem" }}><strong>Notes:</strong> {escapeHtml(notes)}</p>}
+            {notes && <p style={{ marginTop: "0.75rem", fontSize: "0.85rem" }}><strong>Notes:</strong> {notes}</p>}
           </div>
 
           <div style={{ display: "flex", gap: "0.5rem" }}>

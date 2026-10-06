@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, isCustomerLoggedIn } from "@/lib/api";
 import type { RepairTicket } from "@/lib/types";
-import { escapeHtml } from "@/lib/sanitize";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
@@ -62,13 +61,13 @@ export default function MyRepairsPage() {
           <a key={t.id} href={`/repair-ticket?id=${t.id}`} className="order-item" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
               <div>
-                <strong>#{t.id}</strong> — {escapeHtml(t.deviceType)}
-                {t.deviceModel ? ` (${escapeHtml(t.deviceModel)})` : ""}
+                <strong>#{t.id}</strong> — {t.deviceType}
+                {t.deviceModel ? ` (${t.deviceModel})` : ""}
                 <StatusBadge status={t.status} domain="repairs" />
               </div>
               <span className="muted">{new Date(t.createdAt).toLocaleDateString("en-GB")}</span>
             </div>
-            <p className="muted" style={{ fontSize: "0.9rem", marginTop: "0.25rem" }}>{escapeHtml(t.issueDescription)}</p>
+            <p className="muted" style={{ fontSize: "0.9rem", marginTop: "0.25rem" }}>{t.issueDescription}</p>
           </a>
         ))
       )}

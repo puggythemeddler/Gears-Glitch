@@ -6,7 +6,6 @@ import BranchSwitcher from "@/components/BranchSwitcher";
 import { getActiveBranchId, setBranchState } from "@/lib/branches";
 import { useApp } from "@/lib/app-context";
 import { usePageTitle } from "@/lib/use-page-title";
-import { escapeHtml } from "@/lib/sanitize";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 import { Media } from "@/components/Media";
 
@@ -559,8 +558,8 @@ export default function POSPage() {
             const outOfStock = typeof p.stockOnHand === "number" && p.stockOnHand <= 0;
             return (
             <button key={p.id} type="button" className="panel" disabled={outOfStock || !!mpesaPending} style={{ cursor: outOfStock ? "not-allowed" : "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", opacity: outOfStock ? 0.5 : 1 }} onClick={() => addToCart(p)} aria-disabled={outOfStock}>
-              {p.imageUrl ? <Media src={p.imageUrl} alt={p.name} width={240} height={116} fit="cover" fallbackLabel={p.name} className="pos-tile__img" style={{ width: "100%", height: 116, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 116, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{escapeHtml(p.name.charAt(0))}</div>}
-              <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{escapeHtml(p.name)}</div>
+              {p.imageUrl ? <Media src={p.imageUrl} alt={p.name} width={240} height={116} fit="cover" fallbackLabel={p.name} className="pos-tile__img" style={{ width: "100%", height: 116, objectFit: "cover", borderRadius: 4, marginBottom: "0.35rem" }} /> : <div style={{ width: "100%", height: 116, background: "var(--bg)", borderRadius: 4, marginBottom: "0.35rem", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", opacity: 0.3 }}>{p.name.charAt(0)}</div>}
+              <div style={{ fontSize: "0.8rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{p.name}</div>
               <div style={{ fontSize: "1rem", color: "var(--primary)" }}>
                 {p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--success-text)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}
               </div>
@@ -865,14 +864,14 @@ export default function POSPage() {
               Hire-purchase plan for this cart. Cart total <strong>{formatPrice(subtotal)}</strong>. The plan is submitted for approval; approving the application in the Financing console creates the agreement.
             </p>
             {selectedCustomer ? (
-              <p style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>Customer: <strong>{escapeHtml(selectedCustomer.name)}</strong></p>
+              <p style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>Customer: <strong>{selectedCustomer.name}</strong></p>
             ) : (
               <p style={{ fontSize: "0.85rem", color: "var(--danger)", marginBottom: "0.75rem" }}>Select a customer in the cart first.</p>
             )}
 
             {finApp ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-                <p role="status" style={{ color: "var(--success)", fontWeight: 700, margin: 0 }}>Application {escapeHtml(finApp.applicationNumber)} created.</p>
+                <p role="status" style={{ color: "var(--success)", fontWeight: 700, margin: 0 }}>Application {finApp.applicationNumber} created.</p>
                 <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>It now appears in the Financing console as pending. Approve it there to generate the instalment schedule and agreement.</p>
                 <button className="btn btn-primary" onClick={() => { setShowFinance(false); setFinApp(null); }}>Done</button>
               </div>

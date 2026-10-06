@@ -2,7 +2,6 @@
 import { api, isCustomerLoggedIn } from "@/lib/api";
 import type { WishlistItem, Quote } from "@/lib/types";
 import { useApp } from "@/lib/app-context";
-import { escapeHtml } from "@/lib/sanitize";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import Icon from "@/components/icons";
@@ -127,7 +126,7 @@ export default function WishlistPage() {
               )}
               <div className="wishlist-item__info">
                 <div className="wishlist-item__name">
-                  <a href={`/product?id=${encodeURIComponent(item.productId)}`}>{escapeHtml(item.productName || item.productId)}</a>
+                  <a href={`/product?id=${encodeURIComponent(item.productId)}`}>{item.productName || item.productId}</a>
                 </div>
                 {item.productPrice != null && <div className="wishlist-item__price">{formatPrice(item.productPrice)}</div>}
                 <div className="muted" style={{ fontSize: "0.8rem" }}>Added {new Date(item.createdAt).toLocaleDateString("en-GB")}</div>
@@ -158,7 +157,7 @@ export default function WishlistPage() {
               <tbody>
                 {quotes.map((q) => (
                   <tr key={q.id}>
-                    <td>{escapeHtml(q.quoteNumber)}</td>
+                    <td>{q.quoteNumber}</td>
                     <td>{new Date(q.createdAt).toLocaleDateString("en-GB")}</td>
                     <td><StatusBadge status={q.status} domain="quotes" /></td>
                     <td>{formatPrice(q.total)}</td>
@@ -173,7 +172,7 @@ export default function WishlistPage() {
 
       {selectedQuote && (
         <div className="panel" style={{ marginTop: "1rem" }}>
-          <h3>Quote {escapeHtml(selectedQuote.quoteNumber)}</h3>
+          <h3>Quote {selectedQuote.quoteNumber}</h3>
           <p>Status: <StatusBadge status={selectedQuote.status} domain="quotes" /></p>
           <p>Notes: {selectedQuote.notes || "—"}</p>
           <table className="data-table">
@@ -181,7 +180,7 @@ export default function WishlistPage() {
             <tbody>
               {selectedQuote.items.map((i) => (
                 <tr key={i.id}>
-                  <td>{escapeHtml(i.productName)}</td>
+                  <td>{i.productName}</td>
                   <td>{i.quantity}</td>
                   <td>{formatPrice(i.unitPrice)}</td>
                   <td>{formatPrice(i.lineTotal)}</td>
