@@ -1110,6 +1110,7 @@ eTIMS is **disabled in this build**. The VSCU/OSCU integration described in `eTI
 | `PORT` | 8020 | Server port |
 | `STORE_NAME` | Gear&Glitch | Default store name seeded on first boot (control plane sets this to the client's name on provisioning) |
 | `DATABASE_URL` | — | **Required.** PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/dbname`) |
+| `BASE_URL` | — | Public URL of **this API server**, no trailing slash. For server-to-server endpoints only: the Gmail OAuth callback, the M-Pesa callback and CORS. **Do not build customer-facing email links from it** — on a split deployment the API host serves no HTML, so such links 404. Set explicitly in production |
 | `JWT_SECRET` | — | **Required.** Server fails to start if unset or placeholder. Use a long random string. |
 | `ADMIN_USERNAME` | admin | Admin username |
 | `ADMIN_EMAIL` | admin@gearandglitch.com | Admin email |
@@ -1130,7 +1131,7 @@ eTIMS is **disabled in this build**. The VSCU/OSCU integration described in `eTI
 | `GOOGLE_CLIENT_ID` | | Google OAuth client ID (also settable via the `google_client_id` store setting) |
 | `GOOGLE_CLIENT_SECRET` | | Google OAuth client secret (server-side exchange) |
 | `GOOGLE_REDIRECT_URI` | | Google OAuth redirect URI, e.g. `https://your-domain.com/api/auth/google/callback` |
-| `FRONTEND_URL` | derived from request host | Storefront origin to land on after a Google login redirect |
+| `FRONTEND_URL` | falls back to `BASE_URL` | Public URL of the **storefront**, no trailing slash. Every link a human clicks in an email is built from this — order status, credit note, magic-link and password reset, quotes, cart recovery, dashboard and provider notices — plus the post-Google-login redirect. Set it explicitly in production; the fallback is only correct when the API also serves the storefront |
 | `MPESA_CONSUMER_KEY` | | Set via admin UI or env |
 | `MPESA_CONSUMER_SECRET` | | |
 | `MPESA_PASSKEY` | | |
