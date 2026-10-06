@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import { Spinner } from "./shared";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { Media } from "@/components/Media";
 
 interface Stat { value: string; label: string; }
@@ -46,6 +46,7 @@ function AutoGrow({ value, onChange, placeholder }: { value: string; onChange: (
 }
 
 export default function AboutUsPage() {
+  const feedback = useFeedback();
   const [data, setData] = useState<AboutData>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -72,8 +73,8 @@ export default function AboutUsPage() {
     setSaving(true);
     try {
       await api("/api/admin/about-us", { method: "PUT", body: JSON.stringify(data) });
-      toast("success", "About Us content saved.");
-    } catch (e: any) { toast("error", e.message); }
+      feedback.success({ title: "About Us content saved" });
+    } catch (e: any) { feedback.error({ title: "About Us content not saved", message: e.message }); }
     finally { setSaving(false); }
   }
 
@@ -87,8 +88,8 @@ export default function AboutUsPage() {
       if (data.image) fd.append("previousUrl", data.image);
       const d = await api<any>("/api/admin/about-us/image", { method: "POST", body: fd });
       setData((s) => ({ ...s, image: d.url || "" }));
-      toast("success", "Image uploaded.");
-    } catch (err: any) { toast("error", "Upload failed: " + err.message); }
+      feedback.success({ title: "Image uploaded" });
+    } catch (err: any) { feedback.error({ title: "Image not uploaded", message: "Upload failed: " + err.message }); }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
   }
 

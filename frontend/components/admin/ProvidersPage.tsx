@@ -4,9 +4,10 @@ import type { Provider } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
 export default function ProvidersPage() {
+  const feedback = useFeedback();
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ providers: Provider[] }>("/api/admin/providers"), []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" });
@@ -18,8 +19,8 @@ export default function ProvidersPage() {
     try {
       await api("/api/admin/providers", { method: "POST", body: JSON.stringify(form) });
       setShowForm(false); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch();
-      toast("success", "Provider added.");
-    } catch (err: any) { toast("error", err.message); } finally { setSaving(false); }
+      feedback.success({ title: "Provider added" });
+    } catch (err: any) { feedback.error({ title: "Provider not added", message: err.message }); } finally { setSaving(false); }
   }
 
   async function saveEdit(e: React.FormEvent) {
@@ -27,8 +28,8 @@ export default function ProvidersPage() {
     try {
       await api(`/api/admin/providers/${editing.id}`, { method: "PUT", body: JSON.stringify(form) });
       setEditing(null); setForm({ companyName: "", contactName: "", email: "", password: "", phone: "", pin: "" }); refetch();
-      toast("success", "Provider updated.");
-    } catch (err: any) { toast("error", err.message); } finally { setSaving(false); }
+      feedback.success({ title: "Provider updated" });
+    } catch (err: any) { feedback.error({ title: "Provider not updated", message: err.message }); } finally { setSaving(false); }
   }
 
   function openEdit(p: any) {

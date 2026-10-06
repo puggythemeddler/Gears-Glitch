@@ -4,7 +4,7 @@ import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
 import { api } from "@/lib/api";
 import { escapeHtml, Spinner } from "@/components/admin/shared";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 
 function MediaPreview({ content, logs }: { content: string; logs: any[] }) {
@@ -17,6 +17,7 @@ function MediaPreview({ content, logs }: { content: string; logs: any[] }) {
 }
 
 function SecretField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const feedback = useFeedback();
   const [revealed, setRevealed] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [authPw, setAuthPw] = useState("");
@@ -31,9 +32,9 @@ function SecretField({ label, value, onChange, placeholder }: { label: string; v
       setRevealed(true);
       setAuthOpen(false);
       setAuthPw("");
-      toast("success", "Secret revealed.");
+      feedback.success({ title: "Secret revealed", message: `${label} is now visible until hidden.` });
     } catch (e: any) {
-      toast("error", e.message || "Incorrect password.");
+      feedback.error({ title: "Incorrect password", message: e.message });
     } finally { setVerifying(false); }
   }
 
@@ -58,6 +59,7 @@ function SecretField({ label, value, onChange, placeholder }: { label: string; v
 
 export default function WhatsAppSettings() {
   const { refreshSettings } = useApp();
+  const feedback = useFeedback();
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -116,8 +118,9 @@ export default function WhatsAppSettings() {
       });
       setSettings(updated);
       setMsg("WhatsApp settings saved.");
+      feedback.success({ title: "WhatsApp settings saved" });
       api<any>("/api/admin/whatsapp/config").then(setConfig).catch((e) => console.warn("[admin] Failed to reload WhatsApp config:", e?.message));
-    } catch (e: any) { setMsg("Error: " + e.message); }
+    } catch (e: any) { setMsg("Error: " + e.message); feedback.error({ title: "Settings not saved", message: e.message }); }
     finally { setSaving(false); }
   }
 
@@ -164,8 +167,8 @@ export default function WhatsAppSettings() {
     try {
       await api<any>(`/api/admin/whatsapp/templates/${id}`, { method: "DELETE" });
       setTemplates(templates.filter(t => t.id !== id));
-      toast("success", "Template deleted.");
-    } catch (e: any) { setTmplMsg("Error: " + e.message); toast("error", e.message); }
+      feedback.success({ title: "Template deleted" });
+    } catch (e: any) { setTmplMsg("Error: " + e.message); feedback.error({ title: "Template not deleted", message: e.message }); }
   }
 
   async function sendInteractive() {
@@ -262,7 +265,7 @@ export default function WhatsAppSettings() {
           <code style={{ display: "block", padding: "0.5rem 0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: "0.8rem", wordBreak: "break-all", flex: 1 }}>
             {typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"}
           </code>
-          <RippleButton size="small" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"); toast("success", "Webhook URL copied."); } catch {} }} aria-label="Copy webhook URL">Copy</RippleButton>
+          <RippleButton size="small" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"); feedback.success({ title: "Webhook URL copied" }); } catch {} }} aria-label="Copy webhook URL">Copy</RippleButton>
         </div>
         <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
           Verify Token: <strong>{settings?.whatsappVerifyToken || "gear-glitch-wa-verify"}</strong>

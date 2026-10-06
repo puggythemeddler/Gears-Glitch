@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
 import { escapeHtml, Spinner } from "@/components/admin/shared";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import type { AdminView } from "@/pages/admin";
 
@@ -49,6 +49,7 @@ function formatTime(iso?: string | null): string {
 }
 
 function ProviderCard({ entry, gmail, onConnect }: { entry: HealthEntry; gmail?: GmailStatus; onConnect(): void }) {
+  const feedback = useFeedback();
   const [testLoading, setTestLoading] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const status = STATUS_LABEL[entry.status] || { text: entry.status, cls: "badge-muted" };
@@ -59,10 +60,10 @@ function ProviderCard({ entry, gmail, onConnect }: { entry: HealthEntry; gmail?:
     setTestLoading(true);
     try {
       await api("/api/integrations/gmail/test", { method: "POST" });
-      toast("success", "Gmail connection test passed.");
+      feedback.success({ title: "Gmail connection test passed" });
       window.location.reload();
     } catch (e: any) {
-      toast("error", e.message || "Connection test failed.");
+      feedback.error({ title: "Connection test failed", message: e.message });
       window.location.reload();
     } finally { setTestLoading(false); }
   }
@@ -73,9 +74,9 @@ function ProviderCard({ entry, gmail, onConnect }: { entry: HealthEntry; gmail?:
     setDisconnecting(true);
     try {
       await api("/api/integrations/gmail/disconnect", { method: "POST" });
-      toast("success", "Gmail disconnected.");
+      feedback.success({ title: "Gmail disconnected" });
       window.location.reload();
-    } catch (e: any) { toast("error", e.message || "Failed to disconnect."); } finally { setDisconnecting(false); }
+    } catch (e: any) { feedback.error({ title: "Failed to disconnect", message: e.message }); } finally { setDisconnecting(false); }
   }
 
   return (
@@ -121,6 +122,7 @@ function ProviderCard({ entry, gmail, onConnect }: { entry: HealthEntry; gmail?:
 }
 
 export default function IntegrationsSettings({ onNavigate }: { onNavigate?: (view: AdminView) => void }) {
+  const feedback = useFeedback();
   const [checks, setChecks] = useState<HealthEntry[] | null>(null);
   const [gmail, setGmail] = useState<GmailStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,9 +130,9 @@ export default function IntegrationsSettings({ onNavigate }: { onNavigate?: (vie
 
   const load = useCallback(() => {
     setLoading(true);
-    api<{ checks?: HealthEntry[] }>("/api/integrations/status").then((d) => setChecks(d.checks || [])).catch((e) => { toast("error", e.message || "Failed to load integration status."); setChecks([]); }).finally(() => setLoading(false));
+    api<{ checks?: HealthEntry[] }>("/api/integrations/status").then((d) => setChecks(d.checks || [])).catch((e) => { feedback.error({ title: "Failed to load integration status", message: e.message }); setChecks([]); }).finally(() => setLoading(false));
     api<GmailStatus>("/api/integrations/gmail").then(setGmail).catch((e) => console.warn("[admin] Failed to load Gmail status:", e?.message));
-  }, []);
+  }, [feedback]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -140,7 +142,7 @@ export default function IntegrationsSettings({ onNavigate }: { onNavigate?: (vie
       const d = await api<{ url: string }>("/api/integrations/gmail/auth-url");
       window.location.href = d.url || "/admin?integration=gmail&error=no_url";
     } catch (e: any) {
-      toast("error", e.message || "Unable to start Gmail connection.");
+      feedback.error({ title: "Unable to start Gmail connection", message: e.message });
       setConnectLoading(false);
     }
   }

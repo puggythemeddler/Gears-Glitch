@@ -13,7 +13,8 @@ import NotificationBell from "@/components/NotificationBell";
 import { useFeature } from "@/lib/features";
 import { useToast, toast } from "@/components/Toast";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
-import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "@/components/admin/shared";
+import { formatPrice, escapeHtml, useFetch, useInitialLoad, Spinner, ErrorMsg } from "@/components/admin/shared";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import AdminProducts from "@/components/admin/AdminProducts";
 import QuotesPage from "./quotes";
 import ProvidersPage from "@/components/admin/ProvidersPage";
@@ -2544,6 +2545,7 @@ function AdminBranches() {
 
 // ===================== INVOICES =====================
 function SubscriptionInvoices() {
+  const feedback = useFeedback();
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
@@ -2559,11 +2561,11 @@ function SubscriptionInvoices() {
   }, [filterStatus, filterSearch, filterDateFrom, filterDateTo]);
 
   async function markPaid(id: number) {
-    try { await api(`/api/admin/invoices/${id}/pay`, { method: "POST" }); refetch(); toast("success", "Invoice marked as paid."); } catch { toast("error", "Failed to mark invoice as paid"); }
+    try { await api(`/api/admin/invoices/${id}/pay`, { method: "POST" }); refetch(); feedback.success({ title: "Invoice marked as paid", message: `Invoice #${id} was recorded as paid.` }); } catch { feedback.error({ title: "Payment not recorded", message: "Failed to mark invoice as paid." }); }
   }
 
   async function generateInvoice() {
-    try { await api("/api/admin/invoices/generate", { method: "POST" }); refetch(); toast("success", "Invoice generated."); } catch { toast("error", "Invoice generation failed"); }
+    try { await api("/api/admin/invoices/generate", { method: "POST" }); refetch(); feedback.success({ title: "Invoice generated" }); } catch { feedback.error({ title: "Invoice not generated" }); }
   }
 
   async function viewInvoice(id: number) {
@@ -2576,7 +2578,7 @@ function SubscriptionInvoices() {
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 30000);
-    } catch (e: any) { toast("error", "Failed to open invoice: " + (e?.message || "Unknown")); }
+    } catch (e: any) { feedback.error({ title: "Failed to open invoice", message: e?.message || "Unknown" }); }
   }
 
   async function downloadInvoicePdf(id: number) {
@@ -2589,14 +2591,15 @@ function SubscriptionInvoices() {
       const a = document.createElement("a");
       a.href = url; a.download = `invoice-${id}.pdf`; a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown")); }
+    } catch (e: any) { feedback.error({ title: "Failed to download invoice", message: e?.message || "Unknown" }); }
   }
 
   async function emailInvoice(id: number) {
     try {
       const data = await api<{ sent: boolean }>(`/api/admin/invoices/${id}/email`, { method: "POST" });
-      toast(data.sent ? "success" : "error", data.sent ? "Invoice emailed successfully." : "Failed to send email. Check SMTP settings.");
-    } catch (e: any) { toast("error", "Failed to send invoice email: " + (e?.message || "Unknown")); }
+      if (data.sent) feedback.success({ title: "Invoice emailed", message: `Invoice #${id} was sent by email.` });
+      else feedback.error({ title: "Invoice not emailed", message: "Failed to send email. Check SMTP settings." });
+    } catch (e: any) { feedback.error({ title: "Failed to send invoice email", message: e?.message || "Unknown" }); }
   }
 
   function exportCsv() {
@@ -2671,6 +2674,7 @@ function SubscriptionInvoices() {
 }
 
 function AdminInvoices() {
+  const feedback = useFeedback();
   const { data: oiData, loading: oiLoading, error: oiError, refetch: refetchOi } = useFetch(() => api<{ invoices: any[] }>("/api/admin/order-invoices"), []);
   const [oiStatusMsg, setOiStatusMsg] = useState("");
   const [creditedOrders, setCreditedOrders] = useState<Record<number, boolean>>({});
@@ -2683,7 +2687,7 @@ function AdminInvoices() {
   }, [oiData]);
 
   async function markOiPaid(id: number) {
-    try { await api(`/api/admin/order-invoices/${id}/pay`, { method: "POST" }); setOiStatusMsg("Invoice marked as paid."); refetchOi(); toast("success", "Invoice marked as paid."); } catch { toast("error", "Failed to mark invoice as paid"); }
+    try { await api(`/api/admin/order-invoices/${id}/pay`, { method: "POST" }); setOiStatusMsg("Invoice marked as paid."); refetchOi(); feedback.success({ title: "Invoice marked as paid" }); } catch { feedback.error({ title: "Payment not recorded", message: "Failed to mark invoice as paid." }); }
   }
 
   async function createCreditNote(orderId: number) {
@@ -2696,9 +2700,9 @@ function AdminInvoices() {
       });
       setCreditedOrders((prev) => ({ ...prev, [orderId]: true }));
       await downloadPdf(`/api/admin/credit-notes/${created.id}/view`, `credit-note-${created.id}.pdf`);
-      toast("success", "Credit note created and downloaded.");
+      feedback.success({ title: "Credit note created", message: "Credit note #" + created.id + " was created and downloaded." });
     } catch (err: any) {
-      toast("error", err.message || "Failed to create credit note.");
+      feedback.error({ title: "Credit note not created", message: err.message });
     }
   }
 
@@ -2729,7 +2733,7 @@ function AdminInvoices() {
                     <td style={{ whiteSpace: "nowrap" }}>{new Date(inv.createdAt || inv.created_at).toLocaleDateString("en-GB")}</td>
                     <td>
                       {inv.status !== "paid" && <button className="btn btn-sm" style={{ background: "var(--success)", color: "var(--surface)" }} onClick={() => markOiPaid(inv.id)}>Mark paid</button>}
-                      <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); const res = await fetch(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, { headers: { Authorization: `Bearer ${r.token}` } }); if (!res.ok) throw new Error(`HTTP ${res.status}`); const html = await res.text(); const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 30000); } catch (e: any) { toast("error", "Failed to open invoice: " + (e?.message || "Unknown error")); } }}>View</button>
+                      <button className="btn btn-sm btn-ghost" style={{ marginLeft: "0.25rem" }} onClick={async () => { try { const r = await api<{ token: string }>("/api/admin/invoice-token/" + inv.orderId, { method: "POST" }); const res = await fetch(`/api/admin/orders/${inv.orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, { headers: { Authorization: `Bearer ${r.token}` } }); if (!res.ok) throw new Error(`HTTP ${res.status}`); const html = await res.text(); const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 30000); } catch (e: any) { feedback.error({ title: "Failed to open invoice", message: e?.message || "Unknown error" }); } }}>View</button>
                       {creditedOrders[inv.orderId] ? (
                         <span className="btn btn-sm" style={{ marginLeft: "0.25rem", background: "var(--success-light)", color: "var(--success-text)", cursor: "default" }}>Credited</span>
                       ) : (
@@ -2753,6 +2757,7 @@ const AdminCreditNotes = CreditNotesPage;
 
 // ===================== MESSAGES =====================
 function AdminMessages() {
+  const feedback = useFeedback();
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
@@ -2822,20 +2827,20 @@ function AdminMessages() {
       setReplyBody("");
       await loadMessages();
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-      toast("success", "Reply sent.");
-    } catch (e: any) { toast("error", "Failed to send: " + (e?.message || "Unknown error")); }
+      feedback.success({ title: "Reply sent" });
+    } catch (e: any) { feedback.error({ title: "Reply not sent", message: e?.message || "Unknown error" }); }
     setSending(false);
   }
 
   async function sendCompose() {
-    if (!composeBody.trim() || !composeCustomerId || !composeProviderId) { toast("error", "Select customer, provider and enter a message."); return; }
+    if (!composeBody.trim() || !composeCustomerId || !composeProviderId) { feedback.error({ title: "Message not sent", message: "Select a customer, a provider and enter a message." }); return; }
     setSending(true);
     try {
       await api("/api/admin/messages", { method: "POST", body: JSON.stringify({ customerId: composeCustomerId, providerId: composeProviderId, body: composeBody.trim(), subject: composeSubject.trim() }) });
       setComposeOpen(false); setComposeBody(""); setComposeSubject(""); setComposeCustomerId(null); setComposeProviderId(null);
       await loadMessages();
-      toast("success", "Message sent.");
-    } catch (e: any) { toast("error", "Failed to send: " + (e?.message || "Unknown error")); }
+      feedback.success({ title: "Message sent" });
+    } catch (e: any) { feedback.error({ title: "Message not sent", message: e?.message || "Unknown error" }); }
     setSending(false);
   }
 
@@ -5932,6 +5937,7 @@ const AdminStockTake = StockTakeListPage;
 
 // ===================== CUSTOMERS =====================
 function AdminCustomers() {
+  const feedback = useFeedback();
   const [fetched, setFetched] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -5951,39 +5957,76 @@ function AdminCustomers() {
 
   function load() {
     setLoading(true); setError("");
-    api<{ customers: any[] }>("/api/admin/customers?includeInactive=true")
+    return api<{ customers: any[] }>("/api/admin/customers?includeInactive=true")
       .then((d) => setFetched(d.customers))
       .catch((e: any) => setError(e.message))
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { load(); }, []);
+  // useInitialLoad, not useEffect(..., []): reactStrictMode is on, so a bare
+  // effect issues two identical GETs in development and one in production.
+  useInitialLoad(load);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault(); setFormErr(""); setFormOk("");
     if (!formName.trim() || !formEmail.trim() || !formPass.trim()) { setFormErr("Name, email, and password required."); return; }
+    const name = formName.trim();
     try {
-      await api("/api/admin/customers", { method: "POST", body: JSON.stringify({ name: formName.trim(), email: formEmail.trim().toLowerCase(), password: formPass, phone: formPhone.trim() }) });
-      setFormOk("Customer created.");
+      await api("/api/admin/customers", { method: "POST", body: JSON.stringify({ name, email: formEmail.trim().toLowerCase(), password: formPass, phone: formPhone.trim() }) });
       setFormName(""); setFormEmail(""); setFormPass(""); setFormPhone(""); setShowForm(false);
-      load();
-      toast("success", "Customer created.");
-    } catch (err: any) { setFormErr(err.message); toast("error", err.message); }
+      await load();
+      // Transient tier. Validation stays inline (formErr); a save failure is
+      // reported here *and* left on the form, because the form stays open and
+      // the user needs to know which field to correct.
+      feedback.success({ title: "Customer created", message: `${name} was added to your customer list.` });
+    } catch (err: any) { setFormErr(err.message); feedback.error({ title: "Customer not created", message: err.message }); }
   }
 
   async function handleToggle(c: any) {
+    const next = !c.is_active;
     try {
-      await api(`/api/admin/customers/${c.id}/status`, { method: "PATCH", body: JSON.stringify({ isActive: !c.is_active }) });
-      load();
-    } catch {}
+      await api(`/api/admin/customers/${c.id}/status`, { method: "PATCH", body: JSON.stringify({ isActive: next }) });
+      await load();
+      feedback.success({ title: next ? "Customer activated" : "Customer deactivated", message: `${c.name || "This customer"} is now ${next ? "active" : "inactive"}.` });
+    } catch (err: any) {
+      // Previously swallowed by a bare `catch {}`, so a failed status change
+      // looked identical to a successful one.
+      feedback.error({ title: next ? "Customer not activated" : "Customer not deactivated", message: err.message });
+    }
   }
 
   async function handleDelete(id: number) {
-    if (!(await confirmDialog({ message: "Delete this customer and all their data? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
+    const customer = (fetched || []).find((c) => c.id === id);
+    const label = customer?.name || `customer #${id}`;
+
+    // Enter the pending state *before* awaiting the confirmation, and guard on it
+    // for the whole dialog. Previously the row's Delete button stayed live for the
+    // entire confirm dialog and the request only started after the promise
+    // resolved, so a second click could start a second identical DELETE.
+    if (deleting !== null) return;
     setDeleting(id);
-    try { await api(`/api/admin/customers/${id}`, { method: "DELETE" }); load(); toast("success", "Customer deleted."); }
-    catch { toast("error", "Delete failed"); }
-    finally { setDeleting(null); }
+    try {
+      const confirmed = await confirmDialog({
+        title: "Delete customer?",
+        message: `${label} and all of their data will be permanently deleted. This cannot be undone.`,
+        confirmLabel: "Delete customer",
+        danger: true,
+      });
+      if (!confirmed) return;
+
+      const progress = feedback.progress({ title: "Deleting customer", message: `Removing ${label}...` });
+      try {
+        await api(`/api/admin/customers/${id}`, { method: "DELETE" });
+      } catch (err: any) {
+        progress.update({ title: "Customer not deleted", message: err.message });
+        progress.dismiss();
+        return;
+      }
+      await load();
+      progress.update({ title: "Customer deleted", message: `${label} was removed from your customer list.` });
+    } finally {
+      setDeleting(null);
+    }
   }
 
   function startEdit(c: any) {
@@ -5996,13 +6039,20 @@ function AdminCustomers() {
     e.preventDefault(); setEditErr(""); setEditOk("");
     const body: any = { name: editForm.name.trim(), email: editForm.email.trim().toLowerCase(), phone: editForm.phone.trim() };
     if (editForm.password) body.password = editForm.password;
+    const name = body.name;
     try {
       await api(`/api/admin/customers/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) });
-      setEditOk("Customer updated.");
       setEditing(null);
-      load();
-      toast("success", "Customer updated.");
-    } catch (err: any) { setEditErr(err.message); toast("error", err.message); }
+      await load();
+      // Transient tier only. The old code set editOk *and* fired a toast for the
+      // same event, and the panel unmounted immediately after, so editOk was
+      // never even visible.
+      feedback.success({ title: "Customer updated", message: `${name}'s details were saved.` });
+    } catch (err: any) {
+      // The edit panel stays open on failure, so this is a form-level error the
+      // user must act on, not a transient one.
+      setEditErr(err.message);
+    }
   }
 
   if (loading) return <Spinner />;
@@ -6837,6 +6887,7 @@ function AdminReviews() {
 }
 
 function AdminEmailSettings() {
+  const feedback = useFeedback();
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -6862,16 +6913,16 @@ function AdminEmailSettings() {
     try {
       const updated = await api<any>("/api/settings", { method: "PUT", body: JSON.stringify({ emailSender: settings.emailSender, emailSenderName: settings.emailSenderName, emailNotificationsEnabled: settings.emailNotificationsEnabled }) });
       setSettings(updated);
-      toast("success", "Email settings saved.");
-    } catch (e: any) { toast("error", "Failed: " + e.message); }
+      feedback.success({ title: "Email settings saved" });
+    } catch (e: any) { feedback.error({ title: "Email settings not saved", message: e.message }); }
     finally { setSaving(false); }
   }
 
   async function sendTestEmail() {
     if (!testEmail) return;
     setTestMsg("Sending...");
-    try { const d = await api<{ ok: boolean; message: string }>("/api/admin/email/test", { method: "POST", body: JSON.stringify({ to: testEmail }) }); setTestMsg(d.message); }
-    catch (e: any) { setTestMsg("Error: " + e.message); }
+    try { const d = await api<{ ok: boolean; message: string }>("/api/admin/email/test", { method: "POST", body: JSON.stringify({ to: testEmail }) }); setTestMsg(d.message); if (d.ok) feedback.success({ title: "Test email sent", message: d.message }); else feedback.error({ title: "Test email failed", message: d.message }); }
+    catch (e: any) { setTestMsg("Error: " + e.message); feedback.error({ title: "Test email failed", message: e.message }); }
   }
 
   if (loading) return <Spinner />;

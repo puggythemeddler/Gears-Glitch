@@ -6,6 +6,7 @@ import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatPrice, escapeHtml, Spinner } from "./shared";
 import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
 type AdminRepairsTab = "tickets" | "calendar" | "content";
 
@@ -104,6 +105,7 @@ interface TicketForm {
 }
 
 function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: string | null) => void }) {
+  const feedback = useFeedback();
   const [tickets, setTickets] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
@@ -198,8 +200,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       });
       await loadDetail(detail.id);
       await loadList();
-      toast("success", "Repair updated.");
-    } catch (e: any) { toast("error", e.message); }
+      feedback.success({ title: "Repair updated", message: `Repair #${detail.id} was saved.` });
+    } catch (e: any) { feedback.error({ title: "Repair not updated", message: e.message }); }
     finally { setSaving(false); }
   }
 
@@ -208,8 +210,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
     try {
       await api(`/api/repairs/${detail.id}/send-quote`, { method: "POST" });
       await loadDetail(detail.id);
-      toast("success", "Quote sent to customer.");
-    } catch (e: any) { toast("error", e.message); }
+      feedback.success({ title: "Quote sent", message: `The quote for repair #${detail.id} was sent to the customer.` });
+    } catch (e: any) { feedback.error({ title: "Quote not sent", message: e.message }); }
   }
 
   async function addPart() {
@@ -225,8 +227,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       });
       setPartForm({ description: "", quantity: 1, unitCost: 0 });
       await loadDetail(detail.id);
-      toast("success", "Part added.");
-    } catch (e: any) { toast("error", e.message); }
+      feedback.success({ title: "Part added", message: `${partForm.quantity} × ${partForm.description || "part"} added to the repair.` });
+    } catch (e: any) { feedback.error({ title: "Part not added", message: e.message }); }
   }
 
   async function removePart(partId: number) {
@@ -234,8 +236,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
     try {
       await api(`/api/repairs/${detail.id}/parts/${partId}`, { method: "DELETE" });
       await loadDetail(detail.id);
-      toast("success", "Part removed.");
-    } catch (e: any) { toast("error", e.message); }
+      feedback.success({ title: "Part removed" });
+    } catch (e: any) { feedback.error({ title: "Part not removed", message: e.message }); }
   }
 
   async function addNote() {
@@ -247,8 +249,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       });
       setNoteMsg("");
       await loadDetail(detail.id);
-      toast("success", "Update added.");
-    } catch (e: any) { toast("error", e.message); }
+      feedback.success({ title: "Update added" });
+    } catch (e: any) { feedback.error({ title: "Update not added", message: e.message }); }
   }
 
   const partsTotal = Array.isArray(detail?.parts)

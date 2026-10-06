@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import RippleButton from "@/components/RippleButton";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 import { formatPrice, escapeHtml, Spinner } from "./shared";
 
@@ -209,6 +209,7 @@ export default function AdminFinancing() {
 }
 
 function Overview({ stats, onRefresh, canManage, config }: { stats: FinancingStats | null; onRefresh: () => void; canManage: boolean; config: FinancingConfig | null }) {
+  const feedback = useFeedback();
   const [busy, setBusy] = useState(false);
   if (!stats) return <Spinner />;
   return (
@@ -235,10 +236,10 @@ function Overview({ stats, onRefresh, canManage, config }: { stats: FinancingSta
               setBusy(true);
               try {
                 const r = await api<{ updated: number }>("/api/financing/refresh-overdue", { method: "POST" });
-                toast("success", `Recalculated ${r.updated} schedule${r.updated === 1 ? "" : "s"}.`);
+                feedback.success({ title: `Recalculated ${r.updated} schedule${r.updated === 1 ? "" : "s"}` });
                 onRefresh();
               } catch (e: any) {
-                toast("error", e.message);
+                feedback.error({ title: "Schedules not recalculated", message: e.message });
               } finally {
                 setBusy(false);
               }
@@ -327,10 +328,11 @@ function Applications({ canManage, canApprove, config }: { canManage: boolean; c
 }
 
 function ApplicationActions({ app, canManage, canApprove, onDone }: { app: FinApplication; canManage: boolean; canApprove: boolean; onDone: () => void }) {
+  const feedback = useFeedback();
   const [busy, setBusy] = useState(false);
   async function run(fn: () => Promise<any>, msg: string) {
     setBusy(true);
-    try { await fn(); toast("success", msg); onDone(); } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+    try { await fn(); feedback.success({ title: msg.replace(/\.$/, "") }); onDone(); } catch (e: any) { feedback.error({ title: "Action failed", message: e.message }); } finally { setBusy(false); }
   }
   if (app.status === "draft" && canManage) {
     return <RippleButton size="small" variant="primary" disabled={busy} onClick={() => run(() => api(`/api/financing/applications/${app.id}/submit`, { method: "POST" }), "Application submitted.")}>Submit</RippleButton>;
@@ -357,6 +359,7 @@ function ApplicationActions({ app, canManage, canApprove, onDone }: { app: FinAp
 }
 
 function ApplicationForm({ config, onCreated }: { config: FinancingConfig | null; onCreated: () => void }) {
+  const feedback = useFeedback();
   const [customers, setCustomers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [customerId, setCustomerId] = useState("");
@@ -410,18 +413,18 @@ function ApplicationForm({ config, onCreated }: { config: FinancingConfig | null
       const body: any = { ...payload() };
       if (body.productId) { delete body.cashPriceCents; }
       setQuote(await api("/api/financing/quote", { method: "POST", body: JSON.stringify(body) }));
-    } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+    } catch (e: any) { feedback.error({ title: "Quote unavailable", message: e.message }); } finally { setBusy(false); }
   }
 
   async function create() {
-    if (!customerId) { toast("error", "Select a customer."); return; }
-    if (!consent) { toast("error", "Customer consent is required."); return; }
+    if (!customerId) { feedback.error({ title: "Select a customer" }); return; }
+    if (!consent) { feedback.error({ title: "Customer consent is required" }); return; }
     setBusy(true);
     try {
       await api("/api/financing/applications", { method: "POST", body: JSON.stringify({ ...payload(), submit }) });
-      toast("success", "Application created.");
+      feedback.success({ title: "Application created" });
       onCreated();
-    } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+    } catch (e: any) { feedback.error({ title: "Application not created", message: e.message }); } finally { setBusy(false); }
   }
 
   return (
@@ -499,6 +502,7 @@ function ApplicationForm({ config, onCreated }: { config: FinancingConfig | null
 }
 
 function Agreements({ canManage, canPay, config }: { canManage: boolean; canPay: boolean; config: FinancingConfig | null }) {
+  const feedback = useFeedback();
   const [agreements, setAgreements] = useState<FinAgreement[] | null>(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -517,7 +521,7 @@ function Agreements({ canManage, canPay, config }: { canManage: boolean; canPay:
   useEffect(() => { load(); }, [status, overdue]);
 
   async function open(a: FinAgreement) {
-    try { setSelected(await api<FinAgreement>(`/api/financing/agreements/${a.id}`)); } catch (e: any) { toast("error", e.message); }
+    try { setSelected(await api<FinAgreement>(`/api/financing/agreements/${a.id}`)); } catch (e: any) { feedback.error({ title: "Agreement unavailable", message: e.message }); }
   }
 
   return (
@@ -570,6 +574,7 @@ function Agreements({ canManage, canPay, config }: { canManage: boolean; canPay:
 }
 
 function AgreementDetail({ agreement, config, canManage, canPay, onClose, onChanged }: { agreement: FinAgreement; config: FinancingConfig | null; canManage: boolean; canPay: boolean; onClose: () => void; onChanged: () => void }) {
+  const feedback = useFeedback();
   const [busy, setBusy] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("cash");
@@ -579,7 +584,7 @@ function AgreementDetail({ agreement, config, canManage, canPay, onClose, onChan
 
   async function run(fn: () => Promise<any>, msg: string) {
     setBusy(true);
-    try { await fn(); toast("success", msg); onChanged(); } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+    try { await fn(); feedback.success({ title: msg.replace(/\.$/, "") }); onChanged(); } catch (e: any) { feedback.error({ title: "Action failed", message: e.message }); } finally { setBusy(false); }
   }
 
   return (
@@ -593,8 +598,8 @@ function AgreementDetail({ agreement, config, canManage, canPay, onClose, onChan
         </div>
         <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
           <StatusBadge status={agreement.status} domain="financingAgreement" />
-          <RippleButton size="small" variant="ghost" disabled={busy} onClick={() => downloadPdf(`/api/financing/agreements/${agreement.id}/agreement`, `agreement-${agreement.agreementNumber}.pdf`).catch((e) => toast("error", e.message))}>Agreement PDF</RippleButton>
-          <RippleButton size="small" variant="ghost" disabled={busy} onClick={() => downloadPdf(`/api/financing/agreements/${agreement.id}/statement`, `statement-${agreement.agreementNumber}.pdf`).catch((e) => toast("error", e.message))}>Statement PDF</RippleButton>
+          <RippleButton size="small" variant="ghost" disabled={busy} onClick={() => downloadPdf(`/api/financing/agreements/${agreement.id}/agreement`, `agreement-${agreement.agreementNumber}.pdf`).catch((e) => feedback.error({ title: "Agreement PDF unavailable", message: e.message }))}>Agreement PDF</RippleButton>
+          <RippleButton size="small" variant="ghost" disabled={busy} onClick={() => downloadPdf(`/api/financing/agreements/${agreement.id}/statement`, `statement-${agreement.agreementNumber}.pdf`).catch((e) => feedback.error({ title: "Statement PDF unavailable", message: e.message }))}>Statement PDF</RippleButton>
           <RippleButton size="small" variant="ghost" onClick={onClose}>Close</RippleButton>
         </div>
       </div>
@@ -670,7 +675,7 @@ function AgreementDetail({ agreement, config, canManage, canPay, onClose, onChan
           {
             key: "actions", label: "", render: (p) => (p.status === "succeeded" ? (
               <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end" }}>
-                <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/financing/payments/${p.id}/receipt`, `receipt-${p.paymentRef}.pdf`).catch((e) => toast("error", e.message))}>Receipt</RippleButton>
+                <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/financing/payments/${p.id}/receipt`, `receipt-${p.paymentRef}.pdf`).catch((e) => feedback.error({ title: "Receipt unavailable", message: e.message }))}>Receipt</RippleButton>
                 {canPay && (
                   <RippleButton size="small" variant="ghost" disabled={busy} onClick={async () => {
                     const reason = await promptDialog({ title: "Reverse payment", label: "Reason", message: "This reverses the allocation and restores the outstanding balance.", confirmLabel: "Reverse", danger: true });
@@ -689,6 +694,7 @@ function AgreementDetail({ agreement, config, canManage, canPay, onClose, onChan
 }
 
 function Settings({ config, canManage, onSaved }: { config: FinancingConfig; canManage: boolean; onSaved: () => void }) {
+  const feedback = useFeedback();
   const [form, setForm] = useState<FinancingConfig>(config);
   const [busy, setBusy] = useState(false);
 
@@ -700,9 +706,9 @@ function Settings({ config, canManage, onSaved }: { config: FinancingConfig; can
     setBusy(true);
     try {
       await api("/api/financing/config", { method: "PUT", body: JSON.stringify(form) });
-      toast("success", "Financing settings saved.");
+      feedback.success({ title: "Financing settings saved" });
       onSaved();
-    } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+    } catch (e: any) { feedback.error({ title: "Financing settings not saved", message: e.message }); } finally { setBusy(false); }
   }
 
   return (

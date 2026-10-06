@@ -2,6 +2,7 @@
 import { api, getRole, downloadPdf } from "@/lib/api";
 import type { Order, RepairTicket, WishlistItem, Message, Quote } from "@/lib/types";
 import { useToast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { useFeature } from "@/lib/features";
 import { escapeHtml } from "@/lib/sanitize";
 import { usePageTitle } from "@/lib/use-page-title";
@@ -29,7 +30,7 @@ export default function DashboardPage() {
   const [repairFormOpen, setRepairFormOpen] = useState(false);
   const [replyBody, setReplyBody] = useState("");
   const [selectedMsgKey, setSelectedMsgKey] = useState<string | null>(null);
-  const { toast } = useToast();
+  const feedback = useFeedback();
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
 
@@ -74,7 +75,7 @@ export default function DashboardPage() {
         const newCount = await loadMessages();
         if (newCount > prevMsgCountRef.current && prevMsgCountRef.current > 0) {
           const diff = newCount - prevMsgCountRef.current;
-          toast("info", `${diff} new message${diff > 1 ? "s" : ""}`);
+          feedback.info({ title: `${diff} new message${diff > 1 ? "s" : ""}` });
         }
         prevMsgCountRef.current = newCount;
       } catch {}
@@ -126,7 +127,7 @@ export default function DashboardPage() {
     try {
       const r = await api<{ token: string }>("/api/orders/invoice-token/" + orderId, { method: "POST" });
       await downloadPdf(`/api/orders/${orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${orderId}.pdf`);
-    } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown error")); }
+    } catch (e: any) { feedback.error({ title: "Failed to download invoice", message: e?.message || "Unknown error" }); }
   }
 
   const sections: { key: Section; label: string; icon: string; show: boolean; feature?: string }[] = [
@@ -402,7 +403,7 @@ export default function DashboardPage() {
                               await api("/api/messages", { method: "POST", body: JSON.stringify(payload) });
                               setReplyBody("");
                               loadMessages();
-                            } catch (err: any) { toast("error", err.message); }
+                            } catch (err: any) { feedback.error({ title: "Message not sent", message: err.message }); }
                           }} style={{ padding: "0.75rem 1rem", borderTop: "1px solid var(--border)", display: "flex", gap: "0.5rem" }}>
                             <textarea rows={1} value={replyBody} onChange={(e) => setReplyBody(e.target.value)} placeholder="Type a message..." required style={{ flex: 1, resize: "none" }} />
                             <button type="submit" className="btn btn-sm">Send</button>
@@ -494,7 +495,7 @@ function CustomerProfileForm({ profile, onSaved }: { profile: any; onSaved: (p: 
 }
 
 function CustomerNotifications() {
-  const { toast } = useToast();
+  const feedback = useFeedback();
   const [prefs, setPrefs] = useState<{ email: boolean; whatsapp: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
@@ -518,8 +519,8 @@ function CustomerNotifications() {
         body: JSON.stringify(prefs),
       });
       setPrefs(updated);
-      toast("success", "Notification preferences saved.");
-    } catch (e: any) { toast("error", e.message || "Failed to save preferences."); }
+      feedback.success({ title: "Notification preferences saved" });
+    } catch (e: any) { feedback.error({ title: "Preferences not saved", message: e.message }); }
     finally { setSaving(false); }
   }
 

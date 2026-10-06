@@ -3,9 +3,10 @@ import { api, downloadPdf } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
 export default function CreditNotesPage() {
+  const feedback = useFeedback();
   const { data, loading, error, refetch } = useFetch(() => api<{ creditNotes: any[] }>('/api/admin/credit-notes'), []);
   const [search, setSearch] = useState("");
 
@@ -41,7 +42,7 @@ export default function CreditNotesPage() {
                 <td>{escapeHtml(note.reason || '—')}</td>
                 <td><span className="plan-status" style={{ background: note.status === 'submitted' ? 'var(--success-light)' : 'var(--warning-light)', color: note.status === 'submitted' ? 'var(--success-text)' : 'var(--warning-text)' }}>{note.status}</span></td>
                 <td>
-                  <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/admin/credit-notes/${note.id}/view`, `credit-note-${note.id}.pdf`).catch((e: any) => toast("error", "Failed to download credit note: " + (e?.message || "Unknown error")))}>View</RippleButton>
+                  <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/admin/credit-notes/${note.id}/view`, `credit-note-${note.id}.pdf`).catch((e: any) => feedback.error({ title: "Credit note not downloaded", message: "Failed to download credit note: " + (e?.message || "Unknown error") }))}>View</RippleButton>
                 </td>
               </tr>
             ))}

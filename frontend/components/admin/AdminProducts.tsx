@@ -4,11 +4,12 @@ import type { Product } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { useFetch, Spinner, ErrorMsg, formatPrice, escapeHtml } from "./shared";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { Media } from "@/components/Media";
 
 export default function AdminProducts() {
+  const feedback = useFeedback();
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
@@ -142,7 +143,7 @@ export default function AdminProducts() {
   async function uploadPrimaryImage(productId: string, file: File) {
     const fd = new FormData();
     fd.append("image", file);
-    try { await api(`/api/products/${encodeURIComponent(productId)}/image`, { method: "POST", body: fd }); refetch(); } catch (err: any) { toast("error", "Primary upload failed: " + err.message); }
+    try { await api(`/api/products/${encodeURIComponent(productId)}/image`, { method: "POST", body: fd }); refetch(); } catch (err: any) { feedback.error({ title: "Primary image not uploaded", message: "Primary upload failed: " + err.message }); }
   }
 
   async function uploadGalleryImages(productId: string) {
@@ -151,19 +152,19 @@ export default function AdminProducts() {
     for (const file of Array.from(files)) {
       const fd = new FormData();
       fd.append("image", file);
-      try { await api(`/api/products/${encodeURIComponent(productId)}/images`, { method: "POST", body: fd }); } catch (err: any) { toast("error", "Upload failed: " + err.message); }
+      try { await api(`/api/products/${encodeURIComponent(productId)}/images`, { method: "POST", body: fd }); } catch (err: any) { feedback.error({ title: "Images not uploaded", message: "Upload failed: " + err.message }); }
     }
     if (galleryRef.current) galleryRef.current.value = "";
     await loadGallery(productId);
   }
 
   async function setPrimary(productId: string, imageId: number) {
-    try { await api(`/api/products/${encodeURIComponent(productId)}/images/${imageId}/primary`, { method: "PUT" }); await loadGallery(productId); refetch(); } catch (err: any) { toast("error", "Failed: " + err.message); }
+    try { await api(`/api/products/${encodeURIComponent(productId)}/images/${imageId}/primary`, { method: "PUT" }); await loadGallery(productId); refetch(); } catch (err: any) { feedback.error({ title: "Primary image not set", message: "Failed: " + err.message }); }
   }
 
   async function deleteGalleryImage(productId: string, imageId: number) {
     if (!(await confirmDialog({ message: "Remove this image from the gallery?", confirmLabel: "Remove", danger: true }))) return;
-    try { await api(`/api/products/${encodeURIComponent(productId)}/images/${imageId}`, { method: "DELETE" }); await loadGallery(productId); } catch { toast("error", "Delete failed"); }
+    try { await api(`/api/products/${encodeURIComponent(productId)}/images/${imageId}`, { method: "DELETE" }); await loadGallery(productId); } catch { feedback.error({ title: "Image not deleted", message: "Delete failed" }); }
   }
 
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -182,7 +183,7 @@ export default function AdminProducts() {
     setDropIdx(null);
     try {
       await api(`/api/products/${encodeURIComponent(editing.id)}/images/reorder`, { method: "PUT", body: JSON.stringify({ orderedIds: next.map((i: any) => i.id) }) });
-    } catch (err: any) { toast("error", "Reorder failed: " + err.message); await loadGallery(editing.id); }
+    } catch (err: any) { feedback.error({ title: "Images not reordered", message: "Reorder failed: " + err.message }); await loadGallery(editing.id); }
   }
 
   function buildSpecsArray(): any[] {
@@ -220,14 +221,14 @@ export default function AdminProducts() {
         await uploadGalleryImages(editing.id);
       }
       setEditing(null); setCreating(false); refetch();
-      toast("success", creating ? "Product created." : "Product updated.");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success({ title: creating ? "Product created" : "Product updated" });
+    } catch (err: any) { feedback.error({ title: "Product not saved", message: err.message }); }
     finally { setSaving(false); }
   }
 
   async function deleteProduct(id: string) {
     if (!(await confirmDialog({ message: "Delete this product? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/products/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); toast("success", "Product deleted."); } catch { toast("error", "Delete failed"); }
+    try { await api(`/api/products/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); feedback.success({ title: "Product deleted" }); } catch { feedback.error({ title: "Product not deleted", message: "Delete failed" }); }
   }
 
   useEffect(() => { if (editing && !creating && editing.id) loadGallery(editing.id); else setGallery([]); }, [editing?.id, creating]);
@@ -251,7 +252,7 @@ export default function AdminProducts() {
                 {editing?.imageUrl && <Media src={editing.imageUrl} alt="" width={300} height={180} fit="cover" fallbackLabel="Primary image" style={{ maxWidth: 300, maxHeight: 180, borderRadius: 8, objectFit: "cover", marginBottom: "0.5rem" }} />}
                 <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
                   <label style={{ fontSize: "0.85rem", cursor: "pointer" }}>Replace primary image<input type="file" accept="image/*" style={{ display: "block", margin: "0.25rem auto" }} onChange={(e) => { const f = e.target.files?.[0]; if (f && editing) uploadPrimaryImage(editing.id, f); }} /></label>
-                  {editing?.imageUrl && <RippleButton size="small" variant="danger" type="button" onClick={async () => { if (!editing || !(await confirmDialog({ message: "Remove primary image?", confirmLabel: "Remove", danger: true }))) return; try { await api(`/api/products/${encodeURIComponent(editing.id)}/image`, { method: "DELETE" }); refetch(); } catch (err: any) { toast("error", "Failed: " + err.message); } }}>Remove image</RippleButton>}
+                  {editing?.imageUrl && <RippleButton size="small" variant="danger" type="button" onClick={async () => { if (!editing || !(await confirmDialog({ message: "Remove primary image?", confirmLabel: "Remove", danger: true }))) return; try { await api(`/api/products/${encodeURIComponent(editing.id)}/image`, { method: "DELETE" }); refetch(); } catch (err: any) { feedback.error({ title: "Image not removed", message: "Failed: " + err.message }); } }}>Remove image</RippleButton>}
                 </div>
               </div>
             )}

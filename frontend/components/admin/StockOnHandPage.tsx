@@ -2,12 +2,12 @@ import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
-import { useToast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { DataTable } from "@/components/ui/DataTable";
 import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
 
 export default function StockOnHandPage({ showAutoReorder = false }: { showAutoReorder?: boolean }) {
-  const { toast } = useToast();
+  const feedback = useFeedback();
   const { data: sData, loading, error } = useFetch(() => api<{ items: any[] }>("/api/reports/stock-summary"), []);
   const [snapshotDate, setSnapshotDate] = useState(new Date().toISOString().slice(0, 10));
   const [snapshot, setSnapshot] = useState<any>(null);
@@ -40,7 +40,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
       setSnapshot(data);
     } catch (err: any) {
       setSnapshot(null);
-      toast("error", "No snapshot for this date.");
+      feedback.error({ title: "Snapshot not found", message: "No snapshot for this date." });
     } finally { setLoadingSnapshot(false); }
   }
 
@@ -52,8 +52,8 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
       const data = await api<any>(`/api/stock-on-hand/${today}`);
       setSnapshot(data);
       api<{ dates: any[] }>("/api/stock-on-hand/history").then(d => setDates(d.dates || [])).catch(() => {});
-      toast("success", "Snapshot taken.");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success({ title: "Snapshot taken" });
+    } catch (err: any) { feedback.error({ title: "Snapshot not taken", message: err.message }); }
   }
 
   if (loading) return <Spinner />;
@@ -87,7 +87,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
           <strong>{lowStock.length}</strong> item(s) at or below low stock threshold.
           {showAutoReorder && (
             <RippleButton size="small" onClick={async () => {
-              try { const r = await api<any>("/api/admin/auto-reorder", { method: "POST" }); toast("success", `Auto-reorder created ${r.created} items (${r.skipped} already on order)`); } catch (e: any) { toast("error", e.message); }
+              try { const r = await api<any>("/api/admin/auto-reorder", { method: "POST" }); feedback.success({ title: "Auto-reorder created", message: `${r.created} items created (${r.skipped} already on order)` }); } catch (e: any) { feedback.error({ title: "Auto-reorder not created", message: e.message }); }
             }} style={{ marginLeft: "0.75rem" }}>Auto Reorder</RippleButton>
           )}
         </div>

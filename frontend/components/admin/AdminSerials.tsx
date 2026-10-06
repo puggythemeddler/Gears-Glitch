@@ -4,7 +4,7 @@ import type { Product } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { useFetch, Spinner, ErrorMsg, escapeHtml } from "./shared";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 
 interface SerialRecord {
@@ -35,6 +35,7 @@ function warrantyStatus(serial: SerialRecord): string {
 }
 
 export default function AdminSerials() {
+  const feedback = useFeedback();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [lookup, setLookup] = useState<SerialRecord | null>(null);
@@ -85,27 +86,27 @@ export default function AdminSerials() {
   }
 
   async function generate() {
-    if (!genProduct) { toast("error", "Select a product."); return; }
+    if (!genProduct) { feedback.error({ title: "Product not selected", message: "Select a product." }); return; }
     setGenLoading(true); setGenResult([]);
     try {
       const res = await api<{ serials: { serialNumber: string }[] }>("/api/serials/generate", { method: "POST", body: JSON.stringify({ productId: genProduct, count: Number(genCount) || 1 }) });
       setGenResult((res.serials || []).map((s) => s.serialNumber));
-      toast("success", "Serials generated.");
+      feedback.success({ title: "Serials generated" });
       doRefresh();
-    } catch (e: any) { toast("error", e.message); }
+    } catch (e: any) { feedback.error({ title: "Serials not generated", message: e.message }); }
     finally { setGenLoading(false); }
   }
 
   async function createOne() {
-    if (!createSerialNumber.trim() || !createProduct) { toast("error", "Serial number and product are required."); return; }
+    if (!createSerialNumber.trim() || !createProduct) { feedback.error({ title: "Serial not added", message: "Serial number and product are required." }); return; }
     setCreateLoading(true);
     try {
       await api("/api/serials", { method: "POST", body: JSON.stringify({ serialNumber: createSerialNumber.trim(), productId: createProduct, warrantyExpires: createWarrantyExpiry || undefined }) });
-      toast("success", "Serial added.");
+      feedback.success({ title: "Serial added" });
       setCreateSerialNumber(""); setCreateProduct(""); setCreateWarrantyExpiry("");
       setShowCreate(false);
       doRefresh();
-    } catch (e: any) { toast("error", e.message); }
+    } catch (e: any) { feedback.error({ title: "Serial not added", message: e.message }); }
     finally { setCreateLoading(false); }
   }
 
@@ -113,10 +114,10 @@ export default function AdminSerials() {
     if (!(await confirmDialog({ message: `Void serial ${sn.serial_number}?`, confirmLabel: "Void", danger: true }))) return;
     try {
       await api(`/api/serials/${sn.id}/void`, { method: "POST" });
-      toast("success", "Serial voided.");
+      feedback.success({ title: "Serial voided" });
       if (lookup && lookup.id === sn.id) setLookup(null);
       doRefresh();
-    } catch (e: any) { toast("error", e.message); }
+    } catch (e: any) { feedback.error({ title: "Serial not voided", message: e.message }); }
   }
 
   const serials = data?.serials || [];

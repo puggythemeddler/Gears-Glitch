@@ -3,10 +3,11 @@ import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { useFetch, Spinner, ErrorMsg } from "./shared";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 
 export default function StockTakeListPage() {
+  const feedback = useFeedback();
   const { data: sessions, loading, error, refetch } = useFetch(() => api<{ sessions: any[] }>("/api/stock-take"), []);
   const [msg, setMsg] = useState("");
   const [branches, setBranches] = useState<any[]>([]);
@@ -40,8 +41,8 @@ export default function StockTakeListPage() {
     try {
       await api(`/api/stock-take/${session.id}`, { method: "DELETE" });
       refetch();
-      toast("success", "Stock take session deleted.");
-    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
+      feedback.success({ title: "Stock take session deleted" });
+    } catch (err: any) { setMsg(err.message); feedback.error({ title: "Stock take session not deleted", message: err.message }); }
   }
 
   if (loading) return <Spinner />;

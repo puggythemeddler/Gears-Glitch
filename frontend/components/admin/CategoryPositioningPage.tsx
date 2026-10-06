@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
 export default function CategoryPositioningPage() {
+  const feedback = useFeedback();
   const [categories, setCategories] = useState<{ id: string; label: string; sortOrder?: number }[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -35,8 +36,8 @@ export default function CategoryPositioningPage() {
     setSaving(true);
     try {
       await api("/api/admin/categories/reorder", { method: "PUT", body: JSON.stringify({ orderedIds: categories.map((c) => c.id) }) });
-      toast("success", "Category order saved.");
-    } catch (err: any) { toast("error", "Error: " + err.message); }
+      feedback.success({ title: "Category order saved" });
+    } catch (err: any) { feedback.error({ title: "Category order not saved", message: "Error: " + err.message }); }
     finally { setSaving(false); }
   }
 

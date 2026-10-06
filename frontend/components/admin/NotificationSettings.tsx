@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { escapeHtml, Spinner } from "@/components/admin/shared";
 import RippleButton from "@/components/RippleButton";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
 const EVENT_LABELS: Record<string, string> = {
   "order.created": "New order",
@@ -39,6 +39,7 @@ const EVENT_LABELS: Record<string, string> = {
 };
 
 export default function NotificationSettings() {
+  const feedback = useFeedback();
   const [prefs, setPrefs] = useState<Record<string, { email: boolean; whatsapp: boolean }> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -86,9 +87,9 @@ export default function NotificationSettings() {
         body: JSON.stringify(prefs),
       });
       setPrefs(updated);
-      toast("success", "Notification preferences saved.");
+      feedback.success({ title: "Notification preferences saved" });
     } catch (e: any) {
-      toast("error", e.message || "Failed to save notification preferences.");
+      feedback.error({ title: "Preferences not saved", message: e.message || "Failed to save notification preferences." });
     } finally { setSaving(false); }
   }
 
@@ -125,8 +126,8 @@ export default function NotificationSettings() {
         body: JSON.stringify({ days: reminderDays }),
       });
       setReminderDays(d.days);
-      toast("success", "Warranty reminder window saved.");
-    } catch (e: any) { toast("error", e.message || "Failed to save reminder window."); }
+      feedback.success({ title: "Warranty reminder window saved" });
+    } catch (e: any) { feedback.error({ title: "Reminder window not saved", message: e.message || "Failed to save reminder window." }); }
     finally { setReminderSaving(false); }
   }
 
