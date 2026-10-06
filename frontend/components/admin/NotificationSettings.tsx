@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { escapeHtml, Spinner } from "@/components/admin/shared";
+import { Spinner } from "@/components/admin/shared";
 import RippleButton from "@/components/RippleButton";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
@@ -225,15 +225,15 @@ export default function NotificationSettings() {
                 <tbody>
                   {logs.map((l: any) => (
                     <tr key={l.id}>
-                      <td><span style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{escapeHtml(l.event_type)}</span></td>
+                      <td><span style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{l.event_type}</span></td>
                       <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: 4, background: l.channel === "email" ? "var(--primary-light, #e0e7ff)" : "var(--success-light, #d1fae5)" }}>{l.channel}</span></td>
-                      <td>{escapeHtml(l.recipient)}</td>
+                      <td>{l.recipient}</td>
                       <td>
                         <span style={{ color: l.status === "sent" ? "var(--success)" : l.status === "failed" ? "var(--danger)" : "var(--text-secondary)", fontWeight: 600 }}>{l.status}</span>
-                        {l.error_message ? <div style={{ fontSize: "0.7rem", color: "var(--danger)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.error_message}>{escapeHtml(l.error_message)}</div> : null}
+                        {l.error_message ? <div style={{ fontSize: "0.7rem", color: "var(--danger)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.error_message}>{l.error_message}</div> : null}
                       </td>
-                      <td>{l.provider_message_id ? <span style={{ fontSize: "0.72rem", fontFamily: "monospace" }} title={l.provider_message_id} >{escapeHtml(String(l.provider_message_id).slice(0, 18))}{String(l.provider_message_id).length > 18 ? "…" : ""}</span> : <span style={{ color: "var(--text-secondary)", fontSize: "0.72rem" }}>—</span>}</td>
-                      <td><span style={{ fontSize: "0.75rem" }}>{escapeHtml(l.entity_type)}#{escapeHtml(String(l.entity_id))}</span></td>
+                      <td>{l.provider_message_id ? <span style={{ fontSize: "0.72rem", fontFamily: "monospace" }} title={l.provider_message_id} >{String(l.provider_message_id).slice(0, 18)}{String(l.provider_message_id).length > 18 ? "…" : ""}</span> : <span style={{ color: "var(--text-secondary)", fontSize: "0.72rem" }}>—</span>}</td>
+                      <td><span style={{ fontSize: "0.75rem" }}>{l.entity_type}#{String(l.entity_id)}</span></td>
                       <td>{new Date(l.created_at).toLocaleString("en-GB")}</td>
                     </tr>
                   ))}

@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import RippleButton from "@/components/RippleButton";
-import { escapeHtml, Spinner } from "./shared";
+import { Spinner } from "./shared";
 
 export interface Warranty {
   orderItemId: number;
@@ -119,12 +119,12 @@ export default function AdminWarranties({ customerId, embedded = false }: { cust
               key: "product", label: "Product",
               render: (w) => (
                 <>
-                  {escapeHtml(w.productName)}
-                  {w.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {escapeHtml(w.serialNumber)}</span>}
+                  {w.productName}
+                  {w.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {w.serialNumber}</span>}
                 </>
               ),
             },
-            { key: "customer", label: "Customer", render: (w) => escapeHtml(w.customerName) },
+            { key: "customer", label: "Customer", render: (w) => w.customerName },
             { key: "order", label: "Order", render: (w) => `#${w.orderId}` },
             { key: "start", label: "Purchased", value: (w) => w.startDate || "", render: (w) => fmtDate(w.startDate) },
             { key: "duration", label: "Coverage", align: "right", render: (w) => `${w.durationMonths} mo` },
@@ -147,16 +147,16 @@ export default function AdminWarranties({ customerId, embedded = false }: { cust
         <div className="panel" style={{ marginTop: "1.25rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
             <div style={{ minWidth: 0, maxWidth: "70ch" }}>
-              <h3 style={{ margin: 0 }}>{escapeHtml(selected.productName)}</h3>
-              {selected.serialNumber && <p className="muted" style={{ margin: "0.25rem 0 0" }}>Serial {escapeHtml(selected.serialNumber)}</p>}
+              <h3 style={{ margin: 0 }}>{selected.productName}</h3>
+              {selected.serialNumber && <p className="muted" style={{ margin: "0.25rem 0 0" }}>Serial {selected.serialNumber}</p>}
             </div>
             <StatusBadge status={selected.status} domain="warranty" />
           </div>
 
           <ul className="coverage-list" style={{ marginTop: "1rem" }}>
-            <li><span className="coverage-label">Customer</span><span className="coverage-value">{escapeHtml(selected.customerName)}</span></li>
-            <li><span className="coverage-label">Product</span><span className="coverage-value">{escapeHtml(selected.productName)}</span></li>
-            <li><span className="coverage-label">Serial number</span><span className="coverage-value">{selected.serialNumber ? escapeHtml(selected.serialNumber) : "—"}</span></li>
+            <li><span className="coverage-label">Customer</span><span className="coverage-value">{selected.customerName}</span></li>
+            <li><span className="coverage-label">Product</span><span className="coverage-value">{selected.productName}</span></li>
+            <li><span className="coverage-label">Serial number</span><span className="coverage-value">{selected.serialNumber ? selected.serialNumber : "—"}</span></li>
             <li><span className="coverage-label">Order</span><span className="coverage-value">#{selected.orderId} · purchased {fmtDate(selected.startDate)}</span></li>
             <li><span className="coverage-label">Coverage</span><span className="coverage-value">{selected.durationMonths} months from purchase</span></li>
             <li><span className="coverage-label">Start</span><span className="coverage-value">{fmtDate(selected.startDate)}</span></li>

@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
-import { useFetch, Spinner, ErrorMsg, escapeHtml } from "./shared";
+import { useFetch, Spinner, ErrorMsg } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 
@@ -159,7 +159,7 @@ export default function AdminSerials() {
             </div>
             {(lookup.status === "sold") && (
               <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
-                {lookup.customer_name && <span>Customer: <strong>{escapeHtml(lookup.customer_name)}</strong></span>}
+                {lookup.customer_name && <span>Customer: <strong>{lookup.customer_name}</strong></span>}
                 {lookup.order_number && <span>Order: <strong>#{lookup.order_number}</strong></span>}
                 {lookup.sold_at && <span>Sold: <strong>{new Date(lookup.sold_at).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })}</strong></span>}
                 {lookup.warranty_expires && <span>Warranty until: <strong>{new Date(lookup.warranty_expires).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })}</strong></span>}
@@ -190,12 +190,12 @@ export default function AdminSerials() {
             <tbody>
               {serials.map((s) => (
                 <tr key={s.id}>
-                  <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{escapeHtml(s.serial_number)}</td>
-                  <td style={{ fontSize: "0.85rem" }}>{escapeHtml(s.product_name || s.product_id)}</td>
+                  <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{s.serial_number}</td>
+                  <td style={{ fontSize: "0.85rem" }}>{s.product_name || s.product_id}</td>
                   <td><span className={`badge ${s.status === "sold" ? "badge-success" : s.status === "in_stock" ? "badge-info" : "badge-danger"}`} style={{ textTransform: "capitalize" }}>{s.status.replace("_", " ")}</span></td>
                   <td style={{ fontSize: "0.82rem" }}>{s.status === "sold" ? (s.warranty_expires ? new Date(s.warranty_expires).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" }) : "No warranty") : "—"}</td>
                   <td style={{ fontSize: "0.82rem" }}>
-                    {s.status === "sold" ? `${s.customer_name ? escapeHtml(s.customer_name) + " · " : ""}#${s.order_number || ""}` : "—"}
+                    {s.status === "sold" ? `${s.customer_name ? s.customer_name + " · " : ""}#${s.order_number || ""}` : "—"}
                   </td>
                   <td style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>{new Date(s.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })}</td>
                   <td>

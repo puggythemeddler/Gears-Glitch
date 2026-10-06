@@ -7,7 +7,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import RippleButton from "@/components/RippleButton";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
-import { formatPrice, escapeHtml, Spinner } from "./shared";
+import { formatPrice, Spinner } from "./shared";
 
 interface FinancingConfig {
   enabled: boolean;
@@ -309,9 +309,9 @@ function Applications({ canManage, canApprove, config }: { canManage: boolean; c
           rowKey={(a) => a.id}
           defaultSort={{ key: "created", dir: "desc" }}
           columns={[
-            { key: "number", label: "Application", render: (a) => <>{escapeHtml(a.applicationNumber)}</> },
-            { key: "customer", label: "Customer", render: (a) => <>{escapeHtml(a.customerName)}<span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>{escapeHtml(a.customerPhone || "")}</span></> },
-            { key: "product", label: "Product", render: (a) => <>{escapeHtml(a.productName || "—")}{a.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {escapeHtml(a.serialNumber)}</span>}</> },
+            { key: "number", label: "Application", render: (a) => <>{a.applicationNumber}</> },
+            { key: "customer", label: "Customer", render: (a) => <>{a.customerName}<span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>{a.customerPhone || ""}</span></> },
+            { key: "product", label: "Product", render: (a) => <>{a.productName || "—"}{a.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {a.serialNumber}</span>}</> },
             { key: "price", label: "Cash price", align: "right", value: (a) => a.cashPriceCents, render: (a) => money(a.cashPriceCents) },
             { key: "terms", label: "Terms", render: (a) => `${a.termCount} × ${FREQ_LABEL[a.frequency] || a.frequency}` },
             { key: "status", label: "Status", render: (a) => <StatusBadge status={a.status} domain="financingApplication" /> },
@@ -546,8 +546,8 @@ function Agreements({ canManage, canPay, config }: { canManage: boolean; canPay:
           rowKey={(a) => a.id}
           defaultSort={{ key: "created", dir: "desc" }}
           columns={[
-            { key: "number", label: "Agreement", render: (a) => escapeHtml(a.agreementNumber) },
-            { key: "product", label: "Product", render: (a) => <>{escapeHtml(a.productName || "—")}{a.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {escapeHtml(a.serialNumber)}</span>}</> },
+            { key: "number", label: "Agreement", render: (a) => a.agreementNumber },
+            { key: "product", label: "Product", render: (a) => <>{a.productName || "—"}{a.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {a.serialNumber}</span>}</> },
             { key: "instalment", label: "Instalment", align: "right", value: (a) => a.instalmentCents, render: (a) => `${money(a.instalmentCents)} / ${FREQ_LABEL[a.frequency] || a.frequency}` },
             { key: "paid", label: "Paid", align: "right", value: (a) => a.totalPaidCents, render: (a) => money(a.totalPaidCents) },
             { key: "outstanding", label: "Outstanding", align: "right", value: (a) => a.outstandingCents, render: (a) => money(a.outstandingCents) },
@@ -591,7 +591,7 @@ function AgreementDetail({ agreement, config, canManage, canPay, onClose, onChan
     <div className="panel" style={{ marginTop: "1.25rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
         <div>
-          <h3 style={{ margin: 0 }}>{escapeHtml(agreement.agreementNumber)} — {escapeHtml(agreement.productName || "Agreement")}</h3>
+          <h3 style={{ margin: 0 }}>{agreement.agreementNumber} — {agreement.productName || "Agreement"}</h3>
           <p className="muted" style={{ margin: "0.25rem 0 0" }}>
             {money(agreement.instalmentCents)} / {FREQ_LABEL[agreement.frequency] || agreement.frequency} · {agreement.termCount} instalments · first due {fmtDate(agreement.firstDueDate)}
           </p>
@@ -667,9 +667,9 @@ function AgreementDetail({ agreement, config, canManage, canPay, onClose, onChan
         rowKey={(p) => p.id}
         defaultSort={{ key: "created", dir: "desc" }}
         columns={[
-          { key: "ref", label: "Reference", render: (p) => escapeHtml(p.paymentRef) },
+          { key: "ref", label: "Reference", render: (p) => p.paymentRef },
           { key: "amount", label: "Amount", align: "right", value: (p) => p.amountCents, render: (p) => money(p.amountCents) },
-          { key: "method", label: "Method", render: (p) => `${p.method}${p.mpesaReceipt ? ` · ${escapeHtml(p.mpesaReceipt)}` : ""}` },
+          { key: "method", label: "Method", render: (p) => `${p.method}${p.mpesaReceipt ? ` · ${p.mpesaReceipt}` : ""}` },
           { key: "status", label: "Status", render: (p) => <StatusBadge status={p.status} domain="financingPayment" /> },
           { key: "created", label: "Date", value: (p) => p.createdAt || "", render: (p) => fmtDate(p.createdAt) },
           {

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { api, downloadPdf } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
-import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
+import { formatPrice, useFetch, Spinner, ErrorMsg } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
 export default function CreditNotesPage() {
@@ -37,9 +37,9 @@ export default function CreditNotesPage() {
               <tr key={note.id}>
                 <td>#{note.id}</td>
                 <td>#{note.orderId}</td>
-                <td>{escapeHtml(note.customerName || note.customer_name || '—')}</td>
+                <td>{note.customerName || note.customer_name || '—'}</td>
                 <td>{formatPrice(note.totalAmount || 0)}</td>
-                <td>{escapeHtml(note.reason || '—')}</td>
+                <td>{note.reason || '—'}</td>
                 <td><span className="plan-status" style={{ background: note.status === 'submitted' ? 'var(--success-light)' : 'var(--warning-light)', color: note.status === 'submitted' ? 'var(--success-text)' : 'var(--warning-text)' }}>{note.status}</span></td>
                 <td>
                   <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/admin/credit-notes/${note.id}/view`, `credit-note-${note.id}.pdf`).catch((e: any) => feedback.error({ title: "Credit note not downloaded", message: "Failed to download credit note: " + (e?.message || "Unknown error") }))}>View</RippleButton>

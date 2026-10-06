@@ -4,8 +4,7 @@ import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { formatPrice, escapeHtml, Spinner } from "./shared";
-import { toast } from "@/components/Toast";
+import { formatPrice, Spinner } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
 type AdminRepairsTab = "tickets" | "calendar" | "content";
@@ -282,10 +281,10 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
               {tickets.map((t) => (
                 <tr key={t.id}>
                   <td>{t.id}</td>
-                  <td>{escapeHtml(t.customerName || "")}</td>
-                  <td>{t.deviceType ? escapeHtml(t.deviceType + (t.deviceModel ? " " + t.deviceModel : "")) : "—"}</td>
+                  <td>{t.customerName || ""}</td>
+                  <td>{t.deviceType ? t.deviceType + (t.deviceModel ? " " + t.deviceModel : "") : "—"}</td>
                   <td>{statusBadge(t.status)}</td>
-                  <td>{t.assignedName ? escapeHtml(t.assignedName) : <span className="muted">Unassigned</span>}</td>
+                  <td>{t.assignedName ? t.assignedName : <span className="muted">Unassigned</span>}</td>
                   <td>{t.etaAt ? fmtDate(t.etaAt) : "—"}</td>
                   <td>{t.scheduledAt ? new Date(t.scheduledAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                   <td>
@@ -314,8 +313,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
         <div className="panel" style={{ marginTop: "1.25rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
             <div style={{ minWidth: 0, maxWidth: "70ch" }}>
-              <h3 style={{ margin: 0 }}>Ticket #{detail.id} — {escapeHtml(detail.deviceType)}</h3>
-              <p className="muted" style={{ margin: "0.5rem 0 0" }}>{escapeHtml(detail.issueDescription)}</p>
+              <h3 style={{ margin: 0 }}>Ticket #{detail.id} — {detail.deviceType}</h3>
+              <p className="muted" style={{ margin: "0.5rem 0 0" }}>{detail.issueDescription}</p>
             </div>
             {statusBadge(detail.status)}
           </div>
@@ -323,22 +322,22 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: "0.5rem 1.5rem", marginTop: "1.25rem", padding: "0.75rem 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
             <div>
               <div className="input-label">Customer</div>
-              <div>{escapeHtml(detail.customerName)}</div>
+              <div>{detail.customerName}</div>
             </div>
             <div>
               <div className="input-label">Email</div>
-              <div>{escapeHtml(detail.customerEmail || "—")}</div>
+              <div>{detail.customerEmail || "—"}</div>
             </div>
             {detail.deviceModel ? (
               <div>
                 <div className="input-label">Device model</div>
-                <div>{escapeHtml(detail.deviceModel)}</div>
+                <div>{detail.deviceModel}</div>
               </div>
             ) : null}
             {detail.repairTypeName ? (
               <div>
                 <div className="input-label">Repair type</div>
-                <div>{escapeHtml(detail.repairTypeName)}</div>
+                <div>{detail.repairTypeName}</div>
               </div>
             ) : null}
             <div>
@@ -399,7 +398,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
                   <tbody>
                     {detail.parts.map((p: any) => (
                       <tr key={p.id}>
-                        <td>{escapeHtml(p.description)}</td>
+                        <td>{p.description}</td>
                         <td>{p.quantity}</td>
                         <td>{formatPrice(p.unitCost)}</td>
                         <td>{formatPrice(p.unitCost * p.quantity)}</td>
@@ -426,11 +425,11 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
                   <li key={u.id} className="timeline-item done">
                     <span className="timeline-dot" aria-hidden="true" />
                     <div className="timeline-title">
-                      {escapeHtml(u.staffName || "Staff")}
+                      {u.staffName || "Staff"}
                       {!u.customerVisible && <span className="badge badge-default" style={{ marginLeft: "0.5rem" }}>Internal</span>}
                     </div>
                     <div className="timeline-meta">{new Date(u.createdAt).toLocaleString("en-GB")}</div>
-                    <div className="timeline-body" style={{ whiteSpace: "pre-wrap" }}>{escapeHtml(u.message)}</div>
+                    <div className="timeline-body" style={{ whiteSpace: "pre-wrap" }}>{u.message}</div>
                   </li>
                 ))}
               </ul>
@@ -457,8 +456,8 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
                     <tbody>
                       {assetSerials.map((s: any) => (
                         <tr key={s.serial_number}>
-                          <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{escapeHtml(s.serial_number)}</td>
-                          <td>{escapeHtml(s.product_name || "—")}</td>
+                          <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{s.serial_number}</td>
+                          <td>{s.product_name || "—"}</td>
                           <td>{s.sold_at ? new Date(s.sold_at).toLocaleDateString("en-GB") : "—"}</td>
                           <td>{s.warranty_expires ? new Date(s.warranty_expires).toLocaleDateString("en-GB") : "—"}</td>
                         </tr>
@@ -542,8 +541,8 @@ function CalendarTab({ onOpenTicket }: { onOpenTicket: (id: string) => void }) {
                       style={{ display: "block", width: "100%", textAlign: "left", border: "1px solid var(--border)", background: "var(--surface)", borderRadius: 6, padding: "0.4rem 0.5rem", marginBottom: "0.35rem", cursor: "pointer", fontSize: "0.8rem" }}
                     >
                       <strong>{t.id}</strong>
-                      <div>{escapeHtml(t.deviceType || "")}{t.deviceModel ? " " + escapeHtml(t.deviceModel) : ""}</div>
-                      {t.assignedName && <div className="muted" style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}><Icon name="user" size={12} /> {escapeHtml(t.assignedName)}</div>}
+                      <div>{t.deviceType || ""}{t.deviceModel ? " " + t.deviceModel : ""}</div>
+                      {t.assignedName && <div className="muted" style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}><Icon name="user" size={12} /> {t.assignedName}</div>}
                       <div>{t.scheduledAt ? new Date(t.scheduledAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""} {statusBadge(t.status)}</div>
                     </button>
                   ))

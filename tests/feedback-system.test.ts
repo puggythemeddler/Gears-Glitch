@@ -152,14 +152,29 @@ describe("feedback plumbing: integration points", () => {
     assert.equal(oldProviders, 0);
   });
 
-  it("legacyToast is a thin adapter, not a second implementation", () => {
-    const legacy = read("frontend/components/feedback/legacyToast.ts");
-    const adapter = read("frontend/components/Toast.tsx");
-    assert.match(legacy, /DEPRECATED COMPATIBILITY LAYER/);
-    assert.match(adapter, /re-export of the feedback compatibility layer/);
-    // The old provider implementation must be gone: no container, no global
-    // pushToast assignment from a provider effect.
-    assert.doesNotMatch(legacy, /toast-container/);
+  it("compatibility layer is fully removed - no legacy toast global or shim remains", () => {
+    // The old global + re-export shim must be gone, not merely unused: keeping a
+    // second code path would let a future page silently bypass the canonical API.
+    assert.equal(fs.existsSync(path.join(repo, "frontend/components/Toast.tsx")), false, "Toast.tsx shim deleted");
+    assert.equal(fs.existsSync(path.join(repo, "frontend/components/feedback/legacyToast.ts")), false, "legacyToast.ts deleted");
+    // No page or component may import the removed module path.
+    const frontend = path.join(repo, "frontend");
+    const offenders: string[] = [];
+    const scan = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== "node_modules" && entry.name !== ".next") scan(full);
+        } else if (/\.(tsx|ts)$/.test(entry.name)) {
+          const src = fs.readFileSync(full, "utf8");
+          if (src.includes('from "@/components/Toast"') || src.includes('from "@/components/feedback/legacyToast"')) {
+            offenders.push(path.relative(repo, full));
+          }
+        }
+      }
+    };
+    scan(frontend);
+    assert.deepEqual(offenders, [], "no remaining importers of the legacy toast module");
   });
 
   it("removes the old dual live-region/role announcement conflict", () => {

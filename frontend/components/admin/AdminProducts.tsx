@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
-import { useFetch, Spinner, ErrorMsg, formatPrice, escapeHtml } from "./shared";
+import { useFetch, Spinner, ErrorMsg, formatPrice } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { Media } from "@/components/Media";
@@ -243,7 +243,7 @@ export default function AdminProducts() {
       <>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
           <RippleButton size="small" variant="ghost" onClick={() => { setEditing(null); setCreating(false); }}>&larr; Back</RippleButton>
-          <h1 style={{ margin: 0 }}>{creating ? "New Product" : "Edit: " + escapeHtml(editing!.name)}</h1>
+          <h1 style={{ margin: 0 }}>{creating ? "New Product" : "Edit: " + editing!.name}</h1>
         </div>
         <div className="panel" style={{ maxWidth: 560 }}>
           <form onSubmit={saveProduct} className="auth-form">
@@ -387,10 +387,10 @@ export default function AdminProducts() {
               <tr key={p.id}>
                 <td><input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelect(p.id)} /></td>
                 <td>{p.imageUrl ? <Media src={p.imageUrl} alt="" width={40} height={40} fit="cover" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover" }} /> : <span style={{ opacity: 0.3 }}>{'\u200B'}</span>}</td>
-                <td>{escapeHtml(p.name)} {p.isHidden && <span style={{ marginLeft: "0.35rem", fontSize: "0.72rem", fontWeight: 600, color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.35rem", verticalAlign: "middle" }}>Hidden</span>}</td>
+                <td>{p.name} {p.isHidden && <span style={{ marginLeft: "0.35rem", fontSize: "0.72rem", fontWeight: 600, color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.35rem", verticalAlign: "middle" }}>Hidden</span>}</td>
                 <td>{p.salePrice ? <><span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.85em" }}>{formatPrice(p.price)}</span> <span style={{ color: "var(--danger)", fontWeight: 600 }}>{formatPrice(p.salePrice)}</span></> : formatPrice(p.price)}</td>
                 <td>{p.category || "—"}</td>
-                <td>{escapeHtml(groups.find((g: any) => g.id === p.groupId)?.name || "—")}</td>
+                <td>{groups.find((g: any) => g.id === p.groupId)?.name || "—"}</td>
                 <td>{p.inStock ? <span style={{ color: "var(--success)" }}>In stock</span> : <span style={{ color: "var(--danger)" }}>Out</span>}</td>
                 <td style={{ display: "flex", gap: "0.35rem" }}>
                   <RippleButton size="small" variant="ghost" onClick={() => { setCreating(false); setEditing(p); }}>Edit</RippleButton>

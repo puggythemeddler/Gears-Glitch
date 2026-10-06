@@ -4,7 +4,7 @@ import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { DataTable } from "@/components/ui/DataTable";
-import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
+import { formatPrice, useFetch, Spinner, ErrorMsg } from "./shared";
 
 export default function StockOnHandPage({ showAutoReorder = false }: { showAutoReorder?: boolean }) {
   const feedback = useFeedback();
@@ -120,7 +120,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
             <DataTable<any>
               ariaLabel="Stock snapshot"
               columns={[
-                { key: "product", label: "Product", sortable: true, value: (i) => i.productName, render: (i) => escapeHtml(i.productName) },
+                { key: "product", label: "Product", sortable: true, value: (i) => i.productName, render: (i) => i.productName },
                 { key: "quantity", label: "Quantity", sortable: true, align: "right", value: (i) => i.quantity, render: (i) => <strong>{i.quantity}</strong> },
               ]}
               rows={snapshot.items || []}
@@ -136,7 +136,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
         <DataTable<any>
           ariaLabel="Current stock levels"
           columns={[
-            { key: "product", label: "Product", sortable: true, value: (i) => i.name, render: (i) => escapeHtml(i.name) },
+            { key: "product", label: "Product", sortable: true, value: (i) => i.name, render: (i) => i.name },
             { key: "category", label: "Category", sortable: true, value: (i) => i.category || "", render: (i) => i.category || "—" },
             { key: "qty", label: "In Stock", sortable: true, align: "right", value: (i) => i.quantityInStock ?? i.quantity_in_stock ?? 0, render: (i) => <strong>{i.quantityInStock ?? i.quantity_in_stock ?? 0}</strong> },
             { key: "reserved", label: "Reserved", sortable: true, align: "right", value: (i) => i.quantityReserved ?? i.quantity_reserved ?? 0, render: (i) => i.quantityReserved ?? i.quantity_reserved ?? 0 },

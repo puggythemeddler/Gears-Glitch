@@ -3,17 +3,17 @@ import { useApp } from "@/lib/app-context";
 import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
 import { api } from "@/lib/api";
-import { escapeHtml, Spinner } from "@/components/admin/shared";
+import { Spinner } from "@/components/admin/shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 
 function MediaPreview({ content, logs }: { content: string; logs: any[] }) {
   const match = content.match(/^\[image:(.*)\]$/);
-  if (!match) return <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "inline-block" }}>{escapeHtml(content)}</span>;
+  if (!match) return <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "inline-block" }}>{content}</span>;
   const filename = match[1];
   const log = logs.find(l => l.content === content);
-  if (!log?.id) return <span>{escapeHtml(content)}</span>;
-  return <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", color: "var(--primary)" }}><Icon name="image" size={14} /> {escapeHtml(filename || "image")}</span>;
+  if (!log?.id) return <span>{content}</span>;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", color: "var(--primary)" }}><Icon name="image" size={14} /> {filename || "image"}</span>;
 }
 
 function SecretField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
@@ -293,7 +293,7 @@ export default function WhatsAppSettings() {
               <tbody>
                 {logs.map((l: any) => (
                   <tr key={l.id}>
-                    <td>{escapeHtml(l.phone_number)}</td>
+                    <td>{l.phone_number}</td>
                     <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: "var(--radius-sm)", background: l.direction === "outbound" ? "var(--primary-light)" : "var(--success-light)" }}>{l.direction}</span></td>
                     <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: "var(--radius-sm)", background: "var(--border)" }}>{l.message_type}</span></td>
                     <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -324,10 +324,10 @@ export default function WhatsAppSettings() {
                 <tbody>
                   {templates.map((t: any) => (
                     <tr key={t.id}>
-                      <td><strong>{escapeHtml(t.name)}</strong></td>
-                      <td>{escapeHtml(t.category)}</td>
-                      <td><span style={{ fontSize: "0.75rem" }}>{t.header_type !== "none" ? escapeHtml(t.header_text) : "-"}</span></td>
-                      <td style={{ maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{escapeHtml(t.body_text)}</td>
+                      <td><strong>{t.name}</strong></td>
+                      <td>{t.category}</td>
+                      <td><span style={{ fontSize: "0.75rem" }}>{t.header_type !== "none" ? t.header_text : "-"}</span></td>
+                      <td style={{ maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.body_text}</td>
                       <td><RippleButton variant="danger" size="small" onClick={() => deleteTemplate(t.id)}>Delete</RippleButton></td>
                     </tr>
                   ))}

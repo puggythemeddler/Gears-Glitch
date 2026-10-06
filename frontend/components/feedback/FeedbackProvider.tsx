@@ -20,7 +20,6 @@ import {
   pushRecord,
   updateRecord,
 } from "@/lib/feedbackCore";
-import { __bindLegacySink } from "@/components/feedback/legacyToast";
 
 /**
  * Canonical feedback system for Gears&Glitch.
@@ -182,20 +181,6 @@ export function FeedbackProvider({
       timers.clear();
     };
   }, []);
-
-  // Bridge the deprecated `toast()` global onto this provider. The compatibility
-  // layer queues anything fired before this point instead of dropping it.
-  useEffect(
-    () =>
-      __bindLegacySink((type, message, title, action) => {
-        const input: FeedbackInput = { title: title ?? message, message: title ? message : undefined, action };
-        if (type === "success") push("success", input);
-        else if (type === "error") push("error", input);
-        else if (type === "warning") push("warning", input);
-        else push("info", input);
-      }),
-    [push],
-  );
 
   const value = useMemo<FeedbackContextValue>(
     () => ({

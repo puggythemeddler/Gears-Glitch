@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
-import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
+import { formatPrice, useFetch, Spinner, ErrorMsg } from "./shared";
 import { Media } from "@/components/Media";
 
 export default function ProductPositioningPage() {
@@ -74,7 +74,7 @@ export default function ProductPositioningPage() {
             <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", minWidth: 20 }}>{idx + 1}</span>
             {p.imageUrl ? <Media src={p.imageUrl} alt="" width={48} height={48} fit="cover" style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} /> : <div style={{ width: 48, height: 48, borderRadius: 6, background: "var(--border)", flexShrink: 0 }} />}
             <div style={{ overflow: "hidden" }}>
-              <div style={{ fontWeight: 600, fontSize: "0.85rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{escapeHtml(p.name)}</div>
+              <div style={{ fontWeight: 600, fontSize: "0.85rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
               <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{p.category}{p.salePrice ? " • Sale" : ""}</div>
             </div>
           </div>

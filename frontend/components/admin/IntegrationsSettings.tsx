@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
-import { escapeHtml, Spinner } from "@/components/admin/shared";
+import { Spinner } from "@/components/admin/shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import type { AdminView } from "@/pages/admin";
@@ -85,12 +85,12 @@ function ProviderCard({ entry, gmail, onConnect }: { entry: HealthEntry; gmail?:
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <Icon name={isGmail ? "mail" : entry.provider === "whatsapp" ? "messageCircle" : entry.provider === "daraja" ? "smartphone" : "globe"} size={16} />
-            <strong>{escapeHtml(entry.label)}</strong>
+            <strong>{entry.label}</strong>
           </div>
-          <span className={status.cls} style={{ marginTop: "0.35rem", display: "inline-block" }}>{escapeHtml(status.text)}</span>
+          <span className={status.cls} style={{ marginTop: "0.35rem", display: "inline-block" }}>{status.text}</span>
           {entry.meta && (
             <div style={{ marginTop: "0.35rem", color: "var(--muted)", fontSize: "0.85rem" }}>
-              {Object.entries(entry.meta).map(([k, v]) => v ? <span key={k} style={{ marginRight: "0.6rem" }}>{k}: <code>{escapeHtml(String(v))}</code></span> : null)}
+              {Object.entries(entry.meta).map(([k, v]) => v ? <span key={k} style={{ marginRight: "0.6rem" }}>{k}: <code>{String(v)}</code></span> : null)}
             </div>
           )}
         </div>
@@ -103,18 +103,18 @@ function ProviderCard({ entry, gmail, onConnect }: { entry: HealthEntry; gmail?:
 
       {gmail && isGmail && (
         <div style={{ marginTop: "0.6rem", fontSize: "0.85rem", color: "var(--muted)", borderTop: "1px solid var(--border)", paddingTop: "0.6rem" }}>
-          <div>Connected account: {gmail.email ? <strong>{escapeHtml(gmail.email)}</strong> : "—"}</div>
+          <div>Connected account: {gmail.email ? <strong>{gmail.email}</strong> : "—"}</div>
           <div>Last success: {formatTime((gmail as any).lastSuccessAt || entry.lastSuccessAt)}</div>
           <div>Last failure: {formatTime((gmail as any).lastFailureAt || entry.lastFailureAt)}</div>
-          <div>Last test: {formatTime((gmail as any).lastTestAt || entry.lastTestAt)} {entry.lastTestResult ? `— ${escapeHtml(String(entry.lastTestResult))}` : ""}</div>
-          {entry.lastError && <div>Last error: <code>{escapeHtml(entry.lastError)}</code></div>}
+          <div>Last test: {formatTime((gmail as any).lastTestAt || entry.lastTestAt)} {entry.lastTestResult ? `— ${String(entry.lastTestResult)}` : ""}</div>
+          {entry.lastError && <div>Last error: <code>{entry.lastError}</code></div>}
         </div>
       )}
 
       {!isGmail && (entry.lastError || entry.lastFailureAt) && (
         <div style={{ marginTop: "0.6rem", fontSize: "0.85rem", color: "var(--muted)", borderTop: "1px solid var(--border)", paddingTop: "0.6rem" }}>
           {entry.lastFailureAt && <div>Last failure: {formatTime(entry.lastFailureAt)}</div>}
-          {entry.lastError && <div>Last error: <code>{escapeHtml(entry.lastError)}</code></div>}
+          {entry.lastError && <div>Last error: <code>{entry.lastError}</code></div>}
         </div>
       )}
     </div>

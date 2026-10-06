@@ -1,10 +1,8 @@
 ﻿import React, { useEffect, useState, useRef } from "react";
 import { api, getRole, downloadPdf } from "@/lib/api";
 import type { Order, RepairTicket, WishlistItem, Message, Quote } from "@/lib/types";
-import { useToast } from "@/components/Toast";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { useFeature } from "@/lib/features";
-import { escapeHtml } from "@/lib/sanitize";
 import { usePageTitle } from "@/lib/use-page-title";
 import { useApp } from "@/lib/app-context";
 import Icon from "@/components/icons";
@@ -220,7 +218,7 @@ export default function DashboardPage() {
                           return (
                             <div key={i.id} style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.2rem 0.4rem", background: "var(--surface-hover)", borderRadius: "var(--radius-md)", fontSize: "0.75rem" }}>
                               {img && <Media src={img} alt="" width={18} height={18} fit="cover" style={{ width: 18, height: 18, objectFit: "cover", borderRadius: 3 }} />}
-                              <span>{escapeHtml(i.name)}</span>
+                              <span>{i.name}</span>
                             </div>
                           );
                         })}
@@ -242,13 +240,13 @@ export default function DashboardPage() {
                 <a key={t.id} href={`/repair-ticket?id=${t.id}`} className="order-item" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem" }}>
                     <div>
-                      <strong>{escapeHtml(t.deviceType)}</strong>
-                      {t.deviceModel ? ` — ${escapeHtml(t.deviceModel)}` : ""}
-                      <span className="plan-status">{escapeHtml(t.status)}</span>
+                      <strong>{t.deviceType}</strong>
+                      {t.deviceModel ? ` — ${t.deviceModel}` : ""}
+                      <span className="plan-status">{t.status}</span>
                     </div>
                     <span className="muted">{new Date(t.createdAt).toLocaleDateString("en-GB")}</span>
                   </div>
-                  <p className="muted" style={{ fontSize: "0.9rem", marginTop: "0.25rem" }}>{escapeHtml(t.issueDescription)}</p>
+                  <p className="muted" style={{ fontSize: "0.9rem", marginTop: "0.25rem" }}>{t.issueDescription}</p>
                 </a>
               ))
             )}
@@ -266,7 +264,7 @@ export default function DashboardPage() {
                 {wishlist.slice(0, 10).map((item) => (
                   <div key={item.productId} className="wishlist-item" style={{ marginBottom: "0.5rem" }}>
                     <div className="wishlist-item__info">
-                      <div className="wishlist-item__name"><a href={`/product?id=${encodeURIComponent(item.productId)}`}>{escapeHtml(item.productName || item.productId)}</a></div>
+                      <div className="wishlist-item__name"><a href={`/product?id=${encodeURIComponent(item.productId)}`}>{item.productName || item.productId}</a></div>
                       {item.productPrice != null && <div className="wishlist-item__price">{formatPrice(item.productPrice)}</div>}
                     </div>
                   </div>
@@ -343,7 +341,7 @@ export default function DashboardPage() {
                           color: selectedMsgKey === c.key ? "var(--surface)" : "var(--text)",
                         }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <strong style={{ fontSize: "0.9rem" }}>{escapeHtml(c.partner)}</strong>
+                            <strong style={{ fontSize: "0.9rem" }}>{c.partner}</strong>
                             {c.unread > 0 && <span style={{
                               background: selectedMsgKey === c.key ? "var(--surface)" : "var(--primary)",
                               color: selectedMsgKey === c.key ? "var(--primary)" : "var(--surface)",
@@ -351,7 +349,7 @@ export default function DashboardPage() {
                             }}>{c.unread}</span>}
                           </div>
                           <div style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: "0.2rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {escapeHtml(c.latest.body)}
+                            {c.latest.body}
                           </div>
                           <div style={{ fontSize: "0.7rem", opacity: 0.5, marginTop: "0.15rem" }}>
                             {new Date(c.latest.created_at).toLocaleString("en-GB")}
@@ -369,7 +367,7 @@ export default function DashboardPage() {
                       ) : (
                         <>
                           <div style={{ padding: "0.75rem 1rem", borderBottom: "1px solid var(--border)", fontWeight: 600 }}>
-                            {escapeHtml(activeConvo.partner)}
+                            {activeConvo.partner}
                           </div>
                           <div style={{ flex: 1, overflowY: "auto", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                             {activeConvo.msgs.map((m) => {
@@ -384,7 +382,7 @@ export default function DashboardPage() {
                                   padding: "0.6rem 1rem",
                                   border: isMe ? "none" : "1px solid var(--border)",
                                 }}>
-                                  <div style={{ fontSize: "0.9rem" }}>{escapeHtml(m.body)}</div>
+                                  <div style={{ fontSize: "0.9rem" }}>{m.body}</div>
                                   <div style={{ fontSize: "0.7rem", marginTop: "0.25rem", textAlign: "right", opacity: 0.7 }}>
                                     {new Date(m.created_at).toLocaleString("en-GB")}
                                     {isMe && (m.read_at ? <span style={{ marginLeft: "0.5rem" }}>✓ Read</span> : <span style={{ marginLeft: "0.5rem" }}>●</span>)}
@@ -555,10 +553,10 @@ function CustomerNotifications() {
               {logs.map((l: any) => (
                 <tr key={l.id}>
                   <td>{new Date(l.created_at).toLocaleString("en-GB")}</td>
-                  <td>{escapeHtml(l.subject || l.event_type)}</td>
-                  <td>{escapeHtml(l.channel)}</td>
-                  <td style={{ color: l.status === "sent" ? "var(--success)" : l.status === "failed" ? "var(--danger)" : "var(--text-secondary)", fontWeight: 600 }}>{escapeHtml(l.status)}</td>
-                  <td style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>{l.status !== "sent" && l.error_message ? escapeHtml(l.error_message) : "—"}</td>
+                  <td>{l.subject || l.event_type}</td>
+                  <td>{l.channel}</td>
+                  <td style={{ color: l.status === "sent" ? "var(--success)" : l.status === "failed" ? "var(--danger)" : "var(--text-secondary)", fontWeight: 600 }}>{l.status}</td>
+                  <td style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>{l.status !== "sent" && l.error_message ? l.error_message : "—"}</td>
                 </tr>
               ))}
             </tbody>

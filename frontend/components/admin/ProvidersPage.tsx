@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import type { Provider } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
-import { formatPrice, escapeHtml, useFetch, Spinner, ErrorMsg } from "./shared";
+import { formatPrice, useFetch, Spinner, ErrorMsg } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
 export default function ProvidersPage() {
@@ -50,7 +50,7 @@ export default function ProvidersPage() {
       {(showForm || editing) && (
         <div className="panel" style={{ marginBottom: "1rem", maxWidth: 400 }}>
           <form onSubmit={editing ? saveEdit : createProvider}>
-            <h3 style={{ marginTop: 0 }}>{editing ? `Edit ${escapeHtml(editing.companyName)}` : "New Provider"}</h3>
+            <h3 style={{ marginTop: 0 }}>{editing ? `Edit ${editing.companyName}` : "New Provider"}</h3>
             <div className="field"><label>Company<input value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} required /></label></div>
             <div className="field"><label>Contact name<input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} required /></label></div>
             <div className="field"><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label></div>
@@ -74,10 +74,10 @@ export default function ProvidersPage() {
           <tbody>
             {providers.map((p) => (
               <tr key={p.id}>
-                <td><strong>{escapeHtml(p.companyName)}</strong></td>
-                <td>{escapeHtml(p.contactName)}</td>
-                <td>{escapeHtml(p.email)}</td>
-                <td>{escapeHtml(p.phone || "—")}</td>
+                <td><strong>{p.companyName}</strong></td>
+                <td>{p.contactName}</td>
+                <td>{p.email}</td>
+                <td>{p.phone || "—"}</td>
                 <td><span className="plan-status">{p.status}</span></td>
                 <td><RippleButton size="small" variant="ghost" onClick={() => openEdit(p)}>Edit</RippleButton></td>
               </tr>
