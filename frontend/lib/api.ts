@@ -378,11 +378,19 @@ export async function api<T = any>(
 
   // Self-heal a stale/missing CSRF token (e.g. another tab refreshed it):
   // re-fetch a token matching the current cookie and retry the request once.
+  //
+  // This is safe for destructive mutations precisely because the server rejects
+  // an invalid token in middleware (csrfProtection) *before* any route handler
+  // runs. A response carrying code=CSRF_TOKEN_INVALID therefore proves the first
+  // attempt never reached business logic, so re-sending it cannot duplicate a
+  // delete, a charge, or any other side effect. Matching on the machine-readable
+  // code rather than the human-readable text also stops an unrelated 403 from
+  // being replayed. The retry happens at most once per call.
   if (mutating && res.status === 403) {
     let csrfError = false;
     try {
       const body = await res.clone().json();
-      csrfError = typeof body?.error === "string" && body.error.includes("CSRF");
+      csrfError = body?.code === "CSRF_TOKEN_INVALID";
     } catch {}
     if (csrfError) {
       csrfToken = null;

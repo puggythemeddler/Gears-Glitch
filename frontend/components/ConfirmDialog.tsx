@@ -26,7 +26,6 @@ type PromptFn = (options: PromptOptions) => Promise<string | null>;
 interface DialogState {
   kind: "confirm" | "prompt";
   options: ConfirmOptions | PromptOptions;
-  resolve: (value: boolean | string | null) => void;
 }
 
 const ConfirmContext = createContext<ConfirmFn | null>(null);
@@ -53,11 +52,22 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [value, setValue] = useState("");
   const confirmRef = useRef<ConfirmFn>(() => Promise.resolve(false));
   const promptRef = useRef<PromptFn>(() => Promise.resolve(null));
+  // The resolver lives in a ref, never in state. React is free to call a state
+  // updater more than once (StrictMode double-invokes updaters in development to
+  // surface impurity), so resolving from inside setState would be a side effect in
+  // a function React may run twice. Keeping it out of state makes the transition
+  // pure and guarantees the awaiting caller is settled exactly once.
+  const resolverRef = useRef<((value: boolean | string | null) => void) | null>(null);
 
   const open = useCallback((kind: "confirm" | "prompt", options: ConfirmOptions | PromptOptions) => {
     if (kind === "prompt") setValue((options as PromptOptions).defaultValue ?? "");
     return new Promise<boolean | string | null>((resolve) => {
-      setState({ kind, options, resolve });
+      // Opening a second dialog while one is pending abandons the first promise.
+      // Settle it as "declined" so the first caller is never left awaiting
+      // forever (which would hang its loading state).
+      if (resolverRef.current) resolverRef.current(null);
+      resolverRef.current = resolve;
+      setState({ kind, options });
     });
   }, []);
 
@@ -73,18 +83,19 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     return () => {
       pendingConfirm = async () => false;
       pendingPrompt = async () => null;
+      // Unmounting with a dialog open must not strand the caller either.
+      if (resolverRef.current) resolverRef.current(null);
+      resolverRef.current = null;
     };
   }, []);
 
-  const close = useCallback(
-    (result: boolean | string | null) => {
-      setState((current) => {
-        if (current) current.resolve(result);
-        return null;
-      });
-    },
-    [],
-  );
+  const close = useCallback((result: boolean | string | null) => {
+    const resolve = resolverRef.current;
+    resolverRef.current = null;
+    setState(null);
+    // Called outside the state updater so it happens exactly once.
+    if (resolve) resolve(result);
+  }, []);
 
   useEffect(() => {
     if (!state) return;

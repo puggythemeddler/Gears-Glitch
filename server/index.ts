@@ -461,7 +461,14 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   const cookie = req.cookies?.csrf_token;
 
   if (!token || !cookie || token !== cookie) {
-    res.status(403).json({ error: "CSRF token missing or invalid. Reload the page and try again." });
+    // `code` is the machine-readable marker the client keys its single
+    // self-heal retry off. Substring-matching the human-readable `error` string
+    // is brittle: any unrelated 403 whose text happened to contain "CSRF" would
+    // be retried, and a 403 raised *after* a handler already ran would be
+    // retried too. Because this rejection happens in middleware ahead of every
+    // route handler, a request that reaches this branch has had no side effects,
+    // which is what makes the client retry safe for mutations.
+    res.status(403).json({ error: "CSRF token missing or invalid. Reload the page and try again.", code: "CSRF_TOKEN_INVALID" });
     return;
   }
   next();
