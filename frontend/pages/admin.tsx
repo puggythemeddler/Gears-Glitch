@@ -11,10 +11,9 @@ import { getLayoutList, useLayout } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import NotificationBell from "@/components/NotificationBell";
 import { useFeature } from "@/lib/features";
-import { useToast, toast } from "@/components/Toast";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 import { formatPrice, escapeHtml, useFetch, useInitialLoad, Spinner, ErrorMsg } from "@/components/admin/shared";
-import { useFeedback } from "@/components/feedback/FeedbackProvider";
+import { useFeedback, type FeedbackInput } from "@/components/feedback/FeedbackProvider";
 import AdminProducts from "@/components/admin/AdminProducts";
 import QuotesPage from "./quotes";
 import ProvidersPage from "@/components/admin/ProvidersPage";
@@ -35,6 +34,8 @@ import PagesManager from "@/components/admin/PagesManager";
 import FeaturePicker from "@/components/admin/FeaturePicker";
 import AdminWarranties from "@/components/admin/AdminWarranties";
 import AdminFinancing from "@/components/admin/AdminFinancing";
+import BranchPicker from "@/components/BranchPicker";
+import { setBranchState, type BranchOption } from "@/lib/branches";
 import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
 
 export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
@@ -44,7 +45,9 @@ type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provi
 // A-4: Re-authenticate before a high-risk action. Prompts for the current password,
 // obtains a short-lived step-up token, and returns true on success. Returns false if
 // the user cancels or the password is wrong.
-async function stepUpForHighRiskAction(action: string): Promise<boolean> {
+type StepUpNotifier = { error: (input: FeedbackInput | string, message?: string) => string };
+
+async function stepUpForHighRiskAction(action: string, notify: StepUpNotifier): Promise<boolean> {
   const password = await promptDialog({
     title: `Confirm your password to ${action}`,
     message: "This is a sensitive action. Re-enter your password to continue.",
@@ -56,7 +59,7 @@ async function stepUpForHighRiskAction(action: string): Promise<boolean> {
   if (password === null) return false;
   const ok = await obtainStepUpToken(password);
   if (!ok) {
-    toast("error", "Incorrect password. Please try again.");
+    notify.error("Incorrect password. Please try again.");
     return false;
   }
   return true;
@@ -270,6 +273,17 @@ export default function AdminPage() {
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  // Staff accounts that may work at more than one branch stop here and say which
+  // one they are in before the server issues a session. Mirrors pages/login.tsx.
+  const [pendingBranch, setPendingBranch] = useState<{
+    token: string;
+    branches: BranchOption[];
+    lastBranchId: number | null;
+    username: string;
+    role: string;
+  } | null>(null);
+  const [branchBusy, setBranchBusy] = useState(false);
+  const [branchError, setBranchError] = useState("");
   const [showForgotPw, setShowForgotPw] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotMsg, setForgotMsg] = useState("");
@@ -485,13 +499,58 @@ export default function AdminPage() {
       const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: loginUsername, password: loginPassword }) });
       const isStaffLogin = ["admin", "owner", "technician", "manager", "staff", "provider"].includes(data.role);
       if (!isStaffLogin) { setLoginError("Staff access required."); return; }
+      // The account spans more than one branch: hold the short-lived select token
+      // and render the chooser. The server declines to issue a session until the
+      // account says which branch it is in. (See pages/login.tsx.)
+      if (data.requiresBranch) {
+        setPendingBranch({
+          token: data.branchSelectToken,
+          branches: Array.isArray(data.branches) ? data.branches : [],
+          lastBranchId: data.lastBranchId ?? null,
+          username: data.username || "Staff",
+          role: data.role || "staff",
+        });
+        setBranchError("");
+        return;
+      }
       localStorage.setItem("computerStoreToken", data.token);
       localStorage.setItem("staffUserName", data.username || "Staff");
       setStaffRole(data.role || "admin");
       setStaffPermissions(Array.isArray(data.permissions) ? data.permissions : []);
+      setBranchState(data.activeBranchId ?? null, Array.isArray(data.branches) ? data.branches : []);
       setAuthed(true);
     } catch (err: any) { setLoginError(err.message); }
     finally { setLoginLoading(false); }
+  }
+
+  async function completeBranchSelection(branchId: number) {
+    if (!pendingBranch) return;
+    setBranchBusy(true);
+    setBranchError("");
+    try {
+      const res = await fetch("/api/auth/select-branch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // The short-lived branch-select token authorizes only this call.
+          Authorization: `Bearer ${pendingBranch.token}`,
+        },
+        body: JSON.stringify({ branchId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not set your branch.");
+      setBranchState(data.activeBranchId ?? null, data.branches || pendingBranch.branches);
+      localStorage.setItem("computerStoreToken", data.token);
+      localStorage.setItem("staffUserName", data.username || pendingBranch.username || "Staff");
+      setStaffRole(data.role || pendingBranch.role || "admin");
+      setStaffPermissions(Array.isArray(data.permissions) ? data.permissions : []);
+      setPendingBranch(null);
+      setAuthed(true);
+    } catch (err: any) {
+      setBranchError(err.message || "Could not set your branch.");
+    } finally {
+      setBranchBusy(false);
+    }
   }
 
   if (!authed) {
@@ -499,6 +558,17 @@ export default function AdminPage() {
       <div className="auth-page" style={{ marginTop: "3rem" }}>
         <PageHead title={`Staff sign in — ${settings?.storeName || "Store"}`} />
         <h1>Staff Portal</h1>
+        {pendingBranch ? (
+          <BranchPicker
+            branches={pendingBranch.branches}
+            initialBranchId={pendingBranch.lastBranchId}
+            busy={branchBusy}
+            error={branchError}
+            submitLabel="Start session"
+            onSubmit={completeBranchSelection}
+            onCancel={() => { setPendingBranch(null); setBranchError(""); }}
+          />
+        ) : (
         <form onSubmit={handleLogin} className="auth-form">
           <div className="field"><label>Username or email<input value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} required /></label></div>
           <div className="field"><label>Password<input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required /></label></div>
@@ -524,6 +594,7 @@ export default function AdminPage() {
             </>
           )}
         </form>
+        )}
 
         {showForgotPw && (
           <div style={{ position: "fixed", inset: 0, background: "var(--overlay)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={() => setShowForgotPw(false)}>
@@ -957,6 +1028,7 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
 // ===================== CATEGORIES =====================
 function AdminCategories() {
   const { data: cData, loading, error, refetch } = useFetch(() => api<any>("/api/categories"), []);
+  const feedback = useFeedback();
   const [groups, setGroups] = useState<any[]>([]);
   const [detail, setDetail] = useState<{ mode: "add" | "edit"; cat: any } | null>(null);
   const [formLabel, setFormLabel] = useState("");
@@ -974,7 +1046,7 @@ function AdminCategories() {
 
   async function deleteCat(id: string) {
     if (!(await confirmDialog({ message: `Delete category "${id}"?`, confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/categories/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); toast("success", "Category deleted."); } catch { toast("error", "Delete failed"); }
+    try { await api(`/api/categories/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); feedback.success("Category deleted."); } catch { feedback.error("Delete failed"); }
   }
 
   async function saveCat() {
@@ -987,8 +1059,8 @@ function AdminCategories() {
         await api(`/api/categories/${encodeURIComponent(detail.cat.id)}`, { method: "PUT", body: JSON.stringify({ label: formLabel.trim(), group: formGroup.trim(), showOnPos: formShowOnPos }) });
       }
       setDetail(null); refetch();
-      toast("success", detail?.mode === "add" ? "Category created." : "Category saved.");
-    } catch { toast("error", "Failed to save category"); }
+      feedback.success(detail?.mode === "add" ? "Category created." : "Category saved.");
+    } catch { feedback.error("Failed to save category"); }
   }
 
   async function addSub() {
@@ -997,8 +1069,8 @@ function AdminCategories() {
     try {
       await api("/api/subcategories", { method: "POST", body: JSON.stringify({ id: newSubId.trim(), name: newSubName.trim(), category_ids: [catId] }) });
       setNewSubId(""); setNewSubName(""); loadSubs();
-      toast("success", "Subcategory added.");
-    } catch { toast("error", "Failed to add subcategory"); }
+      feedback.success("Subcategory added.");
+    } catch { feedback.error("Failed to add subcategory"); }
   }
 
   async function saveEditSub() {
@@ -1010,13 +1082,13 @@ function AdminCategories() {
       const updatedCats = currentCats.includes(catId) ? currentCats : [...currentCats, catId];
       await api(`/api/subcategories/${encodeURIComponent(editSubId)}`, { method: "PUT", body: JSON.stringify({ name: editSubName, category_ids: updatedCats }) });
       setEditSubId(""); loadSubs();
-      toast("success", "Subcategory updated.");
-    } catch { toast("error", "Failed to update subcategory"); }
+      feedback.success("Subcategory updated.");
+    } catch { feedback.error("Failed to update subcategory"); }
   }
 
   async function deleteSub(id: string) {
     if (!(await confirmDialog({ message: `Delete subcategory "${id}"?`, confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/subcategories/${encodeURIComponent(id)}`, { method: "DELETE" }); loadSubs(); toast("success", "Subcategory deleted."); } catch { toast("error", "Delete failed"); }
+    try { await api(`/api/subcategories/${encodeURIComponent(id)}`, { method: "DELETE" }); loadSubs(); feedback.success("Subcategory deleted."); } catch { feedback.error("Delete failed"); }
   }
 
   function loadSubs() {
@@ -1143,6 +1215,7 @@ function AdminCategories() {
 // ===================== GROUPS =====================
 function AdminGroups() {
   const { data: gData, loading, error, refetch } = useFetch(() => api<any>("/api/admin/groups"), []);
+  const feedback = useFeedback();
   const [newName, setNewName] = useState("");
   const [newSort, setNewSort] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -1160,28 +1233,28 @@ function AdminGroups() {
     try {
       await api("/api/admin/groups", { method: "POST", body: JSON.stringify({ name: newName.trim(), sortOrder: Number(newSort) || 0 }) });
       setNewName(""); setNewSort(nextSort + 1); refetch();
-      toast("success", "Group created.");
+      feedback.success("Group created.");
     } catch (e: any) { setMsg(e.message || "Failed to create group"); }
     finally { setSaving(false); }
   }
 
   async function toggleActive(g: any) {
     try { await api(`/api/admin/groups/${encodeURIComponent(g.id)}`, { method: "PUT", body: JSON.stringify({ isActive: !g.isActive }) }); refetch(); }
-    catch (e: any) { toast("error", e.message || "Update failed"); }
+    catch (e: any) { feedback.error(e.message || "Update failed"); }
   }
 
   async function saveEdit() {
     if (!editName.trim()) return;
     setSaving(true);
-    try { await api(`/api/admin/groups/${encodeURIComponent(editingId)}`, { method: "PUT", body: JSON.stringify({ name: editName.trim(), sortOrder: Number(editSort) || 0 }) }); setEditingId(""); refetch(); toast("success", "Group saved."); }
+    try { await api(`/api/admin/groups/${encodeURIComponent(editingId)}`, { method: "PUT", body: JSON.stringify({ name: editName.trim(), sortOrder: Number(editSort) || 0 }) }); setEditingId(""); refetch(); feedback.success("Group saved."); }
     catch (e: any) { setMsg(e.message || "Update failed"); }
     finally { setSaving(false); }
   }
 
   async function deleteGroup(g: any) {
     if (!(await confirmDialog({ message: `Delete group "${g.name}"? Products assigned to it will keep the value but no longer appear on the storefront.`, confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/admin/groups/${encodeURIComponent(g.id)}`, { method: "DELETE" }); refetch(); toast("success", "Group deleted."); }
-    catch (e: any) { toast("error", e.message || "Delete failed"); }
+    try { await api(`/api/admin/groups/${encodeURIComponent(g.id)}`, { method: "DELETE" }); refetch(); feedback.success("Group deleted."); }
+    catch (e: any) { feedback.error(e.message || "Delete failed"); }
   }
 
   if (loading) return <Spinner />;
@@ -1248,6 +1321,7 @@ function AdminGroups() {
 // ===================== ORDERS =====================
 function AdminOrders() {
   const { data: oData, loading, error, refetch } = useFetch(() => api<{ orders: Order[] }>("/api/admin/orders"), []);
+  const feedback = useFeedback();
   const [selected, setSelected] = useState<any | null>(null);
   const [customerDetail, setCustomerDetail] = useState<any | null>(null);
   const [statusMsg, setStatusMsg] = useState("");
@@ -1266,9 +1340,9 @@ function AdminOrders() {
       const updated = await api<any>(`/api/admin/orders/${selected!.id}`);
       setSelected(updated);
       setSerialInputs((prev) => ({ ...prev, [itemId]: "" }));
-      toast("success", "Serial linked.");
+      feedback.success("Serial linked.");
     } catch (e: any) {
-      toast("error", e.message || "Failed to link serial.");
+      feedback.error({ title: "Failed to link serial.", message: e.message });
     } finally {
       setLinking(null);
     }
@@ -1294,7 +1368,7 @@ function AdminOrders() {
       if (order.customerId) {
         api<any>(`/api/admin/customers/${order.customerId}`).then(setCustomerDetail).catch(() => setCustomerDetail(null));
       } else { setCustomerDetail(null); }
-    } catch { toast("error", "Failed to load order"); }
+    } catch { feedback.error("Failed to load order"); }
   }
 
   async function issueRefund(amount: number, reason: string, orderItemId?: number, productId?: string) {
@@ -1308,10 +1382,9 @@ function AdminOrders() {
       setSelected(updated);
       api<any>(`/api/admin/orders/${selected.id}/refunds`).then((r) => setRefunds(r.refunds || [])).catch(() => setRefunds([]));
       refetch();
-      toast("success", "Refund issued.");
+      feedback.success("Refund issued.");
     } catch (e: any) {
       setRefundMsg(e.message || "Failed to issue refund.");
-      toast("error", e.message || "Failed to issue refund.");
       throw e;
     }
   }
@@ -1327,7 +1400,7 @@ function AdminOrders() {
       const res = await api<{ token: string }>("/api/admin/invoice-token/" + orderId, { method: "POST" });
       await downloadPdf(`/api/admin/orders/${orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(res.token)}`, `invoice-${orderId}.pdf`);
     } catch (e: any) {
-      toast("error", "Failed to download invoice: " + (e?.message || "Unknown error"));
+      feedback.error({ title: "Failed to download invoice", message: e?.message || "Unknown error" });
     }
   }
 
@@ -1419,8 +1492,8 @@ function AdminOrders() {
                     body: JSON.stringify({ orderId: o.id, reason: reason || "" }),
                   });
                   setCreditedOrders((prev) => ({ ...prev, [o.id]: true }));
-                  toast("success", "Credit note created.");
-                } catch (e: any) { toast("error", e.message || "Failed to create credit note."); }
+                  feedback.success("Credit note created.");
+                } catch (e: any) { feedback.error({ title: "Failed to create credit note.", message: e.message }); }
               }} style={{ background: "var(--primary)", color: "var(--surface)" }}>Credit Note</RippleButton>
             )}
             <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>
@@ -1428,7 +1501,7 @@ function AdminOrders() {
               const input = await promptDialog({ title: "Issue refund", message: "Enter the amount to refund.", placeholder: "Amount" });
               if (input === null) return;
               const amount = Number(input);
-              if (!amount || amount <= 0) { setRefundMsg("Invalid amount."); toast("error", "Enter a valid refund amount."); return; }
+              if (!amount || amount <= 0) { setRefundMsg("Invalid amount."); return; }
               const reason = (await promptDialog({ title: "Issue refund", message: "Reason (optional):", confirmLabel: "Refund" })) || "";
               issueRefund(amount, reason).catch(() => {});
             }} style={{ background: "var(--danger)", color: "var(--surface)" }}>Refund</RippleButton>
@@ -1450,7 +1523,7 @@ function AdminOrders() {
                         try {
                           await api(`/api/admin/order-items/${item.id}/warranty`, { method: "PATCH", body: JSON.stringify({ hasWarranty: !item.hasWarranty, warrantyDuration: item.warrantyDuration }) });
                           setSelected({ ...o, items: o.items.map((it: any) => it.id === item.id ? { ...it, hasWarranty: !item.hasWarranty ? 1 : 0 } : it) });
-                        } catch { toast("error", "Failed to update warranty"); }
+                        } catch { feedback.error("Failed to update warranty"); }
                       }} />
                       {item.hasWarranty ? (
                         <input type="number" min="0" style={{ width: 50 }} value={item.warrantyDuration || 0} onChange={async (e) => {
@@ -1458,7 +1531,7 @@ function AdminOrders() {
                           try {
                             await api(`/api/admin/order-items/${item.id}/warranty`, { method: "PATCH", body: JSON.stringify({ hasWarranty: true, warrantyDuration: v }) });
                             setSelected({ ...o, items: o.items.map((it: any) => it.id === item.id ? { ...it, warrantyDuration: v } : it) });
-                          } catch { toast("error", "Failed to update warranty"); }
+                          } catch { feedback.error("Failed to update warranty"); }
                         }} />
                       ) : null}
                       <span>{item.hasWarranty ? "mo" : ""}</span>
@@ -1561,6 +1634,7 @@ function AdminOrders() {
 // ===================== USERS =====================
 function AdminUsers() {
   const { data: sData, loading, error, refetch } = useFetch(() => api<{ staff: any[] }>("/api/staff"), []);
+  const feedback = useFeedback();
   const { data: rolesData } = useFetch(() => api<{ roles: any[] }>("/api/roles"), []);
   const { data: permsData } = useFetch(() => api<{ permissions: Record<string, string> }>("/api/permissions"), []);
   const [showForm, setShowForm] = useState(false);
@@ -1593,14 +1667,14 @@ function AdminUsers() {
   async function addStaff(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    try { await api("/api/staff", { method: "POST", body: JSON.stringify(form) }); setShowForm(false); setForm({ username: "", email: "", password: "", role: "technician" }); refetch(); toast("success", "Staff user created."); } catch (err: any) { toast("error", err.message); }
+    try { await api("/api/staff", { method: "POST", body: JSON.stringify(form) }); setShowForm(false); setForm({ username: "", email: "", password: "", role: "technician" }); refetch(); feedback.success("Staff user created."); } catch (err: any) { feedback.error(err.message); }
     finally { setSaving(false); }
   }
 
   async function deleteStaff(id: number) {
     if (!(await confirmDialog({ message: "Remove this user?", confirmLabel: "Remove", danger: true }))) return;
-    if (!(await stepUpForHighRiskAction("remove this user"))) return;
-    try { await api(`/api/staff/${id}`, { method: "DELETE" }); refetch(); if (selectedUser?.id === id) setSelectedUser(null); toast("success", "User removed."); } catch { toast("error", "Delete failed"); }
+    if (!(await stepUpForHighRiskAction("remove this user", feedback))) return;
+    try { await api(`/api/staff/${id}`, { method: "DELETE" }); refetch(); if (selectedUser?.id === id) setSelectedUser(null); feedback.success("User removed."); } catch { feedback.error("Delete failed"); }
   }
 
   async function selectUser(user: any) {
@@ -1643,21 +1717,21 @@ function AdminUsers() {
         body: JSON.stringify({ branchIds: userBranchIds }),
       });
       setUserEffectiveBranchIds(res.effectiveBranchIds || []);
-      toast("success", "Branch access updated.");
-    } catch (err: any) { toast("error", err.message || "Could not update branch access."); }
+      feedback.success("Branch access updated.");
+    } catch (err: any) { feedback.error(err.message || "Could not update branch access."); }
     finally { setSavingBranches(false); }
   }
 
   async function resetPassword(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedUser || pwForm.password.length < 8) { toast("error", "Password must be at least 8 characters."); return; }
-    if (pwForm.password !== pwForm.confirm) { toast("error", "Passwords do not match."); return; }
+    if (!selectedUser || pwForm.password.length < 8) { feedback.error("Password must be at least 8 characters."); return; }
+    if (pwForm.password !== pwForm.confirm) { feedback.error("Passwords do not match."); return; }
     setSavingPw(true);
     try {
       await api(`/api/staff/${selectedUser.id}/reset-password`, { method: "POST", body: JSON.stringify({ password: pwForm.password }) });
       setPwForm({ password: "", confirm: "" });
-      toast("success", "Password reset successfully.");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success("Password reset successfully.");
+    } catch (err: any) { feedback.error(err.message); }
     finally { setSavingPw(false); }
   }
 
@@ -1671,7 +1745,7 @@ function AdminUsers() {
       ]);
       setUserRoles(rolesRes.roles || []);
       setUserEffectivePerms(permsRes.effective || []);
-    } catch (err: any) { toast("error", err.message); }
+    } catch (err: any) { feedback.error(err.message); }
   }
 
   function toggleDirectPerm(perm: string) {
@@ -1855,7 +1929,7 @@ function AdminUsers() {
 }
 
 function AdminRoles() {
-  const { toast } = useToast();
+  const feedback = useFeedback();
   const { data: rolesData, loading, error, refetch } = useFetch(() => api<{ roles: any[] }>("/api/roles"), []);
   const { data: permsData } = useFetch(() => api<{ permissions: Record<string, string> }>("/api/permissions"), []);
   const [editingRole, setEditingRole] = useState<any>(null);
@@ -1887,13 +1961,13 @@ function AdminRoles() {
       } else {
         await api(`/api/roles/${editingRole.id}`, { method: "PUT", body: JSON.stringify(body) });
       }
-      setNewRole(false); setEditingRole(null); refetch(); toast("success", "Saved successfully");
-    } catch (err: any) { toast("error", err.message); } finally { setSaving(false); }
+      setNewRole(false); setEditingRole(null); refetch(); feedback.success("Saved successfully");
+    } catch (err: any) { feedback.error(err.message); } finally { setSaving(false); }
   }
 
   async function deleteRole(id: string) {
     if (!(await confirmDialog({ message: `Delete this role? This only affects this store — other clients are unaffected. Users assigned to it will lose its permissions.`, confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/roles/${id}`, { method: "DELETE" }); refetch(); toast("success", "Deleted successfully"); } catch (err: any) { toast("error", err.message); }
+    try { await api(`/api/roles/${id}`, { method: "DELETE" }); refetch(); feedback.success("Deleted successfully"); } catch (err: any) { feedback.error(err.message); }
   }
 
   if (loading) return <Spinner />;
@@ -1972,6 +2046,7 @@ function AdminRoles() {
 // ===================== PLANS =====================
 function AdminPlans() {
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ plans: SubscriptionPlan[] }>("/api/admin/plans"), []);
+  const feedback = useFeedback();
   const [editing, setEditing] = useState<SubscriptionPlan | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, syncToOthers: true, features: [] as string[] });
@@ -2035,18 +2110,18 @@ function AdminPlans() {
       setShowForm(false);
       setEditing(null);
       refetch();
-      toast("success", editing ? "Plan updated." : "Plan created.");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success(editing ? "Plan updated." : "Plan created.");
+    } catch (err: any) { feedback.error(err.message); }
     finally { setSaving(false); }
   }
 
   async function deletePlan(id: string) {
     if (!(await confirmDialog({ message: "Delete this plan?", confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); toast("success", "Plan deleted."); } catch { toast("error", "Delete failed"); }
+    try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); feedback.success("Plan deleted."); } catch { feedback.error("Delete failed"); }
   }
 
   async function toggleActive(id: string, current: boolean) {
-    try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ isActive: !current }) }); refetch(); } catch { toast("error", "Failed to update"); }
+    try { await api(`/api/admin/plans/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ isActive: !current }) }); refetch(); } catch { feedback.error("Failed to update"); }
   }
 
   if (loading) return <Spinner />;
@@ -2147,6 +2222,7 @@ const AdminProviders = ProvidersPage;
 // ===================== BRANCHES =====================
 function AdminClients() {
   const { data: cData, loading, error, refetch } = useFetch(() => api<{ clients: Client[] }>("/api/admin/clients"), []);
+  const feedback = useFeedback();
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -2189,8 +2265,8 @@ function AdminClients() {
       setShowNewForm(false);
       setShowEditForm(false);
       refetch();
-      toast("success", showEditForm ? "Client updated." : "Client created.");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success(showEditForm ? "Client updated." : "Client created.");
+    } catch (err: any) { feedback.error(err.message); }
     finally { setSaving(false); }
   }
 
@@ -2198,12 +2274,12 @@ function AdminClients() {
     try {
       await api(`/api/admin/clients/${c.id}`, { method: "PUT", body: JSON.stringify({ isActive: !c.isActive }) });
       refetch();
-    } catch (err: any) { toast("error", err.message); }
+    } catch (err: any) { feedback.error(err.message); }
   }
 
   async function deleteClient(id: number) {
     if (!(await confirmDialog({ message: "Delete this client and all their data? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/admin/clients/${id}`, { method: "DELETE" }); refetch(); toast("success", "Client deleted."); } catch (err: any) { toast("error", err.message); }
+    try { await api(`/api/admin/clients/${id}`, { method: "DELETE" }); refetch(); feedback.success("Client deleted."); } catch (err: any) { feedback.error(err.message); }
   }
 
   // Branch operations
@@ -2233,14 +2309,14 @@ function AdminClients() {
       setShowBranchForm(false);
       setEditingBranch(null);
       refetchBranches();
-      toast("success", editingBranch ? "Branch updated." : "Branch added.");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success(editingBranch ? "Branch updated." : "Branch added.");
+    } catch (err: any) { feedback.error(err.message); }
     finally { setSavingBranch(false); }
   }
 
   async function deleteBranch(branchId: number) {
     if (!selectedClient || !(await confirmDialog({ message: "Delete this branch?", confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/admin/clients/${selectedClient.id}/branches/${branchId}`, { method: "DELETE" }); refetchBranches(); toast("success", "Branch deleted."); } catch (err: any) { toast("error", err.message); }
+    try { await api(`/api/admin/clients/${selectedClient.id}/branches/${branchId}`, { method: "DELETE" }); refetchBranches(); feedback.success("Branch deleted."); } catch (err: any) { feedback.error(err.message); }
   }
 
   if (loading) return <Spinner />;
@@ -2372,7 +2448,7 @@ function AdminClients() {
 
 // ===================== BRANCHES =====================
 function AdminBranches() {
-  const { toast } = useToast();
+  const feedback = useFeedback();
   const { data: bData, loading, error, refetch } = useFetch(() => api<{ branches: Branch[] }>("/api/admin/branches"), []);
   const { data: sData } = useFetch(() => api<{ staff: { id: number; username: string; role: string }[] }>("/api/staff"), []);
   const [showForm, setShowForm] = useState(false);
@@ -2419,8 +2495,8 @@ function AdminBranches() {
       setShowForm(false);
       setEditing(null);
       refetch();
-      toast("success", editing ? "Branch updated." : "Branch created.");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success(editing ? "Branch updated." : "Branch created.");
+    } catch (err: any) { feedback.error(err.message); }
     finally { setSaving(false); }
   }
 
@@ -2428,13 +2504,13 @@ function AdminBranches() {
     try {
       await api(`/api/admin/branches/${b.id}`, { method: "PUT", body: JSON.stringify({ isActive: !b.isActive }) });
       refetch();
-    } catch (err: any) { toast("error", err.message); }
+    } catch (err: any) { feedback.error(err.message); }
   }
 
   async function deleteBranch(id: number) {
     if (!(await confirmDialog({ message: "Delete this branch?", confirmLabel: "Delete", danger: true }))) return;
-    if (!(await stepUpForHighRiskAction("delete this branch"))) return;
-    try { await api(`/api/admin/branches/${id}`, { method: "DELETE" }); refetch(); toast("success", "Branch deleted."); } catch (err: any) { toast("error", err.message); }
+    if (!(await stepUpForHighRiskAction("delete this branch", feedback))) return;
+    try { await api(`/api/admin/branches/${id}`, { method: "DELETE" }); refetch(); feedback.success("Branch deleted."); } catch (err: any) { feedback.error(err.message); }
   }
 
   async function changeBranchPlan(branchId: number, planId: string) {
@@ -2442,8 +2518,8 @@ function AdminBranches() {
       await api(`/api/admin/branches/${branchId}/plan`, { method: "PUT", body: JSON.stringify({ planId: planId || null }) });
       setBranchPlanEditId(null);
       refetch();
-      toast("success", "Plan updated successfully");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success("Plan updated successfully");
+    } catch (err: any) { feedback.error(err.message); }
   }
 
   if (loading) return <Spinner />;
@@ -2959,6 +3035,7 @@ const AdminAboutUs = AboutUsPage;
 
 // ===================== SETTINGS =====================
 function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
+  const feedback = useFeedback();
   const [cfg, setCfg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -3400,7 +3477,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, catChips: [...heroForm.catChips, { label: "", href: "" }] })}>+ Add Chip</RippleButton>
               <RippleButton size="small" variant="ghost" onClick={async () => {
-                try { const d = await api<any>("/api/categories"); const cats = d.categories || []; setHeroForm({ ...heroForm, catChips: cats.map((c: any) => ({ label: c.label, href: "/" + c.id })) }); } catch { toast("error", "Failed to load categories"); }
+                try { const d = await api<any>("/api/categories"); const cats = d.categories || []; setHeroForm({ ...heroForm, catChips: cats.map((c: any) => ({ label: c.label, href: "/" + c.id })) }); } catch { feedback.error("Failed to load categories"); }
               }}>Sync from Categories</RippleButton>
             </div>
           </div>
@@ -3417,15 +3494,15 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, stats: [...heroForm.stats, { value: "", label: "" }] })}>+ Add Stat</RippleButton>
               <RippleButton size="small" variant="ghost" onClick={async () => {
-                try { const d = await api<any>("/api/admin/storefront-stats"); setHeroForm({ ...heroForm, stats: [{ value: String(d.totalProducts) + "+", label: "Products" }, { value: String(d.totalCustomers) + "+", label: "Customers" }, { value: String(d.totalOrders) + "+", label: "Orders" }] }); } catch { toast("error", "Failed to load stats"); }
+                try { const d = await api<any>("/api/admin/storefront-stats"); setHeroForm({ ...heroForm, stats: [{ value: String(d.totalProducts) + "+", label: "Products" }, { value: String(d.totalCustomers) + "+", label: "Customers" }, { value: String(d.totalOrders) + "+", label: "Orders" }] }); } catch { feedback.error("Failed to load stats"); }
               }}>Populate from Live Data</RippleButton>
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.85rem", cursor: "pointer" }}>
               <input type="checkbox" checked={statsPublic} onChange={async (e) => {
                 const next = e.target.checked;
                 setStatsPublic(next);
-                try { await api("/api/storefront/stats-config", { method: "PUT", body: JSON.stringify({ publicTotals: next }) }); toast("success", "Storefront stats visibility updated"); }
-                catch { setStatsPublic(!next); toast("error", "Failed to update stats visibility"); }
+                try { await api("/api/storefront/stats-config", { method: "PUT", body: JSON.stringify({ publicTotals: next }) }); feedback.success("Storefront stats visibility updated"); }
+                catch { setStatsPublic(!next); feedback.error("Failed to update stats visibility"); }
               }} />
               Show live customer/order/review counts when no manual stats are set
             </label>
@@ -3582,6 +3659,7 @@ function AdminExchangeRates() {
 }
 
 function AdminSplashes() {
+  const feedback = useFeedback();
   const [splashes, setSplashes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null);
@@ -3617,13 +3695,13 @@ function AdminSplashes() {
       }
       resetForm();
       loadSplashes();
-      toast("success", editing ? "Splash updated." : "Splash created.");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success(editing ? "Splash updated." : "Splash created.");
+    } catch (err: any) { feedback.error(err.message); }
   }
 
   async function handleDelete(id: number) {
     if (!(await confirmDialog({ message: "Delete this splash?", confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/admin/splashes/${id}`, { method: "DELETE" }); loadSplashes(); toast("success", "Splash deleted."); } catch (err: any) { toast("error", err.message); }
+    try { await api(`/api/admin/splashes/${id}`, { method: "DELETE" }); loadSplashes(); feedback.success("Splash deleted."); } catch (err: any) { feedback.error(err.message); }
   }
 
   const presets = [
@@ -3733,7 +3811,7 @@ function AdminSplashes() {
 
 function AdminStoreInfo() {
   const { refreshSettings } = useApp();
-  const { toast } = useToast();
+  const feedback = useFeedback();
   const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -3815,8 +3893,7 @@ function AdminStoreInfo() {
       setTotpEnabled(true);
       setTotpSetup(null);
       setTotpCode("");
-      setTotpMsg("2FA enabled successfully.");
-      toast?.("success", "2FA enabled successfully.");
+      feedback.success("2FA enabled successfully.");
     } catch (err: any) {
       setTotpMsg("Error: " + err.message);
     } finally { setTotpLoading(false); }
@@ -3830,8 +3907,7 @@ function AdminStoreInfo() {
       setTotpEnabled(false);
       setTotpSetup(null);
       setTotpDisablePassword("");
-      setTotpMsg("2FA disabled.");
-      toast?.("success", "2FA disabled.");
+      feedback.success("2FA disabled.");
     } catch (err: any) {
       setTotpMsg("Error: " + err.message);
     } finally { setTotpLoading(false); }
@@ -4324,6 +4400,7 @@ function AdminFooterConfig() {
 }
 
 function AdminSystem() {
+  const feedback = useFeedback();
   return (
     <>
       <h1>System</h1>
@@ -4339,7 +4416,7 @@ function AdminSystem() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a"); a.href = url; a.download = `store-backup-${new Date().toISOString().slice(0, 10)}.db`; a.click();
             URL.revokeObjectURL(url);
-          } catch (e: any) { toast("error", e.message); }
+} catch (e: any) { feedback.error(e.message); }
         }}>Download Backup</RippleButton>
       </div>
       <div className="panel" style={{ marginBottom: "1.5rem" }}>
@@ -4355,6 +4432,7 @@ function AdminSystem() {
 // ===================== SHOP SUBSCRIPTION =====================
 function AdminShopSubscription() {
   const { data: subData, loading, error, refetch } = useFetch(() => api<{ plan: SubscriptionPlan; activatedAt: string | null }>("/api/shop/subscription"), []);
+  const feedback = useFeedback();
   const { data: plans } = useFetch(() => api<{ plans: SubscriptionPlan[] }>("/api/plans"), []);
   const { data: reqData, refetch: refetchReqs } = useFetch(() => api<{ requests: any[] }>("/api/shop/subscription/requests"), []);
   const [selectedPlan, setSelectedPlan] = useState("");
@@ -4364,11 +4442,11 @@ function AdminShopSubscription() {
   async function activatePlan() {
     if (!selectedPlan) return;
     setSaving(true); setMsg("");
-    try { await api("/api/shop/subscription", { method: "PUT", body: JSON.stringify({ planId: selectedPlan }) }); setMsg(`Plan changed to ${selectedPlan}.`); refetch(); toast("success", `Plan changed to ${selectedPlan}.`); } catch (err: any) { setMsg("Error: " + err.message); toast("error", err.message); } finally { setSaving(false); }
+    try { await api("/api/shop/subscription", { method: "PUT", body: JSON.stringify({ planId: selectedPlan }) }); refetch(); feedback.success(`Plan changed to ${selectedPlan}.`); } catch (err: any) { setMsg("Error: " + err.message); } finally { setSaving(false); }
   }
 
   async function handleRequest(id: number, status: string) {
-    try { await api(`/api/shop/subscription/requests/${id}`, { method: "PUT", body: JSON.stringify({ status }) }); refetch(); refetchReqs(); toast("success", status === "approved" ? "Subscription request approved." : "Subscription request rejected."); } catch (err: any) { toast("error", err.message); }
+    try { await api(`/api/shop/subscription/requests/${id}`, { method: "PUT", body: JSON.stringify({ status }) }); refetch(); refetchReqs(); feedback.success(status === "approved" ? "Subscription request approved." : "Subscription request rejected."); } catch (err: any) { feedback.error(err.message); }
   }
 
   if (loading) return <Spinner />;
@@ -4447,6 +4525,7 @@ function AdminShopSubscription() {
 function AdminSpecTemplates() {
   const { data: catData } = useFetch(() => api<{ categories: any[] }>("/api/categories"), []);
   const { data: fieldsData, loading, error, refetch } = useFetch(() => api<{ fields: any[] }>("/api/spec-templates"), []);
+  const feedback = useFeedback();
   const [selectedCat, setSelectedCat] = useState("");
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ fieldKey: "", fieldLabel: "", fieldType: "text", options: "", required: false, sortOrder: 0 });
@@ -4465,13 +4544,13 @@ function AdminSpecTemplates() {
       if (editing) { await api(`/api/spec-templates/${editing.id}`, { method: "PUT", body: JSON.stringify(body) }); }
       else { await api("/api/spec-templates", { method: "POST", body: JSON.stringify(body) }); }
       refetch(); resetForm();
-      toast("success", editing ? "Spec field updated." : "Spec field added.");
-    } catch (err: any) { toast("error", err.message); }
+      feedback.success(editing ? "Spec field updated." : "Spec field added.");
+    } catch (err: any) { feedback.error(err.message); }
   }
 
   async function handleDelete(id: number) {
     if (!(await confirmDialog({ message: "Delete this spec field?", confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/spec-templates/${id}`, { method: "DELETE" }); refetch(); toast("success", "Spec field deleted."); } catch (err: any) { toast("error", err.message); }
+    try { await api(`/api/spec-templates/${id}`, { method: "DELETE" }); refetch(); feedback.success("Spec field deleted."); } catch (err: any) { feedback.error(err.message); }
   }
 
   function startEdit(f: any) {
@@ -4741,6 +4820,7 @@ function exportPdf(report: any, from: string, to: string) {
 
 function AdminCoupons() {
   const { data, loading, error, refetch } = useFetch(() => api<{ coupons: any[] }>("/api/admin/coupons"), []);
+  const feedback = useFeedback();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [saving, setSaving] = useState(false);
@@ -4760,14 +4840,14 @@ function AdminCoupons() {
         await api("/api/admin/coupons", { method: "POST", body: JSON.stringify(body) });
       }
       setShowForm(false); setEditing(null); refetch();
-      toast("success", editing ? "Coupon updated." : "Coupon created.");
-    } catch (e: any) { setMsg(e.message); toast("error", e.message); }
+      feedback.success(editing ? "Coupon updated." : "Coupon created.");
+    } catch (e: any) { setMsg(e.message); }
     finally { setSaving(false); }
   }
 
   async function deleteC(id: number) {
     if (!(await confirmDialog({ message: "Delete this coupon?", confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/admin/coupons/${id}`, { method: "DELETE" }); refetch(); toast("success", "Coupon deleted."); } catch { toast("error", "Delete failed"); }
+    try { await api(`/api/admin/coupons/${id}`, { method: "DELETE" }); refetch(); feedback.success("Coupon deleted."); } catch { feedback.error("Delete failed"); }
   }
 
   return (
@@ -4822,6 +4902,7 @@ function AdminCoupons() {
 
 function AdminGiftCards() {
   const { data, loading, error, refetch } = useFetch(() => api<{ giftCards: any[] }>("/api/admin/gift-cards"), []);
+  const feedback = useFeedback();
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -4843,8 +4924,8 @@ function AdminGiftCards() {
     try {
       await api("/api/admin/gift-cards", { method: "POST", body: JSON.stringify(body) });
       setShowForm(false); refetch();
-      toast("success", "Gift card created.");
-    } catch (e: any) { setMsg(e.message); toast("error", e.message); }
+      feedback.success("Gift card created.");
+    } catch (e: any) { setMsg(e.message); }
     finally { setSaving(false); }
   }
 
@@ -4852,7 +4933,7 @@ function AdminGiftCards() {
     try {
       await api(`/api/admin/gift-cards/${card.id}`, { method: "PUT", body: JSON.stringify({ is_active: card.is_active !== 1 }) });
       refetch();
-    } catch (e: any) { toast("error", e.message); }
+    } catch (e: any) { feedback.error(e.message); }
   }
 
   async function showRedemptions(card: any) {
@@ -4926,6 +5007,7 @@ function AdminGiftCards() {
 
 function AdminCampaigns() {
   const { data, loading, error, refetch } = useFetch(() => api<{ campaigns: any[] }>("/api/admin/campaigns"), []);
+  const feedback = useFeedback();
   const { data: products } = useFetch(() => api<{ products: any[] }>("/api/products?includeHidden=1"), []);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -4968,14 +5050,14 @@ function AdminCampaigns() {
         await api("/api/admin/campaigns", { method: "POST", body: JSON.stringify(body) });
       }
       setShowForm(false); setEditing(null); refetch();
-      toast("success", editing ? "Campaign updated." : "Campaign created.");
-    } catch (e: any) { setMsg(e.message); toast("error", e.message); }
+      feedback.success(editing ? "Campaign updated." : "Campaign created.");
+    } catch (e: any) { setMsg(e.message); }
     finally { setSaving(false); }
   }
 
   async function del(id: number) {
     if (!(await confirmDialog({ message: "Delete this campaign? The campaign page will be removed.", confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/admin/campaigns/${id}`, { method: "DELETE" }); refetch(); toast("success", "Campaign deleted."); } catch { toast("error", "Delete failed"); }
+    try { await api(`/api/admin/campaigns/${id}`, { method: "DELETE" }); refetch(); feedback.success("Campaign deleted."); } catch { feedback.error("Delete failed"); }
   }
 
   return (
@@ -5143,6 +5225,7 @@ function AdminAbandonedCarts() {
 
 function AdminSuppliers() {
   const { data, loading, error, refetch } = useFetch(() => api<{ suppliers: any[] }>("/api/admin/suppliers"), []);
+  const feedback = useFeedback();
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -5150,7 +5233,7 @@ function AdminSuppliers() {
 
   async function del(id: number) {
     if (!(await confirmDialog({ message: "Delete supplier?", confirmLabel: "Delete", danger: true }))) return;
-    try { await api(`/api/admin/suppliers/${id}`, { method: "DELETE" }); refetch(); toast("success", "Supplier deleted."); } catch { toast("error", "Delete failed"); }
+    try { await api(`/api/admin/suppliers/${id}`, { method: "DELETE" }); refetch(); feedback.success("Supplier deleted."); } catch { feedback.error("Delete failed"); }
   }
 
   return (
@@ -5787,7 +5870,7 @@ const AdminStockOnHand = () => <StockOnHandPage showAutoReorder={true} />;
 
 // ===================== STOCK TRANSFERS =====================
 function AdminStockTransfers() {
-  const { toast } = useToast();
+  const feedback = useFeedback();
   const { data: tData, loading, error, refetch } = useFetch(() => api<{ transfers: any[] }>("/api/stock-transfers"), []);
   const { data: branches } = useFetch(() => api<{ branches: any[] }>("/api/admin/branches"), []);
   const { data: products } = useFetch(() => api<{ products: any[] }>("/api/products?includeHidden=1"), []);
@@ -5833,16 +5916,16 @@ function AdminStockTransfers() {
         }),
       });
       setShowForm(false); setForm({ fromBranchId: "", toBranchId: "", productId: "", quantity: "", notes: "" });
-      refetch(); toast("success", "Transfer created");
-    } catch (err: any) { toast("error", err.message); } finally { setCreating(false); }
+      refetch(); feedback.success("Transfer created");
+    } catch (err: any) { feedback.error(err.message); } finally { setCreating(false); }
   }
 
   async function completeTransfer(id: number) {
-    try { await api(`/api/admin/stock/transfer/${id}/complete`, { method: "PUT" }); refetch(); toast("success", "Transfer completed"); } catch (err: any) { toast("error", err.message); }
+    try { await api(`/api/admin/stock/transfer/${id}/complete`, { method: "PUT" }); refetch(); feedback.success("Transfer completed"); } catch (err: any) { feedback.error(err.message); }
   }
 
   async function rejectTransfer(id: number) {
-    try { await api(`/api/stock-transfers/${id}/reject`, { method: "POST" }); refetch(); toast("success", "Transfer rejected"); } catch (err: any) { toast("error", err.message); }
+    try { await api(`/api/stock-transfers/${id}/reject`, { method: "POST" }); refetch(); feedback.success("Transfer rejected"); } catch (err: any) { feedback.error(err.message); }
   }
 
   if (loading) return <Spinner />;
@@ -6315,6 +6398,7 @@ function AdminStockControl() {
 // ===================== PURCHASE ORDERS =====================
 function AdminPurchases() {
   const [orders, setOrders] = useState<any[]>([]);
+  const feedback = useFeedback();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [viewing, setViewing] = useState<any>(null);
@@ -6403,8 +6487,8 @@ function AdminPurchases() {
     try {
       await api(`/api/purchases/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
       loadOrder(id); loadOrders();
-      toast("success", `Purchase order marked as ${status}.`);
-    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
+      feedback.success(`Purchase order marked as ${status}.`);
+    } catch (err: any) { setMsg(err.message); }
   }
 
   async function confirmMarkReceived() {
@@ -6431,8 +6515,8 @@ function AdminPurchases() {
       setReceiveInputs({}); setReceiveSerials({});
       if (viewing) loadOrder(viewing.id);
       loadOrders();
-      toast("success", "All items received and added to stock.");
-    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
+      feedback.success("All items received and added to stock.");
+    } catch (err: any) { setMsg(err.message); }
     setReceiving(null);
   }
 
@@ -6459,8 +6543,8 @@ function AdminPurchases() {
       const list = (d.serials || []).map((s) => s.serialNumber);
       setReceiveSerials((prev) => ({ ...prev, [itemId]: list }));
       setSerialInput("");
-      toast("success", `Generated ${list.length} serial number${list.length !== 1 ? "s" : ""}.`);
-    } catch (err: any) { setSerialMsg(err.message); toast("error", err.message); }
+      feedback.success(`Generated ${list.length} serial number${list.length !== 1 ? "s" : ""}.`);
+    } catch (err: any) { setSerialMsg(err.message); }
     setSerialising(null);
   }
 
@@ -6481,8 +6565,8 @@ function AdminPurchases() {
         total += list.length;
       }
       setReceiveSerials((prev) => ({ ...prev, ...updates }));
-      toast("success", `Generated ${total} serial number${total !== 1 ? "s" : ""}.`);
-    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
+      feedback.success(`Generated ${total} serial number${total !== 1 ? "s" : ""}.`);
+    } catch (err: any) { setMsg(err.message); }
     setSerialising(null);
   }
 
@@ -6492,8 +6576,8 @@ function AdminPurchases() {
       await api(`/api/purchases/${id}`, { method: "DELETE" });
       if (viewing && viewing.id === id) setViewing(null);
       loadOrders();
-      toast("success", "Purchase order moved to trash.", undefined, { label: "Undo", onClick: () => restoreOrder(id) });
-    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
+      feedback.success({ title: "Purchase order moved to trash.", action: { label: "Undo", onClick: () => restoreOrder(id) } });
+    } catch (err: any) { setMsg(err.message); }
   }
 
   async function restoreOrder(id: number) {
@@ -6514,15 +6598,15 @@ function AdminPurchases() {
       await api(`/api/purchases/${id}/recall`, { method: "POST" });
       if (viewing && viewing.id === id) loadOrder(id);
       loadOrders();
-      toast("success", "Purchase order recalled — stock reversed.");
-    } catch (err: any) { setMsg(err.message); toast("error", err.message); }
+      feedback.success("Purchase order recalled — stock reversed.");
+    } catch (err: any) { setMsg(err.message); }
   }
 
   async function downloadPdf(id: number) {
     try {
       const r = await api<{ token: string }>(`/api/admin/purchase-pdf-token/${id}`, { method: "POST" });
       window.open(`/api/purchases/${id}/pdf?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, "_blank");
-    } catch (err: any) { toast("error", err.message); }
+    } catch (err: any) { feedback.error(err.message); }
   }
 
   useEffect(() => { loadOrders(); }, []);
@@ -6823,6 +6907,7 @@ const AdminProductPositioning = ProductPositioningPage;
 // ===================== EMAIL SETTINGS =====================
 function AdminReviews() {
   const [reviews, setReviews] = useState<any[]>([]);
+  const feedback = useFeedback();
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -6844,8 +6929,8 @@ function AdminReviews() {
     try {
       await api(`/api/admin/products/${encodeURIComponent(productId)}/reviews/${id}`, { method: "DELETE" });
       loadReviews(page);
-      toast("success", "Review deleted.");
-    } catch (e: any) { toast("error", e.message || "Failed to delete."); }
+      feedback.success("Review deleted.");
+    } catch (e: any) { feedback.error(e.message || "Failed to delete."); }
     finally { setDeletingId(null); }
   }
 
@@ -7038,8 +7123,7 @@ function AdminDeliveryFees() {
       const data = await api<{ message?: string; counties?: any[] }>("/api/admin/delivery-fees", { method: "DELETE" });
       setFees({}); setMsg({ text: data?.message || "Reset to defaults." });
       if (data?.counties) setCounties(data.counties);
-      toast("success", data?.message || "Delivery fees reset.");
-    } catch (e: any) { setMsg({ text: e.message || "Reset failed", error: true }); toast("error", e.message || "Reset failed"); }
+    } catch (e: any) { setMsg({ text: e.message || "Reset failed", error: true }); }
     finally { setSaving(false); }
   }
 
@@ -7342,6 +7426,7 @@ function ReportReceivables() {
 
 // ----- Lipa Mdogo Mdogo (hire purchase) -----
 function ReportFinancing() {
+  const feedback = useFeedback();
   const cents = (v: any) => formatPrice((Number(v) || 0) / 100);
   return (
     <ReportScreen
@@ -7401,7 +7486,7 @@ function ReportFinancing() {
               { key: "oldest", label: "Oldest due", value: (row: any) => row.oldestDue || "", render: (row: any) => row.oldestDue ? new Date(row.oldestDue).toLocaleDateString("en-GB") : "\u2014" },
               { key: "outstanding", label: "Outstanding", align: "right", sortable: true, value: (row: any) => row.outstandingCents, render: (row: any) => cents(row.outstandingCents) },
               { key: "actions", label: "", render: (row: any) => (
-                <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/financing/agreements/${row.id}/statement`, `statement-${row.agreementNumber}.pdf`).catch((e: any) => toast("error", e.message))}>Statement</RippleButton>
+                <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(`/api/financing/agreements/${row.id}/statement`, `statement-${row.agreementNumber}.pdf`).catch((e: any) => feedback.error(e.message))}>Statement</RippleButton>
               )},
             ]}
             rows={r.arrears || []}
