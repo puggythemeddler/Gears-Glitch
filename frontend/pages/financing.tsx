@@ -4,7 +4,7 @@ import { escapeHtml } from "@/lib/sanitize";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
 interface Schedule {
   id: number;
@@ -83,6 +83,7 @@ function fmtDate(s: string | null): string {
 }
 
 export default function FinancingPage() {
+  const feedback = useFeedback();
   usePageTitle("My financing");
   const [mounted, setMounted] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
@@ -119,7 +120,7 @@ export default function FinancingPage() {
   }, []);
 
   async function open(a: Agreement) {
-    try { setSelected(await api<Agreement>(`/api/financing/my/agreements/${a.id}`)); } catch (e: any) { toast("error", e.message); }
+    try { setSelected(await api<Agreement>(`/api/financing/my/agreements/${a.id}`)); } catch (e: any) { feedback.error({ title: "Agreement not loaded", message: e.message }); }
   }
 
   if (mounted && !loggedIn) {
@@ -210,21 +211,22 @@ export default function FinancingPage() {
 }
 
 function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChanged: () => void }) {
+  const feedback = useFeedback();
   const [phone, setPhone] = useState("");
   const [amount, setAmount] = useState(String(Math.max(1, Math.round((agreement.outstandingCents || agreement.instalmentCents) / 100))));
   const [busy, setBusy] = useState(false);
 
   async function pay() {
-    if (!phone.trim()) { toast("error", "Enter the M-Pesa phone number."); return; }
+    if (!phone.trim()) { feedback.error({ title: "Payment not started", message: "Enter the M-Pesa phone number." }); return; }
     const cents = Math.round(Number(amount) * 100);
-    if (!Number.isFinite(cents) || cents <= 0) { toast("error", "Enter a valid amount."); return; }
+    if (!Number.isFinite(cents) || cents <= 0) { feedback.error({ title: "Payment not started", message: "Enter a valid amount." }); return; }
     setBusy(true);
     try {
       await api(`/api/financing/my/agreements/${agreement.id}/mpesa`, { method: "POST", body: JSON.stringify({ phone, amountCents: cents }) });
-      toast("success", "Check your phone and enter your M-Pesa PIN to complete the payment.");
+      feedback.success({ title: "Check your phone", message: "Enter your M-Pesa PIN to complete the payment." });
       onChanged();
     } catch (e: any) {
-      toast("error", e.message);
+      feedback.error({ title: "Payment not started", message: e.message });
     } finally {
       setBusy(false);
     }
@@ -244,8 +246,8 @@ function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChang
       </div>
 
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "var(--space-3)" }}>
-        <button className="btn btn-secondary" onClick={() => downloadPdf(`/api/financing/my/agreements/${agreement.id}/agreement`, `agreement-${agreement.agreementNumber}.pdf`).catch((e) => toast("error", e.message))}>Download agreement</button>
-        <button className="btn btn-secondary" onClick={() => downloadPdf(`/api/financing/my/agreements/${agreement.id}/statement`, `statement-${agreement.agreementNumber}.pdf`).catch((e) => toast("error", e.message))}>Download statement</button>
+        <button className="btn btn-secondary" onClick={() => downloadPdf(`/api/financing/my/agreements/${agreement.id}/agreement`, `agreement-${agreement.agreementNumber}.pdf`).catch((e) => feedback.error({ title: "Agreement not downloaded", message: e.message }))}>Download agreement</button>
+        <button className="btn btn-secondary" onClick={() => downloadPdf(`/api/financing/my/agreements/${agreement.id}/statement`, `statement-${agreement.agreementNumber}.pdf`).catch((e) => feedback.error({ title: "Statement not downloaded", message: e.message }))}>Download statement</button>
       </div>
 
       {agreement.status === "active" && agreement.outstandingCents > 0 && (
@@ -298,7 +300,7 @@ function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChang
                     <td>{p.method}</td>
                     <td><StatusBadge status={p.status} domain="financingPayment" /></td>
                     <td>{fmtDate(p.createdAt)}</td>
-                    <td>{p.status === "succeeded" ? <button className="btn btn-ghost" style={{ fontSize: "0.8rem" }} onClick={() => downloadPdf(`/api/financing/my/payments/${p.id}/receipt`, `receipt-${p.paymentRef}.pdf`).catch((e) => toast("error", e.message))}>Receipt</button> : null}</td>
+                    <td>{p.status === "succeeded" ? <button className="btn btn-ghost" style={{ fontSize: "0.8rem" }} onClick={() => downloadPdf(`/api/financing/my/payments/${p.id}/receipt`, `receipt-${p.paymentRef}.pdf`).catch((e) => feedback.error({ title: "Receipt not downloaded", message: e.message }))}>Receipt</button> : null}</td>
                   </tr>
                 ))}
               </tbody>
@@ -311,6 +313,7 @@ function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChang
 }
 
 function ApplyForm({ options, onCreated }: { options: Options; onCreated: () => void }) {
+  const feedback = useFeedback();
   const [products, setProducts] = useState<any[]>([]);
   const [productId, setProductId] = useState("");
   const [depositPercent, setDepositPercent] = useState(String(options.depositPercentMin ?? 0));
@@ -327,18 +330,18 @@ function ApplyForm({ options, onCreated }: { options: Options; onCreated: () => 
   }, []);
 
   async function submit() {
-    if (!consent) { toast("error", "Please tick the consent box."); return; }
+    if (!consent) { feedback.error({ title: "Application not submitted", message: "Please tick the consent box." }); return; }
     setBusy(true);
     try {
       await api("/api/financing/my/applications", {
         method: "POST",
         body: JSON.stringify({ productId: productId || null, depositPercent: Number(depositPercent), frequency, termCount: Number(termCount), guarantorName, guarantorPhone, notes, consent }),
       });
-      toast("success", "Application submitted. We will review it and get back to you.");
+      feedback.success({ title: "Application submitted", message: "We will review it and get back to you." });
       setConsent(false); setProductId(""); setNotes("");
       onCreated();
     } catch (e: any) {
-      toast("error", e.message);
+      feedback.error({ title: "Application not submitted", message: e.message });
     } finally {
       setBusy(false);
     }

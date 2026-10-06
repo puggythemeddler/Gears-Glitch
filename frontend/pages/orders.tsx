@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import type { Order } from "@/lib/types";
 import { useApp } from "@/lib/app-context";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
@@ -11,6 +11,7 @@ import { Media } from "@/components/Media";
 function escapeHtml(v: string) { return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 
 export default function OrdersPage() {
+  const feedback = useFeedback();
   const { formatPrice } = useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +49,7 @@ export default function OrdersPage() {
     try {
       const r = await api<{ token: string }>("/api/orders/invoice-token/" + orderId, { method: "POST" });
       await downloadPdf(`/api/orders/${orderId}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${orderId}.pdf`);
-    } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown error")); }
+    } catch (e: any) { feedback.error({ title: "Invoice not downloaded", message: "Failed to download invoice: " + (e?.message || "Unknown error") }); }
   }
 
   return (

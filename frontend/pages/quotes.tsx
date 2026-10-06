@@ -3,7 +3,7 @@ import { api, getRole } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { useApp } from "@/lib/app-context";
 import { escapeHtml } from "@/lib/sanitize";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { usePageTitle } from "@/lib/use-page-title";
 import { Media } from "@/components/Media";
@@ -43,6 +43,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
 };
 
 export default function QuotesPage() {
+  const feedback = useFeedback();
   const { isDark, formatPrice } = useApp();
   const role = getRole();
   const isStaff = role === "staff" || role === "provider";
@@ -80,10 +81,10 @@ export default function QuotesPage() {
     setActionLoading(true);
     try {
       const d = await api<{ order: any; invoiceNumber: string }>(`/api/admin/quotes/${q.id}/approve`, { method: "POST" });
-      toast("success", `Quote approved! Order created with invoice: ${d.invoiceNumber}`);
+      feedback.success({ title: "Quote approved", message: `Order created with invoice: ${d.invoiceNumber}` });
       setViewQuote(null);
       loadQuotes();
-    } catch (e: any) { toast("error", e.message || "Failed to approve."); }
+    } catch (e: any) { feedback.error({ title: "Quote not approved", message: e.message || "Failed to approve." }); }
     setActionLoading(false);
   }
 
@@ -92,10 +93,10 @@ export default function QuotesPage() {
     setActionLoading(true);
     try {
       await api(`/api/admin/quotes/${q.id}/cancel`, { method: "POST" });
-      toast("success", `Quote ${q.quoteNumber} cancelled.`);
+      feedback.success({ title: `Quote ${q.quoteNumber} cancelled` });
       setViewQuote(null);
       loadQuotes();
-    } catch (e: any) { toast("error", e.message || "Failed to cancel."); }
+    } catch (e: any) { feedback.error({ title: "Quote not cancelled", message: e.message || "Failed to cancel." }); }
     setActionLoading(false);
   }
 
@@ -104,10 +105,10 @@ export default function QuotesPage() {
     setActionLoading(true);
     try {
       await api(`/api/admin/quotes/${q.id}`, { method: "DELETE" });
-      toast("success", `Quote ${q.quoteNumber} deleted.`);
+      feedback.success({ title: `Quote ${q.quoteNumber} deleted` });
       setViewQuote(null);
       loadQuotes();
-    } catch (e: any) { toast("error", e.message || "Failed to delete."); }
+    } catch (e: any) { feedback.error({ title: "Quote not deleted", message: e.message || "Failed to delete." }); }
     setActionLoading(false);
   }
 
@@ -195,6 +196,7 @@ export default function QuotesPage() {
 }
 
 function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { quote: Quote; onBack: () => void; onRefresh: () => void; formatPrice: (n: number) => string }) {
+  const feedback = useFeedback();
   const [quote, setQuote] = useState<Quote>(initialQuote);
   const [actionLoading, setActionLoading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -244,7 +246,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
   }
 
   async function saveEdits() {
-    if (editItems.length === 0) { toast("error", "Quote must have at least one item."); return; }
+    if (editItems.length === 0) { feedback.error({ title: "Quote not saved", message: "Quote must have at least one item." }); return; }
     setActionLoading(true);
     try {
       const d = await api<{ quote: Quote }>(`/api/admin/quotes/${quote.id}`, {
@@ -253,8 +255,8 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
       });
       setQuote(d.quote);
       setEditing(false);
-      toast("success", "Quote updated.");
-    } catch (e: any) { toast("error", e.message || "Failed to save."); }
+      feedback.success({ title: "Quote updated" });
+    } catch (e: any) { feedback.error({ title: "Quote not saved", message: e.message || "Failed to save." }); }
     setActionLoading(false);
   }
 
@@ -263,9 +265,9 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
     setActionLoading(true);
     try {
       const d = await api<{ order: any; invoiceNumber: string }>(`/api/admin/quotes/${quote.id}/approve`, { method: "POST" });
-      toast("success", `Quote approved! Invoice: ${d.invoiceNumber}`);
+      feedback.success({ title: "Quote approved", message: `Invoice: ${d.invoiceNumber}` });
       onRefresh();
-    } catch (e: any) { toast("error", e.message || "Failed."); }
+    } catch (e: any) { feedback.error({ title: "Quote not approved", message: e.message || "Failed." }); }
     setActionLoading(false);
   }
 
@@ -274,9 +276,9 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
     setActionLoading(true);
     try {
       await api(`/api/admin/quotes/${quote.id}/cancel`, { method: "POST" });
-      toast("success", `Quote ${quote.quoteNumber} cancelled.`);
+      feedback.success({ title: `Quote ${quote.quoteNumber} cancelled` });
       onRefresh();
-    } catch (e: any) { toast("error", e.message || "Failed."); }
+    } catch (e: any) { feedback.error({ title: "Quote not cancelled", message: e.message || "Failed." }); }
     setActionLoading(false);
   }
 
@@ -285,9 +287,9 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
     setActionLoading(true);
     try {
       await api(`/api/admin/quotes/${quote.id}`, { method: "DELETE" });
-      toast("success", `Quote ${quote.quoteNumber} deleted.`);
+      feedback.success({ title: `Quote ${quote.quoteNumber} deleted` });
       onRefresh();
-    } catch (e: any) { toast("error", e.message || "Failed."); }
+    } catch (e: any) { feedback.error({ title: "Quote not deleted", message: e.message || "Failed." }); }
     setActionLoading(false);
   }
 
@@ -295,7 +297,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
     try {
       const r = await api<{ token: string }>(`/api/admin/quote-pdf-token/${quote.id}`, { method: "POST" });
       window.open(`/api/admin/quotes/${quote.id}/pdf?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, "_blank");
-    } catch (e: any) { toast("error", "Failed to open quote: " + (e?.message || "Unknown error")); }
+    } catch (e: any) { feedback.error({ title: "Quote not opened", message: "Failed to open quote: " + (e?.message || "Unknown error") }); }
   }
 
   const editSubtotal = editItems.reduce((s, i) => s + calcEditItemTotal(i), 0);
@@ -479,6 +481,7 @@ function QuoteDetail({ quote: initialQuote, onBack, onRefresh, formatPrice }: { 
 }
 
 function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; onCreated: () => void; formatPrice: (n: number) => string }) {
+  const feedback = useFeedback();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -529,8 +532,8 @@ function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; 
   if (grandTotal < 0) grandTotal = 0;
 
   async function submit() {
-    if (!customerName.trim()) { toast("error", "Customer name is required."); return; }
-    if (selectedItems.length === 0) { toast("error", "Add at least one product."); return; }
+    if (!customerName.trim()) { feedback.error({ title: "Quote not created", message: "Customer name is required." }); return; }
+    if (selectedItems.length === 0) { feedback.error({ title: "Quote not created", message: "Add at least one product." }); return; }
     setSaving(true);
     try {
       await api("/api/admin/quotes", {
@@ -544,9 +547,9 @@ function QuoteCreator({ onBack, onCreated, formatPrice }: { onBack: () => void; 
           discountValue: quoteDiscountValue,
         }),
       });
-      toast("success", "Quote created.");
+      feedback.success({ title: "Quote created" });
       onCreated();
-    } catch (e: any) { toast("error", e.message || "Failed to create quote."); }
+    } catch (e: any) { feedback.error({ title: "Quote not created", message: e.message || "Failed to create quote." }); }
     setSaving(false);
   }
 

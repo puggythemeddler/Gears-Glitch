@@ -4,7 +4,7 @@ import { api, isCustomerLoggedIn, downloadPdf } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import type { Order } from "@/lib/types";
 import { escapeHtml } from "@/lib/sanitize";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { usePageTitle } from "@/lib/use-page-title";
@@ -12,6 +12,7 @@ import OrderCelebrationAnimation from "@/components/OrderCelebrationAnimation";
 import { Media } from "@/components/Media";
 
 export default function OrderDetailPage() {
+  const feedback = useFeedback();
   const router = useRouter();
   const { id } = router.query;
   const { formatPrice, refreshCartCount } = useApp();
@@ -101,7 +102,7 @@ export default function OrderDetailPage() {
     try {
       const r = await api<{ token: string }>("/api/orders/invoice-token/" + order!.id, { method: "POST" });
       await downloadPdf(`/api/orders/${order!.id}/invoice?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, `invoice-${order!.id}.pdf`);
-    } catch (e: any) { toast("error", "Failed to download invoice: " + (e?.message || "Unknown error")); }
+    } catch (e: any) { feedback.error({ title: "Invoice not downloaded", message: "Failed to download invoice: " + (e?.message || "Unknown error") }); }
   }
 
   async function reorder() {
@@ -112,7 +113,7 @@ export default function OrderDetailPage() {
       const d = await api<{ added: number; total: number }>(`/api/orders/${order.id}/reorder`, { method: "POST" });
       refreshCartCount();
       setReorderMsg(`Added ${d.added} of ${d.total} item(s) to your cart.`);
-      toast("success", "Items added to cart!");
+      feedback.success({ title: "Items added to cart" });
     } catch (e: any) {
       setReorderMsg(e.message || "Failed to reorder.");
     } finally { setReordering(false); }

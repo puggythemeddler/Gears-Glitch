@@ -4,7 +4,7 @@ import { api, isCustomerLoggedIn, requireCustomerLogin, addGuestCartItem } from 
 import { useApp } from "@/lib/app-context";
 import type { Product, ProductImage } from "@/lib/types";
 import { escapeHtml } from "@/lib/sanitize";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { PageHead } from "@/components/ui";
 import Icon from "@/components/icons";
@@ -15,6 +15,7 @@ function productInitials(name: string) {
 }
 
 export default function ProductPage() {
+  const feedback = useFeedback();
   const router = useRouter();
   const { id } = router.query;
   const { formatPrice, refreshCartCount } = useApp();
@@ -187,9 +188,9 @@ export default function ProductPage() {
       await api(`/api/products/${encodeURIComponent(id as string)}/reviews/${userReview.id}`, { method: "DELETE" });
       setUserReviewed(false); setUserReview(null); setEditingReview(false);
       setReviewMsg("Review deleted.");
-      toast("success", "Review deleted.");
+      feedback.success({ title: "Review deleted" });
       await fetchReviews(1);
-    } catch (e: any) { setReviewMsg(e.message || "Failed to delete review."); toast("error", e.message || "Failed to delete review."); }
+    } catch (e: any) { setReviewMsg(e.message || "Failed to delete review."); feedback.error({ title: "Review not deleted", message: e.message || "Failed to delete review." }); }
     finally { setDeletingReview(false); }
   }
 

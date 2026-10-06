@@ -3,7 +3,7 @@ import { api, isCustomerLoggedIn } from "@/lib/api";
 import type { WishlistItem, Quote } from "@/lib/types";
 import { useApp } from "@/lib/app-context";
 import { escapeHtml } from "@/lib/sanitize";
-import { toast } from "@/components/Toast";
+import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -12,6 +12,7 @@ import EmptyWishlistAnimation from "@/components/EmptyWishlistAnimation";
 import { Media } from "@/components/Media";
 
 export default function WishlistPage() {
+  const feedback = useFeedback();
   const { formatPrice } = useApp();
   const [items, setItems] = useState<WishlistItem[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -57,10 +58,10 @@ export default function WishlistPage() {
         method: "POST",
         body: JSON.stringify({ notes: quoteNotes }),
       });
-      toast("success", `Quote ${result.quoteNumber} created!`);
+      feedback.success({ title: "Quote created", message: `Quote ${result.quoteNumber} created!` });
       setQuoteNotes("");
       loadQuotes();
-    } catch (err: any) { toast("error", err.message); }
+    } catch (err: any) { feedback.error({ title: "Quote not created", message: err.message }); }
   }
 
   async function updateQuoteStatus(quoteId: number, status: string) {
@@ -135,8 +136,8 @@ export default function WishlistPage() {
                 <button className="btn btn-sm" onClick={async () => {
                   try {
                     await api("/api/cart", { method: "POST", body: JSON.stringify({ productId: item.productId, quantity: 1 }) });
-                    toast("success", "Added to cart!");
-                  } catch (err: any) { toast("error", err.message); }
+                    feedback.success({ title: "Added to cart" });
+                  } catch (err: any) { feedback.error({ title: "Item not added to cart", message: err.message }); }
                 }}>Add to cart</button>
                 <a href={`/product?id=${encodeURIComponent(item.productId)}`} className="btn btn-sm btn-ghost">View</a>
                 <button className="btn btn-sm btn-ghost" style={{ color: "var(--danger)" }} onClick={() => removeFromWishlist(item.productId)}>Remove</button>
