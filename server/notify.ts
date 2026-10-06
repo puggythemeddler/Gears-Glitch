@@ -1,5 +1,6 @@
 import { getSettings } from "./db";
 import { sendEmail, resetTransporter } from "./email";
+import { publicBaseUrl } from "./public-url";
 
 interface Ticket {
   id: string;
@@ -43,15 +44,15 @@ function formatMagicLinkHtml(customer: Customer, link: string): string {
 }
 
 function formatProviderWelcomeHtml(provider: ProviderInfo): string {
-  return `<h2>Welcome!</h2><p>Hello ${esc(provider.contactName)},</p><p>Welcome to <strong>${esc(process.env.SITE_NAME || "Gear&Glitch")}</strong>! Your provider account for <strong>${esc(provider.companyName)}</strong> has been created.</p><p>You can log in at: <a href="${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/">${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/</a></p><p>Regards,<br/>Support Team</p>`;
+  return `<h2>Welcome!</h2><p>Hello ${esc(provider.contactName)},</p><p>Welcome to <strong>${esc(process.env.SITE_NAME || "Gear&Glitch")}</strong>! Your provider account for <strong>${esc(provider.companyName)}</strong> has been created.</p><p>You can log in at: <a href="${esc(publicBaseUrl("http://localhost:8020"))}/provider/">${esc(publicBaseUrl("http://localhost:8020"))}/provider/</a></p><p>Regards,<br/>Support Team</p>`;
 }
 
 function formatProviderPlanChangedHtml(provider: ProviderInfo, planName: string): string {
-  return `<h2>Subscription Updated</h2><p>Hello ${esc(provider.contactName)},</p><p>Your subscription for <strong>${esc(provider.companyName)}</strong> has been updated to the <strong>${esc(planName)}</strong> plan.</p><p>View your subscription: <a href="${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/">${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/</a></p><p>Regards,<br/>Support Team</p>`;
+  return `<h2>Subscription Updated</h2><p>Hello ${esc(provider.contactName)},</p><p>Your subscription for <strong>${esc(provider.companyName)}</strong> has been updated to the <strong>${esc(planName)}</strong> plan.</p><p>View your subscription: <a href="${esc(publicBaseUrl("http://localhost:8020"))}/provider/">${esc(publicBaseUrl("http://localhost:8020"))}/provider/</a></p><p>Regards,<br/>Support Team</p>`;
 }
 
 function formatInvoiceHtml(provider: ProviderInfo, amount: number, periodEnd: string): string {
-  return `<h2>Invoice</h2><p>Hello ${esc(provider.contactName)},</p><p>An invoice for <strong>${esc(provider.companyName)}</strong> has been generated for <strong>KES ${amount.toFixed(2)}</strong>.</p><p>Due: ${esc(periodEnd)}</p><p>View your invoices: <a href="${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/">${esc(process.env.BASE_URL || "http://localhost:8020")}/provider/</a></p><p>Regards,<br/>Support Team</p>`;
+  return `<h2>Invoice</h2><p>Hello ${esc(provider.contactName)},</p><p>An invoice for <strong>${esc(provider.companyName)}</strong> has been generated for <strong>KES ${amount.toFixed(2)}</strong>.</p><p>Due: ${esc(periodEnd)}</p><p>View your invoices: <a href="${esc(publicBaseUrl("http://localhost:8020"))}/provider/">${esc(publicBaseUrl("http://localhost:8020"))}/provider/</a></p><p>Regards,<br/>Support Team</p>`;
 }
 
 const sendNewRepairEmail = async (ticket: Ticket): Promise<boolean> => {

@@ -420,6 +420,7 @@ import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrde
 import { startNotificationQueueWorker } from "./notification-service";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
+import { publicBaseUrl } from "./public-url";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile, validateImageMagicBytes } from "./upload";
 import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
@@ -3406,7 +3407,7 @@ app.patch("/api/provider/orders/:id/status", providerAuthMiddleware, asyncHandle
     if (!ok) { res.status(404).json({ error: "Order not found." }); return; }
     const updatedOrder = await getOrder(Number(req.params.id));
     if (updatedOrder && updatedOrder.customerEmail) {
-      const { subject: emailSub, html } = orderStatusEmail(updatedOrder.customerName || "Customer", `#${updatedOrder.id}`, status, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${updatedOrder.id}`);
+      const { subject: emailSub, html } = orderStatusEmail(updatedOrder.customerName || "Customer", `#${updatedOrder.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${updatedOrder.id}`);
       sendEmail(updatedOrder.customerEmail, emailSub, html, "order_status");
     }
     res.json({ ok: true });
@@ -3520,7 +3521,7 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, requirePermission
   res.json({ ok: true });
   const order = await getOrder(Number(req.params.id));
   if (order && order.customerEmail) {
-    const { subject: emailSub, html } = orderStatusEmail(order.customerName || "Customer", `#${order.id}`, status, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`);
+    const { subject: emailSub, html } = orderStatusEmail(order.customerName || "Customer", `#${order.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${order.id}`);
     sendEmail(order.customerEmail, emailSub, html, "order_status");
   }
 }));
@@ -4127,7 +4128,7 @@ app.post("/api/admin/credit-notes", ownerAuthMiddleware, requirePermission("cred
   res.status(201).json(cn);
   if (order.customerEmail) {
     const settings = await getSettings();
-    const { subject: emailSub, html } = creditNoteEmail(order.customerName || "Customer", cn.id, reason || "", String(cn.totalAmount || order.subtotal || 0), settings.currency, `${process.env.BASE_URL || "http://localhost:3000"}/order?id=${order.id}`, settings.storeName);
+    const { subject: emailSub, html } = creditNoteEmail(order.customerName || "Customer", cn.id, reason || "", String(cn.totalAmount || order.subtotal || 0), settings.currency, `${publicBaseUrl("http://localhost:3000")}/order?id=${order.id}`, settings.storeName);
     sendEmail(order.customerEmail, emailSub, html, "credit_note");
   }
 }));
@@ -4314,7 +4315,7 @@ app.post("/api/messages", customerAuthMiddleware, asyncHandler(async (req: Reque
     const customer = await findCustomerById(customerId);
     const provider = await findProviderById(Number(providerId));
     if (customer && provider) {
-      const { subject: emailSub, html } = messageNotificationEmail(customer.name || customer.email || "Customer", "customer", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+      const { subject: emailSub, html } = messageNotificationEmail(customer.name || customer.email || "Customer", "customer", subject || "", body.substring(0, 300), `${publicBaseUrl("http://localhost:3000")}/dashboard`);
       sendEmail(provider.email, emailSub, html, "message");
       const settings = await getSettings();
       if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
@@ -4339,7 +4340,7 @@ app.post("/api/provider/messages", providerAuthMiddleware, requireProviderFeatur
     const customer = await findCustomerById(Number(customerId));
     const provider = await findProviderById(providerId);
     if (customer && provider) {
-      const { subject: emailSub, html } = messageNotificationEmail(provider.companyName || provider.contactName || "Provider", "provider", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+      const { subject: emailSub, html } = messageNotificationEmail(provider.companyName || provider.contactName || "Provider", "provider", subject || "", body.substring(0, 300), `${publicBaseUrl("http://localhost:3000")}/dashboard`);
       if (customer.email) sendEmail(customer.email, emailSub, html, "message");
       const settings = await getSettings();
       if (settings.emailSender) sendEmail(settings.emailSender, emailSub, html, "message_cc");
@@ -5839,7 +5840,7 @@ app.post("/api/auth/magic-request", asyncHandler(async (req: Request, res: Respo
   if (!customer) { res.json({ ok: true }); return; }
   const jti = crypto.randomUUID();
   const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "magic", jti }, "1h");
-  const link = `${process.env.BASE_URL || ""}/account?magic=${token}`;
+  const link = `${publicBaseUrl()}/account?magic=${token}`;
   try {
     await notifier.sendMagicLinkEmail(customer, link);
   } catch (_e) { /* ignore */ }
@@ -5877,7 +5878,7 @@ app.post("/api/auth/request-admin-password-reset", asyncHandler(async (req: Requ
   if (staff) {
     const jti = crypto.randomUUID();
     const token = signToken({ sub: staff.id, email: staff.email, name: staff.username, role: "admin", purpose: "reset", jti }, "2h");
-    const link = `${process.env.BASE_URL || ""}/account?adminReset=${token}`;
+    const link = `${publicBaseUrl()}/account?adminReset=${token}`;
     try {
       await notifier.sendPasswordResetEmail({ email: staff.email, name: staff.username }, link);
     } catch (_e) { /* ignore */ }
@@ -5992,7 +5993,7 @@ app.post("/api/auth/request-password-reset", asyncHandler(async (req: Request, r
   if (!customer) { res.json({ ok: true }); return; }
   const jti = crypto.randomUUID();
   const token = signToken({ sub: customer.id, email: customer.email, name: customer.name, role: "customer", purpose: "reset", jti }, "2h");
-  const link = `${process.env.BASE_URL || ""}/account?reset=${token}`;
+  const link = `${publicBaseUrl()}/account?reset=${token}`;
   try {
     await notifier.sendPasswordResetEmail(customer, link);
   } catch (_e) { /* ignore */ }
@@ -7164,7 +7165,7 @@ app.post("/api/admin/quotes", staffAuthMiddleware, requirePermission("reports:vi
     const cust = await findCustomerById(customerId);
     if (cust && cust.email && cust.email !== "walkin@pos") {
       const settings = await getSettings();
-      const { subject: emailSub, html } = quoteEmail(cust.name || customerName || "Customer", quote.quoteNumber, String(quote.total), settings.currency, notes || "", `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`, settings.storeName);
+      const { subject: emailSub, html } = quoteEmail(cust.name || customerName || "Customer", quote.quoteNumber, String(quote.total), settings.currency, notes || "", `${publicBaseUrl("http://localhost:3000")}/dashboard`, settings.storeName);
       sendEmail(cust.email, emailSub, html, "quote");
     }
   } catch (err: any) {
@@ -7644,7 +7645,7 @@ app.post("/api/admin/abandoned-carts/send-reminder", ownerAuthMiddleware, requir
   if (customerId === undefined || !isInt(Number(customerId))) { res.status(400).json({ error: "customerId must be an integer." }); return; }
   const customer = await findCustomerById(Number(customerId));
   if (!customer) { res.status(404).json({ error: "Customer not found." }); return; }
-  const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+  const baseUrl = publicBaseUrl("http://localhost:3000");
   const subject = "You left items in your cart 🛒";
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
@@ -7832,7 +7833,7 @@ app.post("/api/admin/messages", ownerAuthMiddleware, requirePermission("messagin
     const provider = await findProviderById(Number(providerId));
     if (customer && provider) {
       const senderName = (req as any).user.username || "Admin";
-      const { subject: emailSub, html } = messageNotificationEmail(senderName, "admin", subject || "", body.substring(0, 300), `${process.env.BASE_URL || "http://localhost:3000"}/dashboard`);
+      const { subject: emailSub, html } = messageNotificationEmail(senderName, "admin", subject || "", body.substring(0, 300), `${publicBaseUrl("http://localhost:3000")}/dashboard`);
       if (customer.email) sendEmail(customer.email, emailSub, html, "message");
       if (provider.email) sendEmail(provider.email, emailSub, html, "message");
       const settings = await getSettings();
