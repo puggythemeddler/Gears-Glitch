@@ -8,7 +8,7 @@ const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), textarea:not([disab
  * element on close.
  */
 export function useFocusTrap<T extends HTMLElement>(
-  ref: React.RefObject<T>,
+  ref: React.RefObject<T | null>,
   active: boolean,
   { focusFirst = true }: { focusFirst?: boolean } = {},
 ) {

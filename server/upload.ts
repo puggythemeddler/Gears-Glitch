@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
-import { CloudinaryStorage } from "multer-storage-cloudinary";
+import type { UploadApiOptions, UploadApiResponse } from "cloudinary";
 
 const UPLOAD_DIR: string = path.join(__dirname, "..", "data", "uploads");
 
@@ -68,21 +68,46 @@ class DynamicStorage implements multer.StorageEngine {
   }
 }
 
-function makeCloudinaryStorage(folder: string, filenameFn?: (req: any, file: Express.Multer.File) => string) {
-  return new CloudinaryStorage({
-    cloudinary,
-    params: (_req: any, file: Express.Multer.File) => {
-      const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
-      const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"].includes(ext) ? ext : ".jpg";
-      const base = filenameFn ? filenameFn(_req, file) : `file-${Date.now()}`;
-      return {
-        folder: `${cloudinaryFolder}/${folder}`,
-        public_id: base.replace(/\.[^.]+$/, ""),
-        format: safeExt.replace(".", ""),
-        resource_type: "image",
-      };
-    },
-  });
+class CloudinaryStorageEngine implements multer.StorageEngine {
+  private folder: string;
+  private filenameFn: (req: any, file: Express.Multer.File) => string;
+
+  constructor(folder: string, filenameFn: (req: any, file: Express.Multer.File) => string) {
+    this.folder = folder;
+    this.filenameFn = filenameFn;
+  }
+
+  private buildParams(req: any, file: Express.Multer.File): UploadApiOptions {
+    const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
+    const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"].includes(ext) ? ext : ".jpg";
+    const base = this.filenameFn(req, file);
+    return {
+      folder: `${cloudinaryFolder}/${this.folder}`,
+      public_id: base.replace(/\.[^.]+$/, ""),
+      format: safeExt.replace(".", ""),
+      resource_type: "image",
+    };
+  }
+
+  _handleFile(req: any, file: Express.Multer.File, cb: (error?: Error | null, info?: Partial<Express.Multer.File>) => void): void {
+    const options = this.buildParams(req, file);
+    const upload = cloudinary.uploader.upload_stream(options, (error: Error | null | undefined, result?: UploadApiResponse) => {
+      if (error) return cb(error);
+      if (!result) return cb(new Error("Cloudinary upload returned no result"));
+      cb(null, { path: result.secure_url || result.url, filename: result.public_id, size: file.size });
+    });
+    file.stream.pipe(upload);
+  }
+
+  _removeFile(_req: any, file: Express.Multer.File, cb: (error: Error | null) => void): void {
+    const publicId = file.filename || String(file.path || "").split("/").pop()?.replace(/\.[^.]+$/, "");
+    if (!publicId) return cb(new Error("Cannot determine Cloudinary public_id for removal"));
+    cloudinary.uploader.destroy(publicId).then(() => cb(null)).catch((err: any) => cb(err));
+  }
+}
+
+function makeCloudinaryStorage(folder: string, filenameFn: (req: any, file: Express.Multer.File) => string) {
+  return new CloudinaryStorageEngine(folder, filenameFn);
 }
 
 function makeLocalDiskStorage(filenameFn: (req: any, file: Express.Multer.File) => string) {
