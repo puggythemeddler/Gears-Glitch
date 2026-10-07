@@ -84,6 +84,44 @@ describe("Gmail REST send message", () => {
     assert.throws(() => buildGmailRawMessage({ from: "shop@example.com", to: [], subject: "Hi", html: "x" }), /at least one recipient/);
   });
 
+  it("emits multipart/mixed with the HTML first and a base64 attachment when attachments are present", () => {
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj fake invoice stream", "utf8");
+    const raw = buildGmailRawMessage({
+      from: "shop@example.com",
+      to: "customer@example.com",
+      subject: "Invoice #42",
+      html: "<p>Your invoice</p>",
+      attachments: [{ filename: "invoice-42.pdf", content: pdf, contentType: "application/pdf" }],
+    });
+    const headerPart = raw.slice(0, raw.indexOf("\r\n\r\n"));
+    assert.match(headerPart, /Content-Type: multipart\/mixed; boundary="----=_gandg_[0-9a-f]+"/, `got: ${headerPart}`);
+    assert.match(headerPart, /MIME-Version: 1\.0/);
+    const body = raw.slice(raw.indexOf("\r\n\r\n") + 4);
+    // HTML first, exactly as the plain (attachment-less) message is sent.
+    assert.ok(body.includes('Content-Type: text/html; charset="UTF-8"'), "the HTML part must be present");
+    assert.ok(body.includes(Buffer.from("<p>Your invoice</p>", "utf8").toString("base64")), "the HTML must round-trip through base64");
+    // Then the PDF attachment, base64-encoded with a disposition.
+    assert.ok(body.includes('Content-Type: application/pdf; name="invoice-42.pdf"'), "the PDF part must declare its type + name");
+    assert.ok(body.includes('Content-Disposition: attachment; filename="invoice-42.pdf"'), "the PDF must be an attachment");
+    assert.ok(body.includes(pdf.toString("base64")), "the PDF bytes must round-trip through base64");
+    assert.ok(body.trimEnd().endsWith("--"), "the body must close with the boundary");
+  });
+
+  it("drops attachments entries with no filename or no content and stays single-part", () => {
+    const raw = buildGmailRawMessage({
+      from: "shop@example.com",
+      to: "customer@example.com",
+      subject: "Hi",
+      html: "<p>Hi</p>",
+      attachments: [
+        { filename: "", content: "x" },
+        { filename: "ok.txt", content: undefined as any },
+      ] as any,
+    });
+    assert.match(raw, /\r\nContent-Type: text\/html; charset="UTF-8"\r\n/);
+    assert.ok(!raw.includes("multipart/mixed"), "an empty attachment list must keep the single-part message");
+  });
+
   it("parses quoted, bare and display-name address forms", () => {
     assert.deepEqual(parseGmailAddress('"Shop Name" <a@b.com>'), { name: "Shop Name", email: "a@b.com" });
     assert.deepEqual(parseGmailAddress("plain@example.com"), { name: "", email: "plain@example.com" });

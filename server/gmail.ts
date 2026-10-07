@@ -219,29 +219,64 @@ function formatAddress(addr: GmailAddress): string {
   return addr.name ? `${encodeHeaderText(addr.name)} <${addr.email}>` : addr.email;
 }
 
+export interface GmailAttachment {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+}
+
 // Builds the RFC 5322 message that messages.send expects in its `raw` field.
 // The body is base64 so HTML containing 8-bit characters or bare CR/LF cannot
-// corrupt the headers.
+// corrupt the headers. With no attachments this is a single-part HTML message
+// (the exact shape the transporter has always produced); with attachments it
+// becomes multipart/mixed with the HTML as the first part.
 export function buildGmailRawMessage(input: {
   from: string;
   to: string | string[];
   subject: string;
   html: string;
+  attachments?: GmailAttachment[];
 }): string {
   const recipients = (Array.isArray(input.to) ? input.to : [input.to])
     .map((entry) => parseGmailAddress(entry).email)
     .filter(Boolean);
   if (!recipients.length) throw new Error("Gmail send requires at least one recipient.");
+  const attachments = (input.attachments || [])
+    .map((a) => ({ filename: String(a.filename || ""), content: a.content, contentType: a.contentType || "application/octet-stream" }))
+    .filter((a) => a.filename && a.content !== undefined && a.content !== null);
   const headers = [
     `From: ${formatAddress(parseGmailAddress(input.from))}`,
     `To: ${recipients.join(", ")}`,
     `Subject: ${encodeHeaderText(input.subject)}`,
     "MIME-Version: 1.0",
-    `Content-Type: text/html; charset="UTF-8"`,
-    "Content-Transfer-Encoding: base64",
   ];
-  const body = Buffer.from(String(input.html ?? ""), "utf8").toString("base64");
-  return `${headers.join("\r\n")}\r\n\r\n${body}`;
+  if (!attachments.length) {
+    return `${[...headers, `Content-Type: text/html; charset="UTF-8"`, "Content-Transfer-Encoding: base64"].join("\r\n")}\r\n\r\n${
+      Buffer.from(String(input.html ?? ""), "utf8").toString("base64")
+    }`;
+  }
+  const boundary = `----=_gandg_${crypto.randomBytes(16).toString("hex")}`;
+  const parts = [
+    [
+      "Content-Type: text/html; charset=\"UTF-8\"",
+      "Content-Transfer-Encoding: base64",
+    ].join("\r\n"),
+    Buffer.from(String(input.html ?? ""), "utf8").toString("base64"),
+  ];
+  for (const a of attachments) {
+    const filename = String(a.filename).replace(/["\r\n]/g, "").trim();
+    const body = Buffer.isBuffer(a.content) ? a.content.toString("base64") : Buffer.from(String(a.content), "utf8").toString("base64");
+    parts.push(
+      [
+        `Content-Type: ${a.contentType}; name="${filename}"`,
+        "Content-Transfer-Encoding: base64",
+        `Content-Disposition: attachment; filename="${filename}"`,
+      ].join("\r\n"),
+      body
+    );
+  }
+  const body = parts.map((p) => `--${boundary}\r\n${p}`).join("\r\n") + `\r\n--${boundary}--`;
+  return `${[...headers, `Content-Type: multipart/mixed; boundary="${boundary}"`].join("\r\n")}\r\n\r\n${body}`;
 }
 
 // Google's error bodies use camelCase reasons ("insufficientPermissions") while
@@ -269,7 +304,7 @@ export async function refreshGmailAccessToken(creds: { clientId: string; clientS
 }
 
 export async function sendGmailMessageViaApi(
-  input: { from: string; to: string | string[]; subject: string; html: string },
+  input: { from: string; to: string | string[]; subject: string; html: string; attachments?: GmailAttachment[] },
   accessToken: string,
 ): Promise<{ id?: string; threadId?: string }> {
   const raw = Buffer.from(buildGmailRawMessage(input), "utf8").toString("base64url");
@@ -291,12 +326,13 @@ export async function getGmailTransporter(): Promise<any> {
   const creds = await getGmailSendingCreds();
   if (!creds) return null;
   return {
-    async sendMail(opts: { from?: string; to?: string | string[]; subject?: string; html?: string }) {
+    async sendMail(opts: { from?: string; to?: string | string[]; subject?: string; html?: string; attachments?: GmailAttachment[] }) {
       const message = {
         from: String(opts?.from || creds.email),
         to: opts?.to ?? "",
         subject: String(opts?.subject ?? ""),
         html: String(opts?.html ?? ""),
+        attachments: opts?.attachments,
       };
       const accessToken = await refreshGmailAccessToken(creds);
       try {

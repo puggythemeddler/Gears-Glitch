@@ -216,7 +216,13 @@ export async function logEmailTransportStatus(): Promise<void> {
   }
 }
 
-export async function sendEmail(to: string, subject: string, html: string, type: string = "general"): Promise<boolean> {
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+}
+
+export async function sendEmail(to: string, subject: string, html: string, type: string = "general", attachments?: EmailAttachment[]): Promise<boolean> {
   const s = await getSettings();
   if (s.emailNotificationsEnabled === false) {
     await logEmail(to, s.emailSender || "", subject, html, type, "disabled");
@@ -225,16 +231,17 @@ export async function sendEmail(to: string, subject: string, html: string, type:
   const from = s.emailSender || process.env.EMAIL_FROM || process.env.FROM_EMAIL || "no-reply@example.com";
   const fromName = s.emailSenderName || s.storeName || "Gear&Glitch";
   const fromField = `"${fromName}" <${from}>`;
+  const mail = { from: fromField, to, subject, html, attachments: attachments && attachments.length ? attachments : undefined };
   const transport = await getTransporter();
   if (!transport) {
     const provider = resolveEmailProvider();
-    console.log(`[Email] No email transport configured (provider=${provider}). Would send to=${to} subject="${subject}" type=${type}`);
+    console.log(`[Email] No email transport configured (provider=${provider}). Would send to=${to} subject="${subject}" type=${type}${attachments && attachments.length ? ` with ${attachments.length} attachment(s)` : ""}`);
     await logEmail(to, from, subject, html, type, "no_smtp");
     return false;
   }
   try {
-    await transport.sendMail({ from: fromField, to, subject, html });
-    console.log(`[Email] Sent via ${transportKind || "smtp"} to=${to} subject="${subject}" type=${type}`);
+    await transport.sendMail(mail);
+    console.log(`[Email] Sent via ${transportKind || "smtp"} to=${to} subject="${subject}" type=${type}${attachments && attachments.length ? ` with ${attachments.length} attachment(s)` : ""}`);
     await logEmail(to, from, subject, html, type, "sent");
     if (transportKind === "gmail") {
       try { await recordGmailSendResult(true); } catch { /* best effort */ }
@@ -251,7 +258,7 @@ export async function sendEmail(to: string, subject: string, html: string, type:
       // A dead OAuth credential cannot be fixed by retrying — go straight to
       // SMTP. Other transient failures get exactly one Gmail retry.
       if (!isGmailOAuthError(err)) {
-        const retry = await sendEmail(to, subject, html, type);
+        const retry = await sendEmail(to, subject, html, type, attachments);
         if (retry) return true;
       }
       // Gmail worked but the message itself failed once — try SMTP as a
@@ -263,7 +270,7 @@ export async function sendEmail(to: string, subject: string, html: string, type:
       const fallbackKind: string | null = transportKind;
       if (smtpTransport && fallbackKind === "smtp") {
         try {
-          await smtpTransport.sendMail({ from: fromField, to, subject, html });
+          await smtpTransport.sendMail(mail);
           console.log(`[Email] Sent via SMTP (fallback) to=${to} subject="${subject}" type=${type}`);
           await logEmail(to, from, subject, html, type, "sent");
           return true;

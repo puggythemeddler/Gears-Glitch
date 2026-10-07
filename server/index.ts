@@ -303,6 +303,7 @@ import {
   createRefund,
   listRefunds,
   getRefundTotal,
+  isOrderPaid,
 } from "./db";
 import { query, queryOne, queryAll, transaction } from "./db-helpers";
 import {
@@ -429,6 +430,7 @@ import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, querySta
 import bcrypt from "bcryptjs";
 import { htmlToPdf, closeBrowser, warmPdf } from "./pdf";
 import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml, addCalendarMonthsClamped } from "./routes/shared";
+import { sendOrderInvoiceEmail } from "./order-invoice";
 
 const PORT: number = Number(process.env.PORT) || 8020;
 const ROOT: string = path.join(__dirname, "..");
@@ -1184,6 +1186,9 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
         await notifyAdminEmail(subject, html, "admin_notification", `Payment received for order ${order.id} (${notifySettings.currency || "KES"} ${(Number(order.subtotal) + Number(order.shippingFee) - (Number(order.discountAmount) || 0) - (Number(order.giftCardAmount) || 0)).toFixed(2)}) from ${order.customerName || "Customer"}.`);
         // Customer-facing order.processed (idempotent; also fires from POS/admin paths).
         try { notifyCustomerOrderProcessed(order.id).catch(() => {}); } catch { /* ignore */ }
+        // The paid event is when the customer invoice PDF gets attached to the
+        // processed/paid email on the storefront path too.
+        try { sendOrderInvoiceEmail(order.id, "paid").catch(() => {}); } catch { /* ignore */ }
       }
     } catch (err: any) {
       console.warn("[notify] Order-paid notification failed:", err?.message || err);
@@ -2707,10 +2712,24 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
         throw checkoutErr;
       }
     }
-    await updateOrderStatus(orderId, holding ? "pending_payment" : "delivered");
+    await updateOrderStatus(orderId, holding ? "pending_payment" : "confirmed");
     // Generate invoice number for the order
     const invNum = await generateInvoiceNumber();
     await query("UPDATE orders SET invoice_number = $1 WHERE id = $2", [invNum, orderId]);
+    // Cash/other till-paid methods (holding is always M-Pesa) move money the
+    // moment the sale completes: the order is paid straight away, so it lands
+    // in 'paid' (post-'confirmed') and counts toward revenue reports. M-Pesa
+    // stays 'pending_payment'/confirmed until the STK callback confirms it.
+    if (!holding) {
+      await query("UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text WHERE id = $1 AND status = 'confirmed'", [orderId]);
+    }
+    // POS orders only carry customer_email when the cashier picked an account at
+    // the till; copy it across so the automatic paid invoice reaches the inbox.
+    if (Number(customerId) > 0) {
+      const picked = await queryOne("SELECT email FROM customers WHERE id = $1", [Number(customerId)]) as any;
+      if (picked?.email) await query("UPDATE orders SET customer_email = $1 WHERE id = $2", [String(picked.email), orderId]);
+    }
+    if (!holding) sendOrderInvoiceEmail(orderId, "paid");
     // M-Pesa STK push — report the push state so the till can wait for payment
     let mpesaState: { status: "pending" | "failed" | "disabled"; checkoutRequestId?: string | null } = { status: "disabled" };
     if (pmt === "mpesa" && mpesaPhone) {
@@ -2765,16 +2784,17 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
     // the reconciliation branch below so the order stays pending/cancelled.
     if (String(checkoutRequestId).startsWith("SIM") && process.env.NODE_ENV !== "production") {
       await confirmOrderPayment(id);
-      await query("UPDATE orders SET status = 'paid', mpesa_receipt = COALESCE(mpesa_receipt, $1), updated_at = NOW()::text WHERE id = $2", [`SIM${id}`, id]);
+      await query("UPDATE orders SET status = 'paid', mpesa_receipt = COALESCE(mpesa_receipt, $1), paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text WHERE id = $2", [`SIM${id}`, id]);
       paid = true; status = "paid"; mpesaReceipt = mpesaReceipt || `SIM${id}`;
       try { notifyCustomerOrderProcessed(id).catch(() => {}); } catch { /* ignore */ }
+      sendOrderInvoiceEmail(id, "paid");
     } else if (status === "pending_payment" || status === "pending") {
       try {
         const q = await queryStatus(checkoutRequestId);
         const code = Number(q?.ResultCode ?? q?.resultCode);
         if (code === 0) {
           await confirmOrderPayment(id);
-          await query("UPDATE orders SET status = 'paid', updated_at = NOW()::text WHERE id = $1", [id]);
+          await query("UPDATE orders SET status = 'paid', mpesa_receipt = COALESCE(mpesa_receipt, $1), paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, id]);
           paid = true; status = "paid";
           try {
             const full = await getOrder(id);
@@ -2814,10 +2834,11 @@ app.post("/api/pos/orders/:id/pay-cash", posAuthMiddleware, asyncHandler(async (
   if (order.status === "pending_payment" || order.status === "pending") {
     await confirmOrderPayment(id);
   }
-  await query("UPDATE orders SET payment_method = 'cash', tendered_amount = $1, status = 'delivered', updated_at = NOW()::text WHERE id = $2", [tenderedAmount, order.id]);
+  await query("UPDATE orders SET payment_method = 'cash', tendered_amount = $1, status = 'paid', paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text WHERE id = $2", [tenderedAmount, order.id]);
   try { notifyCustomerOrderProcessed(order.id).catch(() => {}); } catch { /* ignore */ }
+  sendOrderInvoiceEmail(order.id, "paid");
   const change = tenderedAmount > order.subtotal ? tenderedAmount - order.subtotal : 0;
-  res.json({ order: { ...order, status: "delivered", paymentMethod: "cash", tenderedAmount }, change });
+  res.json({ order: { ...order, status: "paid", paymentMethod: "cash", tenderedAmount }, change });
 }));
 
 app.post("/api/pos/orders/:id/cancel", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -3410,12 +3431,23 @@ app.patch("/api/provider/orders/:id/status", providerAuthMiddleware, asyncHandle
     if (!["confirmed", "shipped", "delivered", "cancelled"].includes(status)) {
       res.status(400).json({ error: "Invalid status." }); return;
     }
+    // Same payment guard as the admin route: a confirmed order cannot ship or
+    // be delivered until payment is recorded. Providers have no grant path, so
+    // payment is mandatory when they move an order forward.
+    if (order.status === "confirmed" && (status === "shipped" || status === "delivered") && !isOrderPaid(order)) {
+      res.status(403).json({ error: "This confirmed order has no recorded payment. Record the payment before shipping or delivering." }); return;
+    }
     const ok = await updateOrderStatus(Number(req.params.id), status);
     if (!ok) { res.status(404).json({ error: "Order not found." }); return; }
     const updatedOrder = await getOrder(Number(req.params.id));
     if (updatedOrder && updatedOrder.customerEmail) {
-      const { subject: emailSub, html } = orderStatusEmail(updatedOrder.customerName || "Customer", `#${updatedOrder.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${updatedOrder.id}`);
-      sendEmail(updatedOrder.customerEmail, emailSub, html, "order_status");
+      if (status === "delivered") {
+        // Delivered orders also get their invoice PDF automatically.
+        sendOrderInvoiceEmail(updatedOrder.id, "delivered");
+      } else {
+        const { subject: emailSub, html } = orderStatusEmail(updatedOrder.customerName || "Customer", `#${updatedOrder.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${updatedOrder.id}`);
+        sendEmail(updatedOrder.customerEmail, emailSub, html, "order_status");
+      }
     }
     res.json({ ok: true });
   } catch (err: any) {
@@ -3523,13 +3555,30 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, requirePermission
   if (!["pending", "confirmed", "shipped", "delivered", "cancelled"].includes(status)) {
     res.status(400).json({ error: "Invalid status." }); return;
   }
+  const order = await getOrder(Number(req.params.id));
+  if (!order) { res.status(404).json({ error: "Order not found." }); return; }
+  // A confirmed order cannot advance to shipped/delivered without a recorded
+  // payment. Owner/admin hold order:without_payment by default; anyone else
+  // (e.g. a manager) needs it explicitly granted before an unpaid confirmed
+  // order can move forward. The right is fully owner-grantable in the Roles
+  // and per-user permissions UI.
+  if (order.status === "confirmed" && (status === "shipped" || status === "delivered") && !isOrderPaid(order)) {
+    const canAdvanceUnpaid = await hasPermission(Number((req as any).user?.sub), "order:without_payment");
+    if (!canAdvanceUnpaid) {
+      res.status(403).json({ error: "This confirmed order has no recorded payment. Record the payment first, or ask the owner to grant the 'Advance without payment' right." }); return;
+    }
+  }
   const ok = await updateOrderStatus(Number(req.params.id), status);
   if (!ok) { res.status(404).json({ error: "Order not found." }); return; }
   res.json({ ok: true });
-  const order = await getOrder(Number(req.params.id));
   if (order && order.customerEmail) {
-    const { subject: emailSub, html } = orderStatusEmail(order.customerName || "Customer", `#${order.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${order.id}`);
-    sendEmail(order.customerEmail, emailSub, html, "order_status");
+    if (status === "delivered" && isOrderPaid({ ...order, status })) {
+      // Delivered orders also get their invoice PDF automatically.
+      sendOrderInvoiceEmail(order.id, "delivered");
+    } else {
+      const { subject: emailSub, html } = orderStatusEmail(order.customerName || "Customer", `#${order.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${order.id}`);
+      sendEmail(order.customerEmail, emailSub, html, "order_status");
+    }
   }
 }));
 
@@ -3742,7 +3791,7 @@ app.get("/api/orders/:id/invoice", customerAuthMiddleware, asyncHandler(async (r
   try {
   const order = await getOrder(Number(req.params.id));
   if (!order || order.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Order not found." }); return; }
-  if (order.status !== "shipped" && order.status !== "delivered") { res.status(400).json({ error: "Invoice is only available for shipped or delivered orders." }); return; }
+  if (order.status !== "shipped" && order.status !== "delivered" && order.status !== "paid") { res.status(400).json({ error: "Invoice is only available for paid, shipped or delivered orders." }); return; }
   const settings = await getSettings();
   const baseUrl = `${req.protocol}://${req.get("host")}`;
   const store = settings.storeName || "Gear&Glitch";

@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS orders (
   mpesa_receipt TEXT,
   mpesa_phone TEXT,
   tendered_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  paid_at TEXT,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (customer_id) REFERENCES customers(id)
@@ -874,6 +875,10 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'storef
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_id INTEGER;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_amount DOUBLE PRECISION NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount_refunded DOUBLE PRECISION NOT NULL DEFAULT 0;
+-- First-class "was this order ever paid" marker for the confirmed-order guard
+-- (an unpaid confirmed order cannot advance without the order:without_payment
+-- right). Mirrors migration 0026.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TEXT;
 -- Remembers the branch an account last worked at so the login picker can
 -- pre-select it. Kept as a SET NULL FK so deleting a branch just forgets it.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;

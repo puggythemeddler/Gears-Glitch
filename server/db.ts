@@ -2731,6 +2731,19 @@ const HAS_OPEN_RESERVATION_SQL = `SELECT EXISTS (
       )
   ) AS held`;
 
+// True when the order has actually been paid for. Status alone cannot answer
+// this: once an order advances to shipped/delivered its status no longer says
+// 'paid', so the confirmed-order guard relies on the paid_at marker plus the
+// surviving M-Pesa receipt. Delivered orders are inherently considered paid,
+// because every path into 'delivered' either passed through 'paid' or was a
+// POS cash sale that physically took money at the till.
+export function isOrderPaid(order: { status: string; paid_at?: string | null; mpesa_receipt?: string | null }): boolean {
+  if (!order) return false;
+  if (order.status === "delivered") return true;
+  if (order.paid_at) return true;
+  return order.status === "paid" || !!order.mpesa_receipt;
+}
+
 async function updateOrderStatus(id: number, status: string): Promise<boolean> {
   if (status === "cancelled") {
     // Cancelling an order must return its stock and free its serials exactly
@@ -2831,7 +2844,7 @@ async function confirmOrderPayment(orderId: number): Promise<void> {
     const order = (await client.query("SELECT id, branch_id, status FROM orders WHERE id = $1 FOR UPDATE", [orderId])).rows?.[0] as any;
     if (!order || (order.status !== "pending_payment" && order.status !== "pending")) return;
     await deductReservedStockForOrder(client, order);
-    await client.query("UPDATE orders SET status = 'paid', updated_at = NOW()::text WHERE id = $1", [orderId]);
+    await client.query("UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text WHERE id = $1", [orderId]);
   });
 }
 
@@ -2919,7 +2932,7 @@ async function updateOrderMpesaStatus(checkoutRequestId: string, resultCode: num
           outcome = { applied: true };
         } else if (order.status === "pending" || order.status === "pending_payment") {
           await deductReservedStockForOrder(client, order);
-          await client.query("UPDATE orders SET status = 'paid', mpesa_receipt = $1, updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
+          await client.query("UPDATE orders SET status = 'paid', mpesa_receipt = $1, paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text WHERE id = $2", [mpesaReceipt, order.id]);
           outcome = { applied: true };
         } else {
           outcome = { applied: false, reason: `order status ${order.status} not payable` };
