@@ -3079,6 +3079,24 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
     trustText: "Trusted by 5,000+ customers across Kenya",
   });
   const [statsPublic, setStatsPublic] = useState(false);
+  const [subscribers, setSubscribers] = useState<{ id: number; email: string; created_at: string }[]>([]);
+  const [subscribersTotal, setSubscribersTotal] = useState(0);
+  const [subscribersLoading, setSubscribersLoading] = useState(false);
+
+  async function loadSubscribers() {
+    setSubscribersLoading(true);
+    try {
+      const d = await api<any>("/api/newsletter/subscribers?limit=100");
+      setSubscribers(d.subscribers || []);
+      setSubscribersTotal(d.total || 0);
+    } catch { feedback.error("Failed to load subscribers"); }
+    finally { setSubscribersLoading(false); }
+  }
+
+  async function removeSubscriber(id: number) {
+    try { await api(`/api/newsletter/subscribers/${id}`, { method: "DELETE" }); await loadSubscribers(); feedback.success("Subscriber removed"); }
+    catch { feedback.error("Failed to remove subscriber"); }
+  }
 
   async function load() {
     setLoading(true);
@@ -3101,6 +3119,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
       }
       try { const cd = await api<any>("/api/categories"); setCatList(cd.categories || []); } catch {}
       try { const sc = await api<any>("/api/storefront/stats-config"); setStatsPublic(sc?.publicTotals === true); } catch {}
+      await loadSubscribers();
     } catch {}
     finally { setLoading(false); }
   }
@@ -3513,6 +3532,33 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
         <div style={{ marginTop: "1rem" }}>
           <RippleButton size="small" onClick={saveHero} loading={saving}>Save Hero Section</RippleButton>
         </div>
+      </div>
+
+      <div className="panel" style={{ marginBottom: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Newsletter Subscribers</h3>
+            <p className="muted" style={{ fontSize: "0.85rem", margin: "4px 0 0" }}>
+              {subscribersTotal === 0 ? "No one has subscribed yet." : `${subscribersTotal} subscriber${subscribersTotal === 1 ? "" : "s"}`}
+              <span> — real emails collected from the homepage newsletter form.</span>
+            </p>
+          </div>
+          <RippleButton size="small" variant="ghost" onClick={loadSubscribers} loading={subscribersLoading}>Refresh</RippleButton>
+        </div>
+        {subscribersLoading && !subscribers.length ? <div style={{ padding: "1rem 0" }}><Spinner /></div> : subscribers.length === 0 ? (
+          <p className="muted" style={{ fontSize: "0.85rem", marginTop: "0.75rem" }}>When a visitor signs up on the storefront homepage, their email is saved here in Settings.</p>
+        ) : (
+          <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column" }}>
+            {subscribers.slice(0, 50).map((s) => (
+              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.45rem 0", borderBottom: "1px solid var(--border)" }}>
+                <span style={{ flex: 1, fontSize: "0.9rem", wordBreak: "break-all" }}>{s.email}</span>
+                <span className="muted" style={{ fontSize: "0.75rem", whiteSpace: "nowrap" }}>{new Date(s.created_at).toLocaleDateString()}</span>
+                <RippleButton size="small" variant="danger" aria-label={`Remove ${s.email}`} onClick={() => removeSubscriber(s.id)}>✕</RippleButton>
+              </div>
+            ))}
+          </div>
+        )}
+        {!subscribersLoading && subscribersTotal > 50 && <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.5rem" }}>Showing the 50 most recent subscriptions.</p>}
       </div>
     </>
   );

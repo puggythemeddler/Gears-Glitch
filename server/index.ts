@@ -579,6 +579,16 @@ const productViewLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
 });
+// Newsletter subscription is public, unauthenticated and spammable, so it gets
+// its own tight per-IP window (a handful of signups per 15 minutes each).
+const newsletterLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+app.use("/api/newsletter/subscribe", newsletterLimiter);
 
 // ============ INPUT VALIDATION HELPERS ============
 // Re-exported from ./routes/shared for backward compatibility
@@ -1335,6 +1345,56 @@ app.put("/api/storefront/stats-config", ownerAuthMiddleware, requirePermission("
     res.json({ publicTotals });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to update storefront stats config." });
+  }
+}));
+
+// ============ NEWSLETTER ============
+// Public one-click signup for the storefront newsletter. Idempotent: a repeat
+// subscription keeps the original row and still reports success, so the page
+// state is always real (whatever runs here is visible in Settings).
+app.post("/api/newsletter/subscribe", asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!isEmail(email)) {
+      res.status(400).json({ error: "Please enter a valid email address." });
+      return;
+    }
+    await queryOne(
+      "INSERT INTO newsletter_subscribers (email) VALUES ($1) ON CONFLICT (email) DO NOTHING",
+      [email]
+    );
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Could not subscribe right now. Please try again later." });
+  }
+}));
+
+app.get("/api/newsletter/subscribers", ownerAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 100, 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const rows = await queryAll(
+      "SELECT id, email, created_at FROM newsletter_subscribers ORDER BY id DESC LIMIT $1 OFFSET $2",
+      [limit, offset]
+    ) as any[];
+    const totalRow = await queryOne("SELECT COUNT(*) AS count FROM newsletter_subscribers") as any;
+    res.json({ subscribers: rows || [], total: Number(totalRow?.count) || 0 });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load subscribers." });
+  }
+}));
+
+app.delete("/api/newsletter/subscribers/:id", ownerAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) {
+      res.status(400).json({ error: "Invalid subscriber." });
+      return;
+    }
+    await queryOne("DELETE FROM newsletter_subscribers WHERE id = $1", [id]);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to remove subscriber." });
   }
 }));
 

@@ -6,6 +6,7 @@ import { useApp } from "@/lib/app-context";
 import { formatPrice } from "./shared";
 import { Media } from "@/components/Media";
 import { Pagination } from "@/components/ui";
+import { ProductCard } from "@/components/ProductCard";
 import { normalizeHref } from "@/lib/links";
 
 type SortKey = "newest" | "price-asc" | "price-desc" | "name";
@@ -48,10 +49,16 @@ function HeroStarRating({ average }: { average: number }) {
   );
 }
 
+const ChevronLeft = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+);
+const ChevronRight = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+);
+
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const { isLoggedIn, userName, settings, isDark } = useApp();
   const [activeIdx, setActiveIdx] = useState(0);
-  const [liveStats, setLiveStats] = useState<any>(null);
   const [ratings, setRatings] = useState<Record<string, { average: number; count: number }>>({});
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
@@ -68,10 +75,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     "--hero-text": heroText,
     "--hero-text-secondary": heroTextSec,
   } as React.CSSProperties) : undefined;
-
-  useEffect(() => {
-    fetch("/api/storefront-stats").then(r => r.json()).then(setLiveStats).catch(() => {});
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,66 +101,14 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const browseLabel = hero?.browseLabel || "Browse Categories";
   const browseLink = hero?.browseLink || "/#categories";
 
-  const showTrustStrip = hero?.showTrustStrip !== false;
   const showWhatsApp = hero?.showWhatsApp !== false;
   const waPhone = settings?.storePhone ? settings.storePhone.replace(/[^0-9]/g, "") : "";
 
-  const liveCats: { id: string; label: string }[] = Array.isArray(liveStats?.categories) ? liveStats.categories : [];
-  const savedChips: { label: string; href: string }[] = Array.isArray(hero?.catChips) && hero.catChips.length > 0 ? hero.catChips : [];
-
-  const catChips = (() => {
-    if (liveCats.length === 0) {
-      return savedChips.length > 0 ? savedChips : [
-        { label: "Gaming PCs", href: "/pc" },
-        { label: "Graphics Cards", href: "/graphics-cards" },
-        { label: "Laptops", href: "/laptops" },
-        { label: "Servers", href: "/servers" },
-        { label: "Repairs", href: "/repairs" },
-      ];
-    }
-    if (savedChips.length === 0) {
-      return liveCats.slice(0, 6).map((c) => ({ label: c.label, href: "/" + c.id }));
-    }
-    const liveByHref = new Map(liveCats.map((c) => ["/" + c.id, c.label]));
-    const kept = savedChips.filter((c) => c.href && liveByHref.has(c.href));
-    const existing = new Set(kept.map((c) => c.href));
-    const added = liveCats
-      .filter((c) => !existing.has("/" + c.id))
-      .map((c) => ({ label: c.label, href: "/" + c.id }));
-    return [...kept, ...added];
-  })();
-
-  const defaultStats = [
-    { value: "1000+", label: "Products" },
-    { value: "500+", label: "Happy Customers" },
-    { value: "24/7", label: "Support" },
-  ];
-  // The public /api/storefront-stats endpoint only returns business totals when
-  // the owner has opted in (storefront_stats_totals). Only render chips for the
-  // numbers the store chose to expose.
-  const liveStatsArr = liveStats
-    ? [
-        ...(liveStats.totalProducts != null ? [{ value: String(liveStats.totalProducts) + "+", label: "Products" }] : []),
-        ...(liveStats.totalCustomers != null ? [{ value: String(liveStats.totalCustomers) + "+", label: "Customers" }] : []),
-        ...(liveStats.totalOrders != null ? [{ value: String(liveStats.totalOrders) + "+", label: "Orders" }] : []),
-        ...(liveStats.totalReviews != null ? [{ value: String(liveStats.totalReviews) + "+", label: "Reviews" }] : []),
-      ]
-    : [];
-  const stats = hero?.stats?.length > 0 ? hero.stats : liveStatsArr.length > 0 ? liveStatsArr : defaultStats;
-
-  const highlights = hero?.highlights?.length > 0
-    ? hero.highlights
-    : [
-        "Genuine Products",
-        "Fast Delivery Across Kenya",
-        "Secure Payments",
-      ];
-
-  const trustStripItems = showTrustStrip
-    ? ["M-Pesa & Cards accepted", "Nationwide delivery", "Warranty on all items", "Nairobi delivery in 24h"]
-    : [];
-  const editorialTrust = Array.from(new Set([...highlights, ...trustStripItems]));
   const panel = featured.length > 0 ? featured[activeIdx % featured.length] : null;
+  const cycle = (dir: number) => {
+    if (featured.length < 2) return;
+    setActiveIdx((activeIdx + dir + featured.length) % featured.length);
+  };
 
   return (
     <section className="dy-hero" style={heroStyle} aria-label="Featured products">
@@ -211,31 +162,12 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
               </a>
             )}
           </div>
-
-          <div className="dy-hero-trust">
-            {editorialTrust.map((h) => (
-              <span key={h} className="dy-hero-trust-item">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path d="M2.5 7.2l3.2 3.2 5.8-6.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                {h}
-              </span>
-            ))}
-          </div>
-
-          {catChips.length > 0 && (
-            <div className="dy-hero-chips">
-              {catChips.map((c: { label: string; href: string }) => (
-                <Link key={c.href} href={normalizeHref(c.href) || "/"} className="dy-hero-chip">{c.label}</Link>
-              ))}
-            </div>
-          )}
         </div>
 
-        <div>
+        <div className="dy-hero-showcase">
           {panel ? (
-            <Link href={`/product?id=${encodeURIComponent(panel.id)}`} className="dy-hero-panel" style={{ textDecoration: "none", color: "var(--text)" }} aria-label={`View ${panel.name}`}>
-              <span className="dy-hero-panel-tag">Featured</span>
+            <Link href={`/product?id=${encodeURIComponent(panel.id)}`} className="dy-hero-panel" style={{ textDecoration: "none", color: "var(--text)" }} aria-label={`View ${panel.name} (featured product ${activeIdx + 1} of ${featured.length})`}>
+              <span className="dy-hero-panel-tag">Featured pick</span>
               <div className="dy-hero-panel-media">
                 {panel.imageUrl ? (
                   <Media src={panel.imageUrl} alt={panel.name} width={640} height={360} fit="cover" fallbackLabel={panel.name} />
@@ -271,31 +203,31 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
           ) : (
             <div className="dy-hero-panel">
               <div className="dy-hero-panel-media">
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="22"/></svg>
               </div>
             </div>
           )}
           {featured.length > 1 && (
-            <div className="dy-hero-dots">
-              {featured.map((_, i) => (
+            <div className="dy-hero-carousel">
+              <span className="dy-hero-counter" aria-live="polite">{activeIdx + 1} / {featured.length}</span>
+              <div className="dy-hero-carousel-btns">
                 <button
-                  key={i}
                   type="button"
-                  className={`dy-hero-dot${i === activeIdx ? " is-active" : ""}`}
-                  onClick={() => setActiveIdx(i)}
-                  aria-label={`Show product ${i + 1}`}
-                />
-              ))}
-            </div>
-          )}
-          {stats.length > 0 && (
-            <div className="dy-hero-metrics">
-              {stats.map((s: { value: string; label: string }) => (
-                <div key={s.label} className="dy-hero-metric">
-                  <span className="dy-hero-metric-value">{s.value}</span>
-                  <span className="dy-hero-metric-label">{s.label}</span>
-                </div>
-              ))}
+                  className="dy-hero-carousel-btn"
+                  onClick={() => cycle(-1)}
+                  aria-label="Previous featured product"
+                >
+                  <ChevronLeft />
+                </button>
+                <button
+                  type="button"
+                  className="dy-hero-carousel-btn"
+                  onClick={() => cycle(1)}
+                  aria-label="Next featured product"
+                >
+                  <ChevronRight />
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -304,10 +236,177 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   );
 }
 
+// Real social proof + service guarantees. The public /api/storefront-stats
+// endpoint only returns customer/order totals when the owner opted in, so any
+// number shown here is real — there is no fabricated "1000+ customers" fallback.
+function GuaranteeStrip({ hero }: { hero?: any }) {
+  const [liveStats, setLiveStats] = useState<any>(null);
+
+  useEffect(() => {
+    fetch("/api/storefront-stats").then(r => r.json()).then(setLiveStats).catch(() => {});
+  }, []);
+
+  const showTrustStrip = hero?.showTrustStrip !== false;
+  const highlights: string[] = hero?.highlights?.length > 0
+    ? hero.highlights
+    : ["Genuine Products", "Fast Delivery Across Kenya", "Secure Payments"];
+
+  const serviceClaims = ["Pay with M-Pesa or card", "Nationwide delivery", "Warranty on all items", "Repairs with live tracking"];
+  const items = Array.from(new Set([...highlights, ...serviceClaims])).slice(0, 4);
+
+  const hasTotals = liveStats && (liveStats.totalCustomers != null || liveStats.totalOrders != null);
+  const totalsLine = hasTotals
+    ? [
+        ...(liveStats.totalCustomers != null ? [`${liveStats.totalCustomers}+ customers`] : []),
+        ...(liveStats.totalOrders != null ? [`${liveStats.totalOrders}+ orders shipped`] : []),
+      ].join(" \u00b7 ")
+    : "";
+
+  if (items.length === 0 && !totalsLine) return null;
+
+  return (
+    <section className="storefront-guarantees" aria-label="Why shop with us">
+      <div className="storefront-guarantees-inner">
+        {items.map((h) => (
+          <span key={h} className="storefront-guarantee">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M2.5 7.2l3.2 3.2 5.8-6.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {h}
+          </span>
+        ))}
+        {totalsLine && <span className="storefront-guarantee-grow"><span>Trusted by {totalsLine}</span></span>}
+      </div>
+    </section>
+  );
+}
+
+function ShopCategories({ categories, products, chips }: {
+  categories: { id: string; label: string }[];
+  products: Product[];
+  chips: { label: string; href: string }[];
+}) {
+  if (categories.length === 0) return null;
+
+  return (
+    <section className="storefront-cats" id="categories" aria-label="Shop by category">
+      <div className="storefront-section-head">
+        <div>
+          <h2>Shop by category</h2>
+          <p>Everything we carry — from everyday laptops to full workstation builds.</p>
+        </div>
+        <a href="#catalogue" className="storefront-section-link">All products <ChevronRight /></a>
+      </div>
+      <div className="storefront-cats-grid">
+        {categories.map((cat) => {
+          const count = products.filter((p) => p.category === cat.id).length;
+          return (
+            <Link key={cat.id} href={`/${cat.id}`} className="storefront-cat-card">
+              <span className="storefront-cat-main">
+                <span className="storefront-cat-label">{cat.label}</span>
+                <span className="storefront-cat-count">
+                  {count === 0 ? "Browse products" : `${count} product${count === 1 ? "" : "s"}`}
+                </span>
+              </span>
+              <span className="storefront-cat-arrow"><ChevronRight /></span>
+            </Link>
+          );
+        })}
+      </div>
+      {chips.length > 0 && (
+        <div className="storefront-quicklinks" aria-label="Quick links">
+          <span className="storefront-quicklinks-label">Quick links</span>
+          {chips.map((c) => (
+            <Link key={c.href} href={normalizeHref(c.href) || "/"} className="storefront-quicklink">{c.label}</Link>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FeaturedProducts({ featured }: { featured: Product[] }) {
+  if (featured.length === 0) return null;
+
+  return (
+    <section className="storefront-featured" aria-label="Featured products">
+      <div className="storefront-section-head">
+        <div>
+          <h2>Featured products</h2>
+          <p>Hand-picked stock, ready to ship to your door.</p>
+        </div>
+        <a href="#catalogue" className="storefront-section-link">View all <ChevronRight /></a>
+      </div>
+      <div className="product-grid">
+        {featured.map((p) => (
+          <ProductCard key={p.id} product={p} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function NewsletterSection() {
+  const { settings } = useApp();
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  async function subscribe(e: React.FormEvent) {
+    e.preventDefault();
+    const value = email.trim();
+    if (!value || status === "busy") return;
+    setStatus("busy");
+    setMessage("");
+    try {
+      await api("/api/newsletter/subscribe", { method: "POST", body: JSON.stringify({ email: value }) });
+      setStatus("done");
+      setMessage(`You're on the list — watch your inbox for the next drop from ${settings?.storeName || "the store"}.`);
+    } catch (err: any) {
+      setStatus("error");
+      setMessage(err?.message || "Could not subscribe right now. Please try again.");
+    }
+  }
+
+  return (
+    <section className="storefront-newsletter" aria-label="Newsletter">
+      <div className="storefront-newsletter-inner">
+        <div className="storefront-newsletter-copy">
+          <h2>Drop us your email</h2>
+          <p>New hardware drops, exclusive deals and restock alerts — straight to your inbox.</p>
+        </div>
+        {status === "done" ? (
+          <p className="storefront-newsletter-done" role="status">{message}</p>
+        ) : (
+          <form className="storefront-newsletter-form" onSubmit={subscribe}>
+            <label htmlFor="gg-newsletter-email" className="visually-hidden">Email address</label>
+            <input
+              id="gg-newsletter-email"
+              type="email"
+              required
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); if (status !== "idle") { setStatus("idle"); setMessage(""); } }}
+              aria-describedby={status === "error" ? "gg-newsletter-status" : undefined}
+            />
+            <button type="submit" className="btn btn-primary" disabled={status === "busy"}>
+              {status === "busy" ? "Subscribing..." : "Subscribe"}
+            </button>
+          </form>
+        )}
+        <p id="gg-newsletter-status" className={`storefront-newsletter-status ${status === "error" ? "is-error" : ""}`} aria-live="polite" role={status === "error" ? "alert" : "status"}>
+          {status === "error" ? message : ""}
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export function Header() { return null; }
 export function Footer() { return null; }
 
-export function HomePage({ products, categories, hero }: {
+export function HomePage({ products, categories, banners, hero }: {
   products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any;
 }) {
   const [homeSort, setHomeSort] = useState<SortKey>("newest");
@@ -327,45 +426,85 @@ export function HomePage({ products, categories, hero }: {
   const safeHomePage = Math.min(homePage, homeTotalPages);
   const homeVisible = sortedProducts.slice((safeHomePage - 1) * HOME_PAGE_SIZE, safeHomePage * HOME_PAGE_SIZE);
 
+  const featuredPicks = [...products]
+    .sort((a, b) => {
+      const sa = a.salePrice ? 1 : 0, sb = b.salePrice ? 1 : 0;
+      if (sb !== sa) return sb - sa;
+      const ia = a.imageUrl ? 1 : 0, ib = b.imageUrl ? 1 : 0;
+      if (ib !== ia) return ib - ia;
+      return 0;
+    })
+    .slice(0, 8);
+
+  // Category quick links reconcile the admin's saved chips against the live
+  // category list so stale entries never leave dead links on the page.
+  const chips = (() => {
+    const savedChips: { label: string; href: string }[] = Array.isArray(hero?.catChips) && hero.catChips.length > 0 ? hero.catChips : [];
+    if (categories.length === 0) {
+      return savedChips.length > 0 ? savedChips : [
+        { label: "Gaming PCs", href: "/pc" },
+        { label: "Graphics Cards", href: "/graphics-cards" },
+        { label: "Laptops", href: "/laptops" },
+        { label: "Servers", href: "/servers" },
+        { label: "Repairs", href: "/repairs" },
+      ];
+    }
+    if (savedChips.length === 0) {
+      return categories.slice(0, 6).map((c) => ({ label: c.label, href: "/" + c.id }));
+    }
+    const liveByHref = new Map(categories.map((c) => ["/" + c.id, c.label]));
+    const kept = savedChips.filter((c) => c.href && liveByHref.has(c.href));
+    const existing = new Set(kept.map((c) => c.href));
+    const added = categories
+      .filter((c) => !existing.has("/" + c.id))
+      .map((c) => ({ label: c.label, href: "/" + c.id }));
+    return [...kept, ...added];
+  })();
+
+  const identityBandActive = hero?.identityBandActive !== false;
+
   return (
-    <>
+    <div className="storefront-original">
       {hero?.heroActive !== false && <HeroSection products={products} hero={hero} />}
 
-      {hero?.identityBandActive !== false && (
-      <section className="identity-band" aria-label="Shop and repairs">
-        <div className="identity-card identity-card--shop">
-          <div className="identity-icon">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+      <GuaranteeStrip hero={hero} />
+
+      <ShopCategories categories={categories} products={products} chips={chips} />
+
+      {identityBandActive && (
+        <section className="identity-band" aria-label="Shop and repairs">
+          <div className="identity-card identity-card--shop">
+            <div className="identity-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+            </div>
+            <div>
+              <h2>Shop premium tech</h2>
+              <p>Gaming PCs, laptops, graphics cards, servers and printers with nationwide delivery.</p>
+            </div>
+            <Link href="/pc" className="btn btn-primary btn-sm">Shop now</Link>
           </div>
-          <div>
-            <h2>Shop premium tech</h2>
-            <p>Gaming PCs, laptops, graphics cards, servers and printers with nationwide delivery.</p>
+          <div className="identity-card identity-card--repair">
+            <div className="identity-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            </div>
+            <div>
+              <h2>Need a repair?</h2>
+              <p>Expert laptop, PC and device repairs with real-time tracking. Most repairs in 24-48h.</p>
+            </div>
+            <Link href="/repairs" className="btn btn-secondary btn-sm">Book a repair</Link>
           </div>
-          <Link href="/pc" className="btn btn-primary btn-sm">Shop now</Link>
-        </div>
-        <div className="identity-card identity-card--repair">
-          <div className="identity-icon">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-          </div>
-          <div>
-            <h2>Need a repair?</h2>
-            <p>Expert laptop, PC and device repairs with real-time tracking. Most repairs in 24-48h.</p>
-          </div>
-          <Link href="/repairs" className="btn btn-secondary btn-sm">Book a repair</Link>
-        </div>
-      </section>
+        </section>
       )}
 
-      <div style={{ width: "100%", padding: "0 var(--space-5)" }}>
-        {categories.length > 0 && (
-          <div id="categories" style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", margin: "1.5rem 0" }}>
-            {categories.map((cat) => (
-              <a key={cat.id} href={`/${cat.id}`} className="btn btn-secondary btn-sm" style={{ textAlign: "left", whiteSpace: "nowrap" }}>{cat.label}</a>
-            ))}
-          </div>
-        )}
+      <FeaturedProducts featured={featuredPicks} />
 
-        <h2>All products</h2>
+      <section className="storefront-catalogue" id="catalogue" aria-label="All products">
+        <div className="storefront-section-head">
+          <div>
+            <h2>All products</h2>
+            <p>Browse the full catalogue.</p>
+          </div>
+        </div>
         {products.length === 0 ? (
           <p style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>No products found.</p>
         ) : (
@@ -388,40 +527,16 @@ export function HomePage({ products, categories, hero }: {
               </label>
             </div>
             <div className="product-grid">
-              {homeVisible.map((p) => {
-                const initials = p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
-                return (
-                  <Link key={p.id} href={`/product?id=${encodeURIComponent(p.id)}`} className="product-card">
-                    {p.imageUrl ? (
-                      <Media src={p.imageUrl} alt={p.imageAlt || p.name} width={400} height={300} fit="cover" fallbackLabel={p.name} />
-                    ) : (
-                      <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: "var(--radius-sm)", fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>
-                        {initials}
-                      </div>
-                    )}
-                    <h3>{p.name}</h3>
-                    <div className="price" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                      {p.salePrice ? (
-                        <>
-                          <span style={{ textDecoration: "line-through", color: "var(--muted)", fontSize: "0.8em" }}>{formatPrice(p.price)}</span>
-                          <span style={{ color: "var(--danger)", fontWeight: 700 }}>{formatPrice(p.salePrice)}</span>
-                          <span style={{ display: "inline-block", background: "var(--danger)", color: "var(--on-danger)", fontSize: "0.6rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: "var(--radius-full)", textTransform: "uppercase" }}>Sale</span>
-                        </>
-                      ) : (
-                        formatPrice(p.price)
-                      )}
-                    </div>
-                    <div className={`stock-badge ${p.inStock ? "in-stock" : "out-of-stock"}`}>
-                      {p.inStock ? "In stock" : "Enquire for availability"}
-                    </div>
-                  </Link>
-                );
-              })}
+              {homeVisible.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
             </div>
             <Pagination page={safeHomePage} totalPages={homeTotalPages} onChange={setHomePage} label="All products pagination" />
           </>
         )}
-      </div>
-    </>
+      </section>
+
+      <NewsletterSection />
+    </div>
   );
 }

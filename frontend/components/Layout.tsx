@@ -126,6 +126,45 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const leftNavLinks = filteredNavLinks.filter((l: any) => !RIGHT_NAV_IDS.has(l.id));
   const rightNavLinks = filteredNavLinks.filter((l: any) => RIGHT_NAV_IDS.has(l.id));
 
+  // Footer columns honour the owner's saved footer config when present; the
+  // defaults below are the real storefront destinations (all routes that exist),
+  // so the footer is never an empty shell before one is saved.
+  const footerColumns: any[] = (() => {
+    if (footerConfig?.columns?.length) return footerConfig.columns;
+    const catLinks = categories.slice(0, 6).map((c) => ({ label: c.label, href: "/" + c.id }));
+    return [
+      { title: "Shop", links: [...catLinks, { label: "All products", href: "/" }] },
+      {
+        title: "Support",
+        links: [
+          { label: "Repairs", href: "/repairs" },
+          { label: "Book a repair", href: "/repair-book" },
+          { label: "Track a repair", href: "/my-repairs" },
+          { label: "Contact us", href: "/contact" },
+        ],
+      },
+      {
+        title: "Account",
+        links: [
+          { label: "Sign in", href: "/login" },
+          { label: "My account", href: "/account" },
+          { label: "My orders", href: "/orders" },
+          { label: "My wishlist", href: "/wishlist" },
+          { label: "Cart", href: "/cart" },
+        ],
+      },
+      {
+        title: "Company",
+        links: [
+          { label: "About us", href: "/about" },
+          { label: "Contact", href: "/contact" },
+          { label: "Financing", href: "/financing" },
+          { label: "Product groups", href: "/groups" },
+        ],
+      },
+    ];
+  })();
+
   function closeTransientMenus() {
     setMobileOpen(false);
     setSettingsOpen(false);
@@ -305,7 +344,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           </div>
         </div>
         <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) router.push(`/?search=${encodeURIComponent(q)}`); }}>
-          <input name="q" type="search" placeholder="Search..." aria-label="Search products" />
+          <input name="q" type="search" placeholder="Search PCs, laptops, GPUs, repairs..." aria-label="Search products" />
           <button type="submit" aria-label="Search">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
@@ -486,35 +525,41 @@ export default function Layout({ children, activeNav }: LayoutProps) {
       ) : (
         <footer className="site-footer">
           <div className="footer-inner">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: "1.5rem", width: "100%", padding: "0 var(--space-5)" }}>
-              <div>
-                <div style={{ fontWeight: 700, marginBottom: "0.5rem", fontSize: "var(--text-base)" }}>{settings?.storeName || "My Shop"}</div>
-                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>Kenya&apos;s trusted tech platform for gaming PCs, laptops, and accessories.</p>
+            <div className="footer-grid">
+              <div className="footer-brand">
+                {settings?.storeLogo ? (
+                  <Media src={settings.storeLogo} alt={settings.storeName || "Store"} width={180} height={44} fit="contain" className="footer-logo" />
+                ) : (
+                  <span className="footer-brand-name">{settings?.storeName || "My Shop"}</span>
+                )}
+                <p className="footer-tagline">Kenya&apos;s trusted tech platform for gaming PCs, laptops, graphics cards, servers and accessories &mdash; plus real repairs with live tracking.</p>
+                {(settings?.storePhone || settings?.storeEmail) && (
+                  <div className="footer-contact">
+                    {settings.storePhone && <span>{settings.storePhone}</span>}
+                    {settings.storeEmail && <span>{settings.storeEmail}</span>}
+                  </div>
+                )}
               </div>
-              {(footerConfig?.columns || []).map((col: any, idx: number) => (
-                <div key={idx}>
-                  <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.85rem" }}>{col.title}</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                    {(col.links || []).map((link: any, li: number) => (
-                      // minHeight keeps the whole row tappable at the 44px
-                      // control floor, without changing the footer's rhythm.
-                      <a
-                        key={li}
-                        href={link.href}
-                        style={{
-                          fontSize: "0.85rem",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          minHeight: 44,
-                        }}
-                      >{link.label}</a>
-                    ))}
+              {footerColumns.map((col: any, idx: number) => (
+                <div className="footer-col" key={idx}>
+                  <div className="footer-col-title">{col.title}</div>
+                  <div className="footer-col-links">
+                    {(col.links || []).map((link: any, li: number) => {
+                      const label = link.label || link.href || "";
+                      const external = /^(https?:)?\/\//i.test(link.href || "");
+                      return external ? (
+                        <a key={li} href={link.href} className="footer-link" target="_blank" rel="noopener noreferrer">{label}</a>
+                      ) : (
+                        <Link key={li} href={link.href || "#"} className="footer-link">{label}</Link>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
             </div>
-            <div style={{ borderTop: "1px solid var(--border)", marginTop: "1.5rem", paddingTop: "1rem", textAlign: "center", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-              &copy; {new Date().getFullYear()} {settings?.storeName || "My Shop"}. All rights reserved.
+            <div className="footer-bottom">
+              <span>&copy; {new Date().getFullYear()} {settings?.storeName || "My Shop"}. All rights reserved.</span>
+              <span className="footer-payments">M-Pesa &middot; Visa &middot; Mastercard &middot; Bank transfer</span>
             </div>
           </div>
         </footer>
