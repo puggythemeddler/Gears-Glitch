@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Product } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -59,6 +59,11 @@ const ChevronRight = () => (
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const { isLoggedIn, userName, settings, isDark } = useApp();
   const [activeIdx, setActiveIdx] = useState(0);
+  const heroRef = useRef<HTMLDivElement>(null);
+  const [pointer, setPointer] = useState({ x: 0, y: 0, active: false });
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const allowPointer = hero?.enablePointerEffects !== false && !prefersReducedMotion && !reducedMotion;
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
 
