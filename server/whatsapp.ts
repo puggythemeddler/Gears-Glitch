@@ -388,3 +388,147 @@ export async function testWhatsAppConnection(): Promise<{ ok: boolean; error?: s
     return { ok: false, error: err?.message || "Connection failed" };
   }
 }
+
+export async function uploadWhatsAppMedia(file: Blob | Buffer | Uint8Array, filename?: string, mimeType?: string): Promise<{ ok: boolean; mediaId?: string; error?: string }> {
+  try {
+    const s = await getSettings();
+    if (!s.whatsappEnabled || !s.whatsappAccessToken || !s.whatsappPhoneNumberId) return { ok: false, error: "WhatsApp not configured" };
+    const apiVersion = s.whatsappApiVersion || "v21.0";
+
+    const fileBlob = file instanceof Blob ? file : new Blob([file] as any);
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
+    form.append("type", mimeType || fileBlob.type || "application/pdf");
+    form.append("file", fileBlob as any, filename || "file.pdf");
+
+    const url = `https://graph.facebook.com/${apiVersion}/${s.whatsappPhoneNumberId}/media`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${s.whatsappAccessToken}` },
+      body: form as any,
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      return { ok: false, error: txt || `Failed to upload media: ${res.status}` };
+    }
+    const data = await res.json();
+    if (!data?.id) return { ok: false, error: "No media ID in response" };
+    return { ok: true, mediaId: data.id };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Media upload failed" };
+  }
+}
+
+export async function sendWhatsAppDocumentMessage(to: string, mediaId: string, caption?: string): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+  try {
+    const s = await getSettings();
+    if (!s.whatsappEnabled || !s.whatsappAccessToken || !s.whatsappPhoneNumberId) return { ok: false, error: "WhatsApp not configured" };
+    const apiVersion = s.whatsappApiVersion || "v21.0";
+
+    const phone = normalizePhone(to);
+    const url = `https://graph.facebook.com/${apiVersion}/${s.whatsappPhoneNumberId}/messages`;
+    const payload: any = {
+      messaging_product: "whatsapp",
+      to: phone,
+      type: "document",
+      document: { id: mediaId },
+    };
+    if (caption) payload.document.caption = caption;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${s.whatsappAccessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      await logWhatsAppMessage(phone, "outbound", "document", caption || "", "failed", undefined, txt || res.statusText);
+      await upsertWhatsAppConversation(phone, "store", 0, caption || "invoice", "outbound");
+      return { ok: false, error: txt || `Failed to send document: ${res.status}` };
+    }
+    const data = await res.json();
+    const messageId = data?.messages?.[0]?.id;
+    await logWhatsAppMessage(phone, "outbound", "document", caption || "", "sent", messageId);
+    await upsertWhatsAppConversation(phone, "store", 0, caption || "invoice", "outbound");
+    return { ok: true, messageId };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Document send failed" };
+  }
+}
+
+export async function sendWhatsAppDocument(
+  to: string,
+  pdf: Blob | Buffer | Uint8Array | null | undefined,
+  filename?: string,
+  caption?: string
+): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+  try {
+    const s = await getSettings();
+    if (!s.whatsappEnabled || !s.whatsappAccessToken || !s.whatsappPhoneNumberId) return { ok: false, error: "WhatsApp not configured" };
+    const apiVersion = s.whatsappApiVersion || "v21.0";
+
+    const phone = normalizePhone(to);
+
+    // Try to upload PDF as media if provided
+    if (pdf) {
+      const upload = await uploadWhatsAppMedia(pdf, filename, "application/pdf");
+      if (upload.ok && upload.mediaId) {
+        const sent = await sendWhatsAppDocumentMessage(phone, upload.mediaId, caption);
+        if (sent.ok) return sent;
+        return { ok: false, error: sent.error || "Failed to send document message" };
+      }
+      // If upload failed, fall through to template fallback below
+    }
+
+    // Fallback: try approved template if available (within 24h window constraint applies)
+    const templateName = "invoice_notification";
+    try {
+      const tmpl = await getWhatsAppTemplateByName(templateName);
+      if (tmpl && tmpl.language) {
+        const bodyVars = caption ? [caption] : [];
+        const url = `https://graph.facebook.com/${apiVersion}/${s.whatsappPhoneNumberId}/messages`;
+        const payload: any = {
+          messaging_product: "whatsapp",
+          to: phone,
+          type: "template",
+          template: {
+            name: templateName,
+            language: { code: tmpl.language },
+          },
+        };
+        if (bodyVars.length > 0) {
+          payload.template.components = [{ type: "body", parameters: bodyVars.map((v) => ({ type: "text", text: v })) }];
+        }
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${s.whatsappAccessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const messageId = data?.messages?.[0]?.id;
+          await logWhatsAppMessage(phone, "outbound", "template", templateName, "sent", messageId);
+          await upsertWhatsAppConversation(phone, "store", 0, templateName, "outbound");
+          return { ok: true, messageId };
+        }
+        const txt = await res.text();
+        await logWhatsAppMessage(phone, "outbound", "template", templateName, "failed", undefined, txt || res.statusText);
+        await upsertWhatsAppConversation(phone, "store", 0, templateName, "outbound");
+      }
+    } catch (e: any) {
+      // ignore template errors
+    }
+
+    return { ok: false, error: "No approved WhatsApp document template (invoice_notification) configured and no PDF media available" };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Document send failed" };
+  }
+}
