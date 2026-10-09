@@ -13,7 +13,7 @@ export interface LayoutModule {
   LayoutStyles: () => React.JSX.Element;
   Header: (props: { categories: { id: string; label: string }[]; settings: any; isLoggedIn?: boolean; userName?: string; cartCount?: number; isDark?: boolean; toggleDark?: () => void; logout?: () => void; isStaff?: boolean }) => React.JSX.Element | null;
   Footer: (props: { settings: any }) => React.JSX.Element | null;
-  HomePage: (props: { products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any }) => React.JSX.Element;
+  HomePage: (props: { products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any; allProducts?: Product[] }) => React.JSX.Element;
 }
 
 const STATIC_LAYOUTS: Record<string, LayoutModule> = { original, amazon, jumia };
@@ -182,7 +182,7 @@ export function LayoutEngine({
       return <DynamicHomePage products={allProducts || products} categories={categories} banners={banners} config={layoutConfig.config} />;
     }
     const mod = getLayout(layout);
-    return <mod.HomePage products={products} categories={categories} banners={banners} hero={hero} />;
+    return <mod.HomePage products={products} categories={categories} banners={banners} hero={hero} allProducts={allProducts || products} />;
   }
   return null;
 }

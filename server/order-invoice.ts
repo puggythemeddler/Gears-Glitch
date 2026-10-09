@@ -10,6 +10,7 @@ import { queryOne } from "./db-helpers";
 import { htmlToPdf } from "./pdf";
 import { sendEmail, orderStatusEmail } from "./email";
 import { escapeHtml, renderStoreLogo, INVOICE_CSS, addCalendarMonthsClamped } from "./routes/shared";
+import { sendWhatsAppDocument } from "./whatsapp";
 
 function storeBaseUrl(): string {
   return (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "") || "http://localhost:3000";
@@ -35,23 +36,24 @@ function orderTotal(order: any): number {
   return Number(order.subtotal || 0) + Number(order.shippingFee || 0) - (Number(order.discountAmount) || 0) - (Number(order.giftCardAmount) || 0);
 }
 
-// Emails the order's invoice PDF to the customer. `paid` = payment-recorded
-// trigger; `delivered` = order delivered trigger (reuses the delivered status
-// email wording with the PDF attached). Never throws: failures are logged so a
-// broken email can never take down a payment or status transition.
-export async function sendOrderInvoiceEmail(orderId: number, kind: "paid" | "delivered"): Promise<void> {
+export interface OrderInvoiceDeliveryResult {
+  ok: boolean;
+  error?: string;
+  messageId?: string;
+}
+
+// Emails the order's invoice PDF to the customer. Truthful: only claims attachment if PDF exists.
+// Never throws; returns structured result.
+export async function sendOrderInvoiceDeliveryEmail(orderId: number, kind: "paid" | "delivered"): Promise<OrderInvoiceDeliveryResult> {
   try {
     const order = await getOrder(orderId);
-    if (!order) return;
+    if (!order) return { ok: false, error: "Order not found" };
     const email = String(order.customerEmail || "").trim();
-    if (!email) return;
+    if (!email) return { ok: false, error: "No customer email" };
     const settings = await getSettings();
     const base = storeBaseUrl();
     (order as any)._invoiceRow = await loadOrderInvoiceRow(orderId);
-    // Chromium may be unavailable (local dev, some hosts). Never let that
-    // swallow the paid/delivered notification: send the invoice content inline
-    // (the HTML is a full invoice document) and skip the attachment instead of
-    // dropping the whole email.
+
     let pdf: Buffer | null = null;
     try {
       pdf = await buildOrderInvoicePdf(order, settings, base);
@@ -70,13 +72,15 @@ export async function sendOrderInvoiceEmail(orderId: number, kind: "paid" | "del
       subject = `Your invoice for order #${order.id} — ${store}`;
       const total = orderTotal(order).toFixed(2);
       const currency = settings.currency || "KES";
+      const onlineLink = `${base}/order?id=${order.id}`;
       bodyHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice #${order.id}</title></head>
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f4f4f5;">
 <div style="max-width:600px;margin:24px auto;background:#ffffff;border-radius:8px;border:1px solid #e5e7eb;overflow:hidden;">
 <div style="background:#1e293b;padding:20px 24px;"><h1 style="margin:0;color:#f8fafc;font-size:18px;">Invoice #${escapeHtml(String(order.id))}</h1></div>
 <div style="padding:24px;color:#334155;font-size:14px;line-height:1.6;">
 <p>Hi ${escapeHtml(order.customerName || "there")},</p>
-<p>Payment for your order <strong>#${escapeHtml(String(order.id))}</strong> has been received. Your invoice is attached to this email as a PDF.</p>
+<p>Payment for your order <strong>#${escapeHtml(String(order.id))}</strong> has been received.</p>
+${pdf ? `<p>Your invoice is attached to this email as a PDF.</p>` : `<p>You can view or download your invoice online: <a href="${escapeHtml(onlineLink)}">${escapeHtml(onlineLink)}</a>.</p>`}
 <div style="background:#f1f5f9;padding:12px 16px;margin:16px 0;border-radius:6px;">
 <p style="margin:0;"><strong>Order:</strong> #${escapeHtml(String(order.id))}</p>
 <p style="margin:8px 0 0;"><strong>Total:</strong> ${escapeHtml(currency)} ${escapeHtml(total)}</p>
@@ -86,9 +90,55 @@ export async function sendOrderInvoiceEmail(orderId: number, kind: "paid" | "del
 <div style="padding:16px 24px;background:#f8fafc;border-top:1px solid #e5e7eb;font-size:12px;color:#94a3b8;text-align:center;">Automated Notification</div>
 </div></body></html>`;
     }
-    await sendEmail(email, subject, bodyHtml, kind === "paid" ? "order_invoice" : "order_status", pdf ? [
+    const attachments = pdf ? [
       { filename: `invoice-${order.id}.pdf`, content: pdf, contentType: "application/pdf" },
-    ] : undefined);
+    ] : undefined;
+    await sendEmail(email, subject, bodyHtml, kind === "paid" ? "order_invoice" : "order_status", attachments);
+    return { ok: true };
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    console.error(`[invoice] Failed to email invoice for order ${orderId} (${kind}):`, msg);
+    return { ok: false, error: msg };
+  }
+}
+
+export async function sendOrderInvoiceDeliveryWhatsApp(orderId: number, kind: "paid" | "delivered"): Promise<OrderInvoiceDeliveryResult> {
+  try {
+    const order = await getOrder(orderId);
+    if (!order) return { ok: false, error: "Order not found" };
+    const settings = await getSettings();
+    const base = storeBaseUrl();
+    (order as any)._invoiceRow = await loadOrderInvoiceRow(orderId);
+    let pdf: Buffer | null = null;
+    try {
+      pdf = await buildOrderInvoicePdf(order, settings, base);
+    } catch (pdfErr: any) {
+      console.warn(`[invoice] PDF generation failed for order ${orderId} (${kind}) — WhatsApp will fallback:`, pdfErr?.message || pdfErr);
+    }
+    const to = String((order as any).shippingPhone || (order as any).customerPhone || "").trim();
+    if (!to) return { ok: false, error: "No customer WhatsApp number on file" };
+    const store = settings.storeName || "Gear&Glitch";
+    const onlineLink = `${base}/order?id=${order.id}`;
+    const total = orderTotal(order).toFixed(2);
+    const currency = settings.currency || "KES";
+    if (pdf) {
+      const res = await sendWhatsAppDocument(to, pdf, `invoice-${order.id}.pdf`, `Hi ${order.customerName || "there"}, your ${kind} invoice for order #${order.id} (${currency} ${total}) from ${store}.`);
+      return res;
+    }
+    // If PDF unavailable, try 24h template path; sendWhatsAppDocument will handle template fallback
+    const res = await sendWhatsAppDocument(to, null as any, `invoice-${order.id}.pdf`, `Hi ${order.customerName || "there"}, your ${kind} invoice for order #${order.id} (${currency} ${total}) from ${store}. View it online: ${onlineLink}`);
+    return res;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    console.error(`[invoice] Failed to WhatsApp invoice for order ${orderId} (${kind}):`, msg);
+    return { ok: false, error: msg };
+  }
+}
+
+// Backwards compatibility wrapper (kept for existing call sites; prefer queue-based)
+export async function sendOrderInvoiceEmail(orderId: number, kind: "paid" | "delivered"): Promise<void> {
+  try {
+    await sendOrderInvoiceDeliveryEmail(orderId, kind);
   } catch (err: any) {
     console.error(`[invoice] Failed to email invoice for order ${orderId} (${kind}):`, err?.message || err);
   }

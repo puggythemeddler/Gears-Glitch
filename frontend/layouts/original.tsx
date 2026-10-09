@@ -59,7 +59,6 @@ const ChevronRight = () => (
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const { isLoggedIn, userName, settings, isDark } = useApp();
   const [activeIdx, setActiveIdx] = useState(0);
-  const [ratings, setRatings] = useState<Record<string, { average: number; count: number }>>({});
 
   const featured = products.filter((p) => p.imageUrl).slice(0, 6);
 
@@ -75,16 +74,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     "--hero-text": heroText,
     "--hero-text-secondary": heroTextSec,
   } as React.CSSProperties) : undefined;
-
-  useEffect(() => {
-    let cancelled = false;
-    products.filter((p) => p.imageUrl).slice(0, 6).forEach((p) => {
-      api<{ rating: { average: number; count: number } }>(`/api/products/${encodeURIComponent(p.id)}/reviews`)
-        .then((d) => { if (!cancelled && d.rating && d.rating.count > 0) setRatings((prev) => ({ ...prev, [p.id]: d.rating })); })
-        .catch(() => {});
-    });
-    return () => { cancelled = true; };
-  }, [products]);
 
   const variants = hero?.headlineVariants?.length > 0 ? hero.headlineVariants : [];
   const variant = variants.length > 0 ? variants[0] : null;
@@ -180,10 +169,10 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
               <div className="dy-hero-panel-foot">
                 <div style={{ minWidth: 0 }}>
                   <span className="dy-hero-panel-name">{panel.name}</span>
-                  {ratings[panel.id] && (
+                  {panel.rating && panel.rating.count > 0 && (
                     <div className="dy-hero-panel-meta">
-                      <HeroStarRating average={ratings[panel.id].average} />
-                      <span>({ratings[panel.id].count})</span>
+                      <HeroStarRating average={panel.rating.average} />
+                      <span>({panel.rating.count})</span>
                       {panel.inStock && typeof panel.stockOnHand === "number" && panel.stockOnHand <= 5 && (
                         <span>Only {panel.stockOnHand} left</span>
                       )}
@@ -247,12 +236,21 @@ function GuaranteeStrip({ hero }: { hero?: any }) {
   }, []);
 
   const showTrustStrip = hero?.showTrustStrip !== false;
-  const highlights: string[] = hero?.highlights?.length > 0
-    ? hero.highlights
-    : ["Genuine Products", "Fast Delivery Across Kenya", "Secure Payments"];
 
-  const serviceClaims = ["Pay with M-Pesa or card", "Nationwide delivery", "Warranty on all items", "Repairs with live tracking"];
-  const items = Array.from(new Set([...highlights, ...serviceClaims])).slice(0, 4);
+  // Deliberate guarantee set. Every store can truthfully display these four, so
+  // they are the defaults; the owner's own hero config is used when set and any
+  // empty slots are back-filled from this list (never more than four, never an
+  // invented claim).
+  const DEFAULT_GUARANTEES = ["Genuine Products", "Fast Delivery", "Secure Payments", "Warranty Included"];
+  const configured = (hero?.highlights?.length > 0 ? hero.highlights : [])
+    .map((h: any) => String(h).trim())
+    .filter(Boolean);
+  const merged = [...configured];
+  for (const g of DEFAULT_GUARANTEES) {
+    if (merged.length >= 4) break;
+    if (!merged.includes(g)) merged.push(g);
+  }
+  const items = merged.slice(0, 4);
 
   const hasTotals = liveStats && (liveStats.totalCustomers != null || liveStats.totalOrders != null);
   const totalsLine = hasTotals
@@ -406,8 +404,8 @@ function NewsletterSection() {
 export function Header() { return null; }
 export function Footer() { return null; }
 
-export function HomePage({ products, categories, banners, hero }: {
-  products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any;
+export function HomePage({ products, categories, banners, hero, allProducts }: {
+  products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any; allProducts?: Product[];
 }) {
   const [homeSort, setHomeSort] = useState<SortKey>("newest");
   const [homePage, setHomePage] = useState(1);
@@ -417,6 +415,10 @@ export function HomePage({ products, categories, banners, hero }: {
   }, [homeSort]);
 
   const HOME_PAGE_SIZE = 20;
+  // Category counts always reflect the full catalogue (allProducts), not the
+  // search-filtered product set the grid below shows — a search for "laptop"
+  // must never shrink "Graphics Cards: 14" to a count of matching items.
+  const catalogueProducts = allProducts && allProducts.length > 0 ? allProducts : products;
   const sortedProducts = [...products];
   if (homeSort === "price-asc") sortedProducts.sort((a, b) => effectivePrice(a) - effectivePrice(b));
   else if (homeSort === "price-desc") sortedProducts.sort((a, b) => effectivePrice(b) - effectivePrice(a));
@@ -469,7 +471,7 @@ export function HomePage({ products, categories, banners, hero }: {
 
       <GuaranteeStrip hero={hero} />
 
-      <ShopCategories categories={categories} products={products} chips={chips} />
+      <ShopCategories categories={categories} products={catalogueProducts} chips={chips} />
 
       {identityBandActive && (
         <section className="identity-band" aria-label="Shop and repairs">

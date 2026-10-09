@@ -416,9 +416,8 @@ import { getGmailConfig, getGmailStatus, buildGmailAuthUrl, signGmailState, veri
 import { getIntegrationsHealth } from "./integrations-health";
 import { upsertOauthAccount, acquireWebhookEvent, markWebhookProcessed, markWebhookFailed } from "./integrations-store";
 import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
-import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs } from "./notification-service";
+import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs, enqueueOrderInvoiceDelivery, startNotificationQueueWorker } from "./notification-service";
 import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
-import { startNotificationQueueWorker } from "./notification-service";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
 import { publicBaseUrl } from "./public-url";
@@ -1198,7 +1197,7 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
         try { notifyCustomerOrderProcessed(order.id).catch(() => {}); } catch { /* ignore */ }
         // The paid event is when the customer invoice PDF gets attached to the
         // processed/paid email on the storefront path too.
-        try { sendOrderInvoiceEmail(order.id, "paid").catch(() => {}); } catch { /* ignore */ }
+        try { enqueueOrderInvoiceDelivery(order.id, "paid").catch(() => {}); } catch { /* ignore */ }
       }
     } catch (err: any) {
       console.warn("[notify] Order-paid notification failed:", err?.message || err);
@@ -2789,7 +2788,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       const picked = await queryOne("SELECT email FROM customers WHERE id = $1", [Number(customerId)]) as any;
       if (picked?.email) await query("UPDATE orders SET customer_email = $1 WHERE id = $2", [String(picked.email), orderId]);
     }
-    if (!holding) sendOrderInvoiceEmail(orderId, "paid");
+    if (!holding) { try { enqueueOrderInvoiceDelivery(orderId, "paid").catch(() => {}); } catch {} }
     // M-Pesa STK push — report the push state so the till can wait for payment
     let mpesaState: { status: "pending" | "failed" | "disabled"; checkoutRequestId?: string | null } = { status: "disabled" };
     if (pmt === "mpesa" && mpesaPhone) {
@@ -2847,7 +2846,7 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
       await query("UPDATE orders SET status = 'paid', mpesa_receipt = COALESCE(mpesa_receipt, $1), paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text WHERE id = $2", [`SIM${id}`, id]);
       paid = true; status = "paid"; mpesaReceipt = mpesaReceipt || `SIM${id}`;
       try { notifyCustomerOrderProcessed(id).catch(() => {}); } catch { /* ignore */ }
-      sendOrderInvoiceEmail(id, "paid");
+      try { enqueueOrderInvoiceDelivery(id, "paid").catch(() => {}); } catch {}
     } else if (status === "pending_payment" || status === "pending") {
       try {
         const q = await queryStatus(checkoutRequestId);
@@ -2896,7 +2895,7 @@ app.post("/api/pos/orders/:id/pay-cash", posAuthMiddleware, asyncHandler(async (
   }
   await query("UPDATE orders SET payment_method = 'cash', tendered_amount = $1, status = 'paid', paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text WHERE id = $2", [tenderedAmount, order.id]);
   try { notifyCustomerOrderProcessed(order.id).catch(() => {}); } catch { /* ignore */ }
-  sendOrderInvoiceEmail(order.id, "paid");
+  try { enqueueOrderInvoiceDelivery(order.id, "paid").catch(() => {}); } catch {}
   const change = tenderedAmount > order.subtotal ? tenderedAmount - order.subtotal : 0;
   res.json({ order: { ...order, status: "paid", paymentMethod: "cash", tenderedAmount }, change });
 }));
@@ -3503,7 +3502,7 @@ app.patch("/api/provider/orders/:id/status", providerAuthMiddleware, asyncHandle
     if (updatedOrder && updatedOrder.customerEmail) {
       if (status === "delivered") {
         // Delivered orders also get their invoice PDF automatically.
-        sendOrderInvoiceEmail(updatedOrder.id, "delivered");
+        try { enqueueOrderInvoiceDelivery(updatedOrder.id, "delivered").catch(() => {}); } catch {}
       } else {
         const { subject: emailSub, html } = orderStatusEmail(updatedOrder.customerName || "Customer", `#${updatedOrder.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${updatedOrder.id}`);
         sendEmail(updatedOrder.customerEmail, emailSub, html, "order_status");
@@ -3634,7 +3633,7 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, requirePermission
   if (order && order.customerEmail) {
     if (status === "delivered" && isOrderPaid({ ...order, status })) {
       // Delivered orders also get their invoice PDF automatically.
-      sendOrderInvoiceEmail(order.id, "delivered");
+      try { enqueueOrderInvoiceDelivery(order.id, "delivered").catch(() => {}); } catch {}
     } else {
       const { subject: emailSub, html } = orderStatusEmail(order.customerName || "Customer", `#${order.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${order.id}`);
       sendEmail(order.customerEmail, emailSub, html, "order_status");

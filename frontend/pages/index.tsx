@@ -93,7 +93,7 @@ export default function HomePage() {
       <LayoutEngine
         page="home"
         products={filtered}
-        allProducts={filtered}
+        allProducts={products}
         categories={categories}
         banners={banners}
         settings={settings}

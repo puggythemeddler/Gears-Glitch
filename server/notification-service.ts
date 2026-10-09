@@ -3,7 +3,16 @@
 
 import { getSettings } from "./db";
 import { sendEmail } from "./email";
-import { sendWhatsAppMessage } from "./whatsapp";
+import { sendWhatsAppMessage, sendWhatsAppDocument } from "./whatsapp";
+import { sendOrderInvoiceDeliveryEmail, sendOrderInvoiceDeliveryWhatsApp } from "./order-invoice";
+import { getOrder } from "./db";
+
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("0") && digits.length >= 10) return "254" + digits.slice(1);
+  if (digits.startsWith("254")) return digits;
+  return digits;
+}
 
 // ─── Notification Event Types ────────────────────────────────────────────────
 export type NotificationEvent =
@@ -440,23 +449,42 @@ export async function processPendingDelivery(row: DeliveryRow): Promise<"sent" |
 
   try {
     if (row.channel === "email") {
-      const html = payload?.html || `<p>${(payload?.text || row.subject || "").replace(/\n/g, "<br>")}</p>`;
-      const type = payload?.type || `notification_${row.event_type}`;
-      const ok = await sendEmail(row.recipient, row.subject || "", html, type);
-      if (!ok) return await failDelivery(row, attemptsAfter, maxAttempts, "Email send failed", entityType, entityId, logFields);
+    if (payload?.__invoice) {
+      const kind = (payload?.kind === "delivered" ? "delivered" : "paid") as "paid" | "delivered";
+      const orderId = Number(payload?.orderId || entityId);
+      const res = await sendOrderInvoiceDeliveryEmail(orderId, kind);
+      if (!res.ok) return await failDelivery(row, attemptsAfter, maxAttempts, res.error || "Invoice email failed", entityType, entityId, logFields);
       await settleDelivery(row.id, { status: "sent", sentAt: new Date().toISOString() });
       await logNotification(row.event_type as NotificationEvent, "email", row.recipient, "sent", entityType, entityId, undefined, undefined, logFields);
       return "sent";
     }
+    const html = payload?.html || `<p>${(payload?.text || row.subject || "").replace(/\n/g, "<br>")}</p>`;
+    const type = payload?.type || `notification_${row.event_type}`;
+    const ok = await sendEmail(row.recipient, row.subject || "", html, type);
+    if (!ok) return await failDelivery(row, attemptsAfter, maxAttempts, "Email send failed", entityType, entityId, logFields);
+    await settleDelivery(row.id, { status: "sent", sentAt: new Date().toISOString() });
+    await logNotification(row.event_type as NotificationEvent, "email", row.recipient, "sent", entityType, entityId, undefined, undefined, logFields);
+    return "sent";
+  }
 
-    if (row.channel === "whatsapp") {
-      const text = payload?.text || row.subject || "";
-      const r = await sendNotifWhatsApp(row.recipient, text, payload?.entityName || "My Shop", payload?.entityType || "staff", Number(payload?.entityId || 0), payload?.entityName || "My Shop");
-      if (r.status !== "sent") return await failDelivery(row, attemptsAfter, maxAttempts, r.error || "WhatsApp send failed", entityType, entityId, logFields);
+  if (row.channel === "whatsapp") {
+    if (payload?.__invoice) {
+      const kind = (payload?.kind === "delivered" ? "delivered" : "paid") as "paid" | "delivered";
+      const orderId = Number(payload?.orderId || entityId);
+      const res = await sendOrderInvoiceDeliveryWhatsApp(orderId, kind);
+      if (!res.ok) return await failDelivery(row, attemptsAfter, maxAttempts, res.error || "Invoice WhatsApp failed", entityType, entityId, logFields);
       await settleDelivery(row.id, { status: "sent", sentAt: new Date().toISOString() });
-      await logNotification(row.event_type as NotificationEvent, "whatsapp", row.recipient, "sent", entityType, entityId, undefined, r.messageId, logFields);
+      await logNotification(row.event_type as NotificationEvent, "whatsapp", row.recipient, "sent", entityType, entityId, undefined, res.messageId, logFields);
       return "sent";
     }
+    const text = payload?.text || row.subject || "";
+    const r = await sendNotifWhatsApp(row.recipient, text, payload?.entityName || "My Shop", payload?.entityType || "staff", Number(payload?.entityId || 0), payload?.entityName || "My Shop");
+    if (r.status !== "sent") return await failDelivery(row, attemptsAfter, maxAttempts, r.error || "WhatsApp send failed", entityType, entityId, logFields);
+    await settleDelivery(row.id, { status: "sent", sentAt: new Date().toISOString() });
+    await logNotification(row.event_type as NotificationEvent, "whatsapp", row.recipient, "sent", entityType, entityId, undefined, r.messageId, logFields);
+    return "sent";
+  }
+
 
     return await failDelivery(row, attemptsAfter, maxAttempts, `Unknown channel ${row.channel}`, entityType, entityId, logFields, true);
   } catch (err: any) {
@@ -573,4 +601,66 @@ export async function listNotificationLog(
     [...params, limit, offset]
   );
   return { logs, total };
+}
+
+export async function enqueueOrderInvoiceDelivery(orderId: number, kind: "paid" | "delivered"): Promise<void> {
+  try {
+    const order = await getOrder(orderId);
+    if (!order) return;
+    const settings = await getSettings();
+    const prefs = await getCustomerCommPrefs(order.customerId);
+    const payload = { __invoice: true, orderId, kind, entityType: "order", entityId: orderId };
+
+    const baseKey = `order:${orderId}:invoice:${kind}`;
+    if (prefs.email) {
+      const keyEmail = `${baseKey}:email`;
+      const email = String(order.customerEmail || "").trim();
+      if (email) {
+        await enqueueDelivery({
+          eventId: keyEmail,
+          eventType: kind === "paid" ? ("order.paid" as any) : ("order.status_changed" as any),
+          channel: "email",
+          audience: "customer",
+          entityType: "order",
+          entityId: String(orderId),
+          recipient: email,
+          subject: kind === "paid" ? `Invoice for Order #${orderId}` : `Invoice — Order #${orderId}`,
+          payload: JSON.stringify({ ...payload, type: kind === "paid" ? "order_invoice" : "order_status" }),
+          maxAttempts: 5,
+          customerId: order.customerId ?? null,
+          idempotencyKey: keyEmail,
+        });
+      }
+    }
+
+    if (prefs.whatsapp) {
+      const s = await getSettings();
+      if (s.whatsappEnabled && s.whatsappPhoneNumberId && s.whatsappAccessToken) {
+        const keyWa = `${baseKey}:whatsapp`;
+        const phone = normalizePhone(String((order as any).shippingPhone || (order as any).customerPhone || order.customerName ? (order as any).shippingPhone || (order as any).customerPhone || "" : "").trim());
+        if (phone) {
+          await enqueueDelivery({
+            eventId: keyWa,
+            eventType: kind === "paid" ? ("order.paid" as any) : ("order.status_changed" as any),
+            channel: "whatsapp",
+            audience: "customer",
+            entityType: "order",
+            entityId: String(orderId),
+            recipient: phone,
+            subject: `Invoice for Order #${orderId}`,
+            payload: JSON.stringify({ ...payload }),
+            maxAttempts: 5,
+            customerId: order.customerId ?? null,
+            idempotencyKey: keyWa,
+          });
+        }
+      } else {
+        try {
+          await logNotification(kind === "paid" ? ("order.paid" as any) : ("order.status_changed" as any), "whatsapp", "", "skipped", "order", String(orderId), "WhatsApp not configured", undefined, { customerId: order.customerId ?? undefined, idempotencyKey: `${baseKey}:whatsapp` });
+        } catch { }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[notification-service] enqueueOrderInvoiceDelivery failed for order ${orderId}:`, err?.message || err);
+  }
 }
