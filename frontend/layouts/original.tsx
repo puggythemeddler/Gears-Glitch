@@ -8,6 +8,16 @@ import { Media } from "@/components/Media";
 import { Pagination } from "@/components/ui";
 import { ProductCard } from "@/components/ProductCard";
 import { normalizeHref } from "@/lib/links";
+import {
+  HERO_POINTER_VARS_IDLE,
+  clampHeroPointer,
+  cycleHeroIndex,
+  heroEffectVars,
+  heroEntranceEnabled,
+  selectHeroFeatured,
+  shouldAllowPointerEffects,
+  type HeroPointerVars,
+} from "@/lib/hero-effects";
 
 type SortKey = "newest" | "price-asc" | "price-desc" | "name";
 
@@ -60,12 +70,11 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const { isLoggedIn, userName, settings, isDark } = useApp();
   const [activeIdx, setActiveIdx] = useState(0);
   const heroRef = useRef<HTMLDivElement>(null);
-  const [pointer, setPointer] = useState({ x: 0, y: 0, active: false });
   const [reducedMotion, setReducedMotion] = useState(false);
-  const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const allowPointer = hero?.enablePointerEffects !== false && !prefersReducedMotion && !reducedMotion;
+  const allowPointer = shouldAllowPointerEffects(hero, reducedMotion);
+  const entranceEnabled = heroEntranceEnabled(hero);
 
-  const featured = products.filter((p) => p.imageUrl).slice(0, 6);
+  const featured = selectHeroFeatured(products, 6);
 
   const heroBgLight = typeof hero?.heroBgLight === "string" ? hero.heroBgLight.trim() : "";
   const heroBgDark = typeof hero?.heroBgDark === "string" ? hero.heroBgDark.trim() : "";
@@ -100,10 +109,10 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
   const panel = featured.length > 0 ? featured[activeIdx % featured.length] : null;
   const cycle = (dir: number) => {
-    if (featured.length < 2) return;
-    setActiveIdx((activeIdx + dir + featured.length) % featured.length);
+    setActiveIdx((current) => cycleHeroIndex(current, dir, featured.length));
   };
 
+  // Track the reduced-motion preference, including live changes.
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const update = () => setReducedMotion(mq.matches);
@@ -112,54 +121,56 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     return () => mq.removeEventListener('change', update);
   }, []);
 
+  // Pointer effects write CSS custom properties directly on the hero node.
+  // This keeps 60fps motion off the React render path (no re-render storms),
+  // and the effect tears every listener/rAF down when disabled or unmounted.
   useEffect(() => {
     const el = heroRef.current;
-    if (!el || !allowPointer) return;
+    const writeVars = (vars: HeroPointerVars) => {
+      if (!el) return;
+      for (const key of Object.keys(vars) as (keyof HeroPointerVars)[]) {
+        el.style.setProperty(key, vars[key]);
+      }
+    };
+    if (!el) return;
+    if (!allowPointer) {
+      writeVars(HERO_POINTER_VARS_IDLE);
+      return;
+    }
+    const node = el;
+
     let raf = 0;
-    const handleMove = (e: MouseEvent) => {
-      const rect = el.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width - 0.5;
-      const y = (e.clientY - rect.top) / rect.height - 0.5;
+    const handleMove = (event: MouseEvent) => {
+      const rect = node.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const x = (event.clientX - rect.left) / rect.width - 0.5;
+      const y = (event.clientY - rect.top) / rect.height - 0.5;
       if (raf) cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        setPointer({ x: Math.max(-0.5, Math.min(0.5, x)), y: Math.max(-0.5, Math.min(0.5, y)), active: true });
+        writeVars(heroEffectVars(clampHeroPointer(x, y), true));
       });
     };
     const handleLeave = () => {
       if (raf) cancelAnimationFrame(raf);
-      setPointer({ x: 0, y: 0, active: false });
+      raf = 0;
+      writeVars(HERO_POINTER_VARS_IDLE);
     };
-    el.addEventListener('mousemove', handleMove);
-    el.addEventListener('mouseleave', handleLeave);
+
+    node.addEventListener('mousemove', handleMove);
+    node.addEventListener('mouseleave', handleLeave);
     return () => {
-      el.removeEventListener('mousemove', handleMove);
-      el.removeEventListener('mouseleave', handleLeave);
+      node.removeEventListener('mousemove', handleMove);
+      node.removeEventListener('mouseleave', handleLeave);
       if (raf) cancelAnimationFrame(raf);
+      writeVars(HERO_POINTER_VARS_IDLE);
     };
   }, [allowPointer]);
-
-  const tiltX = allowPointer ? pointer.y * -6 : 0;
-  const tiltY = allowPointer ? pointer.x * 6 : 0;
-  const spotX = allowPointer ? (0.5 + pointer.x) * 100 : 50;
-  const spotY = allowPointer ? (0.5 + pointer.y) * 100 : 50;
-  const parallaxY = allowPointer ? pointer.y * -8 : 0;
-  const parallaxX = allowPointer ? pointer.x * 4 : 0;
 
   return (
     <section
       ref={heroRef}
-      className="dy-hero dy-hero--interactive"
-      style={{
-        ...heroStyle,
-        ...(allowPointer ? {
-          '--hero-tilt-x': `${tiltX}deg`,
-          '--hero-tilt-y': `${tiltY}deg`,
-          '--hero-spot-x': `${spotX}%`,
-          '--hero-spot-y': `${spotY}%`,
-          '--hero-parallax-x': `${parallaxX}px`,
-          '--hero-parallax-y': `${parallaxY}px`,
-        } : {}),
-      }}
+      className={`dy-hero dy-hero--interactive${entranceEnabled ? " dy-hero--enter" : ""}`}
+      style={heroStyle}
       aria-label="Featured products"
     >
       <div className="dy-hero-spotlight" aria-hidden="true" />
@@ -221,7 +232,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
             <Link
               href={`/product?id=${encodeURIComponent(panel.id)}`}
               className="dy-hero-panel dy-hero-panel--interactive"
-              style={{ textDecoration: "none", color: "var(--text)", transform: allowPointer ? `perspective(900px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateX(var(--hero-parallax-x,0)) translateY(var(--hero-parallax-y,0))` : undefined, transition: allowPointer ? 'transform 0.15s ease-out' : undefined }}
+              style={{ textDecoration: "none", color: "var(--text)" }}
               aria-label={`View ${panel.name} (featured product ${activeIdx + 1} of ${featured.length})`}
             >
               <span className="dy-hero-panel-tag">Featured pick</span>
