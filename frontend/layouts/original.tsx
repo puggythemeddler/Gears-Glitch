@@ -104,10 +104,68 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     setActiveIdx((activeIdx + dir + featured.length) % featured.length);
   };
 
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el || !allowPointer) return;
+    let raf = 0;
+    const handleMove = (e: MouseEvent) => {
+      const rect = el.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        setPointer({ x: Math.max(-0.5, Math.min(0.5, x)), y: Math.max(-0.5, Math.min(0.5, y)), active: true });
+      });
+    };
+    const handleLeave = () => {
+      if (raf) cancelAnimationFrame(raf);
+      setPointer({ x: 0, y: 0, active: false });
+    };
+    el.addEventListener('mousemove', handleMove);
+    el.addEventListener('mouseleave', handleLeave);
+    return () => {
+      el.removeEventListener('mousemove', handleMove);
+      el.removeEventListener('mouseleave', handleLeave);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [allowPointer]);
+
+  const tiltX = allowPointer ? pointer.y * -6 : 0;
+  const tiltY = allowPointer ? pointer.x * 6 : 0;
+  const spotX = allowPointer ? (0.5 + pointer.x) * 100 : 50;
+  const spotY = allowPointer ? (0.5 + pointer.y) * 100 : 50;
+  const parallaxY = allowPointer ? pointer.y * -8 : 0;
+  const parallaxX = allowPointer ? pointer.x * 4 : 0;
+
   return (
-    <section className="dy-hero" style={heroStyle} aria-label="Featured products">
+    <section
+      ref={heroRef}
+      className="dy-hero dy-hero--interactive"
+      style={{
+        ...heroStyle,
+        ...(allowPointer ? {
+          '--hero-tilt-x': `${tiltX}deg`,
+          '--hero-tilt-y': `${tiltY}deg`,
+          '--hero-spot-x': `${spotX}%`,
+          '--hero-spot-y': `${spotY}%`,
+          '--hero-parallax-x': `${parallaxX}px`,
+          '--hero-parallax-y': `${parallaxY}px`,
+        } : {}),
+      }}
+      aria-label="Featured products"
+    >
+      <div className="dy-hero-spotlight" aria-hidden="true" />
+      <div className="dy-hero-bg-layer" aria-hidden="true" />
       <div className="dy-hero-inner">
-        <div>
+        <div className="dy-hero-content">
           {isLoggedIn && userName && (
             <p className="dy-hero-greeting">
               Welcome back, {userName.split(/\s+/)[0]}
@@ -160,16 +218,24 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
         <div className="dy-hero-showcase">
           {panel ? (
-            <Link href={`/product?id=${encodeURIComponent(panel.id)}`} className="dy-hero-panel" style={{ textDecoration: "none", color: "var(--text)" }} aria-label={`View ${panel.name} (featured product ${activeIdx + 1} of ${featured.length})`}>
+            <Link
+              href={`/product?id=${encodeURIComponent(panel.id)}`}
+              className="dy-hero-panel dy-hero-panel--interactive"
+              style={{ textDecoration: "none", color: "var(--text)", transform: allowPointer ? `perspective(900px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateX(var(--hero-parallax-x,0)) translateY(var(--hero-parallax-y,0))` : undefined, transition: allowPointer ? 'transform 0.15s ease-out' : undefined }}
+              aria-label={`View ${panel.name} (featured product ${activeIdx + 1} of ${featured.length})`}
+            >
               <span className="dy-hero-panel-tag">Featured pick</span>
-              <div className="dy-hero-panel-media">
-                {panel.imageUrl ? (
-                  <Media src={panel.imageUrl} alt={panel.name} width={640} height={360} fit="cover" fallbackLabel={panel.name} />
-                ) : (
-                  <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem", textAlign: "center" }}>
-                    {panel.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
-                  </span>
-                )}
+              <div className="dy-hero-panel-media dy-hero-panel-media--stage">
+                <div className="dy-hero-panel-media-backdrop" aria-hidden="true" />
+                <div className="dy-hero-panel-media-inner">
+                  {panel.imageUrl ? (
+                    <Media src={panel.imageUrl} alt={panel.name} width={640} height={360} fit="contain" fallbackLabel={panel.name} />
+                  ) : (
+                    <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem", textAlign: "center" }}>
+                      {panel.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="dy-hero-panel-foot">
                 <div style={{ minWidth: 0 }}>
@@ -196,7 +262,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
             </Link>
           ) : (
             <div className="dy-hero-panel">
-              <div className="dy-hero-panel-media">
+              <div className="dy-hero-panel-media dy-hero-panel-media--stage">
                 <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="22"/></svg>
               </div>
             </div>
