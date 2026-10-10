@@ -4702,6 +4702,7 @@ a.about-contact-card:hover {
   padding-top: 1.5rem;
 }
 .dy-hero-dot {
+  position: relative;
   width: 40px;
   height: 4px;
   padding: 0;
@@ -4713,6 +4714,12 @@ a.about-contact-card:hover {
      A fixed 40px box scaled on the compositor gives the same 28px/40px result. */
   transform: scaleX(0.7);
   transition: background 0.25s ease, transform 0.25s ease;
+}
+/* Expand the tap target to ~44px tall without altering the 4px visual bar. */
+.dy-hero-dot::after {
+  content: "";
+  position: absolute;
+  inset: -20px -2px;
 }
 .dy-hero-dot.is-active {
   background: var(--primary);

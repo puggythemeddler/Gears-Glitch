@@ -119,7 +119,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   return (
     <section
       ref={heroRef}
-      className={`dy-hero dy-hero--interactive${entranceEnabled ? " dy-hero--enter" : ""}`}
+      className={`dy-hero${effects.interactive ? " dy-hero--interactive" : ""}${entranceEnabled ? " dy-hero--enter" : ""}`}
       style={heroStyle}
       aria-label="Featured products"
     >
@@ -181,7 +181,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
           {panel ? (
             <Link
               href={`/product?id=${encodeURIComponent(panel.id)}`}
-              className="dy-hero-panel dy-hero-panel--interactive"
+              className={`dy-hero-panel${allowPointer ? " dy-hero-panel--interactive" : ""}`}
               style={{ textDecoration: "none", color: "var(--text)" }}
               aria-label={`View ${panel.name} (featured product ${activeIdx + 1} of ${featured.length})`}
             >

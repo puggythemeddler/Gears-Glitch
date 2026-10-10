@@ -203,7 +203,7 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
   const heroTimeline = hero.animation?.preset === "hero-timeline" ? "hero-timeline" : undefined;
   // Skip the built-in entrance stagger when a Motion hero-timeline preset is
   // configured, so the two entrance systems never play on top of each other.
-  const entranceOn = effects.interactive && effects.entrance && !heroTimeline;
+  const entranceOn = effects.entrance && !heroTimeline;
   const heroClass = [
     "dy-hero",
     isPhoto ? "dy-hero--photo" : "",

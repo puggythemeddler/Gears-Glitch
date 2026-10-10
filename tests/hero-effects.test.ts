@@ -199,6 +199,37 @@ describe("hero effect profile", () => {
   });
 });
 
+describe("interactive hero effect independence", () => {
+  it("keeps entrance independent of the interactive master switch", () => {
+    const offPointer = heroEffectProfile({ effects: { interactive: false } }, false);
+    assert.equal(offPointer.allowPointer, false);
+    assert.equal(offPointer.entrance, true);
+
+    const offEntrance = heroEffectProfile({ effects: { entrance: false } }, false);
+    assert.equal(offEntrance.entrance, false);
+    assert.equal(offEntrance.allowPointer, true);
+  });
+
+  it("treats interactive as a master switch over every pointer sub-effect", () => {
+    const p = heroEffectProfile({ effects: { interactive: false, spotlight: true, parallax: true, tilt: true } }, false);
+    assert.equal(p.allowPointer, false);
+    assert.equal(p.spotlight, true);
+    assert.equal(p.parallax, true);
+    assert.equal(p.tilt, true);
+  });
+
+  it("still lets reduced motion override an explicit interactive opt-in", () => {
+    assert.equal(heroEffectProfile({ effects: { interactive: true } }, true).allowPointer, false);
+    assert.equal(heroEffectProfile({ effects: { interactive: true } }, true).entrance, true);
+  });
+
+  it("does not couple legacy flat keys to the entrance flag", () => {
+    const p = heroEffectProfile({ enablePointerEffects: false, heroEntrance: true }, false);
+    assert.equal(p.allowPointer, false);
+    assert.equal(p.entrance, true);
+  });
+});
+
 describe("hero effect vars options", () => {
   const corner = { x: HERO_POINTER_LIMIT, y: -HERO_POINTER_LIMIT };
 
