@@ -422,6 +422,7 @@ import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, de
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
 import { publicBaseUrl } from "./public-url";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
+import { validateLayoutConfig } from "./template-validate";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile, validateImageMagicBytes } from "./upload";
 import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
@@ -1572,6 +1573,8 @@ app.post("/api/admin/layouts", adminAuthMiddleware, requirePermission("settings:
   const { layoutKey, label, description, layoutType, config } = req.body || {};
   if (!layoutKey || !isStr(layoutKey, 50)) { res.status(400).json({ error: "layoutKey is required (≤50 chars)." }); return; }
   if (!label || !isStr(label, 100)) { res.status(400).json({ error: "label is required (≤100 chars)." }); return; }
+  const configError = validateLayoutConfig(config ?? {});
+  if (configError) { res.status(400).json({ error: configError }); return; }
   const exists = await queryOne("SELECT id FROM storefront_layouts WHERE layout_key = $1", [String(layoutKey).trim()]);
   if (exists) { res.status(400).json({ error: "A layout with this key already exists." }); return; }
   const maxOrder = await queryOne("SELECT COALESCE(MAX(sort_order),0) AS mx FROM storefront_layouts") as any;
@@ -1588,6 +1591,10 @@ app.put("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settin
   if (!existing) { res.status(404).json({ error: "Layout not found." }); return; }
   if ((existing as any).layout_type === "static") { res.status(409).json({ error: "Cannot edit built-in static layouts." }); return; }
   const { label, description, config } = req.body || {};
+  if (config !== undefined) {
+    const configError = validateLayoutConfig(config);
+    if (configError) { res.status(400).json({ error: configError }); return; }
+  }
   const updates: string[] = [];
   const params: any[] = [];
   let idx = 1;

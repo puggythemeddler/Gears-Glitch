@@ -19,6 +19,9 @@ import { promptDialog, confirmDialog } from "@/components/ConfirmDialog";
 import type { HistoryState } from "@/lib/history";
 import { isSafeHref } from "@/lib/links";
 import { isAllowedImageSrc, ALLOWED_IMAGE_ORIGINS } from "@/lib/image-allowlist";
+import TemplateGallery from "./TemplateGallery";
+import { TEMPLATE_REGISTRY, instantiateTemplateConfig } from "@/lib/templates";
+import type { StorefrontTemplate } from "@/lib/templates";
 
 type Section = NonNullable<DynamicLayoutConfig["sections"]>[number];
 
@@ -222,7 +225,8 @@ export default function StorefrontBuilder() {
   const [unpublished, setUnpublished] = useState(false);
   const [device, setDevice] = useState<Device>("desktop");
   const [paletteQuery, setPaletteQuery] = useState("");
-  const [tab, setTab] = useState<"content" | "design" | "layout">("content");
+  const [tab, setTab] = useState<"content" | "design" | "layout" | "templates">("content");
+  const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
   const [financingEnabled, setFinancingEnabled] = useState(false);
 
   // Live preview of the design tokens. The engine emits the same custom
@@ -310,6 +314,7 @@ export default function StorefrontBuilder() {
   function mutateConfig(next: DynamicLayoutConfig) {
     setConfig(next);
     setDirty(true);
+    setAppliedTemplateId(null);
     scheduleHistory();
   }
 
@@ -445,6 +450,36 @@ export default function StorefrontBuilder() {
     const hero = configRef.current.hero || {};
     const effects = { ...normalizeHeroEffects(hero), ...patch };
     mutateConfig({ ...configRef.current, hero: { ...hero, effects } });
+  }
+
+  // Templates only ever replace presentation config (hero + sections + palette
+  // + tokens). Business data is not part of the config and is never touched.
+  async function applyTemplate(template: StorefrontTemplate) {
+    const ok = await confirmDialog({
+      title: `Apply "${template.name}"?`,
+      message: "This replaces this draft's hero and sections with the template's starter design. Your products, prices, orders and customers are never changed.",
+      confirmLabel: "Apply template",
+    });
+    if (!ok) return;
+    cancelPendingHistory();
+    setHist((h) => pushHistory(h, { label: labelRef.current, description: descRef.current, config: configRef.current }));
+    setConfig(instantiateTemplateConfig(template) as unknown as DynamicLayoutConfig);
+    setDirty(true);
+    setSelectedSection(null);
+    setAppliedTemplateId(template.id);
+    setTab("content");
+    scheduleHistory();
+    setMsg(`Template "${template.name}" applied to this draft. Review the copy, then Save Draft and Publish.`);
+  }
+
+  function revertTemplate() {
+    cancelPendingHistory();
+    const res = undoHistory(hist);
+    if (!res.value) return;
+    setHist(res.state);
+    applySnapshot(res.value);
+    setAppliedTemplateId(null);
+    setMsg("Reverted the last template apply.");
   }
 
   function updateColors(patch: Partial<NonNullable<DynamicLayoutConfig["colors"]>>) {
@@ -751,10 +786,22 @@ export default function StorefrontBuilder() {
   const renderLayoutSettings = () => (
     <>
       <div style={{ display: "flex", gap: "0.35rem", borderBottom: "1px solid var(--border)", marginBottom: "1rem" }}>
-        {(["content", "design"] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setTab(t)} style={{ ...tabChip, ...(tab === t ? tabChipActive : {}) }}>{t === "content" ? "Hero" : "Design"}</button>
+        {(["content", "design", "templates"] as const).map((t) => (
+          <button key={t} type="button" onClick={() => setTab(t)} style={{ ...tabChip, ...(tab === t ? tabChipActive : {}) }}>{t === "content" ? "Hero" : t === "design" ? "Design" : "Templates"}</button>
         ))}
       </div>
+
+      {tab === "templates" && (
+        <TemplateGallery
+          templates={TEMPLATE_REGISTRY}
+          appliedTemplateId={appliedTemplateId}
+          canRevert={canUndoNow}
+          financingEnabled={financingEnabled}
+          device={device}
+          onApply={applyTemplate}
+          onRevert={revertTemplate}
+        />
+      )}
 
       {tab === "content" && (<>
         <Field label="Layout name"><Text value={label} onChange={updateLabel} /></Field>
