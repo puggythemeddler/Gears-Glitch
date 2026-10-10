@@ -78,3 +78,25 @@ keys in its config.
 2. Keep `license` as the original-work preset and bundle no media.
 3. Run `npx tsx --test tests/templates.test.ts`. The registry validates on the
    test run; an invalid template fails the suite.
+
+## Server-side validation
+
+`server/template-validate.ts` is defence-in-depth for the layout APIs: it runs
+`validateLayoutConfig` on every layout `POST`/`PUT` and rejects malformed or
+oversized payloads before they reach the database. It validates structure only —
+it never rewrites merchant fields, so a valid config round-trips byte-for-byte.
+
+- `sections[].type` must be one of the canonical `LAYOUT_SECTION_TYPES`
+  (the Dynamic Engine union) **or** a documented legacy alias in
+  `LEGACY_SECTION_ALIASES` (e.g. `categories` → `category-grid`).
+- Unknown types, oversized payloads (>256KB), and >200 sections are rejected.
+- Template provenance (`templateId`/`templateVersion`) is validated when present.
+
+Legacy aliases are accepted on write for backward compatibility and cleaned from
+storage by the one-off migration `server/migrations/0029_normalize_layout_section_types.sql`,
+which rewrites `config`/`draft_config` sections in place (idempotent). The API's
+save/read path never normalises, so existing round-trip guarantees still hold.
+`normalizeLayoutConfig` in `server/template-validate.ts` is the pure helper the
+migration mirrors and the unit tests cover. When adding an alias, add the SQL
+entry in the same change so the allowlist and storage never diverge.
+
