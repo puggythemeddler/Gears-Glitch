@@ -158,6 +158,23 @@ describe("hero effects normalization", () => {
     assert.equal(isHeroMotionIntensity(undefined), false);
     assert.equal(isHeroMotionIntensity({}), false);
   });
+
+  it("survives a persistence round-trip and is idempotent", () => {
+    const stored = { headline: "Hi", effects: { interactive: true, spotlight: false, parallax: true, tilt: false, entrance: false, intensity: "expressive" as const } };
+    const restored = JSON.parse(JSON.stringify(stored));
+    const flat = normalizeHeroEffects(stored);
+    assert.deepEqual(normalizeHeroEffects(restored), flat);
+    assert.deepEqual(normalizeHeroEffects({ effects: flat }), flat);
+  });
+
+  it("upgrades legacy configs without inventing unsafe values", () => {
+    const legacy = JSON.parse(JSON.stringify({ enablePointerEffects: false, heroEntrance: false }));
+    const out = normalizeHeroEffects(legacy);
+    assert.equal(out.interactive, false);
+    assert.equal(heroEntranceEnabled(legacy), false);
+    assert.equal(out.intensity, "balanced");
+    assert.equal(out.spotlight, true);
+  });
 });
 
 describe("hero effect profile", () => {

@@ -180,6 +180,13 @@ describe("sanitizePageConfig", () => {
     assert.equal(out.hero.buttons[0].variant, undefined);
   });
 
+  it("preserves every supported Dynamic Engine hero style", () => {
+    for (const style of ["carousel", "split", "minimal", "none"]) {
+      const out = sanitizePageConfig({ hero: { style, headline: "Hi" } });
+      assert.equal(out.hero.style, style, `${style} should round-trip`);
+    }
+  });
+
   it("caps hero string lengths and button count", () => {
     const out = sanitizePageConfig({
       hero: {
