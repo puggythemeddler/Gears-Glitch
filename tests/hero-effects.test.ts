@@ -6,10 +6,16 @@ import {
   HERO_PARALLAX_Y_PX,
   HERO_POINTER_LIMIT,
   HERO_POINTER_VARS_IDLE,
+  HERO_EFFECTS_DEFAULT,
+  HERO_INTENSITY_AMPLITUDE,
+  HERO_MOTION_INTENSITIES,
   clampHeroPointer,
   cycleHeroIndex,
+  heroEffectProfile,
   heroEffectVars,
   heroEntranceEnabled,
+  isHeroMotionIntensity,
+  normalizeHeroEffects,
   selectHeroFeatured,
   shouldAllowPointerEffects,
 } from "../frontend/lib/hero-effects";
@@ -103,5 +109,105 @@ describe("interactive hero entrance configuration", () => {
     assert.equal(heroEntranceEnabled({}), true);
     assert.equal(heroEntranceEnabled({ heroEntrance: true }), true);
     assert.equal(heroEntranceEnabled({ heroEntrance: false }), false);
+  });
+});
+
+describe("hero effects normalization", () => {
+  it("returns the shipped defaults for empty, null or junk configs", () => {
+    assert.deepEqual(normalizeHeroEffects(undefined), HERO_EFFECTS_DEFAULT);
+    assert.deepEqual(normalizeHeroEffects(null), HERO_EFFECTS_DEFAULT);
+    assert.deepEqual(normalizeHeroEffects({}), HERO_EFFECTS_DEFAULT);
+    assert.deepEqual(normalizeHeroEffects({ effects: null }), HERO_EFFECTS_DEFAULT);
+    assert.deepEqual(normalizeHeroEffects({ effects: "on" as unknown as object }), HERO_EFFECTS_DEFAULT);
+    assert.deepEqual(normalizeHeroEffects({ effects: [] as unknown as object }), HERO_EFFECTS_DEFAULT);
+  });
+
+  it("keeps explicit booleans and ignores non-boolean values", () => {
+    const out = normalizeHeroEffects({ effects: { interactive: false, spotlight: true, parallax: "yes", tilt: 1, entrance: false } as any });
+    assert.equal(out.interactive, false);
+    assert.equal(out.spotlight, true);
+    assert.equal(out.parallax, true);
+    assert.equal(out.tilt, true);
+    assert.equal(out.entrance, false);
+  });
+
+  it("accepts only the allowlisted intensities", () => {
+    assert.equal(normalizeHeroEffects({ effects: { intensity: "expressive" } }).intensity, "expressive");
+    assert.equal(normalizeHeroEffects({ effects: { intensity: "wild" } as any }).intensity, "balanced");
+    assert.equal(normalizeHeroEffects({ effects: { intensity: 3 } as any }).intensity, "balanced");
+  });
+
+  it("honours legacy flat keys when the nested object is absent", () => {
+    assert.equal(normalizeHeroEffects({ enablePointerEffects: false }).interactive, false);
+    assert.equal(normalizeHeroEffects({ heroEntrance: false }).entrance, false);
+    const nestedWins = normalizeHeroEffects({ enablePointerEffects: false, effects: { interactive: true } });
+    assert.equal(nestedWins.interactive, true);
+  });
+
+  it("exposes a positive amplitude for every documented intensity", () => {
+    for (const i of HERO_MOTION_INTENSITIES) {
+      assert.ok(HERO_INTENSITY_AMPLITUDE[i] > 0);
+    }
+    assert.equal(HERO_INTENSITY_AMPLITUDE.balanced, 1);
+    assert.ok(HERO_INTENSITY_AMPLITUDE.subtle < HERO_INTENSITY_AMPLITUDE.expressive);
+  });
+
+  it("only recognises documented intensity strings", () => {
+    assert.equal(isHeroMotionIntensity("balanced"), true);
+    assert.equal(isHeroMotionIntensity("Subtle"), false);
+    assert.equal(isHeroMotionIntensity(undefined), false);
+    assert.equal(isHeroMotionIntensity({}), false);
+  });
+});
+
+describe("hero effect profile", () => {
+  it("blocks pointer effects for reduced motion or an explicit opt-out", () => {
+    assert.equal(heroEffectProfile(undefined, false).allowPointer, true);
+    assert.equal(heroEffectProfile(undefined, true).allowPointer, false);
+    assert.equal(heroEffectProfile({ effects: { interactive: false } }, false).allowPointer, false);
+  });
+
+  it("maps intensity to the shared amplitude scale", () => {
+    assert.equal(heroEffectProfile({ effects: { intensity: "subtle" } }, false).amplitude, HERO_INTENSITY_AMPLITUDE.subtle);
+    assert.equal(heroEffectProfile({ effects: { intensity: "expressive" } }, false).amplitude, HERO_INTENSITY_AMPLITUDE.expressive);
+    assert.equal(heroEffectProfile({}, false).amplitude, 1);
+  });
+
+  it("merges profile fields onto the normalised config", () => {
+    const p = heroEffectProfile({ effects: { tilt: false, intensity: "expressive" } }, false);
+    assert.equal(p.tilt, false);
+    assert.equal(p.spotlight, true);
+    assert.equal(p.entrance, true);
+    assert.equal(p.intensity, "expressive");
+  });
+});
+
+describe("hero effect vars options", () => {
+  const corner = { x: HERO_POINTER_LIMIT, y: -HERO_POINTER_LIMIT };
+
+  it("zeroes disabled effects so toggling them off is fully static", () => {
+    const vars = heroEffectVars(corner, true, { tilt: false, parallax: false, spotlight: false });
+    assert.equal(vars["--hero-tilt-x"], "0deg");
+    assert.equal(vars["--hero-tilt-y"], "0deg");
+    assert.equal(vars["--hero-parallax-x"], "0px");
+    assert.equal(vars["--hero-parallax-y"], "0px");
+    assert.equal(vars["--hero-spot-opacity"], "0");
+  });
+
+  it("scales travel by the supplied amplitude", () => {
+    const full = heroEffectVars(corner, true, { amplitude: 1 });
+    const half = heroEffectVars(corner, true, { amplitude: 0.5 });
+    assert.equal(half["--hero-tilt-x"], `${(-HERO_POINTER_LIMIT * HERO_MAX_TILT_DEG) / 2}deg`);
+    assert.equal(half["--hero-parallax-x"], `${-(HERO_POINTER_LIMIT * HERO_PARALLAX_X_PX) / 2}px`);
+    assert.notEqual(full["--hero-tilt-x"], half["--hero-tilt-x"]);
+  });
+
+  it("falls back to unit amplitude for zero/NaN values", () => {
+    assert.equal(heroEffectVars(corner, true, { amplitude: 0 })["--hero-tilt-x"], `${-HERO_POINTER_LIMIT * HERO_MAX_TILT_DEG}deg`);
+    assert.equal(heroEffectVars(corner, true, { amplitude: Number.NaN })["--hero-tilt-y"], `${-HERO_POINTER_LIMIT * HERO_MAX_TILT_DEG}deg`);
+  });
+
+  it("still reports neutral values when inactive regardless of options", () => {
+    assert.deepEqual(heroEffectVars({ x: 0, y: 0 }, false, { tilt: true, parallax: true, spotlight: true }), HERO_POINTER_VARS_IDLE);
   });
 });

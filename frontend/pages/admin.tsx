@@ -11,6 +11,8 @@ import { getLayoutList, useLayout } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import NotificationBell from "@/components/NotificationBell";
 import { useFeature } from "@/lib/features";
+import { HERO_EFFECTS_DEFAULT, HERO_MOTION_INTENSITIES, HERO_INTENSITY_LABELS, normalizeHeroEffects } from "@/lib/hero-effects";
+import type { HeroEffectsConfig, HeroMotionIntensity } from "@/lib/hero-effects";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 import { formatPrice, escapeHtml, useFetch, useInitialLoad, Spinner, ErrorMsg } from "@/components/admin/shared";
 import { useFeedback, type FeedbackInput } from "@/components/feedback/FeedbackProvider";
@@ -3077,6 +3079,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
     ],
     highlights: ["Genuine Products", "Fast Delivery Across Kenya", "Secure Payments"],
     trustText: "Trusted by 5,000+ customers across Kenya",
+    effects: { ...HERO_EFFECTS_DEFAULT } as HeroEffectsConfig,
   });
   const [statsPublic, setStatsPublic] = useState(false);
   const [subscribers, setSubscribers] = useState<{ id: number; email: string; created_at: string }[]>([]);
@@ -3115,6 +3118,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
             h.countdownEnd = new Date(dt.getTime() - off * 60000).toISOString().slice(0, 16);
           }
         }
+        h.effects = normalizeHeroEffects(h);
         setHeroForm((prev) => ({ ...prev, ...h }));
       }
       try { const cd = await api<any>("/api/categories"); setCatList(cd.categories || []); } catch {}
@@ -3167,6 +3171,9 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
     catch {}
     finally { setSaving(false); }
   }
+
+  const setHeroEffect = (patch: Partial<HeroEffectsConfig>) =>
+    setHeroForm((prev) => ({ ...prev, effects: { ...HERO_EFFECTS_DEFAULT, ...prev.effects, ...patch } }));
 
   async function saveTheme(key: string) {
     if (key === theme) return;
@@ -3335,6 +3342,39 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
               Show shop &amp; repair band
             </label>
             <p className="muted" style={{ fontSize: "0.8rem", margin: "0.25rem 0 0 1.75rem" }}>The "Shop premium tech" and "Need a repair?" cards under the hero.</p>
+          </div>
+
+          <div style={{ gridColumn: "1 / -1", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 600, marginBottom: "0.25rem" }}>Interactive hero effects</label>
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "0 0 0.75rem" }}>Pointer motion on the flagship hero. Effects pause automatically for visitors who prefer reduced motion and on touch devices.</p>
+            <div style={{ display: "grid", gap: "0.4rem" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem" }}>
+                <input type="checkbox" checked={heroForm.effects.interactive} onChange={(e) => setHeroEffect({ interactive: e.target.checked })} style={{ width: 17, height: 17 }} disabled={heroForm.heroActive === false} />
+                Enable interactive effects (spotlight, parallax, tilt)
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem" }}>
+                <input type="checkbox" checked={heroForm.effects.spotlight} onChange={(e) => setHeroEffect({ spotlight: e.target.checked })} style={{ width: 17, height: 17 }} disabled={heroForm.heroActive === false || !heroForm.effects.interactive} />
+                Pointer spotlight
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem" }}>
+                <input type="checkbox" checked={heroForm.effects.parallax} onChange={(e) => setHeroEffect({ parallax: e.target.checked })} style={{ width: 17, height: 17 }} disabled={heroForm.heroActive === false || !heroForm.effects.interactive} />
+                Background parallax
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem" }}>
+                <input type="checkbox" checked={heroForm.effects.tilt} onChange={(e) => setHeroEffect({ tilt: e.target.checked })} style={{ width: 17, height: 17 }} disabled={heroForm.heroActive === false || !heroForm.effects.interactive} />
+                3D tilt on the featured product panel
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem" }}>
+                <input type="checkbox" checked={heroForm.effects.entrance} onChange={(e) => setHeroEffect({ entrance: e.target.checked })} style={{ width: 17, height: 17 }} disabled={heroForm.heroActive === false} />
+                Staggered entrance animation
+              </label>
+            </div>
+            <div className="field" style={{ margin: "0.75rem 0 0", maxWidth: 260 }}>
+              <label>Motion intensity</label>
+              <select value={heroForm.effects.intensity} onChange={(e) => setHeroEffect({ intensity: e.target.value as HeroMotionIntensity })} disabled={heroForm.heroActive === false || !heroForm.effects.interactive}>
+                {HERO_MOTION_INTENSITIES.map((i) => <option key={i} value={i}>{HERO_INTENSITY_LABELS[i]}</option>)}
+              </select>
+            </div>
           </div>
 
           <div style={{ gridColumn: "1 / -1" }}>

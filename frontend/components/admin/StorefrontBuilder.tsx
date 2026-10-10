@@ -12,6 +12,8 @@ import MotionPanel from "./MotionPanel";
 import { Field, inputStyle, Text, Num, Color, Select, Check } from "./studio-ui";
 import { MOTION_INTENSITIES, MOTION_INTENSITY_LABELS, isMotionIntensity } from "@/lib/motion";
 import type { MotionIntensity } from "@/lib/motion";
+import { HERO_MOTION_INTENSITIES, HERO_INTENSITY_LABELS, normalizeHeroEffects } from "@/lib/hero-effects";
+import type { HeroEffectsConfig, HeroMotionIntensity } from "@/lib/hero-effects";
 import { createHistory, pushHistory, undoHistory, redoHistory, canUndo, canRedo } from "@/lib/history";
 import { promptDialog, confirmDialog } from "@/components/ConfirmDialog";
 import type { HistoryState } from "@/lib/history";
@@ -439,6 +441,12 @@ export default function StorefrontBuilder() {
     mutateConfig({ ...configRef.current, hero: { ...(configRef.current.hero || {}), ...patch } });
   }
 
+  function updateHeroEffects(patch: Partial<HeroEffectsConfig>) {
+    const hero = configRef.current.hero || {};
+    const effects = { ...normalizeHeroEffects(hero), ...patch };
+    mutateConfig({ ...configRef.current, hero: { ...hero, effects } });
+  }
+
   function updateColors(patch: Partial<NonNullable<DynamicLayoutConfig["colors"]>>) {
     mutateConfig({ ...configRef.current, colors: { ...(configRef.current.colors || {}), ...patch } });
   }
@@ -593,6 +601,7 @@ export default function StorefrontBuilder() {
   if (error && !layouts.length) return <ErrorMsg msg={error} />;
 
   const hero = config.hero || {};
+  const heroEffects = normalizeHeroEffects(hero);
   const sections = config.sections || [];
   const selectedSectionData: Section | null = selectedSection !== null ? sections[selectedSection] : null;
   const canUndoNow = canUndo(hist);
@@ -777,6 +786,29 @@ export default function StorefrontBuilder() {
         <div style={{ borderTop: "1px solid var(--border)", marginTop: "0.25rem", paddingTop: "0.75rem" }}>
           <h4 style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>Hero animation</h4>
           <MotionPanel value={hero.animation} onChange={(a) => updateHero({ animation: a })} onPreview={() => setPreviewAnim("hero")} />
+        </div>
+        <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
+          <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.85rem" }}>Interactive hero</h4>
+          <Check label="Pointer spotlight &amp; tilt" checked={heroEffects.interactive} onChange={(v) => updateHeroEffects({ interactive: v })} />
+          <Check label="Spotlight glow" checked={heroEffects.spotlight} onChange={(v) => updateHeroEffects({ spotlight: v })} />
+          <Check label="Background parallax" checked={heroEffects.parallax} onChange={(v) => updateHeroEffects({ parallax: v })} />
+          {hero.style !== "minimal" && (
+            <Check label="3D tilt on the product panel" checked={heroEffects.tilt} onChange={(v) => updateHeroEffects({ tilt: v })} />
+          )}
+          <Check label="Entrance animation" checked={heroEffects.entrance} onChange={(v) => updateHeroEffects({ entrance: v })} />
+          <Field label="Motion intensity">
+            <Select
+              value={heroEffects.intensity}
+              onChange={(v) => updateHeroEffects({ intensity: v as HeroMotionIntensity })}
+              options={HERO_MOTION_INTENSITIES.map((i) => ({ value: i, label: HERO_INTENSITY_LABELS[i] }))}
+            />
+          </Field>
+          <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: "0.5rem 0 0" }}>
+            Pointer effects pause for visitors who prefer reduced motion and are skipped on touch devices.
+            {heroEffects.interactive
+              ? " Turn off the master switch to ship a fully static hero."
+              : " All pointer effects are currently off."}
+          </p>
         </div>
         <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.85rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>Colors</h4>
         <Field label="Hero background"><Color value={config.colors?.heroBg || ""} onChange={(v) => updateColors({ heroBg: v })} /></Field>

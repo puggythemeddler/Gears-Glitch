@@ -10,6 +10,7 @@ import type { Product } from "./types";
 export interface HeroConfigLike {
   enablePointerEffects?: boolean;
   heroEntrance?: boolean;
+  effects?: Partial<HeroEffectsConfig> | null;
 }
 
 export interface HeroPointer {
@@ -63,6 +64,92 @@ export function clampHeroPointer(x: unknown, y: unknown): HeroPointer {
 }
 
 /**
+ * The independently toggleable effects a merchant can configure from the
+ * Website Studio and the Storefront hero editor. Every field is optional in
+ * stored configs; `normalizeHeroEffects` supplies safe defaults so an old
+ * storefront (or a partial draft) keeps rendering.
+ */
+export const HERO_MOTION_INTENSITIES = ["subtle", "balanced", "expressive"] as const;
+export type HeroMotionIntensity = (typeof HERO_MOTION_INTENSITIES)[number];
+
+export const HERO_INTENSITY_LABELS: Record<HeroMotionIntensity, string> = {
+  subtle: "Subtle",
+  balanced: "Balanced",
+  expressive: "Expressive",
+};
+
+/** Multiplier applied to tilt/parallax travel. 1 = the base editorial amount. */
+export const HERO_INTENSITY_AMPLITUDE: Record<HeroMotionIntensity, number> = {
+  subtle: 0.65,
+  balanced: 1,
+  expressive: 1.5,
+};
+
+export interface HeroEffectsConfig {
+  interactive: boolean;
+  spotlight: boolean;
+  parallax: boolean;
+  tilt: boolean;
+  entrance: boolean;
+  intensity: HeroMotionIntensity;
+}
+
+/** Defaults preserve the flagship hero as shipped: everything on, balanced. */
+export const HERO_EFFECTS_DEFAULT: HeroEffectsConfig = {
+  interactive: true,
+  spotlight: true,
+  parallax: true,
+  tilt: true,
+  entrance: true,
+  intensity: "balanced",
+};
+
+export function isHeroMotionIntensity(value: unknown): value is HeroMotionIntensity {
+  return typeof value === "string" && (HERO_MOTION_INTENSITIES as readonly string[]).includes(value);
+}
+
+/**
+ * Collapse the persisted hero config (nested `effects` object, with legacy flat
+ * keys as fallback) into one validated shape. Unknown keys are ignored and any
+ * missing/invalid value falls back to the safe default.
+ */
+export function normalizeHeroEffects(hero: HeroConfigLike | null | undefined): HeroEffectsConfig {
+  const raw = hero?.effects && typeof hero.effects === "object" && !Array.isArray(hero.effects)
+    ? (hero.effects as Record<string, unknown>)
+    : {};
+  const bool = (key: keyof HeroEffectsConfig, fallback: boolean): boolean =>
+    typeof raw[key] === "boolean" ? (raw[key] as boolean) : fallback;
+  return {
+    interactive: bool("interactive", hero?.enablePointerEffects !== false),
+    spotlight: bool("spotlight", true),
+    parallax: bool("parallax", true),
+    tilt: bool("tilt", true),
+    entrance: bool("entrance", hero?.heroEntrance !== false),
+    intensity: isHeroMotionIntensity(raw.intensity) ? raw.intensity : "balanced",
+  };
+}
+
+export interface HeroEffectProfile extends HeroEffectsConfig {
+  /** Motion amplitude derived from `intensity`. */
+  amplitude: number;
+  /** True only when pointer motion is allowed: enabled and not reduced-motion. */
+  allowPointer: boolean;
+}
+
+/** The full derived profile the layouts/hooks use to drive pointer + entrance. */
+export function heroEffectProfile(
+  hero: HeroConfigLike | null | undefined,
+  reducedMotion = false,
+): HeroEffectProfile {
+  const cfg = normalizeHeroEffects(hero);
+  return {
+    ...cfg,
+    amplitude: HERO_INTENSITY_AMPLITUDE[cfg.intensity],
+    allowPointer: cfg.interactive && !reducedMotion,
+  };
+}
+
+/**
  * Pointer effects stay disabled when the merchant turned them off, or when the
  * visitor prefers reduced motion. Any other value (including undefined) keeps
  * the feature on.
@@ -71,25 +158,45 @@ export function shouldAllowPointerEffects(
   hero: HeroConfigLike | null | undefined,
   reducedMotion: boolean,
 ): boolean {
-  if (reducedMotion) return false;
-  return hero?.enablePointerEffects !== false;
+  return heroEffectProfile(hero, reducedMotion).allowPointer;
+}
+
+export interface HeroEffectVarsOptions {
+  tilt?: boolean;
+  parallax?: boolean;
+  spotlight?: boolean;
+  amplitude?: number;
 }
 
 /**
  * Translate a clamped pointer position into the CSS custom properties the
  * stylesheet consumes. `active` controls spotlight opacity so the static
- * fallback (no pointer support) never paints a stray glow.
+ * fallback (no pointer support) never paints a stray glow. `options` lets a
+ * disabled effect report neutral values (0deg / 0px / opacity 0) so toggling it
+ * off is truly static without a separate stylesheet branch.
  */
-export function heroEffectVars(pointer: HeroPointer, active: boolean): HeroPointerVars {
+export function heroEffectVars(
+  pointer: HeroPointer,
+  active: boolean,
+  options: HeroEffectVarsOptions = {},
+): HeroPointerVars {
   const { x, y } = clampHeroPointer(pointer?.x, pointer?.y);
+  const tilt = options.tilt !== false;
+  const parallax = options.parallax !== false;
+  const spotlight = options.spotlight !== false;
+  const amplitude = isFiniteNumber(options.amplitude) && options.amplitude > 0 ? options.amplitude : 1;
+  const tiltX = tilt ? y * HERO_MAX_TILT_DEG * amplitude : 0;
+  const tiltY = tilt ? -x * HERO_MAX_TILT_DEG * amplitude : 0;
+  const parallaxX = parallax ? -x * HERO_PARALLAX_X_PX * amplitude : 0;
+  const parallaxY = parallax ? -y * HERO_PARALLAX_Y_PX * amplitude : 0;
   return {
-    "--hero-tilt-x": `${formatNumber(y * HERO_MAX_TILT_DEG)}deg`,
-    "--hero-tilt-y": `${formatNumber(-x * HERO_MAX_TILT_DEG)}deg`,
+    "--hero-tilt-x": `${formatNumber(tiltX)}deg`,
+    "--hero-tilt-y": `${formatNumber(tiltY)}deg`,
     "--hero-spot-x": `${formatNumber(50 + x * 100)}%`,
     "--hero-spot-y": `${formatNumber(50 + y * 100)}%`,
-    "--hero-parallax-x": `${formatNumber(-x * HERO_PARALLAX_X_PX)}px`,
-    "--hero-parallax-y": `${formatNumber(-y * HERO_PARALLAX_Y_PX)}px`,
-    "--hero-spot-opacity": active ? "1" : "0",
+    "--hero-parallax-x": `${formatNumber(parallaxX)}px`,
+    "--hero-parallax-y": `${formatNumber(parallaxY)}px`,
+    "--hero-spot-opacity": active && spotlight ? "1" : "0",
   };
 }
 
@@ -110,5 +217,5 @@ export function cycleHeroIndex(current: number, delta: number, total: number): n
 
 /** Entrance sequencing is on by default; merchants can switch it off. */
 export function heroEntranceEnabled(hero: HeroConfigLike | null | undefined): boolean {
-  return hero?.heroEntrance !== false;
+  return normalizeHeroEffects(hero).entrance;
 }

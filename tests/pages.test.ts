@@ -199,6 +199,30 @@ describe("sanitizePageConfig", () => {
     assert.equal(sanitizePageConfig({ hero: "yes" }).hero, undefined);
   });
 
+  it("keeps validated hero effect toggles and intensity", () => {
+    const out = sanitizePageConfig({
+      hero: { headline: "Hi", effects: { interactive: true, spotlight: false, parallax: true, tilt: true, entrance: false, intensity: "expressive" } },
+    });
+    assert.deepEqual(out.hero.effects, { interactive: true, spotlight: false, parallax: true, tilt: true, entrance: false, intensity: "expressive" });
+  });
+
+  it("drops unknown effect keys, non-booleans and bad intensities", () => {
+    const out = sanitizePageConfig({
+      hero: { effects: { interactive: "yes", spotlight: true, parallax: 1, evil: true, intensity: "wild" } },
+    });
+    assert.deepEqual(out.hero.effects, { spotlight: true });
+  });
+
+  it("ignores effect payloads that are not objects", () => {
+    assert.equal(sanitizePageConfig({ hero: { headline: "Hi", effects: "on" } }).hero.effects, undefined);
+    assert.equal(sanitizePageConfig({ hero: { headline: "Hi", effects: [] } }).hero.effects, undefined);
+    assert.equal(sanitizePageConfig({ hero: { headline: "Hi", effects: 42 } }).hero.effects, undefined);
+  });
+
+  it("drops an effects object that sanitizes to nothing", () => {
+    assert.equal(sanitizePageConfig({ hero: { headline: "Hi", effects: { evil: true } } }).hero.effects, undefined);
+  });
+
   it("sanitizes the productCard key", () => {
     const out = sanitizePageConfig({
       productCard: { style: "detailed", showRating: true, showSalePrice: false, evil: 1 },

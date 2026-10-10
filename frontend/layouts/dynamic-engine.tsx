@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { Product } from "@/lib/types";
 import { formatPrice } from "./shared";
 import { Motion } from "@/components/motion/Motion";
 import { Media } from "@/components/Media";
 import { motionGroupItemVars } from "@/lib/motion";
 import type { MotionConfig, MotionIntensity, MotionTrigger } from "@/lib/motion";
+import { heroEffectProfile, type HeroEffectsConfig } from "@/lib/hero-effects";
+import { useHeroPointerEffects, usePrefersReducedMotion } from "@/components/motion/useHeroEffects";
 import { normalizeHref } from "@/lib/links";
 import { api } from "@/lib/api";
 
@@ -47,6 +49,7 @@ export interface DynamicLayoutConfig {
     backgroundImage?: string;
     featuredCategory?: string;
     animation?: MotionConfig | null;
+    effects?: Partial<HeroEffectsConfig> | null;
   };
   sections?: DynamicSection[];
   productCard?: {
@@ -122,13 +125,29 @@ function TrustRow() {
   );
 }
 
-function ProductPanel({ item }: { item?: Product }) {
+function ProductPanel({ item, interactive }: { item?: Product; interactive?: boolean }) {
   if (!item) return null;
   return (
-    <a href={`/product?id=${item.id}`} className="dy-hero-panel" style={{ textDecoration: "none", color: "var(--text)" }} aria-label={`View ${item.name}`}>
+    <a
+      href={`/product?id=${item.id}`}
+      className={`dy-hero-panel${interactive ? " dy-hero-panel--interactive" : ""}`}
+      style={{ textDecoration: "none", color: "var(--text)" }}
+      aria-label={`View ${item.name}`}
+    >
       <span className="dy-hero-panel-tag">Featured</span>
-      <div className="dy-hero-panel-media">
-        {item.imageUrl ? (
+      <div className={`dy-hero-panel-media${interactive ? " dy-hero-panel-media--stage" : ""}`}>
+        {interactive ? (
+          <>
+            <div className="dy-hero-panel-media-backdrop" aria-hidden="true" />
+            <div className="dy-hero-panel-media-inner">
+              {item.imageUrl ? (
+                <Media src={item.imageUrl} alt={item.name} width={640} height={360} fit="cover" fallbackLabel={item.name} />
+              ) : (
+                <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem" }}>{item.name}</span>
+              )}
+            </div>
+          </>
+        ) : item.imageUrl ? (
           <Media src={item.imageUrl} alt={item.name} width={640} height={360} fit="cover" fallbackLabel={item.name} />
         ) : (
           <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem" }}>{item.name}</span>
@@ -149,6 +168,9 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
   // tripping React's "hooks changed order" guard.
   const isCarousel = heroActive && hero.style !== "minimal" && hero.style !== "split";
   const [current, setCurrent] = useState(0);
+  const heroRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = usePrefersReducedMotion();
+  const effects = heroEffectProfile(hero, reducedMotion);
 
   const featuredRaw = hero?.featuredCategory
     ? products.filter((p) => p.category === hero.featuredCategory).slice(0, 5)
@@ -158,12 +180,20 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
   const featured = isCarousel ? featuredRaw : featuredRaw.slice(0, 1);
 
   useEffect(() => {
-    if (!isCarousel || featured.length <= 1) return;
-    if (typeof window === "undefined") return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (!isCarousel || featured.length <= 1 || reducedMotion) return;
     const t = setInterval(() => setCurrent((c) => (c + 1) % featured.length), 5000);
     return () => clearInterval(t);
-  }, [isCarousel, featured.length]);
+  }, [isCarousel, featured.length, reducedMotion]);
+
+  // Pointer effects share the Original-layout implementation: CSS custom
+  // properties written off the render path, with the active hero variant as a
+  // reset key so switching style re-binds to the current DOM node.
+  useHeroPointerEffects(heroRef, effects.allowPointer, {
+    tilt: effects.tilt,
+    parallax: effects.parallax,
+    spotlight: effects.spotlight,
+    amplitude: effects.amplitude,
+  }, hero?.style);
 
   if (!heroActive) return null;
 
@@ -171,7 +201,16 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
   const textColor = colors?.heroText || (isPhoto ? "#ffffff" : "inherit");
   const accent = colors?.accent || "var(--primary)";
   const heroTimeline = hero.animation?.preset === "hero-timeline" ? "hero-timeline" : undefined;
-  const heroClass = ["dy-hero", isPhoto ? "dy-hero--photo" : "", heroTimeline || ""].filter(Boolean).join(" ");
+  // Skip the built-in entrance stagger when a Motion hero-timeline preset is
+  // configured, so the two entrance systems never play on top of each other.
+  const entranceOn = effects.interactive && effects.entrance && !heroTimeline;
+  const heroClass = [
+    "dy-hero",
+    isPhoto ? "dy-hero--photo" : "",
+    heroTimeline || "",
+    effects.interactive ? "dy-hero--interactive" : "",
+    entranceOn ? "dy-hero--enter" : "",
+  ].filter(Boolean).join(" ");
   const heroStyle: React.CSSProperties = isPhoto
     ? { backgroundImage: heroBackground(hero) }
     : colors?.heroBg
@@ -197,51 +236,44 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
     </>
   );
 
-  if (hero.style === "minimal") {
-    return (
-      <div className={heroClass} style={{ ...heroStyle, color: textColor, textAlign: "center" }} data-fid="hero">
-        <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center" }}>{content}</div>
-      </div>
-    );
-  }
-
-  if (hero.style === "split") {
-    return (
-      <div className={heroClass} style={{ ...heroStyle, color: textColor }} data-fid="hero">
-        <div className="dy-hero-inner">
-          <div>{content}</div>
-          <div>
-            <ProductPanel item={featured[0]} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const item = featured[current % Math.max(featured.length, 1)];
+  const isMinimal = hero.style === "minimal";
+  const item = isMinimal ? undefined : isCarousel ? featured[current % Math.max(featured.length, 1)] : featured[0];
 
   return (
-    <div className={heroClass} style={{ ...heroStyle, color: textColor }} data-fid="hero">
-      <div className="dy-hero-inner">
-        <div>{content}</div>
-        <div>
-          <ProductPanel item={item} />
-          {featured.length > 1 && (
-            <div className="dy-hero-dots">
-              {featured.map((_: unknown, i: number) => (
-                <button
-                  key={i}
-                  type="button"
-                  aria-label={`Go to slide ${i + 1}`}
-                  className={i === current ? "dy-hero-dot is-active" : "dy-hero-dot"}
-                  style={i === current ? { background: accent } : undefined}
-                  onClick={() => setCurrent(i)}
-                />
-              ))}
-            </div>
-          )}
+    <div
+      ref={heroRef}
+      className={heroClass}
+      style={{ ...heroStyle, color: textColor, ...(isMinimal ? { textAlign: "center" } : {}) }}
+      data-fid="hero"
+    >
+      {effects.interactive && effects.parallax && <div className="dy-hero-bg-layer" aria-hidden="true" />}
+      {effects.interactive && effects.spotlight && <div className="dy-hero-spotlight" aria-hidden="true" />}
+      {isMinimal ? (
+        <div className="dy-hero-content" style={{ maxWidth: 760, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center" }}>
+          {content}
         </div>
-      </div>
+      ) : (
+        <div className="dy-hero-inner">
+          <div className="dy-hero-content">{content}</div>
+          <div className="dy-hero-showcase">
+            <ProductPanel item={item} interactive={effects.allowPointer} />
+            {isCarousel && featured.length > 1 && (
+              <div className="dy-hero-dots">
+                {featured.map((_: unknown, i: number) => (
+                  <button
+                    key={i}
+                    type="button"
+                    aria-label={`Go to slide ${i + 1}`}
+                    className={i === current ? "dy-hero-dot is-active" : "dy-hero-dot"}
+                    style={i === current ? { background: accent } : undefined}
+                    onClick={() => setCurrent(i)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

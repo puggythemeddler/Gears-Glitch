@@ -9,15 +9,11 @@ import { Pagination } from "@/components/ui";
 import { ProductCard } from "@/components/ProductCard";
 import { normalizeHref } from "@/lib/links";
 import {
-  HERO_POINTER_VARS_IDLE,
-  clampHeroPointer,
   cycleHeroIndex,
-  heroEffectVars,
-  heroEntranceEnabled,
+  heroEffectProfile,
   selectHeroFeatured,
-  shouldAllowPointerEffects,
-  type HeroPointerVars,
 } from "@/lib/hero-effects";
+import { useHeroPointerEffects, usePrefersReducedMotion } from "@/components/motion/useHeroEffects";
 
 type SortKey = "newest" | "price-asc" | "price-desc" | "name";
 
@@ -70,9 +66,17 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const { isLoggedIn, userName, settings, isDark } = useApp();
   const [activeIdx, setActiveIdx] = useState(0);
   const heroRef = useRef<HTMLDivElement>(null);
-  const [reducedMotion, setReducedMotion] = useState(false);
-  const allowPointer = shouldAllowPointerEffects(hero, reducedMotion);
-  const entranceEnabled = heroEntranceEnabled(hero);
+  const reducedMotion = usePrefersReducedMotion();
+  const effects = heroEffectProfile(hero, reducedMotion);
+  const allowPointer = effects.allowPointer;
+  const entranceEnabled = effects.entrance;
+
+  useHeroPointerEffects(heroRef, allowPointer, {
+    tilt: effects.tilt,
+    parallax: effects.parallax,
+    spotlight: effects.spotlight,
+    amplitude: effects.amplitude,
+  });
 
   const featured = selectHeroFeatured(products, 6);
 
@@ -112,60 +116,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
     setActiveIdx((current) => cycleHeroIndex(current, dir, featured.length));
   };
 
-  // Track the reduced-motion preference, including live changes.
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setReducedMotion(mq.matches);
-    update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-
-  // Pointer effects write CSS custom properties directly on the hero node.
-  // This keeps 60fps motion off the React render path (no re-render storms),
-  // and the effect tears every listener/rAF down when disabled or unmounted.
-  useEffect(() => {
-    const el = heroRef.current;
-    const writeVars = (vars: HeroPointerVars) => {
-      if (!el) return;
-      for (const key of Object.keys(vars) as (keyof HeroPointerVars)[]) {
-        el.style.setProperty(key, vars[key]);
-      }
-    };
-    if (!el) return;
-    if (!allowPointer) {
-      writeVars(HERO_POINTER_VARS_IDLE);
-      return;
-    }
-    const node = el;
-
-    let raf = 0;
-    const handleMove = (event: MouseEvent) => {
-      const rect = node.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      const x = (event.clientX - rect.left) / rect.width - 0.5;
-      const y = (event.clientY - rect.top) / rect.height - 0.5;
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        writeVars(heroEffectVars(clampHeroPointer(x, y), true));
-      });
-    };
-    const handleLeave = () => {
-      if (raf) cancelAnimationFrame(raf);
-      raf = 0;
-      writeVars(HERO_POINTER_VARS_IDLE);
-    };
-
-    node.addEventListener('mousemove', handleMove);
-    node.addEventListener('mouseleave', handleLeave);
-    return () => {
-      node.removeEventListener('mousemove', handleMove);
-      node.removeEventListener('mouseleave', handleLeave);
-      if (raf) cancelAnimationFrame(raf);
-      writeVars(HERO_POINTER_VARS_IDLE);
-    };
-  }, [allowPointer]);
-
   return (
     <section
       ref={heroRef}
@@ -173,8 +123,8 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
       style={heroStyle}
       aria-label="Featured products"
     >
-      <div className="dy-hero-spotlight" aria-hidden="true" />
-      <div className="dy-hero-bg-layer" aria-hidden="true" />
+      {effects.interactive && effects.spotlight && <div className="dy-hero-spotlight" aria-hidden="true" />}
+      {effects.interactive && effects.parallax && <div className="dy-hero-bg-layer" aria-hidden="true" />}
       <div className="dy-hero-inner">
         <div className="dy-hero-content">
           {isLoggedIn && userName && (

@@ -4985,6 +4985,14 @@ a.about-contact-card:hover {
   background: radial-gradient(320px circle at var(--hero-spot-x) var(--hero-spot-y), color-mix(in srgb, var(--primary) 15%, transparent), transparent 62%);
 }
 
+/* Photo heroes lift every direct child to z-index 1 for the overlay scrim;
+   the interactive layers must stay behind that content in both engines. */
+.dy-hero--photo > .dy-hero-bg-layer,
+.dy-hero--photo > .dy-hero-spotlight {
+  position: absolute;
+  z-index: 0;
+}
+
 /* Panel tilt + parallax read the same variables; scale/parallax stay subtle. */
 .dy-hero-panel--interactive {
   transform-style: preserve-3d;

@@ -129,6 +129,7 @@ export function sanitizeSections(raw: unknown): any[] {
 
 const HERO_STYLES = ["carousel", "split", "minimal", "none"] as const;
 const HERO_BUTTON_VARIANTS = ["secondary", "outline"] as const;
+const HERO_MOTION_INTENSITIES = ["subtle", "balanced", "expressive"] as const;
 
 function sanitizeHeroButtons(raw: unknown): { label: string; link: string; variant?: "secondary" | "outline" }[] {
   if (!Array.isArray(raw)) return [];
@@ -163,7 +164,25 @@ function sanitizeHero(raw: unknown): any {
   }
   const buttons = sanitizeHeroButtons((raw as any).buttons);
   if (buttons.length) h.buttons = buttons;
+  const effects = sanitizeHeroEffects((raw as any).effects);
+  if (effects) h.effects = effects;
   return Object.keys(h).length ? h : undefined;
+}
+
+// Mirrors the `effects` key of DynamicLayoutConfig hero. Boolean toggles plus a
+// validated intensity so a saved hero keeps its interactive settings through the
+// CMS/page sanitizer without accepting arbitrary client payloads.
+function sanitizeHeroEffects(raw: unknown): any {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, boolean | string> = {};
+  for (const key of ["interactive", "spotlight", "parallax", "tilt", "entrance"] as const) {
+    if (typeof (raw as any)[key] === "boolean") out[key] = (raw as any)[key];
+  }
+  const intensity = (raw as any).intensity;
+  if (typeof intensity === "string" && (HERO_MOTION_INTENSITIES as readonly string[]).includes(intensity)) {
+    out.intensity = intensity;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 // Mirrors the `productCard` key of DynamicLayoutConfig.
