@@ -276,6 +276,15 @@ export default function StorefrontBuilder() {
     return () => { alive = false; };
   }, []);
 
+  // Closing the tab or refreshing with edits that are not written to a draft
+  // would lose them silently. Only warn while there is something to lose.
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
   async function loadLayouts() {
     try {
       const rows = await api<LayoutRow[]>("/api/layouts");
@@ -374,7 +383,14 @@ export default function StorefrontBuilder() {
       setUnpublished(!!row.has_unpublished);
       setDirty(false);
       resetHistory({ label: row.label, description: row.description || "", config: newConfig });
-    } catch (e: any) { setError(e.message || "Failed to load layout."); }
+    } catch (e: any) {
+      // A failed load must not leave the toolbar pointing at a layout whose
+      // config never arrived: surface the error and return to the picker.
+      const m = e.message || "Failed to load layout.";
+      setError(m);
+      setMsg("Failed to load layout: " + m);
+      setSelectedId(null);
+    }
     finally { setSaving(false); }
   }
 
@@ -933,6 +949,10 @@ export default function StorefrontBuilder() {
         .sb-section:hover { outline: 1px dashed var(--border-hover); outline-offset: 2px; }
         .sb-section.selected { border-color: var(--primary); border-style: solid; border-width: 2px; border-radius: var(--radius-sm); }
         .sb-section.selected .sb-section-bar { display: flex; }
+        .sb-section:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .sb-palette-item:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .sb-section-bar button:focus-visible { outline: 2px solid var(--on-primary); outline-offset: 1px; }
+        .sb-section-bar button:disabled { opacity: 0.4; cursor: default; }
         .sb-section-bar { display: none; position: absolute; top: 6px; left: 6px; z-index: 20; align-items: center; gap: 0.3rem; background: var(--primary); color: var(--on-primary); border-radius: var(--radius-sm); padding: 0.15rem 0.4rem; font-size: 0.7rem; font-weight: 600; box-shadow: var(--shadow-md); }
         .sb-section-bar button { background: none; border: none; color: var(--on-primary); cursor: pointer; font-size: 0.75rem; padding: 0 0.2rem; line-height: 1; }
         .sb-section-bar .sb-grip { cursor: grab; }
@@ -986,7 +1006,7 @@ export default function StorefrontBuilder() {
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(180px, 100%), 1fr))", gap: "0.75rem", marginTop: "1rem" }}>
             {dynamicLayouts.map((l) => (
-              <div key={l.id} className="panel" role="button" tabIndex={0} style={{ cursor: "pointer", margin: 0, border: l.is_active === 1 ? "2px solid var(--primary)" : "1px solid var(--border)" }} onClick={() => loadSelected(l.id)} onKeyDown={(e) => { if (e.key === "Enter") loadSelected(l.id); }}>
+              <div key={l.id} className="panel" role="button" tabIndex={0} style={{ cursor: "pointer", margin: 0, border: l.is_active === 1 ? "2px solid var(--primary)" : "1px solid var(--border)" }} onClick={() => loadSelected(l.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); loadSelected(l.id); } }}>
                 <div style={{ height: 80, borderRadius: 8, background: "var(--bg)", marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-tertiary)" }}><Icon name="layout" size={32} /></div>
                 <strong style={{ fontSize: "0.9rem" }}>{l.label}</strong>
                 {l.is_active === 1 && <span className="badge badge-success" style={{ marginLeft: "0.4rem" }}>Live</span>}
@@ -1007,7 +1027,7 @@ export default function StorefrontBuilder() {
                 <div key={group}>
                   <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0.4rem 0 0.4rem" }}>{group}</div>
                   {items.map((t) => (
-                    <div key={t.type} className="sb-palette-item" onClick={() => addSection(t)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") addSection(t); }}>
+                    <div key={t.type} className="sb-palette-item" onClick={() => addSection(t)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); addSection(t); } }}>
                       <span className="sb-palette-icon">{t.icon}</span>
                       {t.label}
                     </div>
@@ -1068,10 +1088,14 @@ export default function StorefrontBuilder() {
                   <>
                     <div
                       className={`sb-section${selectedSection === null ? " selected" : ""}`}
+                      role="group"
+                      tabIndex={0}
+                      aria-label={`Hero section${selectedSection === null ? ", selected" : ""}`}
                       onClick={() => { setSelectedSection(null); setTab("content"); }}
+                      onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedSection(null); setTab("content"); } }}
                     >
                       <div className="sb-section-bar">
-                        <span className="sb-grip">≡</span>
+                        <span className="sb-grip" aria-hidden="true">≡</span>
                         <span>Hero</span>
                       </div>
                       <HeroSection key={previewAnim === "hero" ? "hero-anim" : "hero-static"} hero={hero} colors={config.colors} products={products} categories={categories} forceTrigger={previewAnim === "hero" ? "load" : undefined} />
@@ -1083,13 +1107,17 @@ export default function StorefrontBuilder() {
                       <div
                         key={`${(s as any).id || i}-${previewAnim === i ? "anim" : "static"}`}
                         className={`sb-section${selectedSection === i ? " selected" : ""}`}
+                        role="group"
+                        tabIndex={0}
+                        aria-label={`${SECTION_LABELS[s.type] || s.type} section${selectedSection === i ? ", selected" : ""}`}
                         onClick={() => setSelectedSection(i)}
+                        onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedSection(i); setTab("content"); } }}
                       >
                         <div className="sb-section-bar">
-                          <span className="sb-grip" draggable onDragStart={() => onDragStart(i)} onDragOver={(e) => onDragOver(e, i)} onDragEnd={onDragEnd} onDrop={() => onDrop(i)} title="Drag to reorder">≡</span>
+                          <span className="sb-grip" draggable onDragStart={() => onDragStart(i)} onDragOver={(e) => onDragOver(e, i)} onDragEnd={onDragEnd} onDrop={() => onDrop(i)} title="Drag to reorder" aria-hidden="true">≡</span>
                           <span>{SECTION_LABELS[s.type] || s.type}</span>
-                          <button type="button" aria-label="Move up" onClick={(e) => { e.stopPropagation(); moveSection(i, -1); }}>↑</button>
-                          <button type="button" aria-label="Move down" onClick={(e) => { e.stopPropagation(); moveSection(i, 1); }}>↓</button>
+                          <button type="button" aria-label="Move up" disabled={i === 0} onClick={(e) => { e.stopPropagation(); moveSection(i, -1); }}>↑</button>
+                          <button type="button" aria-label="Move down" disabled={i === sections.length - 1} onClick={(e) => { e.stopPropagation(); moveSection(i, 1); }}>↓</button>
                           <button type="button" aria-label="Duplicate section" onClick={(e) => { e.stopPropagation(); duplicateSection(i); }}>⧉</button>
                           <button type="button" aria-label="Remove section" onClick={(e) => { e.stopPropagation(); removeSection(i); }}>✕</button>
                         </div>
@@ -1103,6 +1131,7 @@ export default function StorefrontBuilder() {
                           autoFocus
                           value={editDraft}
                           data-sb-overlay
+                          aria-label="Edit text on canvas"
                           onChange={(e) => { setEditDraft(e.target.value); applyFieldPath(editField, e.target.value); }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); }
