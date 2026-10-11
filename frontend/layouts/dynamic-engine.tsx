@@ -64,14 +64,29 @@ export interface DynamicLayoutConfig {
   };
   // Storefront-wide design tokens exposed by the Studio Design panel. Radius is
   // in px; accent/onAccent are hex colours; motionIntensity is the default dial
-  // applied to sections that enable motion without specifying their own.
+  // applied to sections that enable motion without specifying their own. The
+  // typography tokens (headingFont/bodyFont/headingWeight/headingCase/
+  // headingTracking) are what make each template a distinct design system; all
+  // are optional and re-validated in DynamicLayoutStyles before injection.
   tokens?: {
     radius?: number;
     accent?: string;
     onAccent?: string;
     motionIntensity?: MotionIntensity;
+    headingFont?: "sans" | "serif" | "mono";
+    bodyFont?: "sans" | "serif" | "mono";
+    headingWeight?: number;
+    headingCase?: "none" | "uppercase";
+    headingTracking?: number;
   };
 }
+
+// Heading weights are written through a CSS custom property so a template's
+// `headingWeight` token can restyle every section title without touching each
+// element. The fallback preserves the original weight exactly when a layout
+// has no typography tokens (i.e. every layout saved before this feature).
+const HEADING_WEIGHT = "var(--dy-heading-weight, 700)" as React.CSSProperties["fontWeight"];
+const SUBHEAD_WEIGHT = "var(--dy-heading-weight, 600)" as React.CSSProperties["fontWeight"];
 
 export type DynamicSection =
   | { type: "product-grid"; id?: string; title?: string; productFilter?: "all" | "featured" | "sale" | "newest"; columns?: number; columnsTablet?: number; columnsMobile?: number; hideOnMobile?: boolean; limit?: number; animation?: MotionConfig | null }
@@ -371,7 +386,7 @@ function FinancingPromo({ section, fid }: { section: Extract<DynamicSection, { t
   return (
     <div style={{ padding: "2rem 1rem", maxWidth: 1000, margin: "0 auto" }}>
       <div style={{ background: "var(--primary-subtle)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "1.75rem", textAlign: "center" }}>
-        {section.title && <h2 style={{ fontSize: "1.35rem", fontWeight: 700, margin: "0 0 0.5rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
+        {section.title && <h2 style={{ fontSize: "1.35rem", fontWeight: HEADING_WEIGHT, margin: "0 0 0.5rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         {section.content && <p style={{ color: "var(--text-secondary)", margin: "0 0 1rem", lineHeight: 1.6 }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
         {section.ctaText && <DyLink className="btn btn-primary" href={section.ctaLink || "/financing"} fid={fid ? `${fid}.ctaText` : undefined}>{section.ctaText}</DyLink>}
       </div>
@@ -390,7 +405,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     const grid = responsiveGridProps(section);
     return (
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
-        {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
+        {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: HEADING_WEIGHT, marginBottom: "1rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         {filtered.length === 0 ? (
           <p style={{ color: "var(--text-tertiary)", padding: "1rem 0" }}>No products match this filter yet.</p>
         ) : (
@@ -421,7 +436,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     };
     return (
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
-        {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
+        {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: HEADING_WEIGHT, marginBottom: "1rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         {categories.length === 0 ? (
           <p style={{ color: "var(--text-tertiary)", padding: "1rem 0" }}>No categories yet.</p>
         ) : (
@@ -449,14 +464,14 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
               <Media src={section.imageUrl} alt={section.text || ""} width={1200} height={200} fit="cover" fallbackLabel="Section image" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
               {(section.text || section.buttonLabel) && (
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.75rem", background: "rgba(0,0,0,0.35)", color: "#fff" }}>
-                  {section.text && <div style={{ fontSize: "1.2rem", fontWeight: 700 }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
+                  {section.text && <div style={{ fontSize: "1.2rem", fontWeight: HEADING_WEIGHT }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
                   {section.buttonLabel && <span style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "0.5rem 1.4rem", borderRadius: "var(--radius-sm)", fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
                 </div>
               )}
             </div>
           ) : (
             <div style={{ padding: "2rem", textAlign: "center", color: section.textColor || "var(--text)", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
-              {section.text && <div style={{ fontSize: "1.2rem", fontWeight: 600 }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
+              {section.text && <div style={{ fontSize: "1.2rem", fontWeight: SUBHEAD_WEIGHT }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
               {section.buttonLabel && <span style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "0.5rem 1.4rem", borderRadius: "var(--radius-sm)", fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
             </div>
           )}
@@ -473,7 +488,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
           {(section.items || []).map((item, j) => (
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{item.icon}</div>}
-              <div style={{ fontSize: "1.8rem", fontWeight: 700, color: colors?.accent || "var(--primary)" }} data-fid={fid ? `${fid}.items.${j}.value` : undefined}>{item.value}</div>
+              <div style={{ fontSize: "1.8rem", fontWeight: HEADING_WEIGHT, color: colors?.accent || "var(--primary)" }} data-fid={fid ? `${fid}.items.${j}.value` : undefined}>{item.value}</div>
               <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 4 }} data-fid={fid ? `${fid}.items.${j}.label` : undefined}>{item.label}</div>
             </div>
           ))}
@@ -485,7 +500,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
   if (section.type === "text") {
     return (
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 800, margin: "0 auto", textAlign: section.align || "center" }} data-fid={fid}>
-        {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "0.75rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
+        {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: HEADING_WEIGHT, marginBottom: "0.75rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         {section.content && <p style={{ fontSize: "1rem", color: "var(--text-secondary)", lineHeight: 1.7 }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
       </div>
     );
@@ -530,7 +545,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     const grid = responsiveGridProps(section);
     return (
       <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
-        {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem", textAlign: "center" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
+        {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: HEADING_WEIGHT, marginBottom: "1rem", textAlign: "center" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         <div
           className={grid ? grid.className : undefined}
           style={grid ? grid.style : { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(${section.columns && section.columns > 3 ? 200 : 260}px, 100%), 1fr))`, gap: "1rem" }}
@@ -538,7 +553,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
           {(section.items || []).map((item, j) => (
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ padding: "1.5rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", textAlign: "center", ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.8rem", marginBottom: "0.6rem" }}>{item.icon}</div>}
-              {item.title && <div style={{ fontWeight: 700, marginBottom: "0.4rem" }} data-fid={fid ? `${fid}.items.${j}.title` : undefined}>{item.title}</div>}
+              {item.title && <div style={{ fontWeight: HEADING_WEIGHT, marginBottom: "0.4rem" }} data-fid={fid ? `${fid}.items.${j}.title` : undefined}>{item.title}</div>}
               {item.text && <div style={{ fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.6 }} data-fid={fid ? `${fid}.items.${j}.text` : undefined}>{item.text}</div>}
             </div>
           ))}
@@ -603,6 +618,15 @@ export function DynamicHomePage({ products, categories, banners, config }: { pro
   );
 }
 
+// Self-hosted font stacks only — no external font loading, so a template can
+// carry a distinct typographic identity without a network dependency or a
+// licence obligation. Every family listed ships with Windows/macOS/Linux.
+const FONT_STACKS = {
+  sans: 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  serif: 'Georgia, "Times New Roman", Times, serif',
+  mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+} as const;
+
 // Scoped storefront design tokens. Emitted as CSS custom properties on
 // `.dynamic-layout` so the engine's `var(--radius-*)` / `var(--primary)` values
 // pick them up without leaking to the rest of the app. Values are re-validated
@@ -612,17 +636,45 @@ export function DynamicLayoutStyles({ tokens }: { tokens?: DynamicLayoutConfig["
   const hex = /^#[0-9a-fA-F]{3,8}$/;
   const accent = tokens?.accent && hex.test(tokens.accent) ? tokens.accent : undefined;
   const onAccent = tokens?.onAccent && hex.test(tokens.onAccent) ? tokens.onAccent : undefined;
+
+  // Typography tokens. Each is clamped/re-validated here; unknown font keys are
+  // dropped so only the fixed stacks above can ever reach the <style> tag.
+  const headingFont = tokens?.headingFont && tokens.headingFont in FONT_STACKS ? FONT_STACKS[tokens.headingFont] : undefined;
+  const bodyFont = tokens?.bodyFont && tokens.bodyFont in FONT_STACKS ? FONT_STACKS[tokens.bodyFont] : undefined;
+  const headingWeight = typeof tokens?.headingWeight === "number" && Number.isFinite(tokens.headingWeight)
+    ? Math.max(100, Math.min(900, Math.round(tokens.headingWeight / 100) * 100)) : undefined;
+  const headingCase = tokens?.headingCase === "uppercase" ? "uppercase" : tokens?.headingCase === "none" ? "none" : undefined;
+  const headingTracking = typeof tokens?.headingTracking === "number" && Number.isFinite(tokens.headingTracking)
+    ? Math.round(Math.max(-0.05, Math.min(0.25, tokens.headingTracking)) * 1000) / 1000 : undefined;
+
   const decls: string[] = [];
   if (radius !== undefined) {
     decls.push(`--radius-sm: ${radius}px;`, `--radius-md: ${radius + 2}px;`, `--radius-lg: ${radius + 4}px;`);
   }
   if (accent) decls.push(`--primary: ${accent};`);
   if (onAccent) decls.push(`--on-primary: ${onAccent};`);
+  if (headingFont) decls.push(`--dy-font-heading: ${headingFont};`);
+  if (bodyFont) decls.push(`--dy-font-body: ${bodyFont};`);
+  if (headingWeight !== undefined) decls.push(`--dy-heading-weight: ${headingWeight};`);
+  if (headingCase !== undefined) decls.push(`--dy-heading-case: ${headingCase};`);
+  if (headingTracking !== undefined) decls.push(`--dy-heading-tracking: ${headingTracking}em;`);
   const scope = decls.length ? `.dynamic-layout { ${decls.join(" ")} }` : "";
+
+  // Typography rules are only added for the tokens a template actually sets, so
+  // a layout with no typography tokens renders byte-identically to before.
+  const rules: string[] = [];
+  if (bodyFont) rules.push(`.dynamic-layout { font-family: var(--dy-font-body); }`);
+  if (headingFont) rules.push(`.dynamic-layout h1, .dynamic-layout h2 { font-family: var(--dy-font-heading); }`);
+  const headingParts: string[] = [];
+  if (headingWeight !== undefined) headingParts.push(`font-weight: var(--dy-heading-weight, 700);`);
+  if (headingCase !== undefined) headingParts.push(`text-transform: var(--dy-heading-case, none);`);
+  if (headingTracking !== undefined) headingParts.push(`letter-spacing: var(--dy-heading-tracking, normal);`);
+  if (headingParts.length) rules.push(`.dynamic-layout h1, .dynamic-layout h2 { ${headingParts.join(" ")} }`);
 
   return (
     <style>{`
       ${scope}
+      ${rules.join("\n      ")}
       .dynamic-layout a:hover { opacity: 0.9; }
       @media (max-width: 768px) {
         .dynamic-layout [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }

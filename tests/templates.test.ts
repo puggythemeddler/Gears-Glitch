@@ -2,6 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   TEMPLATE_CATEGORIES,
+  TEMPLATE_FONT_FAMILIES,
+  TEMPLATE_HEADING_CASES,
   TEMPLATE_LIBRARY_VERSION,
   TEMPLATE_LICENSING,
   TEMPLATE_REGISTRY,
@@ -134,6 +136,47 @@ describe("instantiateTemplateConfig", () => {
       assert.equal(instance.sections?.length, t.config.sections?.length);
       assert.deepEqual((instance.sections ?? []).map((s) => s.type), (t.config.sections ?? []).map((s) => s.type));
     }
+  });
+});
+
+describe("template design systems", () => {
+  it("declares a validated typography system on every template", () => {
+    const fonts = TEMPLATE_FONT_FAMILIES as readonly string[];
+    const cases = TEMPLATE_HEADING_CASES as readonly string[];
+    for (const t of TEMPLATE_REGISTRY) {
+      const tokens = t.config.tokens ?? {};
+      assert.ok(fonts.includes(tokens.headingFont as string), `${t.id} needs a headingFont`);
+      assert.ok(fonts.includes(tokens.bodyFont as string), `${t.id} needs a bodyFont`);
+      assert.ok(
+        typeof tokens.headingWeight === "number" && tokens.headingWeight >= 100 && tokens.headingWeight <= 900,
+        `${t.id} needs a headingWeight in 100..900`,
+      );
+      assert.ok(cases.includes(tokens.headingCase as string), `${t.id} needs a headingCase`);
+    }
+  });
+
+  it("gives the templates visibly distinct heading treatments", () => {
+    const signatures = new Set(
+      TEMPLATE_REGISTRY.map((t) => {
+        const k = t.config.tokens ?? {};
+        return `${k.headingFont}|${k.headingWeight}|${k.headingCase}`;
+      }),
+    );
+    assert.ok(signatures.size >= 3, `expected at least 3 distinct heading signatures, got ${signatures.size}`);
+  });
+
+  it("rejects malformed typography tokens", () => {
+    const base = TEMPLATE_REGISTRY[0];
+    const withTokens = (tokens: Record<string, unknown>) => ({ ...base, config: { ...base.config, tokens } });
+    assert.ok(validateTemplate(withTokens({ headingFont: "comic" })).some((p) => p.includes("headingFont")));
+    assert.ok(validateTemplate(withTokens({ bodyFont: "comic" })).some((p) => p.includes("bodyFont")));
+    assert.ok(validateTemplate(withTokens({ headingCase: "shout" })).some((p) => p.includes("headingCase")));
+    assert.ok(validateTemplate(withTokens({ headingWeight: 1000 })).some((p) => p.includes("headingWeight")));
+    assert.ok(validateTemplate(withTokens({ headingTracking: 5 })).some((p) => p.includes("headingTracking")));
+    assert.deepEqual(
+      validateTemplate(withTokens({ headingFont: "serif", bodyFont: "mono", headingWeight: 400, headingCase: "uppercase", headingTracking: 0.05 })),
+      [],
+    );
   });
 });
 

@@ -44,6 +44,14 @@ export type TemplateSectionType = (typeof TEMPLATE_SECTION_TYPES)[number];
 
 export const TEMPLATE_HERO_STYLES = ["carousel", "split", "minimal", "none"] as const;
 
+/** Self-hosted heading/body font families a template design system may pick. */
+export const TEMPLATE_FONT_FAMILIES = ["sans", "serif", "mono"] as const;
+export type TemplateFontFamily = (typeof TEMPLATE_FONT_FAMILIES)[number];
+
+/** Heading letter-case treatments a template design system may pick. */
+export const TEMPLATE_HEADING_CASES = ["none", "uppercase"] as const;
+export type TemplateHeadingCase = (typeof TEMPLATE_HEADING_CASES)[number];
+
 /**
  * Structural mirror of the Dynamic Engine's `DynamicLayoutConfig`. Kept local and
  * alias-free so the pure template module can be unit-tested and type-checked
@@ -74,7 +82,17 @@ export interface TemplateLayoutConfig {
   sections?: TemplateSection[];
   productCard?: { style?: string; showRating?: boolean; showSalePrice?: boolean };
   colors?: { heroBg?: string; heroText?: string; accent?: string };
-  tokens?: { radius?: number; accent?: string; onAccent?: string; motionIntensity?: string };
+  tokens?: {
+    radius?: number;
+    accent?: string;
+    onAccent?: string;
+    motionIntensity?: string;
+    headingFont?: TemplateFontFamily;
+    bodyFont?: TemplateFontFamily;
+    headingWeight?: number;
+    headingCase?: TemplateHeadingCase;
+    headingTracking?: number;
+  };
   templateId?: string;
   templateVersion?: number;
 }
@@ -199,6 +217,29 @@ export function validateTemplate(t: unknown): string[] {
     }
   }
 
+  const tokens = config.tokens;
+  if (tokens !== undefined) {
+    if (!isPlainObject(tokens)) {
+      problems.push("config.tokens must be an object");
+    } else {
+      if (tokens.headingFont !== undefined && !TEMPLATE_FONT_FAMILIES.includes(tokens.headingFont as TemplateFontFamily)) {
+        problems.push(`config.tokens.headingFont is not allowed: ${String(tokens.headingFont)}`);
+      }
+      if (tokens.bodyFont !== undefined && !TEMPLATE_FONT_FAMILIES.includes(tokens.bodyFont as TemplateFontFamily)) {
+        problems.push(`config.tokens.bodyFont is not allowed: ${String(tokens.bodyFont)}`);
+      }
+      if (tokens.headingCase !== undefined && !TEMPLATE_HEADING_CASES.includes(tokens.headingCase as TemplateHeadingCase)) {
+        problems.push(`config.tokens.headingCase is not allowed: ${String(tokens.headingCase)}`);
+      }
+      if (tokens.headingWeight !== undefined && (typeof tokens.headingWeight !== "number" || !Number.isFinite(tokens.headingWeight) || tokens.headingWeight < 100 || tokens.headingWeight > 900)) {
+        problems.push("config.tokens.headingWeight must be a number between 100 and 900");
+      }
+      if (tokens.headingTracking !== undefined && (typeof tokens.headingTracking !== "number" || !Number.isFinite(tokens.headingTracking) || tokens.headingTracking < -0.05 || tokens.headingTracking > 0.25)) {
+        problems.push("config.tokens.headingTracking must be a number between -0.05 and 0.25");
+      }
+    }
+  }
+
   const sections = config.sections;
   if (sections !== undefined) {
     if (!Array.isArray(sections)) {
@@ -256,7 +297,7 @@ export const TEMPLATE_REGISTRY: StorefrontTemplate[] = [
         effects: DEFAULT_EFFECTS,
       },
       colors: { heroBg: "#0b1220", heroText: "#e6ecf7", accent: "#3b82f6" },
-      tokens: { radius: 8, accent: "#3b82f6", onAccent: "#ffffff" },
+      tokens: { radius: 8, accent: "#3b82f6", onAccent: "#ffffff", headingFont: "sans", bodyFont: "sans", headingWeight: 800, headingCase: "none", headingTracking: -0.02 },
       productCard: { style: "default", showRating: true, showSalePrice: true },
       sections: [
         { type: "category-grid", title: "Shop by category", columns: 4, style: "cards" },
@@ -297,7 +338,7 @@ export const TEMPLATE_REGISTRY: StorefrontTemplate[] = [
         effects: { ...DEFAULT_EFFECTS, intensity: "subtle" },
       },
       colors: { heroBg: "#faf9f7", heroText: "#1c1917", accent: "#a17e4b" },
-      tokens: { radius: 2, accent: "#a17e4b", onAccent: "#ffffff" },
+      tokens: { radius: 2, accent: "#a17e4b", onAccent: "#ffffff", headingFont: "serif", bodyFont: "sans", headingWeight: 400, headingCase: "none", headingTracking: 0.01 },
       productCard: { style: "compact", showRating: false, showSalePrice: true },
       sections: [
         { type: "text", title: "Our approach", content: "We keep a deliberately small range so every piece earns its place.", align: "center" },
@@ -334,7 +375,7 @@ export const TEMPLATE_REGISTRY: StorefrontTemplate[] = [
         effects: { ...DEFAULT_EFFECTS, intensity: "expressive" },
       },
       colors: { heroBg: "#ffffff", heroText: "#111827", accent: "#ec4899" },
-      tokens: { radius: 14, accent: "#ec4899", onAccent: "#ffffff" },
+      tokens: { radius: 14, accent: "#ec4899", onAccent: "#ffffff", headingFont: "sans", bodyFont: "sans", headingWeight: 900, headingCase: "uppercase", headingTracking: 0.02 },
       productCard: { style: "detailed", showRating: true, showSalePrice: true },
       sections: [
         { type: "banner", text: "Limited-time offers", bgColor: "#ec4899", textColor: "#ffffff", buttonLabel: "Shop now", buttonLink: "/" },
@@ -372,7 +413,7 @@ export const TEMPLATE_REGISTRY: StorefrontTemplate[] = [
         effects: { ...DEFAULT_EFFECTS },
       },
       colors: { heroBg: "#f0fdfa", heroText: "#134e4a", accent: "#0d9488" },
-      tokens: { radius: 10, accent: "#0d9488", onAccent: "#ffffff" },
+      tokens: { radius: 10, accent: "#0d9488", onAccent: "#ffffff", headingFont: "sans", bodyFont: "sans", headingWeight: 600, headingCase: "none" },
       productCard: { style: "default", showRating: true, showSalePrice: true },
       sections: [
         { type: "features", title: "Why shop with us", columns: 3, items: [
