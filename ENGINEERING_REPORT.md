@@ -105,10 +105,18 @@ local `.env` — **rotate the password.**
 no `DATABASE_URL`/Render access. Safe procedure to run in the Render/Neon console:
 
 ```sql
--- read-only: confirm the runner recorded it, then sample for un-migrated rows
+-- read-only: confirm the runner recorded it, then confirm no layout still
+-- carries the dead `categories` section type (this second query should return
+-- 0 rows once 0029 has run; the migration is idempotent so a stray row means it
+-- did not run, or a runtime write reintroduced the alias).
 SELECT version, applied_at FROM schema_migrations WHERE version LIKE '0029%';
-SELECT id, jsonb_typeof(config->'sections') AS sections_type
-FROM layouts WHERE jsonb_typeof(config->'sections') IS DISTINCT FROM 'array';
+
+SELECT id, layout_key,
+       jsonb_typeof(config->'sections')       AS config_sections,
+       jsonb_typeof(draft_config->'sections') AS draft_sections
+FROM storefront_layouts
+WHERE config->'sections' @> '[{"type":"categories"}]'
+   OR draft_config->'sections' @> '[{"type":"categories"}]';
 ```
 
 **Testing.** Full suite 641/641 with the isolated embedded-Postgres recipe; non-DB subset
