@@ -660,6 +660,14 @@ export async function enqueueOrderInvoiceDelivery(orderId: number, kind: "paid" 
         } catch { }
       }
     }
+
+    // Deliver promptly. Enqueuing above only persists a durable row; the
+    // periodic worker drains every 15s, so without this a paid/delivered
+    // invoice could sit queued for up to a full tick. Kick an immediate,
+    // lock-guarded drain so the customer gets the invoice within ~a second.
+    // Safe to call from the request path: it is fire-and-forget, never throws,
+    // and the queue's unique(idempotencyKey) + drain lock prevent double-sends.
+    void drainNotificationQueueOnce().catch(() => {});
   } catch (err: any) {
     console.warn(`[notification-service] enqueueOrderInvoiceDelivery failed for order ${orderId}:`, err?.message || err);
   }
