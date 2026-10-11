@@ -20,6 +20,7 @@ import type { HistoryState } from "@/lib/history";
 import { isSafeHref } from "@/lib/links";
 import { isAllowedImageSrc, ALLOWED_IMAGE_ORIGINS } from "@/lib/image-allowlist";
 import TemplateGallery from "./TemplateGallery";
+import TemplateLivePreview from "./TemplateLivePreview";
 import { TEMPLATE_REGISTRY, instantiateTemplateConfig } from "@/lib/templates";
 import type { StorefrontTemplate } from "@/lib/templates";
 
@@ -227,6 +228,7 @@ export default function StorefrontBuilder() {
   const [paletteQuery, setPaletteQuery] = useState("");
   const [tab, setTab] = useState<"content" | "design" | "layout" | "templates">("content");
   const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
+  const [previewTemplate, setPreviewTemplate] = useState<StorefrontTemplate | null>(null);
   const [financingEnabled, setFinancingEnabled] = useState(false);
 
   // Live preview of the design tokens. The engine emits the same custom
@@ -420,6 +422,16 @@ export default function StorefrontBuilder() {
     setSelectedSection(null);
   }
 
+  function duplicateSection(idx: number) {
+    const sections = [...(configRef.current.sections || [])];
+    const source = sections[idx];
+    if (!source) return;
+    sections.splice(idx + 1, 0, { ...source, id: uid() } as Section);
+    mutateConfig({ ...configRef.current, sections });
+    setSelectedSection(idx + 1);
+    setTab("content");
+  }
+
   function moveSection(idx: number, dir: -1 | 1) {
     const sections = [...(configRef.current.sections || [])];
     const target = idx + dir;
@@ -467,6 +479,7 @@ export default function StorefrontBuilder() {
     setDirty(true);
     setSelectedSection(null);
     setAppliedTemplateId(template.id);
+    setPreviewTemplate(null);
     setTab("content");
     scheduleHistory();
     setMsg(`Template "${template.name}" applied to this draft. Review the copy, then Save Draft and Publish.`);
@@ -795,10 +808,12 @@ export default function StorefrontBuilder() {
         <TemplateGallery
           templates={TEMPLATE_REGISTRY}
           appliedTemplateId={appliedTemplateId}
+          activePreviewId={previewTemplate?.id ?? null}
           canRevert={canUndoNow}
           financingEnabled={financingEnabled}
           device={device}
           onApply={applyTemplate}
+          onPreview={(t) => { setPreviewTemplate(t); setSelectedSection(null); setEditField(null); setEditRect(null); }}
           onRevert={revertTemplate}
         />
       )}
@@ -1004,9 +1019,21 @@ export default function StorefrontBuilder() {
           </div>
 
           <div>
+            {previewTemplate && (
+              <div className="tpl-preview-banner" role="status">
+                <div className="tpl-preview-banner__text">
+                  <strong>Previewing &ldquo;{previewTemplate.name}&rdquo;</strong>
+                  <span>Your storefront is unchanged until you apply the template, then Save Draft and Publish.</span>
+                </div>
+                <div className="tpl-preview-banner__actions">
+                  <RippleButton size="small" variant="primary" onClick={() => applyTemplate(previewTemplate)}>Apply this template</RippleButton>
+                  <RippleButton size="small" variant="secondary" onClick={() => setPreviewTemplate(null)}>Close preview</RippleButton>
+                </div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-              <RippleButton size="small" variant={!showPreview ? "primary" : "secondary"} onClick={() => { setShowPreview(false); setEditField(null); setEditRect(null); }}>Edit</RippleButton>
-              <RippleButton size="small" variant={showPreview ? "primary" : "secondary"} onClick={() => { setShowPreview(true); setSelectedSection(null); setEditField(null); setEditRect(null); }}>Preview</RippleButton>
+              <RippleButton size="small" variant={!showPreview && !previewTemplate ? "primary" : "secondary"} onClick={() => { setShowPreview(false); setPreviewTemplate(null); setEditField(null); setEditRect(null); }}>Edit</RippleButton>
+              <RippleButton size="small" variant={showPreview || !!previewTemplate ? "primary" : "secondary"} onClick={() => { setShowPreview(true); setPreviewTemplate(null); setSelectedSection(null); setEditField(null); setEditRect(null); }}>Preview</RippleButton>
               <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
                 {DEVICES.map((d) => (
                   <button key={d.id} type="button" onClick={() => { setDevice(d.id); setEditField(null); setEditRect(null); }} aria-pressed={device === d.id} style={{ padding: "0.4rem 0.8rem", fontSize: "0.78rem", fontWeight: 600, border: "none", cursor: "pointer", background: device === d.id ? "var(--primary)" : "transparent", color: device === d.id ? "var(--on-primary)" : "var(--text-secondary)" }}>{d.label}</button>
@@ -1030,7 +1057,9 @@ export default function StorefrontBuilder() {
                   // every frame. The switch is discrete and reads fine as a jump.
                 }}
               >
-                {showPreview ? (
+                {previewTemplate ? (
+                  <TemplateLivePreview template={previewTemplate} products={products} categories={categories} device={device} />
+                ) : showPreview ? (
                   <>
                     <HeroSection key={previewAnim === "hero" ? "hero-anim" : "hero-static"} hero={hero} colors={config.colors} products={products} categories={categories} forceTrigger={previewAnim === "hero" ? "load" : undefined} />
                     {sections.map((s, i) => <DynamicSectionView key={(s as any).id || i} section={s} products={products} categories={categories} colors={config.colors} cardConfig={config.productCard} index={i} />)}
@@ -1061,6 +1090,7 @@ export default function StorefrontBuilder() {
                           <span>{SECTION_LABELS[s.type] || s.type}</span>
                           <button type="button" aria-label="Move up" onClick={(e) => { e.stopPropagation(); moveSection(i, -1); }}>↑</button>
                           <button type="button" aria-label="Move down" onClick={(e) => { e.stopPropagation(); moveSection(i, 1); }}>↓</button>
+                          <button type="button" aria-label="Duplicate section" onClick={(e) => { e.stopPropagation(); duplicateSection(i); }}>⧉</button>
                           <button type="button" aria-label="Remove section" onClick={(e) => { e.stopPropagation(); removeSection(i); }}>✕</button>
                         </div>
                         <DynamicSectionView section={s} products={products} categories={categories} colors={config.colors} cardConfig={config.productCard} forceTrigger={previewAnim === i ? "load" : undefined} index={i} />

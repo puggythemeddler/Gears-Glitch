@@ -4856,6 +4856,74 @@ a.about-contact-card:hover {
   .dy-hero-panel-media img { max-height: 220px; }
 }
 
+/* Template live preview (Website Studio canvas). Scoped entirely to
+   `.tpl-preview*` so no other screen is affected. */
+.tpl-preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--bg);
+}
+.tpl-preview-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+.tpl-preview-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #22c55e 25%, transparent);
+  flex-shrink: 0;
+}
+.tpl-preview-name { font-size: 0.82rem; }
+.tpl-preview-badge {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tpl-preview-viewport { flex: 1; }
+.tpl-preview-page { pointer-events: none; user-select: none; }
+.tpl-preview-note {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.tpl-preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: var(--primary-subtle);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+}
+.tpl-preview-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+}
+.tpl-preview-banner__text span { color: var(--text-secondary); font-size: 0.75rem; }
+.tpl-preview-banner__actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
 /* Reduced motion is a site-wide accessibility requirement, not per-effect.
    The targeted blocks above calm specific large animations; this kills the
    long tail of small transitions (hover fades, focus rings, panel slides)

@@ -14,10 +14,13 @@ interface TemplateGalleryProps {
   templates: StorefrontTemplate[];
   /** Template most recently applied in this session (shows the revert affordance). */
   appliedTemplateId?: string | null;
+  /** Template currently shown in the large canvas preview, if any. */
+  activePreviewId?: string | null;
   canRevert?: boolean;
   financingEnabled?: boolean;
   device?: Device;
   onApply: (template: StorefrontTemplate) => void;
+  onPreview?: (template: StorefrontTemplate) => void;
   onRevert?: () => void;
 }
 
@@ -93,10 +96,12 @@ function TemplatePreview({ template }: { template: StorefrontTemplate }) {
 export default function TemplateGallery({
   templates,
   appliedTemplateId,
+  activePreviewId,
   canRevert,
   financingEnabled,
   device,
   onApply,
+  onPreview,
   onRevert,
 }: TemplateGalleryProps) {
   const [query, setQuery] = useState("");
@@ -158,7 +163,7 @@ export default function TemplateGallery({
               <article
                 key={t.id}
                 style={{
-                  border: applied ? "2px solid var(--primary)" : "1px solid var(--border)",
+                  border: applied ? "2px solid var(--primary)" : activePreviewId === t.id ? "1px dashed var(--primary)" : "1px solid var(--border)",
                   borderRadius: "var(--radius-sm)",
                   padding: "0.6rem",
                   background: "var(--bg)",
@@ -169,20 +174,33 @@ export default function TemplateGallery({
                   <strong style={{ fontSize: "0.88rem" }}>{t.name}</strong>
                   <span className="badge" style={{ fontSize: "0.62rem", padding: "0.05rem 0.35rem" }}>{TEMPLATE_CATEGORY_LABELS[t.category]}</span>
                   {applied && <span className="badge badge-success" style={{ fontSize: "0.62rem" }}>Applied</span>}
+                  {!applied && activePreviewId === t.id && <span className="badge" style={{ fontSize: "0.62rem" }}>Previewing</span>}
                 </div>
                 <p style={{ margin: "0.2rem 0 0.35rem", fontSize: "0.78rem", color: "var(--text-secondary)" }}>{t.tagline}</p>
                 <p style={{ margin: "0 0 0.5rem", fontSize: "0.72rem", color: "var(--text-tertiary)" }}>{t.description}</p>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.4rem" }}>
                   <span style={{ fontSize: "0.66rem", color: "var(--text-tertiary)" }}>Original · Gears&amp;Glitch v{t.version}</span>
-                  <RippleButton
-                    size="small"
-                    variant={applied ? "secondary" : "primary"}
-                    disabled={locked}
-                    aria-label={locked ? `${t.name} requires the financing add-on` : `Apply ${t.name} template`}
-                    onClick={() => onApply(t)}
-                  >
-                    {locked ? "Needs financing" : applied ? "Re-apply" : "Apply"}
-                  </RippleButton>
+                  <div style={{ display: "flex", gap: "0.35rem" }}>
+                    {onPreview && (
+                      <RippleButton
+                        size="small"
+                        variant="secondary"
+                        aria-label={`Preview ${t.name} in the canvas`}
+                        onClick={() => onPreview(t)}
+                      >
+                        Preview
+                      </RippleButton>
+                    )}
+                    <RippleButton
+                      size="small"
+                      variant={applied ? "secondary" : "primary"}
+                      disabled={locked}
+                      aria-label={locked ? `${t.name} requires the financing add-on` : `Apply ${t.name} template`}
+                      onClick={() => onApply(t)}
+                    >
+                      {locked ? "Needs financing" : applied ? "Re-apply" : "Apply"}
+                    </RippleButton>
+                  </div>
                 </div>
               </article>
             );

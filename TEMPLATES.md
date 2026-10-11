@@ -62,6 +62,23 @@ keys in its config.
 - Applying a template that requires the financing add-on is disabled unless the
   shop has the entitlement enabled.
 
+## Live preview
+
+Each gallery card has a **Preview** button. It renders the template with the
+**real storefront engine** (`DynamicHomePage`'s hero + section renderers) in the
+large Studio canvas — not a schematic — so you see the actual composition,
+colours, typography and product cards before committing.
+
+- The merchant's own products and categories are used when they exist; otherwise
+  clearly-labelled **sample data** (`frontend/lib/template-fixtures.ts`) is shown,
+  with an inline note that it is not saved.
+- Sample imagery is inline SVG data URIs: nothing is fetched, nothing leaves the
+  image allowlist, and no third-party assets are used.
+- The preview is **read-only**: it writes nothing, and the page inside the frame
+  is inert (clicks do not navigate). A banner names the template being previewed
+  and offers **Apply this template** / **Close preview**, and the Desktop /
+  Tablet / Mobile switcher drives the frame width as usual.
+
 ## Original vs Dynamic Engine
 
 - **Dynamic Engine** layouts are the only ones driven by a stored, editable
