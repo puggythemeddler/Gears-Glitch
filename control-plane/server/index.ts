@@ -44,6 +44,11 @@ import {
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 
+// Render terminates TLS at its edge proxy and forwards the client IP in
+// X-Forwarded-For. Without this, express-rate-limit keys every request by the
+// proxy address (one shared bucket for all users) and logs ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+app.set("trust proxy", 1);
+
 // Warn the owner at startup if provisioning can't work (missing required keys).
 // This is non-fatal (an already-running platform should still boot) but loud so
 // the missing key is fixed before any new client provisioning is attempted.
