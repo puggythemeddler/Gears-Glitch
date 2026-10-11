@@ -332,4 +332,21 @@ describe("control plane alignment", () => {
     assert.match(html, /@media \(prefers-reduced-motion: reduce\)/);
     assert.ok(html.includes("%23f97316"), "the favicon should stay brand orange");
   });
+
+  it("re-authenticates before 2FA setup (server requires the password)", () => {
+    assert.ok(html.includes('id="twofa-setup-pass"'), "2FA setup must prompt for the password");
+    assert.match(
+      html,
+      /api\("\/api\/auth\/2fa\/setup",\s*\{\s*method:\s*"POST",\s*body:\s*JSON\.stringify\(\{\s*password\s*\}\)/,
+      "2FA setup must POST the password or the hardened endpoint returns 400"
+    );
+  });
+
+  it("lets an admin change a user's password via PUT /api/users/:id", () => {
+    assert.ok(html.includes('id="user-new-pass"'), "user detail must offer a change-password field");
+    assert.match(
+      html,
+      /api\("\/api\/users\/"\s*\+\s*id,\s*\{\s*method:\s*"PUT",\s*body:\s*JSON\.stringify\(\{\s*password\s*\}\)/
+    );
+  });
 });
