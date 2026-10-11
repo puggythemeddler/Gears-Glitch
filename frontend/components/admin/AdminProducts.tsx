@@ -231,6 +231,21 @@ export default function AdminProducts() {
     try { await api(`/api/products/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); feedback.success({ title: "Product deleted" }); } catch { feedback.error({ title: "Product not deleted", message: "Delete failed" }); }
   }
 
+  async function deleteSelected() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!(await confirmDialog({ message: `Delete ${ids.length} selected product(s)? This cannot be undone. Products with sales, stock, serial, or return history cannot be deleted.`, confirmLabel: "Delete", danger: true }))) return;
+    let ok = 0; let failed = 0;
+    for (const id of ids) {
+      try { await api(`/api/products/${encodeURIComponent(id)}`, { method: "DELETE" }); ok++; }
+      catch { failed++; }
+    }
+    setSelectedIds(new Set());
+    refetch();
+    if (failed === 0) feedback.success({ title: `${ok} product(s) deleted` });
+    else feedback.error({ title: `${ok} deleted, ${failed} could not be deleted`, message: "Products with sales, stock, serial, or return history must be deactivated instead." });
+  }
+
   useEffect(() => { if (editing && !creating && editing.id) loadGallery(editing.id); else setGallery([]); }, [editing?.id, creating]);
 
   if (loading) return <Spinner />;
@@ -374,6 +389,7 @@ export default function AdminProducts() {
           <input type="search" placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search products" style={{ padding: "0.4rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: "0.85rem", minWidth: 180 }} />
           {selectedIds.size > 0 && <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{selectedIds.size} selected</span>}
           {selectedIds.size > 0 && <RippleButton size="small" variant="secondary" onClick={() => setShowBulk(true)}>Bulk Edit</RippleButton>}
+          {selectedIds.size > 0 && <RippleButton size="small" variant="danger" onClick={deleteSelected}>Delete Selected</RippleButton>}
           <RippleButton size="small" onClick={downloadTemplate}>Download Import Template</RippleButton>
           <RippleButton size="small" onClick={() => setShowImport(true)}>Import CSV</RippleButton>
           <RippleButton size="small" onClick={() => { setCreating(true); setEditing(empty); }}>+ Add</RippleButton>

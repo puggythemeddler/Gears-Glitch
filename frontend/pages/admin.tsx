@@ -1036,6 +1036,7 @@ function AdminCategories() {
   const [formLabel, setFormLabel] = useState("");
   const [formGroup, setFormGroup] = useState("");
   const [formShowOnPos, setFormShowOnPos] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [catSubs, setCatSubs] = useState<any[]>([]);
   const [newSubId, setNewSubId] = useState("");
   const [newSubName, setNewSubName] = useState("");
@@ -1049,6 +1050,30 @@ function AdminCategories() {
   async function deleteCat(id: string) {
     if (!(await confirmDialog({ message: `Delete category "${id}"?`, confirmLabel: "Delete", danger: true }))) return;
     try { await api(`/api/categories/${encodeURIComponent(id)}`, { method: "DELETE" }); refetch(); feedback.success("Category deleted."); } catch { feedback.error("Delete failed"); }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === categories.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(categories.map((c: any) => c.id)));
+  }
+
+  async function deleteSelected() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!(await confirmDialog({ message: `Delete ${ids.length} selected categor${ids.length === 1 ? "y" : "ies"}? Products in them will keep the value but no longer appear on the storefront.`, confirmLabel: "Delete", danger: true }))) return;
+    let ok = 0; let failed = 0;
+    for (const id of ids) {
+      try { await api(`/api/categories/${encodeURIComponent(id)}`, { method: "DELETE" }); ok++; }
+      catch { failed++; }
+    }
+    setSelectedIds(new Set());
+    refetch();
+    if (failed === 0) feedback.success({ title: `${ok} categor${ok === 1 ? "y" : "ies"} deleted` });
+    else feedback.error({ title: `${ok} deleted, ${failed} could not be deleted` });
   }
 
   async function saveCat() {
@@ -1185,16 +1210,21 @@ function AdminCategories() {
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
         <h1 style={{ margin: 0 }}>Categories</h1>
-        <RippleButton onClick={openAdd}>+ Add Category</RippleButton>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          {selectedIds.size > 0 && <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{selectedIds.size} selected</span>}
+          {selectedIds.size > 0 && <RippleButton size="small" variant="danger" onClick={deleteSelected}>Delete Selected</RippleButton>}
+          <RippleButton onClick={openAdd}>+ Add Category</RippleButton>
+        </div>
       </div>
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>ID</th><th>Label</th><th>Group</th><th>POS</th><th>Subcategories</th><th></th></tr></thead>
+          <thead><tr><th><input type="checkbox" checked={categories.length > 0 && selectedIds.size === categories.length} onChange={toggleSelectAll} aria-label="Select all categories" /></th><th>ID</th><th>Label</th><th>Group</th><th>POS</th><th>Subcategories</th><th></th></tr></thead>
           <tbody>
             {categories.map((c: any) => {
               const subs = allSubs.filter((s: any) => s.category_ids.includes(c.id));
               return (
                 <tr key={c.id}>
+                  <td><input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)} aria-label={`Select ${c.label}`} /></td>
                   <td><code>{c.id}</code></td>
                   <td>{c.label}</td>
                   <td style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{groups.find((g: any) => g.id === c.group)?.name || "—"}</td>

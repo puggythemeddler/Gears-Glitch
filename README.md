@@ -353,7 +353,7 @@ Opens **http://localhost:3000** in a browser.
 | **Customer** | `/dashboard` | `customer@gearandglitch.com` / `customer123` | not seeded in production |
 | **Provider** | `/admin` | `provider@gearandglitch.com` / `provider123` | not seeded in production |
 
-- **Demo accounts** (`customer123`, `provider123`) are only seeded when `NODE_ENV !== "production"`.
+- **Demo data is opt-in.** The default category taxonomy, the demo product catalog (`server/products.json`), and the demo accounts (`customer123`, `provider123`) are seeded **only when `SEED_DEMO_DATA` is enabled** (`1`/`true`/`yes`/`on`). New client stores boot **empty** and are populated through the admin. Set `SEED_DEMO_DATA=1` on a demo/dev instance to restore the samples.
 - **`ADMIN_PASSWORD` is an initial provisioning credential** — it is used to create the administrator account when it does not exist. On every later boot an existing administrator is left completely untouched (only the configured `ADMIN_EMAIL` is synchronized), so a password changed in the app is preserved across restarts; it is never re-applied from the env var.
 - **Admin/Technician** use a fallback dev password if the env var is unset, but **in production the server skips user creation** if the password env var is missing.
 - **Password minimum length** is 8 characters across all endpoints.
@@ -680,7 +680,7 @@ server/                   # Express backend (TypeScript)
 ├── auth.ts               # JWT auth middleware + login/register
 ├── repairs.ts            # Repair ticket lifecycle
 ├── permissions.ts        # Role-based permissions + assignRoleToUser
-├── categories.ts         # Category definitions (seeded into DB, editable via admin)
+├── categories.ts         # Category definitions (seeded when SEED_DEMO_DATA is set; editable via admin)
 ├── upload.ts             # Multer image upload (Cloudinary in production, local disk in dev)
 ├── shipping.ts           # Kenyan counties with tiered fees
 ├── mpesa.ts              # Daraja API STK Push
@@ -1109,6 +1109,7 @@ eTIMS is **disabled in this build**. The VSCU/OSCU integration described in `eTI
 |----------|---------|-------------|
 | `PORT` | 8020 | Server port |
 | `STORE_NAME` | Gear&Glitch | Default store name seeded on first boot (control plane sets this to the client's name on provisioning) |
+| `SEED_DEMO_DATA` | unset (off) | When enabled (`1`/`true`/`yes`/`on`), seeds the default category taxonomy, the demo product catalog, and the demo provider/customer accounts on an empty database. Leave unset for real clients so they start empty. |
 | `DATABASE_URL` | — | **Required.** PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/dbname`) |
 | `BASE_URL` | — | Public URL of **this API server**, no trailing slash. For server-to-server endpoints only: the Gmail OAuth callback, the M-Pesa callback and CORS. **Do not build customer-facing email links from it** — on a split deployment the API host serves no HTML, so such links 404. Set explicitly in production |
 | `JWT_SECRET` | — | **Required.** Server fails to start if unset or placeholder. Use a long random string. |

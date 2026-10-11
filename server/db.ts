@@ -913,7 +913,17 @@ async function ensureDefaultSettings(): Promise<void> {
   }
 }
 
+// Demo/sample data (the default category taxonomy, demo catalog, and demo
+// provider/customer logins) is opt-in via SEED_DEMO_DATA. New client stores
+// start empty; set SEED_DEMO_DATA=1 ("true"/"yes"/"on") on a demo/dev instance
+// to seed the samples.
+function demoSeedEnabled(): boolean {
+  const v = String(process.env.SEED_DEMO_DATA || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
 async function ensureDefaultCategories(): Promise<void> {
+  if (!demoSeedEnabled()) return;
   const existing = await queryOne("SELECT COUNT(*) AS count FROM categories") as { count: number } | undefined;
   if (existing && Number(existing.count) > 0) return;
   for (const category of CATEGORIES) {
@@ -972,7 +982,7 @@ async function grantAllActiveBranches(userId: number): Promise<void> {
 }
 
 async function seedDemoProvider(): Promise<void> {
-  if (process.env.NODE_ENV === "production") return;
+  if (!demoSeedEnabled()) return;
   const demoEmail = "provider@gearandglitch.com";
   if (await findProviderByEmail(demoEmail)) return;
   const pwdHash = await bcrypt.hash("provider123", 10);
@@ -985,7 +995,7 @@ async function seedDemoProvider(): Promise<void> {
 }
 
 async function seedDemoCustomer(): Promise<void> {
-  if (process.env.NODE_ENV === "production") return;
+  if (!demoSeedEnabled()) return;
   const demoEmail = "customer@gearandglitch.com";
   if (await findCustomerByEmail(demoEmail)) return;
   const pwdHash = await bcrypt.hash("customer123", 10);
@@ -1203,6 +1213,7 @@ async function updateStaffDetails(id: number, data: { username?: string; email?:
 }
 
 async function seedProductsIfEmpty(): Promise<void> {
+  if (!demoSeedEnabled()) return;
   const row = await queryOne("SELECT COUNT(*) AS count FROM products") as { count: number } | undefined;
   if (row && Number(row.count) > 0) return;
   try {
