@@ -24,16 +24,27 @@ hard-coding one.
 - Endpoint: `GET/POST /api/webhooks/whatsapp`
 - Inbound verification handshake is the standard Meta challenge (`hub.challenge`).
 - **POSTs require a valid `x-hub-signature-256`.** The signature is HMAC-SHA256 of the
-  raw request body using the App Secret. A missing or invalid signature is rejected
-  with `403`. The raw body is captured by the express `express.json({ verify })` hook
-  into `req.rawBody`.
+  raw request body using the App Secret. A missing, malformed or invalid signature is
+  rejected with `403`. The raw body is captured by the express `express.json({ verify })`
+  hook into `req.rawBody`; if it is unavailable the request is rejected (re-serializing
+  `req.body` can never match the signature).
+- **Response codes:** `200` only when every event in the payload was processed (or was
+  already processed). A partial failure returns `500` so Meta redelivers — already
+  processed events are skipped via the durable ledger, so only failed events re-run.
 
 ### Idempotency
 
-Meta redelivers webhook payloads until it gets a `200`. A single inbound message can
-therefore arrive multiple times. `handleWhatsAppWebhook` dedups by Meta message id via
-an in-memory set with a 5-minute TTL (bounded at 2000 entries), so a message is
-processed once per delivery window.
+Meta redelivers webhook payloads until it gets a `200`, so one inbound message can
+arrive many times. Each inbound **message** (`message:<id>`) and each **delivery
+status** (`status:<id>:<state>`) is claimed in the durable `webhook_events` ledger
+(migration 0018) via `claimWebhookEvent`:
+
+- `processed` → skipped on redelivery (no duplicate log rows, routing or sends).
+- `received` → treated as in-progress; skipped to avoid concurrent double-processing.
+  A claim stale beyond 10 minutes is reclaimed so a crash mid-event is retried.
+- `failed` → re-claimed on the next redelivery and retried.
+
+Events are marked `processed` only after the work succeeds.
 
 ## Outbound messages
 

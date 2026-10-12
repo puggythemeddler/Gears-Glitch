@@ -73,8 +73,10 @@ cached transporter so a stale token is never reused.
    **App secret** (used to verify inbound webhook signatures).
 2. In WhatsApp settings: enable WhatsApp, paste Phone number ID, access token,
    app secret, verify token, and choose the API version.
-3. **Webhook**: set the callback URL to `{BASE_URL}/api/whatsapp/webhook` and the
+3. **Webhook**: set the callback URL to `{BASE_URL}/api/webhooks/whatsapp` and the
    verify token you chose. Meta shows `EVENT_RECEIVED` when verification passes.
+   The admin WhatsApp page shows the exact URL to copy (built from the server's
+   `BASE_URL`), so the browser/storefront origin is never used by mistake.
 4. Optional: enable the admin (staff) WhatsApp channel and set the receiver phone.
 
 ### Verify
@@ -83,9 +85,10 @@ cached transporter so a stale token is never reused.
   for the phone channel.
 
 ### Disconnect / rotate
-- Clear the access token (set the field blank and save — blank keeps the previous
-  value hidden; to remove entirely set an empty string and save, or generate a new
-  token). In Meta, generate a new system-user token to rotate.
+- Access token / App secret / Verify token are write-only: they are redacted to
+  `""` by `GET /api/settings`, and saving a blank field keeps the stored value.
+   To rotate, paste a new value and save; to stop all outbound traffic, turn the
+   master **Enabled** toggle off instead of clearing credentials.
 
 ### Troubleshooting
 | Symptom | Fix |

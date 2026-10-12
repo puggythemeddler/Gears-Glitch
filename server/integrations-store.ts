@@ -229,6 +229,65 @@ export interface AcquireWebhookResult {
   inserted: boolean;
 }
 
+// A claim decision for a single inbound webhook event:
+//   process     -> caller owns the event and must run the work
+//   duplicate   -> already processed successfully; safe to skip
+//   in_progress -> another delivery is currently handling it; skip to avoid
+//                  double-processing (Meta will redeliver if we never ACK)
+export type WebhookClaimDecision = "process" | "duplicate" | "in_progress";
+
+export interface WebhookClaim {
+  event: WebhookEventRow | null;
+  decision: WebhookClaimDecision;
+}
+
+// Stale-claim window: a 'received' row older than this is assumed to belong to a
+// crashed/aborted handler and may be reclaimed, so a crash mid-event does not
+// strand the event forever (Meta stops redelivering once it gets a 200).
+const WEBHOOK_CLAIM_STALE_MS = 10 * 60 * 1000;
+
+// Durable, per-event idempotency claim backed by the `webhook_events` ledger.
+//
+// Unlike acquireWebhookEvent (which only reports whether the row was inserted),
+// this serializes the outcome so callers can distinguish "new", "done", and
+// "already being handled". Events recorded as failed are re-claimable so a
+// redelivery retries them.
+export async function claimWebhookEvent(provider: string, eventKey: string, payload: any): Promise<WebhookClaim> {
+  const payloadHash = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  const inserted = await queryOne(
+    `INSERT INTO webhook_events (provider, event_key, status, payload_hash, payload, http_status)
+     VALUES ($1, $2, 'received', $3, $4, 200)
+     ON CONFLICT (provider, event_key) DO NOTHING
+     RETURNING *`,
+    [provider, eventKey, payloadHash, JSON.stringify(payload)]
+  );
+  if (inserted) return { event: rowToWebhookEvent(inserted), decision: "process" };
+
+  const existing = await queryOne("SELECT * FROM webhook_events WHERE provider = $1 AND event_key = $2", [provider, eventKey]);
+  if (!existing) return { event: null, decision: "process" };
+  const event = rowToWebhookEvent(existing);
+  if (event.status === "processed") return { event, decision: "duplicate" };
+  if (event.status === "failed") {
+    // Re-claim so a Meta redelivery retries the event.
+    await query("UPDATE webhook_events SET status = 'received', error = NULL, received_at = NOW() WHERE provider = $1 AND event_key = $2", [provider, eventKey]);
+    return { event, decision: "process" };
+  }
+  // status === 'received' -> in progress, unless the claim is stale.
+  const receivedAt = new Date(event.received_at).getTime();
+  if (Number.isFinite(receivedAt) && Date.now() - receivedAt > WEBHOOK_CLAIM_STALE_MS) {
+    await query("UPDATE webhook_events SET received_at = NOW() WHERE provider = $1 AND event_key = $2", [provider, eventKey]);
+    return { event, decision: "process" };
+  }
+  return { event, decision: "in_progress" };
+}
+
+function rowToWebhookEvent(row: any): WebhookEventRow {
+  return {
+    ...row,
+    payload: typeof row.payload === "string" ? safeJson(row.payload) : row.payload,
+  };
+}
+
 export async function acquireWebhookEvent(
   provider: string,
   eventKey: string,

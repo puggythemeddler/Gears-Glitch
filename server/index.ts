@@ -8356,19 +8356,33 @@ app.get("/api/webhooks/whatsapp", asyncHandler(async (req: Request, res: Respons
 }));
 
 app.post("/api/webhooks/whatsapp", asyncHandler(async (req: Request, res: Response) => {
-  // Security: all WhatsApp webhook POSTs MUST carry a valid x-hub-signature-256.
-  // A missing signature is rejected outright (previous behavior only checked it
-  // when present, which would allow unauthenticated webhook injection).
-  if (!(await verifyWhatsAppSignature((req as any).rawBody || JSON.stringify(req.body), req.headers["x-hub-signature-256"] as string | undefined))) {
-    res.sendStatus(403);
+  // Security: all WhatsApp webhook POSTs MUST carry a valid x-hub-signature-256
+  // computed over the exact raw body Meta sent. The raw bytes are captured by
+  // the express.json `verify` hook (see the JSON body parser setup). Re-serializing
+  // req.body would change the bytes and could never match the signature, so a
+  // missing rawBody is rejected rather than silently accepted.
+  const rawBody = (req as any).rawBody as Buffer | undefined;
+  if (!rawBody || !(await verifyWhatsAppSignature(rawBody, req.headers["x-hub-signature-256"] as string | undefined))) {
+    res.status(403).json({ error: "Invalid or missing webhook signature." });
     return;
   }
+  // Return a non-2xx when any event fails so Meta redelivers the payload. Already
+  // processed events are skipped via the durable ledger, so the retry only
+  // re-runs the events that actually failed.
+  let outcome;
   try {
-    await handleWhatsAppWebhook(req.body);
+    outcome = await handleWhatsAppWebhook(req.body);
   } catch (err: any) {
     console.error("[WhatsApp Webhook]", err?.message || err);
+    res.status(500).json({ error: "Webhook processing error." });
+    return;
   }
-  res.sendStatus(200);
+  if (!outcome.ok) {
+    console.error("[WhatsApp Webhook] partial failure:", outcome.errors.join("; "));
+    res.status(500).json({ error: "One or more webhook events failed.", failed: outcome.failed });
+    return;
+  }
+  res.status(200).json({ ok: true, processed: outcome.processed, skipped: outcome.skipped });
 }));
 
 app.get("/api/admin/whatsapp/config", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
@@ -8517,13 +8531,24 @@ app.get("/api/whatsapp/media/:id", adminAuthMiddleware, requirePermission("whats
   const media = await getWhatsAppMediaById(id);
   if (!media) return res.status(404).json({ error: "Media not found" });
   const buf = Buffer.from(media.media_data, "base64");
-  res.set("Content-Type", media.mime_type || "image/jpeg");
+  // Defense in depth: only ever serve the media types WhatsApp actually sends,
+  // and never let a stored type trigger HTML/script rendering. Unknown types are
+  // forced to a download (application/octet-stream) with nosniff.
+  const ALLOWED_MEDIA_TYPES = [
+    "image/jpeg", "image/png", "image/webp", "image/gif",
+    "audio/ogg", "audio/mpeg", "audio/mp4", "audio/amr",
+    "video/mp4", "video/3gpp", "application/pdf",
+  ];
+  const declared = String(media.mime_type || "").toLowerCase().split(";")[0].trim();
+  const type = ALLOWED_MEDIA_TYPES.includes(declared) ? declared : "application/octet-stream";
+  const inline = type.startsWith("image/") || type === "application/pdf";
+  res.set("Content-Type", type);
   res.set("Content-Length", String(buf.length));
-  if (media.filename) {
-    // Defense in depth: never let a stored filename break out of the header.
-    const safe = String(media.filename).replace(/[\r\n\x00-\x1f"]/g, "");
-    res.set("Content-Disposition", `inline; filename="${safe}"`);
-  }
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Cache-Control", "private, max-age=300");
+  // Defense in depth: never let a stored filename break out of the header.
+  const safe = String(media.filename || "").replace(/[\r\n\x00-\x1f"\\]/g, "").slice(0, 128);
+  res.set("Content-Disposition", `${inline ? "inline" : "attachment"}${safe ? `; filename="${safe}"` : ""}`);
   res.send(buf);
 }));
 

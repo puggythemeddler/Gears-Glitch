@@ -190,6 +190,13 @@ export default function WhatsAppSettings() {
     } catch (e: any) { setIntResult("Error: " + e.message); }
   }
 
+  // Prefer the server-computed backend webhook URL (BASE_URL + path). Falling
+  // back to window.location.origin is only a local-dev convenience — on a split
+  // deployment the browser origin is the storefront, not the API that receives
+  // Meta's webhook.
+  const webhookUrl = config?.webhookUrl
+    || (typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp");
+
   if (loading) return <Spinner />;
 
   return (
@@ -263,12 +270,14 @@ export default function WhatsAppSettings() {
         </p>
         <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginBottom: "0.75rem" }}>
           <code style={{ display: "block", padding: "0.5rem 0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: "0.8rem", wordBreak: "break-all", flex: 1 }}>
-            {typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"}
+            {webhookUrl}
           </code>
-          <RippleButton size="small" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp"); feedback.success({ title: "Webhook URL copied" }); } catch {} }} aria-label="Copy webhook URL">Copy</RippleButton>
+          <RippleButton size="small" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(webhookUrl); feedback.success({ title: "Webhook URL copied" }); } catch {} }} aria-label="Copy webhook URL">Copy</RippleButton>
         </div>
         <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
-          Verify Token: <strong>{settings?.whatsappVerifyToken || "gear-glitch-wa-verify"}</strong>
+          Verify Token: {config?.verifyTokenConfigured
+            ? <strong>configured (hidden — it is never sent to the browser)</strong>
+            : <strong style={{ color: "var(--warning-text)" }}>using the built-in default — set your own below before going live</strong>}
         </p>
       </div>
 

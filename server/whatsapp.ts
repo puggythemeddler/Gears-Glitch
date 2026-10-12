@@ -1,35 +1,31 @@
+import crypto from "crypto";
 import { getSettings, upsertWhatsAppConversation, getWhatsAppConversationByPhone, logWhatsAppMessage, findCustomerByPhone, findProviderByPhone, sendMessage, storeWhatsAppMedia, getWhatsAppMedia, getWhatsAppTemplateByName } from "./db";
+import { claimWebhookEvent, markWebhookProcessed, markWebhookFailed } from "./integrations-store";
 
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
+// Normalizes Kenyan phone numbers to E.164-without-plus (2547XXXXXXXX). Accepts
+// 07XXXXXXXX, 01XXXXXXXX, +2547XXXXXXXX and 254XXXXXXXXX; strips spaces, dashes
+// and any other non-digit characters. Numbers that are not Kenyan are returned
+// digit-only so callers can still attempt delivery.
+export function normalizePhone(phone: string): string {
+  const digits = String(phone || "").replace(/\D/g, "");
   if (digits.startsWith("0") && digits.length >= 10) return "254" + digits.slice(1);
-  if (digits.startsWith("254")) return digits;
+  if (digits.startsWith("254") && digits.length > 9) return digits;
   return digits;
 }
 
-function isWithin24Hours(lastIncomingAt: string | null): boolean {
+// True only for a complete Kenyan MSISDN in E.164-without-plus form
+// (254 + 9 digits). Used to reject obviously malformed inbound senders before
+// they are written to the conversation log.
+export function isValidKenyanPhone(phone: string): boolean {
+  return /^254\d{9}$/.test(normalizePhone(phone));
+}
+
+export function isWithin24Hours(lastIncomingAt: string | null): boolean {
   if (!lastIncomingAt) return false;
   const last = new Date(lastIncomingAt);
   if (isNaN(last.getTime())) return false;
   const now = new Date();
   return (now.getTime() - last.getTime()) < 24 * 60 * 60 * 1000;
-}
-
-// Idempotency guard: Meta redelivers webhook payloads until it gets a 200, and
-// a single inbound message may arrive in multiple deliveries. The message id is
-// the dedup key. Kept in-memory (bounded / LRU-ish by age) so redelivery of the
-// *same payload burst* is handled without persisting every inbound id globally.
-const processedMessageIds = new Map<string, number>();
-function isProcessedMessage(id: string): boolean {
-  const now = Date.now();
-  if (processedMessageIds.size > 2000) {
-    for (const [k, t] of processedMessageIds) {
-      if (now - t > 5 * 60 * 1000) processedMessageIds.delete(k);
-    }
-  }
-  if (processedMessageIds.has(id)) return true;
-  processedMessageIds.set(id, now);
-  return false;
 }
 
 export async function downloadWhatsAppMedia(mediaId: string): Promise<{ ok: boolean; data?: Buffer; mimeType?: string; filename?: string; error?: string }> {
@@ -262,89 +258,159 @@ export async function notifyAdminWhatsApp(text: string): Promise<void> {
   );
 }
 
+// Meta signs every webhook POST with HMAC-SHA256 over the *raw* request bytes:
+//   x-hub-signature-256: sha256=<64 lowercase hex>
+export function buildWhatsAppSignature(body: string | Buffer, appSecret: string): string {
+  return "sha256=" + crypto.createHmac("sha256", appSecret).update(body).digest("hex");
+}
+
+// Constant-time comparison that is safe against mismatched lengths/encodings.
+// crypto.timingSafeEqual throws when the buffers differ in length, so the length
+// guard must come first or a malformed header would throw (and previously left a
+// pre-auth code path exploitable).
+export function signaturesMatch(expected: string, provided: string): boolean {
+  if (typeof provided !== "string") return false;
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(provided, "utf8");
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 export async function verifyWhatsAppSignature(body: string | Buffer, signature: string | undefined): Promise<boolean> {
+  // Reject early on an empty body or a malformed/absent header, before touching
+  // the database or running any comparison. Meta only ever sends "sha256=" + 64
+  // hex chars over a non-empty body.
+  if (!body || !(body as any).length || typeof signature !== "string" || !/^sha256=[0-9a-f]{64}$/i.test(signature)) return false;
   const s = await getSettings();
   const appSecret = s.whatsappAppSecret;
-  if (!appSecret || !signature) return false;
+  if (!appSecret) return false;
   try {
-    const crypto = await import("crypto");
-    const expected = "sha256=" + crypto.createHmac("sha256", appSecret).update(body).digest("hex");
-    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    return signaturesMatch(buildWhatsAppSignature(body, appSecret), signature.toLowerCase());
   } catch {
     return false;
   }
 }
 
-export async function handleWhatsAppWebhook(body: any): Promise<void> {
-  if (body.object !== "whatsapp_business_account") return;
-  const entries = body.entry || [];
+export interface WhatsAppWebhookResult {
+  ok: boolean;
+  processed: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
+}
+
+// Processes one inbound message: downloads/stores media, logs it, links it to a
+// customer/provider conversation and mirrors it into the internal thread. Any
+// throw here is caught by the caller, recorded against the durable ledger and
+// surfaced as a non-2xx so Meta retries the payload.
+async function processInboundMessage(msg: any, value: any): Promise<void> {
+  const from = normalizePhone(msg.from || "");
+  const msgType = msg.type || "text";
+  let content = msgType === "text" ? (msg.text?.body || "") : `[${msgType}]`;
+  const contacts = Array.isArray(value.contacts) ? value.contacts : [];
+  const contactName = contacts[0]?.profile?.name || "";
+
+  // Download and store media if present. A media-download failure is
+  // non-fatal: the message is still logged with its type placeholder.
+  if (["image", "audio", "video", "document"].includes(msgType)) {
+    const mediaId = msg[msgType]?.id || msg[msgType]?.media_id || "";
+    if (mediaId) {
+      const dl = await downloadWhatsAppMedia(mediaId);
+      if (dl.ok && dl.data) {
+        const base64 = dl.data.toString("base64");
+        const filename = dl.filename || msg[msgType]?.filename || "";
+        await storeWhatsAppMedia(msg.id, from, dl.mimeType || "application/octet-stream", base64, filename);
+        content = `[${msgType}:${filename || dl.mimeType || msgType}]`;
+      } else if (!dl.ok) {
+        console.warn(`[whatsapp] media download failed for ${msg.id}: ${dl.error}`);
+      }
+    }
+  }
+
+  await logWhatsAppMessage(from, "inbound", msgType, content, "received", msg.id);
+
+  const customer = await findCustomerByPhone(from);
+  const provider = await findProviderByPhone(from);
+
+  if (customer) {
+    const existingConvo = await getWhatsAppConversationByPhone(from);
+    await upsertWhatsAppConversation(from, "customer", customer.id, customer.name || contactName, "inbound");
+    if (existingConvo) {
+      const providerId = existingConvo.entity_type === "provider" ? existingConvo.entity_id : 0;
+      if (providerId) await sendMessage(customer.id, providerId, "WhatsApp Message", content, "customer");
+    }
+  } else if (provider) {
+    const existingConvo = await getWhatsAppConversationByPhone(from);
+    await upsertWhatsAppConversation(from, "provider", provider.id, provider.company_name || provider.contact_name || contactName, "inbound");
+    if (existingConvo) {
+      const customerId = existingConvo.entity_type === "customer" ? existingConvo.entity_id : 0;
+      if (customerId) await sendMessage(customerId, provider.id, "WhatsApp Message", content, "provider");
+    }
+  } else {
+    await upsertWhatsAppConversation(from, "customer", 0, contactName, "inbound");
+  }
+}
+
+// Processes a Meta webhook payload and reports per-event outcomes. Each inbound
+// message and each delivery status is individually claimed in the durable
+// `webhook_events` ledger (migration 0018), so:
+//   * a redelivery of an already-processed event is skipped (no duplicates),
+//   * a delivery status is processed exactly once,
+//   * a failed event is retried on the next Meta redelivery,
+//   * a partially-successful payload does not re-run the events that succeeded.
+export async function handleWhatsAppWebhook(body: any): Promise<WhatsAppWebhookResult> {
+  const result: WhatsAppWebhookResult = { ok: true, processed: 0, skipped: 0, failed: 0, errors: [] };
+  if (!body || body.object !== "whatsapp_business_account") return result;
+  const entries = Array.isArray(body.entry) ? body.entry : [];
   for (const entry of entries) {
-    const changes = entry.changes || [];
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
     for (const change of changes) {
-      if (change.field !== "messages") continue;
+      if (change?.field !== "messages") continue;
       const value = change.value || {};
 
-      // Handle incoming messages
-      const messages = value.messages || [];
+      const messages = Array.isArray(value.messages) ? value.messages : [];
       for (const msg of messages) {
-        // Idempotency: Meta redelivers webhook payloads on failures; the same
-        // message id must never be processed twice (duplicate messages / routing).
-        if (isProcessedMessage(msg.id)) continue;
-        const from = normalizePhone(msg.from || "");
-        const msgType = msg.type || "text";
-        let content = msgType === "text" ? (msg.text?.body || "") : `[${msgType}]`;
-        const contacts = value.contacts || [];
-        const contactName = contacts[0]?.profile?.name || "";
-
-        // Download and store media if present
-        if (["image", "audio", "video", "document"].includes(msgType)) {
-          const mediaId = msg[msgType]?.id || msg[msgType]?.media_id || "";
-          if (mediaId) {
-            const dl = await downloadWhatsAppMedia(mediaId);
-            if (dl.ok && dl.data) {
-              const base64 = dl.data.toString("base64");
-              const filename = dl.filename || msg[msgType]?.filename || "";
-              await storeWhatsAppMedia(msg.id, from, dl.mimeType || "application/octet-stream", base64, filename);
-              content = `[${msgType}:${filename || dl.mimeType || msgType}]`;
-            }
-          }
-        }
-
-        await logWhatsAppMessage(from, "inbound", msgType, content, "received", msg.id);
-
-        const customer = await findCustomerByPhone(from);
-        const provider = await findProviderByPhone(from);
-
-        if (customer) {
-          const existingConvo = await getWhatsAppConversationByPhone(from);
-          await upsertWhatsAppConversation(from, "customer", customer.id, customer.name || contactName, "inbound");
-          if (existingConvo) {
-            const providerId = existingConvo.entity_type === "provider" ? existingConvo.entity_id : 0;
-            if (providerId) await sendMessage(customer.id, providerId, "WhatsApp Message", content, "customer");
-          }
-        } else if (provider) {
-          const existingConvo = await getWhatsAppConversationByPhone(from);
-          await upsertWhatsAppConversation(from, "provider", provider.id, provider.company_name || provider.contact_name || contactName, "inbound");
-          if (existingConvo) {
-            const customerId = existingConvo.entity_type === "customer" ? existingConvo.entity_id : 0;
-            if (customerId) await sendMessage(customerId, provider.id, "WhatsApp Message", content, "provider");
-          }
-        } else {
-          await upsertWhatsAppConversation(from, "customer", 0, contactName, "inbound");
+        const id = String(msg?.id || "");
+        if (!id) { result.skipped++; continue; }
+        const eventKey = `message:${id}`;
+        const claim = await claimWebhookEvent("whatsapp", eventKey, msg);
+        if (claim.decision !== "process") { result.skipped++; continue; }
+        try {
+          await processInboundMessage(msg, value);
+          await markWebhookProcessed("whatsapp", eventKey, 200);
+          result.processed++;
+        } catch (err: any) {
+          const message = err?.message || String(err);
+          await markWebhookFailed("whatsapp", eventKey, message);
+          result.failed++;
+          result.errors.push(`${eventKey}: ${message}`);
         }
       }
 
-      // Handle status updates
-      const statuses = value.statuses || [];
+      const statuses = Array.isArray(value.statuses) ? value.statuses : [];
       for (const status of statuses) {
-        const phone = normalizePhone(status.recipient_id || "");
+        const id = String(status?.id || "");
+        if (!id) { result.skipped++; continue; }
         const statusValue = status.status || "unknown";
-        if (phone) {
-          await logWhatsAppMessage(phone, "status", statusValue, "", statusValue, status.id);
+        const eventKey = `status:${id}:${statusValue}`;
+        const claim = await claimWebhookEvent("whatsapp", eventKey, status);
+        if (claim.decision !== "process") { result.skipped++; continue; }
+        try {
+          const phone = normalizePhone(status.recipient_id || "");
+          if (phone) await logWhatsAppMessage(phone, "status", statusValue, "", statusValue, status.id);
+          await markWebhookProcessed("whatsapp", eventKey, 200);
+          result.processed++;
+        } catch (err: any) {
+          const message = err?.message || String(err);
+          await markWebhookFailed("whatsapp", eventKey, message);
+          result.failed++;
+          result.errors.push(`${eventKey}: ${message}`);
         }
       }
     }
   }
+  result.ok = result.failed === 0;
+  return result;
 }
 
 export async function verifyWhatsAppWebhook(mode: string, token: string, challenge: string): Promise<{ ok: boolean; response?: string }> {
@@ -359,13 +425,31 @@ export async function verifyWhatsAppChallenge(mode: string, verifyToken: string,
   return { ok: false };
 }
 
-export async function getWhatsAppConfig(): Promise<{ enabled: boolean; configured: boolean; phoneNumberId: string; businessAccountId: string }> {
+// Meta's handshake verifies against the stored token; when the merchant has not
+// set one the server falls back to this default (see db.ts getSettings). The
+// admin UI needs to know whether a *custom* token exists without ever being told
+// the token itself (GET /api/settings redacts it).
+export const DEFAULT_WHATSAPP_VERIFY_TOKEN = "gear-glitch-wa-verify";
+
+export async function getWhatsAppConfig(): Promise<{
+  enabled: boolean;
+  configured: boolean;
+  phoneNumberId: string;
+  businessAccountId: string;
+  verifyTokenConfigured: boolean;
+  webhookUrl: string;
+}> {
   const s = await getSettings();
+  // The webhook is a server-to-server endpoint and must resolve to the API host
+  // (BASE_URL), NOT the storefront origin (FRONTEND_URL / window.location).
+  const apiBase = String(process.env.BASE_URL || "").trim().replace(/\/$/, "");
   return {
     enabled: s.whatsappEnabled,
     configured: !!(s.whatsappPhoneNumberId && s.whatsappAccessToken),
     phoneNumberId: s.whatsappPhoneNumberId,
     businessAccountId: s.whatsappBusinessAccountId,
+    verifyTokenConfigured: !!s.whatsappVerifyToken && s.whatsappVerifyToken !== DEFAULT_WHATSAPP_VERIFY_TOKEN,
+    webhookUrl: apiBase ? `${apiBase}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp",
   };
 }
 
