@@ -2178,7 +2178,9 @@
             const r = data.results || [];
             const ok = r.filter(x => x.success).length;
             const fail = r.filter(x => !x.success).length;
-            toast(`Backups: ${ok} succeeded, ${fail} failed`);
+            const firstErr = r.find(x => !x.success && x.error);
+            toast(`Backups: ${ok} succeeded, ${fail} failed` + (firstErr ? ` — ${firstErr.name}: ${firstErr.error}` : ""), fail ? "error" : undefined);
+            if (fail) console.warn("[backups] failures:", r.filter(x => !x.success));
             loadBackups();
           } catch (e) { toast("Backup failed: " + e.message, "error"); }
         }

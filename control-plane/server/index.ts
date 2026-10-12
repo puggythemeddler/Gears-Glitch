@@ -1305,41 +1305,52 @@ app.get("/api/deploys", requireAuth, requireAdmin, async (req, res) => {
 // ─── BACKUPS ─────────────────────────────────────────────
 import { spawn } from "child_process";
 import fs from "fs";
+import zlib from "zlib";
 
 const BACKUP_DIR = path.join(__dirname, "..", "..", "backups");
 
-// Safe pg_dump: runs pg_dump and gzip as separate child processes with an
-// argument array (NO shell), so a DB URL can never inject shell commands.
-// The DB URL is passed as a single argv element, never interpolated into a
-// shell string. stderr is drained (a piped-but-unconsumed stderr can fill the
-// kernel pipe buffer and deadlock pg_dump) and its tail is included in errors so
-// failures are diagnosable. Returns a promise that rejects if either process fails.
+// Safe pg_dump: runs pg_dump with an argument array (NO shell), so a DB URL can
+// never inject shell commands. The DB URL is passed as a single argv element,
+// never interpolated into a shell string. Output is gzipped in-process with
+// zlib: this avoids requiring a `gzip` binary, and — the previous bug — avoids
+// passing an unopened WriteStream into spawn's stdio array, which Node 22/24
+// rejects with "The argument 'stdio' is invalid. Received WriteStream {fd:null}".
+// stderr is drained (a piped-but-unconsumed stderr can fill the kernel buffer and
+// deadlock pg_dump) and its tail is included in errors so failures are diagnosable.
 function runPgDump(dbUrl: string, filepath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
-      const outStream = fs.createWriteStream(filepath);
-      const gzip = spawn("gzip", [], { stdio: ["pipe", outStream, "ignore"] });
-      const dump = spawn("pg_dump", [dbUrl], {
+      let settled = false;
+      const settle = (err?: Error) => { if (settled) return; settled = true; if (err) reject(err); else resolve(); };
+
+      const pg = spawn("pg_dump", [dbUrl], {
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, PGPASSWORD: "" },
       });
       let stderrBuf = "";
-      dump.stderr.setEncoding("utf8");
-      dump.stderr.on("data", (chunk) => {
+      pg.stderr.setEncoding("utf8");
+      pg.stderr.on("data", (chunk) => {
         stderrBuf += String(chunk);
         if (stderrBuf.length > 1024) stderrBuf = stderrBuf.slice(-1024);
       });
-      dump.stdout.pipe(gzip.stdin);
-      dump.on("error", (e) => { try { gzip.kill(); } catch {} reject(e as Error); });
-      gzip.on("error", (e) => reject(e as Error));
-      gzip.on("close", (code) => {
-        outStream.end();
-        if (code !== 0) { reject(new Error(`gzip exited with code ${code}${stderrBuf ? ": " + stderrBuf.trim() : ""}`)); return; }
-        resolve();
+
+      const gz = zlib.createGzip();
+      const out = fs.createWriteStream(filepath);
+
+      out.on("error", (e) => { try { pg.kill(); } catch {} settle(e as Error); });
+      gz.on("error", (e) => { try { pg.kill(); } catch {} settle(e as Error); });
+      out.on("finish", () => settle());
+      pg.on("error", (e: NodeJS.ErrnoException) => {
+        out.destroy();
+        settle(new Error(e && e.code === "ENOENT"
+          ? "pg_dump not found on PATH - install the PostgreSQL client (postgresql-client) on the control-plane host."
+          : String((e && e.message) || e)));
       });
-      dump.on("close", (code) => {
-        if (code !== 0) { try { gzip.kill(); } catch {} reject(new Error(`pg_dump exited with code ${code}${stderrBuf ? ": " + stderrBuf.trim() : ""}`)); }
+      pg.on("close", (code) => {
+        if (code !== 0) { out.destroy(); settle(new Error(`pg_dump exited with code ${code}${stderrBuf ? ": " + stderrBuf.trim() : ""}`)); }
       });
+
+      pg.stdout.pipe(gz).pipe(out);
     } catch (e) { reject(e as Error); }
   });
 }
