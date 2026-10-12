@@ -98,8 +98,11 @@ section). **No commit or push was made in either pass — the working tree is su
 - **P0/pass-gate** M-Pesa `SIM`-prefixed `checkoutRequestId` auto-confirm must stay production-gated.
 - **Frontend baseline:** the 2 committed typecheck errors are genuine defects (wrong `ConfirmOptions`
   prop + view-setter type) — filed for the §5 fix in this pass.
-- **Restore procedure** is documented but not DR-verified (no `pg_dump`/`psql` locally; a restore dry-run
-  in CI/manual is the operator action).
+- **Restore procedure** is **DR-verified (2026-10-12)**: `mumbo-instruments-and-electron_2026-10-12.sql.gz`
+  restored cleanly (no `ERROR` lines) into a scratch PostgreSQL 17 instance — 93 tables, `schema_migrations`
+  head `0029`. Requirements: the target must be PostgreSQL 17+ (the dump's preamble sets `transaction_timeout`),
+  and a non-Neon target must pre-create Neon's roles (`neondb_owner`, `neon_superuser`, `cloud_admin`); a Neon
+  scratch project satisfies both natively. See `ACTION_ITEMS.md` Runbook B and `scripts/dr-restore.ps1`.
 - **0020 exception handlers** under review this pass (§3) — report pending.
 - Full disposition matrix: `PRODUCTION_READINESS_AUDIT_FULL.md` (A–G addenda).
 

@@ -7,6 +7,13 @@
   Implements ACTION_ITEMS.md "Runbook B". It NEVER touches production -- pass
   the connection string of a throwaway/scratch Neon project only.
 
+  The dump is produced by pg_dump 17 (Neon runs PostgreSQL 17) and its preamble
+  includes `SET transaction_timeout = ...`, so the TARGET database must be
+  PostgreSQL 17 or newer. A Neon scratch project satisfies this automatically.
+  When restoring into a plain / non-Neon Postgres, also pass -ProvisionNeonRoles
+  so the Neon-owned objects resolve (owner `neondb_owner`; roles `neon_superuser`
+  and `cloud_admin`).
+
   Steps: decompress the .sql.gz (native PowerShell, no 7z/gzip needed), restore
   with psql (ON_ERROR_STOP, so it fails loudly), then print verification counts.
 
@@ -19,7 +26,9 @@
 param(
   [Parameter(Mandatory = $true)][string]$BackupGz,
   [Parameter(Mandatory = $true)][string]$ScratchUrl,
-  [string]$PgBin = "C:\Program Files\PostgreSQL\16\bin"
+  [string]$PgBin = "C:\Program Files\PostgreSQL\17\bin",
+  # Create the Neon-owned roles before restoring (needed for a non-Neon target).
+  [switch]$ProvisionNeonRoles
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,7 +41,7 @@ function Resolve-Psql {
   if ($cmd) { $candidates += $cmd.Source }
   $candidates += (Get-ChildItem "C:\Program Files\PostgreSQL\*\bin\psql.exe" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
   $found = $candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
-  if (-not $found) { throw "psql.exe not found. Install it with: winget install --id PostgreSQL.PostgreSQL.16 -e" }
+  if (-not $found) { throw "psql 17 not found. Install it with: winget install --id PostgreSQL.PostgreSQL.17 -e" }
   return $found
 }
 
@@ -43,6 +52,20 @@ Write-Host "target:  scratch DB only`n"
 
 if (-not (Test-Path -LiteralPath $BackupGz)) { throw "Backup file not found: $BackupGz" }
 if ($ScratchUrl -notmatch "sslmode=") { $ScratchUrl += "?sslmode=require" }
+
+# 0. Target must be PostgreSQL 17+ (dump preamble sets `transaction_timeout`).
+$serverNum = $(& $psql $ScratchUrl -tAc "SHOW server_version_num;").Trim()
+Write-Host "target server_version_num: $ver"
+if ([int]$ver -lt 170000) {
+  Write-Warning "Target is PostgreSQL < 17; restore may fail on 'SET transaction_timeout'. Use a PG17+ target (Neon scratch)."
+}
+
+if ($ProvisionNeonRoles) {
+  Write-Host "Provisioning Neon roles on the target (neondb_owner, neon_superuser, cloud_admin)..."
+  foreach ($role in @("neondb_owner", "neon_superuser", "cloud_admin")) {
+    & $psql $ScratchUrl -c ('CREATE ROLE "' + $role + '";') 2>$null
+  }
+}
 
 # 1. Decompress .sql.gz -> .sql using native .NET (no external gzip needed).
 $sqlPath = [System.IO.Path]::ChangeExtension($BackupGz, ".sql")

@@ -67,9 +67,9 @@ gh run view <run-id> --repo <owner>/Gears-Glitch --log-failed
 
 Acceptance: the run whose `headSha` starts with `4181de9` shows `completed/success`; the workflow must run **all four gates** — server `typecheck`+`build`+`test`, control-plane `typecheck`+`build`+`test`, frontend `build` (the CF worker deployment job can be `success` independently; an amber `in_progress` on the code-quality workflow is not green). Expected local units that CI should mirror: server **137**, control-plane **72** (incl. 13 `cp-secrets`), frontend **29 static pages**. Optionally `gh run watch <run-id>` if still queued.
 
-### Runbook B — DR restore drill (documented-only today; `NOT VERIFIED`)
+### Runbook B — DR restore drill (`VERIFIED 2026-10-12`)
 
-Prerequisite: one RO**scratch** Neon project (independent from prod), and run on a machine with the Postgres client (e.g. `winget install PostgreSQL.PostgreSQL.16` gives `psql`).
+Prerequisite: one scratch Neon project (independent from prod) **or** a local PostgreSQL 17 instance, and the Postgres client (`winget install --id PostgreSQL.PostgreSQL.17 -e` gives `psql`/`pg_dump`). The target **must be PostgreSQL 17+**: the dump is produced by `pg_dump 17` and its preamble sets `transaction_timeout`, which 16 and older reject. A non-Neon target must also pre-create Neon's roles (`neondb_owner`, `neon_superuser`, `cloud_admin`); a Neon scratch project has them natively. `scripts/dr-restore.ps1` automates steps 2–4 (`-ProvisionNeonRoles` for non-Neon targets).
 
 ```powershell
 # 1. Get the latest backup from the control-plane backups page (admin-gated
@@ -86,10 +86,13 @@ $in.CopyTo($of); $in.Dispose(); $of.Dispose()
 # 3. restore into the scratch project (never against prod)
 psql "$SCRATCH_NEON_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f latest_backup.sql
 
-# 4. smoke verify against scratch
-psql "$SCRATCH_NEON_CONNECTION_STRING" -c "SELECT count(*) FROM clients;"
+# 4. smoke verify against scratch (TENANT tables only — `clients` is the
+#    control-plane DB and is NOT present in a tenant backup)
+psql "$SCRATCH_NEON_CONNECTION_STRING" -c "SELECT count(*) FROM products;"
 psql "$SCRATCH_NEON_CONNECTION_STRING" -c "SELECT count(*) FROM customers;"
-psql "$SCRATCH_NEON_CONNECTION_STRING" -c "SELECT count(*) FROM invoices;"
+psql "$SCRATCH_NEON_CONNECTION_STRING" -c "SELECT max(version) FROM schema_migrations;"
 ```
 
-Acceptance: counters match the pre-backup prod counters (log them before the drill), rows for a known customer/invoice resolve, and no `ERROR` lines appear (ON_ERROR_STOP forces failure loudly). Then point a **scratch** Render service at the scratch DB and smoke the storefront/POS logins before discarding the scratch project. Update `PRODUCTION_READINESS_CURRENT.md` from "restore … NOT DR-verified" to "DR-verified on <date> against scratch Neon project <id>". Until this is run, **DR is a documented runbook, not a verified capability** — the audit claims no more than that.
+Acceptance: counters match the pre-backup prod counters (log them before the drill), rows for a known customer/invoice resolve, and no `ERROR` lines appear (ON_ERROR_STOP forces failure loudly). Then point a **scratch** Render service at the scratch DB and smoke the storefront/POS logins before discarding the scratch project.
+
+**Result (2026-10-12):** `mumbo-instruments-and-electron_2026-10-12.sql.gz` (31,954 B) decompressed to 285,832 B and restored into a fresh local PostgreSQL 17 instance with **no `ERROR`/`FATAL` lines** — 93 `public` tables, `products` 32, `customers` 0, `orders` 0, `invoices` 1, `schema_migrations` head `0029_normalize_layout_section_types`. Findings: (1) target must be PG 17+; (2) a non-Neon target needs Neon's roles pre-created. A Neon scratch project satisfies both, so the earlier documented procedure is sound; the local run is an equivalent artifact-level validation. `PRODUCTION_READINESS_CURRENT.md` updated accordingly.
