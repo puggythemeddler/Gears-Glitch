@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { getSettings, upsertWhatsAppConversation, getWhatsAppConversationByPhone, logWhatsAppMessage, findCustomerByPhone, findProviderByPhone, sendMessage, storeWhatsAppMedia, getWhatsAppMedia, getWhatsAppTemplateByName } from "./db";
-import { claimWebhookEvent, markWebhookProcessed, markWebhookFailed } from "./integrations-store";
+import { claimWebhookEvent, completeWebhookClaim, failWebhookClaim, type WebhookClaim } from "./integrations-store";
 
 // Normalizes Kenyan phone numbers to E.164-without-plus (2547XXXXXXXX). Accepts
 // 07XXXXXXXX, 01XXXXXXXX, +2547XXXXXXXX and 254XXXXXXXXX; strips spaces, dashes
@@ -292,11 +292,25 @@ export async function verifyWhatsAppSignature(body: string | Buffer, signature: 
 }
 
 export interface WhatsAppWebhookResult {
+  // ok === true only when nothing failed AND nothing was deferred (in-progress
+  // elsewhere). The HTTP layer must return a retryable status otherwise.
   ok: boolean;
   processed: number;
-  skipped: number;
+  skipped: number;   // duplicates already processed successfully
+  deferred: number;  // in-progress elsewhere; safely retryable
   failed: number;
   errors: string[];
+}
+
+// Maps a webhook outcome to the HTTP status Meta receives. Kept as a pure
+// function so the acknowledgement contract is unit-testable:
+//   500 -> a real failure; Meta should redeliver
+//   503 -> still in progress elsewhere; do NOT ack, Meta should redeliver
+//   200 -> fully handled (or a safe idempotent duplicate)
+export function whatsAppWebhookHttpStatus(result: WhatsAppWebhookResult): number {
+  if (result.failed > 0) return 500;
+  if (result.deferred > 0) return 503;
+  return 200;
 }
 
 // Processes one inbound message: downloads/stores media, logs it, links it to a
@@ -351,15 +365,36 @@ async function processInboundMessage(msg: any, value: any): Promise<void> {
   }
 }
 
+// Dependency seam: production uses the real ledger + processing functions; tests
+// inject a throwing processInbound to exercise the per-event failure path without
+// mocking the whole database module.
+export interface WhatsAppWebhookDeps {
+  claim: (provider: string, eventKey: string, payload: any) => Promise<WebhookClaim>;
+  complete: (provider: string, eventKey: string, token: string, httpStatus?: number) => Promise<boolean>;
+  fail: (provider: string, eventKey: string, token: string, error: string) => Promise<boolean>;
+  processInbound: (msg: any, value: any) => Promise<void>;
+}
+
+const defaultWebhookDeps: WhatsAppWebhookDeps = {
+  claim: claimWebhookEvent,
+  complete: completeWebhookClaim,
+  fail: failWebhookClaim,
+  processInbound: processInboundMessage,
+};
+
 // Processes a Meta webhook payload and reports per-event outcomes. Each inbound
 // message and each delivery status is individually claimed in the durable
-// `webhook_events` ledger (migration 0018), so:
+// `webhook_events` ledger (migration 0018 + lease columns in 0030), so:
 //   * a redelivery of an already-processed event is skipped (no duplicates),
 //   * a delivery status is processed exactly once,
+//   * an event still owned elsewhere is DEFERRED (not acked) and retried,
 //   * a failed event is retried on the next Meta redelivery,
-//   * a partially-successful payload does not re-run the events that succeeded.
-export async function handleWhatsAppWebhook(body: any): Promise<WhatsAppWebhookResult> {
-  const result: WhatsAppWebhookResult = { ok: true, processed: 0, skipped: 0, failed: 0, errors: [] };
+//   * a partially-successful payload does not re-run the events that succeeded,
+//     and one broken event cannot lose its independent siblings.
+export async function handleWhatsAppWebhook(body: any, deps: WhatsAppWebhookDeps = defaultWebhookDeps): Promise<WhatsAppWebhookResult> {
+  const result: WhatsAppWebhookResult = { ok: true, processed: 0, skipped: 0, deferred: 0, failed: 0, errors: [] };
+  // Unsupported but structurally valid payloads (other objects/fields) are
+  // acknowledged safely with an empty result.
   if (!body || body.object !== "whatsapp_business_account") return result;
   const entries = Array.isArray(body.entry) ? body.entry : [];
   for (const entry of entries) {
@@ -373,15 +408,17 @@ export async function handleWhatsAppWebhook(body: any): Promise<WhatsAppWebhookR
         const id = String(msg?.id || "");
         if (!id) { result.skipped++; continue; }
         const eventKey = `message:${id}`;
-        const claim = await claimWebhookEvent("whatsapp", eventKey, msg);
-        if (claim.decision !== "process") { result.skipped++; continue; }
+        const claim = await deps.claim("whatsapp", eventKey, msg);
+        if (claim.decision === "duplicate") { result.skipped++; continue; }
+        if (claim.decision === "in_progress" || !claim.token) { result.deferred++; continue; }
         try {
-          await processInboundMessage(msg, value);
-          await markWebhookProcessed("whatsapp", eventKey, 200);
-          result.processed++;
+          await deps.processInbound(msg, value);
+          const owned = await deps.complete("whatsapp", eventKey, claim.token, 200);
+          if (owned) result.processed++;
+          else { result.deferred++; result.errors.push(`${eventKey}: lease lost before completion`); }
         } catch (err: any) {
           const message = err?.message || String(err);
-          await markWebhookFailed("whatsapp", eventKey, message);
+          await deps.fail("whatsapp", eventKey, claim.token, message);
           result.failed++;
           result.errors.push(`${eventKey}: ${message}`);
         }
@@ -393,23 +430,25 @@ export async function handleWhatsAppWebhook(body: any): Promise<WhatsAppWebhookR
         if (!id) { result.skipped++; continue; }
         const statusValue = status.status || "unknown";
         const eventKey = `status:${id}:${statusValue}`;
-        const claim = await claimWebhookEvent("whatsapp", eventKey, status);
-        if (claim.decision !== "process") { result.skipped++; continue; }
+        const claim = await deps.claim("whatsapp", eventKey, status);
+        if (claim.decision === "duplicate") { result.skipped++; continue; }
+        if (claim.decision === "in_progress" || !claim.token) { result.deferred++; continue; }
         try {
           const phone = normalizePhone(status.recipient_id || "");
           if (phone) await logWhatsAppMessage(phone, "status", statusValue, "", statusValue, status.id);
-          await markWebhookProcessed("whatsapp", eventKey, 200);
-          result.processed++;
+          const owned = await deps.complete("whatsapp", eventKey, claim.token, 200);
+          if (owned) result.processed++;
+          else { result.deferred++; result.errors.push(`${eventKey}: lease lost before completion`); }
         } catch (err: any) {
           const message = err?.message || String(err);
-          await markWebhookFailed("whatsapp", eventKey, message);
+          await deps.fail("whatsapp", eventKey, claim.token, message);
           result.failed++;
           result.errors.push(`${eventKey}: ${message}`);
         }
       }
     }
   }
-  result.ok = result.failed === 0;
+  result.ok = result.failed === 0 && result.deferred === 0;
   return result;
 }
 

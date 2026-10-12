@@ -28,23 +28,47 @@ hard-coding one.
   rejected with `403`. The raw body is captured by the express `express.json({ verify })`
   hook into `req.rawBody`; if it is unavailable the request is rejected (re-serializing
   `req.body` can never match the signature).
-- **Response codes:** `200` only when every event in the payload was processed (or was
-  already processed). A partial failure returns `500` so Meta redelivers — already
-  processed events are skipped via the durable ledger, so only failed events re-run.
+- **Response codes:**
+  - `200` — every event was processed, or was already processed (idempotent duplicate).
+  - `500` — one or more events failed to process. Meta redelivers; already-processed
+    events are skipped, so only the failures re-run.
+  - `503` — one or more events are **already in progress** in another delivery. This is
+    deliberately *not* acked: if the original worker then dies, the retry is the only
+    thing that recovers the event.
+  - `403` — missing/invalid signature.
+  - Unsupported but valid payload objects (e.g. a different `object`) are acked `200`
+    with nothing to do.
 
-### Idempotency
+### Idempotency (atomic claim + lease)
 
 Meta redelivers webhook payloads until it gets a `200`, so one inbound message can
-arrive many times. Each inbound **message** (`message:<id>`) and each **delivery
-status** (`status:<id>:<state>`) is claimed in the durable `webhook_events` ledger
-(migration 0018) via `claimWebhookEvent`:
+arrive many times (including concurrently). Each inbound **message** (`message:<id>`)
+and each **delivery status** (`status:<id>:<state>`) is claimed in the durable
+`webhook_events` ledger via `claimWebhookEvent` (migration 0018 columns + lease
+columns from migration **0030**):
 
-- `processed` → skipped on redelivery (no duplicate log rows, routing or sends).
-- `received` → treated as in-progress; skipped to avoid concurrent double-processing.
-  A claim stale beyond 10 minutes is reclaimed so a crash mid-event is retried.
-- `failed` → re-claimed on the next redelivery and retried.
+- Ownership is granted by a single atomic statement — `INSERT ... ON CONFLICT ... DO
+  NOTHING ... RETURNING` for a new event, otherwise `UPDATE ... WHERE status <>
+  'processed' AND (lease_expires_at IS NULL OR lease_expires_at < NOW()) ... RETURNING`.
+  Postgres serializes the row, so exactly one concurrent caller wins `process`; the
+  rest get `in_progress`. There is no read-then-write window.
+- `processed` → skipped on redelivery (`duplicate`).
+- `in_progress` → the caller defers (HTTP `503`) so the event is never lost.
+- The lease is `WEBHOOK_LEASE_SECONDS` (120s). A crashed worker's event becomes
+  reclaimable once the lease lapses — nothing is stuck forever.
+- `completeWebhookClaim` / `failWebhookClaim` are fenced by the worker's ownership
+  token: if the lease was reclaimed, a stale worker's completion is a no-op (returns
+  `false`) and cannot clobber the new owner's state.
+- An event is marked `processed` only after the work succeeds.
 
-Events are marked `processed` only after the work succeeds.
+### Exactly-once limits
+
+Database writes are idempotent (the ledger dedups them), but a handler's *external*
+side effects (a Graph API send triggered by an inbound reply) cannot share the DB
+transaction. If a worker's lease lapses mid-effect, a reclaiming worker may repeat
+that external effect. This window is bounded by the 120s lease and is the reason the
+lease is kept well above the observed processing time; true exactly-once delivery to
+an external system is not guaranteed by this design.
 
 ## Outbound messages
 

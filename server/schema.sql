@@ -1057,9 +1057,15 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   error TEXT,
   received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   processed_at TIMESTAMPTZ,
+  -- Lease columns (migration 0030): atomic claim/fencing for concurrent webhook
+  -- deliveries. Empty/NULL leases are reclaimable; claim_token fences completions.
+  claim_token TEXT,
+  lease_expires_at TIMESTAMPTZ,
+  attempts INTEGER NOT NULL DEFAULT 0,
   UNIQUE (provider, event_key)
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_events_provider ON webhook_events(provider, status);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_lease ON webhook_events(status, lease_expires_at);
 
 -- ---------------------------------------------------------------------------
 -- Cumulative schema objects (historically applied at boot by the legacy

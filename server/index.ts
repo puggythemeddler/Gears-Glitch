@@ -415,7 +415,7 @@ import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, cred
 import { getGmailConfig, getGmailStatus, buildGmailAuthUrl, signGmailState, verifyGmailState, getOAuthStateSecret, exchangeGmailCode, saveGmailConnection, testGmailConnection, recordGmailTestResult, disconnectGmail } from "./gmail";
 import { getIntegrationsHealth } from "./integrations-health";
 import { upsertOauthAccount, acquireWebhookEvent, markWebhookProcessed, markWebhookFailed } from "./integrations-store";
-import { handleWhatsAppWebhook, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
+import { handleWhatsAppWebhook, whatsAppWebhookHttpStatus, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs, enqueueOrderInvoiceDelivery, startNotificationQueueWorker } from "./notification-service";
 import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
@@ -8377,9 +8377,17 @@ app.post("/api/webhooks/whatsapp", asyncHandler(async (req: Request, res: Respon
     res.status(500).json({ error: "Webhook processing error." });
     return;
   }
-  if (!outcome.ok) {
-    console.error("[WhatsApp Webhook] partial failure:", outcome.errors.join("; "));
-    res.status(500).json({ error: "One or more webhook events failed.", failed: outcome.failed });
+  const status = whatsAppWebhookHttpStatus(outcome);
+  if (status === 500) {
+    console.error("[WhatsApp Webhook] failure:", outcome.errors.join("; "));
+    res.status(500).json({ error: "One or more webhook events failed.", failed: outcome.failed, deferred: outcome.deferred });
+    return;
+  }
+  if (status === 503) {
+    // In-progress duplicates: deliberately NOT acked, so the event is not lost if
+    // the original worker then fails. Meta redelivers and the claim is retried.
+    console.warn(`[WhatsApp Webhook] deferred ${outcome.deferred} event(s) already in progress`);
+    res.status(503).json({ error: "Webhook events are already being processed.", deferred: outcome.deferred, retry: true });
     return;
   }
   res.status(200).json({ ok: true, processed: outcome.processed, skipped: outcome.skipped });

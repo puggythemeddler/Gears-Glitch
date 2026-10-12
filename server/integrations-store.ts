@@ -59,6 +59,10 @@ export interface WebhookEventRow {
   error: string | null;
   received_at: string;
   processed_at: string | null;
+  // Lease columns (migration 0030) power the atomic claim/fencing protocol.
+  claim_token: string | null;
+  lease_expires_at: string | null;
+  attempts: number;
 }
 
 export interface NotificationDeliveryRow {
@@ -230,55 +234,110 @@ export interface AcquireWebhookResult {
 }
 
 // A claim decision for a single inbound webhook event:
-//   process     -> caller owns the event and must run the work
+//   process     -> caller owns the event (holding a lease) and must run the work
 //   duplicate   -> already processed successfully; safe to skip
-//   in_progress -> another delivery is currently handling it; skip to avoid
-//                  double-processing (Meta will redeliver if we never ACK)
+//   in_progress -> another delivery currently holds the lease. The caller must
+//                  NOT ack success (return a retryable status) so the event is
+//                  never lost if the original worker then fails.
 export type WebhookClaimDecision = "process" | "duplicate" | "in_progress";
 
 export interface WebhookClaim {
   event: WebhookEventRow | null;
   decision: WebhookClaimDecision;
+  // Opaque ownership token, present only for `process`. Required by
+  // completeWebhookClaim/failWebhookClaim; a stale worker whose lease was
+  // reclaimed cannot clobber the new owner's state (fencing).
+  token: string | null;
+  leaseExpiresAt: string | null;
 }
 
-// Stale-claim window: a 'received' row older than this is assumed to belong to a
-// crashed/aborted handler and may be reclaimed, so a crash mid-event does not
-// strand the event forever (Meta stops redelivering once it gets a 200).
-const WEBHOOK_CLAIM_STALE_MS = 10 * 60 * 1000;
+// How long a claim is owned before another delivery may reclaim it. Must exceed
+// the worst-case processing time for one event. A crashed worker's event becomes
+// reclaimable once this elapses, so nothing is stuck forever.
+export const WEBHOOK_LEASE_SECONDS = 120;
 
 // Durable, per-event idempotency claim backed by the `webhook_events` ledger.
 //
-// Unlike acquireWebhookEvent (which only reports whether the row was inserted),
-// this serializes the outcome so callers can distinguish "new", "done", and
-// "already being handled". Events recorded as failed are re-claimable so a
-// redelivery retries them.
+// Ownership is granted by a single atomic statement (INSERT ... ON CONFLICT for
+// a brand-new event, otherwise an UPDATE ... WHERE ... RETURNING guarded by the
+// lease). Postgres serializes the conflicting row, so under concurrent redelivery
+// exactly one caller wins "process" and every other caller gets "in_progress" —
+// there is no SELECT-then-UPDATE window in which two workers both believe they
+// own the event.
 export async function claimWebhookEvent(provider: string, eventKey: string, payload: any): Promise<WebhookClaim> {
+  const token = crypto.randomBytes(16).toString("hex");
   const payloadHash = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  // Interpolated constant (not user input): keeps the lease duration in one place.
+  const lease = `NOW() + INTERVAL '${WEBHOOK_LEASE_SECONDS} seconds'`;
+
+  // 1. First delivery: insert a row already owned by this worker.
   const inserted = await queryOne(
-    `INSERT INTO webhook_events (provider, event_key, status, payload_hash, payload, http_status)
-     VALUES ($1, $2, 'received', $3, $4, 200)
+    `INSERT INTO webhook_events
+       (provider, event_key, status, payload_hash, payload, http_status, claim_token, lease_expires_at, attempts)
+     VALUES ($1, $2, 'processing', $3, $4, 200, $5, ${lease}, 1)
      ON CONFLICT (provider, event_key) DO NOTHING
      RETURNING *`,
-    [provider, eventKey, payloadHash, JSON.stringify(payload)]
+    [provider, eventKey, payloadHash, JSON.stringify(payload), token]
   );
-  if (inserted) return { event: rowToWebhookEvent(inserted), decision: "process" };
+  if (inserted) {
+    return { event: rowToWebhookEvent(inserted), decision: "process", token, leaseExpiresAt: inserted.lease_expires_at };
+  }
 
-  const existing = await queryOne("SELECT * FROM webhook_events WHERE provider = $1 AND event_key = $2", [provider, eventKey]);
-  if (!existing) return { event: null, decision: "process" };
-  const event = rowToWebhookEvent(existing);
-  if (event.status === "processed") return { event, decision: "duplicate" };
-  if (event.status === "failed") {
-    // Re-claim so a Meta redelivery retries the event.
-    await query("UPDATE webhook_events SET status = 'received', error = NULL, received_at = NOW() WHERE provider = $1 AND event_key = $2", [provider, eventKey]);
-    return { event, decision: "process" };
-  }
-  // status === 'received' -> in progress, unless the claim is stale.
-  const receivedAt = new Date(event.received_at).getTime();
-  if (Number.isFinite(receivedAt) && Date.now() - receivedAt > WEBHOOK_CLAIM_STALE_MS) {
-    await query("UPDATE webhook_events SET received_at = NOW() WHERE provider = $1 AND event_key = $2", [provider, eventKey]);
-    return { event, decision: "process" };
-  }
-  return { event, decision: "in_progress" };
+  // Atomic steal: take ownership only when the event is not already processed
+  // AND its lease has expired (or was never set). The WHERE clause is evaluated
+  // while holding the row lock, so only one concurrent updater matches.
+  const stolen = await queryOne(
+    `UPDATE webhook_events
+        SET status = 'processing',
+            claim_token = $3,
+            lease_expires_at = NOW() + INTERVAL '${WEBHOOK_LEASE_SECONDS} seconds',
+            attempts = attempts + 1,
+            error = NULL,
+            received_at = NOW()
+      WHERE provider = $1 AND event_key = $2
+        AND status <> 'processed'
+        AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
+      RETURNING *`,
+    [provider, eventKey, token]
+  );
+  if (stolen) return { event: rowToWebhookEvent(stolen), decision: "process", token, leaseExpiresAt: stolen.lease_expires_at };
+
+  // Lost the race: report whether the event is finished or still owned elsewhere.
+  const current = await queryOne("SELECT * FROM webhook_events WHERE provider = $1 AND event_key = $2", [provider, eventKey]);
+  if (!current) return { event: null, decision: "process", token, leaseExpiresAt: null };
+  const event = rowToWebhookEvent(current);
+  return {
+    event,
+    decision: event.status === "processed" ? "duplicate" : "in_progress",
+    token: null,
+    leaseExpiresAt: event.lease_expires_at,
+  };
+}
+
+// Completes a claimed event. Fenced by the ownership token: if the lease was
+// reclaimed by another worker, this is a no-op and returns false so the caller
+// knows its result was superseded (it must not report success).
+export async function completeWebhookClaim(provider: string, eventKey: string, token: string, httpStatus = 200): Promise<boolean> {
+  const res = await query(
+    `UPDATE webhook_events
+        SET status = 'processed', http_status = $4, processed_at = NOW(),
+            claim_token = NULL, lease_expires_at = NULL
+      WHERE provider = $1 AND event_key = $2 AND claim_token = $3`,
+    [provider, eventKey, token, httpStatus]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+// Marks a claimed event failed and releases the lease so the next Meta
+// redelivery can atomically reclaim and retry it. Fenced by the ownership token.
+export async function failWebhookClaim(provider: string, eventKey: string, token: string, error: string): Promise<boolean> {
+  const res = await query(
+    `UPDATE webhook_events
+        SET status = 'failed', error = $4, claim_token = NULL, lease_expires_at = NULL
+      WHERE provider = $1 AND event_key = $2 AND claim_token = $3`,
+    [provider, eventKey, token, error]
+  );
+  return (res.rowCount ?? 0) > 0;
 }
 
 function rowToWebhookEvent(row: any): WebhookEventRow {

@@ -101,7 +101,8 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 - **P3:** held stock never released if polling is abandoned.
 
 ### Webhooks
-- WhatsApp webhook: verification (GET) + receiver (POST). `/api/whatsapp/media/:id` is now **authenticated** (guarded by `adminAuthMiddleware` + `requirePermission("whatsapp:view")`, `server/index.ts`) with filename header-injection sanitized — earlier "unauthenticated (P1, PII)" finding is stale since 2026-09-03.
+- WhatsApp webhook: verification (GET) + receiver (POST). `POST` requires a valid `x-hub-signature-256` HMAC-SHA256 over the raw body (403 otherwise), and each message/status is deduplicated by an atomic claim + lease in `webhook_events` (migration 0030) with token fencing — replacing an earlier in-memory, then read-then-write, guard. In-progress duplicates return `503` (retryable) rather than a false `200`.
+- `/api/whatsapp/media/:id` is **authenticated** (guarded by `adminAuthMiddleware` + `requirePermission("whatsapp:view")`, `server/index.ts`) with filename header-injection sanitized — earlier "unauthenticated (P1, PII)" finding is stale since 2026-09-03.
 - eTIMS: config present; verification/tenancy/idempotency should be audited before activation.
 - No payment webhook for subscriptions (shop-level billing missing, see Subscriptions).
 
