@@ -1,4 +1,4 @@
-﻿CREATE TABLE IF NOT EXISTS whatsapp_consent (
+CREATE TABLE IF NOT EXISTS whatsapp_consent (
   id BIGSERIAL PRIMARY KEY,
   tenant_id BIGINT,
   merchant_id BIGINT,
