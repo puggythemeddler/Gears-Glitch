@@ -1,0 +1,12 @@
+-- Forward-only migration. Do NOT edit already-applied migrations.
+--
+-- A row in whatsapp_templates is a local mirror, not proof that Meta approved
+-- the template. Outside the 24-hour customer-service window a business-initiated
+-- message may only use a template that Meta has approved AND whose category is
+-- valid for the message. This column records that explicit approval decision.
+--
+-- Default FALSE so existing rows are never silently trusted: each template must
+-- be explicitly approved by an operator before it can be used for an
+-- out-of-window send. Inside the window free-form messages are governed by the
+-- customer-service window instead.
+ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT FALSE;

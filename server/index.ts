@@ -418,7 +418,7 @@ import { upsertOauthAccount, acquireWebhookEvent, markWebhookProcessed, markWebh
 import { handleWhatsAppWebhook, whatsAppWebhookHttpStatus, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs, enqueueOrderInvoiceDelivery, startNotificationQueueWorker } from "./notification-service";
 import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
-import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, trackPageView, getVisitorStats } from "./db";
+import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, setWhatsAppTemplateApproval, trackPageView, getVisitorStats } from "./db";
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
 import { publicBaseUrl } from "./public-url";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
@@ -725,6 +725,7 @@ defineAudit("/api/admin/splashes", "splash");
 defineAudit("/api/admin/splashes/:id", "splash");
 defineAudit("/api/admin/whatsapp/templates", "whatsapp_template", { method: "POST" });
 defineAudit("/api/admin/whatsapp/templates/:id", "whatsapp_template", { method: "DELETE" });
+defineAudit("/api/admin/whatsapp/templates/:id", "whatsapp_template", { action: "approved", method: "PATCH" });
 // Customer-initiated business events (actor resolves from req.customer)
 defineAudit("/api/orders", "order", { method: "POST" });
 defineAudit("/api/orders/create-pending", "order", { action: "pending_created", method: "POST" });
@@ -8567,15 +8568,27 @@ app.get("/api/admin/whatsapp/templates", adminAuthMiddleware, requirePermission(
 }));
 
 app.post("/api/admin/whatsapp/templates", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
-  const { name, bodyText, language, category, headerType, headerText, footerText } = req.body || {};
+  const { name, bodyText, language, category, headerType, headerText, footerText, approved, isApproved } = req.body || {};
   if (!name || !bodyText) return res.status(400).json({ error: "Name and bodyText are required" });
   try {
-    const template = await createWhatsAppTemplate(name, bodyText, language || "en", category || "UTILITY", headerType || "none", headerText || "", footerText || "");
+    const template = await createWhatsAppTemplate(name, bodyText, language || "en", category || "UTILITY", headerType || "none", headerText || "", footerText || "", approved === true || isApproved === true);
     res.json({ ok: true, template });
   } catch (err: any) {
     if (err?.code === "23505") return res.status(409).json({ error: "Template name already exists" });
     res.status(500).json({ error: "Failed to create template." });
   }
+}));
+
+// Approve/unapprove a template. Only an approved, category-valid template may
+// be used for an out-of-window (business-initiated) send.
+app.patch("/api/admin/whatsapp/templates/:id", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid template ID" });
+  const { approved, isApproved } = req.body || {};
+  const flag = approved === true || isApproved === true;
+  const template = await setWhatsAppTemplateApproval(id, flag);
+  if (!template) return res.status(404).json({ error: "Template not found" });
+  res.json({ ok: true, template });
 }));
 
 app.delete("/api/admin/whatsapp/templates/:id", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {

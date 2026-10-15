@@ -853,6 +853,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_templates (
   header_type TEXT DEFAULT 'none',
   header_text TEXT DEFAULT '',
   footer_text TEXT DEFAULT '',
+  is_approved BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
 );

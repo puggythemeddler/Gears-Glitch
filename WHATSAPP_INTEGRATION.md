@@ -106,6 +106,26 @@ Every sender routes through it, so no code path can bypass the check:
   queued or retried message is re-checked at send time and cannot bypass a `STOP` that
   arrived in the meantime.
 
+### Meta messaging-window / template rules (IMPLEMENTED)
+
+`postMetaMessage` also enforces Meta's platform rules before every request, so consent
+alone can never authorise a message Meta would reject:
+
+- **Free-form messages require an open 24-hour customer-service window.** Text,
+  media/documents and interactive buttons/lists are sent with `kind = "freeform"` and are
+  blocked when the recipient has not messaged us within 24 hours.
+- **Outside the window only an approved template may be used.** A template send is
+  `kind = "template"` and is validated against the local store: the template must exist,
+  be **explicitly marked approved** (`whatsapp_templates.is_approved`, migration `0033`),
+  and its category must match the message (`MARKETING` for marketing, `AUTHENTICATION`
+  for authentication, `UTILITY` for transactional/utility/service). A stored template row
+  does **not** prove Meta approval, so unapproved rows are never sent.
+- `sendWhatsAppDocument` skips the free-form media upload entirely outside the window and
+  goes straight to the approved `invoice_notification` template.
+- A window/template violation is a **permanent** denial (`{ ok:false, blocked:true }`),
+  like a consent denial. Operators approve templates via
+  `PATCH /api/admin/whatsapp/templates/:id` (`{ approved: true }`).
+
 **Policy (default-DENY — absence of a consent record is *not* consent):**
 
 - `marketing` requires an explicit `marketing_allowed = TRUE` grant.

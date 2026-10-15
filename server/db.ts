@@ -4236,12 +4236,19 @@ async function getWhatsAppMediaById(id: number): Promise<any | null> {
   return await queryOne("SELECT * FROM whatsapp_media WHERE id = $1", [id]) || null;
 }
 
-async function createWhatsAppTemplate(name: string, bodyText: string, language: string, category: string, headerType: string, headerText: string, footerText: string): Promise<any> {
+async function createWhatsAppTemplate(name: string, bodyText: string, language: string, category: string, headerType: string, headerText: string, footerText: string, isApproved: boolean = false): Promise<any> {
   const row = await queryOne(
-    "INSERT INTO whatsapp_templates (name, language, category, body_text, header_type, header_text, footer_text) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
-    [name, language, category, bodyText, headerType, headerText, footerText]
+    "INSERT INTO whatsapp_templates (name, language, category, body_text, header_type, header_text, footer_text, is_approved) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+    [name, language, category, bodyText, headerType, headerText, footerText, isApproved === true]
   );
   return row;
+}
+
+async function setWhatsAppTemplateApproval(id: number, approved: boolean): Promise<any | null> {
+  return await queryOne(
+    "UPDATE whatsapp_templates SET is_approved = $1, updated_at = NOW()::text WHERE id = $2 RETURNING *",
+    [approved === true, id]
+  ) || null;
 }
 
 async function listWhatsAppTemplates(): Promise<any[]> {
@@ -4616,7 +4623,7 @@ export {
   upsertWhatsAppConversation, getWhatsAppConversationByPhone, getWhatsAppConversations, logWhatsAppMessage, listWhatsAppLogs, getWhatsAppStats, findCustomerByPhone, findProviderByPhone,
   storeWhatsAppMedia, getWhatsAppMedia, getWhatsAppMediaById,
   trackPageView, getVisitorStats,
-  createWhatsAppTemplate, listWhatsAppTemplates, getWhatsAppTemplateByName, deleteWhatsAppTemplate,
+  createWhatsAppTemplate, listWhatsAppTemplates, getWhatsAppTemplateByName, deleteWhatsAppTemplate, setWhatsAppTemplateApproval,
   getDb,
   storeImage, getImage, deleteImageByRef,
   getUserTotp, setUserTotp,

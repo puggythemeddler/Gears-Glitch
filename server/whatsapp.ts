@@ -16,6 +16,62 @@ export function isWithin24Hours(lastIncomingAt: string | null): boolean {
   return (now.getTime() - last.getTime()) < 24 * 60 * 60 * 1000;
 }
 
+// True when the recipient last messaged us within Meta's 24-hour
+// customer-service window, i.e. when free-form (non-template) messages - text,
+// media/documents and interactive buttons/lists - are permitted. Templates are
+// permitted regardless of the window.
+async function isWithinCustomerServiceWindow(phone: string): Promise<boolean> {
+  const conversation = await getWhatsAppConversationByPhone(phone);
+  return isWithin24Hours(conversation?.last_incoming_at || null);
+}
+
+// Meta template categories, and the template category required for a message in
+// each messaging category. A message may only be carried by a template whose
+// category matches, so a marketing message cannot ride a utility template (and
+// vice versa).
+const TEMPLATE_CATEGORIES = ["MARKETING", "UTILITY", "AUTHENTICATION"] as const;
+type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number];
+
+function templateCategoryForMessage(category: MessageCategory): TemplateCategory {
+  if (category === "marketing") return "MARKETING";
+  if (category === "authentication") return "AUTHENTICATION";
+  return "UTILITY"; // transactional / utility / service
+}
+
+// Whether a message is free-form or a template; decides which Meta rule applies.
+type OutboundKind = "freeform" | "template";
+
+// Enforces Meta's messaging-window and template rules. Free-form messages are
+// only permitted inside the 24-hour customer-service window; outside it only an
+// approved template may be used. A local whatsapp_templates row does NOT prove
+// Meta approval - the template must be explicitly marked approved - and its
+// category must be valid for the message being sent.
+async function enforceMessagingRules(phone: string, kind: OutboundKind, category: MessageCategory, templateName?: string): Promise<{ allowed: boolean; reason?: string }> {
+  if (kind === "freeform") {
+    if (!(await isWithinCustomerServiceWindow(phone))) {
+      return { allowed: false, reason: "Free-form WhatsApp messages are only permitted inside the 24-hour customer-service window; use an approved template outside it." };
+    }
+    return { allowed: true };
+  }
+
+  if (!templateName) return { allowed: false, reason: "Template message requires a template name." };
+  const tmpl = await getWhatsAppTemplateByName(templateName);
+  if (!tmpl) return { allowed: false, reason: `WhatsApp template '${templateName}' is not configured.` };
+  // A stored template does not prove Meta approved it.
+  if (tmpl.is_approved !== true) {
+    return { allowed: false, reason: `WhatsApp template '${templateName}' is not marked approved; a stored template does not prove Meta approval.` };
+  }
+  const tmplCategory = String(tmpl.category || "").toUpperCase();
+  if (!(TEMPLATE_CATEGORIES as readonly string[]).includes(tmplCategory)) {
+    return { allowed: false, reason: `WhatsApp template '${templateName}' has an invalid category '${tmpl.category}'.` };
+  }
+  const required = templateCategoryForMessage(category);
+  if (tmplCategory !== required) {
+    return { allowed: false, reason: `WhatsApp template '${templateName}' (${tmplCategory}) is not valid for a ${category} message (requires ${required}).` };
+  }
+  return { allowed: true };
+}
+
 export async function downloadWhatsAppMedia(mediaId: string): Promise<{ ok: boolean; data?: Buffer; mimeType?: string; filename?: string; error?: string }> {
   const s = await getSettings();
   if (!s.whatsappAccessToken) return { ok: false, error: "WhatsApp not configured" };
@@ -63,14 +119,17 @@ interface MetaSendResult {
 // lives in this choke point and is evaluated immediately before the request.
 //
 // The recipient is normalised here (never trusted from the payload builder), the
-// consent/opt-out policy is enforced here (fail closed), and a permanent denial
-// is recorded in whatsapp_logs and returned as `{ ok:false, blocked:true }`.
+// consent/opt-out policy is enforced here (fail closed), the Meta
+// messaging-window/template rules are enforced here, and a permanent denial is
+// recorded in whatsapp_logs and returned as `{ ok:false, blocked:true }`.
 async function postMetaMessage(
   to: string,
   category: MessageCategory,
   logType: string,
   logContent: string,
-  buildPayload: (normalizedTo: string) => Record<string, unknown>
+  buildPayload: (normalizedTo: string) => Record<string, unknown>,
+  kind: OutboundKind = "freeform",
+  templateName?: string
 ): Promise<MetaSendResult> {
   const phone = normalizePhone(to);
   const decision = await isWhatsAppSendingAllowed(phone, category);
@@ -78,6 +137,16 @@ async function postMetaMessage(
     await logWhatsAppMessage(phone, "outbound", "blocked", logContent, "blocked", undefined, decision.reason);
     console.warn(`[whatsapp] Outbound blocked (${category}/${logType}): ${decision.reason}`);
     return { ok: false, blocked: true, error: decision.reason };
+  }
+
+  // Meta messaging-window / approved-template rules. A permanent policy denial:
+  // retrying cannot help (free-form outside the window needs the customer to
+  // message first; a template must be approved/category-correct).
+  const rule = await enforceMessagingRules(phone, kind, category, templateName);
+  if (!rule.allowed) {
+    await logWhatsAppMessage(phone, "outbound", "blocked", logContent, "blocked", undefined, rule.reason);
+    console.warn(`[whatsapp] Outbound blocked (${category}/${logType}): ${rule.reason}`);
+    return { ok: false, blocked: true, error: rule.reason };
   }
 
   const s = await getSettings();
@@ -123,13 +192,13 @@ async function sendWhatsAppTemplate(to: string, templateName: string, languageCo
       language: { code: languageCode },
       components: params.length > 0 ? [{ type: "body", parameters: params }] : [],
     },
-  }));
+  }), "template", templateName);
 }
 
 export async function sendWhatsAppInteractiveButtons(to: string, bodyText: string, buttons: { id: string; title: string }[], category: MessageCategory = "utility"): Promise<{ ok: boolean; waMessageId?: string; error?: string; blocked?: boolean }> {
-  // Interactive replies are only delivered inside the customer-service window,
-  // i.e. as a utility/service reply. The consent/opt-out policy is enforced in
-  // postMetaMessage before any outbound request.
+  // Interactive buttons are free-form messages: Meta only permits them inside
+  // the 24-hour customer-service window. Consent and the window rule are both
+  // enforced in postMetaMessage before any outbound request.
   return postMetaMessage(to, category, "interactive_buttons", bodyText, (phone) => ({
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -149,8 +218,9 @@ export async function sendWhatsAppInteractiveButtons(to: string, bodyText: strin
 }
 
 export async function sendWhatsAppListMessage(to: string, bodyText: string, buttonText: string, sections: { title: string; rows: { id: string; title: string; description?: string }[] }[], category: MessageCategory = "utility"): Promise<{ ok: boolean; waMessageId?: string; error?: string; blocked?: boolean }> {
-  // List messages are likewise a customer-service-window utility reply; the
-  // consent/opt-out policy is enforced in postMetaMessage before any request.
+  // List messages are free-form: Meta only permits them inside the 24-hour
+  // customer-service window. Consent and the window rule are both enforced in
+  // postMetaMessage before any outbound request.
   return postMetaMessage(to, category, "interactive_list", bodyText, (phone) => ({
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -535,6 +605,10 @@ export async function uploadWhatsAppMedia(file: Blob | Buffer | Uint8Array, file
 
 export async function sendWhatsAppDocumentMessage(to: string, mediaId: string, caption?: string, category: MessageCategory = "utility"): Promise<{ ok: boolean; messageId?: string; error?: string; blocked?: boolean }> {
   const phone = normalizePhone(to);
+  // A document/media message is free-form: Meta only permits it inside the
+  // 24-hour customer-service window. Outside the window the caller must use an
+  // approved template instead (see sendWhatsAppDocument). Both consent and the
+  // window rule are enforced in postMetaMessage.
   const result = await postMetaMessage(to, category, "document", caption || "", (normalizedTo) => {
     const payload: any = {
       messaging_product: "whatsapp",
@@ -574,8 +648,13 @@ export async function sendWhatsAppDocument(
     const s = await getSettings();
     if (!s.whatsappEnabled || !s.whatsappAccessToken || !s.whatsappPhoneNumberId) return { ok: false, error: "WhatsApp not configured" };
 
-    // Try to upload PDF as media if provided
-    if (pdf) {
+    const withinWindow = await isWithinCustomerServiceWindow(phone);
+
+    // A document/media message is free-form: Meta only permits it inside the
+    // 24-hour customer-service window. Only attempt the media send inside the
+    // window (and only if we have a PDF to upload); outside the window we skip
+    // straight to the approved-template path.
+    if (pdf && withinWindow) {
       const upload = await uploadWhatsAppMedia(pdf, filename, "application/pdf");
       if (upload.ok && upload.mediaId) {
         const sent = await sendWhatsAppDocumentMessage(phone, upload.mediaId, caption, category);
@@ -586,15 +665,18 @@ export async function sendWhatsAppDocument(
       // If upload failed, fall through to template fallback below
     }
 
-    // Fallback: try approved template if available (within 24h window constraint applies)
+    // Outside the window (or no usable PDF): only an approved, category-valid
+    // template may be sent. The template must be explicitly approved - a stored
+    // template row does not prove Meta approval (enforced in postMetaMessage).
     const templateName = "invoice_notification";
     try {
       const tmpl = await getWhatsAppTemplateByName(templateName);
       if (tmpl && tmpl.language) {
         const bodyVars = caption ? [caption] : [];
-        // Authorization is re-checked immediately before this direct template
-        // request (inside postMetaMessage). A check performed before the
-        // potentially slow media upload above is NOT assumed to still hold.
+        // Authorization and the window/template rules are re-checked immediately
+        // before this direct template request (inside postMetaMessage). A check
+        // performed before the potentially slow media upload above is NOT
+        // assumed to still hold.
         const res = await postMetaMessage(to, category, "template", templateName, (normalizedTo) => {
           const payload: any = {
             messaging_product: "whatsapp",
@@ -609,7 +691,7 @@ export async function sendWhatsAppDocument(
             payload.template.components = [{ type: "body", parameters: bodyVars.map((v) => ({ type: "text", text: v })) }];
           }
           return payload;
-        });
+        }, "template", templateName);
         if (res.blocked) return { ok: false, error: res.error, blocked: true };
         if (res.ok) {
           await logWhatsAppMessage(phone, "outbound", "template", templateName, "sent", res.waMessageId);
