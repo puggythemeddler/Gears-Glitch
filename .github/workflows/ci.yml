@@ -37,7 +37,7 @@ jobs:
       - run: npm run build
 
   server-test:
-    name: Server (isolation tests vs Postgres)
+    name: Server (isolation tests vs disposable Postgres)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -60,9 +60,13 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      # Destructive integration tests are gated on an explicit, validated
+      # TEST_DATABASE_URL pointing at this disposable service. DATABASE_URL is
+      # deliberately NOT set: the test helpers will refuse to fall back to it and
+      # will skip the DB suites if TEST_DATABASE_URL is absent or unsafe.
       - run: npm run test
         env:
-          DATABASE_URL: postgres://test:test@localhost:5432/gears_test
+          TEST_DATABASE_URL: postgres://test:test@localhost:5432/gears_test
 
   control-plane-test:
     name: Control plane (ops tests vs Postgres)

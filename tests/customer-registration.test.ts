@@ -8,7 +8,8 @@ import { join } from "node:path";
 import { getPool, queryOne, runSchema } from "../server/db-helpers";
 import { registerCustomer, loginCustomer, verifyToken } from "../server/auth";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // signToken()/verifyToken() refuse to run without a strong secret.
 process.env.JWT_SECRET = process.env.JWT_SECRET || "qa-customer-reg-test-secret-7d4b2f9a6c1e";
@@ -18,7 +19,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "qa-customer-reg-test-secret-
 // posted only { email, password } to /api/customer/login. A new customer
 // therefore got a bare 401 and no account was ever created, while
 // POST /api/customer/register sat unused with no UI caller.
-describe("customer self-registration", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("customer self-registration", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   const emailFor = (tag: string) => `${tag}-${runId}@example.com`;
 

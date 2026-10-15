@@ -4,7 +4,8 @@ import path from "path";
 import { spawn, ChildProcess } from "child_process";
 import { query, queryOne, closePool } from "../server/db-helpers";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -31,7 +32,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 //
 // Fixtures are namespaced with a runId prefix; like the existing HTTP suite, this
 // leaves its own rows behind and performs no global cleanup.
-describe("Website Studio layouts API over real HTTP + PostgreSQL (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("Website Studio layouts API over real HTTP + PostgreSQL (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   let child: ChildProcess | null = null;
   let base = "";
   let adminToken = "";

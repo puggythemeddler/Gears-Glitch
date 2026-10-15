@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -18,7 +19,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 //     bottlenecks fulfilment;
 //   - delivering an order emails the invoice PDF (order_status row) on top of
 //     the plain status email.
-describe("order lifecycle (confirmed -> paid guard, automatic invoices) over real HTTP (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("order lifecycle (confirmed -> paid guard, automatic invoices) over real HTTP (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   let child: ChildProcess | null = null;
   let base = "";
   const childLog: string[] = [];

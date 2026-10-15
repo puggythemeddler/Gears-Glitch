@@ -7,13 +7,14 @@ import { getPool, query, queryOne, queryAll, runSchema } from "../server/db-help
 import { salesTotals, salesBreakdown, parseDateRange } from "../server/reporting";
 import { computeVatAmount, normalizePaymentMethod, createOrder, getOrder } from "../server/db";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // DB-backed integration coverage for the reporting deliverable: canonical
 // sales math, normalized breakdown dimensions, and the new VAT/campaign/loyalty
 // columns. Gated the same way as tests/isolation.test.ts — CI's server-test job
 // provides Postgres via DATABASE_URL; locally these skip.
-describe("reporting integration (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("reporting integration (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   const BR1 = 1001, BR2 = 1002;
   const JAN = "2026-01-15", JAN2 = "2026-01-16";
   const range = (from = JAN, to = JAN2) => parseDateRange(from, to)!;

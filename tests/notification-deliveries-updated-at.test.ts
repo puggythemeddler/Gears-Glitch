@@ -6,7 +6,8 @@ import path from "path";
 import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
 import { settleDelivery, markDeliveryAttempt } from "../server/integrations-store";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 const MIG_DIR = path.join(__dirname, "..", "server", "migrations");
 const MIG = "0025_notification_deliveries_updated_at.sql";
 
@@ -19,7 +20,7 @@ const MIG = "0025_notification_deliveries_updated_at.sql";
 //
 // Both installation paths are covered: a brand new database (schema.sql) and a
 // legacy database that already has the table without the column (migration).
-describe("notification_deliveries updated_at (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("notification_deliveries updated_at (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   const runId = `nd-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
   const hasColumn = async () => !!(await queryOne(

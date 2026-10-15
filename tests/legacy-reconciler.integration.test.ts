@@ -5,7 +5,8 @@ import path from "path";
 
 import { getPool, query, queryOne, transaction, runSchema } from "../server/db-helpers";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // DB-backed coverage for the one-source-of-truth migration model after the
 // legacy boot-time runMigrations() was removed from server/db.ts.
@@ -20,7 +21,7 @@ const HAS_DB = !!process.env.DATABASE_URL;
 //
 // Gated the same way as tests/migrations.integration.test.ts — CI's
 // server-test job provides Postgres via DATABASE_URL; locally these skip.
-describe("legacy schema reconciliation (schema.sql + 0020)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("legacy schema reconciliation (schema.sql + 0020)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   const MIG_DIR = path.join(__dirname, "..", "server", "migrations");
   const load = (name: string) => fs.readFileSync(path.join(MIG_DIR, name), "utf8");
   const migrations = fs.readdirSync(MIG_DIR).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();

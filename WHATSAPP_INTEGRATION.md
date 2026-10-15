@@ -86,6 +86,44 @@ an external system is not guaranteed by this design.
 - Outbound admin alerts created by the notification service use
   `sendWhatsAppMessage(phone, text, "staff", 0, storeName)`.
 
+### Consent / opt-out enforcement (IMPLEMENTED)
+
+Every outbound send is gated by a single server-side policy check,
+`isWhatsAppSendingAllowed(phone, category)` (`server/whatsapp-consent.ts`), evaluated
+**immediately before** the Meta request. No sender bypasses it:
+
+- `sendWhatsAppMessage`, `sendWhatsAppDocumentMessage` and `sendWhatsAppDocument` all
+  call the guard first (before contacting Meta, and before `getSettings()` for the
+  document paths).
+- The guard reads the durable `whatsapp_consent` table (migration `0031`), so a queued
+  or retried message is re-checked at send time and cannot bypass a `STOP` that arrived
+  in the meantime.
+- **Message categories:** `marketing` requires an explicit `marketing_allowed = TRUE`
+  grant (absence of a row is *not* consent); `transactional`/`utility`/`service`/
+  `authentication` require `transactional_allowed <> FALSE`.
+- **Fail closed:** if consent cannot be determined (lookup error, unknown number) the
+  send is denied.
+
+### Inbound opt-out
+
+- Opt-out keywords `STOP`, `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT` are detected on
+  verified inbound text webhooks (`detectOptOutKeyword`) and persisted idempotently by
+  `recordOptOut` (upsert on the unique `COALESCE(tenant_id,-1), COALESCE(merchant_id,-1),
+  phone_normalized` index — never creates duplicates). An opt-out disables both
+  marketing and transactional messaging for the number.
+- Ordinary inbound messages never restore consent; only an explicit
+  `recordConsentGrant` (trusted caller, e.g. an admin action) clears an opt-out.
+- Opt-out persistence happens in the webhook processing path, so a failure is recorded
+  against the durable `webhook_events` ledger and Meta redelivers; the opt-out is never
+  silently lost.
+
+### Retry safety
+
+- A consent/policy denial is a **permanent** failure. It is surfaced as
+  `{ ok: false, blocked: true }` and the outbound queue (`processPendingDelivery`)
+  dead-letters it immediately via `failDelivery(..., giveUp = true)` instead of applying
+  exponential backoff. Transient transport errors still retry as before.
+
 ## Media
 
 - `downloadWhatsAppMedia(mediaId)` fetches media metadata then the blob:

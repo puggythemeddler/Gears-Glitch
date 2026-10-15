@@ -22,7 +22,8 @@ import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
 // These tests pin the exact statements so a future hold path cannot reintroduce
 // the ambiguity, and assert the reservation semantics are preserved:
 // accumulation across orders, no negative stock, and a release floor at zero.
-describe("stock reservation ON CONFLICT statements (DB)", { skip: !process.env.DATABASE_URL && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+import { bootstrapTestDatabase } from "../server/test-db";
+describe("stock reservation ON CONFLICT statements (DB)", { skip: !bootstrapTestDatabase() && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   before(() => {
     getPool();
     return Promise.resolve();

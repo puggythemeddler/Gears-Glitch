@@ -6,7 +6,8 @@ import path from "path";
 import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
 import { createOrder, confirmOrderPayment, releaseOrderHeldStock, updateOrderStatus, holdStockForOrder } from "../server/db";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // DB-backed coverage for the storefront stock-integrity fix (P-3):
 //   - createOrder(stock:"hold") reserves: products.stock_on_hand down, stock_levels
@@ -19,7 +20,7 @@ const HAS_DB = !!process.env.DATABASE_URL;
 //   - createOrder(stock:"deduct") deducts immediately (COD) and cancel restores
 // Gated the same way as the other integration suites — CI provides Postgres via
 // DATABASE_URL; locally these skip.
-describe("storefront order stock integrity (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("storefront order stock integrity (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   const MIG_DIR = path.join(__dirname, "..", "server", "migrations");
   const load = (name: string) => fs.readFileSync(path.join(MIG_DIR, name), "utf8");
 

@@ -16,7 +16,8 @@ import {
 } from "../server/feature-access";
 import { featureListIncludes } from "../server/feature-rules";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 const FEATURE = "Lipa Mdogo Mdogo";
 
 function fakeReq(body: any = {}): any {
@@ -36,7 +37,7 @@ function fakeRes(): any {
 // financing: entitlement resolution (plan + control-plane overrides), the
 // persistence of per-branch activation, and the two server-side gates. Gated
 // like the other *.integration tests - CI provides Postgres via DATABASE_URL.
-describe("feature access integration (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("feature access integration (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   before(() => {
     getPool();
     return Promise.resolve();

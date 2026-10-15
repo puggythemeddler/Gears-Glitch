@@ -16,7 +16,8 @@ import path from "path";
 // credentials, a network, or an external provider.
 import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 const SAVED_ENV = [
   "EMAIL_PROVIDER", "SMTP_HOST", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER",
@@ -155,7 +156,7 @@ async function startFakeSmtp(): Promise<FakeSmtp> {
   };
 }
 
-describe("email transport configuration", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("email transport configuration", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   let smtp: FakeSmtp;
 
   before(async () => {
@@ -370,7 +371,7 @@ describe("email transport configuration", { skip: !HAS_DB && "DATABASE_URL not s
 // The transport is only half the story: the point of the queue is that a
 // delivery actually goes out and that the outcome is recorded. These drive the
 // real drain against the fake SMTP server.
-describe("notification queue delivers through SMTP", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("notification queue delivers through SMTP", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   let smtp: FakeSmtp;
   let runId: string;
 

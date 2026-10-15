@@ -17,9 +17,10 @@ import {
   cancelOrderItemQuantity,
 } from "../server/db";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
-describe("isolation & atomicity (P0)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   let pool: any;
 
   const seed = async () => {

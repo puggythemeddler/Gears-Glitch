@@ -4,9 +4,10 @@ import assert from "node:assert/strict";
 import { query, queryOne } from "../server/db-helpers";
 import { updateNotificationPreferences, listNotificationLog } from "../server/notification-service";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
-describe("notification service (P1)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("notification service (P1)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   before(async () => {
     // Ensure the settings + notification_log tables exist (schema runs at server
     // boot, but tests may target a fresh isolated database). The test runner

@@ -40,6 +40,9 @@ export interface OrderInvoiceDeliveryResult {
   ok: boolean;
   error?: string;
   messageId?: string;
+  // true when delivery was refused by the consent/opt-out policy. Callers must
+  // treat this as permanent (do not retry/backoff).
+  blocked?: boolean;
 }
 
 // Emails the order's invoice PDF to the customer. Truthful: only claims attachment if PDF exists.

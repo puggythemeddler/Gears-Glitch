@@ -1,24 +1,12 @@
 import crypto from "crypto";
 import { getSettings, upsertWhatsAppConversation, getWhatsAppConversationByPhone, logWhatsAppMessage, findCustomerByPhone, findProviderByPhone, sendMessage, storeWhatsAppMedia, getWhatsAppMedia, getWhatsAppTemplateByName } from "./db";
 import { claimWebhookEvent, completeWebhookClaim, failWebhookClaim, type WebhookClaim } from "./integrations-store";
+import { normalizePhone, isValidKenyanPhone } from "./phone";
+import { isWhatsAppSendingAllowed, detectOptOutKeyword, recordOptOut, type MessageCategory } from "./whatsapp-consent";
 
-// Normalizes Kenyan phone numbers to E.164-without-plus (2547XXXXXXXX). Accepts
-// 07XXXXXXXX, 01XXXXXXXX, +2547XXXXXXXX and 254XXXXXXXXX; strips spaces, dashes
-// and any other non-digit characters. Numbers that are not Kenyan are returned
-// digit-only so callers can still attempt delivery.
-export function normalizePhone(phone: string): string {
-  const digits = String(phone || "").replace(/\D/g, "");
-  if (digits.startsWith("0") && digits.length >= 10) return "254" + digits.slice(1);
-  if (digits.startsWith("254") && digits.length > 9) return digits;
-  return digits;
-}
-
-// True only for a complete Kenyan MSISDN in E.164-without-plus form
-// (254 + 9 digits). Used to reject obviously malformed inbound senders before
-// they are written to the conversation log.
-export function isValidKenyanPhone(phone: string): boolean {
-  return /^254\d{9}$/.test(normalizePhone(phone));
-}
+// Re-exported for backwards compatibility (many callers/tests import these from
+// server/whatsapp). The implementation lives in server/phone.ts.
+export { normalizePhone, isValidKenyanPhone };
 
 export function isWithin24Hours(lastIncomingAt: string | null): boolean {
   if (!lastIncomingAt) return false;
@@ -203,8 +191,18 @@ export async function sendWhatsAppListMessage(to: string, bodyText: string, butt
   }
 }
 
-export async function sendWhatsAppMessage(to: string, text: string, entityType: string, entityId: number, entityName: string): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+export async function sendWhatsAppMessage(to: string, text: string, entityType: string, entityId: number, entityName: string, category: MessageCategory = "transactional"): Promise<{ ok: boolean; messageId?: string; error?: string; blocked?: boolean }> {
   const normalizedTo = normalizePhone(to);
+
+  // Central consent/opt-out gate. Evaluated immediately before sending so a
+  // queued or retried message can never bypass a stop that arrived in between.
+  const decision = await isWhatsAppSendingAllowed(normalizedTo, category);
+  if (!decision.allowed) {
+    await logWhatsAppMessage(normalizedTo, "outbound", "blocked", text, "blocked", undefined, decision.reason);
+    console.warn(`[whatsapp] Outbound blocked (${category}): ${decision.reason}`);
+    return { ok: false, error: decision.reason, blocked: true };
+  }
+
   const conversation = await getWhatsAppConversationByPhone(normalizedTo);
   const withinWindow = isWithin24Hours(conversation?.last_incoming_at || null);
 
@@ -342,6 +340,15 @@ async function processInboundMessage(msg: any, value: any): Promise<void> {
   }
 
   await logWhatsAppMessage(from, "inbound", msgType, content, "received", msg.id);
+
+  // Opt-out keywords (STOP/UNSUBSCRIBE/CANCEL/END/QUIT) are persisted idempotently
+  // before any other processing. A throw here fails the event so Meta redelivers
+  // and the opt-out is never silently lost. Ordinary inbound messages never
+  // restore consent — only an explicit recordConsentGrant call does.
+  if (msgType === "text" && detectOptOutKeyword(content)) {
+    const recorded = await recordOptOut(from, "inbound_keyword");
+    console.log(`[whatsapp] Opt-out recorded for ${from} (${recorded})`);
+  }
 
   const customer = await findCustomerByPhone(from);
   const provider = await findProviderByPhone(from);
@@ -543,13 +550,18 @@ export async function uploadWhatsAppMedia(file: Blob | Buffer | Uint8Array, file
   }
 }
 
-export async function sendWhatsAppDocumentMessage(to: string, mediaId: string, caption?: string): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+export async function sendWhatsAppDocumentMessage(to: string, mediaId: string, caption?: string, category: MessageCategory = "utility"): Promise<{ ok: boolean; messageId?: string; error?: string; blocked?: boolean }> {
   try {
+    const phone = normalizePhone(to);
+    const decision = await isWhatsAppSendingAllowed(phone, category);
+    if (!decision.allowed) {
+      await logWhatsAppMessage(phone, "outbound", "blocked", caption || "", "blocked", undefined, decision.reason);
+      return { ok: false, error: decision.reason, blocked: true };
+    }
     const s = await getSettings();
     if (!s.whatsappEnabled || !s.whatsappAccessToken || !s.whatsappPhoneNumberId) return { ok: false, error: "WhatsApp not configured" };
     const apiVersion = s.whatsappApiVersion || "v21.0";
 
-    const phone = normalizePhone(to);
     const url = `https://graph.facebook.com/${apiVersion}/${s.whatsappPhoneNumberId}/messages`;
     const payload: any = {
       messaging_product: "whatsapp",
@@ -588,21 +600,27 @@ export async function sendWhatsAppDocument(
   to: string,
   pdf: Blob | Buffer | Uint8Array | null | undefined,
   filename?: string,
-  caption?: string
-): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+  caption?: string,
+  category: MessageCategory = "utility"
+): Promise<{ ok: boolean; messageId?: string; error?: string; blocked?: boolean }> {
   try {
+    const phone = normalizePhone(to);
+    const decision = await isWhatsAppSendingAllowed(phone, category);
+    if (!decision.allowed) {
+      await logWhatsAppMessage(phone, "outbound", "blocked", caption || "", "blocked", undefined, decision.reason);
+      return { ok: false, error: decision.reason, blocked: true };
+    }
     const s = await getSettings();
     if (!s.whatsappEnabled || !s.whatsappAccessToken || !s.whatsappPhoneNumberId) return { ok: false, error: "WhatsApp not configured" };
     const apiVersion = s.whatsappApiVersion || "v21.0";
-
-    const phone = normalizePhone(to);
 
     // Try to upload PDF as media if provided
     if (pdf) {
       const upload = await uploadWhatsAppMedia(pdf, filename, "application/pdf");
       if (upload.ok && upload.mediaId) {
-        const sent = await sendWhatsAppDocumentMessage(phone, upload.mediaId, caption);
+        const sent = await sendWhatsAppDocumentMessage(phone, upload.mediaId, caption, category);
         if (sent.ok) return sent;
+        if (sent.blocked) return sent;
         return { ok: false, error: sent.error || "Failed to send document message" };
       }
       // If upload failed, fall through to template fallback below

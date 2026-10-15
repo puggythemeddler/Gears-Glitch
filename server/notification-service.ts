@@ -241,11 +241,11 @@ async function sendNotifWhatsApp(
   entityType: string = "staff",
   entityId: number = 0,
   entityName: string = "My Shop"
-): Promise<{ status: NotificationStatus; error?: string; messageId?: string }> {
+): Promise<{ status: NotificationStatus; error?: string; messageId?: string; blocked?: boolean }> {
   try {
     const r = await sendWhatsAppMessage(to, text, entityType, entityId, entityName || "My Shop");
     if (r.ok) return { status: "sent", messageId: r.messageId };
-    return { status: "failed", error: r.error || "WhatsApp send failed" };
+    return { status: "failed", error: r.error || "WhatsApp send failed", blocked: r.blocked };
   } catch (err: any) {
     return { status: "failed", error: err?.message || "WhatsApp send error" };
   }
@@ -472,14 +472,14 @@ export async function processPendingDelivery(row: DeliveryRow): Promise<"sent" |
       const kind = (payload?.kind === "delivered" ? "delivered" : "paid") as "paid" | "delivered";
       const orderId = Number(payload?.orderId || entityId);
       const res = await sendOrderInvoiceDeliveryWhatsApp(orderId, kind);
-      if (!res.ok) return await failDelivery(row, attemptsAfter, maxAttempts, res.error || "Invoice WhatsApp failed", entityType, entityId, logFields);
+      if (!res.ok) return await failDelivery(row, attemptsAfter, maxAttempts, res.error || "Invoice WhatsApp failed", entityType, entityId, logFields, res.blocked === true);
       await settleDelivery(row.id, { status: "sent", sentAt: new Date().toISOString() });
       await logNotification(row.event_type as NotificationEvent, "whatsapp", row.recipient, "sent", entityType, entityId, undefined, res.messageId, logFields);
       return "sent";
     }
     const text = payload?.text || row.subject || "";
     const r = await sendNotifWhatsApp(row.recipient, text, payload?.entityName || "My Shop", payload?.entityType || "staff", Number(payload?.entityId || 0), payload?.entityName || "My Shop");
-    if (r.status !== "sent") return await failDelivery(row, attemptsAfter, maxAttempts, r.error || "WhatsApp send failed", entityType, entityId, logFields);
+    if (r.status !== "sent") return await failDelivery(row, attemptsAfter, maxAttempts, r.error || "WhatsApp send failed", entityType, entityId, logFields, r.blocked === true);
     await settleDelivery(row.id, { status: "sent", sentAt: new Date().toISOString() });
     await logNotification(row.event_type as NotificationEvent, "whatsapp", row.recipient, "sent", entityType, entityId, undefined, r.messageId, logFields);
     return "sent";

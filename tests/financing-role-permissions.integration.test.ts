@@ -7,7 +7,8 @@ import { getPool, query, runSchema } from "../server/db-helpers";
 import { initRolesAsync } from "../server/db";
 import { DEFAULT_ROLES, hasPermission } from "../server/permissions";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // D2 regression: the authoritative async boot seeding path (initRolesAsync)
 // used its own role table that omitted the financing:* permissions, so a fresh
@@ -15,7 +16,7 @@ const HAS_DB = !!process.env.DATABASE_URL;
 // seed from the single shared source in server/permissions.ts, with least
 // privilege: admin/owner get all four, manager gets view/manage/payment but not
 // approve, and non-financing roles get none. Gated like the other DB tests.
-describe("fresh-install role seeding financing permissions (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("fresh-install role seeding financing permissions (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   before(() => {
     getPool();
     return Promise.resolve();

@@ -102,6 +102,7 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 
 ### Webhooks
 - WhatsApp webhook: verification (GET) + receiver (POST). `POST` requires a valid `x-hub-signature-256` HMAC-SHA256 over the raw body (403 otherwise), and each message/status is deduplicated by an atomic claim + lease in `webhook_events` (migration 0030) with token fencing — replacing an earlier in-memory, then read-then-write, guard. In-progress duplicates return `503` (retryable) rather than a false `200`.
+- WhatsApp outbound consent (IMPLEMENTED): a single server-side gate, `isWhatsAppSendingAllowed` (migration `0031` `whatsapp_consent`), is evaluated immediately before every Meta send (`sendWhatsAppMessage`, `sendWhatsAppDocumentMessage`, `sendWhatsAppDocument`). It blocks opted-out recipients and un-consented marketing, fails closed when consent is indeterminate, and is re-checked for queued/retried sends. Inbound `STOP`/`UNSUBSCRIBE`/`CANCEL`/`END`/`QUIT` are persisted idempotently from verified webhooks; ordinary inbound messages never restore consent. Consent/policy denials are terminal (dead-lettered) and never retried as transient errors.
 - `/api/whatsapp/media/:id` is **authenticated** (guarded by `adminAuthMiddleware` + `requirePermission("whatsapp:view")`, `server/index.ts`) with filename header-injection sanitized — earlier "unauthenticated (P1, PII)" finding is stale since 2026-09-03.
 - eTIMS: config present; verification/tenancy/idempotency should be audited before activation.
 - No payment webhook for subscriptions (shop-level billing missing, see Subscriptions).
@@ -141,6 +142,7 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 6. M-Pesa callback + refund + order-status idempotency via `FOR UPDATE`.
 7. Upload magic-byte + server-generated filenames.
 8. Per-tenant DB isolation.
+9. Destructive integration tests are gated on an explicit, validated `TEST_DATABASE_URL` (`server/test-db.ts`); the runtime `DATABASE_URL` is never used as a fallback and managed/production hosts are rejected, so a misconfigured run skips rather than wiping prod.
 
 ---
 

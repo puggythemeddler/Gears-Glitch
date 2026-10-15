@@ -16,6 +16,7 @@ import {
   type WhatsAppWebhookResult,
 } from "../server/whatsapp";
 import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
+import { hasSafeTestDatabase, applyTestDatabaseUrl } from "../server/test-db";
 import {
   claimWebhookEvent,
   completeWebhookClaim,
@@ -23,10 +24,10 @@ import {
   WEBHOOK_LEASE_SECONDS,
 } from "../server/integrations-store";
 
-// DB-backed webhook-ledger checks. Dev + prod share one Neon project, so this
-// suite only runs when DATABASE_URL points at a disposable/local database (CI
-// provides one). It never runs against production by default.
-const HAS_DB = !!process.env.DATABASE_URL;
+// DB-backed webhook-ledger checks. These only run against an explicitly
+// configured, validated disposable test database (TEST_DATABASE_URL); the
+// runtime DATABASE_URL is never used as a fallback. See server/test-db.ts.
+const HAS_DB = hasSafeTestDatabase();
 
 function emptyResult(): WhatsAppWebhookResult {
   return { ok: true, processed: 0, skipped: 0, deferred: 0, failed: 0, errors: [] };
@@ -127,6 +128,7 @@ if (HAS_DB) {
   describe("whatsapp webhook ledger (integration)", () => {
     before(async () => {
       process.env.JWT_SECRET = process.env.JWT_SECRET || "qa-whatsapp-test-jwt-0123456789abcdef";
+      applyTestDatabaseUrl();
       getPool();
       const schema = fs.readFileSync(path.join(__dirname, "..", "server", "schema.sql"), "utf8");
       await runSchema(schema);

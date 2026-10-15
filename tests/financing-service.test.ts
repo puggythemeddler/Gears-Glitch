@@ -20,13 +20,14 @@ import {
   listApplications,
 } from "../server/financing/service";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // DB-backed integration coverage for the Lipa Mdogo Mdogo service: intake ->
 // approval -> schedule generation, oldest-due-first allocation, waivers,
 // reversals and the reporting aggregate. Gated like the other *.integration
 // tests — CI provides Postgres via DATABASE_URL; locally these skip.
-describe("financing service integration (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("financing service integration (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   const actor = { id: null, name: "Test Admin", type: "staff" } as any;
   let customerId = 0;
 

@@ -16,7 +16,8 @@ import path from "path";
 import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
 import { initDb } from "../server/db";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // Every pre-existing column, so "no existing data was destroyed" is checked
 // against the whole row and not just the columns the migration touches.
@@ -53,7 +54,7 @@ async function seedLegacyRows(count: number): Promise<void> {
   );
 }
 
-describe("migration 0025 on a production-shaped database", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("migration 0025 on a production-shaped database", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   let baseline: { n: number; digest: string };
 
   before(async () => {

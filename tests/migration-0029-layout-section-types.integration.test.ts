@@ -17,7 +17,8 @@ import path from "path";
 import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
 import { initDb } from "../server/db";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 const VERSION = "0029_normalize_layout_section_types";
 
 const legacyConfig = {
@@ -39,7 +40,7 @@ const cleanConfig = {
   sections: [{ type: "category-grid" }, { type: "text", title: "Already fine" }],
 };
 
-describe("migration 0029 on a real database", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("migration 0029 on a real database", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const legacyKey = `qa-0029-legacy-${suffix}`;
   const cleanKey = `qa-0029-clean-${suffix}`;

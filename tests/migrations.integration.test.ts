@@ -4,8 +4,11 @@ import fs from "fs";
 import path from "path";
 
 import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
+import { hasSafeTestDatabase, applyTestDatabaseUrl } from "../server/test-db";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+// Only runs against an explicitly-configured, validated disposable database.
+// DATABASE_URL is never used as a fallback (see server/test-db.ts).
+const HAS_DB = hasSafeTestDatabase();
 
 // DB-backed coverage for the Phase-1 remediation (migration 0013 + boot
 // hardening), which is not exercisable without a database:
@@ -15,11 +18,12 @@ const HAS_DB = !!process.env.DATABASE_URL;
 //   - order_items/stock_levels RESTRICT semantics stop destructive product deletes
 // Gated the same way as tests/isolation.test.ts — CI's server-test job provides
 // Postgres via DATABASE_URL; locally these skip.
-describe("migration 0013 + boot hardening (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("migration 0013 + boot hardening (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   const MIG_DIR = path.join(__dirname, "..", "server", "migrations");
   const load = (name: string) => fs.readFileSync(path.join(MIG_DIR, name), "utf8");
 
   before(() => {
+    applyTestDatabaseUrl();
     getPool();
     return Promise.resolve();
   });

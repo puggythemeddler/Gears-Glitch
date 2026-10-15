@@ -17,7 +17,8 @@ import {
 //   hold      -> products.stock_on_hand -= qty, stock_levels.quantity_reserved += qty
 //   paid      -> quantity_in_stock -= qty, quantity_reserved -= qty, status paid
 //   released  -> products.stock_on_hand += qty, quantity_reserved -= qty, status cancelled
-describe("M-Pesa order hold lifecycle (DB)", { skip: !process.env.DATABASE_URL && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+import { bootstrapTestDatabase } from "../server/test-db";
+describe("M-Pesa order hold lifecycle (DB)", { skip: !bootstrapTestDatabase() && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   before(() => {
     getPool();
     return Promise.resolve();

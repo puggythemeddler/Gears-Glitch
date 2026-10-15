@@ -6,14 +6,15 @@ import path from "path";
 import { getPool, query, runSchema } from "../server/db-helpers";
 import { createPage, updatePage, deletePage, listPages, listPublishedPages, getPageBySlug, getPageById } from "../server/db";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // DB-backed coverage of the Page Builder CMS lifecycle at the exact layer the
 // /api/pages and /api/admin/pages routes delegate to. Gated the same way as
 // tests/migrations.integration.test.ts (CI provides Postgres via DATABASE_URL;
 // locally these skip). Covers create → draft → edit → publish → unpublish →
 // delete, slug uniqueness, and public/draft visibility semantics.
-describe("page builder CMS lifecycle (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("page builder CMS lifecycle (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   before(() => { getPool(); return Promise.resolve(); });
 
   before(async () => {

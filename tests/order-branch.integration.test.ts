@@ -6,7 +6,8 @@ import path from "path";
 import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
 import { createStockTransfer, completeStockTransfer, linkSerialsToOrderItem } from "../server/db";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // DB-backed coverage for the Phase-3/4 remediation (migration 0014 + BN2/BN3):
 //   - POS orders backfill to the single branch (migration 0014)
@@ -16,7 +17,7 @@ const HAS_DB = !!process.env.DATABASE_URL;
 //   - completing a stock transfer reattributes in-stock serials to the target branch
 // Gated the same way as tests/migrations.integration.test.ts — CI's server-test
 // job provides Postgres via DATABASE_URL; locally these skip.
-describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   const MIG_DIR = path.join(__dirname, "..", "server", "migrations");
   const load = (name: string) => fs.readFileSync(path.join(MIG_DIR, name), "utf8");
 

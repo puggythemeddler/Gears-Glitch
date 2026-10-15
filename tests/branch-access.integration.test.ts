@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -26,7 +27,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 //   - the session's activeBranchId is authoritative, so a stale or tampered
 //     branchId on checkout is rejected instead of silently re-attributed;
 //   - the last branch survives a re-login as a pre-selection.
-describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   let child: ChildProcess | null = null;
   let base = "";
   const childLog: string[] = [];

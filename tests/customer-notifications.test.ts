@@ -11,7 +11,8 @@ import {
 } from "../server/customer-notifications";
 import { getCustomerCommPrefs, updateCustomerCommPrefs } from "../server/notification-service";
 
-const HAS_DB = !!process.env.DATABASE_URL;
+import { bootstrapTestDatabase } from "../server/test-db";
+const HAS_DB = bootstrapTestDatabase();
 
 // ─── Pure logic (runs everywhere) ─────────────────────────────────────────────
 describe("customer notification derivation (pure)", () => {
@@ -147,7 +148,7 @@ describe("customer notification derivation (pure)", () => {
 });
 
 // ─── DB-backed (opt-in) ───────────────────────────────────────────────────────
-describe("customer notification service (P1)", { skip: !HAS_DB && "DATABASE_URL not set (CI/isolated DB only)" }, () => {
+describe("customer notification service (P1)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   // The runner executes each test file in its own process, so the isolation
   // suite may be running schema.sql concurrently and racing on the catalog.
   const RETRYABLE = ["23505", "42P07", "42701", "40001", "40P01"];
