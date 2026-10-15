@@ -90,19 +90,40 @@ an external system is not guaranteed by this design.
 
 Every outbound send is gated by a single server-side policy check,
 `isWhatsAppSendingAllowed(phone, category)` (`server/whatsapp-consent.ts`), evaluated
-**immediately before** the Meta request. No sender bypasses it:
+**immediately before** the Meta request. Structurally there is exactly one place that
+POSTs to the Meta `/messages` endpoint — the private `postMetaMessage` choke point in
+`server/whatsapp.ts` — and it calls the guard before building or issuing the request.
+Every sender routes through it, so no code path can bypass the check:
 
-- `sendWhatsAppMessage`, `sendWhatsAppDocumentMessage` and `sendWhatsAppDocument` all
-  call the guard first (before contacting Meta, and before `getSettings()` for the
-  document paths).
-- The guard reads the durable `whatsapp_consent` table (migration `0031`), so a queued
-  or retried message is re-checked at send time and cannot bypass a `STOP` that arrived
-  in the meantime.
-- **Message categories:** `marketing` requires an explicit `marketing_allowed = TRUE`
-  grant (absence of a row is *not* consent); `transactional`/`utility`/`service`/
-  `authentication` require `transactional_allowed <> FALSE`.
-- **Fail closed:** if consent cannot be determined (lookup error, unknown number) the
-  send is denied.
+- `sendWhatsAppText`, `sendWhatsAppTemplate`, `sendWhatsAppInteractiveButtons`,
+  `sendWhatsAppListMessage` and `sendWhatsAppDocumentMessage` all go through
+  `postMetaMessage`.
+- `sendWhatsAppMessage` and `sendWhatsAppDocument` additionally call the guard first
+  (before contacting Meta, before `getSettings()` and before a media upload) and then
+  again via `postMetaMessage`, so the document template fallback is re-checked after the
+  upload.
+- The guard reads the durable `whatsapp_consent` table (migrations `0031`/`0032`), so a
+  queued or retried message is re-checked at send time and cannot bypass a `STOP` that
+  arrived in the meantime.
+
+**Policy (default-DENY — absence of a consent record is *not* consent):**
+
+- `marketing` requires an explicit `marketing_allowed = TRUE` grant.
+- `transactional` / `utility` / `service` / `authentication` require an established
+  authorisation: an explicit `transactional_allowed = TRUE` grant, **or** an open
+  customer-service session (the recipient messaged us within the Meta 24-hour window),
+  **or** the merchant's own configured admin number (`adminWhatsAppPhone`/`phone`).
+  A row with `transactional_allowed = FALSE` is an explicit denial.
+- **Fail closed:** if authorisation cannot be determined (lookup error, unknown number,
+  no grant and no session) the send is denied. As of migration `0032` the column default
+  is `FALSE`, so an insert that omits the flag authorises nothing; existing rows are left
+  untouched (they are explicit persisted state).
+
+**Tenant scope:** consent is scoped to the tenant database. Per `SECURITY_MODEL.md` there
+is one database per tenant, so every `whatsapp_consent` row belongs to that tenant;
+`tenant_id`/`merchant_id` are reserved for a future shared/control-plane model and are
+left `NULL` (the unique index `COALESCE`s them to `-1`). Authorisation is per
+recipient — a grant or opt-out for one number never affects another.
 
 ### Inbound opt-out
 

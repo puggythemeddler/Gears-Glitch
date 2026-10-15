@@ -1,0 +1,13 @@
+-- Forward-only migration. Do NOT edit the already-applied 0031.
+--
+-- Business-initiated transactional messaging must not be implicitly authorised
+-- by a column default. After this change a consent row that omits the column
+-- does NOT authorise any category; authorisation for transactional messaging is
+-- granted explicitly (recordConsentGrant) or established by an open
+-- customer-service session / the merchant's own admin number (see
+-- server/whatsapp-consent.ts).
+--
+-- Existing rows are intentionally left untouched: their current values represent
+-- explicit persisted state and rewriting them could silently revoke or invent
+-- consent. Only the default for future inserts changes.
+ALTER TABLE whatsapp_consent ALTER COLUMN transactional_allowed SET DEFAULT FALSE;

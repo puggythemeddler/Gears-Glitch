@@ -47,7 +47,39 @@ export async function downloadWhatsAppMedia(mediaId: string): Promise<{ ok: bool
   }
 }
 
-async function sendWhatsAppText(to: string, text: string): Promise<{ ok: boolean; waMessageId?: string; error?: string }> {
+// Result of any single outbound message attempt. `blocked` marks a permanent
+// consent/policy denial that must not be retried as a transient error.
+interface MetaSendResult {
+  ok: boolean;
+  waMessageId?: string;
+  error?: string;
+  blocked?: boolean;
+}
+
+// The ONE place that POSTs an outbound message to Meta's /messages endpoint.
+//
+// Every sender (text, template, interactive buttons, list, document) routes
+// through here so a caller cannot forget the consent check: the enforcement
+// lives in this choke point and is evaluated immediately before the request.
+//
+// The recipient is normalised here (never trusted from the payload builder), the
+// consent/opt-out policy is enforced here (fail closed), and a permanent denial
+// is recorded in whatsapp_logs and returned as `{ ok:false, blocked:true }`.
+async function postMetaMessage(
+  to: string,
+  category: MessageCategory,
+  logType: string,
+  logContent: string,
+  buildPayload: (normalizedTo: string) => Record<string, unknown>
+): Promise<MetaSendResult> {
+  const phone = normalizePhone(to);
+  const decision = await isWhatsAppSendingAllowed(phone, category);
+  if (!decision.allowed) {
+    await logWhatsAppMessage(phone, "outbound", "blocked", logContent, "blocked", undefined, decision.reason);
+    console.warn(`[whatsapp] Outbound blocked (${category}/${logType}): ${decision.reason}`);
+    return { ok: false, blocked: true, error: decision.reason };
+  }
+
   const s = await getSettings();
   if (!s.whatsappEnabled || !s.whatsappPhoneNumberId || !s.whatsappAccessToken) {
     return { ok: false, error: "WhatsApp is not configured or not enabled." };
@@ -57,71 +89,51 @@ async function sendWhatsAppText(to: string, text: string): Promise<{ ok: boolean
     const res = await fetch(url, {
       method: "POST",
       headers: { "Authorization": `Bearer ${s.whatsappAccessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "text",
-        text: { body: text },
-      }),
+      body: JSON.stringify(buildPayload(phone)),
     });
     const data = await res.json() as any;
     if (!res.ok) {
-      const errMsg = data?.error?.message || `HTTP ${res.status}`;
       // No blind retry: a lost HTTP response after the request reached Meta
       // would otherwise resend the message to the recipient (duplicate delivery).
-      return { ok: false, error: errMsg };
+      return { ok: false, error: data?.error?.message || `HTTP ${res.status}` };
     }
-    const waMessageId = data?.messages?.[0]?.id;
-    return { ok: true, waMessageId };
+    return { ok: true, waMessageId: data?.messages?.[0]?.id };
   } catch (err: any) {
     return { ok: false, error: err?.message || "Network error" };
   }
 }
 
-async function sendWhatsAppTemplate(to: string, templateName: string, languageCode: string, params: { type: string; text: string }[]): Promise<{ ok: boolean; waMessageId?: string; error?: string }> {
-  const s = await getSettings();
-  if (!s.whatsappEnabled || !s.whatsappPhoneNumberId || !s.whatsappAccessToken) {
-    return { ok: false, error: "WhatsApp is not configured or not enabled." };
-  }
-  const url = `https://graph.facebook.com/${s.whatsappApiVersion || "v21.0"}/${s.whatsappPhoneNumberId}/messages`;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${s.whatsappAccessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to,
-        type: "template",
-        template: {
-          name: templateName,
-          language: { code: languageCode },
-          components: params.length > 0 ? [{ type: "body", parameters: params }] : [],
-        },
-      }),
-    });
-    const data = await res.json() as any;
-    if (!res.ok) {
-      const errMsg = data?.error?.message || `HTTP ${res.status}`;
-      return { ok: false, error: errMsg };
-    }
-    const waMessageId = data?.messages?.[0]?.id;
-    return { ok: true, waMessageId };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || "Network error" };
-  }
-}
-
-export async function sendWhatsAppInteractiveButtons(to: string, bodyText: string, buttons: { id: string; title: string }[]): Promise<{ ok: boolean; waMessageId?: string; error?: string }> {
-  const s = await getSettings();
-  if (!s.whatsappEnabled || !s.whatsappPhoneNumberId || !s.whatsappAccessToken) {
-    return { ok: false, error: "WhatsApp is not configured or not enabled." };
-  }
-  const url = `https://graph.facebook.com/${s.whatsappApiVersion || "v21.0"}/${s.whatsappPhoneNumberId}/messages`;
-  const payload: any = {
+async function sendWhatsAppText(to: string, text: string, category: MessageCategory = "transactional"): Promise<MetaSendResult> {
+  return postMetaMessage(to, category, "text", text, (phone) => ({
     messaging_product: "whatsapp",
     recipient_type: "individual",
-    to,
+    to: phone,
+    type: "text",
+    text: { body: text },
+  }));
+}
+
+async function sendWhatsAppTemplate(to: string, templateName: string, languageCode: string, params: { type: string; text: string }[], category: MessageCategory = "utility"): Promise<MetaSendResult> {
+  return postMetaMessage(to, category, "template", templateName, (phone) => ({
+    messaging_product: "whatsapp",
+    to: phone,
+    type: "template",
+    template: {
+      name: templateName,
+      language: { code: languageCode },
+      components: params.length > 0 ? [{ type: "body", parameters: params }] : [],
+    },
+  }));
+}
+
+export async function sendWhatsAppInteractiveButtons(to: string, bodyText: string, buttons: { id: string; title: string }[], category: MessageCategory = "utility"): Promise<{ ok: boolean; waMessageId?: string; error?: string; blocked?: boolean }> {
+  // Interactive replies are only delivered inside the customer-service window,
+  // i.e. as a utility/service reply. The consent/opt-out policy is enforced in
+  // postMetaMessage before any outbound request.
+  return postMetaMessage(to, category, "interactive_buttons", bodyText, (phone) => ({
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: phone,
     type: "interactive",
     interactive: {
       type: "button",
@@ -133,32 +145,16 @@ export async function sendWhatsAppInteractiveButtons(to: string, bodyText: strin
         })),
       },
     },
-  };
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${s.whatsappAccessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json() as any;
-    if (!res.ok) return { ok: false, error: data?.error?.message || `HTTP ${res.status}` };
-    const waMessageId = data?.messages?.[0]?.id;
-    return { ok: true, waMessageId };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || "Network error" };
-  }
+  }));
 }
 
-export async function sendWhatsAppListMessage(to: string, bodyText: string, buttonText: string, sections: { title: string; rows: { id: string; title: string; description?: string }[] }[]): Promise<{ ok: boolean; waMessageId?: string; error?: string }> {
-  const s = await getSettings();
-  if (!s.whatsappEnabled || !s.whatsappPhoneNumberId || !s.whatsappAccessToken) {
-    return { ok: false, error: "WhatsApp is not configured or not enabled." };
-  }
-  const url = `https://graph.facebook.com/${s.whatsappApiVersion || "v21.0"}/${s.whatsappPhoneNumberId}/messages`;
-  const payload: any = {
+export async function sendWhatsAppListMessage(to: string, bodyText: string, buttonText: string, sections: { title: string; rows: { id: string; title: string; description?: string }[] }[], category: MessageCategory = "utility"): Promise<{ ok: boolean; waMessageId?: string; error?: string; blocked?: boolean }> {
+  // List messages are likewise a customer-service-window utility reply; the
+  // consent/opt-out policy is enforced in postMetaMessage before any request.
+  return postMetaMessage(to, category, "interactive_list", bodyText, (phone) => ({
     messaging_product: "whatsapp",
     recipient_type: "individual",
-    to,
+    to: phone,
     type: "interactive",
     interactive: {
       type: "list",
@@ -175,20 +171,7 @@ export async function sendWhatsAppListMessage(to: string, bodyText: string, butt
         })),
       },
     },
-  };
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${s.whatsappAccessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json() as any;
-    if (!res.ok) return { ok: false, error: data?.error?.message || `HTTP ${res.status}` };
-    const waMessageId = data?.messages?.[0]?.id;
-    return { ok: true, waMessageId };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || "Network error" };
-  }
+  }));
 }
 
 export async function sendWhatsAppMessage(to: string, text: string, entityType: string, entityId: number, entityName: string, category: MessageCategory = "transactional"): Promise<{ ok: boolean; messageId?: string; error?: string; blocked?: boolean }> {
@@ -219,10 +202,10 @@ export async function sendWhatsAppMessage(to: string, text: string, entityType: 
   }
 
   if (withinWindow) {
-    const result = await sendWhatsAppText(normalizedTo, text);
+    const result = await sendWhatsAppText(normalizedTo, text, category);
     await logWhatsAppMessage(normalizedTo, "outbound", "text", text, result.ok ? "sent" : "failed", result.waMessageId, result.error);
     await upsertWhatsAppConversation(normalizedTo, storeType, storeId, storeName, "outbound");
-    return { ok: result.ok, messageId: result.waMessageId, error: result.error };
+    return { ok: result.ok, messageId: result.waMessageId, error: result.error, blocked: result.blocked };
   } else {
     const template = await getWhatsAppTemplateByName("general_notification");
     if (!template) {
@@ -238,10 +221,10 @@ export async function sendWhatsAppMessage(to: string, text: string, entityType: 
     const result = await sendWhatsAppTemplate(normalizedTo, templateName, lang, [
       { type: "text", text: storeName || "Customer" },
       { type: "text", text: text },
-    ]);
+    ], category);
     await logWhatsAppMessage(normalizedTo, "outbound", "template", text, result.ok ? "sent" : "failed", result.waMessageId, result.error);
     await upsertWhatsAppConversation(normalizedTo, storeType, storeId, storeName, "outbound");
-    return { ok: result.ok, messageId: result.waMessageId, error: result.error };
+    return { ok: result.ok, messageId: result.waMessageId, error: result.error, blocked: result.blocked };
   }
 }
 
@@ -551,49 +534,27 @@ export async function uploadWhatsAppMedia(file: Blob | Buffer | Uint8Array, file
 }
 
 export async function sendWhatsAppDocumentMessage(to: string, mediaId: string, caption?: string, category: MessageCategory = "utility"): Promise<{ ok: boolean; messageId?: string; error?: string; blocked?: boolean }> {
-  try {
-    const phone = normalizePhone(to);
-    const decision = await isWhatsAppSendingAllowed(phone, category);
-    if (!decision.allowed) {
-      await logWhatsAppMessage(phone, "outbound", "blocked", caption || "", "blocked", undefined, decision.reason);
-      return { ok: false, error: decision.reason, blocked: true };
-    }
-    const s = await getSettings();
-    if (!s.whatsappEnabled || !s.whatsappAccessToken || !s.whatsappPhoneNumberId) return { ok: false, error: "WhatsApp not configured" };
-    const apiVersion = s.whatsappApiVersion || "v21.0";
-
-    const url = `https://graph.facebook.com/${apiVersion}/${s.whatsappPhoneNumberId}/messages`;
+  const phone = normalizePhone(to);
+  const result = await postMetaMessage(to, category, "document", caption || "", (normalizedTo) => {
     const payload: any = {
       messaging_product: "whatsapp",
-      to: phone,
+      to: normalizedTo,
       type: "document",
       document: { id: mediaId },
     };
     if (caption) payload.document.caption = caption;
+    return payload;
+  });
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${s.whatsappAccessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const txt = await res.text();
-      await logWhatsAppMessage(phone, "outbound", "document", caption || "", "failed", undefined, txt || res.statusText);
-      await upsertWhatsAppConversation(phone, "store", 0, caption || "invoice", "outbound");
-      return { ok: false, error: txt || `Failed to send document: ${res.status}` };
-    }
-    const data = await res.json();
-    const messageId = data?.messages?.[0]?.id;
-    await logWhatsAppMessage(phone, "outbound", "document", caption || "", "sent", messageId);
+  if (result.blocked) return { ok: false, error: result.error, blocked: true };
+  if (!result.ok) {
+    await logWhatsAppMessage(phone, "outbound", "document", caption || "", "failed", undefined, result.error);
     await upsertWhatsAppConversation(phone, "store", 0, caption || "invoice", "outbound");
-    return { ok: true, messageId };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || "Document send failed" };
+    return { ok: false, error: result.error };
   }
+  await logWhatsAppMessage(phone, "outbound", "document", caption || "", "sent", result.waMessageId);
+  await upsertWhatsAppConversation(phone, "store", 0, caption || "invoice", "outbound");
+  return { ok: true, messageId: result.waMessageId };
 }
 
 export async function sendWhatsAppDocument(
@@ -612,7 +573,6 @@ export async function sendWhatsAppDocument(
     }
     const s = await getSettings();
     if (!s.whatsappEnabled || !s.whatsappAccessToken || !s.whatsappPhoneNumberId) return { ok: false, error: "WhatsApp not configured" };
-    const apiVersion = s.whatsappApiVersion || "v21.0";
 
     // Try to upload PDF as media if provided
     if (pdf) {
@@ -632,36 +592,31 @@ export async function sendWhatsAppDocument(
       const tmpl = await getWhatsAppTemplateByName(templateName);
       if (tmpl && tmpl.language) {
         const bodyVars = caption ? [caption] : [];
-        const url = `https://graph.facebook.com/${apiVersion}/${s.whatsappPhoneNumberId}/messages`;
-        const payload: any = {
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "template",
-          template: {
-            name: templateName,
-            language: { code: tmpl.language },
-          },
-        };
-        if (bodyVars.length > 0) {
-          payload.template.components = [{ type: "body", parameters: bodyVars.map((v) => ({ type: "text", text: v })) }];
-        }
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${s.whatsappAccessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
+        // Authorization is re-checked immediately before this direct template
+        // request (inside postMetaMessage). A check performed before the
+        // potentially slow media upload above is NOT assumed to still hold.
+        const res = await postMetaMessage(to, category, "template", templateName, (normalizedTo) => {
+          const payload: any = {
+            messaging_product: "whatsapp",
+            to: normalizedTo,
+            type: "template",
+            template: {
+              name: templateName,
+              language: { code: tmpl.language },
+            },
+          };
+          if (bodyVars.length > 0) {
+            payload.template.components = [{ type: "body", parameters: bodyVars.map((v) => ({ type: "text", text: v })) }];
+          }
+          return payload;
         });
+        if (res.blocked) return { ok: false, error: res.error, blocked: true };
         if (res.ok) {
-          const data = await res.json();
-          const messageId = data?.messages?.[0]?.id;
-          await logWhatsAppMessage(phone, "outbound", "template", templateName, "sent", messageId);
+          await logWhatsAppMessage(phone, "outbound", "template", templateName, "sent", res.waMessageId);
           await upsertWhatsAppConversation(phone, "store", 0, templateName, "outbound");
-          return { ok: true, messageId };
+          return { ok: true, messageId: res.waMessageId };
         }
-        const txt = await res.text();
-        await logWhatsAppMessage(phone, "outbound", "template", templateName, "failed", undefined, txt || res.statusText);
+        await logWhatsAppMessage(phone, "outbound", "template", templateName, "failed", undefined, res.error);
         await upsertWhatsAppConversation(phone, "store", 0, templateName, "outbound");
       }
     } catch (e: any) {

@@ -1,15 +1,51 @@
 import { query, queryOne } from "./db-helpers";
 import { normalizePhone } from "./phone";
+import { getSettings } from "./db";
 
 // Consent + opt-out policy for outbound WhatsApp messaging.
 //
 // Every outbound send is funnelled through `isWhatsAppSendingAllowed` immediately
 // before the Meta request. The policy is evaluated server-side from the durable
 // `whatsapp_consent` table (migration 0031) so a stale in-memory decision can
-// never authorise a prohibited message. The check fails closed: if consent
-// cannot be determined the send is denied.
+// never authorise a prohibited message.
+//
+// Policy (default-DENY). A recipient is only messaged when an authorisation can
+// actually be established:
+//   * opt-out (`opted_out_at` set)              -> deny every category
+//   * marketing                                 -> require an explicit
+//                                                  `marketing_allowed = TRUE`
+//                                                  grant (absence of a row is
+//                                                  NOT consent)
+//   * transactional / utility / service /
+//     authentication                            -> require explicit
+//                                                  `transactional_allowed = TRUE`
+//                                                  OR an open customer-service
+//                                                  session (the recipient
+//                                                  messaged us within the Meta
+//                                                  24h window) OR the merchant's
+//                                                  own configured admin number
+//   * anything indeterminate                    -> deny (fail closed)
+//
+// Absence of a consent record is NOT treated as consent: this is the explicit,
+// defensible default required by the WhatsApp Business Platform (opt-in before
+// business-initiated messaging) and data-protection law. The distinction is that
+// operational/service messages ride on an established session or explicit grant,
+// while marketing always needs an explicit opt-in.
+//
+// Tenant scope: SECURITY_MODEL documents one database per tenant. `tenant_id` /
+// `merchant_id` are reserved for a future shared-database/control-plane model
+// and are left NULL in the per-tenant database (the unique index COALESCEs them
+// to -1). Within a tenant database every consent row therefore belongs to that
+// tenant; isolation is enforced by the database boundary, not these columns.
 
 export type MessageCategory = "marketing" | "transactional" | "utility" | "authentication" | "service";
+
+// Where a sending authorisation came from. Useful for auditing/tests.
+export type AuthorizationSource =
+  | "explicit_consent"        // a consent row explicitly authorises this category
+  | "customer_service_window" // recipient messaged us within the Meta 24h window
+  | "merchant_owned"          // the merchant's own configured admin number
+  | "none";
 
 // Meta/industry standard opt-out keywords. Matched case-insensitively against
 // the whole (whitespace-trimmed, non-alphabetic-stripped) message body so that
@@ -38,6 +74,7 @@ export interface ConsentDecision {
   policyDenied: boolean;
   category: MessageCategory;
   optedOut: boolean;
+  authorization: AuthorizationSource;
 }
 
 async function getConsent(phone: string): Promise<ConsentRow | undefined> {
@@ -53,44 +90,84 @@ async function getConsent(phone: string): Promise<ConsentRow | undefined> {
   );
 }
 
-// Central policy gate. Evaluates merchant/recipient ownership is enforced by the
-// caller's tenant context; here we enforce consent + opt-out for the recipient
-// number and the message category. Fails closed on any lookup error.
+// True when the recipient has initiated a conversation within the Meta 24-hour
+// customer-service window (they messaged us, so replying is authorised).
+function withinCustomerServiceWindow(lastIncomingAt: string | null | undefined): boolean {
+  if (!lastIncomingAt) return false;
+  const t = new Date(lastIncomingAt).getTime();
+  if (isNaN(t)) return false;
+  return Date.now() - t < 24 * 60 * 60 * 1000;
+}
+
+async function lastIncomingAt(phone: string): Promise<string | null> {
+  const row = await queryOne("SELECT last_incoming_at FROM whatsapp_conversations WHERE phone_number = $1", [phone]);
+  return (row && row.last_incoming_at) || null;
+}
+
+// The merchant's own operational number (admin alerts) is self-authorised: the
+// operator owns the number and configures it as the destination for their own
+// alerts. This never authorises marketing.
+async function isMerchantOwnedNumber(phone: string): Promise<boolean> {
+  try {
+    const settings = await getSettings();
+    const admin = normalizePhone(settings.adminWhatsAppPhone || settings.phone || "");
+    return !!admin && admin === phone;
+  } catch {
+    return false;
+  }
+}
+
+function deny(reason: string, category: MessageCategory, optedOut: boolean): ConsentDecision {
+  return { allowed: false, reason, policyDenied: true, category, optedOut, authorization: "none" };
+}
+
+// Central policy gate. Fails closed on any lookup error.
 export async function isWhatsAppSendingAllowed(phone: string, category: MessageCategory = "transactional"): Promise<ConsentDecision> {
   const normalized = normalizePhone(phone);
-  if (!normalized) {
-    return { allowed: false, reason: "Cannot determine recipient phone number", policyDenied: true, category, optedOut: false };
-  }
+  if (!normalized) return deny("Cannot determine recipient phone number", category, false);
 
   let row: ConsentRow | undefined;
   try {
     row = await getConsent(normalized);
   } catch (err: any) {
     // Fail closed: an indeterminate consent state must not authorise a send.
-    return {
-      allowed: false,
-      reason: `Consent lookup failed: ${err?.message || err}`,
-      policyDenied: true,
-      category,
-      optedOut: false,
-    };
+    return deny(`Consent lookup failed: ${err?.message || err}`, category, false);
   }
 
   const optedOut = !!(row && row.opted_out_at);
   if (optedOut) {
-    return { allowed: false, reason: "Recipient has opted out of WhatsApp messages", policyDenied: true, category, optedOut: true };
+    return deny("Recipient has opted out of WhatsApp messages", category, true);
   }
 
   if (category === "marketing") {
-    // Marketing requires an explicit grant; absence of a row is NOT consent.
     if (!row || row.marketing_allowed !== true) {
-      return { allowed: false, reason: "Recipient has not granted marketing consent", policyDenied: true, category, optedOut };
+      return deny("Recipient has not granted marketing consent", category, optedOut);
     }
-  } else if (row && row.transactional_allowed === false) {
-    return { allowed: false, reason: "Recipient has disabled transactional WhatsApp messages", policyDenied: true, category, optedOut };
+    return { allowed: true, reason: "allowed (explicit marketing consent)", policyDenied: false, category, optedOut, authorization: "explicit_consent" };
   }
 
-  return { allowed: true, reason: "allowed", policyDenied: false, category, optedOut };
+  // Transactional / utility / service / authentication.
+  if (row && row.transactional_allowed === false) {
+    return deny("Recipient has disabled transactional WhatsApp messages", category, optedOut);
+  }
+  if (row && row.transactional_allowed === true) {
+    return { allowed: true, reason: "allowed (explicit transactional consent)", policyDenied: false, category, optedOut, authorization: "explicit_consent" };
+  }
+
+  // No explicit grant: authorisation must be established another way. Absence of
+  // a consent record is NOT consent.
+  try {
+    if (await isMerchantOwnedNumber(normalized)) {
+      return { allowed: true, reason: "allowed (merchant-owned number)", policyDenied: false, category, optedOut, authorization: "merchant_owned" };
+    }
+    if (withinCustomerServiceWindow(await lastIncomingAt(normalized))) {
+      return { allowed: true, reason: "allowed (open customer-service session)", policyDenied: false, category, optedOut, authorization: "customer_service_window" };
+    }
+  } catch (err: any) {
+    return deny(`Authorization lookup failed: ${err?.message || err}`, category, optedOut);
+  }
+
+  return deny("No established authorization for transactional WhatsApp messaging (no explicit consent and no open customer-service session)", category, optedOut);
 }
 
 // Persist an opt-out idempotently. Safe to call on every redelivery: the unique
@@ -116,12 +193,13 @@ export async function recordOptOut(phone: string, source: string): Promise<boole
 }
 
 // Explicit, auditable consent grant. Only ever invoked from a trusted caller
-// (e.g. an admin action); ordinary inbound messages must not restore consent.
+// (e.g. an admin action or an explicit opt-in captured at checkout); ordinary
+// inbound messages must not restore consent.
 export async function recordConsentGrant(phone: string, source: string, opts: { marketing?: boolean; transactional?: boolean } = {}): Promise<boolean> {
   const normalized = normalizePhone(phone);
   if (!normalized) return false;
   const marketing = opts.marketing === true;
-  const transactional = opts.transactional !== false;
+  const transactional = opts.transactional === true;
   await query(
     `INSERT INTO whatsapp_consent (phone, phone_normalized, consent_granted_at, consent_source, marketing_allowed, transactional_allowed, updated_at)
      VALUES ($1, $1, NOW(), $2, $3, $4, NOW())

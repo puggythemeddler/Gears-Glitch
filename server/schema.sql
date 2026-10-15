@@ -1364,7 +1364,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_consent (
   consent_granted_at TIMESTAMPTZ,
   consent_source TEXT,
   marketing_allowed BOOLEAN NOT NULL DEFAULT FALSE,
-  transactional_allowed BOOLEAN NOT NULL DEFAULT TRUE,
+  transactional_allowed BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
