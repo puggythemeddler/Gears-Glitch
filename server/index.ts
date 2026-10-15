@@ -8394,12 +8394,12 @@ app.post("/api/webhooks/whatsapp", asyncHandler(async (req: Request, res: Respon
   res.status(200).json({ ok: true, processed: outcome.processed, skipped: outcome.skipped });
 }));
 
-app.get("/api/admin/whatsapp/config", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/admin/whatsapp/config", staffAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
   const config = await getWhatsAppConfig();
   res.json(config);
 }));
 
-app.post("/api/admin/whatsapp/test", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
+app.post("/api/admin/whatsapp/test", staffAuthMiddleware, requirePermission("whatsapp:manage"), asyncHandler(async (_req: Request, res: Response) => {
   const result = await testWhatsAppConnection();
   res.json(result);
 }));
@@ -8517,24 +8517,24 @@ app.post("/api/admin/notifications/test-customer", adminAuthMiddleware, requireP
   res.json(results);
 }));
 
-app.get("/api/admin/whatsapp/conversations", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/admin/whatsapp/conversations", staffAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
   const convos = await getWhatsAppConversations();
   res.json({ conversations: convos });
 }));
 
-app.get("/api/admin/whatsapp/logs", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/whatsapp/logs", staffAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const logs = await listWhatsAppLogs(limit);
   res.json({ logs });
 }));
 
-app.get("/api/admin/whatsapp/stats", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/admin/whatsapp/stats", staffAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
   const stats = await getWhatsAppStats();
   res.json(stats);
 }));
 
 // Serve stored WhatsApp media (public for displaying in admin)
-app.get("/api/whatsapp/media/:id", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/whatsapp/media/:id", staffAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid media ID" });
   const media = await getWhatsAppMediaById(id);
@@ -8562,16 +8562,27 @@ app.get("/api/whatsapp/media/:id", adminAuthMiddleware, requirePermission("whats
 }));
 
 // WhatsApp Template CRUD
-app.get("/api/admin/whatsapp/templates", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/admin/whatsapp/templates", staffAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
   const templates = await listWhatsAppTemplates();
   res.json({ templates });
 }));
 
-app.post("/api/admin/whatsapp/templates", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/whatsapp/templates", staffAuthMiddleware, requirePermission("whatsapp:manage"), asyncHandler(async (req: Request, res: Response) => {
   const { name, bodyText, language, category, headerType, headerText, footerText, approved, isApproved } = req.body || {};
   if (!name || !bodyText) return res.status(400).json({ error: "Name and bodyText are required" });
+  // Creating a template requires whatsapp:manage. Approving one is a separate,
+  // higher-trust action: a template defaults to unapproved unless the caller also
+  // holds whatsapp:approve. This stops a manage-only operator from self-approving
+  // a template to enable out-of-window (business-initiated) sends.
+  const wantsApproval = approved === true || isApproved === true;
+  if (wantsApproval) {
+    const uid = Number((req as any).user?.sub);
+    if (!uid || !(await hasPermission(uid, "whatsapp:approve"))) {
+      return res.status(403).json({ error: "Missing permission: whatsapp:approve" });
+    }
+  }
   try {
-    const template = await createWhatsAppTemplate(name, bodyText, language || "en", category || "UTILITY", headerType || "none", headerText || "", footerText || "", approved === true || isApproved === true);
+    const template = await createWhatsAppTemplate(name, bodyText, language || "en", category || "UTILITY", headerType || "none", headerText || "", footerText || "", wantsApproval);
     res.json({ ok: true, template });
   } catch (err: any) {
     if (err?.code === "23505") return res.status(409).json({ error: "Template name already exists" });
@@ -8581,7 +8592,7 @@ app.post("/api/admin/whatsapp/templates", adminAuthMiddleware, requirePermission
 
 // Approve/unapprove a template. Only an approved, category-valid template may
 // be used for an out-of-window (business-initiated) send.
-app.patch("/api/admin/whatsapp/templates/:id", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
+app.patch("/api/admin/whatsapp/templates/:id", staffAuthMiddleware, requirePermission("whatsapp:approve"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid template ID" });
   const { approved, isApproved } = req.body || {};
@@ -8591,7 +8602,7 @@ app.patch("/api/admin/whatsapp/templates/:id", adminAuthMiddleware, requirePermi
   res.json({ ok: true, template });
 }));
 
-app.delete("/api/admin/whatsapp/templates/:id", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/admin/whatsapp/templates/:id", staffAuthMiddleware, requirePermission("whatsapp:manage"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid template ID" });
   await deleteWhatsAppTemplate(id);
@@ -8599,7 +8610,7 @@ app.delete("/api/admin/whatsapp/templates/:id", adminAuthMiddleware, requirePerm
 }));
 
 // Send interactive WhatsApp message
-app.post("/api/admin/whatsapp/send-interactive", adminAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/whatsapp/send-interactive", staffAuthMiddleware, requirePermission("whatsapp:manage"), asyncHandler(async (req: Request, res: Response) => {
   const { to, type, bodyText, buttons, buttonText, sections } = req.body || {};
   if (!to) return res.status(400).json({ error: "Recipient phone is required" });
   let result;

@@ -171,10 +171,25 @@ recipient — a grant or opt-out for one number never affects another.
   - 16 MB size cap (protects the database).
   - Filename sanitization: strips CR/LF, control chars, quotes and backslashes,
     collapses dot runs, trims, caps at 128 chars.
-- `GET /api/whatsapp/media/:id` requires `adminAuth` + `whatsapp:view` and sanitizes the
+- `GET /api/whatsapp/media/:id` requires `staffAuth` + `whatsapp:view` and sanitizes the
   `Content-Disposition` filename too.
 
 ## Permissions
 
-- `GET /api/admin/whatsapp/conversations`, `/api/admin/whatsapp/log`,
-  `/api/admin/notify/test`, `/api/whatsapp/media/:id` → `whatsapp:view`.
+The WhatsApp admin surface is permission-gated with `staffAuthMiddleware` +
+`requirePermission(...)` (the same model as `financing:*`), so a shop can grant any of
+these to a custom role. Default roles only change for `admin`/`owner`, which keep full
+access — so the default behaviour (only admins/owners reach these endpoints) is unchanged.
+
+- **`whatsapp:view`** (read): `GET /api/admin/whatsapp/config`, `/conversations`, `/logs`,
+  `/stats`, `/templates`, `GET /api/whatsapp/media/:id`.
+- **`whatsapp:manage`** (write): `POST /api/admin/whatsapp/test`,
+  `POST /api/admin/whatsapp/templates`, `DELETE /api/admin/whatsapp/templates/:id`,
+  `POST /api/admin/whatsapp/send-interactive`.
+- **`whatsapp:approve`** (approve/unapprove): `PATCH /api/admin/whatsapp/templates/:id`.
+
+Template approval is deliberately separate from creation: a new template is **unapproved**
+by default. `POST /api/admin/whatsapp/templates` only honours `approved: true` /
+`isApproved: true` when the caller also holds `whatsapp:approve` (otherwise `403`), and
+`PATCH .../templates/:id` requires `whatsapp:approve`. So a `whatsapp:manage`-only operator
+cannot self-approve a template to enable out-of-window (business-initiated) sends.

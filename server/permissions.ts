@@ -69,6 +69,8 @@ const PERMISSIONS: PermissionMap = {
   "about:view": "View about-us editor",
   "positioning:view": "View product positioning",
   "whatsapp:view": "View WhatsApp settings",
+  "whatsapp:manage": "Create, edit and delete WhatsApp templates and send WhatsApp messages",
+  "whatsapp:approve": "Approve or unapprove WhatsApp message templates",
   "review:view": "View product reviews",
   "audit:view": "View audit log",
   "financing:view": "View financing applications and agreements",
@@ -98,7 +100,7 @@ const DEFAULT_ROLES: DefaultRoles = {
     "order:view", "order:without_payment", "customer:view", "coupon:view", "giftcard:view",
     "campaign:view", "cart:view", "provider:view", "spec:view",
     "supplier:view", "branch:view", "subscription:view", "about:view",
-    "positioning:view", "whatsapp:view", "review:view", "audit:view",
+    "positioning:view", "whatsapp:view", "whatsapp:manage", "whatsapp:approve", "review:view", "audit:view",
     "financing:view", "financing:manage", "financing:approve", "financing:payment",
   ],
   technician: [
@@ -148,7 +150,7 @@ const DEFAULT_ROLES: DefaultRoles = {
     "order:view", "order:without_payment", "customer:view", "coupon:view", "giftcard:view",
     "campaign:view", "cart:view", "provider:view", "spec:view",
     "supplier:view", "branch:view", "subscription:view", "about:view",
-    "positioning:view", "whatsapp:view", "review:view", "audit:view",
+    "positioning:view", "whatsapp:view", "whatsapp:manage", "whatsapp:approve", "review:view", "audit:view",
     "financing:view", "financing:manage", "financing:approve", "financing:payment",
   ],
 };
