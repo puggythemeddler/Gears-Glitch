@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import { AppProvider } from "@/lib/app-context";
 import { LayoutProvider, LayoutStyles } from "@/layouts";
 import Layout from "@/components/Layout";
+import CookieConsentBanner from "@/components/CookieConsent";
 import { FeedbackProvider } from "@/components/feedback/FeedbackProvider";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import OfflinePage from "@/components/OfflinePage";
@@ -124,6 +125,7 @@ export default function MyApp({ Component, pageProps, router }: AppProps) {
                     <Component {...pageProps} />
                   </PageTransition>
                 </Layout>
+                <CookieConsentBanner />
               </LayoutProvider>
             </ConfirmProvider>
           </FeedbackProvider>

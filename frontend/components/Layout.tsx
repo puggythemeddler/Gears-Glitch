@@ -160,6 +160,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           { label: "Contact", href: "/contact" },
           { label: "Financing", href: "/financing" },
           { label: "Product groups", href: "/groups" },
+          { label: "Privacy Policy", href: "/privacy" },
+          { label: "Terms of Service", href: "/terms" },
         ],
       },
     ];
