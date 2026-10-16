@@ -57,7 +57,7 @@ paths.
 | F5 | Low | `GET/PUT /api/admin/about-us` and `POST /api/admin/about-us/image` all used the read permission `about:view` → any read-granted role could rewrite the page and banner | `server/index.ts`, `server/permissions.ts` | **Fixed** — writes now require new `about:update` (admin/owner only) |
 | F6 | Low/Med | When Cloudinary is configured, `validateUploadedFile` returns true without a magic-byte check (relied on Cloudinary `resource_type:"image"`) | `server/upload.ts` | **Fixed** — upload stream is magic-byte-validated before any bytes reach Cloudinary |
 | F7 | Low | No malware scanning; no image re-encode/metadata strip | `server/upload.ts` | Open — accepted residual risk |
-| F8 | Low | Uploaded asset can be orphaned if the DB insert fails after upload (local unlink only) | upload routes | Open — accepted residual |
+| F8 | Low | Uploaded asset can be orphaned if the DB insert fails after upload (local unlink only) | upload routes | **Fixed** — storage-aware cleanup removes unpersisted uploads (local disk + Cloudinary); `persisted` guard prevents deleting committed assets |
 | F9 | Info | Cross-tenant isolation relies on one-DB-per-tenant infra, not a tenant column | tenancy model | Documented assumption; keep per-tenant isolation strict |
 | F10 | Low | Control-plane returned raw `err.message` (and one upstream API body) to the client in 11 places | `control-plane/**` | **Fixed** — generic messages to client; real detail logged server-side |
 | F11 | Process | No privacy/terms/cookie surfaces | frontend | **Fixed (drafts)** `552e9cd`; **legal review required** |
@@ -84,6 +84,7 @@ paths.
 | `552e9cd` | `feat(legal)`: draft privacy/terms pages + cookie-consent banner + `LEGAL_REVIEW_REQUIRED.md`; tests |
 | `58fb76f` | `docs`: backup/restore/incident-response runbook |
 | _(this commit)_ | `fix(security)`: F5 about-us writes require new `about:update`; F6 magic-byte guard on the Cloudinary upload stream; F10 stop leaking raw error detail from the control plane; tests |
+| `1441e7c` | `fix(upload)`: prevent orphaned assets on upload failure (F8); storage-aware cleanup with `persisted` guard; tests |
 
 All changes: server `tsc` clean, frontend `tsc` clean, full test suite green
 (§6).
@@ -128,7 +129,7 @@ Code-adjacent (small follow-ups, not blockers):
 
 ### 6.1 Final full-suite result
 
-- tests: **748** | suites: **145** | pass: **748** | fail: **0**
+- tests: **755** | suites: **147** | pass: **755** | fail: **0**
 
 ---
 
