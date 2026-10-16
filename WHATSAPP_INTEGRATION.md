@@ -126,6 +126,23 @@ alone can never authorise a message Meta would reject:
   like a consent denial. Operators approve templates via
   `PATCH /api/admin/whatsapp/templates/:id` (`{ approved: true }`).
 
+#### Local vs Meta approval (why `is_approved` exists)
+
+`whatsapp_templates` is a **local mirror**, not proof that Meta approved the template. A
+row can exist in our database while the same template is `PENDING`, `REJECTED` or edited
+on Meta's side. `is_approved` therefore records an explicit operator decision and defaults
+to `FALSE` (migration `0033`, forward-only, `ADD COLUMN IF NOT EXISTS ... NOT NULL DEFAULT
+FALSE`), so **existing rows are never silently trusted** after an upgrade.
+
+To keep a local approval from going **stale**, any change to a template's content must
+invalidate it. Today there is deliberately **no template content-edit endpoint**: the only
+mutation paths are INSERT (create), `UPDATE ... SET is_approved` (approve/unapprove only)
+and DELETE. `tests/whatsapp-template-approval-guard.test.ts` is a source-level guard that
+fails if a future `UPDATE whatsapp_templates` ever sets a content column
+(`name`/`language`/`category`/`body_text`/`header_type`/`header_text`/`footer_text`)
+without also setting `is_approved = FALSE` in the same statement — so an added edit path
+cannot leave a previously-approved body carrying a stale approval.
+
 **Policy (default-DENY — absence of a consent record is *not* consent):**
 
 - `marketing` requires an explicit `marketing_allowed = TRUE` grant.
@@ -164,6 +181,28 @@ recipient — a grant or opt-out for one number never affects another.
   `{ ok: false, blocked: true }` and the outbound queue (`processPendingDelivery`)
   dead-letters it immediately via `failDelivery(..., giveUp = true)` instead of applying
   exponential backoff. Transient transport errors still retry as before.
+
+### Diagnosing a blocked send
+
+Every blocked attempt is recorded in `whatsapp_logs` with `status = 'blocked'` and the
+human-readable reason in the error field, and echoed to the server log as
+`[whatsapp] Outbound blocked (<category>/<kind>): <reason>`. The reason distinguishes the
+cases so an operator can act:
+
+- consent/opt-out: no authorisation for the category (see the default-DENY policy above);
+- window: free-form message attempted outside the 24-hour customer-service window;
+- template: not configured, not marked approved, unknown/invalid category, or a category
+  mismatch for the message. Fixing a template block means approving it (or correcting its
+  category), **not** retrying — the send is a permanent denial.
+
+### Manual verification (not automated)
+
+The automated suite mocks `fetch`, so it proves our gates but never touches Meta. Before
+go-live, on a real (test) WhatsApp Business number, manually confirm: a webhook
+verification handshake (`GET /api/whatsapp/webhook`) succeeds; an inbound `STOP` flips the
+number's `whatsapp_consent` row to opted-out; an out-of-window template send only succeeds
+after `PATCH /api/admin/whatsapp/templates/:id { approved: true }`; and the server log /
+`whatsapp_logs` show a `blocked` row for an unapproved or out-of-window attempt.
 
 ## Media
 

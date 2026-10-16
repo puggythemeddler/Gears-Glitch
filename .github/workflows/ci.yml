@@ -39,6 +39,9 @@ jobs:
   server-test:
     name: Server (isolation tests vs disposable Postgres)
     runs-on: ubuntu-latest
+    # Safety net: the suite spawns real servers and a lingering handle would
+    # otherwise wedge this job until GitHub's 6-hour default.
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17
