@@ -662,7 +662,8 @@ export async function deployAllClients(
         const ok = await deployRenderService(client.render_service_id);
         results[i] = { name: client.name, success: ok, error: ok ? undefined : `HTTP error` };
       } catch (e: any) {
-        results[i] = { name: client.name, success: false, error: e.message };
+        console.error(`[deploy] Deploy failed for "${client.name}":`, e.message);
+        results[i] = { name: client.name, success: false, error: "Deploy request failed" };
       }
     }
   };

@@ -632,7 +632,7 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
     });
   } catch (err: any) {
     console.error("[api] Create client error:", err.message);
-    res.status(500).json({ error: err.message || "Failed to create client" });
+    res.status(500).json({ error: "Failed to create client" });
   }
 });
 
@@ -644,7 +644,8 @@ app.get("/api/provisioning/status", requireAuth, requireAdmin, async (_req, res)
     const missing = getMissingProvisioningEnv();
     res.json({ ready: missing.length === 0, missing, required: ["NEON_API_KEY", "RENDER_API_KEY", "VERCEL_TOKEN"] });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read provisioning status" });
+    console.error("[api] Provisioning status error:", err.message);
+    res.status(500).json({ error: "Failed to read provisioning status" });
   }
 });
 
@@ -722,7 +723,7 @@ app.post("/api/clients/:id/push-secret", requireAuth, requireAdmin, async (req, 
     res.json({ message: `Control-plane secret ${rotate ? "rotated" : "pushed"} to "${client.name}". The service is redeploying.` });
   } catch (err: any) {
     console.error("[api] Push secret error:", err.message);
-    res.status(500).json({ error: err.message || "Failed to push secret" });
+    res.status(500).json({ error: "Failed to push secret" });
   }
 });
 
@@ -851,8 +852,9 @@ app.post("/api/deploy-test", destructiveLimiter, requireAdmin, async (req, res) 
         results.push({ name: client.name, success: ok, error: ok ? undefined : "HTTP error" });
         if (ok) await query("UPDATE clients SET health_status = 'deploying' WHERE id = $1", [client.id]);
       } catch (e: any) {
+        console.error(`[api] Test deploy failed for "${client.name}":`, e.message);
         await updateDeployLog(logId, "failed");
-        results.push({ name: client.name, success: false, error: e.message });
+        results.push({ name: client.name, success: false, error: "Deploy request failed" });
       }
     }
     await auditLog(req, "deploy_test", "system", null, undefined, `Deployed ${results.filter(r=>r.success).length}/${results.length} test site(s)${commit_sha ? ` (${commit_sha.slice(0,7)})` : ""}`);
@@ -877,7 +879,8 @@ app.post("/api/deploy/disable-auto-deploy", requireAdmin, async (_req, res) => {
         const ok = await setAutoDeploy(c.render_service_id, false);
         results.push({ name: c.name, success: ok, error: ok ? undefined : "HTTP error" });
       } catch (e: any) {
-        results.push({ name: c.name, success: false, error: e.message });
+        console.error(`[api] Auto-deploy update failed for "${c.name}":`, e.message);
+        results.push({ name: c.name, success: false, error: "Auto-deploy update failed" });
       }
     }
     await auditLog(_req, "disable_auto_deploy", "system", null, undefined, `Disabled auto-deploy on ${results.filter(r=>r.success).length}/${results.length} services`);
@@ -953,10 +956,12 @@ app.post("/api/sync-cloudinary", requireAdmin, async (req, res) => {
           results.push({ name: c.name, success: true, folder });
         } else {
           const text = await r.text();
-          results.push({ name: c.name, success: false, error: `HTTP ${r.status}: ${text}` });
+          console.error(`[api] Cloudinary sync rejected for "${c.name}": HTTP ${r.status} ${text}`);
+          results.push({ name: c.name, success: false, error: `HTTP ${r.status}` });
         }
       } catch (e: any) {
-        results.push({ name: c.name, success: false, error: e.message });
+        console.error(`[api] Cloudinary sync failed for "${c.name}":`, e.message);
+        results.push({ name: c.name, success: false, error: "Cloudinary sync failed" });
       }
     }
 
@@ -1379,8 +1384,9 @@ app.post("/api/backups/run", destructiveLimiter, requireAdmin, async (req, res) 
 
         results.push({ name: c.name, success: true, size: `${sizeMB} MB` });
       } catch (e: any) {
+        console.error(`[api] Backup failed for "${c.name}":`, e.message);
         await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [c.id, "backup_failed"]).catch(() => {});
-        results.push({ name: c.name, success: false, error: e.message });
+        results.push({ name: c.name, success: false, error: "Backup failed" });
       }
     }
 
@@ -1627,7 +1633,8 @@ app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, a
         });
         results.push({ name: c.name, success: r.ok });
       } catch (e: any) {
-        results.push({ name: c.name, success: false, error: e.message });
+        console.error(`[api] Plan sync failed for "${c.name}":`, e.message);
+        results.push({ name: c.name, success: false, error: "Plan sync failed" });
       }
     }
     res.json({ results });
@@ -1676,7 +1683,8 @@ app.post("/api/plans/sync-up", requireAuth, async (req, res) => {
         });
         results.push({ name: c.name, success: r.ok });
       } catch (e: any) {
-        results.push({ name: c.name, success: false, error: e.message });
+        console.error(`[api] Plan sync-up failed for "${c.name}":`, e.message);
+        results.push({ name: c.name, success: false, error: "Plan sync failed" });
       }
     }
     const ok = results.filter((r) => r.success).length;

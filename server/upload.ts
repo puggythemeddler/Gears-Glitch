@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { Transform } from "stream";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import type { UploadApiOptions, UploadApiResponse } from "cloudinary";
@@ -91,12 +92,27 @@ class CloudinaryStorageEngine implements multer.StorageEngine {
 
   _handleFile(req: any, file: Express.Multer.File, cb: (error?: Error | null, info?: Partial<Express.Multer.File>) => void): void {
     const options = this.buildParams(req, file);
+    let settled = false;
+    const finish = (error?: Error | null, info?: Partial<Express.Multer.File>) => {
+      if (settled) return;
+      settled = true;
+      cb(error, info);
+    };
     const upload = cloudinary.uploader.upload_stream(options, (error: Error | null | undefined, result?: UploadApiResponse) => {
-      if (error) return cb(error);
-      if (!result) return cb(new Error("Cloudinary upload returned no result"));
-      cb(null, { path: result.secure_url || result.url, filename: result.public_id, size: file.size });
+      if (error) return finish(error);
+      if (!result) return finish(new Error("Cloudinary upload returned no result"));
+      finish(null, { path: result.secure_url || result.url, filename: result.public_id, size: file.size });
     });
-    file.stream.pipe(upload);
+    const guard = magicByteGuard();
+    guard.on("error", (err: Error) => {
+      upload.destroy();
+      finish(err);
+    });
+    file.stream.on("error", (err: Error) => {
+      upload.destroy();
+      finish(err);
+    });
+    file.stream.pipe(guard).pipe(upload);
   }
 
   _removeFile(_req: any, file: Express.Multer.File, cb: (error: Error | null) => void): void {
@@ -152,6 +168,38 @@ function validateImageMagicBytes(buffer: Buffer): boolean {
     if (magic.every((byte, i) => buffer[i] === byte)) return true;
   }
   return false;
+}
+
+// Streams pass-through transform that inspects the leading bytes of an upload
+// and destroys the stream before any further data is forwarded when the magic
+// bytes do not match a supported image format. This lets the Cloudinary upload
+// path enforce the same byte-level check as the local-disk path, closing the
+// gap where a client could send arbitrary bytes with an image/* mimetype.
+function magicByteGuard(): Transform {
+  let head: Buffer = Buffer.alloc(0);
+  let checked = false;
+  return new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      if (checked) return cb(null, chunk);
+      head = Buffer.concat([head, chunk]);
+      if (head.length < 4) return cb(null, null);
+      checked = true;
+      if (!validateImageMagicBytes(head)) {
+        return cb(new Error("Invalid file type. Only genuine image files are allowed."));
+      }
+      const out = head;
+      head = Buffer.alloc(0);
+      cb(null, out);
+    },
+    flush(cb) {
+      if (!checked && head.length) {
+        const out = head;
+        head = Buffer.alloc(0);
+        return cb(null, out);
+      }
+      cb();
+    },
+  });
 }
 
 function validateUploadedFile(file: Express.Multer.File): boolean {
@@ -295,4 +343,4 @@ async function deleteCloudinaryImage(imageUrl: string): Promise<void> {
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile, validateImageMagicBytes };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile, validateImageMagicBytes, magicByteGuard };

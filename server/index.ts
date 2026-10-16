@@ -1736,7 +1736,7 @@ app.get("/api/admin/about-us", adminAuthMiddleware, requirePermission("about:vie
   res.json(aboutUs);
 }));
 
-app.put("/api/admin/about-us", adminAuthMiddleware, requirePermission("about:view"), asyncHandler(async (req: Request, res: Response) => {
+app.put("/api/admin/about-us", adminAuthMiddleware, requirePermission("about:update"), asyncHandler(async (req: Request, res: Response) => {
   const { title, content, mission, vision, missionTitle, visionTitle, image, address, hours, stats } = req.body || {};
   if (title !== undefined && !okLen(title, 0, 500)) { res.status(400).json({ error: "Title must be ≤500 characters." }); return; }
   if (content !== undefined && !okLen(content, 0, 50000)) { res.status(400).json({ error: "Content must be ≤50000 characters." }); return; }
@@ -1762,7 +1762,7 @@ app.put("/api/admin/about-us", adminAuthMiddleware, requirePermission("about:vie
   res.json(data);
 }));
 
-app.post("/api/admin/about-us/image", adminAuthMiddleware, requirePermission("about:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/about-us/image", adminAuthMiddleware, requirePermission("about:update"), asyncHandler(async (req: Request, res: Response) => {
   try {
     await runMulter(uploadAboutImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }

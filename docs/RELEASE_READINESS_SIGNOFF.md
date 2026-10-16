@@ -6,7 +6,8 @@ This document separates **what was verified from code/in-repo evidence** from
 hosting provider). It does not claim legal compliance.
 
 - Baseline audited: `main` @ `6f4deb1`
-- Fixes landed on `main`: `6f6419e`, `5b2985b`, `552e9cd`, `58fb76f`
+- Fixes landed on `main`: `6f6419e`, `5b2985b`, `552e9cd`, `58fb76f`, plus the
+  F5/F6/F10 follow-ups in the final commit of this audit.
 - Test suite at time of writing: see §6 (full run).
 
 ---
@@ -53,12 +54,12 @@ paths.
 | F2 | Medium (P2) | `GET /api/audit-log` guarded only by `ownerAuthMiddleware` → manager could read the tenant audit trail | `server/index.ts` audit route | **Fixed** `6f6419e` (`audit:view`) |
 | F3 | Medium (P2) | `DELETE /api/admin/branches/:id` had step-up auth but no permission (its create/update siblings require `branch:view`) → manager could delete a branch | `server/index.ts` branch routes | **Fixed** `6f6419e` (`branch:view`) |
 | F4 | Medium (P2) | Gallery/repair image uploads unbounded server-side (storage/quota abuse, bloated payloads) | `server/index.ts` upload routes | **Fixed** `5b2985b` (env-overridable caps) |
-| F5 | Low | `POST /api/admin/about-us/image` uses read permission `about:view` for a write | `server/index.ts` | Open — admin-only, semantic; recommend a write permission |
-| F6 | Low/Med | When Cloudinary is configured, `validateUploadedFile` returns true without a magic-byte check (relies on Cloudinary `resource_type:"image"`) | `server/upload.ts` | Open/accepted — document; consider always validating bytes |
+| F5 | Low | `GET/PUT /api/admin/about-us` and `POST /api/admin/about-us/image` all used the read permission `about:view` → any read-granted role could rewrite the page and banner | `server/index.ts`, `server/permissions.ts` | **Fixed** — writes now require new `about:update` (admin/owner only) |
+| F6 | Low/Med | When Cloudinary is configured, `validateUploadedFile` returns true without a magic-byte check (relied on Cloudinary `resource_type:"image"`) | `server/upload.ts` | **Fixed** — upload stream is magic-byte-validated before any bytes reach Cloudinary |
 | F7 | Low | No malware scanning; no image re-encode/metadata strip | `server/upload.ts` | Open — accepted residual risk |
 | F8 | Low | Uploaded asset can be orphaned if the DB insert fails after upload (local unlink only) | upload routes | Open — accepted residual |
 | F9 | Info | Cross-tenant isolation relies on one-DB-per-tenant infra, not a tenant column | tenancy model | Documented assumption; keep per-tenant isolation strict |
-| F10 | Low | Control-plane returns raw `err.message` to the client in places | `control-plane/**` | Open — admin-only, low |
+| F10 | Low | Control-plane returned raw `err.message` (and one upstream API body) to the client in 11 places | `control-plane/**` | **Fixed** — generic messages to client; real detail logged server-side |
 | F11 | Process | No privacy/terms/cookie surfaces | frontend | **Fixed (drafts)** `552e9cd`; **legal review required** |
 | F12 | Process | DR/backup/incident-response undocumented as a single runbook | repo docs | **Fixed (doc)** `58fb76f`; gaps flagged therein |
 
@@ -82,6 +83,7 @@ paths.
 | `5b2985b` | `fix(uploads)`: per-item image caps (env-overridable), backend enforcement + UI guidance; tests |
 | `552e9cd` | `feat(legal)`: draft privacy/terms pages + cookie-consent banner + `LEGAL_REVIEW_REQUIRED.md`; tests |
 | `58fb76f` | `docs`: backup/restore/incident-response runbook |
+| _(this commit)_ | `fix(security)`: F5 about-us writes require new `about:update`; F6 magic-byte guard on the Cloudinary upload stream; F10 stop leaking raw error detail from the control plane; tests |
 
 All changes: server `tsc` clean, frontend `tsc` clean, full test suite green
 (§6).
@@ -107,9 +109,9 @@ External / non-code (owner or legal action):
 
 Code-adjacent (small follow-ups, not blockers):
 
-- [ ] F5: change about-us image upload to a write permission.
-- [ ] F6: always magic-byte-validate uploads even on the Cloudinary path.
-- [ ] F10: stop returning raw `err.message` from control-plane routes.
+- [x] F5: change about-us writes to a write permission (`about:update`).
+- [x] F6: always magic-byte-validate uploads even on the Cloudinary path.
+- [x] F10: stop returning raw `err.message` from control-plane routes.
 
 ---
 
@@ -126,7 +128,7 @@ Code-adjacent (small follow-ups, not blockers):
 
 ### 6.1 Final full-suite result
 
-- tests: **733** | suites: **142** | pass: **733** | fail: **0**
+- tests: **748** | suites: **145** | pass: **748** | fail: **0**
 
 ---
 
@@ -135,7 +137,11 @@ Code-adjacent (small follow-ups, not blockers):
 - HTML sanitisation for admin-authored storefront content (about-us, custom
   pages) was not exhaustively reviewed — admins are trusted, but treat any
   admin-authored HTML as a stored-XSS surface.
-- Rollback for the shipped fixes: revert the four commits above; the only
-  schema-adjacent change is a new **permission row** (`data:backup`) seeded by
-  `initRoles` on boot (`ON CONFLICT DO NOTHING`) — no migration, so no down
-  migration is required.
+- Rollback for the shipped fixes: revert the four commits above plus the F5/F6/F10
+  follow-up; the only schema-adjacent changes are new **permission rows**
+  (`data:backup`, `about:update`) seeded by `initRoles` on boot
+  (`ON CONFLICT DO NOTHING`) — no migration, so no down migration is required.
+- F6 changes the Cloudinary upload path (a leading-bytes guard transform). It is
+  unit-tested at the stream level and reviewed, but could not be exercised
+  end-to-end against a live Cloudinary account from this environment; treat the
+  first post-deploy Cloudinary upload as a smoke test.
