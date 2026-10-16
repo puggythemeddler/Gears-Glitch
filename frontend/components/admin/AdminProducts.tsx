@@ -33,6 +33,13 @@ export default function AdminProducts() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkMsg, setBulkMsg] = useState("");
   const [search, setSearch] = useState("");
+  const [maxImages, setMaxImages] = useState(12);
+
+  useEffect(() => {
+    api<{ maxProductImages?: number }>("/api/upload/status")
+      .then(d => { if (d?.maxProductImages && d.maxProductImages > 0) setMaxImages(d.maxProductImages); })
+      .catch(() => {});
+  }, []);
 
   function downloadTemplate() {
     const headers = "name,price,category,inStock,isNonStock,hasWarranty,warrantyDuration,taxable,subcategory";
@@ -149,7 +156,17 @@ export default function AdminProducts() {
   async function uploadGalleryImages(productId: string) {
     const files = galleryRef.current?.files;
     if (!files || files.length === 0) return;
-    for (const file of Array.from(files)) {
+    const remaining = Math.max(0, maxImages - gallery.length);
+    if (remaining === 0) {
+      feedback.error({ title: "Image limit reached", message: `This product already has the maximum of ${maxImages} images. Remove one before adding another.` });
+      if (galleryRef.current) galleryRef.current.value = "";
+      return;
+    }
+    const chosen = Array.from(files);
+    if (chosen.length > remaining) {
+      feedback.error({ title: "Some images were not uploaded", message: `Only ${remaining} more image(s) can be added (limit ${maxImages}).` });
+    }
+    for (const file of chosen.slice(0, remaining)) {
       const fd = new FormData();
       fd.append("image", file);
       try { await api(`/api/products/${encodeURIComponent(productId)}/images`, { method: "POST", body: fd }); } catch (err: any) { feedback.error({ title: "Images not uploaded", message: "Upload failed: " + err.message }); }
@@ -305,7 +322,7 @@ export default function AdminProducts() {
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="serialTracking" defaultChecked={editing?.serialTracking ?? false} /> Track serial numbers (scan serials at sale)</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="taxable" defaultChecked={editing?.taxable !== false} /> Taxable (eTims-compatible)</label></div>
             <div className="field"><label>Warranty duration (months)<input name="warrantyDuration" type="number" min="0" defaultValue={editing?.warrantyDuration || 0} /></label></div>
-            <div className="field"><label>Add images (multiple)<input type="file" ref={galleryRef} accept="image/*" multiple /></label></div>
+            <div className="field"><label>Add images (multiple)<input type="file" ref={galleryRef} accept="image/*" multiple disabled={gallery.length >= maxImages} /></label><p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>{gallery.length} of {maxImages} images used{gallery.length >= maxImages ? " — limit reached" : ""}.</p></div>
             {specFields.length > 0 ? (
               <div>
                 <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Specifications</p>

@@ -425,6 +425,7 @@ import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } f
 import { validateLayoutConfig } from "./template-validate";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile, validateImageMagicBytes } from "./upload";
 import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
+import { MAX_PRODUCT_IMAGES, MAX_REPAIR_IMAGES, withinImageLimit, productImageLimitMessage, repairImageLimitMessage } from "./image-limits";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus, callbackBaseUrl } from "./mpesa";
 import bcrypt from "bcryptjs";
@@ -938,7 +939,7 @@ async function backupImageToDb(refId: string, imageUrl: string): Promise<void> {
 // Cloudinary status check
 app.get("/api/upload/status", ownerAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   const settings = await getSettings();
-  res.json({ cloudinary: isCloudinaryConfigured(), cloudName: settings.cloudinaryCloudName || "(not set)", hasApiKey: !!settings.cloudinaryApiKey, hasApiSecret: !!settings.cloudinaryApiSecret });
+  res.json({ cloudinary: isCloudinaryConfigured(), cloudName: settings.cloudinaryCloudName || "(not set)", hasApiKey: !!settings.cloudinaryApiKey, hasApiSecret: !!settings.cloudinaryApiSecret, maxProductImages: MAX_PRODUCT_IMAGES, maxRepairImages: MAX_REPAIR_IMAGES });
 }));
 
 // Cloudinary config for control plane provisioning (server-to-server only)
@@ -4944,7 +4945,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
     await setProductImageUrl(String(req.params.id), imageUrl);
     backupImageToDb(`product:${req.params.id}`, imageUrl);
     const existing = await getProductImages(String(req.params.id));
-    if (!existing.find(i => i.imageUrl === imageUrl)) {
+    if (!existing.find(i => i.imageUrl === imageUrl) && withinImageLimit(existing.length, MAX_PRODUCT_IMAGES)) {
       await addProductImage(String(req.params.id), imageUrl, -1);
     }
     const updated = await getProduct(String(req.params.id));
@@ -5139,6 +5140,11 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
   const product = await getProduct(String(req.params.id));
   if (!product) { res.status(404).json({ error: "Product not found." }); return; }
   try {
+    const existing = await getProductImages(String(req.params.id));
+    if (!withinImageLimit(existing.length, MAX_PRODUCT_IMAGES)) {
+      res.status(409).json({ error: productImageLimitMessage() });
+      return;
+    }
     await runMulter(uploadGalleryImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
@@ -6745,6 +6751,11 @@ app.get("/api/repairs/:id/images", staffAuthMiddleware, requirePermission("repai
 
 app.post("/api/repairs/:id/images", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   try {
+    const existing = await getRepairImages(String(req.params.id));
+    if (!withinImageLimit(existing.length, MAX_REPAIR_IMAGES)) {
+      res.status(409).json({ error: repairImageLimitMessage() });
+      return;
+    }
     await runMulter(uploadRepairImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image uploaded." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
