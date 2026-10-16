@@ -423,7 +423,7 @@ import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, 
 import { publicBaseUrl } from "./public-url";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
 import { validateLayoutConfig } from "./template-validate";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile, validateImageMagicBytes } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes } from "./upload";
 import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
 import { MAX_PRODUCT_IMAGES, MAX_REPAIR_IMAGES, withinImageLimit, productImageLimitMessage, repairImageLimitMessage } from "./image-limits";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
@@ -1763,22 +1763,24 @@ app.put("/api/admin/about-us", adminAuthMiddleware, requirePermission("about:upd
 }));
 
 app.post("/api/admin/about-us/image", adminAuthMiddleware, requirePermission("about:update"), asyncHandler(async (req: Request, res: Response) => {
+  let persisted = false;
   try {
     await runMulter(uploadAboutImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
+      await removeUploadedAsset(req.file);
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
     const imageUrl = getUploadedUrl(req);
-    if (!imageUrl) { res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
+    if (!imageUrl) { await removeUploadedAsset(req.file); res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
     if (typeof req.body?.previousUrl === "string" && req.body.previousUrl && req.body.previousUrl !== imageUrl) {
       deleteCloudinaryImage(req.body.previousUrl);
     }
     backupImageToDb("about", imageUrl);
+    persisted = true;
     res.json({ url: imageUrl });
-  } catch (e: any) { console.error("[About image upload]", e.message || e); res.status(400).json({ error: "Upload failed. Please try again." }); }
+  } catch (e: any) { console.error("[About image upload]", e.message || e); if (!persisted) await removeUploadedAsset(req.file, getUploadedUrl(req)); res.status(400).json({ error: "Upload failed. Please try again." }); }
 }));
 
 app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
@@ -1895,19 +1897,22 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
 }));
 
 app.post("/api/settings/logo", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  let persisted = false;
   try {
     await runMulter(uploadLogo, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
+      await removeUploadedAsset(req.file);
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
     const logoUrl = getUploadedUrl(req);
+    if (!logoUrl) { await removeUploadedAsset(req.file); res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
     await updateSettings({ storeLogo: logoUrl });
+    persisted = true;
     backupImageToDb("logo", logoUrl);
     res.json({ logoUrl });
-  } catch (e: any) { console.error("[Logo upload]", e.message || e); res.status(400).json({ error: "Upload failed. Please try again." }); }
+  } catch (e: any) { console.error("[Logo upload]", e.message || e); if (!persisted) await removeUploadedAsset(req.file, getUploadedUrl(req)); res.status(400).json({ error: "Upload failed. Please try again." }); }
 }));
 
 app.get("/api/admin/email-logs", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -1934,19 +1939,22 @@ app.post("/api/contact", asyncHandler(async (req: Request, res: Response) => {
 }));
 
 app.post("/api/settings/favicon", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  let persisted = false;
   try {
     await runMulter(uploadFavicon, req, res);
-    if (!req.file) { res.status(400).json({ error: "No file provided." }); return; }
+    if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
+      await removeUploadedAsset(req.file);
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
     const faviconUrl = getUploadedUrl(req);
+    if (!faviconUrl) { await removeUploadedAsset(req.file); res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
     await updateSettings({ storeFavicon: faviconUrl });
+    persisted = true;
     backupImageToDb("favicon", faviconUrl);
     res.json({ faviconUrl });
-  } catch (e: any) { console.error("[Favicon upload]", e.message || e); res.status(400).json({ error: "Upload failed. Please try again." }); }
+  } catch (e: any) { console.error("[Favicon upload]", e.message || e); if (!persisted) await removeUploadedAsset(req.file, getUploadedUrl(req)); res.status(400).json({ error: "Upload failed. Please try again." }); }
 }));
 
 app.get("/api/settings/nav-order", asyncHandler(async (_req: Request, res: Response) => {
@@ -4931,18 +4939,20 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
   const product = await getProduct(String(req.params.id));
   if (!product) { res.status(404).json({ error: "Product not found." }); return; }
 
+  let persisted = false;
   try {
     await runMulter(uploadProductImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
+      await removeUploadedAsset(req.file);
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
     const imageUrl = getUploadedUrl(req) || imageUrlForProduct(String(req.params.id));
     console.log("[Upload primary] imageUrl:", imageUrl, "cloudinary:", isCloudinaryConfigured());
-    if (!imageUrl) { res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
+    if (!imageUrl) { await removeUploadedAsset(req.file); res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
     await setProductImageUrl(String(req.params.id), imageUrl);
+    persisted = true;
     backupImageToDb(`product:${req.params.id}`, imageUrl);
     const existing = await getProductImages(String(req.params.id));
     if (!existing.find(i => i.imageUrl === imageUrl) && withinImageLimit(existing.length, MAX_PRODUCT_IMAGES)) {
@@ -4952,6 +4962,7 @@ app.post("/api/products/:id/image", ownerAuthMiddleware, requirePermission("prod
     res.json(updated);
   } catch (e: any) {
     console.error("[Upload primary]", e.message || e);
+    if (!persisted) await removeUploadedAsset(req.file, getUploadedUrl(req));
     res.status(500).json({ error: "Upload failed. Please try again." });
   }
 }));
@@ -5139,6 +5150,7 @@ app.get("/api/admin/reviews", ownerAuthMiddleware, requirePermission("product:up
 app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("product:update"), asyncHandler(async (req: Request, res: Response) => {
   const product = await getProduct(String(req.params.id));
   if (!product) { res.status(404).json({ error: "Product not found." }); return; }
+  let persisted = false;
   try {
     const existing = await getProductImages(String(req.params.id));
     if (!withinImageLimit(existing.length, MAX_PRODUCT_IMAGES)) {
@@ -5148,18 +5160,20 @@ app.post("/api/products/:id/images", ownerAuthMiddleware, requirePermission("pro
     await runMulter(uploadGalleryImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image file provided." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
+      await removeUploadedAsset(req.file);
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
     const imageUrl = getUploadedUrl(req);
     console.log("[Upload gallery] imageUrl:", imageUrl, "cloudinary:", isCloudinaryConfigured());
-    if (!imageUrl) { res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
+    if (!imageUrl) { await removeUploadedAsset(req.file); res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
     const img = await addProductImage(String(req.params.id), imageUrl);
+    persisted = true;
     backupImageToDb(`product:${req.params.id}:gallery:${img.id}`, imageUrl);
     res.json(img);
   } catch (e: any) {
     console.error("[Upload gallery]", e.message || e);
+    if (!persisted) await removeUploadedAsset(req.file, getUploadedUrl(req));
     res.status(500).json({ error: "Upload failed. Please try again." });
   }
 }));
@@ -6750,6 +6764,7 @@ app.get("/api/repairs/:id/images", staffAuthMiddleware, requirePermission("repai
 }));
 
 app.post("/api/repairs/:id/images", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  let persisted = false;
   try {
     const existing = await getRepairImages(String(req.params.id));
     if (!withinImageLimit(existing.length, MAX_REPAIR_IMAGES)) {
@@ -6759,17 +6774,23 @@ app.post("/api/repairs/:id/images", staffAuthMiddleware, requirePermission("repa
     await runMulter(uploadRepairImage, req, res);
     if (!req.file) { res.status(400).json({ error: "No image uploaded." }); return; }
     if (req.file && !validateUploadedFile(req.file)) {
-      try { fs.unlinkSync(req.file.path); } catch { console.warn("[upload] Failed to clean up temp file"); }
+      await removeUploadedAsset(req.file);
       res.status(400).json({ error: "Invalid file type. Only genuine image files are allowed." });
       return;
     }
     const imageType = String(req.body.imageType || "before").toLowerCase();
-    if (!["before", "after"].includes(imageType)) { res.status(400).json({ error: "imageType must be 'before' or 'after'." }); return; }
+    if (!["before", "after"].includes(imageType)) { await removeUploadedAsset(req.file); res.status(400).json({ error: "imageType must be 'before' or 'after'." }); return; }
     const imageUrl = getUploadedUrl(req);
+    if (!imageUrl) { await removeUploadedAsset(req.file); res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
     const image = await addRepairImage(String(req.params.id), imageUrl, imageType as "before" | "after", (req as any).user.sub);
+    persisted = true;
     backupImageToDb(`repair:${req.params.id}:${imageType}:${image.id}`, imageUrl);
     res.status(201).json(image);
-  } catch (e: any) { console.error("[Repair image upload]", e.message || e); res.status(400).json({ error: "Upload failed. Please try again." }); }
+  } catch (e: any) {
+    console.error("[Repair image upload]", e.message || e);
+    if (!persisted) await removeUploadedAsset(req.file, getUploadedUrl(req));
+    res.status(400).json({ error: "Upload failed. Please try again." });
+  }
 }));
 
 app.delete("/api/repairs/:id/images/:imageId", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {

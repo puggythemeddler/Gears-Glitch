@@ -343,4 +343,26 @@ async function deleteCloudinaryImage(imageUrl: string): Promise<void> {
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, validateUploadedFile, validateImageMagicBytes, magicByteGuard };
+// Removes an asset that was just written by multer but never persisted to the
+// database (invalid file, missing URL, or a DB write that threw afterwards).
+// Handles both storage modes so a failed request no longer leaks an orphaned
+// object: local disk is unlinked, Cloudinary is destroyed by public_id.
+async function removeUploadedAsset(file: Express.Multer.File | undefined, url?: string): Promise<void> {
+  if (!file) return;
+  try {
+    if (_cloudinaryConfigured) {
+      const target = url && /^https?:\/\//i.test(url)
+        ? url
+        : file.path && /^https?:\/\//i.test(file.path)
+          ? file.path
+          : "";
+      if (target) await deleteCloudinaryImage(target);
+      return;
+    }
+    if (file.path) fs.unlinkSync(file.path);
+  } catch (e: any) {
+    console.warn("[Upload] Failed to clean up uploaded asset:", e?.message || e);
+  }
+}
+
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes, magicByteGuard };
