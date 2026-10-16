@@ -2229,7 +2229,7 @@ app.put("/api/admin/branches/:id", ownerAuthMiddleware, requirePermission("branc
   res.json({ branch });
 }));
 
-app.delete("/api/admin/branches/:id", ownerAuthMiddleware, requireStepUp, asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/admin/branches/:id", ownerAuthMiddleware, requirePermission("branch:view"), requireStepUp, asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid branch ID." }); return; }
   const ok = await deleteBranch(id);
@@ -4850,7 +4850,7 @@ app.get("/api/admin/products/:id/price-history", ownerAuthMiddleware, requirePer
   res.json({ history: await getPriceHistory(String(req.params.id)) });
 }));
 
-app.get("/api/admin/backup", ownerAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/admin/backup", ownerAuthMiddleware, requirePermission("data:backup"), asyncHandler(async (_req: Request, res: Response) => {
   try {
     const { query: q } = require("./db-helpers");
     const tables = await q(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`);
@@ -7579,7 +7579,7 @@ app.put("/api/admin/financing/activation", allowControlPlane(adminAuthMiddleware
   res.json({ enabled: config.enabled });
 }));
 
-app.get("/api/audit-log", ownerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/audit-log", ownerAuthMiddleware, requirePermission("audit:view"), asyncHandler(async (req: Request, res: Response) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
   const entityType = req.query.entityType as string | undefined;
