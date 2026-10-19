@@ -4819,12 +4819,7 @@ a.about-contact-card:hover {
 .dy-hero--photo .dy-hero-trust-item { color: rgba(255, 255, 255, 0.86); }
 
 @media (max-width: 820px) {
-  .dy-hero-inner,
-  .storefront-original .dy-hero-inner { grid-template-columns: minmax(0, 1fr); }
-  .dy-hero-content,
-  .dy-hero-showcase { min-width: 0; }
-  .dy-hero-showcase { width: min(100%, 440px); margin-inline: auto; }
-  .dy-hero-headline { font-size: clamp(1.9rem, 8vw, 2.4rem); line-height: 1.05; }
+  .dy-hero-inner { grid-template-columns: 1fr; }
   .dy-hero-panel-media { min-height: 220px; }
   .dy-hero-panel-media img { max-height: 220px; }
 }
@@ -5329,4 +5324,14 @@ a.about-contact-card:hover {
   .storefront-guarantee-grow { margin-left: 0; width: 100%; }
   .storefront-newsletter-form { flex-direction: column; }
   .storefront-newsletter-form .btn { width: 100%; }
+}
+
+/* Keep this after the desktop original-layout override above. Its two-class
+   selector otherwise wins over the more generic phone breakpoint. */
+@media (max-width: 820px) {
+  .storefront-original .dy-hero-inner { grid-template-columns: minmax(0, 1fr); }
+  .storefront-original .dy-hero-content,
+  .storefront-original .dy-hero-showcase { min-width: 0; }
+  .storefront-original .dy-hero-showcase { width: min(100%, 440px); margin-inline: auto; }
+  .storefront-original .dy-hero-headline { font-size: clamp(1.9rem, 8vw, 2.4rem); line-height: 1.05; }
 }
