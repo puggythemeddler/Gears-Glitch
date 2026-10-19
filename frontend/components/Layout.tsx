@@ -346,7 +346,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           </div>
         </div>
         <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) router.push(`/?search=${encodeURIComponent(q)}`); }}>
-          <input name="q" type="search" placeholder="Search PCs, laptops, GPUs, repairs..." aria-label="Search products" />
+          <input className="header-search-input" name="q" type="search" placeholder="Search PCs, laptops, GPUs, repairs..." aria-label="Search products" />
           <button type="submit" aria-label="Search">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
