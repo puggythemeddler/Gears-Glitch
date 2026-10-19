@@ -1295,10 +1295,10 @@ code, pre {
 .header-search-form {
   display: flex;
   align-items: center;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-hover);
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--bg);
+  background: var(--surface);
   transition: border-color var(--duration-fast) ease;
   flex: 1 1 360px;
   max-width: 720px;
@@ -1308,6 +1308,8 @@ code, pre {
 
 .header-search-form:focus-within {
   border-color: var(--primary);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .header-search-form input {
@@ -1320,6 +1322,11 @@ code, pre {
   width: 100%;
   min-width: 0;
   font-family: inherit;
+}
+
+.header-search-form input::placeholder {
+  color: var(--text-secondary);
+  opacity: 1;
 }
 
 .header-search-form button {
@@ -2022,6 +2029,8 @@ textarea:not(.input)::placeholder {
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-secondary);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .filter-select {
