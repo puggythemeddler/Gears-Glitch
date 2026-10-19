@@ -287,8 +287,8 @@ function GuaranteeStrip({ hero }: { hero?: any }) {
   const hasTotals = liveStats && (liveStats.totalCustomers != null || liveStats.totalOrders != null);
   const totalsLine = hasTotals
     ? [
-        ...(liveStats.totalCustomers != null ? [`${liveStats.totalCustomers}+ customers`] : []),
-        ...(liveStats.totalOrders != null ? [`${liveStats.totalOrders}+ orders shipped`] : []),
+        ...(Number(liveStats.totalCustomers) >= 10 ? [`${liveStats.totalCustomers}+ customers`] : []),
+        ...(Number(liveStats.totalOrders) >= 10 ? [`${liveStats.totalOrders}+ orders shipped`] : []),
       ].join(" \u00b7 ")
     : "";
 

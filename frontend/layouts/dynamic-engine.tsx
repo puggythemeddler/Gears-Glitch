@@ -187,11 +187,21 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
   const reducedMotion = usePrefersReducedMotion();
   const effects = heroEffectProfile(hero, reducedMotion);
 
-  const featuredRaw = hero?.featuredCategory
-    ? products.filter((p) => p.category === hero.featuredCategory).slice(0, 5)
+  const selectedProducts = hero?.featuredCategory
+    ? products.filter((p) => p.category === hero.featuredCategory)
     : products.some((p) => p.salePrice)
-      ? products.filter((p) => p.salePrice).slice(0, 5)
-      : products.slice(0, 5);
+      ? products.filter((p) => p.salePrice)
+      : products;
+  const featuredRaw = hero?.featuredCategory
+    ? selectedProducts.slice(0, 5)
+    : [...selectedProducts]
+        .map((product, index) => ({ product, index }))
+        .sort((a, b) => {
+          const coreDevice = /laptop|notebook|desktop|computer|\bpc\b|workstation|server|graphics card|gpu/i;
+          return Number(coreDevice.test(b.product.category || "")) - Number(coreDevice.test(a.product.category || "")) || a.index - b.index;
+        })
+        .slice(0, 5)
+        .map(({ product }) => product);
   const featured = isCarousel ? featuredRaw : featuredRaw.slice(0, 1);
 
   useEffect(() => {

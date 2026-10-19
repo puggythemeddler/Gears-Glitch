@@ -378,9 +378,9 @@
   --info-light: #ffedd5;
   --accent: var(--brand-accent, #f59e0b);
   --accent-subtle: color-mix(in srgb, var(--brand-accent, #f59e0b) 16%, transparent);
-  --bg: var(--brand-bg-light, #fafaf9);
-  --surface: #ffffff;
-  --surface-hover: color-mix(in srgb, var(--brand-bg-light, #fafaf9) 92%, #000);
+  --bg: color-mix(in srgb, var(--brand-bg-light, #fafaf9) 90%, color-mix(in srgb, var(--brand-primary, #c2410c) 70%, var(--brand-accent, #f59e0b) 30%) 10%);
+  --surface: color-mix(in srgb, #ffffff 97%, var(--brand-accent, #f59e0b) 3%);
+  --surface-hover: color-mix(in srgb, var(--brand-bg-light, #fafaf9) 88%, var(--brand-primary, #c2410c) 12%);
   --text: #1c1917;
   --text-secondary: #57534e;
   --text-tertiary: #716d68;

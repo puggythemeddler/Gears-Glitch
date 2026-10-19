@@ -3108,7 +3108,7 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
       { value: "", label: "Orders" },
     ],
     highlights: ["Genuine Products", "Fast Delivery Across Kenya", "Secure Payments"],
-    trustText: "Trusted by 5,000+ customers across Kenya",
+    trustText: "Tech, repairs and support—under one roof.",
     effects: { ...HERO_EFFECTS_DEFAULT } as HeroEffectsConfig,
   });
   const [statsPublic, setStatsPublic] = useState(false);
