@@ -1466,10 +1466,20 @@ app.post("/api/clients/:id/extend-usage", destructiveLimiter, requireAuth, requi
 // ─── UPDATE CLIENT ───────────────────────────────────────
 app.put("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { plan, subscription_expires, notes, feature_flags, render_service_id, render_service_url, vercel_project_id, vercel_project_url, phone, address, is_test } = req.body || {};
+    const { admin_email, plan, subscription_expires, notes, feature_flags, render_service_id, render_service_url, vercel_project_id, vercel_project_url, phone, address, is_test } = req.body || {};
     const id = Number(req.params.id);
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [id]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+
+    let normalizedAdminEmail: string | undefined;
+    if (admin_email !== undefined) {
+      if (typeof admin_email !== "string") { res.status(400).json({ error: "Enter a valid billing/contact email address." }); return; }
+      normalizedAdminEmail = admin_email.trim();
+      if (normalizedAdminEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedAdminEmail)) {
+        res.status(400).json({ error: "Enter a valid billing/contact email address." });
+        return;
+      }
+    }
 
     if (is_test !== undefined) {
       const testValue = is_test ? 1 : 0;
@@ -1485,6 +1495,7 @@ app.put("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
     const params: any[] = [];
     let idx = 1;
 
+    if (normalizedAdminEmail !== undefined && normalizedAdminEmail !== client.admin_email) { fields.push(`admin_email = $${idx}`); params.push(normalizedAdminEmail); idx++; }
     if (plan !== undefined) { fields.push(`plan = $${idx}`); params.push(plan); idx++; }
     if (subscription_expires !== undefined) { fields.push(`subscription_expires = $${idx}`); params.push(subscription_expires); idx++; }
     if (phone !== undefined) { fields.push(`phone = $${idx}`); params.push(phone); idx++; }
@@ -1500,6 +1511,9 @@ app.put("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
 
     params.push(id);
     await query(`UPDATE clients SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+    if (normalizedAdminEmail !== undefined && normalizedAdminEmail !== client.admin_email) {
+      await auditLog(req, "update_client_email", "client", id, client.name, "Billing/contact email updated");
+    }
 
     res.json({ message: "Client updated." });
   } catch (err: any) {
