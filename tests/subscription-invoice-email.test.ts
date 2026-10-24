@@ -11,7 +11,7 @@ describe("subscription renewal invoice email", () => {
       "4,999",
       "KES",
       "2026-10-31",
-      "https://test.example.com/admin"
+      false
     );
 
     assert.match(email.subject, /SUB-INV-TEST-001/);

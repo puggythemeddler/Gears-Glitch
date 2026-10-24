@@ -351,15 +351,18 @@ export interface SubscriptionInvoiceData {
 
 export function generateSubscriptionInvoiceHtml(data: SubscriptionInvoiceData): string {
   const { invoice, store } = data;
-  const statusClass = invoice.status === "paid" ? "badge-paid" : invoice.status === "overdue" ? "badge-overdue" : "badge-pending";
+  const normalizedStatus = invoice.status.toLowerCase();
+  const isProforma = normalizedStatus === "pending" || normalizedStatus === "overdue";
+  const documentTitle = isProforma ? "PROFORMA INVOICE" : "SUBSCRIPTION INVOICE";
+  const statusClass = normalizedStatus === "paid" ? "badge-paid" : normalizedStatus === "overdue" ? "badge-overdue" : "badge-pending";
   const itemsHtml = `<tr><td>${escapeHtml(invoice.planName)} Subscription</td><td style="text-align:center">1</td><td style="text-align:right;white-space:nowrap">${invoice.currency} ${invoice.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${invoice.currency} ${invoice.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`;
 
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${escapeHtml(invoice.invoiceNumber)} — ${escapeHtml(store.name)}</title>
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${documentTitle} ${escapeHtml(invoice.invoiceNumber)} — ${escapeHtml(store.name)}</title>
 <style>${SUBSCRIPTION_INVOICE_CSS}</style></head><body>
 <div class="invoice">
   ${renderStoreLogo(store.logo, store.logoPosition, store.name, store.baseUrl)}
   <div class="header">
-    <div><h1>SUBSCRIPTION INVOICE</h1><p class="meta">${escapeHtml(invoice.invoiceNumber)}</p></div>
+    <div><h1>${documentTitle}</h1><p class="meta">${escapeHtml(invoice.invoiceNumber)}</p></div>
     <div style="text-align:right;"><strong>${escapeHtml(store.name)}</strong><br><span class="meta">${escapeHtml(store.email)}</span><br><span class="badge ${statusClass}">${invoice.status.toUpperCase()}</span></div>
   </div>
   <div class="info-grid">
@@ -369,7 +372,7 @@ export function generateSubscriptionInvoiceHtml(data: SubscriptionInvoiceData): 
       <div>${escapeHtml(invoice.providerEmail)}</div>
     </div>
     <div>
-      <div class="label">Invoice details</div>
+      <div class="label">${isProforma ? "Proforma details" : "Invoice details"}</div>
       <div>Date: ${new Date(invoice.createdAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}</div>
       <div>Due: ${invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }) : "—"}</div>
       <div>Period: ${invoice.periodStart} to ${invoice.periodEnd}</div>
@@ -387,7 +390,7 @@ export function generateSubscriptionInvoiceHtml(data: SubscriptionInvoiceData): 
     <button class="print-btn" onclick="window.print()">Print</button>
     <button class="pdf-btn" onclick="window.location.href=window.location.pathname+'?format=pdf'">Save PDF</button>
   </div>
-  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">Subscription invoice — ${escapeHtml(store.name)}</div>
+  <div style="text-align:center;font-size:0.7rem;color:#9ca3af;margin-top:0.5rem;">${isProforma ? "Proforma only — not a tax invoice. The final invoice is available after payment is recorded." : `Subscription invoice — ${escapeHtml(store.name)}`}</div>
 </div>
 </body></html>`;
 }

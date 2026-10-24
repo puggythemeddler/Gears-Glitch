@@ -3321,7 +3321,7 @@
               ${mpesaConfigured && ['pending','overdue'].includes(String(inv.status).toLowerCase()) ? '<button class="btn btn-primary btn-sm" onclick="requestMpesaPayment(' + Number(clientId) + ',' + Number(inv.id) + ',' + Number(inv.amount || 0) + ')">M-Pesa</button>' : ''}
               <button class="btn btn-ghost btn-sm" onclick="viewClientInvoice(' + clientId + ',' + inv.id + ')">View</button>
               <button class="btn btn-ghost btn-sm" onclick="downloadClientInvoicePdf(' + clientId + ',' + inv.id + ')">PDF</button>
-              <button class="btn btn-primary btn-sm" onclick="emailClientInvoice(' + clientId + ',' + inv.id + ')">Email</button>
+              <button class="btn btn-primary btn-sm" title="Email the ${['pending','overdue'].includes(String(inv.status).toLowerCase()) ? 'proforma invoice' : 'invoice'} as a PDF" onclick="emailClientInvoice(' + clientId + ',' + inv.id + ')">Email PDF</button>
               <div id="mpesa-status-${clientId}-${inv.id}" style="width:100%;font-size:0.78rem;color:var(--text-muted)"></div>
             </div></td>
           </tr>`;
@@ -3329,8 +3329,9 @@
         html += '</tbody></table>';
         el.innerHTML = html;
         refreshMpesaStatuses(clientId, invoices);
-      } catch {
-        el.innerHTML = '<div class="empty"><p>Failed to load invoices.</p></div>';
+      } catch (e) {
+        const message = e && e.message ? e.message : "Client invoice service unavailable.";
+        el.innerHTML = '<div class="empty"><p>Failed to load invoices: ' + esc(message) + '</p></div>';
       }
     }
 
@@ -3538,7 +3539,7 @@
     async function emailClientInvoice(clientId, invId) {
       try {
         const data = await api("/api/clients/" + clientId + "/invoices/" + invId + "/email", { method: "POST" });
-        if (data.sent) toast("Invoice emailed to " + (data.to || "client") + "!");
+        if (data.sent) toast((data.documentType || "Invoice") + " PDF emailed to " + (data.to || "client") + "!");
         else toast("Failed: " + (data.error || "Email not sent."), "error");
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }

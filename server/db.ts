@@ -3052,7 +3052,17 @@ async function listInvoices(providerId?: number): Promise<Invoice[]> {
 }
 
 async function markInvoicePaid(id: number): Promise<boolean> {
-  const result = await query("UPDATE invoices SET status = 'paid', paid_at = NOW()::text WHERE id = $1 AND status IN ('pending', 'overdue')", [id]);
+  const result = await query(
+    `UPDATE invoices
+     SET status = 'paid',
+         paid_at = NOW()::text,
+         invoice_number = CASE
+           WHEN invoice_number ~ '^PR-Inv[0-9]+$' THEN 'Inv' || substring(invoice_number FROM 7)
+           ELSE invoice_number
+         END
+     WHERE id = $1 AND status IN ('pending', 'overdue')`,
+    [id]
+  );
   return (result.rowCount ?? 0) > 0;
 }
 
@@ -3066,30 +3076,25 @@ async function generateProviderInvoice(providerId: number | null | undefined, pl
   const now = new Date();
   const { periodStart, periodEnd } = calculateInvoicePeriod(options.periodStart || now.toISOString().slice(0, 10), periodType);
   const dueDate = options.dueDate || new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
-  const invoiceNumber = await generateSubInvoiceNumber();
   const result = await query(
     `INSERT INTO invoices (provider_id, plan_id, amount, currency, period_start, period_end, due_date, invoice_number, generation_key)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (generation_key) WHERE generation_key IS NOT NULL DO NOTHING
      RETURNING *`,
-    [targetProvider.id, plan.id, periodType === "annual" ? plan.priceAnnual : plan.price, "KES", periodStart, periodEnd, dueDate, invoiceNumber, options.generationKey || null]
+    [targetProvider.id, plan.id, periodType === "annual" ? plan.priceAnnual : plan.price, "KES", periodStart, periodEnd, dueDate, "", options.generationKey || null]
   );
   const created = result.rows.length > 0;
-  const row = created
+  let row = created
     ? result.rows[0]
     : await queryOne("SELECT * FROM invoices WHERE generation_key = $1", [options.generationKey]);
   if (!row) throw new Error("Invoice idempotency lookup failed after a duplicate key.");
-  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: plan.name, providerName: targetProvider.companyName, amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes, created };
-}
-
-async function generateSubInvoiceNumber(): Promise<string> {
-  const last = await queryOne("SELECT invoice_number FROM invoices WHERE invoice_number LIKE 'SUB-INV-%' ORDER BY id DESC LIMIT 1") as any;
-  let seq = 1;
-  if (last && last.invoice_number) {
-    const match = last.invoice_number.match(/SUB-INV-(\d+)/);
-    if (match) seq = Number(match[1]) + 1;
+  if (created) {
+    const invoiceNumber = `PR-Inv${String(row.id).padStart(3, "0")}`;
+    const updated = await query("UPDATE invoices SET invoice_number = $1 WHERE id = $2 RETURNING *", [invoiceNumber, row.id]);
+    if (!updated.rows[0]) throw new Error("Could not assign a proforma reference to the new invoice.");
+    row = updated.rows[0];
   }
-  return `SUB-INV-${String(seq).padStart(5, "0")}`;
+  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: plan.name, providerName: targetProvider.companyName, amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes, created };
 }
 
 async function getInvoiceRevenue(): Promise<{ total: number; paid: number; pending: number }> {
