@@ -40,7 +40,18 @@ function fakeClientBackend(): Promise<{ server: Server; url: string }> {
         return json(200, { plan: "growth" });
       }
       if (url === "/api/admin/invoices/generate") return json(200, { id: 55, invoiceNumber: "INV-99", amount: 100 });
-      if (url.startsWith("/api/admin/invoices/") && url.endsWith("/pay")) return json(200, { ok: true });
+      if (url.startsWith("/api/admin/invoices/") && url.endsWith("/pay")) return json(200, {
+        ok: true,
+        invoice: {
+          id: 55,
+          invoiceNumber: "Inv-99",
+          amount: 100,
+          currency: "KES",
+          status: "paid",
+          periodStart: "2026-10-01",
+          periodEnd: "2026-10-31",
+        },
+      });
       if (url === "/api/admin/invoices") {
         return json(200, { invoices: [{ id: 55, invoiceNumber: "INV-99", amount: 100, dueDate: null, planName: "growth", currency: "KES" }], stats: null });
       }
