@@ -225,6 +225,12 @@ export interface GmailAttachment {
   contentType?: string;
 }
 
+function encodeMimeBase64(content: Buffer | string): string {
+  const bytes = Buffer.isBuffer(content) ? content : Buffer.from(String(content), "utf8");
+  const encoded = bytes.toString("base64");
+  return encoded.match(/.{1,76}/g)?.join("\r\n") || "";
+}
+
 // Builds the RFC 5322 message that messages.send expects in its `raw` field.
 // The body is base64 so HTML containing 8-bit characters or bare CR/LF cannot
 // corrupt the headers. With no attachments this is a single-part HTML message
@@ -252,28 +258,24 @@ export function buildGmailRawMessage(input: {
   ];
   if (!attachments.length) {
     return `${[...headers, `Content-Type: text/html; charset="UTF-8"`, "Content-Transfer-Encoding: base64"].join("\r\n")}\r\n\r\n${
-      Buffer.from(String(input.html ?? ""), "utf8").toString("base64")
+      encodeMimeBase64(String(input.html ?? ""))
     }`;
   }
   const boundary = `----=_gandg_${crypto.randomBytes(16).toString("hex")}`;
   const parts = [
-    [
+    `${[
       "Content-Type: text/html; charset=\"UTF-8\"",
       "Content-Transfer-Encoding: base64",
-    ].join("\r\n"),
-    Buffer.from(String(input.html ?? ""), "utf8").toString("base64"),
+    ].join("\r\n")}\r\n\r\n${encodeMimeBase64(String(input.html ?? ""))}`,
   ];
   for (const a of attachments) {
     const filename = String(a.filename).replace(/["\r\n]/g, "").trim();
-    const body = Buffer.isBuffer(a.content) ? a.content.toString("base64") : Buffer.from(String(a.content), "utf8").toString("base64");
-    parts.push(
-      [
-        `Content-Type: ${a.contentType}; name="${filename}"`,
-        "Content-Transfer-Encoding: base64",
-        `Content-Disposition: attachment; filename="${filename}"`,
-      ].join("\r\n"),
-      body
-    );
+    const partHeaders = [
+      `Content-Type: ${a.contentType}; name="${filename}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${filename}"`,
+    ].join("\r\n");
+    parts.push(`${partHeaders}\r\n\r\n${encodeMimeBase64(a.content)}`);
   }
   const body = parts.map((p) => `--${boundary}\r\n${p}`).join("\r\n") + `\r\n--${boundary}--`;
   return `${[...headers, `Content-Type: multipart/mixed; boundary="${boundary}"`].join("\r\n")}\r\n\r\n${body}`;

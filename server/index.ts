@@ -4023,7 +4023,7 @@ app.get("/api/provider/invoices", providerAuthMiddleware, asyncHandler(async (re
   res.json({ invoices: await listInvoices((req as any).provider.sub) });
 }));
 
-app.get("/api/admin/invoices", allowControlPlane(ownerAuthMiddleware), requirePermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/invoices", allowControlPlane(ownerAuthMiddleware), cpOrPermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
   const { status, dateFrom, dateTo, search, page } = req.query as any;
   if (status || dateFrom || dateTo || search) {
     const limit = 50;
@@ -4043,7 +4043,7 @@ app.get("/api/admin/invoices/export", ownerAuthMiddleware, requirePermission("in
   res.send(csv);
 }));
 
-app.get("/api/admin/invoices/:id/view", allowControlPlane(ownerAuthMiddleware), requirePermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/invoices/:id/view", allowControlPlane(ownerAuthMiddleware), cpOrPermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
   const invoice = await getInvoice(Number(req.params.id));
   if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
   const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
@@ -4079,7 +4079,7 @@ app.get("/api/admin/invoices/:id/view", allowControlPlane(ownerAuthMiddleware), 
   }
 }));
 
-app.post("/api/admin/invoices/:id/email", allowControlPlane(ownerAuthMiddleware), requirePermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/:id/email", allowControlPlane(ownerAuthMiddleware), cpOrPermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
   const invoice = await getInvoice(Number(req.params.id));
   if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
   const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
@@ -4141,7 +4141,7 @@ app.post("/api/admin/invoices/mark-overdue", ownerAuthMiddleware, requirePermiss
   res.json({ marked: count });
 }));
 
-app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware), requirePermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware), cpOrPermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
   const { providerId, planId } = req.body || {};
   let pid: number | null = null;
   if (providerId !== undefined && providerId !== null && providerId !== "") {
@@ -4196,7 +4196,7 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
   res.status(invoice.created ? 201 : 200).json(invoice);
 }));
 
-app.post("/api/admin/invoices/:id/pay", allowControlPlane(ownerAuthMiddleware), requirePermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/:id/pay", allowControlPlane(ownerAuthMiddleware), cpOrPermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
   const invoiceId = Number(req.params.id);
   const ok = await markInvoicePaid(invoiceId);
   if (!ok) { res.status(404).json({ error: "Invoice not found." }); return; }
