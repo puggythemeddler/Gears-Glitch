@@ -96,6 +96,7 @@ Click **Details** on any client to see:
   - **View** — open branded HTML invoice in new tab
   - **PDF** — download invoice as PDF
   - **Email** — send invoice to client's email (sent via the control plane's own SMTP)
+- **Billing / contact email** — edit the address used for invoice PDFs and Control Plane client notifications in the client editor. This updates the Control Plane contact record; it does not change the tenant storefront's administrator login email.
 
 ### Notifications (bell)
 A bell icon in the header shows an unread-count badge and a dropdown panel of recent notifications. Alerts are generated on every health cycle and deduplicated so they never re-fire:

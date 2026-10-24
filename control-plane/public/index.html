@@ -678,6 +678,7 @@
     <div class="modal" style="width:520px">
       <h2>Edit Client</h2>
       <div class="form-grid">
+        <div class="field" style="grid-column:1 / -1"><label for="edit-admin-email">Billing / contact email</label><input type="email" id="edit-admin-email" autocomplete="email" maxlength="254" required placeholder="name@example.com"><small style="display:block;color:var(--text-muted);margin-top:0.25rem">Used for invoices and Control Plane client notifications.</small></div>
         <div class="field"><label for="edit-plan">Plan</label><select id="edit-plan"><option value="starter">Starter</option><option value="growth">Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
         <div class="field"><label for="edit-expires">Subscription Expires</label><input type="date" id="edit-expires"></div>
         <div class="field"><label for="edit-phone">Phone</label><input type="text" id="edit-phone" placeholder="+254 7XX XXX XXX"></div>
@@ -1592,6 +1593,7 @@
       const c = allClients.find(x => x.id === id);
       if (!c) return;
       editingClientId = id;
+      document.getElementById("edit-admin-email").value = c.admin_email || "";
       document.getElementById("edit-plan").value = c.plan || "growth";
       document.getElementById("edit-expires").value = c.subscription_expires ? c.subscription_expires.split("T")[0] : "";
       document.getElementById("edit-phone").value = c.phone || "";
@@ -1618,6 +1620,7 @@
     }
 
     async function saveClientEdit() {
+      const adminEmail = document.getElementById("edit-admin-email").value.trim();
       const plan = document.getElementById("edit-plan").value;
       const expires = document.getElementById("edit-expires").value || null;
       const phone = document.getElementById("edit-phone").value;
@@ -1629,8 +1632,10 @@
       const vercelProjectUrl = document.getElementById("edit-vercel-url").value.trim();
       const featureFlags = clientOverridesToObject();
 
+      if (!document.getElementById("edit-admin-email").reportValidity()) return;
+
       try {
-        await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ plan, subscription_expires: expires, phone, address, notes, render_service_id: renderServiceId || undefined, render_service_url: renderServiceUrl || undefined, vercel_project_id: vercelProjectId || undefined, vercel_project_url: vercelProjectUrl || undefined, feature_flags: featureFlags }) });
+        await api("/api/clients/" + editingClientId, { method: "PUT", body: JSON.stringify({ admin_email: adminEmail, plan, subscription_expires: expires, phone, address, notes, render_service_id: renderServiceId || undefined, render_service_url: renderServiceUrl || undefined, vercel_project_id: vercelProjectId || undefined, vercel_project_url: vercelProjectUrl || undefined, feature_flags: featureFlags }) });
         // Push feature overrides to the client backend (empty object clears them)
         await api("/api/clients/" + editingClientId + "/features", { method: "POST", body: JSON.stringify({ overrides: featureFlags }) }).catch(() => {});
         toast("Client updated."); hideEditModal(); loadClients();
