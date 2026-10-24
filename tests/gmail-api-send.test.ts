@@ -61,6 +61,14 @@ describe("Gmail REST send message", () => {
     assert.equal(decodeBody(raw), html);
   });
 
+  it("wraps MIME base64 lines at 76 characters", () => {
+    const html = `<p>${"long body ".repeat(20)}</p>`;
+    const raw = buildGmailRawMessage({ from: "shop@example.com", to: "customer@example.com", subject: "Ready", html });
+    const encoded = raw.split("\r\n\r\n")[1];
+    assert.ok(encoded.split("\r\n").every((line) => line.length <= 76));
+    assert.equal(Buffer.from(encoded.replace(/\r\n/g, ""), "base64").toString("utf8"), html);
+  });
+
   it("strips CR/LF from store-supplied values so a setting cannot inject headers", () => {
     const raw = buildGmailRawMessage({
       from: "Shop\r\nBcc: attacker@example.com",
@@ -96,15 +104,22 @@ describe("Gmail REST send message", () => {
     const headerPart = raw.slice(0, raw.indexOf("\r\n\r\n"));
     assert.match(headerPart, /Content-Type: multipart\/mixed; boundary="----=_gandg_[0-9a-f]+"/, `got: ${headerPart}`);
     assert.match(headerPart, /MIME-Version: 1\.0/);
+    const boundary = headerPart.match(/boundary="([^"]+)"/)?.[1];
+    assert.ok(boundary, "multipart boundary must be declared");
     const body = raw.slice(raw.indexOf("\r\n\r\n") + 4);
-    // HTML first, exactly as the plain (attachment-less) message is sent.
-    assert.ok(body.includes('Content-Type: text/html; charset="UTF-8"'), "the HTML part must be present");
-    assert.ok(body.includes(Buffer.from("<p>Your invoice</p>", "utf8").toString("base64")), "the HTML must round-trip through base64");
-    // Then the PDF attachment, base64-encoded with a disposition.
-    assert.ok(body.includes('Content-Type: application/pdf; name="invoice-42.pdf"'), "the PDF part must declare its type + name");
-    assert.ok(body.includes('Content-Disposition: attachment; filename="invoice-42.pdf"'), "the PDF must be an attachment");
-    assert.ok(body.includes(pdf.toString("base64")), "the PDF bytes must round-trip through base64");
-    assert.ok(body.trimEnd().endsWith("--"), "the body must close with the boundary");
+    const sections = body.split(`--${boundary}`).slice(1);
+    assert.equal(sections.length, 3, "message must contain exactly HTML, PDF, and closing boundary sections");
+    assert.equal(sections[2].trim(), "--", "the body must close with the boundary");
+
+    const [htmlHeaders, htmlBody] = sections[0].replace(/^\r\n/, "").split("\r\n\r\n");
+    assert.ok(htmlHeaders.includes('Content-Type: text/html; charset="UTF-8"'), "the HTML part must declare its type");
+    assert.equal(Buffer.from(htmlBody.replace(/\r\n/g, ""), "base64").toString("utf8"), "<p>Your invoice</p>");
+
+    const [pdfHeaders, pdfBody] = sections[1].replace(/^\r\n/, "").split("\r\n\r\n");
+    assert.ok(pdfHeaders.includes('Content-Type: application/pdf; name="invoice-42.pdf"'), "the PDF part must declare its type + name");
+    assert.ok(pdfHeaders.includes('Content-Disposition: attachment; filename="invoice-42.pdf"'), "the PDF must be an attachment");
+    assert.deepEqual(Buffer.from(pdfBody.replace(/\r\n/g, ""), "base64"), pdf);
+    assert.ok(pdfBody.split("\r\n").every((line) => line.length <= 76), "PDF base64 must use RFC 2045 line lengths");
   });
 
   it("drops attachments entries with no filename or no content and stays single-part", () => {
