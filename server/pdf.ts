@@ -2,17 +2,33 @@ import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 
 let browserInstance: any = null;
+let browserLaunch: Promise<any> | null = null;
 
 async function getBrowser(): Promise<any> {
   if (browserInstance && browserInstance.connected) return browserInstance;
-  const cr = (chromium as any).default || chromium;
-  browserInstance = await puppeteer.launch({
-    args: cr.args || ["--no-sandbox", "--disable-setuid-sandbox"],
-    defaultViewport: null,
-    executablePath: await cr.executablePath(),
-    headless: true,
-  });
-  return browserInstance;
+  // warmPdf() runs at boot and a user can request a PDF before it finishes.
+  // Share the extraction/launch promise so @sparticuz/chromium never inflates
+  // its executable concurrently into /tmp (which can make spawn fail ETXTBSY).
+  if (!browserLaunch) {
+    browserLaunch = (async () => {
+      const cr = (chromium as any).default || chromium;
+      const executablePath = await cr.executablePath();
+      const browser = await puppeteer.launch({
+        args: cr.args || ["--no-sandbox", "--disable-setuid-sandbox"],
+        defaultViewport: null,
+        executablePath,
+        headless: true,
+      });
+      browserInstance = browser;
+      browser.once("disconnected", () => {
+        if (browserInstance === browser) browserInstance = null;
+      });
+      return browser;
+    })().finally(() => {
+      browserLaunch = null;
+    });
+  }
+  return browserLaunch;
 }
 
 // Warm the headless browser at boot so the first PDF request doesn't pay the
@@ -62,6 +78,7 @@ export async function htmlToPdf(html: string, options?: { format?: string; lands
 }
 
 export async function closeBrowser(): Promise<void> {
+  if (browserLaunch) await browserLaunch.catch(() => undefined);
   if (browserInstance && browserInstance.connected) {
     await browserInstance.close();
     browserInstance = null;
