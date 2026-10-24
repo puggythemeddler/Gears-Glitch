@@ -5,6 +5,7 @@ import { getProducts } from "@/components/ProductCard";
 import { useLayout, LayoutEngine } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import { useRouter } from "next/router";
+import { getStorefrontCategories } from "@/lib/storefront-data";
 
 const SITE = "My Shop";
 const BASE = process.env.NEXT_PUBLIC_SITE_URL || "https://gearsandglitch.co.ke";
@@ -25,7 +26,7 @@ export default function HomePage() {
     setLoading(true);
     Promise.all([
       getProducts().then((p) => { if (!cancelled) setProducts(p); }),
-      fetch("/api/categories").then((r) => r.json()).then((d) => { if (!cancelled) setCategories(d.categories || []); }),
+      getStorefrontCategories().then((d) => { if (!cancelled) setCategories(d.categories); }),
     ]).catch(() => { if (!cancelled) setError("Failed to load products."); })
     .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };

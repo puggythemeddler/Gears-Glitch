@@ -10,6 +10,7 @@ import MarqueeBanner from "./MarqueeBanner";
 import Icon from "./icons";
 import { Media } from "./Media";
 import { useFeature } from "@/lib/features";
+import { getStorefrontCategories } from "@/lib/storefront-data";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -89,9 +90,9 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   useEffect(() => { setIsStaff(hasStaffSession()); }, []);
 
   useEffect(() => {
-    fetch("/api/categories").then((r) => r.json()).then((d) => {
-      if (d?.categories) setCategories(d.categories);
-      if (d?.subcategories) setSubcategories(d.subcategories);
+    getStorefrontCategories().then((data) => {
+      setCategories(data.categories);
+      setSubcategories(data.subcategories);
       setCategoriesLoaded(true);
     }).catch(() => { setCategoriesLoaded(true); });
   }, []);

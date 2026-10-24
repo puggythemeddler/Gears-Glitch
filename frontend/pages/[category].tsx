@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import { ProductCard, getProducts } from "@/components/ProductCard";
 import type { Product } from "@/lib/types";
 import { Pagination, EmptyState, ErrorState } from "@/components/ui";
+import { getStorefrontCategories } from "@/lib/storefront-data";
 
 const PAGE_SIZE = 20;
 
@@ -29,18 +30,19 @@ export default function CategoryPage() {
     let cancelled = false;
     setLoading(true);
     setError("");
-    Promise.all([
-      getProducts(category as string).then((p) => { if (!cancelled) setProducts(p); }),
-      fetch("/api/categories").then((r) => r.json()).then((d) => {
-        if (!cancelled) {
-          const c = (d.categories || []).find((x: any) => x.id === category);
-          if (c) setCatName(c.label);
-          const subs = (d.subcategories || []).filter((s: any) => Array.isArray(s.category_ids) && s.category_ids.includes(category));
-          setSubcategories(subs);
-        }
-      }),
-    ]).catch(() => { if (!cancelled) setError("Failed to load products."); })
-    .finally(() => { if (!cancelled) setLoading(false); });
+    getProducts(category as string)
+      .then((p) => { if (!cancelled) setProducts(p); })
+      .catch(() => { if (!cancelled) setError("Failed to load products."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    // Category labels and chips are useful, but should not hold product cards
+    // behind a second request.
+    getStorefrontCategories().then((data) => {
+      if (cancelled) return;
+      const c = data.categories.find((item) => item.id === category);
+      if (c) setCatName(c.label);
+      setSubcategories(data.subcategories.filter((item) => Array.isArray(item.category_ids) && item.category_ids.includes(category)));
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [category]);
 
@@ -61,7 +63,9 @@ export default function CategoryPage() {
   const safePage = Math.min(page, totalPages);
   const visible = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const title = catName || (category ? String(category) : "Products");
+  const title = catName || (category
+    ? String(category).split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ")
+    : "Products");
 
   return (
     <>

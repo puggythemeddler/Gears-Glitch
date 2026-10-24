@@ -1,9 +1,10 @@
 import React from "react";
 import Link from "next/link";
 import type { Product } from "@/lib/types";
-import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { Media } from "@/components/Media";
+
+export { getProducts } from "@/lib/storefront-data";
 
 interface ProductCardProps {
   product: Product;
@@ -56,15 +57,4 @@ export function ProductCard({ product }: ProductCardProps) {
       </div>
     </Link>
   );
-}
-
-export async function getProducts(category?: string, group?: string, extras = true): Promise<Product[]> {
-  const params = new URLSearchParams();
-  if (category) params.set("category", category);
-  if (group) params.set("group", group);
-  if (extras) params.set("withExtras", "1");
-  const qs = params.toString();
-  const url = qs ? `/api/products?${qs}` : "/api/products";
-  const data = await api<{ products: Product[] }>(url);
-  return data.products || [];
 }
