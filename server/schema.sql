@@ -314,7 +314,6 @@ CREATE TABLE IF NOT EXISTS invoices (
   FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
 );
 CREATE INDEX IF NOT EXISTS idx_invoices_provider ON invoices(provider_id);
-CREATE UNIQUE INDEX IF NOT EXISTS invoices_generation_key_uq ON invoices(generation_key) WHERE generation_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS order_invoices (
   id SERIAL PRIMARY KEY,
