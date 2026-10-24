@@ -313,9 +313,9 @@ async function processProformaFollowups(now = new Date()): Promise<void> {
               c.render_service_url, c.render_service_id, c.cp_secret, c.subscription_expires
        FROM proforma_followups f JOIN clients c ON c.id = f.client_id
        WHERE f.status IN ('warning_pending', 'warned')
-         AND (f.updated_at <= $1 - INTERVAL '5 minutes'
-              OR f.warning_due_at <= $1
-              OR f.suspend_due_at <= $1)
+         AND (f.updated_at <= $1::timestamptz - INTERVAL '5 minutes'
+              OR f.warning_due_at <= $1::timestamptz
+              OR f.suspend_due_at <= $1::timestamptz)
        ORDER BY f.updated_at ASC LIMIT 100`, [now]
     ) as any[];
 
