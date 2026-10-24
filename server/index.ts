@@ -4120,7 +4120,7 @@ app.post("/api/admin/invoices/mark-overdue", ownerAuthMiddleware, requirePermiss
   res.json({ marked: count });
 }));
 
-app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware), requirePermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware), cpOrPermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
   const { providerId, planId } = req.body || {};
   let pid: number | null = null;
   if (providerId !== undefined && providerId !== null && providerId !== "") {
