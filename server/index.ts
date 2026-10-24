@@ -4136,7 +4136,18 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
   if (generationKey !== undefined && (typeof generationKey !== "string" || !/^cp-renewal-client-\d+-due-\d{4}-\d{2}-\d{2}$/.test(generationKey))) {
     res.status(400).json({ error: "Generation key is invalid." }); return;
   }
-  const invoice = await generateProviderInvoice(pid, planId || "starter", { periodType, periodStart, dueDate, generationKey });
+  let invoice;
+  try {
+    invoice = await generateProviderInvoice(pid, planId || "starter", { periodType, periodStart, dueDate, generationKey });
+  } catch (err: any) {
+    const suppliedRequestId = req.get("X-Request-ID") || "";
+    const requestId = /^[a-f\d-]{36}$/i.test(suppliedRequestId) ? suppliedRequestId : crypto.randomUUID();
+    const errorName = err instanceof Error ? err.name : "UnknownError";
+    const errorCode = typeof err?.code === "string" ? err.code : undefined;
+    console.error("[invoice] generation failed", { requestId, errorName, ...(errorCode ? { errorCode } : {}) });
+    res.status(500).json({ error: "Invoice generation failed.", requestId });
+    return;
+  }
   if (!invoice) { res.status(400).json({ error: "Could not generate invoice. Plan not found." }); return; }
   try {
     const settings = await getSettings();
