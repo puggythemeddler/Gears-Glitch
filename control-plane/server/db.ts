@@ -362,6 +362,28 @@ export async function initControlPlaneDb() {
     )
   `);
 
+  // Follow-up timers are created only for proformas issued through the
+  // Control Plane after this feature is deployed. Existing invoices are not
+  // backfilled, so rollout cannot immediately suspend a client for old debt.
+  await query(`
+    CREATE TABLE IF NOT EXISTS proforma_followups (
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      invoice_id INTEGER NOT NULL,
+      invoice_number TEXT NOT NULL DEFAULT '',
+      warning_due_at TIMESTAMPTZ NOT NULL,
+      warning_sent_at TIMESTAMPTZ,
+      suspend_due_at TIMESTAMPTZ,
+      extension_days INTEGER NOT NULL DEFAULT 0 CHECK (extension_days >= 0),
+      status TEXT NOT NULL DEFAULT 'warning_pending'
+        CHECK (status IN ('warning_pending', 'warning_sending', 'warned', 'suspending', 'suspended', 'paid', 'cancelled')),
+      last_error TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (client_id, invoice_id)
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS proforma_followups_due_idx ON proforma_followups(status, warning_due_at, suspend_due_at)`);
+
   await query(`
     CREATE TABLE IF NOT EXISTS cp_notifications (
       id SERIAL PRIMARY KEY,

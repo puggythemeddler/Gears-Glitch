@@ -104,6 +104,7 @@ import {
   listInvoices,
   getInvoice,
   markInvoicePaid,
+  deleteUnpaidInvoice,
   generateProviderInvoice,
   getInvoiceRevenue,
   searchInvoices,
@@ -4225,6 +4226,22 @@ app.post("/api/admin/invoices/:id/pay", allowControlPlane(ownerAuthMiddleware), 
     } catch (_err: any) { console.warn("[invoice] notification failed:", _err?.message || _err); }
   }
   res.json({ ok: true, invoice });
+}));
+
+app.delete("/api/admin/invoices/:id", allowControlPlane(ownerAuthMiddleware), cpOrPermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
+  const invoiceId = Number(req.params.id);
+  if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) { res.status(400).json({ error: "Invalid invoice ID." }); return; }
+  const invoice = await getInvoice(invoiceId);
+  if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
+  if (!["pending", "overdue"].includes(String(invoice.status).toLowerCase())) {
+    res.status(409).json({ error: "Only unpaid proforma invoices can be deleted. Paid invoices are retained for accounting." });
+    return;
+  }
+  const deleted = await deleteUnpaidInvoice(invoiceId);
+  if (!deleted) { res.status(409).json({ error: "Invoice status changed; reload invoices before trying again." }); return; }
+  const actor = (req as any).user || {};
+  await recordAuditLog(actor.sub ?? null, actor.username || "control-plane", "invoice_deleted", "invoice", String(invoiceId), JSON.stringify({ invoiceNumber: invoice.invoiceNumber, status: invoice.status }), actor.role || "admin");
+  res.json({ ok: true });
 }));
 
 // ============ ORDER INVOICES ============

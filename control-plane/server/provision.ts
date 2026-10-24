@@ -798,7 +798,13 @@ export async function enforceSubscriptionPayments() {
     const graceDays = Number(process.env.SUSPEND_GRACE_DAYS || 3);
     const cutoff = new Date(Date.now() - graceDays * 86400000);
     const clients: any[] = await queryAll(
-      "SELECT id, name, render_service_url, render_service_id, cp_secret, subscription_expires, next_payment_date FROM clients WHERE status = 'active' AND subscription_expires IS NOT NULL"
+      `SELECT id, name, render_service_url, render_service_id, cp_secret, subscription_expires, next_payment_date
+       FROM clients
+       WHERE status = 'active' AND subscription_expires IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM proforma_followups f
+           WHERE f.client_id = clients.id AND f.status IN ('warning_pending', 'warning_sending', 'warned', 'suspending')
+         )`
     );
     let suspended = 0;
     for (const c of clients) {
