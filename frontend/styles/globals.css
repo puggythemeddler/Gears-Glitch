@@ -5267,6 +5267,30 @@ a.hero-promotion:focus-visible {
 }
 .storefront-catalogue { padding-bottom: clamp(2.5rem, 5vw, 4rem); }
 
+@media (max-width: 600px) {
+  .storefront-cats {
+    padding: 2rem 1rem 0;
+  }
+  .storefront-cats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+  .storefront-cat-card {
+    min-height: 72px;
+    padding: 0.7rem;
+    align-items: flex-start;
+  }
+  .storefront-cat-main { gap: 0.25rem; }
+  .storefront-cat-label {
+    font-size: 0.85rem;
+    line-height: 1.2;
+  }
+  .storefront-cat-count { font-size: 0.72rem; }
+  .storefront-quicklinks { display: none; }
+  .storefront-featured,
+  .storefront-catalogue { padding-inline: 1rem; }
+}
+
 /* Newsletter — real subscription, compact */
 .storefront-newsletter {
   margin-top: clamp(2.5rem, 5vw, 4rem);

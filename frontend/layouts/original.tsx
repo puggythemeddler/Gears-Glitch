@@ -359,7 +359,7 @@ function FeaturedProducts({ featured }: { featured: Product[] }) {
       <div className="storefront-section-head">
         <div>
           <h2>Featured products</h2>
-          <p>Hand-picked stock, ready to ship to your door.</p>
+          <p>A few highlights from the current catalogue.</p>
         </div>
         <a href="#catalogue" className="storefront-section-link">View all <ChevronRight /></a>
       </div>
@@ -464,7 +464,7 @@ export function HomePage({ products, categories, banners, hero, allProducts }: {
       if (ib !== ia) return ib - ia;
       return 0;
     })
-    .slice(0, 8);
+    .slice(0, 4);
 
   // Category quick links reconcile the admin's saved chips against the live
   // category list so stale entries never leave dead links on the page.
@@ -526,8 +526,6 @@ export function HomePage({ products, categories, banners, hero, allProducts }: {
         </section>
       )}
 
-      <FeaturedProducts featured={featuredPicks} />
-
       <section className="storefront-catalogue" id="catalogue" aria-label="All products">
         <div className="storefront-section-head">
           <div>
@@ -565,6 +563,8 @@ export function HomePage({ products, categories, banners, hero, allProducts }: {
           </>
         )}
       </section>
+
+      <FeaturedProducts featured={featuredPicks} />
 
       <NewsletterSection />
     </div>
