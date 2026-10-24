@@ -2767,7 +2767,7 @@ function SubscriptionInvoices() {
                       {inv.status !== "paid" && <RippleButton size="small" style={{ background: "var(--success)", color: "var(--surface)" }} onClick={() => markPaid(inv.id)}>Pay</RippleButton>}
                       <button className="btn btn-sm" style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => viewInvoice(inv.id)}>View</button>
                       <button className="btn btn-sm" style={{ background: "var(--danger)", color: "var(--surface)", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => downloadInvoicePdf(inv.id)}>PDF</button>
-                      <button className="btn btn-sm" style={{ background: "var(--primary)", color: "var(--surface)", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => emailInvoice(inv.id)}>Email</button>
+                      <button className="btn btn-sm" title={`Email the ${["pending", "overdue"].includes(String(inv.status).toLowerCase()) ? "proforma invoice" : "invoice"} as a PDF`} style={{ background: "var(--primary)", color: "var(--surface)", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }} onClick={() => emailInvoice(inv.id)}>Email PDF</button>
                     </td>
                   </tr>
                 ))}

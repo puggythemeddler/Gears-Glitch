@@ -1,11 +1,11 @@
 // Centralized notification dispatcher for Gears&Glitch
 // Routes business events to email + WhatsApp channels with preferences, logging, and idempotency.
 
-import { getSettings } from "./db";
+import { getInvoice, getOrder, getSettings } from "./db";
 import { sendEmail } from "./email";
 import { sendWhatsAppMessage, sendWhatsAppDocument } from "./whatsapp";
 import { sendOrderInvoiceDeliveryEmail, sendOrderInvoiceDeliveryWhatsApp } from "./order-invoice";
-import { getOrder } from "./db";
+import { generateSubscriptionInvoiceHtml } from "./routes/shared";
 
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -180,6 +180,7 @@ export interface NotificationContext {
   recipientName?: string;          // used to link the WhatsApp conversation
   idempotencyKey?: string;         // deterministic; defaults to entityType:entityId:event:audience
   metadata?: Record<string, any>;
+  subscriptionInvoicePdfId?: number; // worker renders the current invoice state into an attached PDF
 }
 
 // ─── Notification Result ──────────────────────────────────────────────────────
@@ -387,7 +388,11 @@ export async function enrollNotification(ctx: NotificationContext): Promise<Noti
 
   const logFields: LogFields = { subject: ctx.subject, customerId: audience === "customer" ? ctx.customerId : undefined, idempotencyKey };
   const entityId = String(ctx.entityId);
-  const emailPayload = JSON.stringify({ html: ctx.bodyHtml || `<p>${(ctx.bodyText || "").replace(/\n/g, "<br>")}</p>`, type: `notification_${ctx.event}` });
+  const emailPayload = JSON.stringify({
+    html: ctx.bodyHtml || `<p>${(ctx.bodyText || "").replace(/\n/g, "<br>")}</p>`,
+    type: `notification_${ctx.event}`,
+    ...(ctx.subscriptionInvoicePdfId ? { subscriptionInvoicePdfId: ctx.subscriptionInvoicePdfId } : {}),
+  });
   const whatsappPayload = JSON.stringify({
     text: ctx.bodyText || ctx.subject || "",
     entityType: audience === "customer" ? "customer" : "staff",
@@ -460,7 +465,11 @@ export async function processPendingDelivery(row: DeliveryRow): Promise<"sent" |
     }
     const html = payload?.html || `<p>${(payload?.text || row.subject || "").replace(/\n/g, "<br>")}</p>`;
     const type = payload?.type || `notification_${row.event_type}`;
-    const ok = await sendEmail(row.recipient, row.subject || "", html, type);
+    const invoiceId = Number(payload?.subscriptionInvoicePdfId);
+    const attachments = Number.isSafeInteger(invoiceId) && invoiceId > 0
+      ? [await renderSubscriptionInvoicePdf(invoiceId)]
+      : undefined;
+    const ok = await sendEmail(row.recipient, row.subject || "", html, type, attachments);
     if (!ok) return await failDelivery(row, attemptsAfter, maxAttempts, "Email send failed", entityType, entityId, logFields);
     await settleDelivery(row.id, { status: "sent", sentAt: new Date().toISOString() });
     await logNotification(row.event_type as NotificationEvent, "email", row.recipient, "sent", entityType, entityId, undefined, undefined, logFields);
@@ -549,6 +558,43 @@ export function startNotificationQueueWorker(intervalMs: number = 15_000): NodeJ
   timer.unref();
   drainNotificationQueueOnce(50).catch(() => {});
   return timer;
+}
+
+async function renderSubscriptionInvoicePdf(invoiceId: number): Promise<{ filename: string; content: Buffer; contentType: string }> {
+  const invoice = await getInvoice(invoiceId);
+  if (!invoice) throw new Error("Subscription invoice no longer exists.");
+  const { queryOne } = await import("./db-helpers");
+  const provider = await queryOne("SELECT email FROM providers WHERE id = $1", [invoice.providerId]) as any;
+  const settings = await getSettings();
+  const html = generateSubscriptionInvoiceHtml({
+    invoice: {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber || `INV-${invoice.id}`,
+      providerName: invoice.providerName || "Client",
+      providerEmail: provider?.email || "",
+      planName: invoice.planName || "Subscription",
+      amount: Number(invoice.amount),
+      currency: invoice.currency || settings.currency || "KES",
+      status: invoice.status,
+      periodStart: invoice.periodStart,
+      periodEnd: invoice.periodEnd,
+      dueDate: invoice.dueDate || "",
+      notes: invoice.notes || "",
+      createdAt: invoice.createdAt,
+    },
+    store: {
+      name: settings.storeName || "Gear&Glitch",
+      email: settings.emailSender || settings.email || "",
+      logo: settings.storeLogo || "",
+      logoPosition: settings.logoPosition || "top-left",
+      baseUrl: process.env.BASE_URL || "",
+    },
+  });
+  const { htmlToPdf } = await import("./pdf");
+  const content = await htmlToPdf(html);
+  const safeNumber = (invoice.invoiceNumber || `INV-${invoice.id}`).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const isProforma = ["pending", "overdue"].includes(String(invoice.status).toLowerCase());
+  return { filename: `${isProforma ? "proforma" : "invoice"}-${safeNumber}.pdf`, content, contentType: "application/pdf" };
 }
 
 // ─── Convenience: fire-and-forget wrapper ─────────────────────────────────────

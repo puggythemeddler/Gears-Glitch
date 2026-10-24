@@ -1962,7 +1962,18 @@ app.get("/api/clients/:id/invoices", requireAuth, requireAdmin, async (req, res)
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.json({ invoices: [], stats: null }); return; }
 
-    const invoicesData = await fetch(`${client.render_service_url}/api/admin/invoices`, { headers: cpHeaders(client.cp_secret) }).then(r => r.ok ? r.json() : { invoices: [], stats: null }).catch(() => ({ invoices: [], stats: null })) as any;
+    const invoicesResponse = await fetch(`${client.render_service_url}/api/admin/invoices`, { headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(30000) });
+    if (!invoicesResponse.ok) {
+      console.error("[api] Client invoice list request failed", { clientId: client.id, status: invoicesResponse.status });
+      res.status(502).json({ error: "Could not retrieve invoices from the client service." });
+      return;
+    }
+    const invoicesData = await invoicesResponse.json() as any;
+    if (!invoicesData || !Array.isArray(invoicesData.invoices)) {
+      console.error("[api] Client invoice list returned an unexpected response", { clientId: client.id });
+      res.status(502).json({ error: "Client invoice service returned an invalid response." });
+      return;
+    }
 
     res.json({ invoices: invoicesData.invoices || [], stats: invoicesData.stats || null, mpesaConfigured: Boolean(getDarajaConfig()) });
   } catch (err: any) {
@@ -2050,6 +2061,8 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
       headers: cpHeaders(client.cp_secret),
     });
     if (!pay.ok) { res.status(500).json({ error: "Generated invoice but failed to mark paid" }); return; }
+    const paidResult: any = await pay.json().catch(() => null);
+    if (paidResult?.invoice) Object.assign(invoice, paidResult.invoice);
 
     // 3. Extend subscription expiry
     const now = new Date();
@@ -2409,33 +2422,59 @@ app.post("/api/clients/:id/invoices/:invId/email", requireAuth, requireAdmin, as
     const invoiceNumber = invoice.invoiceNumber || `INV-${invoice.id}`;
     const planName = invoice.planName || invoice.planId || "Subscription";
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : "";
-    const viewUrl = `${client.render_service_url}/api/admin/invoices/${invoice.id}/view`;
-
-    const subject = `Invoice ${invoiceNumber} — ${planName} Plan`;
+    const isProforma = ["pending", "overdue"].includes(String(invoice.status || "").toLowerCase());
+    const documentType = isProforma ? "Proforma invoice" : "Invoice";
+    const subject = `${documentType} ${invoiceNumber} — ${planName} Plan`;
     const html = `
       <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 2rem;">
-        <h2 style="color:#c2410c;margin-bottom:0.5rem;">Invoice ${esc(invoiceNumber)}</h2>
+        <h2 style="color:#c2410c;margin-bottom:0.5rem;">${esc(documentType)} ${esc(invoiceNumber)}</h2>
         <p>Hi ${esc(client.name)},</p>
-        <p>Your subscription invoice for <strong>${esc(planName)}</strong> is ready.</p>
+        <p>Your ${isProforma ? "proforma" : "subscription"} invoice for <strong>${esc(planName)}</strong> is ready.</p>
         <div style="background:#f1f5f9;padding:16px;margin:16px 0;border-radius:6px;">
-          <p style="margin:0;"><strong>Invoice:</strong> ${esc(invoiceNumber)}</p>
+          <p style="margin:0;"><strong>${isProforma ? "Proforma reference" : "Invoice"}:</strong> ${esc(invoiceNumber)}</p>
           <p style="margin:8px 0 0;"><strong>Plan:</strong> ${esc(planName)}</p>
           <p style="margin:8px 0 0;"><strong>Amount:</strong> ${esc(invoice.currency)} ${Number(invoice.amount).toLocaleString()}</p>
           ${dueDate ? `<p style="margin:8px 0 0;"><strong>Due Date:</strong> ${esc(dueDate)}</p>` : ""}
         </div>
-        <p>Please ensure payment is made by the due date to avoid service interruption.</p>
-        <p><a href="${viewUrl}" style="display:inline-block;padding:10px 20px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">View Invoice</a></p>
+        ${isProforma ? "<p>This proforma is for payment reference and is not a tax invoice. The final invoice will be available after payment is recorded.</p>" : "<p>Your payment has been recorded. Please keep the attached invoice for your records.</p>"}
+        <p>The ${isProforma ? "proforma" : "invoice"} PDF is attached to this email.</p>
       </div>
     `;
+
+    const pdfResponse = await fetch(`${client.render_service_url}/api/admin/invoices/${invoice.id}/view?format=pdf`, {
+      headers: cpHeaders(client.cp_secret),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!pdfResponse.ok) {
+      console.error("[api] Client invoice PDF request failed", { clientId: client.id, invoiceId: invoice.id, status: pdfResponse.status });
+      res.status(502).json({ error: "Could not retrieve the invoice PDF; email was not sent." });
+      return;
+    }
+    const pdfContentType = pdfResponse.headers.get("content-type") || "";
+    const pdfLength = Number(pdfResponse.headers.get("content-length") || 0);
+    if (!pdfContentType.toLowerCase().includes("application/pdf") || pdfLength > 15 * 1024 * 1024) {
+      console.error("[api] Client invoice PDF response was invalid", { clientId: client.id, invoiceId: invoice.id, contentType: pdfContentType, contentLength: pdfLength || undefined });
+      res.status(502).json({ error: "Client invoice service returned an invalid PDF; email was not sent." });
+      return;
+    }
+    const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
+    if (pdfBuffer.length === 0 || pdfBuffer.length > 15 * 1024 * 1024 || pdfBuffer.subarray(0, 5).toString("ascii") !== "%PDF-") {
+      console.error("[api] Client invoice PDF failed content validation", { clientId: client.id, invoiceId: invoice.id, contentLength: pdfBuffer.length });
+      res.status(502).json({ error: "Client invoice service returned an invalid PDF; email was not sent." });
+      return;
+    }
+    const safeInvoiceNumber = String(invoiceNumber).replace(/[^a-zA-Z0-9._-]/g, "_");
+    const filename = `${isProforma ? "proforma" : "invoice"}-${safeInvoiceNumber}.pdf`;
 
     await st.transporter.sendMail({
       from: `"${st.fromName}" <${st.fromEmail}>`,
       to: client.admin_email,
       subject,
       html,
+      attachments: [{ filename, content: pdfBuffer, contentType: "application/pdf" }],
     });
-    await auditLog(req, "email_invoice", "client", client.id, client.name, `Invoice ${invoiceNumber} → ${client.admin_email}`);
-    res.json({ sent: true, to: client.admin_email });
+    await auditLog(req, "email_invoice", "client", client.id, client.name, `${documentType} ${invoiceNumber} with PDF → ${client.admin_email}`);
+    res.json({ sent: true, to: client.admin_email, documentType, filename });
   } catch (err: any) {
     console.error("[api] Email invoice error:", err.message);
     res.status(500).json({ error: "Failed to email invoice" });

@@ -4085,7 +4085,6 @@ app.post("/api/admin/invoices/:id/email", allowControlPlane(ownerAuthMiddleware)
   const provider = await queryOne("SELECT * FROM providers WHERE id = $1", [invoice.providerId]) as any;
   if (!provider?.email) { res.status(400).json({ error: "Provider has no email." }); return; }
   const settings = await getSettings();
-  const dashboardUrl = `${req.protocol}://${req.get("host")}/api/admin/invoices/${invoice.id}/view`;
   const { subject, html } = subscriptionInvoiceEmail(
     provider.company_name || provider.name || "Client",
     invoice.invoiceNumber || `INV-${invoice.id}`,
@@ -4093,10 +4092,32 @@ app.post("/api/admin/invoices/:id/email", allowControlPlane(ownerAuthMiddleware)
     String(invoice.amount),
     invoice.currency,
     invoice.dueDate || "",
-    dashboardUrl
+    ["pending", "overdue"].includes(String(invoice.status).toLowerCase())
   );
   const { sendEmail } = await import("./email");
-  const sent = await sendEmail(provider.email, subject, html, "invoice");
+  const invoiceHtml = generateSubscriptionInvoiceHtml({
+    invoice: {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber || `INV-${invoice.id}`,
+      providerName: provider.company_name || provider.name || "Unknown",
+      providerEmail: provider.email,
+      planName: invoice.planName,
+      amount: invoice.amount,
+      currency: invoice.currency,
+      status: invoice.status,
+      periodStart: invoice.periodStart,
+      periodEnd: invoice.periodEnd,
+      dueDate: invoice.dueDate || "",
+      notes: invoice.notes || "",
+      createdAt: invoice.createdAt,
+    },
+    store: { name: settings.storeName, email: settings.emailSender || settings.email || "", logo: settings.storeLogo || "", logoPosition: settings.logoPosition || "top-left", baseUrl: `${req.protocol}://${req.get("host")}` },
+  });
+  const { htmlToPdf } = await import("./pdf");
+  const pdf = await htmlToPdf(invoiceHtml);
+  const safeInvoiceNumber = (invoice.invoiceNumber || `INV-${invoice.id}`).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const filename = `${invoice.status === "paid" ? "invoice" : "proforma"}-${safeInvoiceNumber}.pdf`;
+  const sent = await sendEmail(provider.email, subject, html, "invoice", [{ filename, content: pdf, contentType: "application/pdf" }]);
   res.json({ sent });
 }));
 
@@ -4151,7 +4172,6 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
   if (!invoice) { res.status(400).json({ error: "Could not generate invoice. Plan not found." }); return; }
   try {
     const settings = await getSettings();
-    const dashboardUrl = `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
     const { subject, html } = subscriptionInvoiceEmail(
       invoice.providerName || "Provider",
       invoice.invoiceNumber || `INV-${invoice.id}`,
@@ -4159,7 +4179,7 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
       String(invoice.amount),
       invoice.currency || settings.currency || "KES",
       invoice.dueDate || "",
-      dashboardUrl
+      true
     );
     if (invoice.created || generationKey) {
       await notify({
@@ -4167,8 +4187,9 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
         entityType: "invoice",
         entityId: invoice.id,
         subject,
-        bodyText: `Invoice ${invoice.invoiceNumber || invoice.id} generated (${invoice.currency || settings.currency || "KES"} ${invoice.amount}).`,
+        bodyText: `Proforma invoice ${invoice.invoiceNumber || invoice.id} generated (${invoice.currency || settings.currency || "KES"} ${invoice.amount}).`,
         bodyHtml: html,
+        subscriptionInvoicePdfId: invoice.id,
       });
     }
   } catch (_err: any) { console.warn("[invoice] notification failed:", _err?.message || _err); }
@@ -4176,13 +4197,13 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
 }));
 
 app.post("/api/admin/invoices/:id/pay", allowControlPlane(ownerAuthMiddleware), requirePermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
-  const invoice = await getInvoice(Number(req.params.id));
-  const ok = await markInvoicePaid(Number(req.params.id));
+  const invoiceId = Number(req.params.id);
+  const ok = await markInvoicePaid(invoiceId);
   if (!ok) { res.status(404).json({ error: "Invoice not found." }); return; }
+  const invoice = await getInvoice(invoiceId);
   if (invoice) {
     try {
       const settings = await getSettings();
-      const dashboardUrl = `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
       const { subject, html } = subscriptionInvoiceEmail(
         invoice.providerName || "Provider",
         invoice.invoiceNumber || `INV-${invoice.id}`,
@@ -4190,7 +4211,7 @@ app.post("/api/admin/invoices/:id/pay", allowControlPlane(ownerAuthMiddleware), 
         String(invoice.amount),
         invoice.currency || settings.currency || "KES",
         invoice.dueDate || "",
-        dashboardUrl
+        false
       );
       await notify({
         event: "invoice.paid",
@@ -4199,10 +4220,11 @@ app.post("/api/admin/invoices/:id/pay", allowControlPlane(ownerAuthMiddleware), 
         subject: `Invoice ${invoice.invoiceNumber || invoice.id} paid`,
         bodyText: `Invoice ${invoice.invoiceNumber || invoice.id} was marked as paid (${invoice.currency || settings.currency || "KES"} ${invoice.amount}).`,
         bodyHtml: html,
+        subscriptionInvoicePdfId: invoice.id,
       });
     } catch (_err: any) { console.warn("[invoice] notification failed:", _err?.message || _err); }
   }
-  res.json({ ok: true });
+  res.json({ ok: true, invoice });
 }));
 
 // ============ ORDER INVOICES ============
