@@ -134,23 +134,19 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
             </p>
           )}
 
-          {badgeActive && (
-            badgeLink ? (
-              <a href={badgeLink} className="dy-hero-badge" style={{ textDecoration: "none" }}>
-                <span className="hero-badge-dot" />
-                <span>{badgeText}</span>
-              </a>
-            ) : (
-              <span className="dy-hero-badge">
-                <span className="hero-badge-dot" />
-                <span>{badgeText}</span>
-              </span>
-            )
-          )}
-
           <h1 className="dy-hero-headline">
             {headline} <span style={{ color: "var(--primary)" }}>{headlineAccent}</span>
           </h1>
+
+          {badgeActive && (
+            badgeLink ? (
+              <a href={badgeLink} className="hero-promotion">
+                {badgeText}
+              </a>
+            ) : (
+              <p className="hero-promotion">{badgeText}</p>
+            )
+          )}
 
           <p className="dy-hero-sub">{subtitle}</p>
 

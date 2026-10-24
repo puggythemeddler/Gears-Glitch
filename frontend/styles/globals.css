@@ -4577,6 +4577,48 @@ a.about-contact-card:hover {
   text-transform: uppercase;
 }
 
+@keyframes heroPromotionEnter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.hero-promotion {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: -0.25rem 0 1.25rem;
+  color: var(--hero-badge-color, var(--primary));
+  font-size: clamp(0.95rem, 1.3vw, 1.1rem);
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-decoration: none;
+  animation: heroPromotionEnter 380ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
+}
+
+a.hero-promotion {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+a.hero-promotion:hover {
+  transform: translateX(3px);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+a.hero-promotion:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
+
 .dy-hero-headline {
   font-family: var(--font-display);
   font-size: clamp(2.25rem, 5vw, 3.5rem);
@@ -4956,6 +4998,8 @@ a.about-contact-card:hover {
      content is present on first paint instead of waiting out the stagger. */
   .dy-hero--enter .dy-hero-content > *,
   .dy-hero--enter .dy-hero-showcase { animation-delay: 0s !important; }
+  .hero-promotion { animation: none; }
+  a.hero-promotion { transition: none; }
 }
 
 /* ==========================================================================
