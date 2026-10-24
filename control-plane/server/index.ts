@@ -16,6 +16,8 @@ import { corsPolicyMiddleware, parseAllowedOrigins } from "./cors-policy";
 import { initOpsCenterDb, aggregateUsageForClients } from "./ops-db";
 import { evaluateForClient, expireSupportAndMaintenance } from "./ops";
 import { registerOpsRoutes } from "./ops-routes";
+import { createCallbackToken, getDarajaConfig, hashCallbackToken, initiateSandboxStkPush, normalizeKenyanPhone } from "./daraja";
+import { processRenewalInvoiceCandidate, type RenewalInvoiceCandidate } from "./recurring-invoices";
 import {
   provisionClient,
   deployAllClients,
@@ -1746,6 +1748,214 @@ app.put("/api/clients/:id/upgrade-requests/:reqId", requireAuth, requireAdmin, a
 });
 
 // ─── CLIENT INVOICES (proxy to client backends) ──────────────
+app.post("/api/clients/:id/invoices/:invoiceId/mpesa", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
+  const clientId = Number(req.params.id);
+  const invoiceId = Number(req.params.invoiceId);
+  if (!Number.isSafeInteger(clientId) || clientId <= 0 || !Number.isSafeInteger(invoiceId) || invoiceId <= 0) {
+    res.status(400).json({ error: "Invalid client or invoice." }); return;
+  }
+  const config = getDarajaConfig();
+  if (!config) { res.status(503).json({ error: "M-Pesa sandbox is not configured yet." }); return; }
+  const phone = normalizeKenyanPhone(req.body?.phone);
+  if (!phone) { res.status(400).json({ error: "Enter a valid Kenyan M-Pesa phone number." }); return; }
+
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [clientId]) as any;
+    if (!client) { res.status(404).json({ error: "Client not found." }); return; }
+    if (!client.render_service_url || !client.cp_secret) { res.status(400).json({ error: "Client backend is not connected to the control plane." }); return; }
+
+    const invoiceResponse = await fetch(`${client.render_service_url}/api/admin/invoices`, {
+      headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(15000),
+    });
+    if (!invoiceResponse.ok) { res.status(502).json({ error: "Could not retrieve the client invoice." }); return; }
+    const invoiceData: any = await invoiceResponse.json();
+    const invoice = (invoiceData.invoices || []).find((item: any) => Number(item.id) === invoiceId);
+    if (!invoice) { res.status(404).json({ error: "Invoice not found." }); return; }
+    if (!(["pending", "overdue"].includes(String(invoice.status).toLowerCase()))) {
+      res.status(409).json({ error: "Only pending or overdue invoices can receive an M-Pesa payment request." }); return;
+    }
+    const amount = Number(invoice.amount);
+    if (invoice.currency !== "KES" || !Number.isSafeInteger(amount) || amount < 1) {
+      res.status(400).json({ error: "This invoice is not a whole-KES amount supported by the M-Pesa sandbox flow." }); return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}/.test(String(invoice.periodEnd || ""))) {
+      res.status(400).json({ error: "Invoice billing period is missing; M-Pesa payment cannot be matched safely." }); return;
+    }
+    const activeAttempt = await queryOne(
+      "SELECT id FROM mpesa_payment_attempts WHERE client_id = $1 AND invoice_id = $2 AND status IN ('initiating','pending','payment_confirmed','initiation_unknown','needs_review') ORDER BY created_at DESC LIMIT 1",
+      [clientId, invoiceId]
+    );
+    if (activeAttempt) { res.status(409).json({ error: "An M-Pesa payment attempt for this invoice is already active or needs review." }); return; }
+
+    const attemptId = crypto.randomUUID();
+    const callbackToken = createCallbackToken();
+    await query(
+      `INSERT INTO mpesa_payment_attempts (id, client_id, invoice_id, invoice_number, amount, period_end, phone_last4, callback_token_hash, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'initiating')`,
+      [attemptId, clientId, invoiceId, String(invoice.invoiceNumber || `INV-${invoiceId}`).slice(0, 80), amount, String(invoice.periodEnd).slice(0, 10), phone.slice(-4), hashCallbackToken(callbackToken)]
+    );
+    try {
+      const result = await initiateSandboxStkPush({
+        amount, phone, accountReference: String(invoice.invoiceNumber || `INV-${invoiceId}`),
+        transactionDesc: `Invoice ${invoiceId}`, callbackToken,
+      });
+      await query(
+        "UPDATE mpesa_payment_attempts SET merchant_request_id = $1, checkout_request_id = $2, status = 'pending', updated_at = NOW() WHERE id = $3",
+        [result.merchantRequestId, result.checkoutRequestId, attemptId]
+      );
+      await auditLog(req, "mpesa_stk_initiated", "client", clientId, client.name, `STK Push started for ${String(invoice.invoiceNumber || invoiceId)} (attempt ${attemptId})`);
+      res.status(202).json({ attemptId, status: "pending", message: result.customerMessage, phoneLast4: phone.slice(-4) });
+    } catch (error: any) {
+      // A timeout can happen after Safaricom accepted a request. Keep the
+      // attempt locked for review instead of risking a duplicate prompt.
+      await query("UPDATE mpesa_payment_attempts SET status = 'initiation_unknown', updated_at = NOW() WHERE id = $1", [attemptId]);
+      console.warn("[daraja] Sandbox STK request was not confirmed; attempt requires review.");
+      res.status(502).json({ attemptId, status: "initiation_unknown", error: "M-Pesa did not confirm whether the request was accepted. Review the attempt before retrying." });
+    }
+  } catch (error: any) {
+    console.error("[daraja] Could not start sandbox STK request:", error?.message || "unknown error");
+    res.status(500).json({ error: "Could not start M-Pesa payment request." });
+  }
+});
+
+app.get("/api/clients/:id/invoices/:invoiceId/mpesa", requireAuth, requireAdmin, async (req, res) => {
+  const clientId = Number(req.params.id);
+  const invoiceId = Number(req.params.invoiceId);
+  if (!Number.isSafeInteger(clientId) || clientId <= 0 || !Number.isSafeInteger(invoiceId) || invoiceId <= 0) {
+    res.status(400).json({ error: "Invalid client or invoice." }); return;
+  }
+  try {
+    const attempt = await queryOne(
+      `SELECT id, status, amount, invoice_number, phone_last4, result_code, result_description, receipt_number, created_at, updated_at
+       FROM mpesa_payment_attempts WHERE client_id = $1 AND invoice_id = $2 ORDER BY created_at DESC LIMIT 1`,
+      [clientId, invoiceId]
+    );
+    res.json({ attempt: attempt || null });
+  } catch {
+    res.status(500).json({ error: "Could not load M-Pesa payment status." });
+  }
+});
+
+// Daraja callbacks are authenticated with a per-attempt 256-bit capability
+// URL and matched against both provider request IDs before any invoice changes.
+app.post("/api/mpesa/stk-callback/:token", async (req, res) => {
+  const token = typeof req.params.token === "string" ? req.params.token : "";
+  if (!/^[a-f0-9]{64}$/.test(token)) { res.status(404).json({ ok: false }); return; }
+  const callback = req.body?.Body?.stkCallback;
+  if (!callback || typeof callback !== "object" || typeof callback.CheckoutRequestID !== "string" || typeof callback.MerchantRequestID !== "string") {
+    res.status(400).json({ ok: false }); return;
+  }
+  try {
+    let attempt = await queryOne(
+      "SELECT * FROM mpesa_payment_attempts WHERE callback_token_hash = $1",
+      [hashCallbackToken(token)]
+    ) as any;
+    if (!attempt) { res.status(404).json({ ok: false }); return; }
+    if (attempt.status === "initiation_unknown" && !attempt.checkout_request_id && !attempt.merchant_request_id) {
+      // The provider may have accepted a request even if our HTTP client timed
+      // out before receiving its IDs. The per-attempt token lets its callback
+      // bind those IDs exactly once without permitting a second STK request.
+      const linked = await query(
+        `UPDATE mpesa_payment_attempts SET merchant_request_id = $1, checkout_request_id = $2,
+         status = 'pending', updated_at = NOW() WHERE id = $3 AND status = 'initiation_unknown'
+         AND checkout_request_id IS NULL AND merchant_request_id = '' RETURNING *`,
+        [callback.MerchantRequestID, callback.CheckoutRequestID, attempt.id]
+      );
+      if (linked.rowCount) attempt = linked.rows[0];
+      else { res.status(200).json({ ResultCode: 0, ResultDesc: "Callback already received." }); return; }
+    }
+    if (attempt.checkout_request_id !== callback.CheckoutRequestID || attempt.merchant_request_id !== callback.MerchantRequestID) {
+      res.status(404).json({ ok: false }); return;
+    }
+    if (attempt.status !== "pending") { res.status(200).json({ ResultCode: 0, ResultDesc: "Callback already received." }); return; }
+
+    const resultCode = Number(callback.ResultCode);
+    const description = typeof callback.ResultDesc === "string" ? callback.ResultDesc.slice(0, 300) : "";
+    if (resultCode !== 0) {
+      await query(
+        "UPDATE mpesa_payment_attempts SET status = 'failed', result_code = $1, result_description = $2, updated_at = NOW() WHERE id = $3 AND status = 'pending'",
+        [String(callback.ResultCode ?? "unknown").slice(0, 40), description, attempt.id]
+      );
+      res.status(200).json({ ResultCode: 0, ResultDesc: "Callback received." }); return;
+    }
+
+    const items = Array.isArray(callback.CallbackMetadata?.Item) ? callback.CallbackMetadata.Item : [];
+    const metadata = new Map(items.filter((item: any) => item && typeof item.Name === "string").map((item: any) => [item.Name, item.Value]));
+    const callbackAmount = Number(metadata.get("Amount"));
+    const receipt = metadata.get("MpesaReceiptNumber");
+    const transactionDate = metadata.get("TransactionDate");
+    if (!Number.isFinite(callbackAmount) || callbackAmount !== Number(attempt.amount) || typeof receipt !== "string" || !/^[A-Z0-9]{8,20}$/.test(receipt)) {
+      await query("UPDATE mpesa_payment_attempts SET status = 'needs_review', result_code = 'callback_mismatch', result_description = 'Provider success callback did not match expected amount or receipt format.', updated_at = NOW() WHERE id = $1 AND status = 'pending'", [attempt.id]);
+      res.status(200).json({ ResultCode: 0, ResultDesc: "Callback received for review." }); return;
+    }
+    const claimed = await query(
+      `UPDATE mpesa_payment_attempts SET status = 'payment_confirmed', result_code = '0', result_description = $1,
+       receipt_number = $2, transaction_date = $3, updated_at = NOW()
+       WHERE id = $4 AND status = 'pending' RETURNING id`,
+      [description, receipt, String(transactionDate || "").slice(0, 20), attempt.id]
+    );
+    if (!claimed.rowCount) { res.status(200).json({ ResultCode: 0, ResultDesc: "Callback already received." }); return; }
+
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [attempt.client_id]) as any;
+    if (!client?.render_service_url || !client.cp_secret) throw new Error("Client payment route is unavailable.");
+    const invoiceResponse = await fetch(`${client.render_service_url}/api/admin/invoices`, {
+      headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(15000),
+    });
+    if (!invoiceResponse.ok) throw new Error("Could not verify invoice against client backend.");
+    const invoices: any = await invoiceResponse.json();
+    const invoice = (invoices.invoices || []).find((item: any) => Number(item.id) === Number(attempt.invoice_id));
+    if (!invoice || !["pending", "overdue"].includes(String(invoice.status).toLowerCase()) || Number(invoice.amount) !== Number(attempt.amount) || invoice.currency !== "KES") {
+      await query("UPDATE mpesa_payment_attempts SET status = 'needs_review', updated_at = NOW() WHERE id = $1", [attempt.id]);
+      res.status(200).json({ ResultCode: 0, ResultDesc: "Payment received; invoice needs review." }); return;
+    }
+    const paid = await fetch(`${client.render_service_url}/api/admin/invoices/${attempt.invoice_id}/pay`, {
+      method: "POST", headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(15000),
+    });
+    if (!paid.ok) throw new Error("Client backend did not confirm invoice payment.");
+
+    const now = new Date();
+    const currentExpiry = client.subscription_expires ? new Date(client.subscription_expires) : null;
+    const expiryBase = currentExpiry && currentExpiry > now ? currentExpiry : now;
+    // Client subscription invoices are currently generated for a 30-day
+    // period by the tenant backend. Extend from the later of today or expiry,
+    // so paying an overdue invoice never writes an already-expired date.
+    const newExpiry = new Date(expiryBase.getTime() + 30 * 86400000);
+    const nextPaymentDate = newExpiry.toISOString().slice(0, 10);
+    await query(
+      `INSERT INTO client_payments (client_id, invoice_id, amount, period_type, due_date, notes, payment_method, payment_reference)
+       VALUES ($1, $2, $3, 'monthly', $4, $5, 'mpesa', $6)
+       ON CONFLICT (payment_reference) WHERE payment_reference <> '' DO NOTHING`,
+      [client.id, attempt.invoice_id, attempt.amount, nextPaymentDate, `M-Pesa receipt ${receipt}`, receipt]
+    );
+    await query(
+      `UPDATE clients SET
+         subscription_expires = $1,
+         next_payment_date = $2 WHERE id = $3`,
+      [newExpiry, nextPaymentDate, client.id]
+    );
+    await query("UPDATE mpesa_payment_attempts SET status = 'complete', updated_at = NOW() WHERE id = $1 AND status = 'payment_confirmed'", [attempt.id]);
+    await query("UPDATE cp_notifications SET read = true WHERE read = false AND client_id = $1 AND type IN ('payment_due', 'payment_overdue')", [client.id]);
+    await logAudit(0, "daraja-callback", "mpesa_payment_complete", "client", client.id, client.name, `Invoice ${attempt.invoice_number}; receipt ${receipt}`);
+    if (client.status === "suspended") {
+      try {
+        await resumeClientRecord(client);
+        await logAudit(0, "daraja-callback", "auto_resume_client", "client", client.id, client.name, "Resumed after M-Pesa invoice payment");
+      } catch (resumeError: any) {
+        console.warn("[daraja] Invoice paid but suspended client could not be resumed; operator review is required.");
+      }
+    }
+    res.status(200).json({ ResultCode: 0, ResultDesc: "Callback processed." });
+  } catch (error: any) {
+    console.error("[daraja] Callback processing requires review:", error?.message || "unknown error");
+    try {
+      await query("UPDATE mpesa_payment_attempts SET status = 'needs_review', updated_at = NOW() WHERE checkout_request_id = $1 AND status = 'payment_confirmed'", [callback.CheckoutRequestID]);
+    } catch {}
+    // Acknowledge to Safaricom to avoid uncontrolled retries; the attempt stays
+    // visible to an admin as needs_review and is never silently marked paid.
+    res.status(200).json({ ResultCode: 0, ResultDesc: "Callback received for manual review." });
+  }
+});
+
 app.get("/api/clients/:id/invoices", requireAuth, requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
@@ -1754,7 +1964,7 @@ app.get("/api/clients/:id/invoices", requireAuth, requireAdmin, async (req, res)
 
     const invoicesData = await fetch(`${client.render_service_url}/api/admin/invoices`, { headers: cpHeaders(client.cp_secret) }).then(r => r.ok ? r.json() : { invoices: [], stats: null }).catch(() => ({ invoices: [], stats: null })) as any;
 
-    res.json({ invoices: invoicesData.invoices || [], stats: invoicesData.stats || null });
+    res.json({ invoices: invoicesData.invoices || [], stats: invoicesData.stats || null, mpesaConfigured: Boolean(getDarajaConfig()) });
   } catch (err: any) {
     console.error("[api] Get client invoices error:", err.message);
     res.status(500).json({ error: "Failed to get invoices" });
@@ -1900,6 +2110,90 @@ async function computePaymentReminders() {
 
   reminders.sort((a, b) => a.daysLeft - b.daysLeft);
   return { reminders, newReminders };
+}
+
+// Renewal invoices are opt-in until the deployment owner enables the feature.
+// A stable key per client and due date makes retries safe across process restarts.
+let recurringInvoiceTimer: NodeJS.Timeout | undefined;
+let recurringInvoiceRunActive = false;
+
+async function generateUpcomingClientInvoices() {
+  const clients = await queryAll(
+    `SELECT c.id, c.name, c.plan, c.render_service_url, c.cp_secret, c.next_payment_date,
+       p.price AS monthly_price, p.price_annual AS annual_price,
+       COALESCE((SELECT cp.period_type FROM client_payments cp WHERE cp.client_id = c.id ORDER BY cp.created_at DESC, cp.id DESC LIMIT 1), 'monthly') AS period_type
+     FROM clients c
+     LEFT JOIN custom_plans p ON p.id = c.plan
+     WHERE c.status = 'active' AND c.render_service_url <> '' AND COALESCE(c.next_payment_date, '') <> ''`
+  ) as any[];
+  let createdCount = 0;
+
+  for (const client of clients) {
+    const dueDate = String(client.next_payment_date || '').slice(0, 10);
+    try {
+      const candidate: RenewalInvoiceCandidate = {
+        id: Number(client.id),
+        plan: String(client.plan || ''),
+        nextPaymentDate: dueDate,
+        periodType: client.period_type === 'annual' ? 'annual' : 'monthly',
+        monthlyPrice: Number(client.monthly_price),
+        annualPrice: client.annual_price == null ? null : Number(client.annual_price),
+      };
+      const result = await processRenewalInvoiceCandidate(candidate, {
+        listInvoices: async () => {
+          const response = await fetch(`${client.render_service_url}/api/admin/invoices`, {
+            headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(30000),
+          });
+          if (!response.ok) throw new Error(`Invoice listing returned HTTP ${response.status}.`);
+          const data = await response.json() as any;
+          return Array.isArray(data.invoices) ? data.invoices : [];
+        },
+        generateInvoice: async payload => {
+          const response = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
+            method: 'POST',
+            headers: cpHeaders(client.cp_secret, { 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(30000),
+          });
+          const invoice = await response.json() as any;
+          if (!response.ok) throw new Error(invoice?.error || `Invoice generation returned HTTP ${response.status}.`);
+          return invoice;
+        },
+      });
+      if (result.status === 'generated') createdCount++;
+      if (result.status === 'not_billable') {
+        console.warn(`[recurring-invoices] Skipped client ${client.id}: the current ${candidate.periodType} plan price is missing or zero.`);
+      } else if (result.status === 'open_invoice') {
+        console.info(`[recurring-invoices] Skipped client ${client.id}: invoice ${result.invoice?.invoiceNumber || result.invoice?.id} is still open.`);
+      } else if (result.status === 'generated' || result.status === 'existing') {
+        console.info(`[recurring-invoices] ${result.status === 'generated' ? 'Generated' : 'Found existing'} invoice ${result.invoice?.invoiceNumber || result.invoice?.id} for client ${client.id}, due ${dueDate}.`);
+      }
+    } catch (error: any) {
+      console.warn(`[recurring-invoices] Client ${client.id} was not processed: ${error?.message || 'request failed'}`);
+    }
+  }
+
+  console.info(`[recurring-invoices] Run complete: ${createdCount} invoice(s) generated.`);
+}
+
+function scheduleRecurringClientInvoices() {
+  if (process.env.AUTO_GENERATE_CLIENT_INVOICES !== 'true') {
+    console.info('[recurring-invoices] Disabled. Set AUTO_GENERATE_CLIENT_INVOICES=true to enable scheduled renewal invoices.');
+    return;
+  }
+  if (recurringInvoiceTimer) return;
+
+  const run = async () => {
+    if (recurringInvoiceRunActive) return;
+    recurringInvoiceRunActive = true;
+    try { await generateUpcomingClientInvoices(); }
+    catch (error: any) { console.error('[recurring-invoices] Run failed:', error?.message || error); }
+    finally { recurringInvoiceRunActive = false; }
+  };
+
+  void run();
+  recurringInvoiceTimer = setInterval(() => { void run(); }, 60 * 60 * 1000);
+  recurringInvoiceTimer.unref();
 }
 
 // Generate in-app notifications: payment due/overdue, clients down, usage over limit.
@@ -2463,6 +2757,7 @@ export async function start(opts?: { background?: boolean }): Promise<import("ht
       setTimeout(autoImportCloudinary, 4000);
       setTimeout(runStartupHealthCheck, 5000);
       scheduleAutoBackup();
+      scheduleRecurringClientInvoices();
     }
   });
   await new Promise<void>((resolve, reject) => {

@@ -316,9 +316,40 @@ export async function initControlPlaneDb() {
       period_type TEXT DEFAULT 'monthly',
       due_date TEXT DEFAULT '',
       notes TEXT DEFAULT '',
+      payment_method TEXT DEFAULT 'manual',
+      payment_reference TEXT DEFAULT '',
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
+  // Preserve the existing manual payment rows while recording and deduplicating
+  // provider-confirmed M-Pesa receipts separately from invoice status.
+  try { await query(`ALTER TABLE client_payments ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'manual'`); } catch {}
+  try { await query(`ALTER TABLE client_payments ADD COLUMN IF NOT EXISTS payment_reference TEXT DEFAULT ''`); } catch {}
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS client_payments_payment_reference_uq ON client_payments(payment_reference) WHERE payment_reference <> ''`);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS mpesa_payment_attempts (
+      id TEXT PRIMARY KEY,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      invoice_id INTEGER NOT NULL,
+      invoice_number TEXT NOT NULL DEFAULT '',
+      amount NUMERIC(12, 2) NOT NULL,
+      period_end TEXT NOT NULL DEFAULT '',
+      phone_last4 TEXT NOT NULL DEFAULT '',
+      callback_token_hash TEXT,
+      merchant_request_id TEXT NOT NULL DEFAULT '',
+      checkout_request_id TEXT UNIQUE,
+      status TEXT NOT NULL CHECK (status IN ('initiating', 'pending', 'payment_confirmed', 'complete', 'failed', 'initiation_unknown', 'needs_review')),
+      result_code TEXT NOT NULL DEFAULT '',
+      result_description TEXT NOT NULL DEFAULT '',
+      receipt_number TEXT UNIQUE,
+      transaction_date TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS mpesa_payment_attempts_client_invoice_idx ON mpesa_payment_attempts(client_id, invoice_id, created_at DESC)`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS mpesa_payment_attempts_one_active_per_invoice_uq ON mpesa_payment_attempts(client_id, invoice_id) WHERE status IN ('initiating','pending','payment_confirmed','initiation_unknown','needs_review')`);
 
   await query(`
     CREATE TABLE IF NOT EXISTS payment_reminders (

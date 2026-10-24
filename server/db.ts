@@ -9,6 +9,7 @@ import { query, queryOne, queryAll, transaction, runSchema, getPool } from "./db
 import { encryptSecret, decryptSecret, isEncrypted } from "./secret-store";
 import { provisionAdminUser } from "./admin-provisioning";
 import { DEFAULT_ROLES } from "./permissions";
+import { calculateInvoicePeriod } from "./invoice-period";
 
 // Settings keys whose values are secrets and must be encrypted at rest. Values
 // written through the settings layer are stored as `enc:v1:` ciphertext and
@@ -3051,26 +3052,34 @@ async function listInvoices(providerId?: number): Promise<Invoice[]> {
 }
 
 async function markInvoicePaid(id: number): Promise<boolean> {
-  const result = await query("UPDATE invoices SET status = 'paid', paid_at = NOW()::text WHERE id = $1 AND status = 'pending'", [id]);
+  const result = await query("UPDATE invoices SET status = 'paid', paid_at = NOW()::text WHERE id = $1 AND status IN ('pending', 'overdue')", [id]);
   return (result.rowCount ?? 0) > 0;
 }
 
-async function generateProviderInvoice(providerId: number | null | undefined, planId: string): Promise<Invoice | null> {
+async function generateProviderInvoice(providerId: number | null | undefined, planId: string, options: { periodType?: "monthly" | "annual"; periodStart?: string; dueDate?: string; generationKey?: string } = {}): Promise<(Invoice & { created: boolean }) | null> {
   const plan = await getSubscriptionPlan(planId);
   if (!plan) return null;
+  const periodType = options.periodType || "monthly";
+  if (periodType === "annual" && plan.priceAnnual == null) return null;
   let targetProvider = providerId ? await findProviderById(providerId) : undefined;
   if (!targetProvider) targetProvider = await getOrCreatePlatformProvider();
   const now = new Date();
-  const periodStart = now.toISOString().slice(0, 10);
-  const periodEnd = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
-  const dueDate = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+  const { periodStart, periodEnd } = calculateInvoicePeriod(options.periodStart || now.toISOString().slice(0, 10), periodType);
+  const dueDate = options.dueDate || new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
   const invoiceNumber = await generateSubInvoiceNumber();
   const result = await query(
-    "INSERT INTO invoices (provider_id, plan_id, amount, currency, period_start, period_end, due_date, invoice_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
-    [targetProvider.id, plan.id, plan.price, "KES", periodStart, periodEnd, dueDate, invoiceNumber]
+    `INSERT INTO invoices (provider_id, plan_id, amount, currency, period_start, period_end, due_date, invoice_number, generation_key)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (generation_key) WHERE generation_key IS NOT NULL DO NOTHING
+     RETURNING *`,
+    [targetProvider.id, plan.id, periodType === "annual" ? plan.priceAnnual : plan.price, "KES", periodStart, periodEnd, dueDate, invoiceNumber, options.generationKey || null]
   );
-  const row = result.rows[0];
-  return { id: row.id, providerId: targetProvider.id, planId: row.plan_id, planName: plan.name, providerName: targetProvider.companyName, amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
+  const created = result.rows.length > 0;
+  const row = created
+    ? result.rows[0]
+    : await queryOne("SELECT * FROM invoices WHERE generation_key = $1", [options.generationKey]);
+  if (!row) throw new Error("Invoice idempotency lookup failed after a duplicate key.");
+  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: plan.name, providerName: targetProvider.companyName, amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes, created };
 }
 
 async function generateSubInvoiceNumber(): Promise<string> {

@@ -4128,7 +4128,15 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
     pid = Number(providerId);
   }
   if (planId !== undefined && !isStr(planId)) { res.status(400).json({ error: "Plan ID must be a valid string." }); return; }
-  const invoice = await generateProviderInvoice(pid, planId || "starter");
+  const { periodType, periodStart, dueDate, generationKey } = req.body || {};
+  if (periodType !== undefined && periodType !== "monthly" && periodType !== "annual") { res.status(400).json({ error: "Period type must be monthly or annual." }); return; }
+  const validDate = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !isNaN(new Date(`${value}T00:00:00.000Z`).getTime()) && new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
+  if (periodStart !== undefined && !validDate(periodStart)) { res.status(400).json({ error: "Period start must be a valid ISO date." }); return; }
+  if (dueDate !== undefined && !validDate(dueDate)) { res.status(400).json({ error: "Due date must be a valid ISO date." }); return; }
+  if (generationKey !== undefined && (typeof generationKey !== "string" || !/^cp-renewal-client-\d+-due-\d{4}-\d{2}-\d{2}$/.test(generationKey))) {
+    res.status(400).json({ error: "Generation key is invalid." }); return;
+  }
+  const invoice = await generateProviderInvoice(pid, planId || "starter", { periodType, periodStart, dueDate, generationKey });
   if (!invoice) { res.status(400).json({ error: "Could not generate invoice. Plan not found." }); return; }
   try {
     const settings = await getSettings();
@@ -4142,16 +4150,18 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
       invoice.dueDate || "",
       dashboardUrl
     );
-    await notify({
-      event: "invoice.created",
-      entityType: "invoice",
-      entityId: invoice.id,
-      subject,
-      bodyText: `Invoice ${invoice.invoiceNumber || invoice.id} generated (${invoice.currency || settings.currency || "KES"} ${invoice.amount}).`,
-      bodyHtml: html,
-    });
+    if (invoice.created || generationKey) {
+      await notify({
+        event: "invoice.created",
+        entityType: "invoice",
+        entityId: invoice.id,
+        subject,
+        bodyText: `Invoice ${invoice.invoiceNumber || invoice.id} generated (${invoice.currency || settings.currency || "KES"} ${invoice.amount}).`,
+        bodyHtml: html,
+      });
+    }
   } catch (_err: any) { console.warn("[invoice] notification failed:", _err?.message || _err); }
-  res.status(201).json(invoice);
+  res.status(invoice.created ? 201 : 200).json(invoice);
 }));
 
 app.post("/api/admin/invoices/:id/pay", allowControlPlane(ownerAuthMiddleware), requirePermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {

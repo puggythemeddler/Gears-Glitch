@@ -3297,11 +3297,13 @@
         const data = await api("/api/clients/" + clientId + "/invoices");
         const invoices = data.invoices || [];
         const stats = data.stats;
+        const mpesaConfigured = data.mpesaConfigured === true;
         if (!invoices.length) {
           el.innerHTML = '<div class="empty"><p>No subscription invoices yet. Generate one for this client.</p></div>';
           return;
         }
         let html = '';
+        if (!mpesaConfigured) html += '<div style="margin-bottom:1rem;padding:0.75rem 1rem;border:1px solid var(--border);border-radius:0.5rem;color:var(--text-muted)">M-Pesa sandbox setup is pending. Configure Daraja sandbox values on the Control Plane service to enable payment prompts.</div>';
         if (stats) {
           html += `<div style="display:flex;gap:1rem;margin-bottom:1rem;font-size:0.85rem;flex-wrap:wrap"><span>Total: <strong>${stats.total}</strong></span><span style="color:var(--success-strong)">Paid: <strong>${stats.paid}</strong></span><span style="color:var(--warning-strong)">Pending: <strong>${stats.pending}</strong></span><span style="color:var(--danger-strong)">Overdue: <strong>${stats.overdue}</strong></span></div>`;
         }
@@ -3316,17 +3318,60 @@
             <td><span class="badge ${statusClass}">${inv.status}</span></td>
             <td><div class="actions-cell">
               ${inv.status !== 'paid' ? '<button class="btn btn-success btn-sm" onclick="payClientInvoice(' + clientId + ',' + inv.id + ')">Pay</button>' : ''}
+              ${mpesaConfigured && ['pending','overdue'].includes(String(inv.status).toLowerCase()) ? '<button class="btn btn-primary btn-sm" onclick="requestMpesaPayment(' + Number(clientId) + ',' + Number(inv.id) + ',' + Number(inv.amount || 0) + ')">M-Pesa</button>' : ''}
               <button class="btn btn-ghost btn-sm" onclick="viewClientInvoice(' + clientId + ',' + inv.id + ')">View</button>
               <button class="btn btn-ghost btn-sm" onclick="downloadClientInvoicePdf(' + clientId + ',' + inv.id + ')">PDF</button>
               <button class="btn btn-primary btn-sm" onclick="emailClientInvoice(' + clientId + ',' + inv.id + ')">Email</button>
+              <div id="mpesa-status-${clientId}-${inv.id}" style="width:100%;font-size:0.78rem;color:var(--text-muted)"></div>
             </div></td>
           </tr>`;
         }
         html += '</tbody></table>';
         el.innerHTML = html;
+        refreshMpesaStatuses(clientId, invoices);
       } catch {
         el.innerHTML = '<div class="empty"><p>Failed to load invoices.</p></div>';
       }
+    }
+
+    async function refreshMpesaStatuses(clientId, invoices) {
+      await Promise.all(invoices.map(async inv => {
+        const el = document.getElementById(`mpesa-status-${clientId}-${inv.id}`);
+        if (!el) return;
+        try {
+          const data = await api(`/api/clients/${clientId}/invoices/${inv.id}/mpesa`);
+          const attempt = data.attempt;
+          if (!attempt) return;
+          const messages = {
+            initiating: "Preparing M-Pesa request…",
+            pending: `Prompt sent to ••••${attempt.phone_last4}; waiting for payment`,
+            payment_confirmed: "Payment confirmed; applying it to the invoice…",
+            complete: `M-Pesa payment complete${attempt.receipt_number ? ` · ${attempt.receipt_number}` : ""}`,
+            failed: "M-Pesa request was declined or cancelled",
+            initiation_unknown: "M-Pesa request needs review before retrying",
+            needs_review: "M-Pesa callback received; admin review required",
+          };
+          el.textContent = messages[attempt.status] || "M-Pesa payment status unavailable";
+        } catch {}
+      }));
+    }
+
+    function requestMpesaPayment(clientId, invoiceId, amount) {
+      const phone = window.prompt("Enter the customer's Kenyan M-Pesa number (for example, 07XXXXXXXX):");
+      if (!phone || !phone.trim()) return;
+      confirmDialog({
+        title: "Send M-Pesa payment prompt?",
+        message: `Send a KES ${Number(amount).toLocaleString()} STK prompt for invoice #${invoiceId}?`,
+        detail: "The customer must approve the prompt on their phone. The invoice is marked paid only after a successful Daraja callback is matched.",
+        confirmLabel: "Send STK prompt",
+        onConfirm: async () => {
+          try {
+            const data = await api(`/api/clients/${clientId}/invoices/${invoiceId}/mpesa`, { method: "POST", body: JSON.stringify({ phone: phone.trim() }) });
+            toast(data.message || `M-Pesa prompt sent to ••••${data.phoneLast4}.`);
+            await loadClientInvoices(clientId);
+          } catch (e) { toast("M-Pesa request failed: " + e.message, "error"); }
+        }
+      });
     }
 
     async function generateClientInvoice() {
