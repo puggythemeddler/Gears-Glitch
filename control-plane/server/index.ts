@@ -1972,6 +1972,7 @@ app.get("/api/clients/:id/invoices", requireAuth, requireAdmin, async (req, res)
 });
 
 app.post("/api/clients/:id/invoices/generate", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
+  const requestId = crypto.randomUUID();
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
@@ -1979,15 +1980,35 @@ app.post("/api/clients/:id/invoices/generate", destructiveLimiter, requireAuth, 
 
     const r = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
       method: "POST",
-      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json", "X-Request-ID": requestId }),
       body: JSON.stringify({ providerId: 1, planId: client.plan, ...req.body }),
+      signal: AbortSignal.timeout(30000),
     });
-    const data: any = await r.json();
-    if (!r.ok) { res.status(r.status).json(data); return; }
+    const responseText = await r.text();
+    let data: any = {};
+    try { data = responseText ? JSON.parse(responseText) : {}; }
+    catch {
+      console.error("[api] Client invoice service returned a non-JSON response", { requestId, clientId: client.id, status: r.status });
+      res.status(502).json({ error: "Client invoice service returned an invalid response.", requestId });
+      return;
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      console.error("[api] Client invoice service returned an unexpected JSON shape", { requestId, clientId: client.id, status: r.status });
+      res.status(502).json({ error: "Client invoice service returned an invalid response.", requestId });
+      return;
+    }
+    if (!r.ok) {
+      console.error("[api] Client invoice service rejected generation", { requestId, clientId: client.id, status: r.status });
+      res.status(r.status).json({ ...data, requestId });
+      return;
+    }
     await auditLog(req, "generate_invoice", "client", client.id, client.name, `Generated invoice ${data?.invoiceNumber || data?.id || ""} for plan ${client.plan}`);
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to generate invoice" });
+    const errorName = err instanceof Error ? err.name : "UnknownError";
+    const errorCode = typeof err?.cause?.code === "string" ? err.cause.code : undefined;
+    console.error("[api] Client invoice proxy failed", { requestId, clientId: req.params.id, errorName, ...(errorCode ? { errorCode } : {}) });
+    res.status(502).json({ error: "Could not reach the client invoice service.", requestId });
   }
 });
 
