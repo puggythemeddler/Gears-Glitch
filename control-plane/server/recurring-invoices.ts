@@ -20,12 +20,15 @@ export interface ExistingInvoice {
   id: number;
   invoiceNumber?: string;
   status: string;
+  createdAt?: string;
 }
 
 export interface GeneratedInvoice {
   id: number;
   invoiceNumber?: string;
   created: boolean;
+  status?: string;
+  createdAt?: string;
 }
 
 export function isRenewalDateInWindow(dueDate: string, now = new Date(), windowDays = 7): boolean {

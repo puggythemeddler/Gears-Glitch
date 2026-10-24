@@ -3066,6 +3066,14 @@ async function markInvoicePaid(id: number): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
+async function deleteUnpaidInvoice(id: number): Promise<boolean> {
+  const result = await query(
+    "DELETE FROM invoices WHERE id = $1 AND status IN ('pending', 'overdue')",
+    [id]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 async function generateProviderInvoice(providerId: number | null | undefined, planId: string, options: { periodType?: "monthly" | "annual"; periodStart?: string; dueDate?: string; generationKey?: string } = {}): Promise<(Invoice & { created: boolean }) | null> {
   const plan = await getSubscriptionPlan(planId);
   if (!plan) return null;
@@ -4612,7 +4620,7 @@ export {
   createRefund, listRefunds, getRefundTotal, cancelOrderItemQuantity,
   createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, updateOrderMpesaStatus, getOrderByCheckoutRequest, cancelOrderItem, confirmOrderPayment, releaseOrderHeldStock, holdStockForOrder, isOrderStockHeld,
   recordProductView, getPopularProducts, getTotalViews,
-  createInvoice, getInvoice, listInvoices, markInvoicePaid, generateProviderInvoice, getInvoiceRevenue, searchInvoices, markOverdueInvoices, getOverdueInvoices, getInvoiceStats, exportInvoicesCsv,
+  createInvoice, getInvoice, listInvoices, markInvoicePaid, deleteUnpaidInvoice, generateProviderInvoice, getInvoiceRevenue, searchInvoices, markOverdueInvoices, getOverdueInvoices, getInvoiceStats, exportInvoicesCsv,
   getEtimsMode, generateEtimsInvoiceNumber, createEtimsSalesTransaction,
   createOrderInvoice, listOrderInvoices, markOrderInvoicePaid,
   createCreditNote, submitCreditNoteToEtims, getCreditNote, listCreditNotes,

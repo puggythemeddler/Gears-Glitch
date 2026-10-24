@@ -1549,6 +1549,28 @@
       });
     }
 
+    async function extendClientUsage(id) {
+      const raw = window.prompt("How many days should be added? Enter a whole number from 1 to 365.");
+      if (raw === null) return;
+      const days = Number(raw.trim());
+      if (!Number.isSafeInteger(days) || days < 1 || days > 365) { toast("Enter a whole number from 1 to 365.", "error"); return; }
+      const client = allClients.find(x => x.id === id);
+      confirmDialog({
+        title: "Extend client usage?",
+        message: `Add ${days} day${days === 1 ? "" : "s"} for ${client ? client.name : "this client"}?`,
+        detail: "The extension is recorded in the Control Plane audit log. If the client is suspended, use Resume separately after reviewing the account.",
+        confirmLabel: "Extend usage",
+        onConfirm: async () => {
+          try {
+            const data = await api("/api/clients/" + id + "/extend-usage", { method: "POST", body: JSON.stringify({ days }) });
+            toast(`Usage extended by ${days} day${days === 1 ? "" : "s"}, through ${new Date(data.expires).toLocaleDateString()}.`);
+            await loadClients();
+            if (currentDetailClientId === id) await viewClientDetails(id);
+          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
+        }
+      });
+    }
+
     async function redeployClient(id) {
       confirmDialog({
         title: "Redeploy client?",
@@ -3268,6 +3290,8 @@
       } else {
         subHtml += '<div style="color:var(--text-muted)">No expiry date set. Edit client to set one.</div>';
       }
+      subHtml += `<div style="margin-top:1rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap"><button class="btn btn-primary btn-sm" data-admin onclick="extendClientUsage(${Number(c.id)})">Extend usage</button><span style="font-size:0.8rem;color:var(--text-muted)">Add 1–365 days to the expiry and any unpaid-proforma deactivation deadline. Suspended services still need the Resume action.</span></div>`;
+      subHtml += '<p style="margin:0.75rem 0 0;font-size:0.8rem;color:var(--text-muted)">New unpaid proformas receive a payment reminder after 7 days. Service suspension follows 3 days after that reminder if payment is still not recorded.</p>';
       subHtml += '</div>';
       document.getElementById("detail-subscription").innerHTML = subHtml;
 
@@ -3317,11 +3341,12 @@
             <td>${inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}</td>
             <td><span class="badge ${statusClass}">${inv.status}</span></td>
             <td><div class="actions-cell">
-              ${inv.status !== 'paid' ? '<button class="btn btn-success btn-sm" onclick="payClientInvoice(' + clientId + ',' + inv.id + ')">Pay</button>' : ''}
+              ${inv.status !== 'paid' ? '<button class="btn btn-success btn-sm" onclick="payClientInvoice(' + clientId + ',' + inv.id + ')">Mark paid</button>' : ''}
               ${mpesaConfigured && ['pending','overdue'].includes(String(inv.status).toLowerCase()) ? '<button class="btn btn-primary btn-sm" onclick="requestMpesaPayment(' + Number(clientId) + ',' + Number(inv.id) + ',' + Number(inv.amount || 0) + ')">M-Pesa</button>' : ''}
               <button class="btn btn-ghost btn-sm" onclick="viewClientInvoice(${Number(clientId)},${Number(inv.id)})">View</button>
               <button class="btn btn-ghost btn-sm" onclick="downloadClientInvoicePdf(${Number(clientId)},${Number(inv.id)})">PDF</button>
               <button class="btn btn-primary btn-sm" title="Email the ${['pending','overdue'].includes(String(inv.status).toLowerCase()) ? 'proforma invoice' : 'invoice'} as a PDF" onclick="emailClientInvoice(${Number(clientId)},${Number(inv.id)})">Email PDF</button>
+              ${['pending','overdue'].includes(String(inv.status).toLowerCase()) ? '<button class="btn btn-danger btn-sm" title="Delete this unpaid proforma" onclick="deleteClientInvoice(' + Number(clientId) + ',' + Number(inv.id) + ')">Delete</button>' : ''}
               <div id="mpesa-status-${clientId}-${inv.id}" style="width:100%;font-size:0.78rem;color:var(--text-muted)"></div>
             </div></td>
           </tr>`;
@@ -3493,12 +3518,16 @@
     function payClientInvoice(clientId, invId) {
       confirmDialog({
         title: "Mark invoice as paid?",
-        message: "Record this invoice as fully paid?",
+        message: "Confirm that payment for this proforma has been received in full?",
+        detail: "This converts PR-Inv… to Inv…, records the payment, extends the subscription, and resumes a suspended client. Only confirm after payment is verified.",
         confirmLabel: "Mark paid",
         onConfirm: async () => {
           try {
-            await api("/api/clients/" + clientId + "/invoices/" + invId + "/pay", { method: "POST" });
-            toast("Invoice marked as paid."); loadClientInvoices(clientId);
+            const result = await api("/api/clients/" + clientId + "/invoices/" + invId + "/pay", { method: "POST" });
+            toast("Invoice marked paid. Subscription extended through " + new Date(result.nextPaymentDate).toLocaleDateString() + ".");
+            await loadClients();
+            if (currentDetailClientId === clientId) await viewClientDetails(clientId);
+            else await loadClientInvoices(clientId);
           } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });
@@ -3542,6 +3571,22 @@
         if (data.sent) toast((data.documentType || "Invoice") + " PDF emailed to " + (data.to || "client") + "!");
         else toast("Failed: " + (data.error || "Email not sent."), "error");
       } catch (e) { toast("Failed: " + e.message, "error"); }
+    }
+
+    function deleteClientInvoice(clientId, invId) {
+      confirmDialog({
+        title: "Delete unpaid proforma?",
+        message: `Permanently delete proforma #${invId}? This cannot be undone. Paid invoices and invoices with payment history are retained.`,
+        confirmLabel: "Delete Proforma",
+        danger: true,
+        onConfirm: async () => {
+          try {
+            await api("/api/clients/" + clientId + "/invoices/" + invId, { method: "DELETE" });
+            toast("Proforma deleted.");
+            loadClientInvoices(clientId);
+          } catch (e) { toast("Failed: " + e.message, "error"); }
+        }
+      });
     }
 
     // ─── PAYMENT REMINDERS ─────────────────────────────────

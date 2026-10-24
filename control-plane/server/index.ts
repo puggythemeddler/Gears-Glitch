@@ -18,6 +18,7 @@ import { evaluateForClient, expireSupportAndMaintenance } from "./ops";
 import { registerOpsRoutes } from "./ops-routes";
 import { createCallbackToken, getDarajaConfig, hashCallbackToken, initiateSandboxStkPush, normalizeKenyanPhone } from "./daraja";
 import { processRenewalInvoiceCandidate, type RenewalInvoiceCandidate } from "./recurring-invoices";
+import { isValidUsageExtensionDays, paidProformaRenewal, proformaFollowupSchedule } from "./proforma-followups";
 import {
   provisionClient,
   deployAllClients,
@@ -219,6 +220,239 @@ function auditLog(req: any, action: string, targetType: string, targetId?: numbe
 
 function esc(value: any): string {
   return String(value ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m] as string);
+}
+
+async function trackProformaFollowup(clientId: number, invoice: any): Promise<void> {
+  const status = String(invoice?.status || "").toLowerCase();
+  const invoiceNumber = String(invoice?.invoiceNumber || "");
+  if (!Number.isSafeInteger(clientId) || clientId <= 0 || !Number.isSafeInteger(Number(invoice?.id)) ||
+      !/^PR-Inv\d+$/.test(invoiceNumber) || !["pending", "overdue"].includes(status)) return;
+
+  const schedule = proformaFollowupSchedule(invoice.createdAt || new Date());
+  if (!schedule) return;
+  const createdAt = invoice.createdAt ? new Date(invoice.createdAt) : new Date();
+  // Do not enroll legacy open invoices on a retry or manual re-open. New
+  // invoices created through this release are tracked immediately.
+  if (invoice.created !== true && Date.now() - createdAt.getTime() > 15 * 60 * 1000) return;
+  await query(
+    `INSERT INTO proforma_followups (client_id, invoice_id, invoice_number, warning_due_at)
+     VALUES ($1, $2, $3, $4) ON CONFLICT (client_id, invoice_id) DO NOTHING`,
+    [clientId, Number(invoice.id), invoiceNumber, schedule.warningDueAt]
+  );
+}
+
+async function getTrackedInvoice(client: any, invoiceId: number): Promise<any | null> {
+  if (!client?.render_service_url || !client?.cp_secret) throw new Error("Client invoice service is unavailable.");
+  const response = await fetch(`${client.render_service_url}/api/admin/invoices`, {
+    headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) throw new Error(`Invoice lookup returned HTTP ${response.status}.`);
+  const payload: any = await response.json();
+  if (!Array.isArray(payload?.invoices)) throw new Error("Client invoice service returned an invalid list.");
+  return payload.invoices.find((invoice: any) => Number(invoice.id) === invoiceId) || null;
+}
+
+let proformaFollowupRunActive = false;
+async function reconcilePaidProforma(row: any, invoice: any): Promise<void> {
+  const clientId = Number(row.client_id);
+  const invoiceId = Number(row.invoice_id);
+  const amount = Number(invoice?.amount);
+  if (!Number.isSafeInteger(clientId) || clientId <= 0 || !Number.isSafeInteger(invoiceId) || invoiceId <= 0 || !Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Paid proforma has invalid identifiers or amount.");
+  }
+
+  const renewal = paidProformaRenewal(invoice.periodStart, invoice.periodEnd, row.subscription_expires);
+  const nextExpiry = renewal.expiresAt;
+  const nextPaymentDate = renewal.nextPaymentDate;
+  const invoiceNumber = String(invoice.invoiceNumber || row.invoice_number || `invoice ${invoiceId}`).slice(0, 100);
+  const paymentReference = `proforma-reconcile-${clientId}-${invoiceId}`;
+
+  // A stable reference and the invoice-existence check prevent repeated sweeps
+  // from adding duplicate payments or extending the subscription more than once.
+  await query(
+    `WITH existing_payment AS (
+       SELECT id FROM client_payments WHERE client_id = $1 AND invoice_id = $2 LIMIT 1
+     ), inserted_payment AS (
+       INSERT INTO client_payments (client_id, invoice_id, amount, period_type, due_date, notes, payment_method, payment_reference)
+       SELECT $1, $2, $3, $4, $5, $6, 'client-reconciled', $7
+       WHERE NOT EXISTS (SELECT 1 FROM existing_payment)
+       ON CONFLICT (payment_reference) WHERE payment_reference <> '' DO NOTHING
+       RETURNING id
+     ), updated_client AS (
+       UPDATE clients SET subscription_expires = $8, next_payment_date = $5
+       WHERE id = $1 AND EXISTS (SELECT 1 FROM inserted_payment)
+       RETURNING id
+     )
+     UPDATE proforma_followups SET status = 'paid', last_error = '', updated_at = NOW()
+     WHERE client_id = $1 AND invoice_id = $2 AND status IN ('warning_pending', 'warned')`,
+    [clientId, invoiceId, amount, renewal.periodType, nextPaymentDate,
+      `Payment detected on client service for ${invoiceNumber}`, paymentReference, nextExpiry]
+  );
+
+  await query("UPDATE cp_notifications SET read = true WHERE read = false AND client_id = $1 AND type IN ('payment_due', 'payment_overdue')", [clientId]);
+  if (row.client_status === "suspended") {
+    await resumeClientRecord(row);
+    await logAudit(0, "system", "auto_resume_client", "client", clientId, row.client_name, `Resumed after payment was detected for ${invoiceNumber}`);
+  }
+  await logAudit(0, "system", "paid_proforma_reconciled", "client", clientId, row.client_name, `${invoiceNumber} was marked paid on the client service; subscription reconciled through ${nextPaymentDate}`);
+}
+
+async function processProformaFollowups(now = new Date()): Promise<void> {
+  if (proformaFollowupRunActive) return;
+  proformaFollowupRunActive = true;
+  try {
+    // Recover claims left behind by a process crash. SMTP delivery is at-least-once
+    // in that rare case; normal runs claim each reminder atomically.
+    await query(`UPDATE proforma_followups SET status = 'warning_pending', updated_at = NOW()
+      WHERE status = 'warning_sending' AND updated_at < NOW() - INTERVAL '15 minutes'`);
+    await query(`UPDATE proforma_followups SET status = 'warned', updated_at = NOW()
+      WHERE status = 'suspending' AND updated_at < NOW() - INTERVAL '15 minutes'`);
+
+    const dueRows = await queryAll(
+      `SELECT f.*, c.name AS client_name, c.admin_email, c.status AS client_status,
+              c.render_service_url, c.render_service_id, c.cp_secret, c.subscription_expires
+       FROM proforma_followups f JOIN clients c ON c.id = f.client_id
+       WHERE f.status IN ('warning_pending', 'warned')
+         AND (f.updated_at <= $1 - INTERVAL '5 minutes'
+              OR f.warning_due_at <= $1
+              OR f.suspend_due_at <= $1)
+       ORDER BY f.updated_at ASC LIMIT 100`, [now]
+    ) as any[];
+
+    for (const row of dueRows) {
+      try {
+        let invoice = await getTrackedInvoice(row, Number(row.invoice_id));
+        if (!invoice) {
+          await query("UPDATE proforma_followups SET status = 'cancelled', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status IN ('warning_pending','warned')", [row.client_id, row.invoice_id]);
+          continue;
+        }
+        const invoiceStatus = String(invoice.status || "").toLowerCase();
+        if (invoiceStatus === "paid") {
+          await reconcilePaidProforma(row, invoice);
+          continue;
+        }
+        if (!["pending", "overdue"].includes(invoiceStatus)) {
+          await query("UPDATE proforma_followups SET status = 'cancelled', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status IN ('warning_pending','warned')", [row.client_id, row.invoice_id]);
+          continue;
+        }
+
+        const warningDueAt = row.warning_due_at ? new Date(row.warning_due_at) : null;
+        const suspendDueAt = row.suspend_due_at ? new Date(row.suspend_due_at) : null;
+        if (row.status === "warning_pending" && warningDueAt && warningDueAt > now) {
+          await query("UPDATE proforma_followups SET updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status = 'warning_pending'", [row.client_id, row.invoice_id]);
+          continue;
+        }
+        if (row.status === "warned" && suspendDueAt && suspendDueAt > now) {
+          await query("UPDATE proforma_followups SET updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status = 'warned'", [row.client_id, row.invoice_id]);
+          continue;
+        }
+
+        if (row.status === "warning_pending") {
+          if (!row.admin_email) throw new Error("Client billing email is not configured.");
+          const claimed = await query(
+            `UPDATE proforma_followups SET status = 'warning_sending', last_error = '', updated_at = NOW()
+             WHERE client_id = $1 AND invoice_id = $2 AND status = 'warning_pending' RETURNING client_id`,
+            [row.client_id, row.invoice_id]
+          );
+          if (!claimed.rowCount) continue;
+
+          // Recheck immediately before sending to avoid warning after payment.
+          invoice = await getTrackedInvoice(row, Number(row.invoice_id));
+          if (!invoice) {
+            await query("UPDATE proforma_followups SET status = 'cancelled', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status = 'warning_sending'", [row.client_id, row.invoice_id]);
+            continue;
+          }
+          if (String(invoice.status || "").toLowerCase() === "paid") {
+            await query("UPDATE proforma_followups SET status = 'warned', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status = 'warning_sending'", [row.client_id, row.invoice_id]);
+            await reconcilePaidProforma(row, invoice);
+            continue;
+          }
+          if (!["pending", "overdue"].includes(String(invoice.status || "").toLowerCase())) {
+            await query("UPDATE proforma_followups SET status = 'cancelled', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status = 'warning_sending'", [row.client_id, row.invoice_id]);
+            continue;
+          }
+          const warningState = await queryOne("SELECT status FROM proforma_followups WHERE client_id = $1 AND invoice_id = $2", [row.client_id, row.invoice_id]);
+          if (warningState?.status !== "warning_sending") continue;
+          const smtp = await getSmtpTransport();
+          if (!smtp) throw new Error("Control Plane email is not configured.");
+          const number = String(invoice.invoiceNumber || row.invoice_number);
+          const amount = `${esc(invoice.currency || "KES")} ${Number(invoice.amount || 0).toLocaleString("en-KE")}`;
+          const planName = esc(invoice.planName || invoice.planId || "subscription");
+          const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("en-KE", { dateStyle: "long" }) : "";
+          const subject = `Payment reminder: proforma ${number}`;
+          const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#1f2937">
+            <h2>Payment reminder</h2><p>Hello ${esc(row.client_name)},</p>
+            <p>Our records show that proforma <strong>${esc(number)}</strong> for your ${planName} subscription is still unpaid.</p>
+            <p><strong>Amount:</strong> ${amount}${dueDate ? `<br><strong>Due date:</strong> ${esc(dueDate)}` : ""}</p>
+            <p>Please arrange payment within three days of this notice. If payment is not recorded by then, your service will be deactivated automatically. If you have already paid, please contact us so we can reconcile it.</p>
+            <p>Regards,<br>Gear&amp;Glitch</p></div>`;
+          await smtp.transporter.sendMail({
+            from: `"${smtp.fromName}" <${smtp.fromEmail}>`, to: row.admin_email, subject, html,
+          });
+          await query(
+            `UPDATE proforma_followups SET status = 'warned', warning_sent_at = NOW(),
+               suspend_due_at = NOW() + INTERVAL '3 days' + (extension_days * INTERVAL '1 day'),
+               last_error = '', updated_at = NOW()
+             WHERE client_id = $1 AND invoice_id = $2 AND status = 'warning_sending'`,
+            [row.client_id, row.invoice_id]
+          );
+          await logAudit(0, "system", "proforma_payment_warning_sent", "client", Number(row.client_id), row.client_name, `Reminder sent for ${number}; service deactivation is scheduled after the three-day grace period.`);
+          continue;
+        }
+
+        const due = row.suspend_due_at ? new Date(row.suspend_due_at) : null;
+        if (!due || !Number.isFinite(due.getTime()) || due > now) continue;
+        const claimed = await query(
+          `UPDATE proforma_followups SET status = 'suspending', updated_at = NOW()
+           WHERE client_id = $1 AND invoice_id = $2 AND status = 'warned' RETURNING client_id`,
+          [row.client_id, row.invoice_id]
+        );
+        if (!claimed.rowCount) continue;
+        // Verify payment again after claiming the suspension action.
+        invoice = await getTrackedInvoice(row, Number(row.invoice_id));
+        if (!invoice) {
+          await query("UPDATE proforma_followups SET status = 'cancelled', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status = 'suspending'", [row.client_id, row.invoice_id]);
+          continue;
+        }
+        if (String(invoice.status || "").toLowerCase() === "paid") {
+          await query("UPDATE proforma_followups SET status = 'warned', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status = 'suspending'", [row.client_id, row.invoice_id]);
+          await reconcilePaidProforma(row, invoice);
+          continue;
+        }
+        if (!["pending", "overdue"].includes(String(invoice.status || "").toLowerCase())) {
+          await query("UPDATE proforma_followups SET status = 'cancelled', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status = 'suspending'", [row.client_id, row.invoice_id]);
+          continue;
+        }
+        const suspensionState = await queryOne("SELECT status FROM proforma_followups WHERE client_id = $1 AND invoice_id = $2", [row.client_id, row.invoice_id]);
+        if (suspensionState?.status !== "suspending") continue;
+        if (row.client_status !== "suspended") {
+          await suspendClientRecord(row, `Unpaid proforma ${row.invoice_number} remained unpaid three days after the payment warning`);
+        }
+        await query("UPDATE proforma_followups SET status = 'suspended', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status = 'suspending'", [row.client_id, row.invoice_id]);
+        await query(
+          `INSERT INTO cp_notifications (type, title, body, severity, client_id, client_name, dedupe_key)
+           VALUES ('client_suspended', 'Client deactivated for unpaid proforma', $1, 'warning', $2, $3, $4)
+           ON CONFLICT (dedupe_key) DO NOTHING`,
+          [`${row.client_name} was deactivated after proforma ${row.invoice_number} remained unpaid through the three-day warning period.`, row.client_id, row.client_name, `unpaid-proforma-suspended:${row.client_id}:${row.invoice_id}`]
+        );
+        await logAudit(0, "system", "client_deactivated_unpaid_proforma", "client", Number(row.client_id), row.client_name, `Proforma ${row.invoice_number} unpaid three days after warning.`);
+      } catch (error: any) {
+        const message = String(error?.message || "Follow-up processing failed").slice(0, 500);
+        console.warn(`[proforma-followup] Client ${row.client_id}, invoice ${row.invoice_id}: ${message}`);
+        await query(
+          `UPDATE proforma_followups SET
+             status = CASE WHEN status = 'warning_sending' THEN 'warning_pending' WHEN status = 'suspending' THEN 'warned' ELSE status END,
+             last_error = $3, updated_at = NOW()
+           WHERE client_id = $1 AND invoice_id = $2`,
+          [row.client_id, row.invoice_id, message]
+        ).catch(() => {});
+      }
+    }
+  } catch (error: any) {
+    console.warn("[proforma-followup] Sweep failed:", error?.message || "unknown error");
+  } finally {
+    proformaFollowupRunActive = false;
+  }
 }
 
 // ─── TOTP 2FA HELPERS ─────────────────────────────────────
@@ -1154,6 +1388,7 @@ app.post("/api/health-check", requireAuth, requireAdmin, async (_req, res) => {
 
     await enforceUsageLimits();
     await enforceSubscriptionPayments();
+    await processProformaFollowups();
     await expireSupportAndMaintenance();
     await aggregateUsageForClients(clients as any[]);
     await refreshNotifications();
@@ -1192,6 +1427,39 @@ app.put("/api/clients/:id/resume", destructiveLimiter, requireAdmin, async (req,
   } catch (err: any) {
     console.error("[api] Resume error:", err.message);
     res.status(500).json({ error: "Failed to resume client" });
+  }
+});
+
+app.post("/api/clients/:id/extend-usage", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const clientId = Number(req.params.id);
+    const days = req.body?.days;
+    if (!Number.isSafeInteger(clientId) || clientId <= 0) { res.status(400).json({ error: "Invalid client." }); return; }
+    if (!isValidUsageExtensionDays(days)) { res.status(400).json({ error: "Extension must be a whole number of days from 1 to 365." }); return; }
+
+    const client = await queryOne("SELECT id, name, status, subscription_expires FROM clients WHERE id = $1", [clientId]) as any;
+    if (!client) { res.status(404).json({ error: "Client not found." }); return; }
+    const now = new Date();
+    const currentExpiry = client.subscription_expires ? new Date(client.subscription_expires) : null;
+    const base = currentExpiry && Number.isFinite(currentExpiry.getTime()) && currentExpiry > now ? currentExpiry : now;
+    const newExpiry = new Date(base.getTime() + days * 86400000);
+    const nextPaymentDate = newExpiry.toISOString().slice(0, 10);
+    await query(
+      `WITH updated_client AS (
+         UPDATE clients SET subscription_expires = $1, next_payment_date = $2 WHERE id = $3 RETURNING id
+       )
+       UPDATE proforma_followups SET extension_days = extension_days + $4,
+         status = CASE WHEN status = 'suspending' THEN 'warned' ELSE status END,
+         suspend_due_at = CASE WHEN suspend_due_at IS NULL THEN NULL ELSE suspend_due_at + ($4 * INTERVAL '1 day') END,
+         updated_at = NOW()
+       WHERE client_id = (SELECT id FROM updated_client) AND status IN ('warning_pending', 'warning_sending', 'warned', 'suspending')`,
+      [newExpiry, nextPaymentDate, clientId, days]
+    );
+    await auditLog(req, "extend_client_usage", "client", clientId, client.name, `Extended by ${days} day(s) to ${nextPaymentDate}`);
+    res.json({ ok: true, days, expires: newExpiry.toISOString(), nextPaymentDate, remainsSuspended: client.status === "suspended" });
+  } catch (err: any) {
+    console.error("[api] Extend usage error:", err.message);
+    res.status(500).json({ error: "Failed to extend client usage." });
   }
 });
 
@@ -1934,6 +2202,7 @@ app.post("/api/mpesa/stk-callback/:token", async (req, res) => {
       [newExpiry, nextPaymentDate, client.id]
     );
     await query("UPDATE mpesa_payment_attempts SET status = 'complete', updated_at = NOW() WHERE id = $1 AND status = 'payment_confirmed'", [attempt.id]);
+    await query("UPDATE proforma_followups SET status = 'paid', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status NOT IN ('paid','cancelled')", [client.id, attempt.invoice_id]);
     await query("UPDATE cp_notifications SET read = true WHERE read = false AND client_id = $1 AND type IN ('payment_due', 'payment_overdue')", [client.id]);
     await logAudit(0, "daraja-callback", "mpesa_payment_complete", "client", client.id, client.name, `Invoice ${attempt.invoice_number}; receipt ${receipt}`);
     if (client.status === "suspended") {
@@ -2013,6 +2282,12 @@ app.post("/api/clients/:id/invoices/generate", destructiveLimiter, requireAuth, 
       res.status(r.status).json({ ...data, requestId });
       return;
     }
+    try { await trackProformaFollowup(Number(client.id), data); }
+    catch (error: any) {
+      console.error("[api] Proforma follow-up tracking failed", { requestId, clientId: client.id, invoiceId: data?.id, errorName: error instanceof Error ? error.name : "UnknownError" });
+      res.status(500).json({ error: "Proforma was created, but its payment follow-up could not be scheduled. Contact the Control Plane operator.", requestId });
+      return;
+    }
     await auditLog(req, "generate_invoice", "client", client.id, client.name, `Generated invoice ${data?.invoiceNumber || data?.id || ""} for plan ${client.plan}`);
     res.json(data);
   } catch (err: any) {
@@ -2061,6 +2336,7 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
       headers: cpHeaders(client.cp_secret),
     });
     if (!pay.ok) { res.status(500).json({ error: "Generated invoice but failed to mark paid" }); return; }
+    await query("UPDATE proforma_followups SET status = 'paid', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status NOT IN ('paid','cancelled')", [client.id, Number(invoice.id)]);
     const paidResult: any = await pay.json().catch(() => null);
     if (paidResult?.invoice) Object.assign(invoice, paidResult.invoice);
 
@@ -2195,6 +2471,10 @@ async function generateUpcomingClientInvoices() {
         },
       });
       if (result.status === 'generated') createdCount++;
+      if (result.status === 'generated' && result.invoice) {
+        try { await trackProformaFollowup(Number(client.id), result.invoice); }
+        catch (error: any) { console.warn(`[recurring-invoices] Follow-up scheduling failed for client ${client.id}: ${error?.message || "unknown error"}`); }
+      }
       if (result.status === 'not_billable') {
         console.warn(`[recurring-invoices] Skipped client ${client.id}: the current ${candidate.periodType} plan price is missing or zero.`);
       } else if (result.status === 'open_invoice') {
@@ -2362,12 +2642,96 @@ app.post("/api/clients/:id/invoices/:invId/pay", requireAuth, requireAdmin, asyn
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
 
     const r = await fetch(`${client.render_service_url}/api/admin/invoices/${req.params.invId}/pay`, { method: "POST", headers: cpHeaders(client.cp_secret) });
-    const data = await r.json();
+    const data: any = await r.json();
     if (!r.ok) { res.status(r.status).json(data); return; }
-    await auditLog(req, "mark_invoice_paid", "client", client.id, client.name, `Invoice ${req.params.invId} paid`);
+    const invoice = data?.invoice;
+    if (!invoice || Number(invoice.id) !== Number(req.params.invId) || String(invoice.status).toLowerCase() !== "paid") {
+      console.error("[api] Client marked invoice paid but returned an invalid invoice shape", { clientId: client.id, invoiceId: req.params.invId });
+      res.status(502).json({ error: "The client marked the invoice paid, but subscription reconciliation needs operator review." });
+      return;
+    }
+    const amount = Number(invoice.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      res.status(502).json({ error: "The invoice is paid, but its amount is invalid; subscription reconciliation needs operator review." });
+      return;
+    }
+    const now = new Date();
+    const periodStart = /^\d{4}-\d{2}-\d{2}$/.test(String(invoice.periodStart || "")) ? new Date(`${invoice.periodStart}T00:00:00.000Z`) : null;
+    const periodEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(invoice.periodEnd || "")) ? new Date(`${invoice.periodEnd}T00:00:00.000Z`) : null;
+    const periodDays = periodStart && periodEnd && periodEnd > periodStart
+      ? Math.max(1, Math.ceil((periodEnd.getTime() - periodStart.getTime()) / 86400000))
+      : 30;
+    const periodType = periodDays > 180 ? "annual" : "monthly";
+    const currentExpiry = client.subscription_expires ? new Date(client.subscription_expires) : null;
+    const base = currentExpiry && Number.isFinite(currentExpiry.getTime()) && currentExpiry > now ? currentExpiry : now;
+    const nextExpiry = periodEnd && periodEnd > base ? periodEnd : new Date(base.getTime() + periodDays * 86400000);
+    const nextPaymentDate = nextExpiry.toISOString().slice(0, 10);
+    const paymentReference = `manual-invoice-${client.id}-${invoice.id}`;
+    await query(
+      `WITH updated_client AS (
+         UPDATE clients SET subscription_expires = $1, next_payment_date = $2 WHERE id = $3 RETURNING id
+       ), inserted_payment AS (
+         INSERT INTO client_payments (client_id, invoice_id, amount, period_type, due_date, notes, payment_method, payment_reference)
+         SELECT id, $4, $5, $6, $2, $7, 'manual', $8 FROM updated_client
+         ON CONFLICT (payment_reference) WHERE payment_reference <> '' DO NOTHING RETURNING id
+       )
+       UPDATE proforma_followups SET status = 'paid', updated_at = NOW()
+       WHERE client_id = $3 AND invoice_id = $4 AND status NOT IN ('paid','cancelled')
+         AND EXISTS (SELECT 1 FROM inserted_payment)`,
+      [nextExpiry, nextPaymentDate, client.id, Number(invoice.id), amount, periodType,
+        `Control Plane marked ${invoice.invoiceNumber || `invoice ${invoice.id}`} paid`, paymentReference]
+    );
+    await query("UPDATE cp_notifications SET read = true WHERE read = false AND client_id = $1 AND type IN ('payment_due', 'payment_overdue')", [client.id]);
+    if (client.status === "suspended") {
+      await resumeClientRecord(client);
+      await auditLog(req, "auto_resume_client", "client", client.id, client.name, `Resumed after ${invoice.invoiceNumber || `invoice ${invoice.id}`} was marked paid`);
+    }
+    await auditLog(req, "mark_invoice_paid", "client", client.id, client.name, `${invoice.invoiceNumber || invoice.id} paid; ${periodType} subscription extended through ${nextPaymentDate}`);
+    res.json({ ...data, subscriptionExpires: nextExpiry.toISOString(), nextPaymentDate });
+  } catch (err: any) {
+    console.error("[api] Mark invoice paid error:", err.message);
+    res.status(500).json({ error: "Failed to mark invoice paid" });
+  }
+});
+
+app.delete("/api/clients/:id/invoices/:invId", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const clientId = Number(req.params.id);
+    const invoiceId = Number(req.params.invId);
+    if (!Number.isSafeInteger(clientId) || clientId <= 0 || !Number.isSafeInteger(invoiceId) || invoiceId <= 0) {
+      res.status(400).json({ error: "Invalid client or invoice." }); return;
+    }
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [clientId]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+
+    const payment = await queryOne(
+      "SELECT id FROM client_payments WHERE client_id = $1 AND invoice_id = $2 LIMIT 1",
+      [clientId, invoiceId]
+    );
+    if (payment) { res.status(409).json({ error: "This invoice has a payment record and cannot be deleted." }); return; }
+    const mpesaAttempt = await queryOne(
+      "SELECT id FROM mpesa_payment_attempts WHERE client_id = $1 AND invoice_id = $2 LIMIT 1",
+      [clientId, invoiceId]
+    );
+    if (mpesaAttempt) { res.status(409).json({ error: "This invoice has M-Pesa payment history and cannot be deleted." }); return; }
+
+    const response = await fetch(`${client.render_service_url}/api/admin/invoices/${invoiceId}`, {
+      method: "DELETE",
+      headers: cpHeaders(client.cp_secret),
+      signal: AbortSignal.timeout(30000),
+    });
+    const responseText = await response.text();
+    let data: any = {};
+    try { data = responseText ? JSON.parse(responseText) : {}; }
+    catch { res.status(502).json({ error: "Client invoice service returned an invalid response." }); return; }
+    if (!response.ok) { res.status(response.status).json(data); return; }
+    await query("UPDATE proforma_followups SET status = 'cancelled', updated_at = NOW() WHERE client_id = $1 AND invoice_id = $2 AND status NOT IN ('paid','cancelled')", [clientId, invoiceId]);
+    await auditLog(req, "delete_invoice", "client", client.id, client.name, `Deleted unpaid invoice ${invoiceId}`);
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to mark invoice paid" });
+    console.error("[api] Delete client invoice error:", err.message);
+    res.status(502).json({ error: "Could not delete invoice from the client service." });
   }
 });
 
@@ -2662,6 +3026,7 @@ const autoHealthTimer = setInterval(async () => {
     }
     await enforceUsageLimits();
     await enforceSubscriptionPayments();
+    await processProformaFollowups();
     await expireSupportAndMaintenance();
     await aggregateUsageForClients(clients as any[]);
     await refreshNotifications();
