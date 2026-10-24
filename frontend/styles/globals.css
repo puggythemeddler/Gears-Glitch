@@ -590,14 +590,20 @@ code, pre {
   gap: var(--space-1);
   padding: 0 var(--space-5);
   overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
   white-space: nowrap;
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
 
-.main-nav-desktop::-webkit-scrollbar { display: none; }
+.main-nav-desktop::-webkit-scrollbar { height: 4px; }
+.main-nav-desktop::-webkit-scrollbar-track { background: transparent; }
+.main-nav-desktop::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: var(--radius-full);
+}
+.main-nav-desktop::-webkit-scrollbar-thumb:hover { background: var(--primary); }
 
 .main-nav-desktop a,
 .main-nav-desktop button.nav-btn {

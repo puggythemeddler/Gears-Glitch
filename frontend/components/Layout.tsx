@@ -123,7 +123,9 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     return merged;
   })();
 
-  const leftNavLinks = filteredNavLinks.filter((l: any) => !RIGHT_NAV_IDS.has(l.id));
+  // Cart and wishlist already have persistent icon links in the header; avoid
+  // repeating them in the desktop category strip.
+  const leftNavLinks = filteredNavLinks.filter((l: any) => !RIGHT_NAV_IDS.has(l.id) && l.id !== "cart" && l.id !== "wishlist");
   const rightNavLinks = filteredNavLinks.filter((l: any) => RIGHT_NAV_IDS.has(l.id));
 
   // Footer columns honour the owner's saved footer config when present; the
@@ -429,7 +431,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           </button>
         </div>
       </div>
-      <nav className="main-nav-desktop" aria-label="Main">
+      <nav className="main-nav-desktop" aria-label="Shop categories">
         {leftNavLinks.map((link: any) => (
           <Link
             key={link.id}
@@ -438,9 +440,6 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             aria-current={activeNav === link.id ? "page" : undefined}
           >
             {link.label}
-            {link.id === "cart" && cartCount > 0 && (
-              <span className="cart-badge" aria-label="Items in cart">{cartCount}</span>
-            )}
           </Link>
         ))}
       </nav>
