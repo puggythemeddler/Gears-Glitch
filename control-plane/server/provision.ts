@@ -95,6 +95,39 @@ function headers(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
 
+async function setRenderServiceEnvVars(
+  serviceId: string,
+  envVars: Array<{ key: string; value: string }>,
+): Promise<void> {
+  for (const { key, value } of envVars) {
+    const res = await fetch(
+      `https://api.render.com/v1/services/${encodeURIComponent(serviceId)}/env-vars/${encodeURIComponent(key)}`,
+      {
+        method: "PUT",
+        headers: headers(RENDER_API_KEY),
+        body: JSON.stringify({ value }),
+      },
+    );
+    if (!res.ok) {
+      throw new Error(`Failed to set Render environment variable ${key}: HTTP ${res.status}`);
+    }
+  }
+}
+
+async function triggerRenderDeploy(serviceId: string): Promise<void> {
+  const res = await fetch(
+    `https://api.render.com/v1/services/${encodeURIComponent(serviceId)}/deploys`,
+    {
+      method: "POST",
+      headers: headers(RENDER_API_KEY),
+      body: JSON.stringify({ clear_cache: false }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to trigger Render deploy: HTTP ${res.status}`);
+  }
+}
+
 // ─── NEON ────────────────────────────────────────────────
 async function createNeonDatabase(clientName: string) {
   console.log(`[provision] Creating Neon database for "${clientName}"...`);
@@ -248,26 +281,13 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
 
   console.log(`[provision] Render service created: ${serviceId}`);
 
-  // Push env vars via service PATCH (same pattern as pushControlPlaneSecret)
-  const patchRes = await fetch(`https://api.render.com/v1/services/${serviceId}`, {
-    method: "PATCH",
-    headers: headers(RENDER_API_KEY),
-    body: JSON.stringify({
-      envVars: envVars.map((e: any) => ({ key: e.key, value: e.value })),
-    }),
-  });
-  if (!patchRes.ok) {
-    console.error(`[provision] Warning: env var PATCH failed: ${patchRes.status} ${await patchRes.text().catch(() => "")}`);
-  } else {
-    // Trigger deploy so env vars take effect
-    const depRes = await fetch(`https://api.render.com/v1/services/${serviceId}/deploys`, {
-      method: "POST",
-      headers: headers(RENDER_API_KEY),
-      body: JSON.stringify({ clear_cache: false }),
-    });
-    if (!depRes.ok) {
-      console.warn(`[provision] Deploy trigger warning: ${depRes.status}`);
-    }
+  // The Render service PATCH endpoint does not update nested envVars. Update
+  // each key through the dedicated env-var endpoint, then deploy once.
+  try {
+    await setRenderServiceEnvVars(serviceId, envVars);
+    await triggerRenderDeploy(serviceId);
+  } catch (err: any) {
+    console.error(`[provision] Warning: Render environment/deploy update failed: ${err.message}`);
   }
 
   return { serviceId, serviceUrl };
@@ -535,21 +555,8 @@ export function generateCpSecret(): string {
 export async function pushControlPlaneSecret(renderServiceId: string, cpSecret: string): Promise<void> {
   const envVars = [{ key: "CONTROL_PLANE_SECRET", value: cpSecret }];
   if (CONTROL_PLANE_URL) envVars.push({ key: "CONTROL_PLANE_URL", value: CONTROL_PLANE_URL });
-  const res = await fetch(`https://api.render.com/v1/services/${renderServiceId}`, {
-    method: "PATCH",
-    headers: headers(RENDER_API_KEY),
-    body: JSON.stringify({ envVars }),
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Failed to set CONTROL_PLANE_SECRET: ${res.status} ${err}`);
-  }
-  // Redeploy so the new env var takes effect
-  await fetch(`https://api.render.com/v1/services/${renderServiceId}/deploys`, {
-    method: "POST",
-    headers: headers(RENDER_API_KEY),
-    body: JSON.stringify({ clear_cache: false }),
-  });
+  await setRenderServiceEnvVars(renderServiceId, envVars);
+  await triggerRenderDeploy(renderServiceId);
 }
 
 export async function provisionClient(
