@@ -3319,9 +3319,9 @@
             <td><div class="actions-cell">
               ${inv.status !== 'paid' ? '<button class="btn btn-success btn-sm" onclick="payClientInvoice(' + clientId + ',' + inv.id + ')">Pay</button>' : ''}
               ${mpesaConfigured && ['pending','overdue'].includes(String(inv.status).toLowerCase()) ? '<button class="btn btn-primary btn-sm" onclick="requestMpesaPayment(' + Number(clientId) + ',' + Number(inv.id) + ',' + Number(inv.amount || 0) + ')">M-Pesa</button>' : ''}
-              <button class="btn btn-ghost btn-sm" onclick="viewClientInvoice(' + clientId + ',' + inv.id + ')">View</button>
-              <button class="btn btn-ghost btn-sm" onclick="downloadClientInvoicePdf(' + clientId + ',' + inv.id + ')">PDF</button>
-              <button class="btn btn-primary btn-sm" title="Email the ${['pending','overdue'].includes(String(inv.status).toLowerCase()) ? 'proforma invoice' : 'invoice'} as a PDF" onclick="emailClientInvoice(' + clientId + ',' + inv.id + ')">Email PDF</button>
+              <button class="btn btn-ghost btn-sm" onclick="viewClientInvoice(${Number(clientId)},${Number(inv.id)})">View</button>
+              <button class="btn btn-ghost btn-sm" onclick="downloadClientInvoicePdf(${Number(clientId)},${Number(inv.id)})">PDF</button>
+              <button class="btn btn-primary btn-sm" title="Email the ${['pending','overdue'].includes(String(inv.status).toLowerCase()) ? 'proforma invoice' : 'invoice'} as a PDF" onclick="emailClientInvoice(${Number(clientId)},${Number(inv.id)})">Email PDF</button>
               <div id="mpesa-status-${clientId}-${inv.id}" style="width:100%;font-size:0.78rem;color:var(--text-muted)"></div>
             </div></td>
           </tr>`;
