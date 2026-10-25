@@ -5361,34 +5361,6 @@ a.hero-promotion:focus-visible {
 .storefront-cat-count { color: var(--text-tertiary); font-size: 0.8rem; }
 .storefront-cat-arrow { color: var(--text-tertiary); flex-shrink: 0; display: inline-flex; }
 
-.storefront-quicklinks {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 1.25rem;
-}
-.storefront-quicklinks-label {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-tertiary);
-  margin-right: 0.35rem;
-}
-.storefront-quicklink {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--control-min-height);
-  padding: 0.3rem 0.85rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  text-decoration: none;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-}
-.storefront-quicklink:hover { border-color: var(--primary); color: var(--primary); }
-
 /* Featured + catalogue sections */
 .storefront-featured,
 .storefront-catalogue {
@@ -5417,7 +5389,6 @@ a.hero-promotion:focus-visible {
     line-height: 1.2;
   }
   .storefront-cat-count { font-size: 0.72rem; }
-  .storefront-quicklinks { display: none; }
   .storefront-featured,
   .storefront-catalogue { padding-inline: 1rem; }
 }

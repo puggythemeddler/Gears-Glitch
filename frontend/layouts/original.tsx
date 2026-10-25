@@ -307,10 +307,9 @@ function GuaranteeStrip({ hero }: { hero?: any }) {
   );
 }
 
-function ShopCategories({ categories, products, chips }: {
+function ShopCategories({ categories, products }: {
   categories: { id: string; label: string }[];
   products: Product[];
-  chips: { label: string; href: string }[];
 }) {
   if (categories.length === 0) return null;
 
@@ -339,14 +338,6 @@ function ShopCategories({ categories, products, chips }: {
           );
         })}
       </div>
-      {chips.length > 0 && (
-        <div className="storefront-quicklinks" aria-label="Quick links">
-          <span className="storefront-quicklinks-label">Quick links</span>
-          {chips.map((c) => (
-            <Link key={c.href} href={normalizeHref(c.href) || "/"} className="storefront-quicklink">{c.label}</Link>
-          ))}
-        </div>
-      )}
     </section>
   );
 }
@@ -466,31 +457,6 @@ export function HomePage({ products, categories, banners, hero, allProducts }: {
     })
     .slice(0, 4);
 
-  // Category quick links reconcile the admin's saved chips against the live
-  // category list so stale entries never leave dead links on the page.
-  const chips = (() => {
-    const savedChips: { label: string; href: string }[] = Array.isArray(hero?.catChips) && hero.catChips.length > 0 ? hero.catChips : [];
-    if (categories.length === 0) {
-      return savedChips.length > 0 ? savedChips : [
-        { label: "Gaming PCs", href: "/pc" },
-        { label: "Graphics Cards", href: "/graphics-cards" },
-        { label: "Laptops", href: "/laptops" },
-        { label: "Servers", href: "/servers" },
-        { label: "Repairs", href: "/repairs" },
-      ];
-    }
-    if (savedChips.length === 0) {
-      return categories.slice(0, 6).map((c) => ({ label: c.label, href: "/" + c.id }));
-    }
-    const liveByHref = new Map(categories.map((c) => ["/" + c.id, c.label]));
-    const kept = savedChips.filter((c) => c.href && liveByHref.has(c.href));
-    const existing = new Set(kept.map((c) => c.href));
-    const added = categories
-      .filter((c) => !existing.has("/" + c.id))
-      .map((c) => ({ label: c.label, href: "/" + c.id }));
-    return [...kept, ...added];
-  })();
-
   const identityBandActive = hero?.identityBandActive !== false;
 
   return (
@@ -499,7 +465,7 @@ export function HomePage({ products, categories, banners, hero, allProducts }: {
 
       <GuaranteeStrip hero={hero} />
 
-      <ShopCategories categories={categories} products={catalogueProducts} chips={chips} />
+      <ShopCategories categories={categories} products={catalogueProducts} />
 
       {identityBandActive && (
         <section className="identity-band" aria-label="Shop and repairs">

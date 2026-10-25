@@ -240,6 +240,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const hideHeader = ["admin", "marketing", "stock-take", "suppliers", "pos"].includes(activeNav ?? "");
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
   const isThemedLayout = isPublicStorefront && !configLoading && (layout === "amazon" || layout === "jumia");
+  const springboardMenuEnabled = settings?.springboardMenu === true;
 
   function closeMobile() { setMobileOpen(false); setOpenSubMenu(null); if (!springboardPinned) setSpringboardOpen(false); }
 
@@ -263,7 +264,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             )}
             <span>{settings?.storeName || "My Shop"}</span>
           </Link>
-          <div className={`springboard-wrap${springboardPinned ? " pinned" : ""}`}>
+          {springboardMenuEnabled && <div className={`springboard-wrap${springboardPinned ? " pinned" : ""}`}>
             <button
               ref={springboardBtnRef}
               type="button"
@@ -346,7 +347,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                 })}
               </div>
             )}
-          </div>
+          </div>}
         </div>
         <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) router.push(`/?search=${encodeURIComponent(q)}`); }}>
           <input className="header-search-input" name="q" type="search" placeholder="Search PCs, laptops, GPUs, repairs..." aria-label="Search products" />
@@ -432,18 +433,20 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           </button>
         </div>
       </div>
-      <nav className="main-nav-desktop" aria-label="Shop categories">
-        {leftNavLinks.map((link: any) => (
-          <Link
-            key={link.id}
-            href={link.href}
-            className={activeNav === link.id ? "active" : ""}
-            aria-current={activeNav === link.id ? "page" : undefined}
-          >
-            {link.label}
-          </Link>
-        ))}
-      </nav>
+      {!springboardMenuEnabled && (
+        <nav className="main-nav-desktop" aria-label="Shop categories">
+          {leftNavLinks.map((link: any) => (
+            <Link
+              key={link.id}
+              href={link.href}
+              className={activeNav === link.id ? "active" : ""}
+              aria-current={activeNav === link.id ? "page" : undefined}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+      )}
       <nav className={`main-nav-mobile${mobileOpen ? " open" : ""}`} aria-label="Mobile navigation">
         {filteredNavLinks.map((link: any) => (
           <Link
