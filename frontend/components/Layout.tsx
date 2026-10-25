@@ -252,11 +252,11 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     <header className="site-header">
       <div className="header-inner">
         <div className="header-left">
-          <Link className="brand" href="/" onClick={closeMobile}>
+          <Link className="brand" href="/" onClick={closeMobile} aria-label={settings?.storeName || "My Shop"}>
             {settings?.storeLogo && (
               <Media src={settings.storeLogo} alt={settings.storeName || "Store"} width={160} height={40} loading="eager" fit="contain" className="site-logo" />
             )}
-            <span>{settings?.storeName || "My Shop"}</span>
+            {!settings?.storeLogo && <span>{settings?.storeName || "My Shop"}</span>}
           </Link>
           {springboardMenuEnabled && <div className={`springboard-wrap${springboardPinned ? " pinned" : ""}`}>
             <button
