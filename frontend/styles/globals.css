@@ -5318,7 +5318,12 @@ a.hero-promotion:focus-visible {
     padding: 1.25rem;
   }
   .storefront-original .dy-hero-panel-media-inner img { max-height: 260px; }
-  .storefront-original .dy-hero-panel-foot { gap: 0.75rem; }
+  .storefront-original .dy-hero-panel-foot {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .storefront-original .dy-hero-panel-price { align-self: flex-start; }
   .storefront-original .dy-hero-product-picker { margin-top: 0.6rem; }
 }
 @media (max-width: 420px) {
