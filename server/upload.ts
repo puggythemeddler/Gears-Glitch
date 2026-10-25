@@ -291,6 +291,12 @@ const uploadAboutImage = multer({
   fileFilter: imageFileFilter,
 }).single("image");
 
+const uploadLayoutHeroImage = multer({
+  storage: new DynamicStorage("storefront-layouts", (req, file) => `layout-${req.params?.id || "unknown"}-hero-${Date.now()}${safeExt(file, ".jpg")}`),
+  ...MULTER_OPTS,
+  fileFilter: imageFileFilter,
+}).single("image");
+
 function imageUrlForProduct(productId: string): string {
   if (_cloudinaryConfigured) return "";
   const extensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
@@ -365,4 +371,4 @@ async function removeUploadedAsset(file: Express.Multer.File | undefined, url?: 
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes, magicByteGuard };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes, magicByteGuard };

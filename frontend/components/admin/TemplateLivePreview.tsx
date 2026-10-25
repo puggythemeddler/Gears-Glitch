@@ -35,7 +35,7 @@ export default function TemplateLivePreview({ template, products, categories, de
         <span className="tpl-preview-badge">Live preview</span>
       </div>
       <div className="tpl-preview-viewport">
-        <div className="tpl-preview-page" aria-hidden="true">
+        <div className="tpl-preview-page" aria-hidden="true" inert>
           <div className="dynamic-layout">
             <DynamicLayoutStyles tokens={config.tokens} />
             <HeroSection hero={config.hero} colors={config.colors} products={prod.items} categories={cats.items} />
@@ -53,11 +53,10 @@ export default function TemplateLivePreview({ template, products, categories, de
           </div>
         </div>
       </div>
-      {usingSample && (
-        <p className="tpl-preview-note">
-          Showing sample products and categories. This preview is not saved — apply the template, then Save Draft and Publish to go live.
-        </p>
-      )}
+      <p className="tpl-preview-note">
+        {usingSample && <>Showing sample products and categories. </>}
+        Preview buttons do not navigate. After applying the template, edit their destinations in Hero settings. Nothing is saved until you save the draft.
+      </p>
     </div>
   );
 }
