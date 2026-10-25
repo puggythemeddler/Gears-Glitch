@@ -2961,19 +2961,19 @@ textarea:not(.input)::placeholder {
   font-size: var(--text-sm);
   text-align: center;
 }
-.dy-image-text__copy { max-width: 56ch; }
+.dy-image-text__copy { max-width: 56ch; text-align: var(--dy-section-text-align, left); }
 .dy-image-text__copy h2 {
   margin: 0 0 var(--space-3);
   color: var(--text);
-  font-size: clamp(1.6rem, 3.4vw, 2.5rem);
+  font-size: var(--dy-section-heading-size, clamp(1.6rem, 3.4vw, 2.5rem));
   line-height: 1.15;
   text-wrap: balance;
 }
 .dy-image-text__copy p {
   margin: 0 0 var(--space-5);
   color: var(--text-secondary);
-  font-size: 1rem;
-  line-height: 1.7;
+  font-size: var(--dy-section-body-size, 1rem);
+  line-height: var(--dy-section-line-height, 1.7);
 }
 .dy-image-text__copy .btn { width: fit-content; }
 @media (max-width: 700px) {
