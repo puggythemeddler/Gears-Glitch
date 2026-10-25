@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { getProducts } from "@/components/ProductCard";
+import Media from "@/components/Media";
 import { useLayout } from "@/layouts";
 import { HeroSection, DynamicSectionView, DynamicLayoutStyles } from "@/layouts/dynamic-engine";
 import type { DynamicLayoutConfig } from "@/layouts/dynamic-engine";
@@ -1047,7 +1048,7 @@ export default function StorefrontBuilder() {
               aria-label="Upload hero background image"
             />
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-              {hero.backgroundImage && <img src={hero.backgroundImage} alt="Hero background preview" style={{ width: 112, height: 64, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)" }} />}
+              {hero.backgroundImage && <Media src={hero.backgroundImage} alt="Hero background preview" width={112} height={64} fit="cover" style={{ width: 112, height: 64, borderRadius: 8, border: "1px solid var(--border)" }} />}
               <RippleButton type="button" variant="secondary" loading={heroImageUploading} disabled={heroImageUploading || !selectedId} onClick={() => heroImageInputRef.current?.click()}>
                 {heroImageUploading ? "Uploading image…" : hero.backgroundImage ? "Replace image" : "Upload image"}
               </RippleButton>
