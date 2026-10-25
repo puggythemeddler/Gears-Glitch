@@ -61,9 +61,8 @@
   /* Animations */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-bounce: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-interactive: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-press: cubic-bezier(0.2, 0, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --duration-micro: 80ms;
   --duration-fast: 150ms;
   --duration-normal: 250ms;
@@ -791,16 +790,6 @@ code, pre {
   margin-left: 2px;
   vertical-align: super;
 }
-.cart-badge--bounce {
-  animation: cartBadgeBounce 0.5s cubic-bezier(0.17, 0.89, 0.32, 1.28);
-}
-@keyframes cartBadgeBounce {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.4); }
-  70% { transform: scale(0.9); }
-  100% { transform: scale(1); }
-}
-
 .site-logo {
   max-height: 56px;
   width: auto;
@@ -1989,7 +1978,7 @@ textarea:not(.input)::placeholder {
   padding: var(--space-5);
   text-align: left;
   min-width: 0;
-  transition: transform var(--duration-normal) var(--ease-bounce),
+  transition: transform var(--duration-normal) var(--ease-interactive),
               box-shadow var(--duration-normal) ease,
               border-color var(--duration-normal) ease;
 }
@@ -2088,7 +2077,7 @@ textarea:not(.input)::placeholder {
   color: var(--text);
   display: flex;
   flex-direction: column;
-  transition: transform var(--duration-normal) var(--ease-bounce),
+  transition: transform var(--duration-normal) var(--ease-interactive),
               box-shadow var(--duration-normal) ease,
               border-color var(--duration-normal) ease;
 }
