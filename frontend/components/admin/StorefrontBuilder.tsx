@@ -816,7 +816,6 @@ export default function StorefrontBuilder() {
       case "image-text":
         return (<>
           <Field label="Image placement"><Select value={s.imageSide || "left"} onChange={(v) => updateSection(idx, { imageSide: v as "left" | "right" })} options={[{ value: "left", label: "Image left" }, { value: "right", label: "Image right" }]} /></Field>
-          <Field label="Section background"><Select value={s.background || "default"} onChange={(v) => updateSection(idx, { background: v as "default" | "surface" | "accent" })} options={[{ value: "default", label: "Page background" }, { value: "surface", label: "Raised surface" }, { value: "accent", label: "Soft brand tint" }]} /></Field>
         </>);
       case "product-grid":
       case "features":
@@ -1240,13 +1239,40 @@ export default function StorefrontBuilder() {
                 {renderTabs()}
                 {tab === "content" && renderContentTab(selectedSectionData, selectedSection as number)}
                 {tab === "design" && (<>
+                  {selectedSectionData.type !== "spacer" && (
+                    <Field label="Section background">
+                      <Select
+                        value={selectedSectionData.background || "default"}
+                        onChange={(v) => updateSection(selectedSection as number, { background: v as "default" | "surface" | "accent" })}
+                        options={[{ value: "default", label: "Page background" }, { value: "surface", label: "Raised surface" }, { value: "accent", label: "Soft brand tint" }]}
+                      />
+                    </Field>
+                  )}
                   {renderDesignTab(selectedSectionData, selectedSection as number)}
                   <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
                     <h4 style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>Animation</h4>
                     <MotionPanel value={(selectedSectionData as any).animation} onChange={(a) => updateSection(selectedSection as number, { animation: a })} onPreview={() => setPreviewAnim(selectedSection)} />
                   </div>
                 </>)}
-                {tab === "layout" && renderLayoutTab(selectedSectionData, selectedSection as number)}
+                {tab === "layout" && (<>
+                  {selectedSectionData.type !== "spacer" && <>
+                    <Field label="Content width">
+                      <Select
+                        value={selectedSectionData.contentWidth || "default"}
+                        onChange={(v) => updateSection(selectedSection as number, { contentWidth: v as "default" | "narrow" | "standard" | "wide" | "full" })}
+                        options={[{ value: "default", label: "Template default" }, { value: "narrow", label: "Narrow" }, { value: "standard", label: "Standard" }, { value: "wide", label: "Wide" }, { value: "full", label: "Full width" }]}
+                      />
+                    </Field>
+                    <Field label="Vertical spacing">
+                      <Select
+                        value={selectedSectionData.spacing || "default"}
+                        onChange={(v) => updateSection(selectedSection as number, { spacing: v as "default" | "compact" | "standard" | "spacious" })}
+                        options={[{ value: "default", label: "Template default" }, { value: "compact", label: "Compact" }, { value: "standard", label: "Standard" }, { value: "spacious", label: "Spacious" }]}
+                      />
+                    </Field>
+                  </>}
+                  {renderLayoutTab(selectedSectionData, selectedSection as number)}
+                </>)}
                 <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
                   <RippleButton size="small" variant="secondary" onClick={() => { setSelectedSection(null); setTab("content"); }}>← Back to page settings</RippleButton>
                 </div>

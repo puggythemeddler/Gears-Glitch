@@ -2936,7 +2936,7 @@ textarea:not(.input)::placeholder {
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   align-items: center;
   gap: clamp(1.5rem, 4vw, 4rem);
-  max-width: 1200px;
+  max-width: var(--dy-section-width, 1200px);
   margin: 0 auto;
 }
 .dy-image-text__inner--image-right .dy-image-text__media { order: 2; }

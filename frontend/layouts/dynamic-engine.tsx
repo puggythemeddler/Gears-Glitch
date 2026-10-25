@@ -88,7 +88,13 @@ export interface DynamicLayoutConfig {
 const HEADING_WEIGHT = "var(--dy-heading-weight, 700)" as React.CSSProperties["fontWeight"];
 const SUBHEAD_WEIGHT = "var(--dy-heading-weight, 600)" as React.CSSProperties["fontWeight"];
 
-export type DynamicSection =
+type SectionStudioStyle = {
+  background?: "default" | "surface" | "accent";
+  contentWidth?: "default" | "narrow" | "standard" | "wide" | "full";
+  spacing?: "default" | "compact" | "standard" | "spacious";
+};
+
+export type DynamicSection = (
   | { type: "product-grid"; id?: string; title?: string; productFilter?: "all" | "featured" | "sale" | "newest"; columns?: number; columnsTablet?: number; columnsMobile?: number; hideOnMobile?: boolean; limit?: number; animation?: MotionConfig | null }
   | { type: "category-grid"; id?: string; title?: string; columns?: number; columnsTablet?: number; columnsMobile?: number; hideOnMobile?: boolean; style?: "cards" | "icons"; animation?: MotionConfig | null }
   | { type: "banner"; id?: string; imageUrl?: string; link?: string; text?: string; bgColor?: string; textColor?: string; buttonLabel?: string; buttonLink?: string; hideOnMobile?: boolean; animation?: MotionConfig | null }
@@ -99,7 +105,28 @@ export type DynamicSection =
   | { type: "image-text"; id?: string; imageUrl?: string; alt?: string; title?: string; content?: string; ctaText?: string; ctaLink?: string; imageSide?: "left" | "right"; background?: "default" | "surface" | "accent"; hideOnMobile?: boolean; animation?: MotionConfig | null }
   | { type: "features"; id?: string; title?: string; columns?: number; columnsTablet?: number; columnsMobile?: number; hideOnMobile?: boolean; items?: { icon?: string; title?: string; text?: string }[]; animation?: MotionConfig | null }
   | { type: "spacer"; id?: string; height?: number; hideOnMobile?: boolean; animation?: MotionConfig | null }
-  | { type: "financing-promo"; id?: string; title?: string; content?: string; ctaText?: string; ctaLink?: string; hideOnMobile?: boolean; animation?: MotionConfig | null };
+  | { type: "financing-promo"; id?: string; title?: string; content?: string; ctaText?: string; ctaLink?: string; hideOnMobile?: boolean; animation?: MotionConfig | null }
+) & SectionStudioStyle;
+
+function studioSectionStyle(section: DynamicSection): React.CSSProperties {
+  const width = section.contentWidth && section.contentWidth !== "default"
+    ? { narrow: "800px", standard: "1200px", wide: "1440px", full: "none" }[section.contentWidth]
+    : undefined;
+  const blockPadding = section.spacing && section.spacing !== "default"
+    ? { compact: "1rem 0.25rem", standard: "2rem 0.5rem", spacious: "3.5rem 1rem" }[section.spacing]
+    : undefined;
+  const background = section.background === "surface"
+    ? "var(--surface)"
+    : section.background === "accent"
+      ? "color-mix(in srgb, var(--primary) 8%, var(--bg))"
+      : "transparent";
+
+  return {
+    background,
+    ...(width ? { "--dy-section-width": width } : {}),
+    ...(blockPadding ? { "--dy-section-block-padding": blockPadding } : {}),
+  } as React.CSSProperties;
+}
 
 const DEFAULT_HERO_BG = "var(--bg)";
 
@@ -395,7 +422,7 @@ function FinancingPromo({ section, fid }: { section: Extract<DynamicSection, { t
   }, []);
   if (!enabled) return null;
   return (
-    <div style={{ padding: "2rem 1rem", maxWidth: 1000, margin: "0 auto" }}>
+    <div style={{ paddingBlock: "var(--dy-section-block-padding, 2rem)", paddingInline: "1rem", maxWidth: "var(--dy-section-width, 1000px)", margin: "0 auto" }}>
       <div style={{ background: "var(--primary-subtle)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "1.75rem", textAlign: "center" }}>
         {section.title && <h2 style={{ fontSize: "1.35rem", fontWeight: HEADING_WEIGHT, margin: "0 0 0.5rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         {section.content && <p style={{ color: "var(--text-secondary)", margin: "0 0 1rem", lineHeight: 1.6 }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
@@ -415,7 +442,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     const stagger = section.animation?.preset === "stagger";
     const grid = responsiveGridProps(section);
     return (
-      <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
+      <div style={{ paddingBlock: "var(--dy-section-block-padding, 2rem 0.5rem)", paddingInline: "2rem", maxWidth: "var(--dy-section-width, 1440px)", margin: "0 auto" }}>
         {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: HEADING_WEIGHT, marginBottom: "1rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         {filtered.length === 0 ? (
           <p style={{ color: "var(--text-tertiary)", padding: "1rem 0" }}>No products match this filter yet.</p>
@@ -446,7 +473,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
       textAlign: "center", transition: "transform 0.2s, border-color 0.2s",
     };
     return (
-      <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
+      <div style={{ paddingBlock: "var(--dy-section-block-padding, 2rem 0.5rem)", paddingInline: "2rem", maxWidth: "var(--dy-section-width, 1440px)", margin: "0 auto" }}>
         {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: HEADING_WEIGHT, marginBottom: "1rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         {categories.length === 0 ? (
           <p style={{ color: "var(--text-tertiary)", padding: "1rem 0" }}>No categories yet.</p>
@@ -468,7 +495,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
 
   if (section.type === "banner") {
     return (
-      <div style={{ margin: "1.5rem auto", maxWidth: 1440, padding: "0 2rem" }} data-fid={fid}>
+      <div style={{ margin: "1.5rem auto", maxWidth: "var(--dy-section-width, 1440px)", paddingBlock: "var(--dy-section-block-padding, 0)", paddingInline: "2rem" }} data-fid={fid}>
         <DyLink href={section.link} style={{ display: "block", background: section.bgColor || "var(--primary-subtle)", borderRadius: "var(--radius-md)", overflow: "hidden", textDecoration: "none", color: "inherit" }}>
           {section.imageUrl ? (
             <div style={{ position: "relative" }}>
@@ -494,7 +521,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
   if (section.type === "stats") {
     const stagger = section.animation?.preset === "stagger";
     return (
-      <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
+      <div style={{ paddingBlock: "var(--dy-section-block-padding, 2rem 0.5rem)", paddingInline: "2rem", maxWidth: "var(--dy-section-width, 1440px)", margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(160px, 100%), 1fr))", gap: "1rem" }}>
           {(section.items || []).map((item, j) => (
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", ...(stagger ? motionGroupItemVars(j) : {}) }}>
@@ -510,7 +537,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
 
   if (section.type === "text") {
     return (
-      <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 800, margin: "0 auto", textAlign: section.align || "center" }} data-fid={fid}>
+      <div style={{ paddingBlock: "var(--dy-section-block-padding, 2rem 0.5rem)", paddingInline: "2rem", maxWidth: "var(--dy-section-width, 800px)", margin: "0 auto", textAlign: section.align || "center" }} data-fid={fid}>
         {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: HEADING_WEIGHT, marginBottom: "0.75rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         {section.content && <p style={{ fontSize: "1rem", color: "var(--text-secondary)", lineHeight: 1.7 }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
       </div>
@@ -530,7 +557,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
         ? { ...base, border: "1px solid var(--border)", color: "var(--text)", background: "var(--surface)" }
         : { ...base, border: "1px solid var(--primary)", color: "var(--on-primary)", background: "var(--primary)" };
     return (
-      <div style={{ padding: "1rem 2rem", maxWidth: 1440, margin: "0 auto", textAlign: section.align || "center" }} data-fid={fid}>
+      <div style={{ paddingBlock: "var(--dy-section-block-padding, 1rem)", paddingInline: "2rem", maxWidth: "var(--dy-section-width, 1440px)", margin: "0 auto", textAlign: section.align || "center" }} data-fid={fid}>
         {section.label ? <DyLink href={section.link} style={style} fid={fid ? `${fid}.label` : undefined}>{section.label}</DyLink> : <span style={{ color: "var(--text-tertiary)", fontSize: "0.85rem" }}>Button â€” set a label</span>}
       </div>
     );
@@ -538,7 +565,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
 
   if (section.type === "image") {
     return (
-      <div style={{ padding: "1.5rem 2rem", maxWidth: 1440, margin: "0 auto", textAlign: "center" }} data-fid={fid}>
+      <div style={{ paddingBlock: "var(--dy-section-block-padding, 1.5rem)", paddingInline: "2rem", maxWidth: "var(--dy-section-width, 1440px)", margin: "0 auto", textAlign: "center" }} data-fid={fid}>
         {section.imageUrl ? (
           <DyLink href={section.link} style={{ textDecoration: "none", color: "inherit", display: "inline-block" }}>
           <Media src={section.imageUrl} alt={section.alt || section.caption || ""} width={1200} height={480} fit="contain" fallbackLabel="Image" style={{ maxWidth: "100%", maxHeight: 480, width: section.maxWidth ? section.maxWidth : undefined, borderRadius: section.rounded ? "var(--radius-lg)" : 0, objectFit: "contain" }} />
@@ -552,13 +579,8 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
   }
 
   if (section.type === "image-text") {
-    const background = section.background === "surface"
-      ? "var(--surface)"
-      : section.background === "accent"
-        ? "color-mix(in srgb, var(--primary) 8%, transparent)"
-        : "transparent";
     return (
-      <section className="dy-image-text" style={{ background }} data-fid={fid}>
+      <section className="dy-image-text" style={{ paddingBlock: "var(--dy-section-block-padding, clamp(2rem, 5vw, 4rem))" }} data-fid={fid}>
         <div className={`dy-image-text__inner${section.imageSide === "right" ? " dy-image-text__inner--image-right" : ""}`}>
           <div className="dy-image-text__media">
             {section.imageUrl ? (
@@ -581,7 +603,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     const stagger = section.animation?.preset === "stagger";
     const grid = responsiveGridProps(section);
     return (
-      <div style={{ padding: "2rem 2rem 0.5rem", maxWidth: 1440, margin: "0 auto" }}>
+      <div style={{ paddingBlock: "var(--dy-section-block-padding, 2rem 0.5rem)", paddingInline: "2rem", maxWidth: "var(--dy-section-width, 1440px)", margin: "0 auto" }}>
         {section.title && <h2 style={{ fontSize: "1.5rem", fontWeight: HEADING_WEIGHT, marginBottom: "1rem", textAlign: "center" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         <div
           className={grid ? grid.className : undefined}
@@ -625,7 +647,7 @@ export function DynamicSectionView({ section, products, categories, colors, card
   const hideOnMobile = (section as { hideOnMobile?: boolean }).hideOnMobile;
   const innerFid = sectionFid || undefined;
   return (
-    <div data-fid={sectionFid} className={hideOnMobile ? "sb-hide-mobile" : undefined}>
+    <div data-fid={sectionFid} className={hideOnMobile ? "sb-hide-mobile" : undefined} style={studioSectionStyle(section)}>
       <Motion config={section.animation} trigger={forceTrigger}>
         <DynamicSectionInner section={section} products={products} categories={categories} colors={colors} cardConfig={cardConfig} fid={innerFid} />
       </Motion>
