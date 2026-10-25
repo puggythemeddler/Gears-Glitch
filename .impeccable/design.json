@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-15T13:45:00Z",
+  "generatedAt": "2026-10-25T06:56:20.378Z",
   "title": "Design System: Gear&Glitch",
   "extensions": {
     "colorMeta": {
@@ -30,9 +30,13 @@
     ],
     "motion": [
       { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Default easing for state transitions and reveals." },
-      { "name": "ease-bounce", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Playful entrances, card hovers." },
+      { "name": "ease-in-out", "value": "cubic-bezier(0.65, 0, 0.35, 1)", "purpose": "Balanced easing for state changes while an element remains visible." },
+      { "name": "ease-interactive", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Smooth, non-overshooting easing for interactive transforms." },
+      { "name": "ease-press", "value": "cubic-bezier(0.2, 0, 0.3, 1)", "purpose": "Quick settle for pressed controls; no bounce." },
+      { "name": "duration-micro", "value": "80ms", "purpose": "Immediate micro-interaction feedback." },
       { "name": "duration-fast", "value": "150ms", "purpose": "Hover/color/border transitions." },
-      { "name": "duration-normal", "value": "250ms", "purpose": "Theme switching, panel transitions." }
+      { "name": "duration-normal", "value": "250ms", "purpose": "Theme switching and standard panel transitions." },
+      { "name": "duration-slow", "value": "350ms", "purpose": "Larger transitions where extra settling time is useful." }
     ],
     "breakpoints": [
       { "name": "tablet", "value": "1024px" },
@@ -45,49 +49,49 @@
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "The main action button — Till Orange fill, surface text, 8px radius.",
+      "description": "The main action button — Till Orange fill, on-primary text, 12px radius.",
       "html": "<button class=\"ds-btn-primary\">Charge KES 4,500</button>",
-      "css": ".ds-btn-primary { background: #c2410c; color: #fff; border: none; border-radius: 8px; padding: 0.5rem 1.25rem; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: background 150ms ease; } .ds-btn-primary:hover { background: #9a3412; } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(234,88,12,0.12); }"
+      "css": ".ds-btn-primary { background: #c2410c; color: var(--on-primary); border: none; border-radius: 12px; padding: 0.5rem 1.25rem; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: background 150ms ease; } .ds-btn-primary:hover { background: #9a3412; } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(234,88,12,0.12); }"
     },
     {
       "name": "Secondary Button",
       "kind": "button",
       "refersTo": "button-secondary",
-      "description": "Transparent fill, ink text, hairline-hover border. Used for cancel/back actions.",
+      "description": "Transparent fill, ink text, hairline-hover border, 12px radius. Used for cancel/back actions.",
       "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
-      "css": ".ds-btn-secondary { background: transparent; color: #1c1917; border: 1px solid #d6d3d1; border-radius: 8px; padding: 0.5rem 1.25rem; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: background 150ms ease, border-color 150ms ease; } .ds-btn-secondary:hover { background: #f5f5f4; border-color: #a8a29e; } .ds-btn-secondary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(234,88,12,0.12); }"
+      "css": ".ds-btn-secondary { background: transparent; color: #1c1917; border: 1px solid #d6d3d1; border-radius: 12px; padding: 0.5rem 1.25rem; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: background 150ms ease, border-color 150ms ease; } .ds-btn-secondary:hover { background: #f5f5f4; border-color: #a8a29e; } .ds-btn-secondary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(234,88,12,0.12); }"
     },
     {
       "name": "Input Field",
       "kind": "input",
       "refersTo": "input",
-      "description": "1px hairline border, warm-paper-surface background, 8px radius, 3px Till Orange focus ring.",
+      "description": "1px hairline border, warm-paper-surface background, 12px radius, 3px Till Orange focus ring.",
       "html": "<input class=\"ds-input\" placeholder=\"Search products...\" />",
-      "css": ".ds-input { display: block; width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #e7e5e4; border-radius: 8px; background: #fff; color: #1c1917; font-family: Sora, sans-serif; font-size: 0.8125rem; transition: border-color 150ms ease, box-shadow 150ms ease; } .ds-input:focus { outline: none; border-color: #c2410c; box-shadow: 0 0 0 3px rgba(234,88,12,0.12); } .ds-input::placeholder { color: #716d68; }"
+      "css": ".ds-input { display: block; width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #e7e5e4; border-radius: 12px; background: #fff; color: #1c1917; font-family: Sora, sans-serif; font-size: 0.8125rem; transition: border-color 150ms ease, box-shadow 150ms ease; } .ds-input:focus { outline: none; border-color: #c2410c; box-shadow: 0 0 0 3px rgba(234,88,12,0.12); } .ds-input::placeholder { color: #716d68; }"
     },
     {
       "name": "Card",
       "kind": "card",
       "refersTo": "card",
-      "description": "Warm-paper-surface background, 1px hairline border, 12px radius. Flat at rest, shadow-lg on hover.",
+      "description": "Warm-paper-surface background, 1px hairline border, 14px radius. Flat at rest, shadow-lg on hover.",
       "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">Today's Revenue</h3><p class=\"ds-card-value\">KES 847,200</p></div>",
-      "css": ".ds-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 12px; padding: 1rem 1.25rem; transition: box-shadow 250ms ease, border-color 250ms ease; } .ds-card:hover { box-shadow: 0 10px 15px rgba(0,0,0,0.06), 0 4px 6px rgba(0,0,0,0.04); border-color: #c2410c; } .ds-card-title { margin: 0 0 0.25rem; font-size: 0.8125rem; font-weight: 500; color: #57534e; } .ds-card-value { margin: 0; font-family: Archivo, Sora, sans-serif; font-size: 1.875rem; font-weight: 700; color: #c2410c; font-variant-numeric: tabular-nums; }"
+      "css": ".ds-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 14px; padding: 1rem 1.25rem; transition: box-shadow 250ms ease, border-color 250ms ease; } .ds-card:hover { box-shadow: 0 10px 15px rgba(0,0,0,0.06), 0 4px 6px rgba(0,0,0,0.04); border-color: #c2410c; } .ds-card-title { margin: 0 0 0.25rem; font-size: 0.8125rem; font-weight: 500; color: #57534e; } .ds-card-value { margin: 0; font-family: Archivo, Sora, sans-serif; font-size: 1.875rem; font-weight: 700; color: #c2410c; font-variant-numeric: tabular-nums; }"
     },
     {
       "name": "Nav Item",
       "kind": "nav",
       "refersTo": "button-ghost",
-      "description": "Sidebar nav item — ghost button, 8px radius. Active: primary-subtle bg + Till Orange text + semibold. aria-current on active.",
+      "description": "Sidebar nav item — ghost button, 12px radius. Active: primary-subtle bg + Till Orange text + semibold. aria-current on active.",
       "html": "<button class=\"ds-nav-item ds-nav-item--active\" aria-current=\"page\">Products</button>",
-      "css": ".ds-nav-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.38rem 0.55rem; border: none; border-radius: 8px; background: transparent; color: #57534e; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 500; text-align: left; cursor: pointer; transition: background 150ms ease, color 150ms ease; } .ds-nav-item:hover { background: #f5f5f4; color: #1c1917; } .ds-nav-item--active { background: rgba(234,88,12,0.08); color: #c2410c; font-weight: 600; }"
+      "css": ".ds-nav-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.38rem 0.55rem; border: none; border-radius: 12px; background: transparent; color: #57534e; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 500; text-align: left; cursor: pointer; transition: background 150ms ease, color 150ms ease; } .ds-nav-item:hover { background: #f5f5f4; color: #1c1917; } .ds-nav-item--active { background: rgba(234,88,12,0.08); color: #c2410c; font-weight: 600; }"
     },
     {
       "name": "Filter Chip",
       "kind": "chip",
       "refersTo": "button-primary",
-      "description": "Pill-shaped filter chip. Inactive: hairline border, ink-secondary text. Active: Till Orange fill, surface text.",
+      "description": "Full-radius filter chip. Inactive: hairline border, ink-secondary text. Active: Till Orange fill, on-primary text.",
       "html": "<button class=\"ds-chip ds-chip--active\">All features</button>",
-      "css": ".ds-chip { padding: 0.25rem 0.75rem; border: 1px solid #e7e5e4; border-radius: 9999px; background: #fff; color: #57534e; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 500; cursor: pointer; transition: all 150ms ease; } .ds-chip:hover { border-color: #c2410c; color: #c2410c; } .ds-chip--active { background: #c2410c; border-color: #c2410c; color: #fff; }"
+      "css": ".ds-chip { padding: 0.25rem 0.75rem; border: 1px solid #e7e5e4; border-radius: 9999px; background: #fff; color: #57534e; font-family: Sora, sans-serif; font-size: 0.8125rem; font-weight: 500; cursor: pointer; transition: all 150ms ease; } .ds-chip:hover { border-color: #c2410c; color: #c2410c; } .ds-chip--active { background: #c2410c; border-color: #c2410c; color: var(--on-primary); }"
     }
   ],
   "narrative": {
@@ -104,14 +108,15 @@
     "rules": [
       { "name": "The One Voice Rule", "body": "Till Orange is used on ≤10% of any given screen. If everything is orange, nothing is.", "section": "colors" },
       { "name": "The No-Gray Rule", "body": "Neutral text is always warm-tinted (stone family), never generic gray. A workshop has warm light, not fluorescent.", "section": "colors" },
-      { "name": "The Money Rule", "body": "Monetary values use font-variant-numeric: tabular-nums so digits don't jitter as values change.", "section": "typography" },
+      { "name": "The Money Rule", "body": "Monetary values use font-variant-numeric: tabular-nums so digits do not jitter. Applies to POS totals, cart line totals, and all data-table numeric columns.", "section": "typography" },
       { "name": "The Flat-By-Default Rule", "body": "Surfaces are flat at rest. Shadows appear only as a response to state (hover, elevation, focus). No shadow on a resting card.", "section": "elevation" },
       { "name": "The Tactile Rule", "body": "Buttons feel confident — solid fills on primary, hairline borders on secondary, clear focus rings on all. No ghost borders that vanish on dark themes.", "section": "components" }
     ],
     "dos": [
       "Do use Till Orange on ≤10% of any screen — its rarity is its force.",
       "Do use warm stone neutrals, never generic gray, in both themes.",
-      "Do use tabular-nums on all monetary values so digits don't jitter.",
+      "Do use tabular-nums on all monetary values so digits do not jitter.",
+      "Do pair a solid fill with its --on-* token; never hardcode #fff on a fill.",
       "Do keep touch targets ≥32px on Operate surfaces, ≥44px on customer-facing surfaces.",
       "Do pair Archivo for display/headlines with Sora for body — never swap them.",
       "Do design dark mode as a composed warm-black world, not a mechanical inversion."
@@ -122,7 +127,8 @@
       "Don't add shadows to resting cards — depth is a response to state.",
       "Don't use emoji as icons — draw SVGs with one stroke and one weight.",
       "Don't animate every section entrance — one authored moment per page, reduced-motion safe.",
-      "Don't use Sora for display headlines — that's Archivo's role; Sora is the body voice."
+      "Don't use Sora for display headlines — that's Archivo's role; Sora is the body voice.",
+      "Don't put white text on --primary or a semantic fill — use the --on-* token."
     ]
   }
 }
