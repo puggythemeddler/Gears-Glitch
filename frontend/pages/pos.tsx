@@ -309,6 +309,7 @@ export default function POSPage() {
 
   const subtotal = cart.reduce((s, i) => s + i.lineTotal, 0);
   const cartItemCount = cart.reduce((count, item) => count + item.quantity, 0);
+  const showMobileCartJump = !cartPanelVisible && (cartItemCount > 0 || mpesaPending || Boolean(lastOrderId));
   const change = needsTender && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PRODUCTS_PER_PAGE));
@@ -543,7 +544,7 @@ export default function POSPage() {
   }
 
   return (
-    <div className="pos-shell">
+    <div className={showMobileCartJump ? "pos-shell pos-shell--mobile-cart-jump" : "pos-shell"}>
 
       {/* Category sidebar */}
       <div className="pos-category-bar">
@@ -610,14 +611,19 @@ export default function POSPage() {
         )}
       </div>
 
-      {!cartPanelVisible && (cartItemCount > 0 || mpesaPending || lastOrderId) && (
+      {showMobileCartJump && (
         <button
           type="button"
           className="pos-mobile-cart-jump"
-          onClick={() => cartPanelRef.current?.scrollIntoView({
-            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-            block: "start",
-          })}
+          onClick={() => {
+            const panel = cartPanelRef.current;
+            if (!panel) return;
+            panel.scrollIntoView({
+              behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+              block: "start",
+            });
+            panel.focus({ preventScroll: true });
+          }}
           aria-label={`${lastOrderId ? "Sale complete" : mpesaPending ? "Payment pending" : "Open checkout"}. ${cartItemCount} ${cartItemCount === 1 ? "item" : "items"}, total ${formatPrice(subtotal)}.`}
         >
           <span className="pos-mobile-cart-jump__summary">
@@ -628,7 +634,7 @@ export default function POSPage() {
         </button>
       )}
 
-      <div className="pos-cart-panel" id="pos-cart-panel" ref={cartPanelRef}>
+      <div className="pos-cart-panel" id="pos-cart-panel" ref={cartPanelRef} tabIndex={-1}>
         <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
             <span style={{ fontWeight: 800, fontSize: "1.15rem", letterSpacing: "0.04em" }}>TILL</span>
