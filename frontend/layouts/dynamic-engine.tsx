@@ -565,7 +565,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
   if (section.type === "text") {
     return (
       <div style={{ paddingBlock: "var(--dy-section-block-padding, 2rem 0.5rem)", paddingInline: "2rem", maxWidth: "var(--dy-section-width, 800px)", margin: "0 auto", textAlign: SECTION_TEXT_ALIGN_CENTER }} data-fid={fid}>
-        {section.title && <h2 style={{ fontSize: "var(--dy-section-heading-size, 1.5rem)", fontWeight: HEADING_WEIGHT, marginBottom: "0.75rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
+        {section.title && <h2 style={{ fontSize: "var(--dy-section-heading-size, 1.5rem)", fontWeight: HEADING_WEIGHT, marginBottom: "0.75rem", color: "var(--dy-section-custom-text-color, var(--text))" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
         {section.content && <p style={{ fontSize: "var(--dy-section-body-size, 1rem)", color: "var(--dy-section-custom-text-color, var(--text-secondary))", lineHeight: "var(--dy-section-line-height, 1.7)" }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
       </div>
     );
