@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="240" viewBox="0 0 900 240" role="img" aria-labelledby="title desc">
+  <title id="title">Gear&amp;Glitch</title>
+  <desc id="desc">A warm orange gear and lightning bolt beside the Gear&amp;Glitch wordmark.</desc>
+  <rect x="8" y="8" width="884" height="224" rx="46" fill="#171513" stroke="#3c3029" stroke-width="4"/>
+  <path d="M120 33 139 40 153 27 169 40 187 35 196 53 215 58 214 78 230 91 222 109 230 127 214 141 215 160 196 167 187 184 169 180 153 193 139 180 120 187 108 170 89 167 88 148 72 135 80 117 72 99 88 85 89 66 108 59Z" fill="#f25b18"/>
+  <circle cx="151" cy="111" r="43" fill="#171513"/>
+  <path d="M157 70 126 116h26l-12 37 38-51h-27l14-32Z" fill="#fff2e7"/>
+  <path d="M218 65h24v13h-24zM229 94h17v13h-17zM218 123h25v13h-25zM229 152h17v13h-17z" fill="#42d3cb"/>
+  <path d="M248 78h15v13h-15zM252 136h17v13h-17z" fill="#cf7af2"/>
+  <text x="290" y="151" font-family="Arial, Helvetica, sans-serif" font-size="68" font-weight="800" letter-spacing="1" fill="#fff2e7">GEAR<tspan fill="#f25b18">&amp;</tspan>GLITCH</text>
+</svg>

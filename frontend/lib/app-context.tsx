@@ -61,7 +61,6 @@ interface AppState {
   isDark: boolean;
   settings: Settings | null;
   cartCount: number;
-  cartBounce: boolean;
   selectedCurrency: string;
   exchangeRates: Record<string, number>;
 }
@@ -71,7 +70,6 @@ interface AppContextType extends AppState {
   logout: () => void;
   toggleDark: () => void;
   refreshCartCount: () => void;
-  clearCartBounce: () => void;
   refreshSettings: () => void;
   setCurrency: (code: string) => void;
   convertPrice: (amountInKES: number) => number;
@@ -95,7 +93,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     isDark: true,
     settings: null,
     cartCount: 0,
-    cartBounce: false,
     selectedCurrency: "",
     exchangeRates: {},
   });
@@ -196,17 +193,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   function refreshCartCount() {
     if (!isCustomerLoggedIn()) {
       const guestCount = getGuestCartCount();
-      setState((s) => ({ ...s, cartCount: guestCount, cartBounce: guestCount > s.cartCount }));
+      setState((s) => ({ ...s, cartCount: guestCount }));
       return;
     }
     api<{ count: number }>("/api/cart/count").then((d) => {
       const newCount = d?.count || 0;
-      setState((s) => ({ ...s, cartCount: newCount, cartBounce: newCount > s.cartCount }));
+      setState((s) => ({ ...s, cartCount: newCount }));
     }).catch(() => {});
-  }
-
-  function clearCartBounce() {
-    setState((s) => ({ ...s, cartBounce: false }));
   }
 
   function login(token: string, name: string) {
@@ -257,7 +250,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AppContext.Provider value={{ ...state, login, logout, toggleDark, refreshCartCount, clearCartBounce, refreshSettings, setCurrency, convertPrice, formatPrice }}>
+    <AppContext.Provider value={{ ...state, login, logout, toggleDark, refreshCartCount, refreshSettings, setCurrency, convertPrice, formatPrice }}>
       {children}
     </AppContext.Provider>
   );

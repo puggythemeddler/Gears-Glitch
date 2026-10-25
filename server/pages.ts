@@ -122,6 +122,27 @@ export function sanitizeSections(raw: unknown): any[] {
       const sz = (s as any).size;
       if (["sm", "md", "lg"].includes(sz)) sec.size = sz;
     }
+    if (["default", "surface", "accent"].includes((s as any).background)) {
+      sec.background = (s as any).background;
+    }
+    if (["default", "narrow", "standard", "wide", "full"].includes((s as any).contentWidth)) {
+      sec.contentWidth = (s as any).contentWidth;
+    }
+    if (["default", "compact", "standard", "spacious"].includes((s as any).spacing)) {
+      sec.spacing = (s as any).spacing;
+    }
+    if (["small", "standard", "large"].includes((s as any).headingSize)) {
+      sec.headingSize = (s as any).headingSize;
+    }
+    if (["small", "standard", "large"].includes((s as any).bodyTextSize)) {
+      sec.bodyTextSize = (s as any).bodyTextSize;
+    }
+    if (["compact", "standard", "relaxed"].includes((s as any).lineHeight)) {
+      sec.lineHeight = (s as any).lineHeight;
+    }
+    if (["default", "left", "center", "right"].includes((s as any).textAlign)) {
+      sec.textAlign = (s as any).textAlign;
+    }
     out.push(sec);
   }
   return out;

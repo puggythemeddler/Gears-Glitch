@@ -42,6 +42,16 @@ describe("storefront template registry", () => {
     }
   });
 
+  it("gives every hero call-to-action a destination beyond the homepage", () => {
+    for (const template of TEMPLATE_REGISTRY) {
+      const hero = template.config.hero;
+      if (hero?.ctaText) assert.ok(hero.ctaLink && hero.ctaLink !== "/", `${template.id} hero CTA should lead to a useful page`);
+      for (const button of hero?.buttons ?? []) {
+        assert.ok(button.link && button.link !== "/", `${template.id} hero button "${button.label}" should not loop back to the homepage`);
+      }
+    }
+  });
+
   it("targets the dynamic engine and is original, licence-clean work", () => {
     for (const t of TEMPLATE_REGISTRY) {
       assert.equal(t.layoutType, "dynamic");

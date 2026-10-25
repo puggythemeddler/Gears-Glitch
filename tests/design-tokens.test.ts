@@ -71,7 +71,7 @@ const PARITY = [
 const SHARED = [
   "--radius-sm", "--radius-md", "--radius-lg", "--radius-xl",
   "--control-min-height",
-  "--duration-micro", "--duration-fast", "--duration-normal", "--ease-press", "--ease-spring",
+  "--duration-micro", "--duration-fast", "--duration-normal", "--ease-press", "--ease-interactive",
 ];
 
 // Solid fills are only ever paired with their --on-* companion.
@@ -183,7 +183,11 @@ describe("semantic colour tokens", () => {
     const fast = token(LIGHT_CSS, "--duration-fast", "light");
     assert.ok(parseInt(micro, 10) < parseInt(fast, 10), "micro feedback must be quicker than fast");
     assert.ok(token(LIGHT_CSS, "--ease-press", "light").startsWith("cubic-bezier"));
-    assert.ok(token(LIGHT_CSS, "--ease-spring", "light").startsWith("cubic-bezier"));
+    assert.equal(
+      token(LIGHT_CSS, "--ease-interactive", "light"),
+      "cubic-bezier(0.22, 1, 0.36, 1)",
+      "interactive easing should settle without spring overshoot",
+    );
     assert.equal(token(LIGHT_CSS, "--control-min-height", "light"), "44px");
     assert.match(token(LIGHT_CSS, "--focus-ring", "light"), /3px/);
   });

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { getProducts } from "@/components/ProductCard";
+import Media from "@/components/Media";
 import { useLayout } from "@/layouts";
 import { HeroSection, DynamicSectionView, DynamicLayoutStyles } from "@/layouts/dynamic-engine";
 import type { DynamicLayoutConfig } from "@/layouts/dynamic-engine";
@@ -110,6 +111,26 @@ const EDITABLE_FIDS = [
 ];
 
 type Device = "desktop" | "tablet" | "mobile";
+function hexRgb(value: string): [number, number, number] | null {
+  const match = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(value);
+  if (!match) return null;
+  const hex = match[1].length === 3 ? [...match[1]].map((char) => char + char).join("") : match[1];
+  return [0, 2, 4].map((index) => parseInt(hex.slice(index, index + 2), 16)) as [number, number, number];
+}
+
+function colorContrast(foreground: string, background: string): number | null {
+  const fg = hexRgb(foreground);
+  const bg = hexRgb(background);
+  if (!fg || !bg) return null;
+  const luminance = (channels: [number, number, number]) => channels
+    .map((channel) => channel / 255)
+    .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  const a = luminance(fg);
+  const b = luminance(bg);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
 const DEVICES: { id: Device; label: string; width: number | null }[] = [
   { id: "desktop", label: "Desktop", width: null },
   { id: "tablet", label: "Tablet", width: 768 },
@@ -234,6 +255,8 @@ export default function StorefrontBuilder() {
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [heroImageUploading, setHeroImageUploading] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
   const [selectedSection, setSelectedSection] = useState<number | null>(null);
@@ -280,10 +303,18 @@ export default function StorefrontBuilder() {
   const labelRef = useRef(label);
   const descRef = useRef(description);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const heroImageInputRef = useRef<HTMLInputElement>(null);
+  const studioRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { configRef.current = config; }, [config]);
   useEffect(() => { labelRef.current = label; }, [label]);
   useEffect(() => { descRef.current = description; }, [description]);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === studioRootRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
 
   // Only offer the financing block when the shop owns the entitlement and has
   // financing activated. The renderer re-checks server-side, so stale state
@@ -444,6 +475,21 @@ export default function StorefrontBuilder() {
     mutateConfig({ ...configRef.current, sections });
   }
 
+  function resetSectionStyling(idx: number) {
+    const sections = [...(configRef.current.sections || [])];
+    const existing = sections[idx];
+    if (!existing) return;
+    const section = { ...existing } as Section & Record<string, unknown>;
+    const styleKeys = [
+      "background", "contentWidth", "spacing", "headingSize", "bodyTextSize", "lineHeight", "textAlign", "align",
+      "bgColor", "textColor", "maxWidth", "rounded", "imageSide", "columns", "columnsTablet", "columnsMobile",
+      "style", "size", "variant",
+    ];
+    for (const key of styleKeys) delete section[key];
+    sections[idx] = section as Section;
+    mutateConfig({ ...configRef.current, sections });
+  }
+
   function addSection(template: PaletteTemplate) {
     const section = { type: template.type, id: uid(), ...template.defaults };
     const sections = [...(configRef.current.sections || []), section];
@@ -492,6 +538,38 @@ export default function StorefrontBuilder() {
 
   function updateHero(patch: Partial<NonNullable<DynamicLayoutConfig["hero"]>>) {
     mutateConfig({ ...configRef.current, hero: { ...(configRef.current.hero || {}), ...patch } });
+  }
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement === studioRootRef.current) await document.exitFullscreen();
+      else await studioRootRef.current?.requestFullscreen();
+    } catch (e: any) {
+      setMsg(`Could not open full screen: ${e.message || "Your browser may have blocked the request."}`);
+    }
+  }
+
+  async function uploadHeroImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!selectedId) { setMsg("Choose a custom layout before uploading its hero image."); return; }
+    if (file.size > 5 * 1024 * 1024) { setMsg("Choose an image smaller than 5 MB."); return; }
+
+    setHeroImageUploading(true);
+    setMsg("");
+    try {
+      const body = new FormData();
+      body.append("image", file);
+      const result = await api<{ url: string }>(`/api/admin/layouts/${selectedId}/hero-image`, { method: "POST", body });
+      if (!result.url) throw new Error("The upload completed without returning an image URL.");
+      updateHero({ backgroundImage: result.url });
+      setMsg("Hero image uploaded. Save Draft to keep it, then publish when ready.");
+    } catch (e: any) {
+      setMsg(`Image upload failed: ${e.message || "Please try again."}`);
+    } finally {
+      setHeroImageUploading(false);
+    }
   }
 
   function updateHeroEffects(patch: Partial<HeroEffectsConfig>) {
@@ -563,7 +641,7 @@ export default function StorefrontBuilder() {
     scheduleHistory();
   }
 
-  async function createLayout() {
+  async function createLayout(startWithTemplate = false) {
     const baseLabel = await promptDialog({
       title: "New layout",
       message: "Name your layout. You can change this later.",
@@ -583,6 +661,7 @@ export default function StorefrontBuilder() {
       });
       await loadLayouts();
       await loadSelected(row.id);
+      if (startWithTemplate) setTab("templates");
       setMsg("Layout created. Add sections, then save and publish.");
     } catch (e: any) { setMsg("Failed: " + e.message); }
     finally { setSaving(false); }
@@ -800,12 +879,58 @@ export default function StorefrontBuilder() {
   };
 
   const renderDesignTab = (s: Section, idx: number) => {
-    switch (s.type) {
+    const supportsHeadingSize = ["product-grid", "category-grid", "banner", "text", "image-text", "features", "financing-promo"].includes(s.type);
+    const supportsBodyTypography = ["text", "image-text", "features", "financing-promo", "stats"].includes(s.type);
+    const supportsTextAlign = supportsHeadingSize || s.type === "button";
+    const contrast = s.bgColor && s.textColor ? colorContrast(s.textColor, s.bgColor) : null;
+    const typography = supportsHeadingSize || supportsTextAlign || supportsBodyTypography ? (
+      <>
+        {supportsHeadingSize && (
+          <Field label="Heading size">
+            <Select
+              value={s.headingSize || "default"}
+              onChange={(v) => updateSection(idx, { headingSize: v === "default" ? undefined : v as "small" | "standard" | "large" })}
+              options={[{ value: "default", label: "Template default" }, { value: "small", label: "Small" }, { value: "standard", label: "Standard" }, { value: "large", label: "Large" }]}
+            />
+          </Field>
+        )}
+        {supportsTextAlign && (
+          <Field label="Text alignment">
+            <Select
+              value={s.textAlign || ("align" in s ? s.align : undefined) || "default"}
+              onChange={(v) => updateSection(idx, { textAlign: v as "default" | "left" | "center" | "right" })}
+              options={[{ value: "default", label: "Section default" }, { value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]}
+            />
+          </Field>
+        )}
+        {supportsBodyTypography && (
+          <>
+            <Field label="Body text size">
+              <Select
+                value={s.bodyTextSize || "default"}
+                onChange={(v) => updateSection(idx, { bodyTextSize: v === "default" ? undefined : v as "small" | "standard" | "large" })}
+                options={[{ value: "default", label: "Template default" }, { value: "small", label: "Small" }, { value: "standard", label: "Standard" }, { value: "large", label: "Large" }]}
+              />
+            </Field>
+            <Field label="Line spacing">
+              <Select
+                value={s.lineHeight || "default"}
+                onChange={(v) => updateSection(idx, { lineHeight: v === "default" ? undefined : v as "compact" | "standard" | "relaxed" })}
+                options={[{ value: "default", label: "Template default" }, { value: "compact", label: "Compact" }, { value: "standard", label: "Standard" }, { value: "relaxed", label: "Relaxed" }]}
+              />
+            </Field>
+          </>
+        )}
+        {supportsHeadingSize && <p style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", margin: "0 0 0.75rem" }}>Heading size scales responsively so it stays readable on smaller screens.</p>}
+      </>
+    ) : null;
+
+    const designOptions = (() => {
+      switch (s.type) {
       case "button":
         return (<>
           <Field label="Style"><Select value={s.variant || "primary"} onChange={(v) => updateSection(idx, { variant: v as any })} options={[{ value: "primary", label: "Solid" }, { value: "secondary", label: "Neutral" }, { value: "outline", label: "Outline" }]} /></Field>
           <Field label="Size"><Select value={s.size || "md"} onChange={(v) => updateSection(idx, { size: v as any })} options={[{ value: "sm", label: "Small" }, { value: "md", label: "Medium" }, { value: "lg", label: "Large" }]} /></Field>
-          <Field label="Alignment"><Select value={s.align || "center"} onChange={(v) => updateSection(idx, { align: v as any })} options={[{ value: "center", label: "Center" }, { value: "left", label: "Left" }]} /></Field>
         </>);
       case "image":
         return (<>
@@ -815,7 +940,6 @@ export default function StorefrontBuilder() {
       case "image-text":
         return (<>
           <Field label="Image placement"><Select value={s.imageSide || "left"} onChange={(v) => updateSection(idx, { imageSide: v as "left" | "right" })} options={[{ value: "left", label: "Image left" }, { value: "right", label: "Image right" }]} /></Field>
-          <Field label="Section background"><Select value={s.background || "default"} onChange={(v) => updateSection(idx, { background: v as "default" | "surface" | "accent" })} options={[{ value: "default", label: "Page background" }, { value: "surface", label: "Raised surface" }, { value: "accent", label: "Soft brand tint" }]} /></Field>
         </>);
       case "product-grid":
       case "features":
@@ -831,17 +955,29 @@ export default function StorefrontBuilder() {
           <Field label="Columns (desktop)"><Num value={s.columns || 4} min={1} max={6} onChange={(v) => updateSection(idx, { columns: Math.min(6, Math.max(1, v)) })} /></Field>
         </>);
       case "banner":
-        return (<>
-          <Field label="Background color"><Color value={s.bgColor || ""} onChange={(v) => updateSection(idx, { bgColor: v })} /></Field>
-          <Field label="Text color"><Color value={s.textColor || ""} onChange={(v) => updateSection(idx, { textColor: v })} /></Field>
-        </>);
+        return null;
       case "text":
-        return (<>
-          <Field label="Alignment"><Select value={s.align || "center"} onChange={(v) => updateSection(idx, { align: v as any })} options={[{ value: "center", label: "Center" }, { value: "left", label: "Left" }]} /></Field>
-        </>);
+        return null;
       default:
         return <p style={{ fontSize: "0.82rem", color: "var(--text-tertiary)" }}>No design options for this section.</p>;
-    }
+      }
+    })();
+
+    return <>
+      {s.type !== "spacer" && <>
+        <Check label="Use custom section background" checked={!!s.bgColor} onChange={(enabled) => updateSection(idx, { bgColor: enabled ? "#ffffff" : undefined })} />
+        {s.bgColor && <Field label="Background color"><Color value={s.bgColor} onChange={(value) => updateSection(idx, { bgColor: value })} /></Field>}
+        <Check label="Use custom text color" checked={!!s.textColor} onChange={(enabled) => updateSection(idx, { textColor: enabled ? "#1f2937" : undefined })} />
+        {s.textColor && <Field label="Text color"><Color value={s.textColor} onChange={(value) => updateSection(idx, { textColor: value })} /></Field>}
+        {contrast !== null && contrast < 4.5 && <p role="status" style={{ color: "var(--warning-text)", fontSize: "0.75rem", margin: "-0.25rem 0 0.75rem" }}>These colors have a {contrast.toFixed(1)}:1 contrast ratio. Aim for at least 4.5:1 for readable body text.</p>}
+      </>}
+      {typography}
+      {designOptions}
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
+        <RippleButton size="small" variant="secondary" onClick={() => resetSectionStyling(idx)}>Reset section styling</RippleButton>
+        <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: "0.5rem 0 0" }}>Restores design and layout defaults. Content, visibility, and animation stay unchanged.</p>
+      </div>
+    </>;
   };
 
   const renderLayoutTab = (s: Section, idx: number) => {
@@ -902,7 +1038,24 @@ export default function StorefrontBuilder() {
               <RippleButton size="small" variant="danger" aria-label="Remove button" onClick={() => updateHero({ buttons: (hero.buttons || []).filter((_, k) => k !== j) })}>✕</RippleButton>
             </div>
           ))}
-          <Field label="Background image (optional)"><Text value={hero.backgroundImage || ""} onChange={(v) => updateHero({ backgroundImage: v })} placeholder="https://...jpg" /><MediaUrlWarn value={hero.backgroundImage} /></Field>
+          <Field label="Hero background image (optional)">
+            <input
+              ref={heroImageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={uploadHeroImage}
+              style={{ display: "none" }}
+              aria-label="Upload hero background image"
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+              {hero.backgroundImage && <Media src={hero.backgroundImage} alt="Hero background preview" width={112} height={64} fit="cover" style={{ width: 112, height: 64, borderRadius: 8, border: "1px solid var(--border)" }} />}
+              <RippleButton type="button" variant="secondary" loading={heroImageUploading} disabled={heroImageUploading || !selectedId} onClick={() => heroImageInputRef.current?.click()}>
+                {heroImageUploading ? "Uploading image…" : hero.backgroundImage ? "Replace image" : "Upload image"}
+              </RippleButton>
+              {hero.backgroundImage && <RippleButton type="button" variant="secondary" disabled={heroImageUploading} onClick={() => updateHero({ backgroundImage: "" })}>Remove</RippleButton>}
+            </div>
+            <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-tertiary)", marginTop: "0.35rem" }}>PNG, JPEG, WebP, or GIF · up to 5 MB. The image appears in your draft preview.</span>
+          </Field>
           {productImagePicker(hero.backgroundImage, (backgroundImage) => updateHero({ backgroundImage }))}
         </>)}
       </>)}
@@ -997,12 +1150,26 @@ export default function StorefrontBuilder() {
   );
 
   return (
-    <>
+    <div className="sb-studio" ref={studioRootRef}>
       <style>{`
+        .sb-studio:fullscreen { box-sizing: border-box; width: 100vw; height: 100vh; overflow: auto; padding: 1rem; background: var(--bg); color: var(--text); }
         .sb-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
         .sb-toolbar-left { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
         .sb-grid { display: grid; grid-template-columns: 220px 1fr 300px; gap: 1rem; align-items: start; }
-        @media (max-width: 1200px) { .sb-grid { grid-template-columns: 1fr; } }
+        .sb-studio:fullscreen .sb-grid { grid-template-columns: minmax(190px, 240px) minmax(0, 1fr) minmax(260px, 320px); height: calc(100vh - 110px); align-items: stretch; }
+        .sb-studio:fullscreen .sb-grid > div:nth-child(2) { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+        .sb-studio:fullscreen .sb-grid > .sb-panel { min-height: 0; overflow: auto; }
+        .sb-studio:fullscreen .sb-canvas { flex: 1; height: calc(100vh - 190px); max-height: none !important; }
+        @media (max-width: 1200px) {
+          .sb-grid { grid-template-columns: 1fr; }
+          .sb-studio:fullscreen .sb-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; }
+          .sb-studio:fullscreen .sb-grid > div:nth-child(2) { grid-column: 1 / -1; order: -1; }
+          .sb-studio:fullscreen .sb-canvas { height: 68vh; }
+        }
+        @media (max-width: 640px) {
+          .sb-studio:fullscreen .sb-grid { grid-template-columns: minmax(0, 1fr); }
+          .sb-studio:fullscreen .sb-canvas { height: 58vh; }
+        }
         .sb-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; }
         .sb-palette-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: grab; margin-bottom: 0.5rem; font-size: 0.85rem; background: var(--bg); transition: border-color var(--duration-fast) ease; }
         .sb-palette-item:hover { border-color: var(--primary); }
@@ -1040,7 +1207,7 @@ export default function StorefrontBuilder() {
             <option value="" disabled>Select a custom layout…</option>
             {dynamicLayouts.map((l) => <option key={l.id} value={l.id}>{l.label}{l.is_active === 1 ? " (live)" : ""}</option>)}
           </select>
-          <RippleButton onClick={createLayout} loading={saving}>+ New Layout</RippleButton>
+          <RippleButton onClick={() => createLayout()} loading={saving}>+ New Layout</RippleButton>
         </div>
         {selectedId && (
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -1055,18 +1222,21 @@ export default function StorefrontBuilder() {
             <a href="/" target="_blank" rel="noopener noreferrer" className="btn btn-ghost">View Site ↗</a>
           </div>
         )}
+        <RippleButton type="button" variant="secondary" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit full screen editor" : "Open full screen editor"}>
+          {isFullscreen ? "Exit full screen" : "Full screen editor"}
+        </RippleButton>
       </div>
 
       {msg && <div className={`sb-msg ${msg.startsWith("Failed") ? "sb-msg-err" : "sb-msg-ok"}`}>{msg}</div>}
 
       {!selectedId ? (
         <div className="sb-panel">
-          <h3 style={{ marginTop: 0 }}>Design your own storefront — no code needed</h3>
+          <h3 style={{ marginTop: 0 }}>Start designing your storefront</h3>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", maxWidth: 720, lineHeight: 1.6 }}>
-            Click <strong>+ New Layout</strong> to start. Drag and drop sections (products, buttons, images, stats, features…),
-            reorder them, double-click any text on the canvas to edit it in place, then <strong>Publish</strong> to make it live.
-            Built-in layouts (Original, Amazon, Jumia) are shown under <strong>Storefront</strong> and can't be edited here.
+            Choose a template for a guided starting point, or use <strong>+ New Layout</strong> to build a blank page.
+            You can change the sections, content, colors, and responsive layout before publishing.
           </p>
+          <RippleButton onClick={() => createLayout(true)} loading={saving} variant="primary">Start with a template</RippleButton>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(180px, 100%), 1fr))", gap: "0.75rem", marginTop: "1rem" }}>
             {dynamicLayouts.map((l) => (
               <div key={l.id} className="panel" role="button" tabIndex={0} style={{ cursor: "pointer", margin: 0, border: l.is_active === 1 ? "2px solid var(--primary)" : "1px solid var(--border)" }} onClick={() => loadSelected(l.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); loadSelected(l.id); } }}>
@@ -1133,7 +1303,8 @@ export default function StorefrontBuilder() {
                   ...tokenPreviewStyle,
                   width: "100%",
                   maxWidth: deviceWidth ?? "100%",
-                  maxHeight: "70vh",
+                  height: isFullscreen ? "calc(100vh - 190px)" : undefined,
+                  maxHeight: isFullscreen ? "none" : "70vh",
                   position: "relative",
                   // No width transition: the Desktop/Tablet/Mobile toggle resizes a
                   // canvas full of product cards, so animating it re-runs layout on
@@ -1239,13 +1410,40 @@ export default function StorefrontBuilder() {
                 {renderTabs()}
                 {tab === "content" && renderContentTab(selectedSectionData, selectedSection as number)}
                 {tab === "design" && (<>
+                  {selectedSectionData.type !== "spacer" && (
+                    <Field label="Section background">
+                      <Select
+                        value={selectedSectionData.background || "default"}
+                        onChange={(v) => updateSection(selectedSection as number, { background: v as "default" | "surface" | "accent" })}
+                        options={[{ value: "default", label: "Page background" }, { value: "surface", label: "Raised surface" }, { value: "accent", label: "Soft brand tint" }]}
+                      />
+                    </Field>
+                  )}
                   {renderDesignTab(selectedSectionData, selectedSection as number)}
                   <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
                     <h4 style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>Animation</h4>
                     <MotionPanel value={(selectedSectionData as any).animation} onChange={(a) => updateSection(selectedSection as number, { animation: a })} onPreview={() => setPreviewAnim(selectedSection)} />
                   </div>
                 </>)}
-                {tab === "layout" && renderLayoutTab(selectedSectionData, selectedSection as number)}
+                {tab === "layout" && (<>
+                  {selectedSectionData.type !== "spacer" && <>
+                    <Field label="Content width">
+                      <Select
+                        value={selectedSectionData.contentWidth || "default"}
+                        onChange={(v) => updateSection(selectedSection as number, { contentWidth: v as "default" | "narrow" | "standard" | "wide" | "full" })}
+                        options={[{ value: "default", label: "Template default" }, { value: "narrow", label: "Narrow" }, { value: "standard", label: "Standard" }, { value: "wide", label: "Wide" }, { value: "full", label: "Full width" }]}
+                      />
+                    </Field>
+                    <Field label="Vertical spacing">
+                      <Select
+                        value={selectedSectionData.spacing || "default"}
+                        onChange={(v) => updateSection(selectedSection as number, { spacing: v as "default" | "compact" | "standard" | "spacious" })}
+                        options={[{ value: "default", label: "Template default" }, { value: "compact", label: "Compact" }, { value: "standard", label: "Standard" }, { value: "spacious", label: "Spacious" }]}
+                      />
+                    </Field>
+                  </>}
+                  {renderLayoutTab(selectedSectionData, selectedSection as number)}
+                </>)}
                 <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
                   <RippleButton size="small" variant="secondary" onClick={() => { setSelectedSection(null); setTab("content"); }}>← Back to page settings</RippleButton>
                 </div>
@@ -1256,6 +1454,6 @@ export default function StorefrontBuilder() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

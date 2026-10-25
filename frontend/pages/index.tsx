@@ -8,7 +8,7 @@ import { useApp } from "@/lib/app-context";
 import { useRouter } from "next/router";
 import { getStorefrontCategories } from "@/lib/storefront-data";
 
-const SITE = "My Shop";
+const SITE = "Gears&Glitch";
 const BASE = process.env.NEXT_PUBLIC_SITE_URL || "https://gearsandglitch.co.ke";
 
 export default function HomePage() {
@@ -83,12 +83,12 @@ export default function HomePage() {
   return (
     <>
       <Head>
-        <title>{siteName} — Premium PCs, Laptops & Expert Repair in Kenya</title>
-        <meta name="description" content="Kenya's all-in-one platform for premium PC hardware, laptops, graphics cards, servers, printers, and expert repair services. Shop now with nationwide delivery." />
+        <title>{siteName} — PCs, Laptops, Components & Repairs</title>
+        <meta name="description" content="Shop PCs, laptops, graphics cards, servers and printers, or book a device repair." />
         <link rel="canonical" href={BASE} />
         <meta property="og:site_name" content={siteName} />
-        <meta property="og:title" content={`${siteName} — Premium Tech Hardware & Repair in Kenya`} />
-        <meta property="og:description" content="Buy PCs, laptops, graphics cards, servers, and printers in Kenya. Expert repair services with real-time tracking. Shop now." />
+        <meta property="og:title" content={`${siteName} — PCs, Laptops, Components & Repairs`} />
+        <meta property="og:description" content="Shop PCs, laptops, graphics cards, servers and printers, or book a device repair." />
         <meta property="og:url" content={BASE} />
         <meta property="og:type" content="website" />
       </Head>

@@ -424,7 +424,7 @@ import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, 
 import { publicBaseUrl } from "./public-url";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
 import { validateLayoutConfig } from "./template-validate";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes } from "./upload";
 import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
 import { MAX_PRODUCT_IMAGES, MAX_REPAIR_IMAGES, withinImageLimit, productImageLimitMessage, repairImageLimitMessage } from "./image-limits";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
@@ -715,6 +715,7 @@ defineAudit("/api/rates", "settings", { action: "rates_updated" });
 defineAudit("/api/admin/storefront-layout", "storefront_layout", { action: "updated", method: "PUT" });
 defineAudit("/api/admin/layouts", "layout");
 defineAudit("/api/admin/layouts/:id", "layout");
+defineAudit("/api/admin/layouts/:id/hero-image", "layout", { action: "hero_image_uploaded", method: "POST" });
 defineAudit("/api/admin/layouts/:id/activate", "layout", { action: "activated", method: "PUT" });
 defineAudit("/api/admin/about-us", "about_us", { action: "updated", method: "PUT" });
 defineAudit("/api/settings/nav-order", "settings", { action: "nav_order_updated", method: "PUT" });
@@ -1570,6 +1571,34 @@ app.get("/api/admin/layouts/:id", adminAuthMiddleware, requirePermission("settin
   const row = await queryOne("SELECT * FROM storefront_layouts WHERE id = $1", [Number(req.params.id)]);
   if (!row) { res.status(404).json({ error: "Layout not found." }); return; }
   res.json(presentLayout(row));
+}));
+
+app.post("/api/admin/layouts/:id/hero-image", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const layoutId = Number(req.params.id);
+  if (!Number.isInteger(layoutId) || layoutId <= 0) { res.status(400).json({ error: "Invalid layout ID." }); return; }
+  const layout = await queryOne("SELECT id, layout_type FROM storefront_layouts WHERE id = $1", [layoutId]);
+  if (!layout) { res.status(404).json({ error: "Layout not found." }); return; }
+  if ((layout as any).layout_type !== "dynamic") { res.status(409).json({ error: "Hero images can only be uploaded for custom layouts." }); return; }
+
+  let persisted = false;
+  try {
+    await runMulter(uploadLayoutHeroImage, req, res);
+    if (!req.file) { res.status(400).json({ error: "Choose an image to upload." }); return; }
+    if (!validateUploadedFile(req.file)) {
+      await removeUploadedAsset(req.file);
+      res.status(400).json({ error: "Invalid image file. Upload a genuine PNG, JPEG, WebP, or GIF image." });
+      return;
+    }
+    const imageUrl = getUploadedUrl(req);
+    if (!imageUrl) { await removeUploadedAsset(req.file); res.status(500).json({ error: "Image upload failed. Please try again." }); return; }
+    await backupImageToDb(`layout:${layoutId}:hero`, imageUrl);
+    persisted = true;
+    res.json({ url: imageUrl });
+  } catch (e: any) {
+    console.error("[Layout hero image upload]", e.message || e);
+    if (!persisted) await removeUploadedAsset(req.file, getUploadedUrl(req));
+    res.status(400).json({ error: "Image upload failed. Please try again." });
+  }
 }));
 
 app.post("/api/admin/layouts", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
