@@ -5,6 +5,7 @@ import os from "os";
 import { execSync } from "child_process";
 import { getCloudinaryConfig, getSmtpConfig } from "./db";
 import { decryptSecret } from "./cp-secrets";
+import { suspendClientWithConfirmation } from "./client-suspension";
 
 const NEON_API_KEY = process.env.NEON_API_KEY || "";
 const NEON_ORG_ID = process.env.NEON_ORG_ID || "";
@@ -728,35 +729,51 @@ export async function enforceUsageLimits() {
 // Shared suspend routine used by the manual endpoint and the auto-enforcement job.
 // Deactivates (never deletes) the client's store: app-level 403 for visitors,
 // then pauses the Render service. Data is left fully intact.
-export async function suspendClientRecord(client: any, reason: string): Promise<{ appSuspended: boolean }> {
+export async function suspendClientRecord(client: any, reason: string): Promise<{ appSuspended: boolean; renderSuspended: boolean }> {
   const { query } = await import("./db");
-  await query("UPDATE clients SET status = 'suspended' WHERE id = $1", [client.id]);
-
-  let appSuspended = false;
-  if (client.render_service_url && client.cp_secret) {
-    try {
-      const r = await fetch(`${client.render_service_url}/api/control-plane/suspend`, {
-        method: "POST",
-        headers: cpHeaders(client.cp_secret),
-        signal: AbortSignal.timeout(20000),
-      });
-      appSuspended = r.ok;
-    } catch (e: any) { console.warn("[suspend] App-level suspend failed:", e?.message); }
-  }
-
-  if (client.render_service_id) {
-    try {
-      await fetch(`https://api.render.com/v1/services/${client.render_service_id}/suspend`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
-      });
-    } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
-  }
+  const result = await suspendClientWithConfirmation({
+    suspendApp: async () => {
+      if (!client.render_service_url || !client.cp_secret) return false;
+      try {
+        const response = await fetch(`${client.render_service_url}/api/control-plane/suspend`, {
+          method: "POST",
+          headers: cpHeaders(client.cp_secret),
+          signal: AbortSignal.timeout(20000),
+        });
+        if (!response.ok) console.warn(`[suspend] Tenant app returned HTTP ${response.status}.`);
+        return response.ok;
+      } catch (error: any) {
+        console.warn("[suspend] Tenant app suspension request failed:", error?.name || "request error");
+        return false;
+      }
+    },
+    suspendRender: async () => {
+      if (!client.render_service_id || !RENDER_API_KEY) {
+        if (client.render_service_id && !RENDER_API_KEY) console.warn("[suspend] Render API key is not configured.");
+        return false;
+      }
+      try {
+        const response = await fetch(`https://api.render.com/v1/services/${client.render_service_id}/suspend`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${RENDER_API_KEY}`, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(20000),
+        });
+        if (!response.ok) console.warn(`[suspend] Render API returned HTTP ${response.status}.`);
+        return response.ok;
+      } catch (error: any) {
+        console.warn("[suspend] Render suspension request failed:", error?.name || "request error");
+        return false;
+      }
+    },
+    markSuspended: async () => {
+      await query("UPDATE clients SET status = 'suspended' WHERE id = $1", [client.id]);
+    },
+  });
 
   if (reason) {
     await sendSlackAlert(`:warning: *${client.name}* was suspended: ${reason}`);
   }
-  return { appSuspended };
+  return result;
 }
 
 // Resume routine: clears the app-level suspend flag and unpauses the Render service.

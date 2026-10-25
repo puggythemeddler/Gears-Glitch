@@ -56,6 +56,8 @@ export default function POSPage() {
   usePageTitle("Point of sale - Gear&Glitch");
   const [products, setProducts] = useState<Product[]>([]);
   const [filtered, setFiltered] = useState<Product[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<POSItem[]>([]);
   const [status, setStatus] = useState<StatusMessage | null>(null);
@@ -110,10 +112,14 @@ export default function POSPage() {
   // Re-fetch everything that is branch-scoped: catalogue, categories and the
   // allowed-branch list. Called on mount and after a mid-session branch switch.
   const reloadCatalog = useCallback(() => {
+    setCatalogLoading(true);
+    setCatalogError(null);
     api<{ products: Product[] }>("/api/products?includeHidden=1").then((d) => {
       setProducts(d.products || []);
-      setFiltered(d.products || []);
-    }).catch(() => {});
+    }).catch((error: unknown) => {
+      setProducts([]);
+      setCatalogError(error instanceof Error ? error.message : "Could not load products. Check your connection and try again.");
+    }).finally(() => setCatalogLoading(false));
     api<{ categories: { id: string; label: string }[] }>("/api/pos/categories").then((d) => {
       setCategories(d.categories || []);
     }).catch(() => {});
@@ -554,7 +560,16 @@ export default function POSPage() {
           <input ref={searchRef} type="text" className="input" placeholder="Search products or scan barcode / serial..." aria-label="Search products or scan barcode / serial" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const q = search.trim(); if (!q || mpesaPending) return; if (filtered.length === 1) { addToCart(filtered[0]); setSearch(""); return; } if (filtered.length > 1) { setStatus({ text: "Matches more than one product — scan barcode or refine search.", kind: "info" }); return; } handleScan(q); setSearch(""); } }} style={{ flex: 1, fontSize: "1.1rem" }} autoFocus disabled={!!mpesaPending} />
         </div>
         <div className="pos-product-grid">
-          {visibleProducts.map((p) => {
+          {catalogLoading ? (
+            <p className="muted pos-catalog-message" role="status" style={{ gridColumn: "1 / -1", textAlign: "center", padding: "2rem" }}>Loading products…</p>
+          ) : catalogError ? (
+            <div className="pos-catalog-message" role="alert" style={{ gridColumn: "1 / -1", textAlign: "center", padding: "2rem" }}>
+              <p style={{ marginTop: 0 }}>{catalogError}</p>
+              <button type="button" className="btn btn-ghost" onClick={reloadCatalog}>Try again</button>
+            </div>
+          ) : products.length === 0 ? (
+            <p className="muted pos-catalog-message" style={{ gridColumn: "1 / -1", textAlign: "center", padding: "2rem" }}>No products are available for this branch.</p>
+          ) : visibleProducts.map((p) => {
             const outOfStock = typeof p.stockOnHand === "number" && p.stockOnHand <= 0;
             return (
             <button key={p.id} type="button" className="panel" disabled={outOfStock || !!mpesaPending} style={{ cursor: outOfStock ? "not-allowed" : "pointer", textAlign: "left", padding: "0.5rem", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", opacity: outOfStock ? 0.5 : 1 }} onClick={() => addToCart(p)} aria-disabled={outOfStock}>
@@ -571,7 +586,7 @@ export default function POSPage() {
             </button>
             );
           })}
-          {filtered.length === 0 && <p className="muted" style={{ gridColumn: "1 / -1", textAlign: "center", padding: "2rem" }}>No products found.</p>}
+          {!catalogLoading && !catalogError && products.length > 0 && filtered.length === 0 && <p className="muted pos-catalog-message" style={{ gridColumn: "1 / -1", textAlign: "center", padding: "2rem" }}>No products match this search or category.</p>}
         </div>
         {totalPages > 1 && (
           <div className="pos-pagination">
@@ -600,7 +615,6 @@ export default function POSPage() {
               <li><strong>Enter</strong> in search — scan barcode / resolve single match</li>
               <li><strong>Enter</strong> in tendered / M-Pesa phone — charge</li>
               <li><strong>Esc</strong> — close serial modal, return to search</li>
-              <li><strong>+ / &minus;</strong> — adjust cart quantity</li>
             </ul>
             <button onClick={() => setShowHelp(false)} className="btn btn-ghost" style={{ textAlign: "left" }}>Close help</button>
           </div>

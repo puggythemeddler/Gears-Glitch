@@ -96,6 +96,7 @@ export type DynamicSection =
   | { type: "text"; id?: string; title?: string; content?: string; align?: "left" | "center"; hideOnMobile?: boolean; animation?: MotionConfig | null }
   | { type: "button"; id?: string; label?: string; link?: string; variant?: "primary" | "secondary" | "outline"; align?: "left" | "center"; size?: "sm" | "md" | "lg"; hideOnMobile?: boolean; animation?: MotionConfig | null }
   | { type: "image"; id?: string; imageUrl?: string; alt?: string; caption?: string; link?: string; maxWidth?: number; rounded?: boolean; hideOnMobile?: boolean; animation?: MotionConfig | null }
+  | { type: "image-text"; id?: string; imageUrl?: string; alt?: string; title?: string; content?: string; ctaText?: string; ctaLink?: string; imageSide?: "left" | "right"; background?: "default" | "surface" | "accent"; hideOnMobile?: boolean; animation?: MotionConfig | null }
   | { type: "features"; id?: string; title?: string; columns?: number; columnsTablet?: number; columnsMobile?: number; hideOnMobile?: boolean; items?: { icon?: string; title?: string; text?: string }[]; animation?: MotionConfig | null }
   | { type: "spacer"; id?: string; height?: number; hideOnMobile?: boolean; animation?: MotionConfig | null }
   | { type: "financing-promo"; id?: string; title?: string; content?: string; ctaText?: string; ctaLink?: string; hideOnMobile?: boolean; animation?: MotionConfig | null };
@@ -540,13 +541,39 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
       <div style={{ padding: "1.5rem 2rem", maxWidth: 1440, margin: "0 auto", textAlign: "center" }} data-fid={fid}>
         {section.imageUrl ? (
           <DyLink href={section.link} style={{ textDecoration: "none", color: "inherit", display: "inline-block" }}>
-            <Media src={section.imageUrl} alt={section.alt || section.caption || ""} width={1200} height={480} fit="contain" fallbackLabel="Image" style={{ maxWidth: "100%", maxHeight: 480, width: section.maxWidth ? section.maxWidth : undefined, borderRadius: section.rounded ? "var(--radius-lg)" : 0, objectFit: "contain" }} />
+          <Media src={section.imageUrl} alt={section.alt || section.caption || ""} width={1200} height={480} fit="contain" fallbackLabel="Image" style={{ maxWidth: "100%", maxHeight: 480, width: section.maxWidth ? section.maxWidth : undefined, borderRadius: section.rounded ? "var(--radius-lg)" : 0, objectFit: "contain" }} />
           </DyLink>
         ) : (
           <div style={{ border: "2px dashed var(--border)", borderRadius: "var(--radius-md)", padding: "3rem", color: "var(--text-tertiary)" }}>Image â€” add an image URL</div>
         )}
         {section.caption && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.5rem" }} data-fid={fid ? `${fid}.caption` : undefined}>{section.caption}</p>}
       </div>
+    );
+  }
+
+  if (section.type === "image-text") {
+    const background = section.background === "surface"
+      ? "var(--surface)"
+      : section.background === "accent"
+        ? "color-mix(in srgb, var(--primary) 8%, transparent)"
+        : "transparent";
+    return (
+      <section className="dy-image-text" style={{ background }} data-fid={fid}>
+        <div className={`dy-image-text__inner${section.imageSide === "right" ? " dy-image-text__inner--image-right" : ""}`}>
+          <div className="dy-image-text__media">
+            {section.imageUrl ? (
+              <Media src={section.imageUrl} alt={section.alt || ""} width={900} height={700} fit="cover" fallbackLabel={section.title || "Section image"} />
+            ) : (
+              <div className="dy-image-text__placeholder">Choose an image for this section</div>
+            )}
+          </div>
+          <div className="dy-image-text__copy">
+            {section.title && <h2 data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
+            {section.content && <p data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
+            {section.ctaText && <DyLink className="btn btn-primary" href={section.ctaLink || "/"} fid={fid ? `${fid}.ctaText` : undefined}>{section.ctaText}</DyLink>}
+          </div>
+        </div>
+      </section>
     );
   }
 
