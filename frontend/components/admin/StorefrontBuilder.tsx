@@ -110,6 +110,26 @@ const EDITABLE_FIDS = [
 ];
 
 type Device = "desktop" | "tablet" | "mobile";
+function hexRgb(value: string): [number, number, number] | null {
+  const match = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(value);
+  if (!match) return null;
+  const hex = match[1].length === 3 ? [...match[1]].map((char) => char + char).join("") : match[1];
+  return [0, 2, 4].map((index) => parseInt(hex.slice(index, index + 2), 16)) as [number, number, number];
+}
+
+function colorContrast(foreground: string, background: string): number | null {
+  const fg = hexRgb(foreground);
+  const bg = hexRgb(background);
+  if (!fg || !bg) return null;
+  const luminance = (channels: [number, number, number]) => channels
+    .map((channel) => channel / 255)
+    .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  const a = luminance(fg);
+  const b = luminance(bg);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
 const DEVICES: { id: Device; label: string; width: number | null }[] = [
   { id: "desktop", label: "Desktop", width: null },
   { id: "tablet", label: "Tablet", width: 768 },
@@ -819,6 +839,7 @@ export default function StorefrontBuilder() {
     const supportsHeadingSize = ["product-grid", "category-grid", "banner", "text", "image-text", "features", "financing-promo"].includes(s.type);
     const supportsBodyTypography = ["text", "image-text", "features", "financing-promo", "stats"].includes(s.type);
     const supportsTextAlign = supportsHeadingSize || s.type === "button";
+    const contrast = s.bgColor && s.textColor ? colorContrast(s.textColor, s.bgColor) : null;
     const typography = supportsHeadingSize || supportsTextAlign || supportsBodyTypography ? (
       <>
         {supportsHeadingSize && (
@@ -891,10 +912,7 @@ export default function StorefrontBuilder() {
           <Field label="Columns (desktop)"><Num value={s.columns || 4} min={1} max={6} onChange={(v) => updateSection(idx, { columns: Math.min(6, Math.max(1, v)) })} /></Field>
         </>);
       case "banner":
-        return (<>
-          <Field label="Background color"><Color value={s.bgColor || ""} onChange={(v) => updateSection(idx, { bgColor: v })} /></Field>
-          <Field label="Text color"><Color value={s.textColor || ""} onChange={(v) => updateSection(idx, { textColor: v })} /></Field>
-        </>);
+        return null;
       case "text":
         return null;
       default:
@@ -903,6 +921,13 @@ export default function StorefrontBuilder() {
     })();
 
     return <>
+      {s.type !== "spacer" && <>
+        <Check label="Use custom section background" checked={!!s.bgColor} onChange={(enabled) => updateSection(idx, { bgColor: enabled ? "#ffffff" : undefined })} />
+        {s.bgColor && <Field label="Background color"><Color value={s.bgColor} onChange={(value) => updateSection(idx, { bgColor: value })} /></Field>}
+        <Check label="Use custom text color" checked={!!s.textColor} onChange={(enabled) => updateSection(idx, { textColor: enabled ? "#1f2937" : undefined })} />
+        {s.textColor && <Field label="Text color"><Color value={s.textColor} onChange={(value) => updateSection(idx, { textColor: value })} /></Field>}
+        {contrast !== null && contrast < 4.5 && <p role="status" style={{ color: "var(--warning-text)", fontSize: "0.75rem", margin: "-0.25rem 0 0.75rem" }}>These colors have a {contrast.toFixed(1)}:1 contrast ratio. Aim for at least 4.5:1 for readable body text.</p>}
+      </>}
       {typography}
       {designOptions}
       <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
