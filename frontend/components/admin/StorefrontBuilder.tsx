@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { getProducts } from "@/components/ProductCard";
+import Media from "@/components/Media";
 import { useLayout } from "@/layouts";
 import { HeroSection, DynamicSectionView, DynamicLayoutStyles } from "@/layouts/dynamic-engine";
 import type { DynamicLayoutConfig } from "@/layouts/dynamic-engine";
@@ -254,6 +255,8 @@ export default function StorefrontBuilder() {
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [heroImageUploading, setHeroImageUploading] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
   const [selectedSection, setSelectedSection] = useState<number | null>(null);
@@ -300,10 +303,18 @@ export default function StorefrontBuilder() {
   const labelRef = useRef(label);
   const descRef = useRef(description);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const heroImageInputRef = useRef<HTMLInputElement>(null);
+  const studioRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { configRef.current = config; }, [config]);
   useEffect(() => { labelRef.current = label; }, [label]);
   useEffect(() => { descRef.current = description; }, [description]);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === studioRootRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
 
   // Only offer the financing block when the shop owns the entitlement and has
   // financing activated. The renderer re-checks server-side, so stale state
@@ -527,6 +538,38 @@ export default function StorefrontBuilder() {
 
   function updateHero(patch: Partial<NonNullable<DynamicLayoutConfig["hero"]>>) {
     mutateConfig({ ...configRef.current, hero: { ...(configRef.current.hero || {}), ...patch } });
+  }
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement === studioRootRef.current) await document.exitFullscreen();
+      else await studioRootRef.current?.requestFullscreen();
+    } catch (e: any) {
+      setMsg(`Could not open full screen: ${e.message || "Your browser may have blocked the request."}`);
+    }
+  }
+
+  async function uploadHeroImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!selectedId) { setMsg("Choose a custom layout before uploading its hero image."); return; }
+    if (file.size > 5 * 1024 * 1024) { setMsg("Choose an image smaller than 5 MB."); return; }
+
+    setHeroImageUploading(true);
+    setMsg("");
+    try {
+      const body = new FormData();
+      body.append("image", file);
+      const result = await api<{ url: string }>(`/api/admin/layouts/${selectedId}/hero-image`, { method: "POST", body });
+      if (!result.url) throw new Error("The upload completed without returning an image URL.");
+      updateHero({ backgroundImage: result.url });
+      setMsg("Hero image uploaded. Save Draft to keep it, then publish when ready.");
+    } catch (e: any) {
+      setMsg(`Image upload failed: ${e.message || "Please try again."}`);
+    } finally {
+      setHeroImageUploading(false);
+    }
   }
 
   function updateHeroEffects(patch: Partial<HeroEffectsConfig>) {
@@ -995,7 +1038,24 @@ export default function StorefrontBuilder() {
               <RippleButton size="small" variant="danger" aria-label="Remove button" onClick={() => updateHero({ buttons: (hero.buttons || []).filter((_, k) => k !== j) })}>✕</RippleButton>
             </div>
           ))}
-          <Field label="Background image (optional)"><Text value={hero.backgroundImage || ""} onChange={(v) => updateHero({ backgroundImage: v })} placeholder="https://...jpg" /><MediaUrlWarn value={hero.backgroundImage} /></Field>
+          <Field label="Hero background image (optional)">
+            <input
+              ref={heroImageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={uploadHeroImage}
+              style={{ display: "none" }}
+              aria-label="Upload hero background image"
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+              {hero.backgroundImage && <Media src={hero.backgroundImage} alt="Hero background preview" width={112} height={64} fit="cover" style={{ width: 112, height: 64, borderRadius: 8, border: "1px solid var(--border)" }} />}
+              <RippleButton type="button" variant="secondary" loading={heroImageUploading} disabled={heroImageUploading || !selectedId} onClick={() => heroImageInputRef.current?.click()}>
+                {heroImageUploading ? "Uploading image…" : hero.backgroundImage ? "Replace image" : "Upload image"}
+              </RippleButton>
+              {hero.backgroundImage && <RippleButton type="button" variant="secondary" disabled={heroImageUploading} onClick={() => updateHero({ backgroundImage: "" })}>Remove</RippleButton>}
+            </div>
+            <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-tertiary)", marginTop: "0.35rem" }}>PNG, JPEG, WebP, or GIF · up to 5 MB. The image appears in your draft preview.</span>
+          </Field>
           {productImagePicker(hero.backgroundImage, (backgroundImage) => updateHero({ backgroundImage }))}
         </>)}
       </>)}
@@ -1090,12 +1150,26 @@ export default function StorefrontBuilder() {
   );
 
   return (
-    <>
+    <div className="sb-studio" ref={studioRootRef}>
       <style>{`
+        .sb-studio:fullscreen { box-sizing: border-box; width: 100vw; height: 100vh; overflow: auto; padding: 1rem; background: var(--bg); color: var(--text); }
         .sb-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
         .sb-toolbar-left { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
         .sb-grid { display: grid; grid-template-columns: 220px 1fr 300px; gap: 1rem; align-items: start; }
-        @media (max-width: 1200px) { .sb-grid { grid-template-columns: 1fr; } }
+        .sb-studio:fullscreen .sb-grid { grid-template-columns: minmax(190px, 240px) minmax(0, 1fr) minmax(260px, 320px); height: calc(100vh - 110px); align-items: stretch; }
+        .sb-studio:fullscreen .sb-grid > div:nth-child(2) { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+        .sb-studio:fullscreen .sb-grid > .sb-panel { min-height: 0; overflow: auto; }
+        .sb-studio:fullscreen .sb-canvas { flex: 1; height: calc(100vh - 190px); max-height: none !important; }
+        @media (max-width: 1200px) {
+          .sb-grid { grid-template-columns: 1fr; }
+          .sb-studio:fullscreen .sb-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; }
+          .sb-studio:fullscreen .sb-grid > div:nth-child(2) { grid-column: 1 / -1; order: -1; }
+          .sb-studio:fullscreen .sb-canvas { height: 68vh; }
+        }
+        @media (max-width: 640px) {
+          .sb-studio:fullscreen .sb-grid { grid-template-columns: minmax(0, 1fr); }
+          .sb-studio:fullscreen .sb-canvas { height: 58vh; }
+        }
         .sb-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; }
         .sb-palette-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: grab; margin-bottom: 0.5rem; font-size: 0.85rem; background: var(--bg); transition: border-color var(--duration-fast) ease; }
         .sb-palette-item:hover { border-color: var(--primary); }
@@ -1148,6 +1222,9 @@ export default function StorefrontBuilder() {
             <a href="/" target="_blank" rel="noopener noreferrer" className="btn btn-ghost">View Site ↗</a>
           </div>
         )}
+        <RippleButton type="button" variant="secondary" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit full screen editor" : "Open full screen editor"}>
+          {isFullscreen ? "Exit full screen" : "Full screen editor"}
+        </RippleButton>
       </div>
 
       {msg && <div className={`sb-msg ${msg.startsWith("Failed") ? "sb-msg-err" : "sb-msg-ok"}`}>{msg}</div>}
@@ -1226,7 +1303,8 @@ export default function StorefrontBuilder() {
                   ...tokenPreviewStyle,
                   width: "100%",
                   maxWidth: deviceWidth ?? "100%",
-                  maxHeight: "70vh",
+                  height: isFullscreen ? "calc(100vh - 190px)" : undefined,
+                  maxHeight: isFullscreen ? "none" : "70vh",
                   position: "relative",
                   // No width transition: the Desktop/Tablet/Mobile toggle resizes a
                   // canvas full of product cards, so animating it re-runs layout on
@@ -1376,6 +1454,6 @@ export default function StorefrontBuilder() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
