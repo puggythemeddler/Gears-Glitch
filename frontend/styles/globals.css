@@ -5174,8 +5174,159 @@ a.hero-promotion:focus-visible {
 
 /* Hero: a touch wider inner + tighter showcase column for the flagship home */
 .storefront-original .dy-hero-inner {
-  max-width: 1120px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
+  max-width: 1280px;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(1.5rem, 4vw, 4rem);
+}
+.storefront-original .dy-hero {
+  padding: clamp(2.25rem, 5vw, 4.75rem) clamp(1rem, 4vw, 3.5rem);
+}
+.storefront-original .dy-hero-content { max-width: 34rem; }
+.storefront-original .dy-hero-headline {
+  max-width: 10ch;
+  font-size: clamp(2.5rem, 5.4vw, 5rem);
+  text-wrap: balance;
+}
+.storefront-original .dy-hero-sub {
+  max-width: 40ch;
+  font-size: clamp(1rem, 1.3vw, 1.15rem);
+  text-wrap: pretty;
+}
+.storefront-original .dy-hero-cta-row { margin-bottom: 0; }
+.storefront-original .dy-hero-btn {
+  min-height: 48px;
+  padding-inline: 1.2rem;
+  border-radius: var(--radius-md);
+}
+.storefront-original .dy-hero-contact-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: 0.25rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  text-underline-offset: 0.22em;
+}
+.storefront-original .dy-hero-contact-link:hover { color: var(--primary); }
+.storefront-original .dy-hero-contact-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+.storefront-original .dy-hero-panel {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.storefront-original .dy-hero-panel-media--stage {
+  min-height: clamp(280px, 38vw, 500px);
+  aspect-ratio: 1.08;
+  padding: clamp(1.25rem, 4vw, 3.5rem);
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--primary-subtle);
+}
+.storefront-original .dy-hero-panel-media-backdrop {
+  inset: 0;
+  border-radius: inherit;
+  background: var(--primary-subtle);
+}
+.storefront-original .dy-hero-panel-media-inner { min-height: 100%; }
+.storefront-original .dy-hero-panel-media-inner img {
+  width: 100%;
+  max-height: clamp(240px, 32vw, 420px);
+  object-fit: contain;
+}
+.storefront-original .dy-hero-panel-tag {
+  top: 1rem;
+  left: 1rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.75rem;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+.storefront-original .dy-hero-panel-foot {
+  align-items: flex-start;
+  padding: 1rem 0 0;
+}
+.storefront-original .dy-hero-panel-name { font-size: 1.05rem; }
+.storefront-original .dy-hero-product-picker {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+.storefront-original .dy-hero-product-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 44px;
+  min-height: 44px;
+  max-width: 14rem;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.storefront-original .dy-hero-product-option:hover,
+.storefront-original .dy-hero-product-option.is-active {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.storefront-original .dy-hero-product-option.is-active { font-weight: 600; }
+.storefront-original .dy-hero-product-option:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.storefront-original .dy-hero-product-option.is-active::after {
+  position: absolute;
+  right: 0.7rem;
+  bottom: 0.15rem;
+  left: 0.7rem;
+  height: 2px;
+  background: var(--primary);
+  content: "";
+}
+@media (max-width: 760px) {
+  .storefront-original .dy-hero {
+    padding: 1.75rem 1rem 2.25rem;
+  }
+  .storefront-original .dy-hero-inner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+  .storefront-original .dy-hero-headline {
+    max-width: 12ch;
+    font-size: clamp(2.35rem, 9vw, 3.5rem);
+  }
+  .storefront-original .dy-hero-sub { margin-bottom: 1.25rem; }
+  .storefront-original .dy-hero-panel-media--stage {
+    min-height: 0;
+    aspect-ratio: 1.15;
+    padding: 1.25rem;
+  }
+  .storefront-original .dy-hero-panel-media-inner img { max-height: 260px; }
+  .storefront-original .dy-hero-panel-foot { gap: 0.75rem; }
+  .storefront-original .dy-hero-product-picker { margin-top: 0.6rem; }
+}
+@media (max-width: 420px) {
+  .storefront-original .dy-hero-cta-row { gap: 0.5rem; }
+  .storefront-original .dy-hero-btn { padding-inline: 0.85rem; }
+  .storefront-original .dy-hero-product-option { max-width: 11rem; }
 }
 /* Rectangular (non-pill) accents on the original hero */
 .storefront-original .dy-hero-badge,
@@ -5183,36 +5334,8 @@ a.hero-promotion:focus-visible {
   border-radius: var(--radius-sm);
 }
 
-/* Showcase carousel controls (manual only — no autoplay) */
-.dy-hero-showcase { position: relative; }
-.dy-hero-carousel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 0.15rem 0;
-}
-.dy-hero-counter {
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-  letter-spacing: 0.08em;
-}
-.dy-hero-carousel-btns { display: flex; gap: 0.4rem; }
-.dy-hero-carousel-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-hover);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease;
-}
-.dy-hero-carousel-btn:hover { background: var(--surface-hover); border-color: var(--primary); }
-.dy-hero-carousel-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--primary-subtle); }
+/* Product options replace the generic carousel arrows with real inventory names. */
+.dy-hero-showcase { position: relative; min-width: 0; }
 
 /* Interactive flagship hero (Original layout). Pointer offsets arrive as CSS
    custom properties written imperatively by the component, so hover motion
@@ -5327,69 +5450,15 @@ a.hero-promotion:focus-visible {
 .storefront-guarantee svg { color: var(--primary); flex-shrink: 0; }
 .storefront-guarantee-grow { margin-left: auto; font-size: 0.85rem; color: var(--text-secondary); }
 
-/* Shop by category — catalogue-panel cards, not pills */
-.storefront-cats {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: clamp(2.5rem, 5vw, 4rem) 1.5rem 0;
-}
-.storefront-cats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
-  gap: 0.75rem;
-}
-.storefront-cat-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  text-decoration: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
-}
-.storefront-cat-card:hover {
-  border-color: var(--primary);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
-.storefront-cat-card:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--primary-subtle); }
-.storefront-cat-main { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
-.storefront-cat-label { color: var(--text); font-weight: 600; font-size: 0.95rem; }
-.storefront-cat-count { color: var(--text-tertiary); font-size: 0.8rem; }
-.storefront-cat-arrow { color: var(--text-tertiary); flex-shrink: 0; display: inline-flex; }
-
-/* Featured + catalogue sections */
-.storefront-featured,
+/* The header owns category discovery; the home page gives the inventory room. */
 .storefront-catalogue {
-  max-width: 1120px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: clamp(2.5rem, 5vw, 4rem) 1.5rem 0;
 }
 .storefront-catalogue { padding-bottom: clamp(2.5rem, 5vw, 4rem); }
 
 @media (max-width: 600px) {
-  .storefront-cats {
-    padding: 2rem 1rem 0;
-  }
-  .storefront-cats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem;
-  }
-  .storefront-cat-card {
-    min-height: 72px;
-    padding: 0.7rem;
-    align-items: flex-start;
-  }
-  .storefront-cat-main { gap: 0.25rem; }
-  .storefront-cat-label {
-    font-size: 0.85rem;
-    line-height: 1.2;
-  }
-  .storefront-cat-count { font-size: 0.72rem; }
-  .storefront-featured,
   .storefront-catalogue { padding-inline: 1rem; }
 }
 
