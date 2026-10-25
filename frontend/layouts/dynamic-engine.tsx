@@ -92,6 +92,8 @@ const SECTION_TEXT_ALIGN_LEFT = "var(--dy-section-text-align, left)" as React.CS
 
 type SectionStudioStyle = {
   background?: "default" | "surface" | "accent";
+  bgColor?: string;
+  textColor?: string;
   contentWidth?: "default" | "narrow" | "standard" | "wide" | "full";
   spacing?: "default" | "compact" | "standard" | "spacious";
   headingSize?: "small" | "standard" | "large";
@@ -115,17 +117,19 @@ export type DynamicSection = (
 ) & SectionStudioStyle;
 
 function studioSectionStyle(section: DynamicSection): React.CSSProperties {
+  const validColor = (value?: string) => typeof value === "string" && /^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(value) ? value : undefined;
   const width = section.contentWidth && section.contentWidth !== "default"
     ? { narrow: "800px", standard: "1200px", wide: "1440px", full: "none" }[section.contentWidth]
     : undefined;
   const blockPadding = section.spacing && section.spacing !== "default"
     ? { compact: "1rem 0.25rem", standard: "2rem 0.5rem", spacious: "3.5rem 1rem" }[section.spacing]
     : undefined;
-  const background = section.background === "surface"
+  const background = validColor(section.bgColor) || (section.background === "surface"
     ? "var(--surface)"
     : section.background === "accent"
       ? "color-mix(in srgb, var(--primary) 8%, var(--bg))"
-      : "transparent";
+      : "transparent");
+  const textColor = validColor(section.textColor);
   const headingSize = section.headingSize
     ? { small: "clamp(1.2rem, 1.8vw, 1.4rem)", standard: "clamp(1.5rem, 2.6vw, 1.875rem)", large: "clamp(1.75rem, 3.4vw, 2.5rem)" }[section.headingSize]
     : undefined;
@@ -141,6 +145,7 @@ function studioSectionStyle(section: DynamicSection): React.CSSProperties {
 
   return {
     background,
+    ...(textColor ? { "--dy-section-custom-text-color": textColor } : {}),
     ...(width ? { "--dy-section-width": width } : {}),
     ...(blockPadding ? { "--dy-section-block-padding": blockPadding } : {}),
     ...(headingSize ? { "--dy-section-heading-size": headingSize } : {}),
@@ -447,7 +452,7 @@ function FinancingPromo({ section, fid }: { section: Extract<DynamicSection, { t
     <div style={{ paddingBlock: "var(--dy-section-block-padding, 2rem)", paddingInline: "1rem", maxWidth: "var(--dy-section-width, 1000px)", margin: "0 auto" }}>
       <div style={{ background: "var(--primary-subtle)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "1.75rem", textAlign: SECTION_TEXT_ALIGN_CENTER }}>
         {section.title && <h2 style={{ fontSize: "var(--dy-section-heading-size, 1.35rem)", fontWeight: HEADING_WEIGHT, margin: "0 0 0.5rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
-        {section.content && <p style={{ color: "var(--text-secondary)", margin: "0 0 1rem", fontSize: "var(--dy-section-body-size, 1rem)", lineHeight: "var(--dy-section-line-height, 1.6)" }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
+        {section.content && <p style={{ color: "var(--dy-section-custom-text-color, var(--text-secondary))", margin: "0 0 1rem", fontSize: "var(--dy-section-body-size, 1rem)", lineHeight: "var(--dy-section-line-height, 1.6)" }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
         {section.ctaText && <DyLink className="btn btn-primary" href={section.ctaLink || "/financing"} fid={fid ? `${fid}.ctaText` : undefined}>{section.ctaText}</DyLink>}
       </div>
     </div>
@@ -490,7 +495,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     const stagger = section.animation?.preset === "stagger";
     const grid = responsiveGridProps(section);
     const cellStyle: React.CSSProperties = {
-      display: "block", textDecoration: "none", color: "var(--text)", background: "var(--surface)",
+      display: "block", textDecoration: "none", color: "var(--dy-section-custom-text-color, var(--text))", background: "var(--surface)",
       border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: section.style === "icons" ? "1.25rem" : "1.5rem",
       textAlign: "center", transition: "transform 0.2s, border-color 0.2s",
     };
@@ -523,7 +528,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
             <div style={{ position: "relative" }}>
               <Media src={section.imageUrl} alt={section.text || ""} width={1200} height={200} fit="cover" fallbackLabel="Section image" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
               {(section.text || section.buttonLabel) && (
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.75rem", background: "rgba(0,0,0,0.35)", color: "#fff" }}>
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.75rem", background: "rgba(0,0,0,0.35)", color: section.textColor || "#fff" }}>
                   {section.text && <div style={{ fontSize: "var(--dy-section-heading-size, 1.2rem)", fontWeight: HEADING_WEIGHT, textAlign: SECTION_TEXT_ALIGN_CENTER }} data-fid={fid ? `${fid}.text` : undefined}>{section.text}</div>}
                   {section.buttonLabel && <span style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "0.5rem 1.4rem", borderRadius: "var(--radius-sm)", fontWeight: 600, fontSize: "0.9rem" }} data-fid={fid ? `${fid}.buttonLabel` : undefined}>{section.buttonLabel}</span>}
                 </div>
@@ -549,7 +554,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{item.icon}</div>}
               <div style={{ fontSize: "1.8rem", fontWeight: HEADING_WEIGHT, color: colors?.accent || "var(--primary)" }} data-fid={fid ? `${fid}.items.${j}.value` : undefined}>{item.value}</div>
-              <div style={{ fontSize: "var(--dy-section-body-size, 0.85rem)", lineHeight: "var(--dy-section-line-height, 1.4)", color: "var(--text-secondary)", marginTop: 4 }} data-fid={fid ? `${fid}.items.${j}.label` : undefined}>{item.label}</div>
+              <div style={{ fontSize: "var(--dy-section-body-size, 0.85rem)", lineHeight: "var(--dy-section-line-height, 1.4)", color: "var(--dy-section-custom-text-color, var(--text-secondary))", marginTop: 4 }} data-fid={fid ? `${fid}.items.${j}.label` : undefined}>{item.label}</div>
             </div>
           ))}
         </div>
@@ -561,7 +566,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
     return (
       <div style={{ paddingBlock: "var(--dy-section-block-padding, 2rem 0.5rem)", paddingInline: "2rem", maxWidth: "var(--dy-section-width, 800px)", margin: "0 auto", textAlign: SECTION_TEXT_ALIGN_CENTER }} data-fid={fid}>
         {section.title && <h2 style={{ fontSize: "var(--dy-section-heading-size, 1.5rem)", fontWeight: HEADING_WEIGHT, marginBottom: "0.75rem" }} data-fid={fid ? `${fid}.title` : undefined}>{section.title}</h2>}
-        {section.content && <p style={{ fontSize: "var(--dy-section-body-size, 1rem)", color: "var(--text-secondary)", lineHeight: "var(--dy-section-line-height, 1.7)" }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
+        {section.content && <p style={{ fontSize: "var(--dy-section-body-size, 1rem)", color: "var(--dy-section-custom-text-color, var(--text-secondary))", lineHeight: "var(--dy-section-line-height, 1.7)" }} data-fid={fid ? `${fid}.content` : undefined}>{section.content}</p>}
       </div>
     );
   }
@@ -595,7 +600,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
         ) : (
           <div style={{ border: "2px dashed var(--border)", borderRadius: "var(--radius-md)", padding: "3rem", color: "var(--text-tertiary)" }}>Image â€” add an image URL</div>
         )}
-        {section.caption && <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.5rem" }} data-fid={fid ? `${fid}.caption` : undefined}>{section.caption}</p>}
+        {section.caption && <p style={{ fontSize: "0.85rem", color: "var(--dy-section-custom-text-color, var(--text-secondary))", marginTop: "0.5rem" }} data-fid={fid ? `${fid}.caption` : undefined}>{section.caption}</p>}
       </div>
     );
   }
@@ -635,7 +640,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ padding: "1.5rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", textAlign: "center", ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.8rem", marginBottom: "0.6rem" }}>{item.icon}</div>}
               {item.title && <div style={{ fontWeight: HEADING_WEIGHT, marginBottom: "0.4rem" }} data-fid={fid ? `${fid}.items.${j}.title` : undefined}>{item.title}</div>}
-              {item.text && <div style={{ fontSize: "var(--dy-section-body-size, 0.88rem)", color: "var(--text-secondary)", lineHeight: "var(--dy-section-line-height, 1.6)" }} data-fid={fid ? `${fid}.items.${j}.text` : undefined}>{item.text}</div>}
+              {item.text && <div style={{ fontSize: "var(--dy-section-body-size, 0.88rem)", color: "var(--dy-section-custom-text-color, var(--text-secondary))", lineHeight: "var(--dy-section-line-height, 1.6)" }} data-fid={fid ? `${fid}.items.${j}.text` : undefined}>{item.text}</div>}
             </div>
           ))}
         </div>
