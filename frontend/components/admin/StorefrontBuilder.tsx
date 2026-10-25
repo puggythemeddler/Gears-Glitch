@@ -563,7 +563,7 @@ export default function StorefrontBuilder() {
     scheduleHistory();
   }
 
-  async function createLayout() {
+  async function createLayout(startWithTemplate = false) {
     const baseLabel = await promptDialog({
       title: "New layout",
       message: "Name your layout. You can change this later.",
@@ -583,6 +583,7 @@ export default function StorefrontBuilder() {
       });
       await loadLayouts();
       await loadSelected(row.id);
+      if (startWithTemplate) setTab("templates");
       setMsg("Layout created. Add sections, then save and publish.");
     } catch (e: any) { setMsg("Failed: " + e.message); }
     finally { setSaving(false); }
@@ -1040,7 +1041,7 @@ export default function StorefrontBuilder() {
             <option value="" disabled>Select a custom layout…</option>
             {dynamicLayouts.map((l) => <option key={l.id} value={l.id}>{l.label}{l.is_active === 1 ? " (live)" : ""}</option>)}
           </select>
-          <RippleButton onClick={createLayout} loading={saving}>+ New Layout</RippleButton>
+          <RippleButton onClick={() => createLayout()} loading={saving}>+ New Layout</RippleButton>
         </div>
         {selectedId && (
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -1061,12 +1062,12 @@ export default function StorefrontBuilder() {
 
       {!selectedId ? (
         <div className="sb-panel">
-          <h3 style={{ marginTop: 0 }}>Design your own storefront — no code needed</h3>
+          <h3 style={{ marginTop: 0 }}>Start designing your storefront</h3>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", maxWidth: 720, lineHeight: 1.6 }}>
-            Click <strong>+ New Layout</strong> to start. Drag and drop sections (products, buttons, images, stats, features…),
-            reorder them, double-click any text on the canvas to edit it in place, then <strong>Publish</strong> to make it live.
-            Built-in layouts (Original, Amazon, Jumia) are shown under <strong>Storefront</strong> and can't be edited here.
+            Choose a template for a guided starting point, or use <strong>+ New Layout</strong> to build a blank page.
+            You can change the sections, content, colors, and responsive layout before publishing.
           </p>
+          <RippleButton onClick={() => createLayout(true)} loading={saving} variant="primary">Start with a template</RippleButton>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(180px, 100%), 1fr))", gap: "0.75rem", marginTop: "1rem" }}>
             {dynamicLayouts.map((l) => (
               <div key={l.id} className="panel" role="button" tabIndex={0} style={{ cursor: "pointer", margin: 0, border: l.is_active === 1 ? "2px solid var(--primary)" : "1px solid var(--border)" }} onClick={() => loadSelected(l.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); loadSelected(l.id); } }}>

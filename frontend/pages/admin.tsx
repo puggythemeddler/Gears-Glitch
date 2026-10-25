@@ -3102,13 +3102,6 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
     browseLink: "/#categories",
     heroBgLight: "",
     heroBgDark: "",
-    catChips: [
-      { label: "Gaming PCs", href: "/pc" },
-      { label: "Graphics Cards", href: "/graphics-cards" },
-      { label: "Laptops", href: "/laptops" },
-      { label: "Servers", href: "/servers" },
-      { label: "Repairs", href: "/repairs" },
-    ],
     stats: [
       { value: "", label: "Products" },
       { value: "", label: "Customers" },
@@ -3556,26 +3549,6 @@ function AdminStorefront({ onOpenBuilder }: { onOpenBuilder?: () => void }) {
               </div>
             ))}
             <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, highlights: [...heroForm.highlights, ""] })}>+ Add Highlight</RippleButton>
-          </div>
-
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, marginBottom: "0.5rem" }}>Category Chips</label>
-            {heroForm.catChips.map((c, i) => (
-              <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
-                <input value={c.label} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], label: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} placeholder="Label" style={{ flex: 1 }} />
-                <select value={c.href} onChange={(e) => { const copy = [...heroForm.catChips]; copy[i] = { ...copy[i], href: e.target.value }; setHeroForm({ ...heroForm, catChips: copy }); }} style={{ flex: 1 }}>
-                  <option value="">— pick category —</option>
-                  {catList.map((cat) => <option key={cat.id} value={"/" + cat.id}>{cat.label}</option>)}
-                </select>
-                <button className="btn btn-sm btn-ghost" aria-label="Remove category chip" onClick={() => setHeroForm({ ...heroForm, catChips: heroForm.catChips.filter((_, j) => j !== i) })}>&times;</button>
-              </div>
-            ))}
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <RippleButton size="small" variant="ghost" onClick={() => setHeroForm({ ...heroForm, catChips: [...heroForm.catChips, { label: "", href: "" }] })}>+ Add Chip</RippleButton>
-              <RippleButton size="small" variant="ghost" onClick={async () => {
-                try { const d = await api<any>("/api/categories"); const cats = d.categories || []; setHeroForm({ ...heroForm, catChips: cats.map((c: any) => ({ label: c.label, href: "/" + c.id })) }); } catch { feedback.error("Failed to load categories"); }
-              }}>Sync from Categories</RippleButton>
-            </div>
           </div>
 
           <div style={{ gridColumn: "1 / -1" }}>
