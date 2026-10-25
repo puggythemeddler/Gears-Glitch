@@ -14,6 +14,6 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["server/**/*", "tests/**/*"],
+  "include": ["server/**/*", "scripts/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist"]
 }
