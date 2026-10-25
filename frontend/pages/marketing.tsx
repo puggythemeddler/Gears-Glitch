@@ -320,6 +320,7 @@ function HeroDashboardPanel() {
   return (
     <div className="mk-hero-preview">
       <Panel title="Gear&Glitch · Dashboard · Nairobi HQ">
+        <p className="mk-sample-disclosure">Illustrative demo data</p>
         <div className="mk-kpis">
           {HERO_STATS.map((s) => (
             <div key={s.label} className={`mk-kpi${s.primary ? " mk-kpi--primary" : ""}`}>
@@ -354,7 +355,7 @@ function HeroDashboardPanel() {
         </div>
         <a className="mk-inline-link" href="#products">All repairs <Icon name="arrowRight" size={14} /></a>
       </Panel>
-      <p className="mk-panel-caption">The Gear&Glitch dashboard behind every shop — sample data.</p>
+      <p className="mk-panel-caption">Illustrative dashboard; all figures shown are sample data.</p>
     </div>
   );
 }
@@ -607,7 +608,7 @@ function MarketingContent() {
     <div className="mk-page" id="top">
       <Head>
         <title>Gear&Glitch — Run your entire shop from one place.</title>
-        <meta name="description" content="POS, inventory, repairs, warranty, and KRA eTIMS invoicing for electronics businesses in one system. Free Starter plan, no credit card required." />
+        <meta name="description" content="POS, inventory, repairs, warranties, and standard tax invoicing for electronics businesses in one system. Start with the free Starter plan." />
         <meta name="og:title" content="Gear&Glitch — Run your entire shop from one place." />
         <meta name="og:description" content="Sell, track, service, and warrant from one system. The platform built for businesses that sell products that need service." />
         <meta name="og:type" content="website" />
@@ -786,7 +787,7 @@ function MarketingContent() {
               ))}
             </div>
             <OperatorPanel />
-            <p className="mk-panel-caption" style={{ color: "var(--muted)" }}>Operator view — sample data.</p>
+            <p className="mk-panel-caption mk-panel-caption--sample">Illustrative operator data, not live customer or revenue figures.</p>
           </div>
         </section>
 

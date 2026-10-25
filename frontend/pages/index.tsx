@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import Head from "next/head";
+import Link from "next/link";
 import type { Product } from "@/lib/types";
 import { getProducts } from "@/components/ProductCard";
 import { useLayout, LayoutEngine } from "@/layouts";
@@ -63,11 +64,19 @@ export default function HomePage() {
 
   if (error) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "40vh", padding: "2rem", textAlign: "center" }}>
-        <div style={{ marginBottom: "1rem", opacity: 0.3 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
-        <p style={{ color: "var(--danger)", marginBottom: "1rem" }}>{error}</p>
-        <button className="btn btn-primary" onClick={() => window.location.reload()}>Retry</button>
-      </div>
+      <section className="catalogue-error" aria-labelledby="catalogue-error-title">
+        <span className="catalogue-error__mark" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4m0 4h.01"/></svg>
+        </span>
+        <p className="catalogue-error__eyebrow">Shop catalogue</p>
+        <h1 id="catalogue-error-title">We couldn’t load the products.</h1>
+        <p className="catalogue-error__copy" role="alert">The shop is having trouble reaching its catalogue. Give it another try, or browse a service while we reconnect.</p>
+        <div className="catalogue-error__actions">
+          <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>Try again</button>
+          <Link className="btn btn-secondary" href="/repairs">Explore repairs</Link>
+        </div>
+        <p className="catalogue-error__footnote">If the issue continues, <Link href="/contact">contact the shop</Link>.</p>
+      </section>
     );
   }
 

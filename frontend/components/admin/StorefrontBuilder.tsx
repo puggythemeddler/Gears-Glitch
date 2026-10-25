@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { getProducts } from "@/components/ProductCard";
 import { useLayout } from "@/layouts";
-import { HeroSection, DynamicSectionView } from "@/layouts/dynamic-engine";
+import { HeroSection, DynamicSectionView, DynamicLayoutStyles } from "@/layouts/dynamic-engine";
 import type { DynamicLayoutConfig } from "@/layouts/dynamic-engine";
 import RippleButton from "@/components/RippleButton";
 import Icon from "@/components/icons";
@@ -77,6 +77,7 @@ const SECTION_TEMPLATES: PaletteTemplate[] = [
   { type: "text", label: "Text Block", group: "Sections", keywords: "text paragraph heading copy", icon: "T", defaults: { title: "New heading", content: "Add a short paragraph describing your store, a promotion, or anything else your customers should know.", align: "center" } },
   { type: "button", label: "Button", group: "Sections", keywords: "button cta link action", icon: "B", defaults: { label: "Shop Now", link: "/pc", variant: "primary", align: "center", size: "md" } },
   { type: "image", label: "Image", group: "Sections", keywords: "image picture photo media", icon: "I", defaults: { imageUrl: "", alt: "", caption: "", rounded: true } },
+  { type: "image-text", label: "Image + text", group: "Sections", keywords: "image text editorial split story about", icon: "↔", defaults: { imageUrl: "", alt: "", title: "Tell your store’s story", content: "Describe what makes your shop useful to customers.", ctaText: "Explore the shop", ctaLink: "/", imageSide: "left", background: "surface" } },
   { type: "banner", label: "Banner", group: "Sections", keywords: "banner promo offer sale strip", icon: "N", defaults: { text: "Big Sale — up to 30% off", bgColor: "#f97316", textColor: "#ffffff", link: "/pc", buttonLabel: "Shop Now", buttonLink: "/pc" } },
   { type: "stats", label: "Stats", group: "Sections", keywords: "stats numbers counters metrics", icon: "S", defaults: { items: [{ value: "1000+", label: "Products" }, { value: "500+", label: "Customers" }, { value: "24/7", label: "Support" }] } },
   { type: "features", label: "Features", group: "Sections", keywords: "features benefits reasons cards", icon: "F", defaults: { title: "Why shop with us", columns: 3, items: [{ title: "Genuine products", text: "Authentic, sourced from official distributors." }, { title: "Fast delivery", text: "Nationwide delivery, Nairobi within 24h." }, { title: "Warranty", text: "Covered on every item we sell." }] } },
@@ -87,10 +88,17 @@ const SECTION_TEMPLATES: PaletteTemplate[] = [
 ];
 
 const SECTION_LABELS: Record<string, string> = {
-  "product-grid": "Products", "category-grid": "Categories", banner: "Banner", stats: "Stats",
+  "product-grid": "Products", "category-grid": "Categories", "image-text": "Image + text", banner: "Banner", stats: "Stats",
   text: "Text", button: "Button", image: "Image", features: "Features", spacer: "Spacer",
   "financing-promo": "Financing",
 };
+
+const ACCENT_PALETTES = [
+  { id: "till-orange", label: "Till orange", accent: "#c2410c", onAccent: "#ffffff" },
+  { id: "forest", label: "Forest", accent: "#166534", onAccent: "#ffffff" },
+  { id: "cobalt", label: "Cobalt", accent: "#1d4ed8", onAccent: "#ffffff" },
+  { id: "plum", label: "Plum", accent: "#7e22ce", onAccent: "#ffffff" },
+];
 
 const EDITABLE_FIDS = [
   /^hero\.badge$/, /^hero\.headline$/, /^hero\.subtitle$/, /^hero\.ctaText$/, /^hero\.buttons\.\d+\.label$/,
@@ -147,6 +155,11 @@ function normalizeTokens(input: DynamicLayoutConfig["tokens"]): DynamicLayoutCon
   if (typeof input.accent === "string" && hex.test(input.accent)) out.accent = input.accent;
   if (typeof input.onAccent === "string" && hex.test(input.onAccent)) out.onAccent = input.onAccent;
   if (isMotionIntensity(input.motionIntensity)) out.motionIntensity = input.motionIntensity;
+  if (input.headingFont === "sans" || input.headingFont === "serif" || input.headingFont === "mono") out.headingFont = input.headingFont;
+  if (input.bodyFont === "sans" || input.bodyFont === "serif" || input.bodyFont === "mono") out.bodyFont = input.bodyFont;
+  if (typeof input.headingWeight === "number" && Number.isFinite(input.headingWeight)) out.headingWeight = Math.max(400, Math.min(800, Math.round(input.headingWeight / 100) * 100));
+  if (input.headingCase === "none" || input.headingCase === "uppercase") out.headingCase = input.headingCase;
+  if (typeof input.headingTracking === "number" && Number.isFinite(input.headingTracking)) out.headingTracking = Math.max(-0.05, Math.min(0.25, input.headingTracking));
   return Object.keys(out).length ? out : undefined;
 }
 
@@ -211,6 +224,13 @@ export default function StorefrontBuilder() {
   const [description, setDescription] = useState("");
   const [config, setConfig] = useState<DynamicLayoutConfig>(DEFAULT_CONFIG);
   const [products, setProducts] = useState<Product[]>([]);
+  const productImageOptions = useMemo(() => {
+    const uniqueImages = new Map<string, string>();
+    products.forEach((product) => {
+      if (product.imageUrl && isAllowedImageSrc(product.imageUrl) && !uniqueImages.has(product.imageUrl)) uniqueImages.set(product.imageUrl, product.name);
+    });
+    return Array.from(uniqueImages, ([value, name]) => ({ value, label: name }));
+  }, [products]);
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -527,6 +547,16 @@ export default function StorefrontBuilder() {
     mutateConfig({ ...configRef.current, productCard: { ...(configRef.current.productCard || {}), ...patch } });
   }
 
+  function productImagePicker(value: string | undefined, onChange: (next: string) => void) {
+    if (!productImageOptions.length) return null;
+    const selected = productImageOptions.some((option) => option.value === value) ? value || "" : "";
+    return (
+      <Field label="Choose an image from your products">
+        <Select value={selected} onChange={onChange} options={[{ value: "", label: "Select a product image…" }, ...productImageOptions]} />
+      </Field>
+    );
+  }
+
   function applyFieldPath(fid: string, value: string) {
     setConfig((prev) => setAtPath(prev, fid, value) as DynamicLayoutConfig);
     setDirty(true);
@@ -688,9 +718,20 @@ export default function StorefrontBuilder() {
       case "image":
         return (<>
           <Field label="Image URL"><Text value={s.imageUrl || ""} onChange={(v) => updateSection(idx, { imageUrl: v })} placeholder="https://...jpg" /><MediaUrlWarn value={s.imageUrl} /></Field>
+          {productImagePicker(s.imageUrl, (imageUrl) => updateSection(idx, { imageUrl }))}
           <Field label="Alt text"><Text value={s.alt || ""} onChange={(v) => updateSection(idx, { alt: v })} /></Field>
           <Field label="Caption"><Text value={s.caption || ""} onChange={(v) => updateSection(idx, { caption: v })} /></Field>
           <Field label="Link (optional)"><Text value={s.link || ""} onChange={(v) => updateSection(idx, { link: v })} /><LinkHint value={s.link || ""} /></Field>
+        </>);
+      case "image-text":
+        return (<>
+          <Field label="Image URL"><Text value={s.imageUrl || ""} onChange={(v) => updateSection(idx, { imageUrl: v })} placeholder="https://...jpg" /><MediaUrlWarn value={s.imageUrl} /></Field>
+          {productImagePicker(s.imageUrl, (imageUrl) => updateSection(idx, { imageUrl }))}
+          <Field label="Image description"><Text value={s.alt || ""} onChange={(v) => updateSection(idx, { alt: v })} placeholder="Describe the image for screen readers" /></Field>
+          <Field label="Heading"><Text value={s.title || ""} onChange={(v) => updateSection(idx, { title: v })} /></Field>
+          <Field label="Text"><textarea style={{ ...inputStyle, minHeight: 90, resize: "vertical" }} value={s.content || ""} onChange={(e) => updateSection(idx, { content: e.target.value })} /></Field>
+          <Field label="Button label"><Text value={s.ctaText || ""} onChange={(v) => updateSection(idx, { ctaText: v })} /></Field>
+          <Field label="Button link"><Text value={s.ctaLink || ""} onChange={(v) => updateSection(idx, { ctaLink: v })} placeholder="/pc" /><LinkHint value={s.ctaLink || ""} /></Field>
         </>);
       case "product-grid":
         return (<>
@@ -770,6 +811,11 @@ export default function StorefrontBuilder() {
         return (<>
           <Field label="Max width (px)"><Num value={s.maxWidth || 0} onChange={(v) => updateSection(idx, { maxWidth: v || undefined })} /></Field>
           <Check label="Rounded corners" checked={s.rounded !== false} onChange={(v) => updateSection(idx, { rounded: v })} />
+        </>);
+      case "image-text":
+        return (<>
+          <Field label="Image placement"><Select value={s.imageSide || "left"} onChange={(v) => updateSection(idx, { imageSide: v as "left" | "right" })} options={[{ value: "left", label: "Image left" }, { value: "right", label: "Image right" }]} /></Field>
+          <Field label="Section background"><Select value={s.background || "default"} onChange={(v) => updateSection(idx, { background: v as "default" | "surface" | "accent" })} options={[{ value: "default", label: "Page background" }, { value: "surface", label: "Raised surface" }, { value: "accent", label: "Soft brand tint" }]} /></Field>
         </>);
       case "product-grid":
       case "features":
@@ -857,6 +903,7 @@ export default function StorefrontBuilder() {
             </div>
           ))}
           <Field label="Background image (optional)"><Text value={hero.backgroundImage || ""} onChange={(v) => updateHero({ backgroundImage: v })} placeholder="https://...jpg" /><MediaUrlWarn value={hero.backgroundImage} /></Field>
+          {productImagePicker(hero.backgroundImage, (backgroundImage) => updateHero({ backgroundImage }))}
         </>)}
       </>)}
 
@@ -900,11 +947,27 @@ export default function StorefrontBuilder() {
             <button type="button" onClick={() => updateTokens({ radius: undefined })} style={{ ...inputStyle, width: "auto", cursor: "pointer" }}>Default</button>
           </div>
         </Field>
+        <Field label="Accent palette">
+          <Select
+            value={ACCENT_PALETTES.find((palette) => palette.accent === config.tokens?.accent && palette.onAccent === config.tokens?.onAccent)?.id || "custom"}
+            onChange={(id) => {
+              const palette = ACCENT_PALETTES.find((item) => item.id === id);
+              if (palette) updateTokens({ accent: palette.accent, onAccent: palette.onAccent });
+            }}
+            options={[{ value: "custom", label: "Custom colours" }, ...ACCENT_PALETTES.map(({ id, label }) => ({ value: id, label }))]}
+          />
+        </Field>
         <Field label="Store accent"><Color value={config.tokens?.accent || ""} onChange={(v) => updateTokens({ accent: v })} /></Field>
         <Field label="Text on accent"><Color value={config.tokens?.onAccent || ""} onChange={(v) => updateTokens({ onAccent: v })} /></Field>
         <Field label="Motion intensity">
           <Select value={config.tokens?.motionIntensity || "standard"} onChange={(v) => updateTokens({ motionIntensity: v as MotionIntensity })} options={MOTION_INTENSITIES.map((i) => ({ value: i, label: MOTION_INTENSITY_LABELS[i] }))} />
         </Field>
+        <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.85rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>Typography</h4>
+        <Field label="Heading font"><Select value={config.tokens?.headingFont || "sans"} onChange={(v) => updateTokens({ headingFont: v as "sans" | "serif" | "mono" })} options={[{ value: "sans", label: "Sans serif" }, { value: "serif", label: "Serif" }, { value: "mono", label: "Monospace" }]} /></Field>
+        <Field label="Body font"><Select value={config.tokens?.bodyFont || "sans"} onChange={(v) => updateTokens({ bodyFont: v as "sans" | "serif" | "mono" })} options={[{ value: "sans", label: "Sans serif" }, { value: "serif", label: "Serif" }, { value: "mono", label: "Monospace" }]} /></Field>
+        <Field label="Heading weight"><Select value={String(config.tokens?.headingWeight || 700)} onChange={(v) => updateTokens({ headingWeight: Number(v) })} options={[{ value: "400", label: "Regular" }, { value: "500", label: "Medium" }, { value: "600", label: "Semibold" }, { value: "700", label: "Bold" }, { value: "800", label: "Extra bold" }]} /></Field>
+        <Field label="Heading case"><Select value={config.tokens?.headingCase || "none"} onChange={(v) => updateTokens({ headingCase: v as "none" | "uppercase" })} options={[{ value: "none", label: "As typed" }, { value: "uppercase", label: "Uppercase" }]} /></Field>
+        <Field label="Heading letter spacing"><Select value={String(config.tokens?.headingTracking ?? 0)} onChange={(v) => updateTokens({ headingTracking: Number(v) })} options={[{ value: "-0.02", label: "Tighter" }, { value: "0", label: "Default" }, { value: "0.04", label: "Open" }, { value: "0.08", label: "Wide" }]} /></Field>
         <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: "0.5rem 0 0" }}>Radius replaces the storefront corner scale (10–14px reads best). Accent repaints buttons and links, so pick a text colour that stays high contrast. Motion intensity sets the default dial for sections that animate.</p>
         <h4 style={{ margin: "1rem 0 0.5rem", fontSize: "0.85rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>Product cards</h4>
         <Field label="Style"><Select value={config.productCard?.style || "default"} onChange={(v) => updateCard({ style: v as any })} options={[{ value: "default", label: "Default" }, { value: "compact", label: "Compact" }, { value: "detailed", label: "Detailed" }]} /></Field>
@@ -1063,7 +1126,7 @@ export default function StorefrontBuilder() {
             </div>
             <div style={{ display: "flex", justifyContent: device === "desktop" ? "flex-start" : "center" }}>
               <div
-                className="sb-canvas"
+                className="sb-canvas dynamic-layout"
                 ref={canvasRef}
                 onClickCapture={onCanvasClickCapture}
                 style={{
@@ -1077,6 +1140,7 @@ export default function StorefrontBuilder() {
                   // every frame. The switch is discrete and reads fine as a jump.
                 }}
               >
+                <DynamicLayoutStyles tokens={config.tokens} />
                 {previewTemplate ? (
                   <TemplateLivePreview template={previewTemplate} products={products} categories={categories} device={device} />
                 ) : showPreview ? (

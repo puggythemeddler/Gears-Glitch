@@ -6,7 +6,7 @@ export default class MyDocument extends Document {
       <Html lang="en">
         <Head>
           <title>Welcome to our store</title>
-          <meta name="description" content="Kenya's all-in-one platform for premium PC hardware, laptops, graphics cards, servers, printers, and expert repair services. KRA eTIMS compliant invoicing. Shop now." />
+          <meta name="description" content="Kenya's all-in-one platform for premium PC hardware, laptops, graphics cards, servers, printers, and expert repair services. Shop now." />
           <meta name="keywords" content="computers Kenya, laptops Nairobi, PC builds Kenya, graphics cards, server hardware, printer sales, computer repair Kenya, tech shop Kenya" />
           <meta property="og:type" content="website" />
           <meta property="og:site_name" content="Welcome to our store" />

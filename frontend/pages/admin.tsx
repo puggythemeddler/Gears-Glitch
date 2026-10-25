@@ -923,18 +923,22 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
   function nav(v: AdminView) { onNavigate(v); }
 
   function StatCard({ value, label, onClick, tone }: { value: number; label: string; onClick?: () => void; tone?: string }) {
+    const className = `stat-card card-hover${onClick ? " dash-stat-clickable" : ""}`;
+    const content = <>
+      <div className="stat-card__value" style={tone ? { color: `var(--${tone})` } : undefined}>{value.toLocaleString()}</div>
+      <div className="stat-card__label">{label}</div>
+    </>;
+
+    if (onClick) {
+      return (
+        <button type="button" className={className} onClick={onClick} style={tone ? { borderColor: `var(--${tone})` } : undefined}>
+          {content}
+        </button>
+      );
+    }
+
     return (
-      <div
-        className={`stat-card card-hover${onClick ? " dash-stat-clickable" : ""}`}
-        role={onClick ? "button" : undefined}
-        tabIndex={onClick ? 0 : undefined}
-        onClick={onClick}
-        onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
-        style={tone ? { borderColor: `var(--${tone})` } : undefined}
-      >
-        <div className="stat-card__value" style={tone ? { color: `var(--${tone})` } : undefined}>{value.toLocaleString()}</div>
-        <div className="stat-card__label">{label}</div>
-      </div>
+      <div className={className} style={tone ? { borderColor: `var(--${tone})` } : undefined}>{content}</div>
     );
   }
 
@@ -952,6 +956,21 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
     <>
       <h1 className="anim-fade-in-down">Dashboard</h1>
 
+      {attentionItems.length > 0 && (
+        <section className="dash-attention-section" aria-labelledby="dash-attention-title">
+          <h2 id="dash-attention-title" className="dash-attention-heading">Needs attention</h2>
+          <div className="dash-attention">
+            {attentionItems.map((a) => (
+              <button type="button" key={a.label} className={`dash-attention-item tone-${a.tone}`} onClick={() => nav(a.view)}>
+                <span className="dash-attention-value">{a.value}</span>
+                <span className="dash-attention-label">{a.label}{a.note ? <em> — {a.note}</em> : null}</span>
+                <Icon name="arrowRight" size={15} />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="stat-grid">
         <StatCard value={products?.products?.length ?? 0} label="Total Products" onClick={() => nav("products")} />
         {canOrders && <StatCard value={todayOrders} label="Orders Today" onClick={() => nav("orders")} />}
@@ -965,18 +984,6 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
         {isAdmin && <StatCard value={stats?.totalStaff ?? 0} label="Users" onClick={() => nav("users")} />}
         {isAdmin && <StatCard value={pendingReqs} label="Pending Sub. Requests" tone={pendingReqs > 0 ? "danger" : undefined} onClick={() => nav("shop-subscription")} />}
       </div>
-
-      {attentionItems.length > 0 && (
-        <div className="dash-attention" role="status">
-          {attentionItems.map((a) => (
-            <button type="button" key={a.label} className={`dash-attention-item tone-${a.tone}`} onClick={() => nav(a.view)}>
-              <span className="dash-attention-value">{a.value}</span>
-              <span className="dash-attention-label">{a.label}{a.note ? <em> — {a.note}</em> : null}</span>
-              <Icon name="arrowRight" size={15} />
-            </button>
-          ))}
-        </div>
-      )}
 
       {(canStock && lowItems.length > 0) || canRepairs ? (
         <div className="dash-cols">
