@@ -3210,6 +3210,8 @@ a.order-item:hover {
   min-width: 0;
 }
 
+.pos-mobile-cart-jump { display: none; }
+
 /* POS interaction — subtle feedback only: speed, touch and readability
    first. Category rail, product tiles and the customer dropdown get a quiet
    press/lift; nothing bounces at the till. */
@@ -4245,8 +4247,64 @@ a.about-contact-card:hover {
     flex-direction: column;
     height: auto;
     min-height: 100dvh;
-    overflow: auto;
+    overflow: visible;
   }
+
+  .pos-mobile-cart-jump {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: 64px;
+    padding: var(--space-2) var(--space-4) calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+    border: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .pos-mobile-cart-jump:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -3px;
+  }
+
+  .pos-mobile-cart-jump__summary {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .pos-mobile-cart-jump__summary strong { font-size: var(--text-sm); }
+  .pos-mobile-cart-jump__summary > span {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pos-mobile-cart-jump__action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 44px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--primary);
+    color: var(--on-primary);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .pos-cart-panel { scroll-margin-top: var(--space-4); }
 
   .pos-category-bar {
     width: 100%;

@@ -103,6 +103,8 @@ export default function POSPage() {
   const serialInputRef = useRef<HTMLInputElement>(null);
   const serialDialogRef = useRef<HTMLDivElement>(null);
   const newSaleRef = useRef<HTMLButtonElement>(null);
+  const cartPanelRef = useRef<HTMLDivElement>(null);
+  const [cartPanelVisible, setCartPanelVisible] = useState(false);
   const idempotencyKeyRef = useRef<string>("");
   const idempotencyCartRef = useRef<string>("");
 
@@ -289,6 +291,16 @@ export default function POSPage() {
     if (lastOrderId) newSaleRef.current?.focus();
   }, [lastOrderId]);
 
+  useEffect(() => {
+    const panel = cartPanelRef.current;
+    if (!panel || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => {
+      setCartPanelVisible(entry.isIntersecting);
+    }, { threshold: 0.08 });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [loggedIn, pinUnlocked]);
+
   function updateQty(productId: string, qty: number) {
     if (mpesaPending) return;
     if (qty <= 0) { setCart((prev) => prev.filter((i) => i.productId !== productId)); return; }
@@ -296,6 +308,7 @@ export default function POSPage() {
   }
 
   const subtotal = cart.reduce((s, i) => s + i.lineTotal, 0);
+  const cartItemCount = cart.reduce((count, item) => count + item.quantity, 0);
   const change = needsTender && Number(tenderedAmount) > subtotal ? Number(tenderedAmount) - subtotal : 0;
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PRODUCTS_PER_PAGE));
@@ -597,11 +610,29 @@ export default function POSPage() {
         )}
       </div>
 
-      <div className="pos-cart-panel">
+      {!cartPanelVisible && (cartItemCount > 0 || mpesaPending || lastOrderId) && (
+        <button
+          type="button"
+          className="pos-mobile-cart-jump"
+          onClick={() => cartPanelRef.current?.scrollIntoView({
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+            block: "start",
+          })}
+          aria-label={`${lastOrderId ? "Sale complete" : mpesaPending ? "Payment pending" : "Open checkout"}. ${cartItemCount} ${cartItemCount === 1 ? "item" : "items"}, total ${formatPrice(subtotal)}.`}
+        >
+          <span className="pos-mobile-cart-jump__summary">
+            <strong>{lastOrderId ? "Sale complete" : mpesaPending ? "Payment pending" : "Current sale"}</strong>
+            <span aria-live="polite" aria-atomic="true">{cartItemCount} {cartItemCount === 1 ? "item" : "items"} · {formatPrice(subtotal)}</span>
+          </span>
+          <span className="pos-mobile-cart-jump__action">{lastOrderId ? "Receipt options" : mpesaPending ? "View payment" : "Open checkout"} <span aria-hidden="true">↓</span></span>
+        </button>
+      )}
+
+      <div className="pos-cart-panel" id="pos-cart-panel" ref={cartPanelRef}>
         <div style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
             <span style={{ fontWeight: 800, fontSize: "1.15rem", letterSpacing: "0.04em" }}>TILL</span>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{cart.length} {cart.length === 1 ? "item" : "items"}</span>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{cartItemCount} {cartItemCount === 1 ? "item" : "items"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <button onClick={() => setShowHelp(!showHelp)} aria-label="Help and keyboard shortcuts" title="Help & keyboard shortcuts" className="btn btn-ghost" style={{ padding: "0 0.9rem", minWidth: 44 }}>?</button>
