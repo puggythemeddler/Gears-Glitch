@@ -5255,22 +5255,19 @@ a.hero-promotion:focus-visible {
 }
 .storefront-original .dy-hero-panel-name { font-size: 1.05rem; }
 .storefront-original .dy-hero-product-picker {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
   gap: 0.35rem;
   margin-top: 0.85rem;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-hover) transparent;
 }
 .storefront-original .dy-hero-product-option {
   position: relative;
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  align-items: flex-start;
   justify-content: flex-start;
-  min-width: 44px;
+  min-width: 0;
   min-height: 44px;
-  max-width: 14rem;
+  width: 100%;
   padding: 0.55rem 0.7rem;
   border: 0;
   border-radius: var(--radius-sm);
@@ -5279,7 +5276,8 @@ a.hero-promotion:focus-visible {
   font: inherit;
   font-size: 0.85rem;
   text-align: left;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 .storefront-original .dy-hero-product-option:hover,
@@ -5326,7 +5324,6 @@ a.hero-promotion:focus-visible {
 @media (max-width: 420px) {
   .storefront-original .dy-hero-cta-row { gap: 0.5rem; }
   .storefront-original .dy-hero-btn { padding-inline: 0.85rem; }
-  .storefront-original .dy-hero-product-option { max-width: 11rem; }
 }
 /* Rectangular (non-pill) accents on the original hero */
 .storefront-original .dy-hero-badge,
