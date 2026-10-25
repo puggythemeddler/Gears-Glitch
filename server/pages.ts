@@ -131,6 +131,18 @@ export function sanitizeSections(raw: unknown): any[] {
     if (["default", "compact", "standard", "spacious"].includes((s as any).spacing)) {
       sec.spacing = (s as any).spacing;
     }
+    if (["small", "standard", "large"].includes((s as any).headingSize)) {
+      sec.headingSize = (s as any).headingSize;
+    }
+    if (["small", "standard", "large"].includes((s as any).bodyTextSize)) {
+      sec.bodyTextSize = (s as any).bodyTextSize;
+    }
+    if (["compact", "standard", "relaxed"].includes((s as any).lineHeight)) {
+      sec.lineHeight = (s as any).lineHeight;
+    }
+    if (["default", "left", "center", "right"].includes((s as any).textAlign)) {
+      sec.textAlign = (s as any).textAlign;
+    }
     out.push(sec);
   }
   return out;

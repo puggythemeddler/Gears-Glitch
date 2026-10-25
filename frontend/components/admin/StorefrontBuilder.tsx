@@ -444,6 +444,21 @@ export default function StorefrontBuilder() {
     mutateConfig({ ...configRef.current, sections });
   }
 
+  function resetSectionStyling(idx: number) {
+    const sections = [...(configRef.current.sections || [])];
+    const existing = sections[idx];
+    if (!existing) return;
+    const section = { ...existing } as Section & Record<string, unknown>;
+    const styleKeys = [
+      "background", "contentWidth", "spacing", "headingSize", "bodyTextSize", "lineHeight", "textAlign", "align",
+      "bgColor", "textColor", "maxWidth", "rounded", "imageSide", "columns", "columnsTablet", "columnsMobile",
+      "style", "size", "variant",
+    ];
+    for (const key of styleKeys) delete section[key];
+    sections[idx] = section as Section;
+    mutateConfig({ ...configRef.current, sections });
+  }
+
   function addSection(template: PaletteTemplate) {
     const section = { type: template.type, id: uid(), ...template.defaults };
     const sections = [...(configRef.current.sections || []), section];
@@ -801,12 +816,57 @@ export default function StorefrontBuilder() {
   };
 
   const renderDesignTab = (s: Section, idx: number) => {
-    switch (s.type) {
+    const supportsHeadingSize = ["product-grid", "category-grid", "banner", "text", "image-text", "features", "financing-promo"].includes(s.type);
+    const supportsBodyTypography = ["text", "image-text", "features", "financing-promo", "stats"].includes(s.type);
+    const supportsTextAlign = supportsHeadingSize || s.type === "button";
+    const typography = supportsHeadingSize || supportsTextAlign || supportsBodyTypography ? (
+      <>
+        {supportsHeadingSize && (
+          <Field label="Heading size">
+            <Select
+              value={s.headingSize || "default"}
+              onChange={(v) => updateSection(idx, { headingSize: v === "default" ? undefined : v as "small" | "standard" | "large" })}
+              options={[{ value: "default", label: "Template default" }, { value: "small", label: "Small" }, { value: "standard", label: "Standard" }, { value: "large", label: "Large" }]}
+            />
+          </Field>
+        )}
+        {supportsTextAlign && (
+          <Field label="Text alignment">
+            <Select
+              value={s.textAlign || ("align" in s ? s.align : undefined) || "default"}
+              onChange={(v) => updateSection(idx, { textAlign: v as "default" | "left" | "center" | "right" })}
+              options={[{ value: "default", label: "Section default" }, { value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]}
+            />
+          </Field>
+        )}
+        {supportsBodyTypography && (
+          <>
+            <Field label="Body text size">
+              <Select
+                value={s.bodyTextSize || "default"}
+                onChange={(v) => updateSection(idx, { bodyTextSize: v === "default" ? undefined : v as "small" | "standard" | "large" })}
+                options={[{ value: "default", label: "Template default" }, { value: "small", label: "Small" }, { value: "standard", label: "Standard" }, { value: "large", label: "Large" }]}
+              />
+            </Field>
+            <Field label="Line spacing">
+              <Select
+                value={s.lineHeight || "default"}
+                onChange={(v) => updateSection(idx, { lineHeight: v === "default" ? undefined : v as "compact" | "standard" | "relaxed" })}
+                options={[{ value: "default", label: "Template default" }, { value: "compact", label: "Compact" }, { value: "standard", label: "Standard" }, { value: "relaxed", label: "Relaxed" }]}
+              />
+            </Field>
+          </>
+        )}
+        {supportsHeadingSize && <p style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", margin: "0 0 0.75rem" }}>Heading size scales responsively so it stays readable on smaller screens.</p>}
+      </>
+    ) : null;
+
+    const designOptions = (() => {
+      switch (s.type) {
       case "button":
         return (<>
           <Field label="Style"><Select value={s.variant || "primary"} onChange={(v) => updateSection(idx, { variant: v as any })} options={[{ value: "primary", label: "Solid" }, { value: "secondary", label: "Neutral" }, { value: "outline", label: "Outline" }]} /></Field>
           <Field label="Size"><Select value={s.size || "md"} onChange={(v) => updateSection(idx, { size: v as any })} options={[{ value: "sm", label: "Small" }, { value: "md", label: "Medium" }, { value: "lg", label: "Large" }]} /></Field>
-          <Field label="Alignment"><Select value={s.align || "center"} onChange={(v) => updateSection(idx, { align: v as any })} options={[{ value: "center", label: "Center" }, { value: "left", label: "Left" }]} /></Field>
         </>);
       case "image":
         return (<>
@@ -836,12 +896,20 @@ export default function StorefrontBuilder() {
           <Field label="Text color"><Color value={s.textColor || ""} onChange={(v) => updateSection(idx, { textColor: v })} /></Field>
         </>);
       case "text":
-        return (<>
-          <Field label="Alignment"><Select value={s.align || "center"} onChange={(v) => updateSection(idx, { align: v as any })} options={[{ value: "center", label: "Center" }, { value: "left", label: "Left" }]} /></Field>
-        </>);
+        return null;
       default:
         return <p style={{ fontSize: "0.82rem", color: "var(--text-tertiary)" }}>No design options for this section.</p>;
-    }
+      }
+    })();
+
+    return <>
+      {typography}
+      {designOptions}
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: "1rem", paddingTop: "0.75rem" }}>
+        <RippleButton size="small" variant="secondary" onClick={() => resetSectionStyling(idx)}>Reset section styling</RippleButton>
+        <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: "0.5rem 0 0" }}>Restores design and layout defaults. Content, visibility, and animation stay unchanged.</p>
+      </div>
+    </>;
   };
 
   const renderLayoutTab = (s: Section, idx: number) => {
