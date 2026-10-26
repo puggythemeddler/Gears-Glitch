@@ -9,6 +9,7 @@ import { heroEffectProfile, type HeroEffectsConfig } from "@/lib/hero-effects";
 import { useHeroPointerEffects, usePrefersReducedMotion } from "@/components/motion/useHeroEffects";
 import { normalizeHref } from "@/lib/links";
 import { api } from "@/lib/api";
+import { isAllowedPersistentImageSrc, isHexColor } from "@/lib/image-allowlist";
 
 // Render a builder-supplied link as an anchor only when it actually points
 // somewhere. Empty, "#", or unsafe links render as inert styled content so the
@@ -158,8 +159,9 @@ function studioSectionStyle(section: DynamicSection): React.CSSProperties {
 const DEFAULT_HERO_BG = "var(--bg)";
 
 function heroBackground(hero: DynamicLayoutConfig["hero"]): string {
-  return hero?.backgroundImage
-    ? `linear-gradient(rgba(12, 10, 9, 0.62), rgba(12, 10, 9, 0.62)), url(${hero.backgroundImage}) center/cover no-repeat`
+  const image = isAllowedPersistentImageSrc(hero?.backgroundImage) ? hero?.backgroundImage : undefined;
+  return image
+    ? `linear-gradient(rgba(12, 10, 9, 0.62), rgba(12, 10, 9, 0.62)), url(${JSON.stringify(image)}) center/cover no-repeat`
     : DEFAULT_HERO_BG;
 }
 
@@ -277,9 +279,9 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
 
   if (!heroActive) return null;
 
-  const isPhoto = !!hero.backgroundImage;
-  const textColor = colors?.heroText || (isPhoto ? "#ffffff" : "inherit");
-  const accent = colors?.accent || "var(--primary)";
+  const isPhoto = isAllowedPersistentImageSrc(hero.backgroundImage);
+  const textColor = isHexColor(colors?.heroText) ? colors.heroText : (isPhoto ? "#ffffff" : "inherit");
+  const accent = isHexColor(colors?.accent) ? colors.accent : "var(--primary)";
   const heroTimeline = hero.animation?.preset === "hero-timeline" ? "hero-timeline" : undefined;
   // Skip the built-in entrance stagger when a Motion hero-timeline preset is
   // configured, so the two entrance systems never play on top of each other.
@@ -293,7 +295,7 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
   ].filter(Boolean).join(" ");
   const heroStyle: React.CSSProperties = isPhoto
     ? { backgroundImage: heroBackground(hero) }
-    : colors?.heroBg
+    : isHexColor(colors?.heroBg)
       ? { background: colors.heroBg }
       : {};
 
@@ -553,7 +555,7 @@ function DynamicSectionInner({ section, products, categories, colors, cardConfig
           {(section.items || []).map((item, j) => (
             <div key={j} className={stagger ? "motion-child" : undefined} style={{ textAlign: "center", padding: "1.5rem 1rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", ...(stagger ? motionGroupItemVars(j) : {}) }}>
               {item.icon && <div style={{ fontSize: "1.5rem", marginBottom: 8 }}>{item.icon}</div>}
-              <div style={{ fontSize: "1.8rem", fontWeight: HEADING_WEIGHT, color: colors?.accent || "var(--primary)" }} data-fid={fid ? `${fid}.items.${j}.value` : undefined}>{item.value}</div>
+              <div style={{ fontSize: "1.8rem", fontWeight: HEADING_WEIGHT, color: isHexColor(colors?.accent) ? colors.accent : "var(--primary)" }} data-fid={fid ? `${fid}.items.${j}.value` : undefined}>{item.value}</div>
               <div style={{ fontSize: "var(--dy-section-body-size, 0.85rem)", lineHeight: "var(--dy-section-line-height, 1.4)", color: "var(--dy-section-custom-text-color, var(--text-secondary))", marginTop: 4 }} data-fid={fid ? `${fid}.items.${j}.label` : undefined}>{item.label}</div>
             </div>
           ))}

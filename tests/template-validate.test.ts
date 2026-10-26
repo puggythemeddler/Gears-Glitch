@@ -63,6 +63,27 @@ describe("validateLayoutConfig", () => {
     assert.ok(validateLayoutConfig({ productCard: null }));
   });
 
+  it("accepts persisted hero images and strict hex colors", () => {
+    assert.equal(validateLayoutConfig({
+      hero: { backgroundImage: "https://res.cloudinary.com/demo/image/upload/hero.jpg" },
+      colors: { heroBg: "#abc", heroText: "#AABBCC", accent: "#123456" },
+    }), null);
+    assert.equal(validateLayoutConfig({ hero: { backgroundImage: "/uploads/hero.jpg" } }), null);
+    assert.equal(validateLayoutConfig({ hero: { backgroundImage: "" } }), null);
+  });
+
+  it("rejects external, protocol-relative, and malformed hero image values", () => {
+    for (const image of ["https://images.example.com/hero.jpg", "//evil.test/a.jpg", "javascript:alert(1)", "data:image/png;base64,AA==", "/bad\\path"]) {
+      assert.ok(validateLayoutConfig({ hero: { backgroundImage: image } }), `${image} should be rejected`);
+    }
+  });
+
+  it("rejects colors outside the 3- or 6-digit hex format", () => {
+    for (const color of ["red", "url(javascript:alert(1))", "#abcd", "#12345678"]) {
+      assert.ok(validateLayoutConfig({ colors: { heroBg: color } }), `${color} should be rejected`);
+    }
+  });
+
   it("rejects a non-array sections value and malformed sections", () => {
     assert.ok(validateLayoutConfig({ sections: {} }));
     assert.ok(validateLayoutConfig({ sections: [{ title: "no type" }] }));

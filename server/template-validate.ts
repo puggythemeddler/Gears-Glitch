@@ -18,6 +18,7 @@
  * Template identity (`templateId`/`templateVersion`) is validated when present
  * so a malformed provenance marker can never be persisted silently.
  */
+import { isHexColor, isSafePersistedImage } from "./studio-input-validation";
 
 const MAX_CONFIG_BYTES = 256 * 1024;
 const MAX_SECTIONS = 200;
@@ -91,6 +92,23 @@ export function validateLayoutConfig(config: unknown): string | null {
   }
   if (config.productCard !== undefined && !isPlainObject(config.productCard)) {
     return "config.productCard must be an object.";
+  }
+
+  if (isPlainObject(config.hero)) {
+    for (const key of ["backgroundImage", "image"]) {
+      const image = config.hero[key];
+      if (image !== undefined && image !== "" && !isSafePersistedImage(image)) {
+        return `config.hero.${key} must be a same-origin path or an HTTPS Cloudinary URL.`;
+      }
+    }
+  }
+  if (isPlainObject(config.colors)) {
+    for (const key of ["accent", "heroBg", "heroText"]) {
+      const color = config.colors[key];
+      if (color !== undefined && !isHexColor(color)) {
+        return `config.colors.${key} must be a 3- or 6-digit hex color.`;
+      }
+    }
   }
 
   if (config.sections !== undefined) {

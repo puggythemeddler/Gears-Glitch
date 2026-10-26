@@ -28,6 +28,29 @@
  */
 export const ALLOWED_IMAGE_ORIGINS = ["https://res.cloudinary.com"] as const;
 
+/**
+ * Persisted Website Studio images must survive a reload. Unlike Media's
+ * transient previews, stored values may only be same-origin paths or the
+ * project's configured Cloudinary delivery origin.
+ */
+export function isAllowedPersistentImageSrc(src?: string | null): boolean {
+  if (typeof src !== "string" || !src || src.length > 2000 || src.trim() !== src) return false;
+  if (/[\u0000-\u001f\u007f\\]/.test(src)) return false;
+  if (src.startsWith("/")) return !src.startsWith("//");
+  try {
+    const url = new URL(src);
+    return url.protocol === "https:" &&
+      (ALLOWED_IMAGE_ORIGINS as readonly string[]).includes(url.origin) &&
+      !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+export function isHexColor(value?: unknown): value is string {
+  return typeof value === "string" && /^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(value);
+}
+
 const DATA_URL_RE = /^data:image\/(png|jpe?g|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon|svg\+xml)[;,]/i;
 const BLOB_URL_RE = /^blob:/i;
 const ABSOLUTE_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
