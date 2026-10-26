@@ -159,7 +159,7 @@ function studioSectionStyle(section: DynamicSection): React.CSSProperties {
 const DEFAULT_HERO_BG = "var(--bg)";
 
 function heroBackground(hero: DynamicLayoutConfig["hero"]): string {
-  const image = isAllowedPersistentImageSrc(hero?.backgroundImage) ? hero.backgroundImage : undefined;
+  const image = isAllowedPersistentImageSrc(hero?.backgroundImage) ? hero?.backgroundImage : undefined;
   return image
     ? `linear-gradient(rgba(12, 10, 9, 0.62), rgba(12, 10, 9, 0.62)), url(${JSON.stringify(image)}) center/cover no-repeat`
     : DEFAULT_HERO_BG;
