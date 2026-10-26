@@ -136,6 +136,20 @@ describe("sanitizePageConfig", () => {
     assert.deepEqual(out.colors, { accent: "#ff0000", heroBg: "#000" });
   });
 
+  it("drops unsafe persisted hero images and non-hex colors", () => {
+    const out = sanitizePageConfig({
+      hero: { backgroundImage: "https://images.example.com/hero.jpg" },
+      colors: { accent: "red; color: black", heroBg: "url(javascript:alert(1))", heroText: "#abc" },
+    });
+    assert.equal(out.hero, undefined);
+    assert.deepEqual(out.colors, { heroText: "#abc" });
+  });
+
+  it("preserves same-origin uploaded hero images and an empty removal value", () => {
+    assert.equal(sanitizePageConfig({ hero: { backgroundImage: "/uploads/hero-1.webp" } }).hero.backgroundImage, "/uploads/hero-1.webp");
+    assert.equal(sanitizePageConfig({ hero: { backgroundImage: "" } }).hero.backgroundImage, "");
+  });
+
   it("sanitizes nested sections", () => {
     const out = sanitizePageConfig({ sections: [{ type: "text", title: "Hi", evil: 1 }], extra: true });
     assert.equal(out.sections.length, 1);
@@ -153,7 +167,7 @@ describe("sanitizePageConfig", () => {
         subtitle: "Sub",
         ctaText: "Shop",
         ctaLink: "/products",
-        backgroundImage: "https://cdn/x.jpg",
+        backgroundImage: "https://res.cloudinary.com/demo/image/upload/hero.jpg",
         featuredCategory: "tops",
         evil: "drop",
       },
@@ -166,7 +180,7 @@ describe("sanitizePageConfig", () => {
       subtitle: "Sub",
       ctaText: "Shop",
       ctaLink: "/products",
-      backgroundImage: "https://cdn/x.jpg",
+      backgroundImage: "https://res.cloudinary.com/demo/image/upload/hero.jpg",
       featuredCategory: "tops",
     });
   });

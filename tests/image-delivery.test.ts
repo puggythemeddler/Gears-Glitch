@@ -27,7 +27,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
 
-import { isAllowedImageSrc, ALLOWED_IMAGE_ORIGINS } from "../frontend/lib/image-allowlist";
+import { isAllowedImageSrc, isAllowedPersistentImageSrc, isHexColor, ALLOWED_IMAGE_ORIGINS } from "../frontend/lib/image-allowlist";
 
 const repoRoot = path.join(__dirname, "..");
 
@@ -146,6 +146,26 @@ describe("Media allowlist", () => {
 
   it("trims surrounding whitespace before validating", () => {
     assert.equal(isAllowedImageSrc(`  ${CLOUDINARY_URL}  `), true);
+  });
+});
+
+describe("persisted Website Studio image and color policy", () => {
+  it("allows only durable, configured image URL forms", () => {
+    assert.equal(isAllowedPersistentImageSrc(CLOUDINARY_URL), true);
+    assert.equal(isAllowedPersistentImageSrc("/uploads/hero.png"), true);
+    assert.equal(isAllowedPersistentImageSrc("//evil.test/hero.png"), false);
+    assert.equal(isAllowedPersistentImageSrc("https://images.example.com/hero.png"), false);
+    assert.equal(isAllowedPersistentImageSrc("data:image/png;base64,AA=="), false);
+    assert.equal(isAllowedPersistentImageSrc("blob:https://example.test/id"), false);
+    assert.equal(isAllowedPersistentImageSrc("/uploads/bad\\path.png"), false);
+  });
+
+  it("accepts only 3- or 6-digit hex colors", () => {
+    assert.equal(isHexColor("#abc"), true);
+    assert.equal(isHexColor("#AABBCC"), true);
+    assert.equal(isHexColor("red"), false);
+    assert.equal(isHexColor("#abcd"), false);
+    assert.equal(isHexColor("url(javascript:alert(1))"), false);
   });
 });
 

@@ -1,5 +1,6 @@
 // Pure helpers for the Visual Website Studio pages model.
 // No DB or network imports here so these can be unit-tested in isolation.
+import { isHexColor, isSafePersistedImage } from "./studio-input-validation";
 
 export const RESERVED_SLUGS = new Set<string>([
   "admin", "api", "account", "cart", "login", "logout", "register",
@@ -151,7 +152,6 @@ export function sanitizeSections(raw: unknown): any[] {
 const HERO_STYLES = ["carousel", "split", "minimal", "none"] as const;
 const HERO_BUTTON_VARIANTS = ["secondary", "outline"] as const;
 const HERO_MOTION_INTENSITIES = ["subtle", "balanced", "expressive"] as const;
-
 function sanitizeHeroButtons(raw: unknown): { label: string; link: string; variant?: "secondary" | "outline" }[] {
   if (!Array.isArray(raw)) return [];
   const out: { label: string; link: string; variant?: "secondary" | "outline" }[] = [];
@@ -181,7 +181,10 @@ function sanitizeHero(raw: unknown): any {
   };
   for (const [k, limit] of Object.entries(heroStringLimits)) {
     const v = (raw as any)[k];
-    if (v !== undefined && typeof v !== "object") h[k] = String(v).slice(0, limit);
+    if (k === "backgroundImage") {
+      if (v === "") h[k] = "";
+      else if (isSafePersistedImage(v)) h[k] = v;
+    } else if (v !== undefined && typeof v !== "object") h[k] = String(v).slice(0, limit);
   }
   const buttons = sanitizeHeroButtons((raw as any).buttons);
   if (buttons.length) h.buttons = buttons;
@@ -228,7 +231,7 @@ export function sanitizePageConfig(raw: unknown): any {
   if (colors && typeof colors === "object" && !Array.isArray(colors)) {
     const c: any = {};
     for (const k of ["accent", "heroBg", "heroText"]) {
-      if (typeof colors[k] === "string") c[k] = colors[k].slice(0, 30);
+      if (isHexColor(colors[k])) c[k] = colors[k];
     }
     cfg.colors = c;
   }
