@@ -18,7 +18,7 @@
  * Template identity (`templateId`/`templateVersion`) is validated when present
  * so a malformed provenance marker can never be persisted silently.
  */
-import { isHexColor, isSafePersistedImage } from "./studio-input-validation";
+import { isHexColor, isSafePersistedImage, isSafeStudioLink } from "./studio-input-validation";
 
 const MAX_CONFIG_BYTES = 256 * 1024;
 const MAX_SECTIONS = 200;
@@ -66,6 +66,24 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+function validateOptionalLink(record: Record<string, unknown>, key: string, path: string): string | null {
+  const value = record[key];
+  if (value === undefined || value === null || value === "") return null;
+  return isSafeStudioLink(value) ? null : `${path}.${key} must be a safe relative, HTTPS/HTTP, or contact link.`;
+}
+
+function validateOptionalImage(record: Record<string, unknown>, key: string, path: string): string | null {
+  const value = record[key];
+  if (value === undefined || value === null || value === "") return null;
+  return isSafePersistedImage(value) ? null : `${path}.${key} must be a same-origin path or an HTTPS Cloudinary URL.`;
+}
+
+function validateOptionalColor(record: Record<string, unknown>, key: string, path: string): string | null {
+  const value = record[key];
+  if (value === undefined || value === null || value === "") return null;
+  return isHexColor(value) ? null : `${path}.${key} must be a 3- or 6-digit hex color.`;
+}
+
 /**
  * Validate a layout `config` payload. Returns an error message, or null when
  * the payload is acceptable. Pure and side-effect free.
@@ -96,9 +114,18 @@ export function validateLayoutConfig(config: unknown): string | null {
 
   if (isPlainObject(config.hero)) {
     for (const key of ["backgroundImage", "image"]) {
-      const image = config.hero[key];
-      if (image !== undefined && image !== "" && !isSafePersistedImage(image)) {
-        return `config.hero.${key} must be a same-origin path or an HTTPS Cloudinary URL.`;
+      const error = validateOptionalImage(config.hero, key, "config.hero");
+      if (error) return error;
+    }
+    const heroLinkError = validateOptionalLink(config.hero, "ctaLink", "config.hero");
+    if (heroLinkError) return heroLinkError;
+    if (config.hero.buttons !== undefined) {
+      if (!Array.isArray(config.hero.buttons)) return "config.hero.buttons must be an array.";
+      for (let i = 0; i < config.hero.buttons.length; i++) {
+        const button = config.hero.buttons[i];
+        if (!isPlainObject(button)) return `config.hero.buttons[${i}] must be an object.`;
+        const buttonLinkError = validateOptionalLink(button, "link", `config.hero.buttons[${i}]`);
+        if (buttonLinkError) return buttonLinkError;
       }
     }
   }
@@ -123,6 +150,17 @@ export function validateLayoutConfig(config: unknown): string | null {
       if ((s.type as string).length > 40) return `config.sections[${i}].type is too long.`;
       if (!isKnownSectionType(s.type as string)) {
         return `config.sections[${i}].type "${s.type}" is not a recognised section type.`;
+      }
+      const path = `config.sections[${i}]`;
+      for (const key of ["link", "buttonLink", "ctaLink"]) {
+        const linkError = validateOptionalLink(s, key, path);
+        if (linkError) return linkError;
+      }
+      const imageError = validateOptionalImage(s, "imageUrl", path);
+      if (imageError) return imageError;
+      for (const key of ["bgColor", "textColor"]) {
+        const colorError = validateOptionalColor(s, key, path);
+        if (colorError) return colorError;
       }
     }
   }

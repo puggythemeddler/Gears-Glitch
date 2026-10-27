@@ -84,6 +84,65 @@ describe("validateLayoutConfig", () => {
     }
   });
 
+  it("accepts safe Studio links, section images, and section colors unchanged", () => {
+    const config = {
+      hero: {
+        ctaLink: "/products?category=pc",
+        buttons: [{ label: "Email us", link: "mailto:sales@example.com" }],
+      },
+      sections: [
+        {
+          type: "banner",
+          link: "https://example.com/sale",
+          buttonLink: "wa.me/254700000000",
+          imageUrl: "https://res.cloudinary.com/demo/image/upload/banner.jpg",
+          bgColor: "#123",
+          textColor: "#AABBCC",
+        },
+      ],
+    };
+    const before = JSON.stringify(config);
+    assert.equal(validateLayoutConfig(config), null);
+    assert.equal(JSON.stringify(config), before, "validation must not normalize or mutate the config");
+  });
+
+  it("rejects unsafe links in hero and section destinations", () => {
+    const unsafeLinks = [
+      "javascript:alert(1)",
+      "java script:alert(1)",
+      "data:text/html,<script>",
+      "//evil.example/path",
+      "https://user:pass@example.com/path",
+      "\\\\evil.example\\path",
+      "ftp://example.com/file",
+      "x".repeat(2049),
+    ];
+    for (const link of unsafeLinks) {
+      assert.ok(validateLayoutConfig({ hero: { ctaLink: link } }), `hero link ${link} should be rejected`);
+      assert.ok(validateLayoutConfig({ sections: [{ type: "button", link }] }), `section link ${link} should be rejected`);
+      assert.ok(validateLayoutConfig({ sections: [{ type: "banner", buttonLink: link }] }), `button link ${link} should be rejected`);
+      assert.ok(validateLayoutConfig({ sections: [{ type: "image-text", ctaLink: link }] }), `CTA link ${link} should be rejected`);
+    }
+    assert.ok(validateLayoutConfig({ hero: { buttons: [{ label: "Unsafe", link: "javascript:alert(1)" }] } }));
+  });
+
+  it("rejects unsafe section image URLs and non-hex section colors", () => {
+    for (const imageUrl of ["https://images.example.com/banner.jpg", "//evil.example/banner.jpg", "data:image/svg+xml,<svg>"]) {
+      assert.ok(validateLayoutConfig({ sections: [{ type: "image", imageUrl }] }), `${imageUrl} should be rejected`);
+    }
+    for (const bgColor of ["red", "url(javascript:alert(1))", "#12345678"]) {
+      assert.ok(validateLayoutConfig({ sections: [{ type: "banner", bgColor }] }), `${bgColor} should be rejected`);
+    }
+    for (const textColor of ["var(--text)", "rgb(1, 2, 3)", "#abcd"]) {
+      assert.ok(validateLayoutConfig({ sections: [{ type: "text", textColor }] }), `${textColor} should be rejected`);
+    }
+  });
+
+  it("rejects malformed hero button collections before persistence", () => {
+    assert.ok(validateLayoutConfig({ hero: { buttons: {} } }));
+    assert.ok(validateLayoutConfig({ hero: { buttons: ["not a button"] } }));
+  });
+
   it("rejects a non-array sections value and malformed sections", () => {
     assert.ok(validateLayoutConfig({ sections: {} }));
     assert.ok(validateLayoutConfig({ sections: [{ title: "no type" }] }));
