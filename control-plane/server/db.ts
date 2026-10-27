@@ -208,6 +208,9 @@ export async function initControlPlaneDb() {
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_revenue DOUBLE PRECISION DEFAULT 0`); } catch {}
   // Per-client shared secret for authenticated control-plane → client calls
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS cp_secret TEXT DEFAULT ''`); } catch {}
+  // Persist the assigned Cloudinary namespace so credential sync never falls
+  // back to a client-name folder that could collide across tenants.
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS cloudinary_folder TEXT DEFAULT ''`); } catch {}
   // Admin password set during provisioning
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS admin_password TEXT DEFAULT ''`); } catch {}
   // Contact fields

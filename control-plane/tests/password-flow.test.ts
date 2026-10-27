@@ -58,6 +58,7 @@ describe("buildRenderEnvVars", () => {
     clientName: "John's Electronics",
     dbUrl: "postgres://user:pass@host/db",
     clientSlug: "johns-electronics",
+    cloudinaryFolder: "gear-glitch/client-42",
     cloudinary: null,
     cpSecret: "cps_secret",
     adminEmail: "owner@example.com",
@@ -99,7 +100,7 @@ describe("buildRenderEnvVars", () => {
     assert.equal(vars.CLOUDINARY_CLOUD_NAME, "gnc");
     assert.equal(vars.CLOUDINARY_API_KEY, "k");
     assert.equal(vars.CLOUDINARY_API_SECRET, "s");
-    assert.equal(vars.CLOUDINARY_FOLDER, "gear-glitch/johns-electronics");
+    assert.equal(vars.CLOUDINARY_FOLDER, "gear-glitch/client-42");
 
     const without = buildRenderEnvVars(base);
     assert.equal((without as any).CLOUDINARY_CLOUD_NAME, undefined);

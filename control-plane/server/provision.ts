@@ -188,6 +188,7 @@ interface RenderEnvVars {
   clientName: string;
   dbUrl: string;
   clientSlug: string;
+  cloudinaryFolder: string;
   cloudinary: CloudinaryCredentials | null | undefined;
   cpSecret: string;
   adminEmail: string;
@@ -199,7 +200,7 @@ interface RenderEnvVars {
 // controller-selected site admin password is only ever injected here as
 // ADMIN_PASSWORD — it is never persisted or returned by the control plane.
 export function buildRenderEnvVars(input: RenderEnvVars): { key: string; value: string }[] {
-  const { clientName, dbUrl, clientSlug, cloudinary, cpSecret, adminEmail, adminPassword } = input;
+  const { clientName, dbUrl, clientSlug, cloudinaryFolder, cloudinary, cpSecret, adminEmail, adminPassword } = input;
 
   const envVars: { key: string; value: string }[] = [
     { key: "NODE_ENV", value: "production" },
@@ -228,22 +229,22 @@ export function buildRenderEnvVars(input: RenderEnvVars): { key: string; value: 
       { key: "CLOUDINARY_CLOUD_NAME", value: cloudinary.cloudName },
       { key: "CLOUDINARY_API_KEY", value: cloudinary.apiKey },
       { key: "CLOUDINARY_API_SECRET", value: cloudinary.apiSecret },
-      { key: "CLOUDINARY_FOLDER", value: `gear-glitch/${clientSlug}` }
+      { key: "CLOUDINARY_FOLDER", value: cloudinaryFolder }
     );
   }
 
   return envVars;
 }
 
-async function createRenderService(clientName: string, dbUrl: string, clientSlug: string, cloudinary: CloudinaryCredentials | null | undefined, cpSecret: string, adminEmail: string, adminPassword: string) {
+async function createRenderService(clientName: string, dbUrl: string, clientSlug: string, cloudinaryFolder: string, cloudinary: CloudinaryCredentials | null | undefined, cpSecret: string, adminEmail: string, adminPassword: string) {
   console.log(`[provision] Creating Render service for "${clientName}"...`);
 
   const slug = slugify(clientName);
 
-  const envVars = buildRenderEnvVars({ clientName, dbUrl, clientSlug, cloudinary, cpSecret, adminEmail, adminPassword });
+  const envVars = buildRenderEnvVars({ clientName, dbUrl, clientSlug, cloudinaryFolder, cloudinary, cpSecret, adminEmail, adminPassword });
 
   if (cloudinary && cloudinary.cloudName && cloudinary.apiKey && cloudinary.apiSecret) {
-    console.log(`[provision] Cloudinary configured for folder: gear-glitch/${clientSlug}`);
+    console.log(`[provision] Cloudinary configured for folder: ${cloudinaryFolder}`);
   }
 
   const res = await fetch("https://api.render.com/v1/services", {
@@ -565,8 +566,13 @@ export async function provisionClient(
   adminEmail: string,
   plan: string,
   adminPassword: string,
-  domain?: string
+  domain: string | undefined,
+  clientId: number,
+  cloudinaryFolder: string
 ): Promise<ProvisionResult> {
+  if (!Number.isSafeInteger(clientId) || clientId <= 0 || !cloudinaryFolder.startsWith("gear-glitch/")) {
+    throw new Error("A valid control-plane client ID is required for isolated provisioning.");
+  }
   const subdomain = slugify(clientName);
   const clientDomain = domain || `${subdomain}.${DOMAIN_BASE}`;
   const cpSecret = generateCpSecret();
@@ -594,7 +600,7 @@ export async function provisionClient(
     : null;
 
   // 3. Create Render service
-  const render = await createRenderService(clientName, neon.dbUrl, subdomain, cloudinary, cpSecret, adminEmail, adminPassword);
+  const render = await createRenderService(clientName, neon.dbUrl, subdomain, cloudinaryFolder, cloudinary, cpSecret, adminEmail, adminPassword);
 
   // 3. Create Vercel project
   const vercel = await createVercelProject(clientName, render.serviceUrl);

@@ -19,6 +19,7 @@ import { registerOpsRoutes } from "./ops-routes";
 import { createCallbackToken, getDarajaConfig, hashCallbackToken, initiateSandboxStkPush, normalizeKenyanPhone } from "./daraja";
 import { processRenewalInvoiceCandidate, type RenewalInvoiceCandidate } from "./recurring-invoices";
 import { isValidUsageExtensionDays, paidProformaRenewal, proformaFollowupSchedule } from "./proforma-followups";
+import { assignCloudinaryFolders, newCloudinaryFolder } from "./cloudinary-folders";
 import {
   provisionClient,
   deployAllClients,
@@ -823,11 +824,20 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
       [name, uniqueDomain, adminEmail, plan || "starter"]
     );
     const clientId = insertResult.rows[0].id;
+    const existingFolders = await queryAll(
+      "SELECT cloudinary_folder FROM clients WHERE id <> $1 AND cloudinary_folder <> ''",
+      [clientId],
+    );
+    const cloudinaryFolder = newCloudinaryFolder(
+      clientId,
+      (existingFolders as { cloudinary_folder: string }[]).map((client) => client.cloudinary_folder),
+    );
+    await query("UPDATE clients SET cloudinary_folder = $1 WHERE id = $2", [cloudinaryFolder, clientId]);
 
     // Provision in background. The initial admin password is handed to the
     // client's Render service as ADMIN_PASSWORD only — it is never persisted
     // on the control plane or included in the audit trail.
-    provisionClient(name, adminEmail, plan || "starter", adminPassword, uniqueDomain)
+    provisionClient(name, adminEmail, plan || "starter", adminPassword, uniqueDomain, clientId, cloudinaryFolder)
       .then(async (result: ProvisionResult) => {
         const subdomain = result.domain.replace(`.${DOMAIN_BASE}`, "");
         await query(
@@ -1158,16 +1168,19 @@ app.post("/api/sync-cloudinary", requireAdmin, async (req, res) => {
     }
 
     const clients = await queryAll(
-      "SELECT id, name, render_service_id FROM clients WHERE status = 'active' AND render_service_id != ''"
+      "SELECT id, name, render_service_id, cloudinary_folder FROM clients WHERE status = 'active' AND render_service_id != ''"
     );
     if (!clients.length) { res.json({ message: "No active clients.", results: [] }); return; }
 
     const results: { name: string; success: boolean; error?: string; folder?: string }[] = [];
     const RENDER_API_KEY = process.env.RENDER_API_KEY || "";
+    const cloudinaryFolders = assignCloudinaryFolders(
+      clients as { id: number; cloudinary_folder?: string | null }[],
+    );
 
-    for (const c of clients as { id: number; name: string; render_service_id: string }[]) {
-      const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
-      const folder = `gear-glitch/${slug}`;
+    for (const c of clients as { id: number; name: string; render_service_id: string; cloudinary_folder?: string | null }[]) {
+      const assignment = cloudinaryFolders.get(c.id)!;
+      const folder = assignment.folder;
 
       try {
         const r = await fetch(`https://api.render.com/v1/services/${c.render_service_id}`, {
@@ -1184,6 +1197,9 @@ app.post("/api/sync-cloudinary", requireAdmin, async (req, res) => {
         });
 
         if (r.ok) {
+          if (assignment.changed) {
+            await query("UPDATE clients SET cloudinary_folder = $1 WHERE id = $2", [folder, c.id]);
+          }
           await fetch(`https://api.render.com/v1/services/${c.render_service_id}/deploys`, {
             method: "POST",
             headers: { Authorization: `Bearer ${RENDER_API_KEY}`, "Content-Type": "application/json" },
