@@ -247,6 +247,8 @@ Client admins can create/edit plans on their own backend. Each plan has a **"Syn
 
 Plans that are not marked to sync are still saved locally on the creating client but are never distributed. The control plane's own plan editor has the same checkbox, and plan cards show a **"Syncs to clients"** badge. Control-plane `POST /api/plans/sync-all` still distributes all plans to all active clients regardless of the flag.
 
+Newly provisioned client media uses `gear-glitch/client-<control-plane-client-id>` as its Cloudinary namespace. Credential sync preserves unique legacy folders and assigns an ID-based namespace to clients with a missing or duplicated folder. Existing uploaded image URLs are not rewritten; the namespace change applies to new uploads. The tenant settings API does not accept folder changes; `CLOUDINARY_FOLDER` from the service environment takes precedence over legacy stored settings.
+
 ## API Endpoints
 
 All endpoints require authentication via one of:
