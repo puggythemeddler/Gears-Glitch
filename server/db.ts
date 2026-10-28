@@ -10,6 +10,7 @@ import { encryptSecret, decryptSecret, isEncrypted } from "./secret-store";
 import { provisionAdminUser } from "./admin-provisioning";
 import { DEFAULT_ROLES } from "./permissions";
 import { calculateInvoicePeriod } from "./invoice-period";
+import { resolveCloudinaryConfig } from "./cloudinary-config";
 
 // Settings keys whose values are secrets and must be encrypted at rest. Values
 // written through the settings layer are stored as `enc:v1:` ciphertext and
@@ -1236,6 +1237,7 @@ async function getSettings(): Promise<Settings> {
   const rows = await queryAll("SELECT key, value FROM settings") as { key: string; value: string }[];
   const s: { [key: string]: string } = {};
   for (const row of rows) s[row.key] = decryptSettingValue(row.key, row.value);
+  const cloudinary = resolveCloudinaryConfig(s, process.env);
   return {
     storeName: s.storeName || process.env.STORE_NAME || "My Shop",
     phone: s.phone || "",
@@ -1245,10 +1247,7 @@ async function getSettings(): Promise<Settings> {
     storeFavicon: s.storeFavicon || "",
     taxRate: Number(s.taxRate) || 0,
     backupImagesToDb: s.backupImagesToDb === "true",
-    cloudinaryCloudName: s.cloudinaryCloudName || process.env.CLOUDINARY_CLOUD_NAME || "",
-    cloudinaryApiKey: s.cloudinaryApiKey || process.env.CLOUDINARY_API_KEY || "",
-    cloudinaryApiSecret: s.cloudinaryApiSecret || process.env.CLOUDINARY_API_SECRET || "",
-    cloudinaryFolder: s.cloudinaryFolder || process.env.CLOUDINARY_FOLDER || "gear-glitch",
+    ...cloudinary,
     logoPosition: s.logoPosition || "top-left",
     // EMAIL_FROM is the documented name; FROM_EMAIL is the older alias and is
     // still honoured. A store setting always wins over both.
