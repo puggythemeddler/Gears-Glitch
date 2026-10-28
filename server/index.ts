@@ -561,6 +561,14 @@ app.use("/api/provider/login", authLimiter);
 app.use("/api/provider/register", authLimiter);
 app.use("/api/auth/request-password-reset", authLimiter);
 app.use("/api/auth/request-admin-password-reset", authLimiter);
+// Keep alternate sign-in paths and the final reset submissions under the same
+// credential-abuse ceiling as password login. These routes can otherwise be
+// hammered independently of the request/reset-link endpoints.
+app.use("/api/customer/google-login", authLimiter);
+app.use("/api/auth/magic-login", authLimiter);
+app.use("/api/auth/google-admin-login", authLimiter);
+app.use("/api/auth/admin-password-reset", authLimiter);
+app.use("/api/auth/password-reset", authLimiter);
 // Magic links are 1h, single-use and mailed to a real inbox, so this endpoint
 // is an email-bombing vector. Rate limit it like the other mail-sending routes.
 app.use("/api/auth/magic-request", authLimiter);
@@ -591,6 +599,17 @@ const newsletterLimiter = rateLimit({
   message: { error: "Too many requests, please try again later." },
 });
 app.use("/api/newsletter/subscribe", newsletterLimiter);
+
+// Contact submissions can trigger email delivery and database writes. Keep
+// abuse on this public endpoint from consuming those resources.
+const contactLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+app.use("/api/contact", contactLimiter);
 
 // ============ INPUT VALIDATION HELPERS ============
 // Re-exported from ./routes/shared for backward compatibility
