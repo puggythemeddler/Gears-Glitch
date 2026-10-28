@@ -5666,12 +5666,13 @@ function VisitorTrendChart({ data }: { data: any[] }) {
 }
 
 function AdminSalesReport() {
-  const today = new Date().toISOString().slice(0, 10);
-  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  const today = reportToday();
+  const [from, setFrom] = useState(reportYearStart());
   const [to, setTo] = useState(today);
   const [branchId, setBranchId] = useState("");
   const [groupId, setGroupId] = useState("");
   const [report, setReport] = useState<any>(null);
+  const [appliedFilters, setAppliedFilters] = useState<{ from: string; to: string; branchId: string; groupId: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { data: branches } = useFetch(() => api<{ branches: Branch[] }>("/api/admin/branches"), []);
