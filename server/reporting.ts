@@ -30,9 +30,9 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Validate a report date range. Bounds must be ISO yyyy-mm-dd and from <= to.
- * `to` is an inclusive full day — all range queries use
- * `created_at >= :from AND created_at < (:to + 1 day)`, evaluated in the
- * database server's time zone (matching the existing trend/range behavior).
+ * `to` is an inclusive full calendar day in the store's Africa/Nairobi
+ * timezone. Persisted order timestamps are normalized to absolute instants
+ * before comparing against Nairobi-midnight boundaries.
  */
 export function parseDateRange(fromRaw: unknown, toRaw: unknown): DateRange | null {
   const from = String(fromRaw ?? "").trim();
@@ -115,8 +115,8 @@ export function buildOrderWhere(filter: OrderFilter, startIdx = 1): BuiltWhere {
   const params: any[] = [];
   let idx = startIdx;
   if (filter.excludeCancelled !== false) conds.push("o.status != 'cancelled'");
-  if (filter.from) { conds.push(`o.created_at::timestamp >= $${idx}`); params.push(filter.from); idx++; }
-  if (filter.to) { conds.push(`o.created_at::timestamp < ($${idx}::date + interval '1 day')`); params.push(filter.to); idx++; }
+  if (filter.from) { conds.push(`o.created_at::timestamptz >= ($${idx}::date::timestamp AT TIME ZONE 'Africa/Nairobi')`); params.push(filter.from); idx++; }
+  if (filter.to) { conds.push(`o.created_at::timestamptz < (($${idx}::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')`); params.push(filter.to); idx++; }
   if (filter.branchId) { conds.push(`o.branch_id = $${idx}`); params.push(filter.branchId); idx++; }
   if (filter.staffId) { conds.push(`o.staff_id = $${idx}`); params.push(filter.staffId); idx++; }
   if (filter.paymentMethod) { conds.push(`LOWER(o.payment_method) = LOWER($${idx})`); params.push(filter.paymentMethod); idx++; }
@@ -205,10 +205,11 @@ export interface SeriesPoint extends SalesTotals {
 /** Daily/weekly/monthly sales series over a filter. */
 export async function salesSeries(filter: OrderFilter, granularity: Granularity = "day"): Promise<SeriesPoint[]> {
   const { where, params } = buildOrderWhere(filter);
+  const localCreatedAt = `(o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi')`;
   const bucketExpr =
-    granularity === "month" ? "date_trunc('month', o.created_at::timestamp)::date"
-    : granularity === "week" ? "date_trunc('week', o.created_at::timestamp)::date"
-    : "DATE(o.created_at::timestamp)";
+    granularity === "month" ? `date_trunc('month', ${localCreatedAt})::date`
+    : granularity === "week" ? `date_trunc('week', ${localCreatedAt})::date`
+    : `DATE(${localCreatedAt})`;
   const rows = await queryAll(
     `SELECT ${bucketExpr} AS bucket,
        COUNT(*)::int AS orders,
@@ -333,21 +334,21 @@ export async function salesBreakdown(filter: OrderFilter, by: SalesBreakdownBy):
       orderLevel: true,
     },
     hour: {
-      select: "EXTRACT(HOUR FROM o.created_at::timestamp)::int AS id, TO_CHAR(o.created_at::timestamp, 'HH24:00') AS label",
+      select: "EXTRACT(HOUR FROM o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi')::int AS id, TO_CHAR(o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi', 'HH24:00') AS label",
       join: "",
-      group: "EXTRACT(HOUR FROM o.created_at::timestamp)",
+      group: "EXTRACT(HOUR FROM o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi')",
       orderLevel: true,
     },
     dow: {
-      select: "EXTRACT(DOW FROM o.created_at::timestamp)::int AS id, TO_CHAR(o.created_at::timestamp, 'Dy') AS label",
+      select: "EXTRACT(DOW FROM o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi')::int AS id, TO_CHAR(o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi', 'Dy') AS label",
       join: "",
-      group: "EXTRACT(DOW FROM o.created_at::timestamp)",
+      group: "EXTRACT(DOW FROM o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi')",
       orderLevel: true,
     },
     day: {
-      select: "DATE(o.created_at::timestamp)::text AS id, TO_CHAR(o.created_at::timestamp, 'YYYY-MM-DD') AS label",
+      select: "DATE(o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi')::text AS id, TO_CHAR(o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM-DD') AS label",
       join: "",
-      group: "DATE(o.created_at::timestamp)",
+      group: "DATE(o.created_at::timestamptz AT TIME ZONE 'Africa/Nairobi')",
       orderLevel: true,
     },
   };
