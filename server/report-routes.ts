@@ -273,7 +273,7 @@ router.get("/repairs", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Reque
     `SELECT status, COUNT(*)::int AS tickets,
        COALESCE(SUM(total_cost), 0) AS revenue
      FROM repair_tickets
-     WHERE created_at::timestamp >= $1 AND created_at::timestamp < ($2::date + interval '1 day')
+      WHERE created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')
      GROUP BY status ORDER BY tickets DESC`,
     [range.from, range.to]
   );
@@ -286,7 +286,7 @@ router.get("/repairs", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Reque
        COALESCE(AVG(EXTRACT(EPOCH FROM (completed_at::timestamp - created_at::timestamp)) / 86400.0) FILTER (WHERE status = 'collected' AND completed_at IS NOT NULL), 0) AS avg_turnover_days,
        COUNT(*) FILTER (WHERE status = 'collected' AND completed_at IS NOT NULL)::int AS with_turnover
      FROM repair_tickets
-     WHERE created_at::timestamp >= $1 AND created_at::timestamp < ($2::date + interval '1 day')`,
+      WHERE created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')`,
     [range.from, range.to]
   ) as any;
   res.json({
@@ -311,7 +311,7 @@ router.get("/repairs/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(asyn
   const rows = await queryAll(
     `SELECT status, COUNT(*)::int AS tickets, COALESCE(SUM(total_cost), 0) AS revenue
      FROM repair_tickets
-     WHERE created_at::timestamp >= $1 AND created_at::timestamp < ($2::date + interval '1 day')
+     WHERE created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')
      GROUP BY status ORDER BY tickets DESC`,
     [range.from, range.to]
   );
@@ -337,21 +337,22 @@ router.get("/warranty", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
     LEFT JOIN orders o ON o.id = oi.order_id`;
   const branchClaimFilter = branchId ? " AND COALESCE(wc.branch_id, o.branch_id) = $3" : "";
   const branchOrderFilter = branchId ? " AND o.branch_id = $3" : "";
+  const branchExpiringFilter = branchId ? " AND o.branch_id = $1" : "";
   const branchStatusFilter = branchId ? " AND COALESCE(wc.branch_id, o.branch_id) = $1" : "";
   const claimsParams: any[] = [range.from, range.to, ...(branchId ? [branchId.toString()] : [])];
   const [claims, sold, expiring, byStatus] = await Promise.all([
     queryAll(`SELECT wc.* FROM warranty_claims wc
               ${branchJoinClaims}
-              WHERE wc.claim_date::timestamp >= $1 AND wc.claim_date::timestamp < ($2::date + interval '1 day')${branchClaimFilter}
+              WHERE wc.claim_date::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND wc.claim_date::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')${branchClaimFilter}
               ORDER BY wc.claim_date DESC LIMIT 500`, claimsParams),
     queryOne(`SELECT COUNT(*)::int AS units_sold, COUNT(*) FILTER (WHERE warranty_expires IS NOT NULL)::int AS coverage
               FROM order_items oi JOIN orders o ON o.id = oi.order_id AND o.status != 'cancelled'
-              WHERE o.created_at::timestamp >= $1 AND o.created_at::timestamp < ($2::date + interval '1 day') AND oi.cancelled = 0 AND oi.has_warranty >= 1${branchOrderFilter}`, claimsParams),
+              WHERE o.created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND o.created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi') AND oi.cancelled = 0 AND oi.has_warranty >= 1${branchOrderFilter}`, claimsParams),
     queryAll(`SELECT oi.id, oi.name, oi.serial_number, oi.warranty_expires, oi.order_id, o.branch_id FROM order_items oi
               JOIN orders o ON o.id = oi.order_id
               WHERE oi.cancelled = 0 AND oi.has_warranty >= 1 AND oi.warranty_expires IS NOT NULL
-                AND oi.warranty_expires::date >= $1 AND oi.warranty_expires::date < ($2::date + interval '1 day')${branchOrderFilter}
-              ORDER BY oi.warranty_expires LIMIT 200`, [new Date().toISOString().slice(0, 10), new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10), ...(branchId ? [branchId.toString()] : [])]),
+                 AND oi.warranty_expires::date >= (now() AT TIME ZONE 'Africa/Nairobi')::date AND oi.warranty_expires::date < ((now() AT TIME ZONE 'Africa/Nairobi')::date + interval '30 days')${branchExpiringFilter}
+              ORDER BY oi.warranty_expires LIMIT 200`, [...(branchId ? [branchId.toString()] : [])]),
     queryAll(`SELECT wc.status, COUNT(*)::int AS cnt FROM warranty_claims wc
               ${branchJoinClaims}
               WHERE 1=1${branchStatusFilter}
@@ -384,7 +385,7 @@ router.get("/warranty/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(asy
       FROM warranty_claims wc
       LEFT JOIN order_items oi ON oi.serial_number = wc.serial_number
       LEFT JOIN orders o ON o.id = oi.order_id
-      WHERE wc.claim_date::timestamp >= $1 AND wc.claim_date::timestamp < ($2::date + interval '1 day')${branchId ? " AND COALESCE(wc.branch_id, o.branch_id) = $3" : ""}
+       WHERE wc.claim_date::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND wc.claim_date::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')${branchId ? " AND COALESCE(wc.branch_id, o.branch_id) = $3" : ""}
       ORDER BY wc.claim_date DESC`, claimsParams);
   const csv = toCsv(
     (claims || []).map((c: any) => ({ ref: c.warranty_ref, status: c.status, serial: c.serial_number || "", claim_date: c.claim_date, resolution_date: c.resolution_date || "", branch_id: c.branch_id ?? "" })),
@@ -400,7 +401,7 @@ router.get("/customers", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Req
   const top = await salesBreakdown(filter, "customer");
   const row = await queryOne(
     `SELECT COUNT(*)::int AS total,
-       COUNT(*) FILTER (WHERE created_at::timestamp >= $1 AND created_at::timestamp < ($2::date + interval '1 day'))::int AS new_in_period,
+        COUNT(*) FILTER (WHERE created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi'))::int AS new_in_period,
        COUNT(*) FILTER (WHERE is_active = 1)::int AS active_accounts
      FROM customers`,
     [filter.from, filter.to]
@@ -410,7 +411,7 @@ router.get("/customers", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Req
        COUNT(*) FILTER (WHERE buyer_orders = 1)::int AS repeat_buyers
      FROM (SELECT customer_id, COUNT(*)::int AS buyer_orders FROM orders
            WHERE customer_id IS NOT NULL AND status != 'cancelled'
-             AND created_at::timestamp >= $1 AND created_at::timestamp < ($2::date + interval '1 day')
+              AND created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')
            GROUP BY customer_id) t`,
     [filter.from, filter.to]
   ) as any;

@@ -38,6 +38,7 @@ import AdminWarranties from "@/components/admin/AdminWarranties";
 import AdminFinancing from "@/components/admin/AdminFinancing";
 import BranchPicker from "@/components/BranchPicker";
 import { setBranchState, type BranchOption } from "@/lib/branches";
+import { reportDateRange, reportToday, reportYearStart, type ReportRangePreset } from "@/lib/reporting-date";
 import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
 
 export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
@@ -865,24 +866,25 @@ function AdminAuditLog() {
 function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole: StaffRole; staffPermissions: string[]; onNavigate: (v: AdminView) => void }) {
   const isAdmin = staffRole === "admin";
   const hasPerm = (p: string) => isAdmin || staffPermissions.includes(p);
-  const { data: stats, loading: statsLoading } = useFetch(() => api<any>("/api/backoffice/stats"), []);
-  const { data: products, loading: prodLoading } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
-  const { data: subReq, loading: subLoading } = useFetch(() => isAdmin ? api<any>("/api/shop/subscription/requests") : Promise.resolve(null), []);
+  const { data: stats, loading: statsLoading, error: statsError } = useFetch(() => api<any>("/api/backoffice/stats"), []);
+  const { data: products, loading: prodLoading, error: prodError } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
+  const { data: subReq, loading: subLoading, error: subError } = useFetch(() => isAdmin ? api<any>("/api/shop/subscription/requests") : Promise.resolve(null), []);
 
   // Today's numbers
-  const today = new Date().toISOString().slice(0, 10);
-  const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0, 10);
+  const today = reportToday();
+  const recentTrend = reportDateRange("14d");
+  const monthStart = `${today.slice(0, 7)}-01`;
   const canOrders = hasPerm("order:view");
-  const { data: todayReport } = useFetch(
+  const { data: todayReport, loading: todayLoading, error: todayError } = useFetch(
     () => canOrders ? api<any>(`/api/reports/sales?from=${today}&to=${today}`) : Promise.resolve(null),
     [today]
   );
-  const { data: monthReport } = useFetch(
+  const { data: monthReport, loading: monthLoading, error: monthError } = useFetch(
     () => canOrders ? api<any>(`/api/reports/sales?from=${monthStart}&to=${today}`) : Promise.resolve(null),
     [monthStart, today]
   );
-  const { data: allTimeReport } = useFetch(
-    () => canOrders ? api<any>(`/api/reports/sales?from=1900-01-01&to=2099-12-31`) : Promise.resolve(null),
+  const { data: allTimeReport, loading: allTimeLoading, error: allTimeError } = useFetch(
+    () => canOrders ? api<any>(`/api/reports/sales?from=1970-01-01&to=2099-12-31`) : Promise.resolve(null),
     []
   );
 
@@ -890,12 +892,22 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
   const canStock = hasPerm("stock:list");
   const canRepairs = hasPerm("repair:list");
   const canMessages = hasPerm("messaging:view");
-  const { data: lowStock } = useFetch(() => canStock ? api<any>("/api/stock/low-items") : Promise.resolve(null), []);
-  const { data: repairs } = useFetch(() => canRepairs ? api<any>("/api/repairs") : Promise.resolve(null), []);
-  const { data: messages } = useFetch(() => canMessages ? api<any>("/api/admin/messages") : Promise.resolve(null), []);
+  const { data: lowStock, loading: stockLoading, error: stockError } = useFetch(() => canStock ? api<any>("/api/stock/low-items") : Promise.resolve(null), []);
+  const { data: repairs, loading: repairsLoading, error: repairsError } = useFetch(() => canRepairs ? api<any>("/api/repairs") : Promise.resolve(null), []);
+  const { data: messages, loading: messagesLoading, error: messagesError } = useFetch(() => canMessages ? api<any>("/api/admin/messages") : Promise.resolve(null), []);
 
   const pendingReqs = (subReq?.requests || []).filter((r: any) => r.status === "pending").length;
   const loading = statsLoading || prodLoading || subLoading;
+  const checkingAttention = (canStock && stockLoading) || (canRepairs && repairsLoading) || (canMessages && messagesLoading);
+  const failedSections = [
+    statsError && "team stats",
+    prodError && "products",
+    (canOrders && todayError) || (canOrders && monthError) || (canOrders && allTimeError) ? "sales figures" : null,
+    canStock && stockError && "stock status",
+    canRepairs && repairsError && "repair queue",
+    canMessages && messagesError && "messages",
+    isAdmin && subError && "subscription requests",
+  ].filter(Boolean);
 
   const lowItems: { productId: string; name: string; quantityInStock: number; lowStockThreshold: number }[] = lowStock?.items || [];
   const outOfStock = lowItems.filter((i) => i.quantityInStock <= 0).length;
@@ -922,10 +934,10 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
 
   function nav(v: AdminView) { onNavigate(v); }
 
-  function StatCard({ value, label, onClick, tone }: { value: number; label: string; onClick?: () => void; tone?: string }) {
+  function StatCard({ value, label, onClick, tone }: { value: number | string; label: string; onClick?: () => void; tone?: string }) {
     const className = `stat-card card-hover${onClick ? " dash-stat-clickable" : ""}`;
     const content = <>
-      <div className="stat-card__value" style={tone ? { color: `var(--${tone})` } : undefined}>{value.toLocaleString()}</div>
+      <div className="stat-card__value" style={tone ? { color: `var(--${tone})` } : undefined}>{typeof value === "number" ? value.toLocaleString() : value}</div>
       <div className="stat-card__label">{label}</div>
     </>;
 
@@ -956,6 +968,9 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
     <>
       <h1 className="anim-fade-in-down">Dashboard</h1>
 
+      {failedSections.length > 0 && <p className="error" role="status">Some dashboard data could not be loaded: {failedSections.join(", ")}. Refresh the page to try again.</p>}
+      {checkingAttention && attentionItems.length === 0 && <p className="muted" role="status">Checking stock, repairs, and messages for items that need attention…</p>}
+
       {attentionItems.length > 0 && (
         <section className="dash-attention-section" aria-labelledby="dash-attention-title">
           <h2 id="dash-attention-title" className="dash-attention-heading">Needs attention</h2>
@@ -972,18 +987,22 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
       )}
 
       <div className="stat-grid">
-        <StatCard value={products?.products?.length ?? 0} label="Total Products" onClick={() => nav("products")} />
-        {canOrders && <StatCard value={todayOrders} label="Orders Today" onClick={() => nav("orders")} />}
-        {canOrders && <StatCard value={todayRevenue} label="Revenue Today (KES)" onClick={() => nav("reports")} />}
-        {canOrders && <StatCard value={monthRevenue} label="Revenue This Month (KES)" onClick={() => nav("reports")} />}
-        {canOrders && <StatCard value={monthOrders} label="Orders This Month" onClick={() => nav("orders")} />}
-        {canOrders && <StatCard value={allTimeRevenue} label="Revenue All Time (KES)" onClick={() => nav("reports")} />}
-        {canOrders && <StatCard value={allTimeOrders} label="Orders All Time" onClick={() => nav("orders")} />}
-        {canRepairs && <StatCard value={openTickets.length} label="Open Repairs" onClick={() => nav("repairs")} />}
-        {canStock && <StatCard value={lowItems.length} label="Low-Stock Items" tone={lowItems.length > 0 ? "warning" : undefined} onClick={() => nav("stock-on-hand")} />}
-        {isAdmin && <StatCard value={stats?.totalStaff ?? 0} label="Users" onClick={() => nav("users")} />}
-        {isAdmin && <StatCard value={pendingReqs} label="Pending Sub. Requests" tone={pendingReqs > 0 ? "danger" : undefined} onClick={() => nav("shop-subscription")} />}
+        <StatCard value={products ? products.products?.length ?? 0 : prodError ? "Unavailable" : "Loading"} label="Total Products" onClick={() => nav("products")} />
+        {canOrders && <StatCard value={todayReport ? todayOrders : todayError ? "Unavailable" : "Loading"} label="Orders Today" onClick={() => nav("orders")} />}
+        {canOrders && <StatCard value={todayReport ? todayRevenue : todayError ? "Unavailable" : "Loading"} label="Revenue Today (KES)" onClick={() => nav("reports")} />}
+        {canOrders && <StatCard value={monthReport ? monthRevenue : monthError ? "Unavailable" : "Loading"} label="Revenue This Month (KES)" onClick={() => nav("reports")} />}
+        {canOrders && <StatCard value={monthReport ? monthOrders : monthError ? "Unavailable" : "Loading"} label="Orders This Month" onClick={() => nav("orders")} />}
+        {canOrders && <StatCard value={allTimeReport ? allTimeRevenue : allTimeError ? "Unavailable" : "Loading"} label="Revenue All Time (KES)" onClick={() => nav("reports")} />}
+        {canOrders && <StatCard value={allTimeReport ? allTimeOrders : allTimeError ? "Unavailable" : "Loading"} label="Orders All Time" onClick={() => nav("orders")} />}
+        {canRepairs && <StatCard value={repairs ? openTickets.length : repairsError ? "Unavailable" : "Loading"} label="Open Repairs" onClick={() => nav("repairs")} />}
+        {canStock && <StatCard value={lowStock ? lowItems.length : stockError ? "Unavailable" : "Loading"} label="Low-Stock Items" tone={lowItems.length > 0 ? "warning" : undefined} onClick={() => nav("stock-on-hand")} />}
+        {isAdmin && <StatCard value={stats ? stats.totalStaff ?? 0 : statsError ? "Unavailable" : "Loading"} label="Users" onClick={() => nav("users")} />}
+        {isAdmin && <StatCard value={subReq ? pendingReqs : subError ? "Unavailable" : "Loading"} label="Pending Sub. Requests" tone={pendingReqs > 0 ? "danger" : undefined} onClick={() => nav("shop-subscription")} />}
       </div>
+
+      {canOrders && <section className="panel" aria-label="Recent sales trend" style={{ marginTop: "1rem" }}>
+        <SalesTrendsChart from={recentTrend.from} to={today} branchId="" groupId="" compact />
+      </section>}
 
       {(canStock && lowItems.length > 0) || canRepairs ? (
         <div className="dash-cols">
@@ -1011,7 +1030,7 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
           {canRepairs && (
             <div className="panel dash-repairpipeline">
               <h3>Repair pipeline</h3>
-              <ul>
+              {repairsLoading ? <p className="muted" role="status">Loading repair queue…</p> : repairsError ? <p className="muted" role="status">Repair queue could not be loaded.</p> : <ul>
                 {PIPELINE.map((s) => {
                   const count = openTickets.filter((t) => t.status === s.key).length;
                   return (
@@ -1021,7 +1040,7 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
                     </li>
                   );
                 })}
-              </ul>
+              </ul>}
               <button type="button" className="btn btn-subtle btn-sm" onClick={() => nav("repairs")}>
                 Open repairs
               </button>
@@ -5388,18 +5407,64 @@ function dayLabel(iso: string): string {
   return p.length === 3 ? `${p[2]}/${p[1]}` : iso.slice(5);
 }
 
-function SalesTrendsChart({ from, to, branchId }: { from: string; to: string; branchId: string }) {
+function ReportRangeFilter({ from, to, onChange, initialPreset = "custom" }: {
+  from: string;
+  to: string;
+  onChange: (range: { from: string; to: string }) => void;
+  initialPreset?: ReportRangePreset;
+}) {
+  const [preset, setPreset] = useState<ReportRangePreset>(initialPreset);
+  const setDate = (key: "from" | "to", value: string) => {
+    setPreset("custom");
+    onChange({ from: key === "from" ? value : from, to: key === "to" ? value : to });
+  };
+
+  return (
+    <>
+      <div className="field" style={{ margin: 0 }}>
+        <label>Date range
+          <select value={preset} onChange={(event) => {
+            const next = event.target.value as ReportRangePreset;
+            setPreset(next);
+            if (next !== "custom") onChange(reportDateRange(next));
+          }}>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 days</option>
+            <option value="14d">Last 14 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="month">This month</option>
+            <option value="ytd">Year to date</option>
+            <option value="all">All time</option>
+            <option value="custom">Custom range</option>
+          </select>
+        </label>
+      </div>
+      <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(event) => setDate("from", event.target.value)} /></label></div>
+      <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(event) => setDate("to", event.target.value)} /></label></div>
+    </>
+  );
+}
+
+function SalesTrendsChart({ from, to, branchId, groupId, compact = false }: { from: string; to: string; branchId: string; groupId: string; compact?: boolean }) {
   const [trends, setTrends] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
+    setError("");
     let url = `/api/reports/sales/trends?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
     if (branchId) url += `&branch_id=${encodeURIComponent(branchId)}`;
-    api<{ trends: any[] }>(url).then(d => setTrends(d.trends)).catch(() => setTrends([])).finally(() => setLoading(false));
-  }, [from, to, branchId]);
+    if (groupId) url += `&group_id=${encodeURIComponent(groupId)}`;
+    api<{ trends: any[] }>(url).then(d => { if (active) setTrends(d.trends); }).catch((e: any) => {
+      if (active) { setTrends([]); setError(e?.message || "Revenue trend could not be loaded."); }
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [from, to, branchId, groupId]);
 
   if (loading) return <div className="skeleton" style={{ height: 220 }} />;
+  if (error) return <p className="muted" role="status">Revenue trend unavailable: {error}</p>;
   if (!trends || trends.length === 0) return <p className="muted">No trend data for this period.</p>;
 
   const padL = 46, padR = 10, padT = 10, padB = 24;
@@ -5417,11 +5482,11 @@ function SalesTrendsChart({ from, to, branchId }: { from: string; to: string; br
 
   return (
     <div style={{ overflowX: "auto", marginBottom: "1rem" }}>
-      <h3>Daily Revenue Trend</h3>
-      <p className="muted" style={{ margin: "0.1rem 0 0.75rem", fontSize: "0.85rem" }}>
+      <h3>{compact ? "Revenue — last 14 days" : "Daily Revenue Trend"}</h3>
+      {!compact && <p className="muted" style={{ margin: "0.1rem 0 0.75rem", fontSize: "0.85rem" }}>
         Daily revenue (KES) with order count per day, from <strong>{from}</strong> to <strong>{to}</strong>. Hover a bar for exact values.
-      </p>
-      <svg width={chartW} height={chartH} style={{ display: "block", fontFamily: "inherit" }}>
+      </p>}
+      <svg role="img" aria-label={`Daily revenue from ${from} to ${to}`} width={chartW} height={chartH} style={{ display: "block", fontFamily: "inherit" }}>
         {[0, 1, 2, 3, 4].map((i) => {
           const val = step * i;
           const y = baselineY - (val / (step * 4)) * plotH;
@@ -5453,8 +5518,8 @@ function SalesTrendsChart({ from, to, branchId }: { from: string; to: string; br
 }
 
 function AdminVisitorsReport() {
-  const today = new Date().toISOString().slice(0, 10);
-  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  const today = reportToday();
+  const [from, setFrom] = useState(reportYearStart());
   const [to, setTo] = useState(today);
   const [branchId, setBranchId] = useState("");
   const [stats, setStats] = useState<any>(null);
@@ -5475,8 +5540,7 @@ function AdminVisitorsReport() {
     <>
       <h1>Visitor Analytics</h1>
       <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
-        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
-        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <ReportRangeFilter from={from} to={to} initialPreset={from === "1970-01-01" ? "all" : "ytd"} onChange={(range) => { setFrom(range.from); setTo(range.to); }} />
         <div className="field" style={{ margin: 0 }}>
           <label>Branch
             <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
@@ -5602,12 +5666,13 @@ function VisitorTrendChart({ data }: { data: any[] }) {
 }
 
 function AdminSalesReport() {
-  const today = new Date().toISOString().slice(0, 10);
-  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
+  const today = reportToday();
+  const [from, setFrom] = useState(reportYearStart());
   const [to, setTo] = useState(today);
   const [branchId, setBranchId] = useState("");
   const [groupId, setGroupId] = useState("");
   const [report, setReport] = useState<any>(null);
+  const [appliedFilters, setAppliedFilters] = useState<{ from: string; to: string; branchId: string; groupId: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { data: branches } = useFetch(() => api<{ branches: Branch[] }>("/api/admin/branches"), []);
@@ -5617,19 +5682,22 @@ function AdminSalesReport() {
 
   function fetchReport() {
     setLoading(true); setError("");
-    let url = `/api/reports/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-    if (branchId) url += `&branch_id=${encodeURIComponent(branchId)}`;
-    if (groupId) url += `&group_id=${encodeURIComponent(groupId)}`;
-    api<any>(url)
-      .then(setReport).catch((e: any) => setError(e.message)).finally(() => setLoading(false));
+    const filters = { from, to, branchId, groupId };
+    const params = new URLSearchParams({ from, to });
+    if (branchId) params.set("branch_id", branchId);
+    if (groupId) params.set("group_id", groupId);
+    api<any>(`/api/reports/sales?${params.toString()}`)
+      .then((data) => { setReport(data); setAppliedFilters(filters); })
+      .catch((e: any) => setError(e.message)).finally(() => setLoading(false));
   }
+
+  const filtersChanged = !!appliedFilters && (from !== appliedFilters.from || to !== appliedFilters.to || branchId !== appliedFilters.branchId || groupId !== appliedFilters.groupId);
 
   return (
     <>
       <h1>Sales Report</h1>
       <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
-        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
-        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <ReportRangeFilter from={from} to={to} initialPreset={from === "1970-01-01" ? "all" : "ytd"} onChange={(range) => { setFrom(range.from); setTo(range.to); }} />
         <div className="field" style={{ margin: 0 }}>
           <label>Branch
             <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
@@ -5651,13 +5719,14 @@ function AdminSalesReport() {
           </label>
         </div>
         <RippleButton onClick={fetchReport} loading={loading}>Generate</RippleButton>
-        {report && (
+        {report && appliedFilters && (
           <>
-            <RippleButton size="small" variant="secondary" onClick={() => exportExcel(report, from, to)}>Export Excel</RippleButton>
-            <RippleButton size="small" variant="secondary" onClick={() => exportPdf(report, from, to)}>Export PDF</RippleButton>
+            <RippleButton size="small" variant="secondary" disabled={loading || filtersChanged} onClick={() => exportExcel(report, appliedFilters.from, appliedFilters.to)}>Export CSV</RippleButton>
+            <RippleButton size="small" variant="secondary" disabled={loading || filtersChanged} onClick={() => exportPdf(report, appliedFilters.from, appliedFilters.to)}>Export PDF</RippleButton>
           </>
         )}
       </div>
+      {filtersChanged && <p className="muted" role="status">Filters changed. Generate the report to update results, chart, and exports.</p>}
       {error && <ErrorMsg msg={error} />}
       {report && (
         <>
@@ -5668,7 +5737,7 @@ function AdminSalesReport() {
             <div className="stat-card"><div className="stat-card__value">{formatPrice(report.invoiceRevenue)}</div><div className="stat-card__label">Invoice Revenue</div></div>
           </div>
 
-          <SalesTrendsChart from={from} to={to} branchId={branchId} />
+          {appliedFilters && <SalesTrendsChart from={appliedFilters.from} to={appliedFilters.to} branchId={appliedFilters.branchId} groupId={appliedFilters.groupId} />}
 
           {report.channels && report.channels.length > 0 && (
             <>
@@ -5731,8 +5800,8 @@ function AdminSalesReport() {
 
 // ===================== EMPLOYEE SALES REPORT =====================
 function AdminEmployeeSales() {
-  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(reportYearStart());
+  const [to, setTo] = useState(reportToday());
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -5753,8 +5822,7 @@ function AdminEmployeeSales() {
     <>
       <h1>Employee Sales</h1>
       <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
-        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
-        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <ReportRangeFilter from={from} to={to} initialPreset={from === "1970-01-01" ? "all" : "ytd"} onChange={(range) => { setFrom(range.from); setTo(range.to); }} />
         <RippleButton onClick={fetchReport} loading={loading}>Generate</RippleButton>
       </div>
       {error && <ErrorMsg msg={error} />}
@@ -5788,8 +5856,8 @@ function AdminEmployeeSales() {
 
 // ===================== TECH PERFORMANCE REPORT =====================
 function AdminTechPerformance() {
-  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(reportYearStart());
+  const [to, setTo] = useState(reportToday());
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -5811,8 +5879,7 @@ function AdminTechPerformance() {
     <>
       <h1>Technician Performance</h1>
       <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
-        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
-        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <ReportRangeFilter from={from} to={to} initialPreset={from === "1970-01-01" ? "all" : "ytd"} onChange={(range) => { setFrom(range.from); setTo(range.to); }} />
         <RippleButton onClick={fetchReport} loading={loading}>Generate</RippleButton>
       </div>
       {error && <ErrorMsg msg={error} />}
@@ -5848,8 +5915,8 @@ function AdminTechPerformance() {
 
 // ===================== PURCHASES REPORT =====================
 function AdminPurchasesReport() {
-  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(reportYearStart());
+  const [to, setTo] = useState(reportToday());
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -5866,8 +5933,7 @@ function AdminPurchasesReport() {
     <>
       <h1>Purchases Report</h1>
       <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
-        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
-        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <ReportRangeFilter from={from} to={to} initialPreset={from === "1970-01-01" ? "all" : "ytd"} onChange={(range) => { setFrom(range.from); setTo(range.to); }} />
         <RippleButton onClick={fetchReport} loading={loading}>Generate</RippleButton>
       </div>
       {error && <ErrorMsg msg={error} />}
@@ -7280,8 +7346,8 @@ function ReportScreen({ title, endpoint, note, withBranch, withGroup, byOptions,
   exportPath?: (qs: string) => string | null;
   children: (data: any, sel: { from: string; to: string }) => React.ReactNode;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [from, setFrom] = useState("1900-01-01");
+  const today = reportToday();
+  const [from, setFrom] = useState("1970-01-01");
   const [to, setTo] = useState(today);
   const [branchId, setBranchId] = useState("");
   const [groupId, setGroupId] = useState("");
@@ -7289,6 +7355,7 @@ function ReportScreen({ title, endpoint, note, withBranch, withGroup, byOptions,
   const { data: branches } = useFetch(() => api<{ branches: Branch[] }>("/api/admin/branches"), []);
   const { data: groups } = useFetch(() => api<{ groups: any[] }>("/api/admin/groups"), []);
   const [report, setReport] = useState<any>(null);
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -7302,8 +7369,9 @@ function ReportScreen({ title, endpoint, note, withBranch, withGroup, byOptions,
   }
   function build() {
     setLoading(true); setError("");
-    api<any>(`${endpoint}?${qs()}`)
-      .then(setReport)
+    const query = qs();
+    api<any>(`${endpoint}?${query}`)
+      .then((data) => { setReport(data); setAppliedQuery(query); })
       .catch((e: any) => setError(e.message))
       .finally(() => setLoading(false));
   }
@@ -7313,8 +7381,7 @@ function ReportScreen({ title, endpoint, note, withBranch, withGroup, byOptions,
     <>
       <h1 style={{ marginBottom: "0.25rem" }}>{title}</h1>
       <div className="panel" style={{ marginBottom: "1rem", display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
-        <div className="field" style={{ margin: 0 }}><label>From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label></div>
-        <div className="field" style={{ margin: 0 }}><label>To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label></div>
+        <ReportRangeFilter from={from} to={to} initialPreset={from === "1970-01-01" ? "all" : "ytd"} onChange={(range) => { setFrom(range.from); setTo(range.to); }} />
         {withBranch && (
           <div className="field" style={{ margin: 0 }}>
             <label>Branch
@@ -7351,16 +7418,17 @@ function ReportScreen({ title, endpoint, note, withBranch, withGroup, byOptions,
           </div>
         )}
         <RippleButton onClick={build} loading={loading}>Generate</RippleButton>
-        {exportPath && report && (
+        {exportPath && report && appliedQuery && (
           <RippleButton size="small" variant="secondary" onClick={() => {
-            const u = exportPath(qs());
+            const u = exportPath(appliedQuery);
             if (!u) return;
             const a = document.createElement("a");
             a.href = u; a.download = "";
             document.body.appendChild(a); a.click(); a.remove();
-          }}>Export CSV</RippleButton>
+          }} disabled={loading || qs() !== appliedQuery}>Export CSV</RippleButton>
         )}
       </div>
+      {report && qs() !== appliedQuery && <p className="muted" role="status">Filters changed. Generate the report to update results and exports.</p>}
       {error && <ErrorMsg msg={error} />}
       {note && <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginBottom: "1rem" }}>{note}</p>}
       {loading && !report && <Spinner />}

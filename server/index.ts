@@ -7267,7 +7267,7 @@ app.get("/api/reports/tech-performance", ownerAuthMiddleware, requirePermission(
       COALESCE(SUM(CASE WHEN rt.status = 'completed' THEN rt.total_cost ELSE 0 END), 0) AS "totalEarned"
      FROM users u LEFT JOIN repair_tickets rt ON rt.assigned_to = u.id${dateFilter}
      WHERE u.role = 'technician' GROUP BY u.id, u.username ORDER BY "ticketsCompleted" DESC`,
-    params
+     params
   );
   res.json({ technicians: rows });
 }));
@@ -8128,7 +8128,13 @@ app.get("/api/reports/sales/trends", ownerAuthMiddleware, requirePermission("rep
   if (!range) { res.status(400).json({ error: "Invalid date range. Use yyyy-mm-dd." }); return; }
   const branchId = req.query.branch_id ? Number(req.query.branch_id) : undefined;
   const granularity: Granularity = req.query.granularity === "week" || req.query.granularity === "month" ? req.query.granularity : "day";
-  const filter: OrderFilter = { from: range.from, to: range.to, branchId };
+  const groupRaw = req.query.group_id ? String(req.query.group_id) : undefined;
+  const filter: OrderFilter = {
+    from: range.from,
+    to: range.to,
+    branchId,
+    groupId: groupRaw && groupRaw !== "all" ? groupRaw : undefined,
+  };
   const series = await salesSeries(filter, granularity);
   res.json({
     from: range.from,
