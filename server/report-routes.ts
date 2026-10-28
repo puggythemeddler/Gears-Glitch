@@ -159,6 +159,8 @@ router.get("/payments", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
        COUNT(*)::int AS orders,
        COUNT(*) FILTER (WHERE o.status IN ('paid','shipped','delivered'))::int AS collected_orders,
        COALESCE(SUM(li.line_revenue), 0) + COALESCE(SUM(o.shipping_fee), 0) AS revenue,
+       COALESCE(SUM(CASE WHEN o.status IN ('paid','shipped','delivered') THEN COALESCE(li.line_revenue, 0) + COALESCE(o.shipping_fee, 0) ELSE 0 END), 0) AS collected_revenue,
+       COALESCE(SUM(CASE WHEN o.status IN ('paid','shipped','delivered') THEN 0 ELSE COALESCE(li.line_revenue, 0) + COALESCE(o.shipping_fee, 0) END), 0) AS outstanding_revenue,
        COALESCE(SUM(o.amount_refunded), 0) AS refunds
      FROM orders o LEFT JOIN (
         SELECT oi2.order_id, SUM(oi2.price * oi2.quantity) AS line_revenue
@@ -174,15 +176,14 @@ router.get("/payments", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
     collected_orders: Number(r.collected_orders || 0),
     revenue: money(r.revenue),
     refunds: money(r.refunds),
-    collected_revenue: money(
-      Number(r.collected_orders || 0) > 0 ? Number(r.revenue || 0) : 0
-    ),
+    collected_revenue: money(r.collected_revenue),
+    outstanding_revenue: money(r.outstanding_revenue),
   }));
   const summary = {
     total_revenue: money(methods.reduce((s, m) => s + m.revenue, 0)),
     total_refunds: money(methods.reduce((s, m) => s + m.refunds, 0)),
-    collected_revenue: money(methods.reduce((s, m) => s + (Number(m.collected_orders) > 0 ? m.revenue : 0), 0)),
-    outstanding_revenue: money(methods.reduce((s, m) => s + (Number(m.collected_orders) > 0 ? 0 : m.revenue), 0)),
+    collected_revenue: money(methods.reduce((s, m) => s + m.collected_revenue, 0)),
+    outstanding_revenue: money(methods.reduce((s, m) => s + m.outstanding_revenue, 0)),
     orders: methods.reduce((s, m) => s + m.orders, 0),
   };
   res.json({ from: filter.from, to: filter.to, summary, methods });
@@ -192,14 +193,18 @@ router.get("/payments/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(asy
   const filter = filterFromQuery(req);
   const { where, params } = buildOrderWhere(filter);
   const rows = await queryAll(
-    `SELECT COALESCE(NULLIF(LOWER(TRIM(o.payment_method)),''),'unrecorded') AS method, COUNT(*)::int AS orders, COALESCE(SUM(li.line_revenue),0) + COALESCE(SUM(o.shipping_fee),0) AS revenue, COALESCE(SUM(o.amount_refunded),0) AS refunds
+    `SELECT COALESCE(NULLIF(LOWER(TRIM(o.payment_method)),''),'unrecorded') AS method, COUNT(*)::int AS orders,
+       COALESCE(SUM(li.line_revenue),0) + COALESCE(SUM(o.shipping_fee),0) AS revenue,
+       COALESCE(SUM(CASE WHEN o.status IN ('paid','shipped','delivered') THEN COALESCE(li.line_revenue,0) + COALESCE(o.shipping_fee,0) ELSE 0 END),0) AS collected_revenue,
+       COALESCE(SUM(CASE WHEN o.status IN ('paid','shipped','delivered') THEN 0 ELSE COALESCE(li.line_revenue,0) + COALESCE(o.shipping_fee,0) END),0) AS outstanding_revenue,
+       COALESCE(SUM(o.amount_refunded),0) AS refunds
      FROM orders o LEFT JOIN (SELECT oi2.order_id, SUM(oi2.price*oi2.quantity) AS line_revenue FROM order_items oi2 WHERE oi2.cancelled = 0 GROUP BY oi2.order_id) li ON li.order_id = o.id
      WHERE ${where} GROUP BY LOWER(TRIM(o.payment_method)) ORDER BY revenue DESC`,
     params
   );
   const csv = toCsv(
-    rows.map((r: any) => ({ method: r.method, orders: Number(r.orders || 0), revenue: money(r.revenue), refunds: money(r.refunds) })),
-    [{ key: "method", label: "Payment method" }, { key: "orders", label: "Orders" }, { key: "revenue", label: "Revenue" }, { key: "refunds", label: "Refunds" }]
+    rows.map((r: any) => ({ method: r.method, orders: Number(r.orders || 0), revenue: money(r.revenue), collected_revenue: money(r.collected_revenue), outstanding_revenue: money(r.outstanding_revenue), refunds: money(r.refunds) })),
+    [{ key: "method", label: "Payment method" }, { key: "orders", label: "Orders" }, { key: "revenue", label: "Revenue" }, { key: "collected_revenue", label: "Collected" }, { key: "outstanding_revenue", label: "Outstanding" }, { key: "refunds", label: "Refunds" }]
   );
   sendCsv(res, `payments-${filter.from}-to-${filter.to}.csv`, csv);
 }));
