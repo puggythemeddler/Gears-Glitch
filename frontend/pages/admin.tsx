@@ -5665,6 +5665,15 @@ function VisitorTrendChart({ data }: { data: any[] }) {
   );
 }
 
+function previousReportRange(from: string, to: string) {
+  const start = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  const previousEnd = new Date(start.getTime() - 86400000);
+  const previousStart = new Date(previousEnd.getTime() - (days - 1) * 86400000);
+  return { from: previousStart.toISOString().slice(0, 10), to: previousEnd.toISOString().slice(0, 10), days };
+}
+
 function AdminSalesReport() {
   const today = reportToday();
   const [from, setFrom] = useState(reportYearStart());
@@ -5692,6 +5701,9 @@ function AdminSalesReport() {
   }
 
   const filtersChanged = !!appliedFilters && (from !== appliedFilters.from || to !== appliedFilters.to || branchId !== appliedFilters.branchId || groupId !== appliedFilters.groupId);
+  const comparisonRange = report?.comparison && appliedFilters
+    ? previousReportRange(appliedFilters.from, appliedFilters.to)
+    : null;
 
   return (
     <>
@@ -5736,6 +5748,26 @@ function AdminSalesReport() {
             <div className="stat-card"><div className="stat-card__value">{report.paidInvoices}</div><div className="stat-card__label">Paid Invoices</div></div>
             <div className="stat-card"><div className="stat-card__value">{formatPrice(report.invoiceRevenue)}</div><div className="stat-card__label">Invoice Revenue</div></div>
           </div>
+
+          {report.comparison && comparisonRange && (
+            <section className="panel" aria-label="Sales period comparison" style={{ margin: "1rem 0" }}>
+              <h3 style={{ margin: "0 0 0.25rem" }}>Compared with the previous {comparisonRange.days}-day period</h3>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", margin: "0 0 0.75rem" }}>
+                {comparisonRange.from} to {comparisonRange.to} · Net sales after discounts, gift-card redemptions and refunds.
+              </p>
+              <div className="stat-grid">
+                <ReportStat value={formatPrice(report.comparison.current.net)} label="Current net sales" />
+                <ReportStat value={formatPrice(report.comparison.previous.net)} label="Previous net sales" />
+                <ReportStat value={`${report.comparison.abs_change >= 0 ? "+" : "−"}${formatPrice(Math.abs(report.comparison.abs_change))}`} label="Net sales change" />
+                <ReportStat value={report.comparison.pct_change === null
+                  ? (report.comparison.current.net > 0 ? "New activity" : "No prior sales")
+                  : `${report.comparison.pct_change >= 0 ? "+" : ""}${report.comparison.pct_change.toFixed(1)}%`}
+                  label="Change vs previous" />
+                <ReportStat value={report.comparison.current.orders} label="Current orders" />
+                <ReportStat value={report.comparison.previous.orders} label="Previous orders" />
+              </div>
+            </section>
+          )}
 
           {appliedFilters && <SalesTrendsChart from={appliedFilters.from} to={appliedFilters.to} branchId={appliedFilters.branchId} groupId={appliedFilters.groupId} />}
 
@@ -7537,8 +7569,9 @@ function ReportPayments() {
               { key: "method", label: "Method", sortable: true, value: (row: any) => row.method, render: (row: any) => <span style={{ textTransform: "capitalize" }}>{row.method}</span> },
               { key: "orders", label: "Orders", align: "right", sortable: true, value: (row: any) => row.orders },
               { key: "revenue", label: "Revenue", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
-              { key: "refunds", label: "Refunds", align: "right", sortable: true, value: (row: any) => row.refunds, render: (row: any) => formatPrice(row.refunds) },
               { key: "collected_revenue", label: "Collected", align: "right", sortable: true, value: (row: any) => row.collected_revenue, render: (row: any) => formatPrice(row.collected_revenue) },
+              { key: "outstanding_revenue", label: "Outstanding", align: "right", sortable: true, value: (row: any) => row.outstanding_revenue, render: (row: any) => formatPrice(row.outstanding_revenue) },
+              { key: "refunds", label: "Refunds", align: "right", sortable: true, value: (row: any) => row.refunds, render: (row: any) => formatPrice(row.refunds) },
             ]}
             rows={r.methods}
           />
@@ -7574,6 +7607,7 @@ function ReportReceivables() {
             rowKey={(row) => String(row.id)}
             columns={[
               { key: "id", label: "Order", align: "right", sortable: true, value: (row: any) => row.id },
+              { key: "invoice", label: "Invoice", sortable: true, value: (row: any) => row.invoice || "", render: (row: any) => row.invoice || "\u2014" },
               { key: "customer", label: "Customer", sortable: true, value: (row: any) => row.customer || "", render: (row: any) => row.customer || "\u2014" },
               { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{row.status}</span> },
               { key: "total", label: "Total", align: "right", sortable: true, value: (row: any) => row.total, render: (row: any) => formatPrice(row.total) },
