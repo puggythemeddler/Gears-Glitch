@@ -29,6 +29,7 @@ interface TicketRow {
   scheduled_at: string | null;
   diagnosis: string;
   diagnosis_due_at: string | null;
+  diagnosis_recorded_at: string | null;
   diagnosis_last_reminded_at: string | null;
   hold_reason: string;
   hold_remind_at: string | null;
@@ -90,6 +91,7 @@ interface Ticket {
   scheduledAt: string | null;
   diagnosis: string;
   diagnosisDueAt: string | null;
+  diagnosisRecordedAt: string | null;
   diagnosisLastRemindedAt: string | null;
   holdReason: string;
   holdRemindAt: string | null;
@@ -116,7 +118,7 @@ interface Ticket {
 
 export function customerSafeRepairTicket(ticket: Ticket): any {
   const customerTicket: any = { ...ticket };
-  for (const key of ["workNotes", "priority", "diagnosisDueAt", "diagnosisLastRemindedAt", "holdReason", "holdRemindAt", "holdLastRemindedAt"]) delete customerTicket[key];
+  for (const key of ["workNotes", "priority", "diagnosisDueAt", "diagnosisRecordedAt", "diagnosisLastRemindedAt", "holdReason", "holdRemindAt", "holdLastRemindedAt"]) delete customerTicket[key];
   return customerTicket;
 }
 
@@ -311,6 +313,7 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     scheduledAt: row.scheduled_at,
     diagnosis: row.diagnosis || "",
     diagnosisDueAt: row.diagnosis_due_at || null,
+    diagnosisRecordedAt: row.diagnosis_recorded_at || null,
     diagnosisLastRemindedAt: row.diagnosis_last_reminded_at || null,
     holdReason: row.hold_reason || "",
     holdRemindAt: row.hold_remind_at || null,
@@ -632,14 +635,22 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
     fields.push(`diagnosis = $${idx}`);
     params.push(updates.diagnosis);
     idx++;
-    if (nextStatus !== "on_hold" && String(updates.diagnosis).trim()) {
-      fields.push("diagnosis_due_at = NULL");
+    const diagnosisText = String(updates.diagnosis).trim();
+    const previousDiagnosis = String(existing.diagnosis || "").trim();
+    if (nextStatus !== "on_hold" && diagnosisText && !previousDiagnosis) {
+      fields.push("diagnosis_recorded_at = NOW()::text");
       fields.push("diagnosis_last_reminded_at = NULL");
-    } else if (nextStatus !== "on_hold" && (assignedChanged || !existing.diagnosisDueAt) && (updates.assignedTo !== undefined ? updates.assignedTo : existing.assignedTo) && !["collected", "cancelled", "on_hold"].includes(nextStatus)) {
+    } else if (nextStatus !== "on_hold" && !diagnosisText) {
+      fields.push("diagnosis_recorded_at = NULL");
+      fields.push("diagnosis_last_reminded_at = NULL");
+    }
+    if (nextStatus !== "on_hold" && !diagnosisText && (assignedChanged || !existing.diagnosisDueAt || previousDiagnosis) && (updates.assignedTo !== undefined ? updates.assignedTo : existing.assignedTo) && !["collected", "cancelled", "on_hold"].includes(nextStatus)) {
       const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
       fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
       params.push(slaHours);
       idx++;
+    } else if (nextStatus !== "on_hold" && diagnosisText && !previousDiagnosis && !existing.diagnosisDueAt) {
+      fields.push("diagnosis_due_at = NULL");
     }
   }
   if (nextStatus === "on_hold") {
@@ -753,6 +764,28 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
       false
     );
   }
+  if (updates.priority !== undefined && updates.priority !== existing.priority) {
+    await addRepairUpdate(ticketId, staffId || null, "priority", `Priority changed from ${existing.priority || "normal"} to ${updates.priority}.`, false);
+  }
+  if (updates.etaAt !== undefined && String(updates.etaAt || "") !== String(existing.etaAt || "")) {
+    await addRepairUpdate(ticketId, staffId || null, "eta_updated", `Estimated completion date changed to ${updates.etaAt || "not set"}.`, false);
+  }
+  if (updates.scheduledAt !== undefined && String(updates.scheduledAt || "") !== String(existing.scheduledAt || "")) {
+    await addRepairUpdate(ticketId, staffId || null, "schedule_updated", `Repair schedule changed to ${updates.scheduledAt || "not scheduled"}.`, false);
+  }
+  if (Math.abs(Number(existing.totalCost || 0) - Number(totalCost || 0)) >= 0.01) {
+    await addRepairUpdate(ticketId, staffId || null, "quote_updated", `Repair estimate changed from ${Number(existing.totalCost || 0).toFixed(2)} to ${Number(totalCost || 0).toFixed(2)}.`, false);
+  }
+  if (updates.diagnosis !== undefined && String(updates.diagnosis).trim() !== String(existing.diagnosis || "").trim()) {
+    await addRepairUpdate(ticketId, staffId || null, "diagnosis", String(updates.diagnosis).trim() ? "Diagnosis recorded or updated." : "Diagnosis cleared; the diagnosis target restarted.", false);
+  }
+  if (nextStatus === "on_hold" && existing.status !== "on_hold") {
+    await addRepairUpdate(ticketId, staffId || null, "hold", `Ticket placed on hold. Reason: ${nextHoldReason}. Review due ${new Date(String(nextHoldRemindAt)).toLocaleString("en-GB", { timeZone: "Africa/Nairobi" })}.`, false);
+  } else if (nextStatus === "on_hold" && (nextHoldReason !== existing.holdReason || String(nextHoldRemindAt || "") !== String(existing.holdRemindAt || ""))) {
+    await addRepairUpdate(ticketId, staffId || null, "hold_review_updated", `On-hold reason or review date updated. Review due ${new Date(String(nextHoldRemindAt)).toLocaleString("en-GB", { timeZone: "Africa/Nairobi" })}.`, false);
+  } else if (existing.status === "on_hold" && nextStatus !== "on_hold") {
+    await addRepairUpdate(ticketId, staffId || null, "hold_released", `Ticket resumed with status ${STATUS_LABELS[nextStatus] || nextStatus}.`, false);
+  }
 
   return await loadTicketDetails(ticketId);
 }
@@ -769,7 +802,6 @@ export async function runRepairWorkflowSweep(): Promise<{ diagnosisEscalated: an
     )
     UPDATE repair_tickets t SET
       priority = CASE t.priority WHEN 'low' THEN 'normal' WHEN 'normal' THEN 'high' WHEN 'high' THEN 'critical' ELSE 'critical' END,
-      diagnosis_due_at = (NOW() + INTERVAL '1 day')::text,
       diagnosis_last_reminded_at = NOW()::text,
       updated_at = NOW()::text
     FROM due d LEFT JOIN users u ON u.id = d.assigned_to
@@ -802,7 +834,7 @@ async function addRepairUpdate(ticketId: string, staffId: number | null, updateT
   return Number(row.id);
 }
 
-async function addRepairPart(ticketId: string, data: any): Promise<TicketResult> {
+async function addRepairPart(ticketId: string, data: any, staffId?: number): Promise<TicketResult> {
   const desc = String(data.description || "").trim();
   if (!desc) return { ok: false, error: "Part description is required." };
 
@@ -850,14 +882,16 @@ async function addRepairPart(ticketId: string, data: any): Promise<TicketResult>
   await recalculateTicketCost(ticketId);
 
   const partRow = await queryOne("SELECT * FROM repair_parts_used WHERE id = $1", [partId]) as any;
+  await addRepairUpdate(ticketId, staffId || null, "part_added", `Part added: ${desc} × ${qty} (unit cost ${Number(cost).toFixed(2)}).`, false);
   return { ok: true, part: mapPart(partRow) };
 }
 
-async function removeRepairPart(ticketId: string, partId: number): Promise<boolean> {
-  const part = await queryOne("SELECT product_id, quantity FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]) as any;
+async function removeRepairPart(ticketId: string, partId: number, staffId?: number): Promise<boolean> {
+  const part = await queryOne("SELECT description, product_id, quantity, unit_cost FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]) as any;
   const r = await query("DELETE FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]);
   if ((r.rowCount ?? 0) > 0) {
     await recalculateTicketCost(ticketId);
+    await addRepairUpdate(ticketId, staffId || null, "part_removed", `Part removed: ${part?.description || "part"} × ${Number(part?.quantity) || 1}.`, false);
     if (part?.product_id) {
       const qty = Number(part.quantity) || 1;
       try {

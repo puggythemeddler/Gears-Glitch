@@ -391,6 +391,7 @@ CREATE TABLE IF NOT EXISTS repair_tickets (
   scheduled_at TEXT,
   diagnosis TEXT NOT NULL DEFAULT '',
   diagnosis_due_at TEXT,
+  diagnosis_recorded_at TEXT,
   diagnosis_last_reminded_at TEXT,
   hold_reason TEXT NOT NULL DEFAULT '',
   hold_started_at TEXT,

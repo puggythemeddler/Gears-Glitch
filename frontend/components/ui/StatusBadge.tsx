@@ -11,10 +11,15 @@ const REPAIR_STATUS: Record<string, StatusMeta> = {
   received: { label: "Received", tone: "info" },
   diagnosing: { label: "Diagnosing", tone: "warning" },
   waiting_parts: { label: "Waiting for parts", tone: "warning" },
+  awaiting_approval: { label: "Awaiting approval", tone: "warning" },
+  approved: { label: "Approved", tone: "success" },
   in_progress: { label: "In progress", tone: "info" },
   quality_check: { label: "Quality check", tone: "info" },
   ready: { label: "Ready for collection", tone: "success" },
   collected: { label: "Collected", tone: "default" },
+  rejected: { label: "Rejected", tone: "danger" },
+  unrepairable: { label: "Unrepairable", tone: "danger" },
+  on_hold: { label: "On hold", tone: "warning" },
   cancelled: { label: "Cancelled", tone: "danger" },
 };
 

@@ -7706,17 +7706,20 @@ function ReportRepairs() {
     <ReportScreen
       title="Repairs"
       endpoint="/api/reports/repairs"
-      note="Completed counts only tickets with status 'collected' (completed_at is stamped when the customer collects the unit). Other statuses are still mid-flow."
+      note="Collected ticket value is the saved ticket total for tickets marked collected, not a confirmed payment. Repair payments and refunds are not yet linked to tickets. Diagnosis SLA results include only records with a captured due date and diagnosis time."
       exportPath={(qs) => `/api/reports/repairs/export.csv?${qs}`}
     >
       {(r) => (
         <>
           <div className="stat-grid" style={{ marginBottom: "1rem" }}>
-            <ReportStat value={r.summary.tickets} label="Tickets" />
-            <ReportStat value={r.summary.completed} label="Completed (collected)" />
+            <ReportStat value={r.summary.tickets} label="Tickets created" />
+            <ReportStat value={r.summary.open_tickets} label="Still open" />
+            <ReportStat value={r.summary.completed} label="Collected tickets" />
             <ReportStat value={r.summary.cancelled} label="Cancelled / rejected" />
-            <ReportStat value={formatPrice(r.summary.revenue)} label="Revenue (collected)" />
+            <ReportStat value={formatPrice(r.summary.collected_ticket_value)} label="Collected ticket value" />
             <ReportStat value={r.summary.avg_turnover_days === null ? "\u2014" : r.summary.avg_turnover_days + " days"} label="Avg turnaround" />
+            <ReportStat value={`${r.summary.diagnosis_on_time}/${r.summary.diagnosis_sla_measured}`} label="Diagnosis on time" />
+            <ReportStat value={r.summary.diagnosis_overdue} label="Diagnoses overdue" />
           </div>
           <ReportTable
             title="By status"
@@ -7725,9 +7728,48 @@ function ReportRepairs() {
             columns={[
               { key: "status", label: "Status", sortable: true, value: (row: any) => row.status, render: (row: any) => <span className="plan-status">{row.status}</span> },
               { key: "tickets", label: "Tickets", align: "right", sortable: true, value: (row: any) => row.tickets },
-              { key: "revenue", label: "Revenue", align: "right", sortable: true, value: (row: any) => row.revenue, render: (row: any) => formatPrice(row.revenue) },
+              { key: "collected_ticket_value", label: "Collected ticket value", align: "right", sortable: true, value: (row: any) => row.collected_ticket_value, render: (row: any) => formatPrice(row.collected_ticket_value) },
             ]}
             rows={r.statuses}
+          />
+          <ReportTable
+            title="By technician"
+            ariaLabel="Repair workload by technician"
+            rowKey={(row) => row.technician}
+            columns={[
+              { key: "technician", label: "Technician", sortable: true },
+              { key: "tickets", label: "Tickets", align: "right", sortable: true, value: (row: any) => row.tickets },
+              { key: "open_tickets", label: "Open", align: "right", sortable: true, value: (row: any) => row.open_tickets },
+              { key: "completed", label: "Collected", align: "right", sortable: true, value: (row: any) => row.completed },
+              { key: "avg_turnover_days", label: "Avg turnaround", align: "right", sortable: true, value: (row: any) => row.avg_turnover_days ?? -1, render: (row: any) => row.avg_turnover_days === null ? "—" : `${row.avg_turnover_days} days` },
+              { key: "collected_ticket_value", label: "Collected ticket value", align: "right", sortable: true, value: (row: any) => row.collected_ticket_value, render: (row: any) => formatPrice(row.collected_ticket_value) },
+            ]}
+            rows={r.technicians}
+          />
+          <ReportTable
+            title="By priority"
+            ariaLabel="Repair tickets by priority"
+            rowKey={(row) => row.priority}
+            columns={[
+              { key: "priority", label: "Priority", sortable: true },
+              { key: "tickets", label: "Tickets", align: "right", sortable: true, value: (row: any) => row.tickets },
+              { key: "open_tickets", label: "Open", align: "right", sortable: true, value: (row: any) => row.open_tickets },
+              { key: "completed", label: "Collected", align: "right", sortable: true, value: (row: any) => row.completed },
+              { key: "collected_ticket_value", label: "Collected ticket value", align: "right", sortable: true, value: (row: any) => row.collected_ticket_value, render: (row: any) => formatPrice(row.collected_ticket_value) },
+            ]}
+            rows={r.priorities}
+          />
+          <ReportTable
+            title="By repair type"
+            ariaLabel="Repair tickets by repair type"
+            rowKey={(row) => row.repair_type}
+            columns={[
+              { key: "repair_type", label: "Repair type", sortable: true },
+              { key: "tickets", label: "Tickets", align: "right", sortable: true, value: (row: any) => row.tickets },
+              { key: "completed", label: "Collected", align: "right", sortable: true, value: (row: any) => row.completed },
+              { key: "collected_ticket_value", label: "Collected ticket value", align: "right", sortable: true, value: (row: any) => row.collected_ticket_value, render: (row: any) => formatPrice(row.collected_ticket_value) },
+            ]}
+            rows={r.repair_types}
           />
         </>
       )}

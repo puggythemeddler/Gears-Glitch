@@ -7003,13 +7003,13 @@ app.patch("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:upd
 }));
 
 app.post("/api/repairs/:id/parts", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
-  const result = await addRepairPart(String(req.params.id), req.body || {});
+  const result = await addRepairPart(String(req.params.id), req.body || {}, (req as any).user.sub);
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.status(201).json(result.part);
 }));
 
 app.delete("/api/repairs/:id/parts/:partId", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
-  const removed = await removeRepairPart(String(req.params.id), Number(req.params.partId));
+  const removed = await removeRepairPart(String(req.params.id), Number(req.params.partId), (req as any).user.sub);
   if (!removed) { res.status(404).json({ error: "Part not found." }); return; }
   res.status(204).end();
 }));
