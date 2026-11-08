@@ -162,6 +162,24 @@ is one database per tenant, so every `whatsapp_consent` row belongs to that tena
 left `NULL` (the unique index `COALESCE`s them to `-1`). Authorisation is per
 recipient — a grant or opt-out for one number never affects another.
 
+### Customer preferences
+
+Signed-in customers manage two separate, optional WhatsApp choices in their account
+notification settings. Both are off unless the customer explicitly enables them:
+
+- **Order and service updates** covers order, delivery, repair, and warranty messages.
+- **Offers and product news** covers promotions and product announcements. It does not
+  grant permission for service messages, and service consent does not grant permission
+  for marketing.
+
+`GET` and `PUT /api/customer/preferences` require customer authentication and operate
+only on the signed-in customer's phone number. The server returns both category choices
+from `whatsapp_consent`; it does not infer consent from the older channel-level WhatsApp
+setting. The legacy single `whatsapp` field is accepted for older clients as a
+transactional-only choice. A customer must have a phone number before either choice can
+be enabled. Saving both choices off persists an opt-out. An inbound STOP remains an
+opt-out until the customer explicitly changes a preference again.
+
 ### Inbound opt-out
 
 - Opt-out keywords `STOP`, `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT` are detected on

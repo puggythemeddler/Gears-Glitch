@@ -417,6 +417,7 @@ import { getGmailConfig, getGmailStatus, buildGmailAuthUrl, signGmailState, veri
 import { getIntegrationsHealth } from "./integrations-health";
 import { upsertOauthAccount, acquireWebhookEvent, markWebhookProcessed, markWebhookFailed } from "./integrations-store";
 import { handleWhatsAppWebhook, whatsAppWebhookHttpStatus, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
+import { getWhatsAppConsentPreferences, saveWhatsAppConsentPreferences } from "./whatsapp-consent";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs, enqueueOrderInvoiceDelivery, startNotificationQueueWorker } from "./notification-service";
 import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, setWhatsAppTemplateApproval, trackPageView, getVisitorStats } from "./db";
@@ -6042,15 +6043,65 @@ app.put("/api/customer/me", customerAuthMiddleware, asyncHandler(async (req: Req
 
 // Customer communication preferences (opt-outs) for email + WhatsApp.
 app.get("/api/customer/preferences", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  res.json(await getCustomerCommPrefs((req as any).customer.sub));
+  const customerId = (req as any).customer.sub;
+  const [prefs, customer] = await Promise.all([
+    getCustomerCommPrefs(customerId),
+    findCustomerById(customerId),
+  ]);
+  const consent = await getWhatsAppConsentPreferences(customer?.phone || "");
+  const marketing = prefs.whatsapp && consent.marketing;
+  const transactional = prefs.whatsapp && consent.transactional;
+  res.json({
+    email: prefs.email,
+    whatsapp: marketing || transactional,
+    whatsappMarketing: marketing,
+    whatsappTransactional: transactional,
+    hasWhatsappPhone: Boolean(customer?.phone),
+  });
 }));
 
 app.put("/api/customer/preferences", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const { email, whatsapp } = req.body || {};
+  const { email, whatsapp, whatsappMarketing, whatsappTransactional } = req.body || {};
   if (email !== undefined && typeof email !== "boolean") { res.status(400).json({ error: "email must be a boolean." }); return; }
   if (whatsapp !== undefined && typeof whatsapp !== "boolean") { res.status(400).json({ error: "whatsapp must be a boolean." }); return; }
-  const updated = await updateCustomerCommPrefs((req as any).customer.sub, { email, whatsapp });
-  res.json(updated);
+  if (whatsappMarketing !== undefined && typeof whatsappMarketing !== "boolean") { res.status(400).json({ error: "whatsappMarketing must be a boolean." }); return; }
+  if (whatsappTransactional !== undefined && typeof whatsappTransactional !== "boolean") { res.status(400).json({ error: "whatsappTransactional must be a boolean." }); return; }
+
+  const customerId = (req as any).customer.sub;
+  const customer = await findCustomerById(customerId);
+  if (!customer) { res.status(404).json({ error: "Customer not found." }); return; }
+
+  const hasCategoryChoice = whatsappMarketing !== undefined || whatsappTransactional !== undefined;
+  const hasLegacyChoice = whatsapp !== undefined && !hasCategoryChoice;
+  let marketing: boolean | undefined;
+  let transactional: boolean | undefined;
+  if (hasCategoryChoice || hasLegacyChoice) {
+    const current = await getWhatsAppConsentPreferences(customer.phone || "");
+    marketing = hasLegacyChoice ? false : whatsappMarketing ?? current.marketing;
+    transactional = hasLegacyChoice ? whatsapp === true : whatsappTransactional ?? current.transactional;
+    if ((marketing || transactional) && !customer.phone) {
+      res.status(400).json({ error: "Add a phone number to your account before opting in to WhatsApp." });
+      return;
+    }
+    if (customer.phone) {
+      await saveWhatsAppConsentPreferences(customer.phone, { marketing, transactional });
+    }
+  }
+
+  const channelUpdate: { email?: boolean; whatsapp?: boolean } = {};
+  if (email !== undefined) channelUpdate.email = email;
+  if (marketing !== undefined && transactional !== undefined) channelUpdate.whatsapp = marketing || transactional;
+  const updated = await updateCustomerCommPrefs(customerId, channelUpdate);
+  const consent = await getWhatsAppConsentPreferences(customer.phone || "");
+  const effectiveMarketing = updated.whatsapp && consent.marketing;
+  const effectiveTransactional = updated.whatsapp && consent.transactional;
+  res.json({
+    email: updated.email,
+    whatsapp: effectiveMarketing || effectiveTransactional,
+    whatsappMarketing: effectiveMarketing,
+    whatsappTransactional: effectiveTransactional,
+    hasWhatsappPhone: Boolean(customer.phone),
+  });
 }));
 
 // Customer messaging history (only their own notifications).
