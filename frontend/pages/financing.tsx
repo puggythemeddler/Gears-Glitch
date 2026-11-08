@@ -56,6 +56,8 @@ interface Options {
   minTerm: number;
   maxTerm: number;
   depositPercentMin: number | null;
+  depositPercentMax: number | null;
+  guarantorRequired?: boolean;
   onlineApplicationAllowed: boolean;
 }
 
@@ -87,6 +89,7 @@ export default function FinancingPage() {
   const [mounted, setMounted] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [options, setOptions] = useState<Options | null>(null);
+  const [optionsError, setOptionsError] = useState("");
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [selected, setSelected] = useState<Agreement | null>(null);
@@ -112,7 +115,7 @@ export default function FinancingPage() {
 
   useEffect(() => {
     setMounted(true);
-    api<Options>("/api/financing/options").then(setOptions).catch(() => {});
+    api<Options>("/api/financing/options").then((value) => { setOptions(value); setOptionsError(""); }).catch((e: any) => setOptionsError(e.message || "Financing options could not be loaded."));
     const ok = isCustomerLoggedIn();
     setLoggedIn(ok);
     if (ok) load();
@@ -144,6 +147,8 @@ export default function FinancingPage() {
       <nav className="breadcrumbs"><ol><li><a href="/">Home</a></li><li><a href="/account">Account</a></li><li><span aria-current="page">My financing</span></li></ol></nav>
       <h1>My financing</h1>
       <p className="page-intro">Buy now, pay in instalments. Track your plan, view the schedule, and pay by M-Pesa.</p>
+
+      {optionsError && <div className="product-error" role="alert">{optionsError} <button type="button" className="btn btn-secondary btn-sm" onClick={() => api<Options>("/api/financing/options").then((value) => { setOptions(value); setOptionsError(""); }).catch((e: any) => setOptionsError(e.message || "Financing options could not be loaded."))}>Retry</button></div>}
 
       {!enabled && (
         <div className="card" style={{ padding: "var(--space-4)", marginBottom: "var(--space-4)" }}>
@@ -314,30 +319,78 @@ function AgreementView({ agreement, onChanged }: { agreement: Agreement; onChang
 function ApplyForm({ options, onCreated }: { options: Options; onCreated: () => void }) {
   const feedback = useFeedback();
   const [products, setProducts] = useState<any[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState("");
   const [productId, setProductId] = useState("");
   const [depositPercent, setDepositPercent] = useState(String(options.depositPercentMin ?? 0));
   const [frequency, setFrequency] = useState(options.permittedFrequencies[0] || "weekly");
   const [termCount, setTermCount] = useState(String(options.minTerm || 4));
+  const [intervalDays, setIntervalDays] = useState("7");
   const [guarantorName, setGuarantorName] = useState("");
   const [guarantorPhone, setGuarantorPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [quote, setQuote] = useState<any>(null);
+  const [quoteBusy, setQuoteBusy] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
 
-  useEffect(() => {
-    api<{ products: any[] }>("/api/products").then((d) => setProducts(d.products || [])).catch(() => {});
-  }, []);
+  async function loadProducts() {
+    setProductsLoading(true);
+    setProductsError("");
+    try {
+      const d = await api<{ products: any[] }>("/api/products");
+      setProducts(d.products || []);
+    } catch (e: any) {
+      setProductsError(e.message || "Products could not be loaded. Please try again.");
+    } finally { setProductsLoading(false); }
+  }
+
+  useEffect(() => { void loadProducts(); }, []);
+
+  function updateQuoteInput(update: () => void) {
+    update();
+    setQuote(null);
+    setQuoteError("");
+  }
+
+  async function previewQuote() {
+    if (!productId) { setQuoteError("Choose a product to see an estimate."); return; }
+    const deposit = Number(depositPercent);
+    const term = Number(termCount);
+    if (!Number.isFinite(deposit) || deposit < (options.depositPercentMin ?? 0) || deposit > (options.depositPercentMax ?? 100)) {
+      setQuoteError(`Enter a deposit between ${options.depositPercentMin ?? 0}% and ${options.depositPercentMax ?? 100}%.`);
+      return;
+    }
+    if (!Number.isInteger(term) || term < options.minTerm || term > options.maxTerm) {
+      setQuoteError(`Choose between ${options.minTerm} and ${options.maxTerm} instalments.`);
+      return;
+    }
+    setQuoteBusy(true);
+    setQuoteError("");
+    try {
+      const query = new URLSearchParams({ productId, depositPercent: String(deposit), frequency, termCount: String(term) });
+      if (frequency === "custom") query.set("intervalDays", intervalDays);
+      setQuote(await api<any>(`/api/financing/public/quote?${query.toString()}`));
+    } catch (e: any) {
+      setQuote(null);
+      setQuoteError(e.message || "An estimate could not be prepared.");
+    } finally { setQuoteBusy(false); }
+  }
 
   async function submit() {
+    if (!productId) { feedback.error({ title: "Application not submitted", message: "Choose a product first." }); return; }
+    if (!quote) { feedback.error({ title: "Review the estimate first", message: "Preview your estimate before submitting the application." }); return; }
+    if (options.guarantorRequired && (!guarantorName.trim() || !guarantorPhone.trim())) { feedback.error({ title: "Application not submitted", message: "A guarantor name and phone number are required for this plan." }); return; }
     if (!consent) { feedback.error({ title: "Application not submitted", message: "Please tick the consent box." }); return; }
     setBusy(true);
     try {
       await api("/api/financing/my/applications", {
         method: "POST",
-        body: JSON.stringify({ productId: productId || null, depositPercent: Number(depositPercent), frequency, termCount: Number(termCount), guarantorName, guarantorPhone, notes, consent }),
+        body: JSON.stringify({ productId, depositPercent: Number(depositPercent), frequency, intervalDays: frequency === "custom" ? Number(intervalDays) : null, termCount: Number(termCount), guarantorName, guarantorPhone, notes, consent }),
       });
       feedback.success({ title: "Application submitted", message: "We will review it and get back to you." });
-      setConsent(false); setProductId(""); setNotes("");
+      setConsent(false); setProductId(""); setNotes(""); setQuote(null);
       onCreated();
     } catch (e: any) {
       feedback.error({ title: "Application not submitted", message: e.message });
@@ -349,40 +402,63 @@ function ApplyForm({ options, onCreated }: { options: Options; onCreated: () => 
   return (
     <section id="apply" className="panel" style={{ marginTop: "var(--space-6)" }}>
       <h2 style={{ marginTop: 0 }}>Start an application</h2>
+      <p className="muted">Choose an eligible product and review the estimated deposit and instalments before applying. This is an estimate; the shop confirms final terms after review.</p>
+      {productsError ? <div role="alert" className="product-error">{productsError} <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadProducts()}>Retry</button></div> : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" }}>
         <label>Product
-          <select value={productId} onChange={(e) => setProductId(e.target.value)} aria-label="Product">
-            <option value="">Select a product...</option>
+          <select value={productId} onChange={(e) => updateQuoteInput(() => setProductId(e.target.value))} aria-label="Product" required disabled={productsLoading || !!productsError}>
+            <option value="">{productsLoading ? "Loading products…" : "Select a product..."}</option>
             {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
         <label>Deposit (%)
-          <input type="number" min={options.depositPercentMin ?? 0} max="100" value={depositPercent} onChange={(e) => setDepositPercent(e.target.value)} />
+          <input type="number" min={options.depositPercentMin ?? 0} max={options.depositPercentMax ?? 100} step="0.1" value={depositPercent} onChange={(e) => updateQuoteInput(() => setDepositPercent(e.target.value))} />
         </label>
         <label>Frequency
-          <select value={frequency} onChange={(e) => setFrequency(e.target.value)} aria-label="Frequency">
+          <select value={frequency} onChange={(e) => updateQuoteInput(() => setFrequency(e.target.value))} aria-label="Frequency">
             {options.permittedFrequencies.map((f) => <option key={f} value={f}>{FREQ_LABEL[f] || f}</option>)}
           </select>
         </label>
         <label>Number of instalments
-          <input type="number" min={options.minTerm} max={options.maxTerm} value={termCount} onChange={(e) => setTermCount(e.target.value)} />
+          <input type="number" min={options.minTerm} max={options.maxTerm} step="1" value={termCount} onChange={(e) => updateQuoteInput(() => setTermCount(e.target.value))} />
         </label>
-        <label>Guarantor name (optional)
-          <input value={guarantorName} onChange={(e) => setGuarantorName(e.target.value)} />
+        {frequency === "custom" && <label>Days between instalments
+          <input type="number" min={1} max={365} step={1} value={intervalDays} onChange={(e) => updateQuoteInput(() => setIntervalDays(e.target.value))} />
+        </label>}
+        <label>Guarantor name {options.guarantorRequired ? "(required)" : "(optional)"}
+          <input value={guarantorName} required={!!options.guarantorRequired} onChange={(e) => setGuarantorName(e.target.value)} />
         </label>
-        <label>Guarantor phone (optional)
-          <input value={guarantorPhone} onChange={(e) => setGuarantorPhone(e.target.value)} />
+        <label>Guarantor phone {options.guarantorRequired ? "(required)" : "(optional)"}
+          <input value={guarantorPhone} required={!!options.guarantorRequired} onChange={(e) => setGuarantorPhone(e.target.value)} />
         </label>
       </div>
       <label style={{ display: "block", marginTop: "0.75rem" }}>Notes (optional)
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ width: "100%" }} />
       </label>
+      <div style={{ marginTop: "0.75rem" }}>
+        <button type="button" className="btn btn-secondary" onClick={() => void previewQuote()} disabled={quoteBusy || productsLoading || !!productsError || !productId}>
+          {quoteBusy ? "Preparing estimate…" : "Preview estimate"}
+        </button>
+      </div>
+      {quoteError && <p role="alert" className="product-error">{quoteError}</p>}
+      {quote && <div className="card" aria-live="polite" style={{ padding: "var(--space-4)", marginTop: "0.75rem" }}>
+        <h3 style={{ marginTop: 0 }}>Estimated plan</h3>
+        <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.75rem", margin: 0 }}>
+          <div><dt className="muted">Cash price</dt><dd style={{ margin: 0, fontWeight: 600 }}>{money(quote.cashPriceCents)}</dd></div>
+          <div><dt className="muted">Deposit ({quote.depositPercent}%)</dt><dd style={{ margin: 0, fontWeight: 600 }}>{money(quote.depositCents)}</dd></div>
+          <div><dt className="muted">Financing charge</dt><dd style={{ margin: 0, fontWeight: 600 }}>{money(quote.financingChargeCents)}</dd></div>
+          <div><dt className="muted">Total payable</dt><dd style={{ margin: 0, fontWeight: 600 }}>{money(quote.totalPayableCents)}</dd></div>
+          <div><dt className="muted">Instalments</dt><dd style={{ margin: 0, fontWeight: 600 }}>{quote.termCount} {quote.frequency === "custom" ? `every ${quote.intervalDays} days` : (FREQ_LABEL[quote.frequency] || quote.frequency)}</dd></div>
+          <div><dt className="muted">Typical instalment</dt><dd style={{ margin: 0, fontWeight: 600 }}>{money(quote.instalmentCents)}{quote.finalInstalmentCents !== quote.instalmentCents ? ` (final ${money(quote.finalInstalmentCents)})` : ""}</dd></div>
+        </dl>
+        <p className="muted" style={{ marginBottom: 0, fontSize: "0.85rem" }}>Estimate only. Approval, first due date, and final agreement terms are confirmed by the shop. No payment is taken by this estimate.</p>
+      </div>}
       <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.75rem" }}>
-        <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+        <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} disabled={!quote} />
         I understand this is a hire-purchase plan and that the item remains the seller's property until fully paid.
       </label>
       <div style={{ marginTop: "0.75rem" }}>
-        <button className="btn btn-primary" disabled={busy} onClick={submit}>Submit application</button>
+        <button className="btn btn-primary" disabled={busy || !quote || !consent} onClick={submit}>Submit application</button>
       </div>
     </section>
   );

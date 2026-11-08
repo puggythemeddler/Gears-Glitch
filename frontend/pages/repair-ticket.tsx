@@ -94,8 +94,11 @@ export default function RepairTicketPage() {
         </div>
         <table className="data-table">
           <tbody>
-            <tr><td>Device</td><td>{ticket.deviceType} {ticket.deviceModel ? `(${ticket.deviceModel})` : ""}</td></tr>
-            <tr><td>Issue</td><td>{ticket.issueDescription}</td></tr>
+            <tr><td>Device</td><td>{[ticket.deviceBrand, ticket.deviceType, ticket.deviceModel].filter(Boolean).join(" ")}</td></tr>
+            {ticket.serialNumber && <tr><td>Serial number</td><td>{ticket.serialNumber}</td></tr>}
+            {ticket.issueSummary && <tr><td>Issue summary</td><td>{ticket.issueSummary}</td></tr>}
+            <tr><td>Issue details</td><td>{ticket.issueDescription}</td></tr>
+            {(ticket.requestedVisitDate || ticket.requestedVisitTime) && <tr><td>Requested drop-off</td><td>{[ticket.requestedVisitDate, ticket.requestedVisitTime].filter(Boolean).join(" · ")} (awaiting shop confirmation)</td></tr>}
             {ticket.etaAt && <tr><td>Estimated completion</td><td>{formatDate(ticket.etaAt)}</td></tr>}
           </tbody>
         </table>

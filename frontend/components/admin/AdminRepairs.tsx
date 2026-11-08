@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
@@ -112,6 +112,9 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
   const [detail, setDetail] = useState<any>(null);
   const [form, setForm] = useState<TicketForm | null>(null);
   const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
   const [saving, setSaving] = useState(false);
   const [noteMsg, setNoteMsg] = useState("");
   const [noteVisible, setNoteVisible] = useState(true);
@@ -122,6 +125,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
 
   async function loadList() {
     setLoading(true);
+    setListError("");
     try {
       const q: string[] = [];
       if (statusFilter) q.push(`status=${encodeURIComponent(statusFilter)}`);
@@ -129,7 +133,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       const url = `/api/repairs${q.length ? "?" + q.join("&") : ""}`;
       const d = await api<{ tickets: any[] }>(url);
       setTickets(d.tickets || []);
-    } catch { setTickets([]); }
+    } catch (e: any) { setListError(e?.message || "Repair tickets could not be loaded. Please try again."); }
     finally { setLoading(false); }
   }
 
@@ -140,6 +144,10 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
   }, []);
 
   async function loadDetail(id: string) {
+    setDetailLoading(true);
+    setDetailError("");
+    setDetail(null);
+    setForm(null);
     try {
       const d = await api<any>(`/api/repairs/${id}`);
       setDetail(d);
@@ -167,12 +175,19 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
         softwareInstall: Boolean(d.softwareInstall),
         softwareLicense: Boolean(d.softwareLicense),
       });
-    } catch { /* ignore */ }
+    } catch (e: any) {
+      setDetail(null);
+      setForm(null);
+      setDetailError(e?.message || "Ticket details could not be loaded. Please try again.");
+    } finally {
+      setAssetLoading(false);
+      setDetailLoading(false);
+    }
   }
 
-  async function selectTicket(t: any) {
+  function selectTicket(t: any) {
     const next = detail?.id === t.id ? null : t.id;
-    if (next) { await loadDetail(next); } else { setDetail(null); setForm(null); }
+    if (!next) { setDetail(null); setForm(null); setDetailError(""); }
     onOpen(next);
   }
 
@@ -270,10 +285,12 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
           <option value="">All technicians</option>
           {staff.map((s) => <option key={s.id} value={s.id}>{s.username}</option>)}
         </select>
-        <span className="muted">{tickets.length} ticket(s)</span>
+        {!listError && <span className="muted">{tickets.length} ticket(s)</span>}
       </div>
 
-      {loading ? <Spinner /> : (
+      {loading ? <Spinner /> : listError ? (
+        <EmptyState icon="repairs" title="Couldn't load repair tickets" description={listError} actionLabel="Try again" onAction={() => void loadList()} />
+      ) : (
         <div className="table-wrap">
           <table className="data-table">
             <thead><tr><th>#</th><th>Customer</th><th>Device</th><th>Status</th><th>Technician</th><th>ETA</th><th>Scheduled</th><th>Quote</th><th></th></tr></thead>
@@ -282,7 +299,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
                 <tr key={t.id}>
                   <td>{t.id}</td>
                   <td>{t.customerName || ""}</td>
-                  <td>{t.deviceType ? t.deviceType + (t.deviceModel ? " " + t.deviceModel : "") : "—"}</td>
+                  <td>{t.deviceType ? [t.deviceBrand, t.deviceType, t.deviceModel].filter(Boolean).join(" ") : "—"}{t.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {t.serialNumber}</span>}</td>
                   <td>{statusBadge(t.status)}</td>
                   <td>{t.assignedName ? t.assignedName : <span className="muted">Unassigned</span>}</td>
                   <td>{t.etaAt ? fmtDate(t.etaAt) : "—"}</td>
@@ -309,12 +326,17 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
         </div>
       )}
 
+      {detailLoading && <div className="panel" role="status" style={{ marginTop: "1rem" }}><Spinner /></div>}
+      {detailError && !detailLoading && (
+        <EmptyState icon="repairs" title="Couldn't load ticket details" description={detailError} actionLabel="Try again" onAction={() => openId && void loadDetail(openId)} />
+      )}
       {detail && form && (
         <div className="panel" style={{ marginTop: "1.25rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
             <div style={{ minWidth: 0, maxWidth: "70ch" }}>
-              <h3 style={{ margin: 0 }}>Ticket #{detail.id} — {detail.deviceType}</h3>
-              <p className="muted" style={{ margin: "0.5rem 0 0" }}>{detail.issueDescription}</p>
+              <h3 style={{ margin: 0 }}>Ticket #{detail.id} — {[detail.deviceBrand, detail.deviceType, detail.deviceModel].filter(Boolean).join(" ")}</h3>
+              {detail.issueSummary && <p style={{ margin: "0.5rem 0 0", fontWeight: 600 }}>{detail.issueSummary}</p>}
+              <p className="muted" style={{ margin: "0.35rem 0 0" }}>{detail.issueDescription}</p>
             </div>
             {statusBadge(detail.status)}
           </div>
@@ -332,6 +354,24 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
               <div>
                 <div className="input-label">Device model</div>
                 <div>{detail.deviceModel}</div>
+              </div>
+            ) : null}
+            {detail.serialNumber ? (
+              <div>
+                <div className="input-label">Serial number</div>
+                <div>{detail.serialNumber}</div>
+              </div>
+            ) : null}
+            {(detail.requestedVisitDate || detail.requestedVisitTime) ? (
+              <div>
+                <div className="input-label">Customer requested drop-off</div>
+                <div>{[detail.requestedVisitDate, detail.requestedVisitTime].filter(Boolean).join(" · ")}</div>
+              </div>
+            ) : null}
+            {detail.customerNotes ? (
+              <div>
+                <div className="input-label">Customer notes</div>
+                <div>{detail.customerNotes}</div>
               </div>
             ) : null}
             {detail.repairTypeName ? (
@@ -489,16 +529,24 @@ function CalendarTab({ onOpenTicket }: { onOpenTicket: (id: string) => void }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadCalendar = useCallback(async () => {
     setLoading(true);
+    setError("");
     const from = localISODate(weekStart);
     const to = localISODate(addDays(weekStart, 7));
-    api<{ tickets: any[] }>(`/api/repairs/calendar?from=${from}&to=${to}`)
-      .then((d) => setTickets(d.tickets || []))
-      .catch(() => setTickets([]))
-      .finally(() => setLoading(false));
+    try {
+      const d = await api<{ tickets: any[] }>(`/api/repairs/calendar?from=${from}&to=${to}`);
+      setTickets(d.tickets || []);
+    } catch (e: any) {
+      setError(e?.message || "The repair calendar could not be loaded. Please try again.");
+    } finally { setLoading(false); }
   }, [weekStart]);
+
+  useEffect(() => {
+    void loadCalendar();
+  }, [loadCalendar]);
 
   const todayStr = localISODate(new Date());
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -519,7 +567,9 @@ function CalendarTab({ onOpenTicket }: { onOpenTicket: (id: string) => void }) {
         <span className="muted">{days[0].toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – {days[6].toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
       </div>
 
-      {loading ? <Spinner /> : (
+      {loading ? <Spinner /> : error ? (
+        <EmptyState icon="repairs" title="Couldn't load the repair calendar" description={error} actionLabel="Try again" onAction={() => void loadCalendar()} />
+      ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: "0.75rem" }}>
           {days.map((d) => {
             const key = localISODate(d);
@@ -566,9 +616,11 @@ function ContentTab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ text: string; error?: boolean } | null>(null);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
     setLoading(true);
+    setLoadError("");
     try {
       const [d, t] = await Promise.all([
         api<any>("/api/admin/repairs-page"),
@@ -577,7 +629,7 @@ function ContentTab() {
       setIntro(d.intro || "");
       setPanels(Array.isArray(d.panels) ? d.panels : []);
       setRepairTypes(t.types || []);
-    } catch { /* ignore */ }
+    } catch (e: any) { setLoadError(e?.message || "Repair page content could not be loaded. Please try again."); }
     finally { setLoading(false); }
   }
 
@@ -608,6 +660,7 @@ function ContentTab() {
   }
 
   if (loading) return <Spinner />;
+  if (loadError) return <EmptyState icon="repairs" title="Couldn't load repair page content" description={loadError} actionLabel="Try again" onAction={() => void load()} />;
 
   return (
     <>

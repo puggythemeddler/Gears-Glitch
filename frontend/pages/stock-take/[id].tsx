@@ -15,7 +15,7 @@ export default function StockTakeSessionPage() {
   const [authed, setAuthed] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [counts, setCounts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [report, setReport] = useState<any>(null);
@@ -37,8 +37,8 @@ export default function StockTakeSessionPage() {
       const data = await api<any>(`/api/stock-take/${id}`);
       setSession(data.session);
       setItems(data.items || []);
-      const c: Record<string, number> = {};
-      (data.items || []).forEach((item: any) => { if (item.countedQuantity !== null) c[item.productId] = item.countedQuantity; });
+      const c: Record<string, string> = {};
+      (data.items || []).forEach((item: any) => { if (item.countedQuantity !== null) c[item.productId] = String(item.countedQuantity); });
       setCounts(c);
     } catch (err: any) { setMsg("Error: " + err.message); }
   }
@@ -63,9 +63,23 @@ export default function StockTakeSessionPage() {
   }
 
   async function saveCount(productId: string) {
-    const qty = counts[productId];
-    if (qty === undefined || qty < 0) return;
+    const raw = counts[productId];
+    if (raw === undefined) return;
+    if (raw.trim() === "") {
+      setCounts((current) => {
+        const next = { ...current };
+        delete next[productId];
+        return next;
+      });
+      return;
+    }
+    const qty = Number(raw);
+    if (!Number.isInteger(qty) || qty < 0) {
+      setMsg("Enter a whole number of zero or more for the counted quantity.");
+      return;
+    }
     setSaving(true);
+    setMsg("");
     try {
       const data = await api<any>(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId, countedQuantity: qty }) });
       if (data.items) setItems(data.items);
@@ -74,14 +88,42 @@ export default function StockTakeSessionPage() {
   }
 
   async function completeSession() {
+    const invalidItem = items.find((item: any) => {
+      const raw = counts[item.productId];
+      return raw !== undefined && raw.trim() !== "" && (!Number.isInteger(Number(raw)) || Number(raw) < 0);
+    });
+    if (invalidItem) {
+      setMsg(`Enter a whole number of zero or more for ${invalidItem.productName}.`);
+      return;
+    }
+    const countedItems = items.filter((item: any) => {
+      const raw = counts[item.productId];
+      return raw !== undefined && raw.trim() !== "" ? Number.isInteger(Number(raw)) && Number(raw) >= 0 : item.countedQuantity !== null;
+    });
+    if (countedItems.length === 0) {
+      setMsg("Count at least one item before completing this stock take.");
+      return;
+    }
+    const changedItems = countedItems.filter((item: any) => {
+      const raw = counts[item.productId];
+      const qty = raw !== undefined && raw.trim() !== "" ? Number(raw) : Number(item.countedQuantity);
+      return qty !== Number(item.systemQuantity);
+    });
+    const confirmed = await confirmDialog({
+      title: "Apply stock count?",
+      message: `This will update on-hand stock for ${changedItems.length} item${changedItems.length === 1 ? "" : "s"}. ${countedItems.length} of ${items.length} items have been counted; uncounted items will be left unchanged. Review the variances above before continuing.`,
+      confirmLabel: "Apply stock changes",
+      danger: true,
+    });
+    if (!confirmed) return;
     setSaving(true);
     try {
       const unsavedItems = items.filter((item: any) => {
-        const localQty = counts[item.productId];
-        return localQty !== undefined && localQty !== item.countedQuantity;
+        const raw = counts[item.productId];
+        return raw !== undefined && raw.trim() !== "" && Number(raw) !== item.countedQuantity;
       });
       for (const item of unsavedItems) {
-        await api(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId: item.productId, countedQuantity: counts[item.productId] }) });
+        await api(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId: item.productId, countedQuantity: Number(counts[item.productId]) }) });
       }
       const data = await api<any>(`/api/stock-take/${id}/complete`, { method: "POST" });
       setMsg("Stock take completed and stock levels adjusted!");
@@ -145,7 +187,7 @@ export default function StockTakeSessionPage() {
             <div className="stat-card__label">Total Items</div>
           </div>
           <div className="stat-card">
-            <div className="stat-card__value">{items.filter((i: any) => i.countedQuantity !== null && i.countedQuantity > 0).length}</div>
+            <div className="stat-card__value">{items.filter((i: any) => i.countedQuantity !== null).length}</div>
             <div className="stat-card__label">Counted</div>
           </div>
           <div className="stat-card">
@@ -168,9 +210,9 @@ export default function StockTakeSessionPage() {
                 {showProductPicker && filteredProducts.length > 0 && (
                   <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, zIndex: 20, maxHeight: 250, overflowY: "auto" }}>
                     {filteredProducts.slice(0, 20).map((p) => (
-                      <div key={p.id} onClick={() => addProduct(p.id)} style={{ padding: "0.5rem 0.75rem", cursor: "pointer", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
+                      <button type="button" key={p.id} onClick={() => void addProduct(p.id)} aria-label={`Add ${p.name} to stock take`} style={{ display: "block", width: "100%", minHeight: 44, textAlign: "left", padding: "0.5rem 0.75rem", cursor: "pointer", border: 0, borderBottom: "1px solid var(--border)", background: "transparent", color: "inherit", fontSize: "0.85rem" }}>
                         {p.name} — {formatPrice(p.price)}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -190,13 +232,16 @@ export default function StockTakeSessionPage() {
                 label: "Counted",
                 sortable: true,
                 align: "right",
-                value: (r) => (counts[r.productId] ?? r.countedQuantity ?? 0),
+                value: (r) => (counts[r.productId] ?? (r.countedQuantity === null ? "0" : String(r.countedQuantity))),
                 render: (r) => (
                   <input
                     type="number"
+                    min={0}
+                    step={1}
+                    inputMode="numeric"
                     style={{ width: 80, textAlign: "right" }}
-                    value={counts[r.productId] ?? ""}
-                    onChange={(e) => setCounts({ ...counts, [r.productId]: Number(e.target.value) })}
+                    value={counts[r.productId] ?? (r.countedQuantity === null ? "" : String(r.countedQuantity))}
+                    onChange={(e) => setCounts({ ...counts, [r.productId]: e.target.value })}
                     onBlur={() => saveCount(r.productId)}
                     disabled={session.status === "completed"}
                     aria-label={`Counted quantity for ${r.productName}`}
@@ -208,10 +253,10 @@ export default function StockTakeSessionPage() {
                 label: "Variance",
                 sortable: true,
                 align: "right",
-                value: (r) => (r.countedQuantity !== null && r.countedQuantity > 0 ? Math.abs(r.variance) : 0),
+                value: (r) => (r.countedQuantity !== null ? Math.abs(r.variance) : 0),
                 render: (r) => (
                   <span style={{ textAlign: "right", color: r.countedQuantity !== null ? (r.variance > 0 ? "var(--success)" : r.variance < 0 ? "var(--danger)" : "inherit") : "inherit" }}>
-                    {r.countedQuantity !== null && r.countedQuantity > 0 ? (r.variance > 0 ? "+" : "") + r.variance : "\u2014"}
+                    {r.countedQuantity !== null ? (r.variance > 0 ? "+" : "") + r.variance : "\u2014"}
                   </span>
                 ),
               },

@@ -74,14 +74,11 @@ export default function RepairBookPage() {
           deviceBrand: fd.get("deviceBrand"),
           deviceModel: fd.get("deviceModel"),
           serialNumber: fd.get("serialNumber"),
-          purchaseYear: fd.get("purchaseYear"),
           issueSummary: fd.get("issueSummary"),
           issueDescription: fd.get("issueDescription"),
           symptoms,
-          devicePassword: fd.get("devicePassword"),
-          dataBackedUp: fd.get("dataBackedUp"),
-          preferredDate: fd.get("preferredDate"),
-          preferredTime: fd.get("preferredTime"),
+          requestedVisitDate: fd.get("requestedVisitDate"),
+          requestedVisitTime: fd.get("requestedVisitTime"),
           notes: fd.get("notes"),
           repairType: repairTypeRef.current,
         }),
@@ -138,7 +135,9 @@ export default function RepairBookPage() {
 
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
           <legend style={{ fontWeight: 600, color: "var(--primary)" }}>Scheduling</legend>
-          <div className="field"><label>Preferred date<input type="date" name="preferredDate" style={{ width: "100%" }} /></label></div>
+          <p className="muted" style={{ marginTop: 0 }}>Your preferred drop-off time is a request. The shop will confirm the appointment.</p>
+          <div className="field"><label>Preferred date<input type="date" name="requestedVisitDate" style={{ width: "100%" }} /></label></div>
+          <div className="field"><label>Preferred time<input type="time" name="requestedVisitTime" style={{ width: "100%" }} /></label></div>
           <div className="field"><label>Additional notes<textarea name="notes" rows={2} style={{ width: "100%" }} /></label></div>
         </fieldset>
 

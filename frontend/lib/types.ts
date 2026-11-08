@@ -98,7 +98,11 @@ export interface RepairTicket {
   deviceType: string;
   deviceBrand?: string;
   deviceModel: string;
+  serialNumber?: string;
+  issueSummary?: string;
   issueDescription: string;
+  requestedVisitDate?: string;
+  requestedVisitTime?: string;
   status: string;
   etaAt: string;
   createdAt: string;
