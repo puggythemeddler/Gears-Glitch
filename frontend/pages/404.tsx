@@ -1,8 +1,11 @@
 import Link from "next/link";
-import GearHeadFace from "@/components/GearHeadFace";
 import GearHeadTorso from "@/components/GearHeadTorso";
+import SiteMascotFace from "@/components/SiteMascotFace";
+import { useLayout } from "@/layouts";
 
 function NotFoundMascot() {
+  const { mascot } = useLayout();
+  if (mascot === "none") return null;
   return (
     <svg viewBox="0 0 240 220" width="200" height="184" className="nf-mascot">
       {/* Question marks floating around */}
@@ -32,7 +35,7 @@ function NotFoundMascot() {
         {/* head */}
         <g className="nf-head">
           <g transform="translate(112 80) scale(.7)">
-            <GearHeadFace expression="curious" />
+            <SiteMascotFace variant={mascot} expression="curious" />
           </g>
         </g>
       </g>

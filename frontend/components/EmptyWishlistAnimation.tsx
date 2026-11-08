@@ -1,7 +1,9 @@
-import GearHeadFace from "@/components/GearHeadFace";
 import GearHeadTorso from "@/components/GearHeadTorso";
+import SiteMascotFace from "@/components/SiteMascotFace";
+import { useLayout } from "@/layouts";
 
 export default function EmptyWishlistAnimation() {
+  const { mascot } = useLayout();
   return (
     <div className="ew-scene" aria-hidden="true">
       <svg viewBox="0 0 300 200" width="260" height="174">
@@ -24,8 +26,8 @@ export default function EmptyWishlistAnimation() {
           <path d="M140 118 l8 -10 l6 12 l8 -14" fill="none" stroke="var(--danger)" strokeWidth="1.8" strokeLinecap="round" opacity="0.5" />
         </g>
 
-        {/* Gear-head mascot — shrugging */}
-        <g className="ew-mascot">
+        {/* Keep the wishlist graphic without the character when mascots are off. */}
+        {mascot !== "none" && <g className="ew-mascot">
           {/* torso */}
           <GearHeadTorso x={44} y={106} width={54} height={52} />
           {/* feet */}
@@ -40,10 +42,10 @@ export default function EmptyWishlistAnimation() {
           {/* head */}
           <g className="ew-head">
             <g transform="translate(71 78) scale(.6)">
-              <GearHeadFace expression="hopeful" />
+              <SiteMascotFace variant={mascot} expression="hopeful" />
             </g>
           </g>
-        </g>
+        </g>}
       </svg>
     </div>
   );

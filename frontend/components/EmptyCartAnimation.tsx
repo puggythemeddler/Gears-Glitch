@@ -1,5 +1,6 @@
-import GearHeadFace from "@/components/GearHeadFace";
 import GearHeadTorso from "@/components/GearHeadTorso";
+import SiteMascotFace from "@/components/SiteMascotFace";
+import { useLayout } from "@/layouts";
 
 function SighPuff() {
   return (
@@ -24,6 +25,7 @@ function DustBall({ n }: { n: number }) {
 }
 
 export default function EmptyCartAnimation() {
+  const { mascot } = useLayout();
   return (
     <div className="ec-scene" aria-hidden="true">
       <svg viewBox="0 0 360 250" width="340" height="236">
@@ -62,8 +64,8 @@ export default function EmptyCartAnimation() {
         <g className="ec-mote m2" fill="var(--text-tertiary)"><circle cx="0" cy="0" r="1.6" /></g>
         <g className="ec-mote m3" fill="var(--text-tertiary)"><circle cx="0" cy="0" r="1.8" /></g>
 
-        {/* Gear-head character watching, facepalm + head-shake */}
-        <g className="ec-char">
+        {/* Keep the cart illustration when a shop has chosen to hide its mascot. */}
+        {mascot !== "none" && <g className="ec-char">
           {/* Feet */}
           <rect x="96" y="196" width="20" height="13" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
           <rect x="130" y="196" width="20" height="13" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
@@ -79,11 +81,11 @@ export default function EmptyCartAnimation() {
           {/* Head — gear, face looking right toward the tipped cart */}
           <g className="ec-head">
             <g transform="translate(122 126) scale(.62)">
-              <GearHeadFace expression="concerned" />
+              <SiteMascotFace variant={mascot} expression="concerned" />
             </g>
           </g>
           <SighPuff />
-        </g>
+        </g>}
       </svg>
     </div>
   );

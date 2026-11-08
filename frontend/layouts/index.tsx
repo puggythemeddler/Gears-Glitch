@@ -5,6 +5,7 @@ import * as original from "./original";
 import * as amazon from "./amazon";
 import * as jumia from "./jumia";
 import { DynamicHomePage, DynamicLayoutStyles } from "./dynamic-engine";
+import { isMascotId, type MascotId } from "@/lib/mascots";
 
 export interface LayoutModule {
   LAYOUT_KEY: string;
@@ -50,6 +51,7 @@ interface LayoutMeta {
 interface StorefrontConfig {
   layout: string;
   theme: string;
+  mascot: MascotId;
   themeCustom?: any;
   banners: any[];
   features: any[];
@@ -63,6 +65,7 @@ interface LayoutContextType extends StorefrontConfig {
   setLayout: (layout: string) => Promise<void>;
   setBanners: (banners: any[]) => Promise<void>;
   setTheme: (theme: string) => Promise<void>;
+  setMascot: (mascot: MascotId) => Promise<void>;
   allLayouts: LayoutMeta[];
   refreshLayouts: () => void;
 }
@@ -76,7 +79,7 @@ export function useLayout(): LayoutContextType {
 }
 
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfig] = useState<StorefrontConfig>({ layout: "original", theme: "default", banners: [], features: [], hero: { enabled: true } });
+  const [config, setConfig] = useState<StorefrontConfig>({ layout: "original", theme: "default", mascot: "gearhead", banners: [], features: [], hero: { enabled: true } });
   const [configLoading, setConfigLoading] = useState(true);
   const [allLayouts, setAllLayouts] = useState<LayoutMeta[]>([]);
 
@@ -158,8 +161,15 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
     refreshConfig();
   }
 
+  async function setMascot(mascot: MascotId) {
+    if (!isMascotId(mascot)) throw new Error("Choose a mascot from the available options.");
+    const saved = await api<StorefrontConfig>("/api/admin/storefront-layout", { method: "PUT", body: JSON.stringify({ mascot }) });
+    if (saved) setConfig((prev) => ({ ...prev, ...saved }));
+    else refreshConfig();
+  }
+
   return (
-    <LayoutContext.Provider value={{ ...config, configLoading, refreshConfig, setLayout, setBanners, setTheme, allLayouts, refreshLayouts }}>
+    <LayoutContext.Provider value={{ ...config, configLoading, refreshConfig, setLayout, setBanners, setTheme, setMascot, allLayouts, refreshLayouts }}>
       {children}
     </LayoutContext.Provider>
   );

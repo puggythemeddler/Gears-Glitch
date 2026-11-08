@@ -1,7 +1,10 @@
-import GearHeadFace from "@/components/GearHeadFace";
 import GearHeadTorso from "@/components/GearHeadTorso";
+import SiteMascotFace from "@/components/SiteMascotFace";
+import { useLayout } from "@/layouts";
 
 export default function ContactMascotAnimation() {
+  const { mascot } = useLayout();
+  if (mascot === "none") return null;
   return (
     <div className="ct-scene" aria-hidden="true">
       <svg viewBox="120 65 195 135" width="300" height="184">
@@ -25,7 +28,7 @@ export default function ContactMascotAnimation() {
           {/* head */}
           <g className="ct-head">
             <g transform="translate(161 116) scale(.7)">
-              <GearHeadFace expression="listening" />
+              <SiteMascotFace variant={mascot} expression="listening" />
             </g>
           </g>
         </g>

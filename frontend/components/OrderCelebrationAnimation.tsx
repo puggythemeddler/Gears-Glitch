@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import GearHeadFace from "@/components/GearHeadFace";
 import GearHeadTorso from "@/components/GearHeadTorso";
+import SiteMascotFace from "@/components/SiteMascotFace";
+import { useLayout } from "@/layouts";
 
 const CONFETTI_COLORS = [
   "var(--primary)",
@@ -29,7 +30,8 @@ function ConfettiPiece({ color, delay, x, rotation, size }: { color: string; del
   );
 }
 
-function MascotThumbsUp() {
+function MascotThumbsUp({ mascot }: { mascot: import("@/lib/mascots").MascotId }) {
+  if (mascot === "none") return null;
   return (
     <svg viewBox="0 0 200 220" width="160" height="176" className="oc-mascot">
       {/* Body */}
@@ -37,7 +39,7 @@ function MascotThumbsUp() {
       {/* Head */}
       <g className="oc-head">
         <g transform="translate(100 82) scale(.75)">
-          <GearHeadFace expression="celebrating" />
+          <SiteMascotFace variant={mascot} expression="celebrating" />
         </g>
       </g>
       {/* Thumbs-up arm */}
@@ -56,6 +58,7 @@ function MascotThumbsUp() {
 }
 
 export default function OrderCelebrationAnimation({ onDone }: { onDone?: () => void }) {
+  const { mascot } = useLayout();
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
@@ -85,7 +88,7 @@ export default function OrderCelebrationAnimation({ onDone }: { onDone?: () => v
       </div>
       <div className="oc-center">
         <div className="oc-badge">Order placed!</div>
-        <MascotThumbsUp />
+        <MascotThumbsUp mascot={mascot} />
       </div>
     </div>
   );

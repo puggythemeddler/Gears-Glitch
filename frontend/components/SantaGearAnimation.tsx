@@ -1,10 +1,12 @@
-import GearHeadFace from "@/components/GearHeadFace";
+import SiteMascotFace from "@/components/SiteMascotFace";
+import { useLayout } from "@/layouts";
 
-function SantaGearHead() {
+function SantaGearHead({ mascot }: { mascot: import("@/lib/mascots").MascotId }) {
+  if (mascot === "none") return null;
   return (
     <g className="ec-santa-head">
       <g transform="translate(150 125) scale(.8)">
-        <GearHeadFace expression="worried" />
+        <SiteMascotFace variant={mascot} expression="worried" />
       </g>
       {/* Santa hat */}
       <path d="M120 96 Q122 58 150 58 Q178 58 180 96 Z" fill="var(--danger)" />
@@ -16,6 +18,8 @@ function SantaGearHead() {
 }
 
 export default function SantaGearAnimation() {
+  const { mascot } = useLayout();
+  if (mascot === "none") return null;
   return (
     <div className="ec-santa-scene" aria-hidden="true">
       <svg viewBox="0 0 320 280" width="320" height="280" role="img">
@@ -63,7 +67,7 @@ export default function SantaGearAnimation() {
           {/* Right arm holding the empty sack */}
           <path d="M182 176 Q198 190 214 192" fill="none" stroke="var(--danger)" strokeWidth="9" strokeLinecap="round" />
           <circle cx="214" cy="192" r="5" fill="var(--text)" />
-          <SantaGearHead />
+          <SantaGearHead mascot={mascot} />
         </g>
 
         {/* Sweat drop */}
