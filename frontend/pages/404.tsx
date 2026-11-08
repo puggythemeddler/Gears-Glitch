@@ -1,4 +1,6 @@
 import Link from "next/link";
+import GearHeadFace from "@/components/GearHeadFace";
+import GearHeadTorso from "@/components/GearHeadTorso";
 
 function NotFoundMascot() {
   return (
@@ -17,7 +19,7 @@ function NotFoundMascot() {
       {/* Gear-head mascot — confused, looking around */}
       <g className="nf-char">
         {/* torso */}
-        <rect x="80" y="120" width="64" height="56" rx="18" fill="var(--surface)" stroke="var(--border)" strokeWidth="2.5" />
+        <GearHeadTorso x={80} y={120} width={64} height={56} />
         {/* feet */}
         <rect x="86" y="172" width="20" height="14" rx="7" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
         <rect x="118" y="172" width="20" height="14" rx="7" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
@@ -29,19 +31,9 @@ function NotFoundMascot() {
         </g>
         {/* head */}
         <g className="nf-head">
-          {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
-            <rect key={a} x="96.5" y="46" width="7" height="10" rx="2" fill="var(--primary)" transform={`rotate(${a} 112 80)`} />
-          ))}
-          <circle cx="112" cy="80" r="28" fill="var(--primary)" />
-          <circle cx="112" cy="80" r="20" fill="var(--surface)" />
-          <circle cx="112" cy="80" r="7.5" fill="var(--primary)" />
-          <circle cx="112" cy="80" r="3.5" fill="var(--surface)" />
-          {/* confused face — one eyebrow up, one down, squiggly mouth */}
-          <path d="M100 72 l4 -4" stroke="var(--text)" strokeWidth="2.2" strokeLinecap="round" />
-          <path d="M120 72 l4 3" stroke="var(--text)" strokeWidth="2.2" strokeLinecap="round" />
-          <circle cx="103" cy="77" r="2.6" fill="var(--text)" />
-          <circle cx="121" cy="77" r="2.6" fill="var(--text)" />
-          <path d="M104 90 q4 3 8 0 q4 -3 8 0" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" />
+          <g transform="translate(112 80) scale(.7)">
+            <GearHeadFace expression="curious" />
+          </g>
         </g>
       </g>
     </svg>

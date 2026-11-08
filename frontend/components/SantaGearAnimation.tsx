@@ -1,33 +1,16 @@
+import GearHeadFace from "@/components/GearHeadFace";
+
 function SantaGearHead() {
   return (
     <g className="ec-santa-head">
-      {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
-        <rect
-          key={a}
-          x="146.5"
-          y="80"
-          width="7"
-          height="10"
-          rx="2"
-          fill="var(--primary)"
-          transform={`rotate(${a} 150 125)`}
-        />
-      ))}
-      <circle cx="150" cy="125" r="32" fill="var(--primary)" />
-      <circle cx="150" cy="125" r="22" fill="var(--surface)" />
+      <g transform="translate(150 125) scale(.8)">
+        <GearHeadFace expression="worried" />
+      </g>
       {/* Santa hat */}
       <path d="M120 96 Q122 58 150 58 Q178 58 180 96 Z" fill="var(--danger)" />
       <path d="M176 64 C206 66 206 86 212 100 C214 108 220 108 222 100" fill="none" stroke="var(--danger)" strokeWidth="13" strokeLinecap="round" />
       <circle cx="222" cy="100" r="7" fill="var(--text)" />
       <rect x="118" y="94" width="64" height="9" rx="4.5" fill="var(--text)" />
-      {/* Worried face */}
-      <circle cx="138" cy="118" r="3" fill="var(--text)" />
-      <circle cx="160" cy="118" r="3" fill="var(--text)" />
-      <circle cx="139" cy="120" r="1.5" fill="var(--bg)" />
-      <circle cx="161" cy="120" r="1.5" fill="var(--bg)" />
-      <path d="M131 110 Q136 103 144 108" fill="none" stroke="var(--text)" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M169 110 Q164 103 156 108" fill="none" stroke="var(--text)" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M143 138 q7 6 14 0 q7 -6 14 0" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" />
     </g>
   );
 }

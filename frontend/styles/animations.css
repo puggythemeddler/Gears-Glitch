@@ -16,6 +16,24 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  .mascot-eye {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+/* Blinks stay small and infrequent so the gear-head feels present without
+   putting its whole body on a perpetual loop. */
+@keyframes mascotBlink {
+  0%, 6%, 9%, 46%, 49%, 100% { transform: scaleY(1); }
+  7.5%, 47.5% { transform: scaleY(0.08); }
+}
+
+.mascot-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mascotBlink 5.8s cubic-bezier(0.4, 0, 0.6, 1) 1 0.4s both;
 }
 
 /* ----- Keyframes ----- */
@@ -670,9 +688,9 @@
 }
 
 @keyframes ecShake {
-  0%, 100% { transform: rotate(2deg); }
+  0%, 100% { transform: rotate(0deg); }
   30% { transform: rotate(-4deg); }
-  65% { transform: rotate(3deg); }
+  65% { transform: rotate(2.5deg); }
 }
 
 @keyframes ecPalm {
@@ -731,12 +749,12 @@
 }
 
 .ec-head {
-  animation: ecShake 2.2s ease-in-out infinite;
+  animation: ecShake 1.8s cubic-bezier(0.2, 0.75, 0.25, 1) 1 0.65s both;
   transform-origin: 122px 126px;
 }
 
 .ec-palm {
-  animation: ecPalm 1.1s ease-in-out infinite;
+  animation: ecPalm 1.25s cubic-bezier(0.2, 0.75, 0.25, 1) 1 0.5s both;
   transform-origin: 158px 112px;
 }
 
@@ -748,17 +766,15 @@
 }
 
 .ec-dust {
-  animation: ecDustRoll 4.2s ease-in-out infinite;
-  will-change: transform, opacity;
+  animation: ecDustRoll 3.6s cubic-bezier(0.2, 0.65, 0.25, 1) 1 both;
 }
 
-.ec-dust.d1 { animation-delay: 0.9s; }
-.ec-dust.d2 { animation-delay: 2s; animation-name: ecDustRoll2; }
-.ec-dust.d3 { animation-delay: 3.1s; animation-name: ecDustRoll2; }
+.ec-dust.d1 { animation-delay: 0.85s; }
+.ec-dust.d2 { animation-delay: 1.1s; animation-name: ecDustRoll2; }
+.ec-dust.d3 { animation-delay: 1.35s; animation-name: ecDustRoll2; }
 
 .ec-mote {
-  animation: ecMote 3.4s ease-out infinite;
-  will-change: transform, opacity;
+  animation: ecMote 2.8s cubic-bezier(0.2, 0.65, 0.25, 1) 1 both;
 }
 
 .ec-mote.m2 { animation-delay: 1.4s; }
@@ -770,8 +786,7 @@
 }
 
 .ec-sigh {
-  animation: ecSigh 2.2s ease-out 1.2s infinite;
-  will-change: transform, opacity;
+  animation: ecSigh 1.8s cubic-bezier(0.2, 0.65, 0.25, 1) 1 1.2s both;
 }
 
 /* ----- Santa Gearhead (empty bag) ----- */
@@ -816,26 +831,26 @@
 }
 
 .ec-santa {
-  animation: ecSantaSway 3s ease-in-out infinite;
+  animation: ecSantaSway 2.8s cubic-bezier(0.2, 0.75, 0.25, 1) 1 both;
   transform-origin: 150px 236px;
 }
 
 .ec-santa-head {
-  animation: ecSantaHead 2.6s ease-in-out infinite;
+  animation: ecSantaHead 1.8s cubic-bezier(0.2, 0.75, 0.25, 1) 1 0.25s both;
   transform-origin: 150px 125px;
 }
 
 .ec-santa-sack {
-  animation: ecSantaSack 2.8s ease-in-out infinite;
+  animation: ecSantaSack 2.2s cubic-bezier(0.2, 0.75, 0.25, 1) 1 0.2s both;
   transform-origin: 226px 198px;
 }
 
 .ec-santa-sweat {
-  animation: ecSantaSweat 1.6s ease-in infinite;
+  animation: ecSantaSweat 2.4s cubic-bezier(0.2, 0.65, 0.25, 1) 1 0.9s both;
 }
 
 .ec-santa-q {
-  animation: ecSantaQ 2.2s ease-in-out infinite;
+  animation: ecSantaQ 2s cubic-bezier(0.2, 0.65, 0.25, 1) 1 0.45s both;
 }
 
 /* ----- Repairs scene (screwdriver, screws, hovering monitor) ----- */
@@ -894,8 +909,8 @@
   50% { transform: translateY(-2.5px); }
 }
 @keyframes ctHeadTilt {
-  0%, 100% { transform: rotate(1.5deg); }
-  50% { transform: rotate(-1.5deg); }
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-2deg); }
 }
 @keyframes ctPhoneAnswer {
   0%, 12% { transform: translateY(0) rotate(0deg); }
@@ -911,19 +926,19 @@
 }
 
 .ct-mascot {
-  animation: ctMascotBob 3s ease-in-out infinite;
+  animation: ctMascotBob 2.8s cubic-bezier(0.2, 0.75, 0.25, 1) 1 both;
   transform-origin: 161px 190px;
 }
 .ct-head {
-  animation: ctHeadTilt 3.6s ease-in-out infinite;
+  animation: ctHeadTilt 2.2s cubic-bezier(0.2, 0.75, 0.25, 1) 1 0.5s both;
   transform-origin: 161px 116px;
 }
 .ct-armhand {
-  animation: ctPhoneAnswer 5s ease-in-out infinite;
+  animation: ctPhoneAnswer 4.6s cubic-bezier(0.2, 0.75, 0.25, 1) 1 1.25s both;
   transform-origin: 196px 112px;
 }
 .ct-ring {
-  animation: ctRing 2.4s ease-out infinite;
+  animation: ctRing 2.4s cubic-bezier(0.2, 0.65, 0.25, 1) 2 both;
 }
 .ct-ring.r2 { animation-delay: 1.2s; }
 
@@ -947,7 +962,7 @@
   max-height: 92vh;
   padding: 1rem;
   overflow: hidden;
-  animation: ocPopIn 0.5s cubic-bezier(0.17, 0.89, 0.32, 1.28) both;
+  animation: ocPopIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .oc-badge {
   font-size: clamp(1.1rem, 4vw, 1.6rem);
@@ -981,7 +996,7 @@
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
 }
 .oc-head {
-  animation: ocMascotBounce 0.8s ease-in-out 0.3s 3 both;
+  animation: ocMascotNod 0.7s cubic-bezier(0.2, 0.75, 0.25, 1) 1 0.3s both;
   transform-origin: 100px 82px;
 }
 .oc-thumbs {
@@ -993,7 +1008,7 @@
   to { opacity: 0; pointer-events: none; }
 }
 @keyframes ocPopIn {
-  0% { opacity: 0; transform: scale(0.6) translateY(30px); }
+  0% { opacity: 0; transform: scale(0.92) translateY(8px); }
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 @keyframes ocConfettiFall {
@@ -1001,9 +1016,10 @@
   80% { opacity: 1; }
   100% { opacity: 0; transform: translateY(100vh) rotate(720deg) scale(0.5); }
 }
-@keyframes ocMascotBounce {
+@keyframes ocMascotNod {
   0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-8px) rotate(2deg); }
+  42% { transform: translateY(-1px) rotate(-4deg); }
+  76% { transform: translateY(0) rotate(1deg); }
 }
 @keyframes ocThumbsUp {
   0% { transform: rotate(20deg) scale(0.8); opacity: 0; }
@@ -1053,15 +1069,15 @@
 }
 
 .ew-heart {
-  animation: ewHeartPulse 3s ease-in-out infinite;
+  animation: ewHeartPulse 1.6s cubic-bezier(0.2, 0.75, 0.25, 1) 1 both;
   transform-origin: 150px 110px;
 }
 .ew-mascot {
-  animation: ewMascotBob 3.2s ease-in-out infinite;
+  animation: ewMascotBob 1.9s cubic-bezier(0.2, 0.75, 0.25, 1) 1 both;
   transform-origin: 71px 168px;
 }
 .ew-head {
-  animation: ewShrug 3.2s ease-in-out infinite;
+  animation: ewShrug 1.7s cubic-bezier(0.2, 0.75, 0.25, 1) 1 0.2s both;
   transform-origin: 71px 62px;
 }
 
@@ -1071,22 +1087,22 @@
   margin: 0 auto 0.5rem;
 }
 .nf-char {
-  animation: ewMascotBob 4s ease-in-out infinite;
+  animation: ewMascotBob 1.9s cubic-bezier(0.2, 0.75, 0.25, 1) 1 both;
   transform-origin: 112px 190px;
 }
 .nf-head {
-  animation: ewShrug 4.4s ease-in-out infinite;
+  animation: ewShrug 1.8s cubic-bezier(0.2, 0.75, 0.25, 1) 1 0.2s both;
   transform-origin: 112px 80px;
 }
 .nf-scratch {
-  animation: ewShrug 2.4s ease-in-out infinite;
+  animation: ewShrug 1.35s cubic-bezier(0.2, 0.75, 0.25, 1) 1 0.35s both;
   transform-origin: 168px 106px;
 }
 @keyframes ewQfloat {
   0%, 100% { opacity: 0.2; transform: translateY(0); }
   50% { opacity: 0.9; transform: translateY(-6px); }
 }
-.nf-q { animation: ewQfloat 3s ease-in-out infinite; }
+.nf-q { animation: ewQfloat 1.7s cubic-bezier(0.2, 0.65, 0.25, 1) 1 both; }
 .nf-q.q2 { animation-delay: 0.8s; }
 .nf-q.q3 { animation-delay: 1.6s; }
 
