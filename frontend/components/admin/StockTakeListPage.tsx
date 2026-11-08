@@ -24,6 +24,7 @@ export default function StockTakeListPage() {
     if (!stockBranchFilter) {
       setBranchStockSummary([]);
       setBranchStockError("");
+      setBranchStockLoading(false);
       return;
     }
     let cancelled = false;
@@ -81,8 +82,8 @@ export default function StockTakeListPage() {
         </div>
       </div>
 
-      {stockBranchLoading && <p role="status" className="muted">Loading branch stock…</p>}
-      {stockBranchError && <ErrorMsg msg={stockBranchError} />}
+      {branchStockLoading && <p role="status" className="muted">Loading branch stock…</p>}
+      {branchStockError && <ErrorMsg msg={branchStockError} />}
       {stockBranchFilter && branchStockSummary.length > 0 && (
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <h3 style={{ marginTop: 0, fontSize: "0.95rem" }}>Current Stock at {branches.find((b: any) => b.id === stockBranchFilter)?.name || "Selected Branch"}</h3>
