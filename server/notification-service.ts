@@ -25,6 +25,10 @@ export type NotificationEvent =
   | "customer.created"
   | "customer.login"
   | "repair.created"
+  | "repair.assigned"
+  | "repair.staff_update"
+  | "repair.diagnosis_overdue"
+  | "repair.hold_reminder"
   | "repair.status_changed"
   | "repair.quote_sent"
   | "repair.quote_approved"
@@ -69,6 +73,10 @@ const DEFAULT_PREFERENCES: Record<NotificationEvent, { email: boolean; whatsapp:
   "customer.created":       { email: true, whatsapp: true },
   "customer.login":         { email: true, whatsapp: false },
   "repair.created":         { email: true, whatsapp: true },
+  "repair.assigned":        { email: true, whatsapp: false },
+  "repair.staff_update":    { email: true, whatsapp: false },
+  "repair.diagnosis_overdue": { email: true, whatsapp: false },
+  "repair.hold_reminder":   { email: true, whatsapp: false },
   "repair.status_changed":  { email: true, whatsapp: false },
   "repair.quote_sent":      { email: true, whatsapp: true },
   "repair.quote_approved":  { email: true, whatsapp: false },
@@ -101,7 +109,7 @@ const DEFAULT_PREFERENCES: Record<NotificationEvent, { email: boolean; whatsapp:
 // Admin notifications go to the store's configured admin targets (unchanged).
 // Customer notifications go to a specific customer, honour their opt-outs, and
 // link the WhatsApp conversation to the customer record.
-export type NotificationAudience = "admin" | "customer";
+export type NotificationAudience = "admin" | "customer" | "staff";
 
 // ─── In-memory idempotency cache (last 1000 keys, TTL 5 min) ─────────────────
 // Collapses rapid duplicate dispatches within a single process. Durable
@@ -380,6 +388,9 @@ export async function enrollNotification(ctx: NotificationContext): Promise<Noti
     }
     if (ctx.recipientEmail) emailTargets = [ctx.recipientEmail];
     if (ctx.recipientPhone) phoneTargets = [ctx.recipientPhone];
+  } else if (audience === "staff") {
+    emailTargets = ctx.recipientEmail ? [ctx.recipientEmail] : [];
+    phoneTargets = ctx.recipientPhone ? [ctx.recipientPhone] : [];
   } else {
     const targets = await getAdminTargets();
     emailTargets = targets.emails;

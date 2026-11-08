@@ -324,6 +324,50 @@ export async function notifyCustomerRepairUpdate(input: {
   });
 }
 
+export async function notifyCustomerRepairMessage(input: {
+  ticketId: string;
+  updateId: number;
+  customerId: number;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  message: string;
+}): Promise<void> {
+  let email = String(input.customerEmail || "").trim();
+  let phone = normalizePhone(input.customerPhone);
+  let name = String(input.customerName || "there");
+  if (!email || !phone || name === "there") {
+    try {
+      const customer: any = await findCustomerById(Number(input.customerId));
+      if (customer) {
+        email = email || String(customer.email || "").trim();
+        phone = phone || normalizePhone(customer.phone);
+        if (name === "there") name = customer.name || name;
+      }
+    } catch { /* use contact details already on the ticket */ }
+  }
+  if (!email && !phone) return;
+  const settings = await getSettings();
+  const storeName = settings.storeName || "My Shop";
+  const message = String(input.message || "").trim().slice(0, 4000);
+  const htmlEntities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" };
+  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => htmlEntities[char]);
+  await notify({
+    event: "repair.customer_update",
+    entityType: "repair",
+    entityId: input.ticketId,
+    subject: `Update on repair ${input.ticketId} — ${storeName}`,
+    bodyText: `Hi ${name}, a new update was added to repair ${input.ticketId}: ${message} Review your repair at ${baseUrl()}/my-repairs.`,
+    bodyHtml: `<p>Hi ${escapeHtml(name)},</p><p>A new update was added to repair <strong>${escapeHtml(input.ticketId)}</strong>:</p><p>${escapeHtml(message).replace(/\n/g, "<br>")}</p><p><a href="${baseUrl()}/my-repairs">Review your repair</a></p>`,
+    audience: "customer",
+    customerId: input.customerId,
+    recipientEmail: email,
+    recipientPhone: phone,
+    recipientName: name,
+    idempotencyKey: `repair.customer_update:${input.ticketId}:message:${input.updateId}`,
+  });
+}
+
 // ─── Warranty claim customer update (personalized serial details) ─────────────
 export async function notifyCustomerWarrantyUpdate(input: {
   claimId: number;

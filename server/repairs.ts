@@ -22,11 +22,17 @@ interface TicketRow {
   requested_visit_date: string;
   requested_visit_time: string;
   status: string;
+  priority: string;
   assigned_to: number | null;
   assigned_name?: string | null;
   eta_at: string;
   scheduled_at: string | null;
   diagnosis: string;
+  diagnosis_due_at: string | null;
+  diagnosis_last_reminded_at: string | null;
+  hold_reason: string;
+  hold_remind_at: string | null;
+  hold_last_reminded_at: string | null;
   work_notes: string;
   customer_notes: string;
   repair_type: string | null;
@@ -77,11 +83,17 @@ interface Ticket {
   requestedVisitTime: string;
   status: string;
   statusLabel: string;
+  priority: string;
   assignedTo: number | null;
   assignedName: string | null;
   etaAt: string;
   scheduledAt: string | null;
   diagnosis: string;
+  diagnosisDueAt: string | null;
+  diagnosisLastRemindedAt: string | null;
+  holdReason: string;
+  holdRemindAt: string | null;
+  holdLastRemindedAt: string | null;
   workNotes: string;
   customerNotes: string;
   repairType: string | null;
@@ -100,6 +112,12 @@ interface Ticket {
   completedAt: string | null;
   parts: Part[];
   updates: RepairUpdate[];
+}
+
+export function customerSafeRepairTicket(ticket: Ticket): any {
+  const customerTicket: any = { ...ticket };
+  for (const key of ["workNotes", "priority", "diagnosisDueAt", "diagnosisLastRemindedAt", "holdReason", "holdRemindAt", "holdLastRemindedAt"]) delete customerTicket[key];
+  return customerTicket;
 }
 
 interface TicketResult {
@@ -137,10 +155,13 @@ interface DashboardStats {
 
 interface TicketUpdates {
   status?: string;
+  priority?: string;
   assignedTo?: number | null;
   etaAt?: string | null;
   scheduledAt?: string | null;
   diagnosis?: string;
+  holdReason?: string;
+  holdRemindAt?: string | null;
   workNotes?: string;
   customerNotes?: string;
   deviceType?: string;
@@ -154,7 +175,7 @@ interface TicketUpdates {
 
 const STATUSES: string[] = [
   "received", "diagnosing", "waiting_parts", "awaiting_approval", "approved",
-  "in_progress", "quality_check", "ready", "unrepairable", "collected", "cancelled", "rejected",
+  "in_progress", "quality_check", "ready", "unrepairable", "collected", "cancelled", "rejected", "on_hold",
 ];
 
 const STATUS_LABELS: { [key: string]: string } = {
@@ -170,7 +191,10 @@ const STATUS_LABELS: { [key: string]: string } = {
   collected: "Collected",
   cancelled: "Cancelled",
   rejected: "Rejected",
+  on_hold: "On hold",
 };
+
+const PRIORITIES = ["low", "normal", "high", "critical"] as const;
 
 function isValidStatus(status: string): boolean {
   return STATUSES.includes(status);
@@ -181,18 +205,19 @@ function isValidStatus(status: string): boolean {
 // rejected server-side. A ticket may always stay on its current status (idempotent
 // saves), and 'cancelled'/'collected' are terminal once reached.
 const VALID_TRANSITIONS: { [from: string]: string[] } = {
-  received: ["received", "diagnosing", "awaiting_approval", "cancelled"],
-  diagnosing: ["diagnosing", "waiting_parts", "awaiting_approval", "in_progress", "quality_check", "ready", "rejected", "unrepairable", "cancelled"],
-  waiting_parts: ["waiting_parts", "diagnosing", "awaiting_approval", "approved", "in_progress", "cancelled"],
-  awaiting_approval: ["awaiting_approval", "approved", "rejected", "diagnosing", "in_progress", "waiting_parts", "cancelled"],
-  approved: ["approved", "in_progress", "waiting_parts", "diagnosing", "quality_check", "ready", "unrepairable", "cancelled"],
-  in_progress: ["in_progress", "quality_check", "waiting_parts", "awaiting_approval", "approved", "ready", "cancelled"],
-  quality_check: ["quality_check", "in_progress", "ready", "unrepairable", "cancelled"],
-  ready: ["ready", "quality_check", "collected", "unrepairable", "cancelled"],
-  unrepairable: ["unrepairable", "collected", "cancelled"],
+  received: ["received", "diagnosing", "awaiting_approval", "on_hold", "cancelled"],
+  diagnosing: ["diagnosing", "waiting_parts", "awaiting_approval", "in_progress", "quality_check", "ready", "rejected", "unrepairable", "on_hold", "cancelled"],
+  waiting_parts: ["waiting_parts", "diagnosing", "awaiting_approval", "approved", "in_progress", "on_hold", "cancelled"],
+  awaiting_approval: ["awaiting_approval", "approved", "rejected", "diagnosing", "in_progress", "waiting_parts", "on_hold", "cancelled"],
+  approved: ["approved", "in_progress", "waiting_parts", "diagnosing", "quality_check", "ready", "unrepairable", "on_hold", "cancelled"],
+  in_progress: ["in_progress", "quality_check", "waiting_parts", "awaiting_approval", "approved", "ready", "on_hold", "cancelled"],
+  quality_check: ["quality_check", "in_progress", "ready", "unrepairable", "on_hold", "cancelled"],
+  ready: ["ready", "quality_check", "collected", "unrepairable", "on_hold", "cancelled"],
+  unrepairable: ["unrepairable", "collected", "on_hold", "cancelled"],
   collected: ["collected"],
   cancelled: ["cancelled"],
   rejected: ["rejected", "collected", "diagnosing", "cancelled"],
+  on_hold: ["on_hold", "received", "diagnosing", "waiting_parts", "awaiting_approval", "approved", "in_progress", "quality_check", "ready", "unrepairable", "cancelled"],
 };
 
 function isValidTransition(from: string | undefined, to: string): boolean {
@@ -279,11 +304,17 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     requestedVisitTime: row.requested_visit_time || "",
     status: row.status,
     statusLabel: STATUS_LABELS[row.status] || row.status,
+    priority: row.priority || "normal",
     assignedTo: row.assigned_to,
     assignedName: extras.assignedName || row.assigned_name || null,
     etaAt: row.eta_at,
     scheduledAt: row.scheduled_at,
     diagnosis: row.diagnosis || "",
+    diagnosisDueAt: row.diagnosis_due_at || null,
+    diagnosisLastRemindedAt: row.diagnosis_last_reminded_at || null,
+    holdReason: row.hold_reason || "",
+    holdRemindAt: row.hold_remind_at || null,
+    holdLastRemindedAt: row.hold_last_reminded_at || null,
     workNotes: row.work_notes || "",
     customerNotes: row.customer_notes || "",
     repairType: row.repair_type || null,
@@ -539,6 +570,18 @@ async function listCalendarRepairs(from: string, to: string, assignedTo?: number
 async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staffId?: number): Promise<Ticket | { error: string } | null> {
   const existing = await loadTicketDetails(ticketId);
   if (!existing) return null;
+  const nextStatus = updates.status ?? existing.status;
+  const nextHoldReason = String(updates.holdReason ?? existing.holdReason ?? "").trim().slice(0, 500);
+  const nextHoldRemindAt = updates.holdRemindAt === undefined ? existing.holdRemindAt : updates.holdRemindAt;
+  const assignedChanged = updates.assignedTo !== undefined && Number(updates.assignedTo || 0) !== Number(existing.assignedTo || 0);
+  if (updates.priority !== undefined && !PRIORITIES.includes(updates.priority as any)) return { error: "Priority must be low, normal, high, or critical." };
+  if (nextStatus === "on_hold") {
+    if (!nextHoldReason) return { error: "Add a reason before putting this ticket on hold." };
+    const holdDate = nextHoldRemindAt ? new Date(nextHoldRemindAt) : null;
+    const reminderChanged = updates.holdRemindAt !== undefined;
+    const enteringHold = existing.status !== "on_hold";
+    if (!holdDate || Number.isNaN(holdDate.getTime()) || ((enteringHold || reminderChanged) && holdDate.getTime() <= Date.now())) return { error: "Choose a future reminder date before putting this ticket on hold." };
+  }
 
   const fields: string[] = [];
   const params: any[] = [];
@@ -554,10 +597,26 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
       fields.push("completed_at = NOW()::text");
     }
   }
+  if (updates.priority !== undefined && updates.priority !== existing.priority) {
+    fields.push(`priority = $${idx}`);
+    params.push(updates.priority);
+    idx++;
+  }
   if (updates.assignedTo !== undefined) {
     fields.push(`assigned_to = $${idx}`);
     params.push(updates.assignedTo || null);
     idx++;
+    if (assignedChanged && updates.diagnosis === undefined && nextStatus !== "on_hold") {
+      if (updates.assignedTo && !String(updates.diagnosis ?? existing.diagnosis).trim()) {
+        const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
+        fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
+        params.push(slaHours);
+        idx++;
+      } else {
+        fields.push("diagnosis_due_at = NULL");
+      }
+      fields.push("diagnosis_last_reminded_at = NULL");
+    }
   }
   if (updates.etaAt !== undefined) {
     fields.push(`eta_at = $${idx}`);
@@ -573,6 +632,36 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
     fields.push(`diagnosis = $${idx}`);
     params.push(updates.diagnosis);
     idx++;
+    if (nextStatus !== "on_hold" && String(updates.diagnosis).trim()) {
+      fields.push("diagnosis_due_at = NULL");
+      fields.push("diagnosis_last_reminded_at = NULL");
+    } else if (nextStatus !== "on_hold" && (assignedChanged || !existing.diagnosisDueAt) && (updates.assignedTo !== undefined ? updates.assignedTo : existing.assignedTo) && !["collected", "cancelled", "on_hold"].includes(nextStatus)) {
+      const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
+      fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
+      params.push(slaHours);
+      idx++;
+    }
+  }
+  if (nextStatus === "on_hold") {
+    fields.push("diagnosis_due_at = NULL");
+    fields.push(`hold_reason = $${idx}`); params.push(nextHoldReason); idx++;
+    fields.push(`hold_remind_at = $${idx}`); params.push(new Date(String(nextHoldRemindAt)).toISOString()); idx++;
+    if (existing.status !== "on_hold") {
+      fields.push("hold_started_at = NOW()::text");
+      fields.push("hold_last_reminded_at = NULL");
+    }
+  } else if (existing.status === "on_hold") {
+    fields.push("hold_reason = ''");
+    fields.push("hold_remind_at = NULL");
+    fields.push("hold_started_at = NULL");
+    fields.push("hold_last_reminded_at = NULL");
+    if (!assignedChanged && !String(updates.diagnosis ?? existing.diagnosis).trim() && existing.assignedTo) {
+      const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
+      fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
+      params.push(slaHours);
+      idx++;
+      fields.push("diagnosis_last_reminded_at = NULL");
+    }
   }
   if (updates.workNotes !== undefined) {
     fields.push(`work_notes = $${idx}`);
@@ -668,12 +757,49 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   return await loadTicketDetails(ticketId);
 }
 
-async function addRepairUpdate(ticketId: string, staffId: number | null, updateType: string, message: string, customerVisible: boolean = false): Promise<void> {
-  await query(
+export async function runRepairWorkflowSweep(): Promise<{ diagnosisEscalated: any[]; holdReminders: any[] }> {
+  const diagnosisEscalated = await queryAll(`
+    WITH due AS (
+      SELECT t.id, t.assigned_to FROM repair_tickets t
+      WHERE t.assigned_to IS NOT NULL AND t.diagnosis_due_at IS NOT NULL
+        AND t.diagnosis_due_at::timestamptz <= NOW()
+        AND t.diagnosis = '' AND t.status IN ('received', 'diagnosing')
+        AND (t.diagnosis_last_reminded_at IS NULL OR t.diagnosis_last_reminded_at::timestamptz <= NOW() - INTERVAL '23 hours')
+      ORDER BY t.diagnosis_due_at LIMIT 50 FOR UPDATE SKIP LOCKED
+    )
+    UPDATE repair_tickets t SET
+      priority = CASE t.priority WHEN 'low' THEN 'normal' WHEN 'normal' THEN 'high' WHEN 'high' THEN 'critical' ELSE 'critical' END,
+      diagnosis_due_at = (NOW() + INTERVAL '1 day')::text,
+      diagnosis_last_reminded_at = NOW()::text,
+      updated_at = NOW()::text
+    FROM due d LEFT JOIN users u ON u.id = d.assigned_to
+    WHERE t.id = d.id
+    RETURNING t.id, t.priority, u.username AS assigned_name, u.email AS assigned_email
+  `) as any[];
+
+  const holdReminders = await queryAll(`
+    WITH due AS (
+      SELECT t.id, t.assigned_to FROM repair_tickets t
+      WHERE t.status = 'on_hold' AND t.hold_remind_at IS NOT NULL
+        AND t.hold_remind_at::timestamptz <= NOW()
+        AND (t.hold_last_reminded_at IS NULL OR t.hold_last_reminded_at::timestamptz <= NOW() - INTERVAL '23 hours')
+      ORDER BY t.hold_remind_at LIMIT 50 FOR UPDATE SKIP LOCKED
+    )
+    UPDATE repair_tickets t SET hold_last_reminded_at = NOW()::text, updated_at = NOW()::text
+    FROM due d LEFT JOIN users u ON u.id = d.assigned_to
+    WHERE t.id = d.id
+    RETURNING t.id, t.hold_reason, t.priority, u.username AS assigned_name, u.email AS assigned_email
+  `) as any[];
+  return { diagnosisEscalated, holdReminders };
+}
+
+async function addRepairUpdate(ticketId: string, staffId: number | null, updateType: string, message: string, customerVisible: boolean = false): Promise<number> {
+  const row = await queryOne(
     `INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible)
-     VALUES ($1, $2, $3, $4, $5)`,
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
     [ticketId, staffId, updateType, message, customerVisible ? 1 : 0]
-  );
+  ) as { id: number };
+  return Number(row.id);
 }
 
 async function addRepairPart(ticketId: string, data: any): Promise<TicketResult> {

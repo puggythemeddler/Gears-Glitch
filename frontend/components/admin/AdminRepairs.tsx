@@ -7,7 +7,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatPrice, Spinner } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
-type AdminRepairsTab = "tickets" | "calendar" | "content";
+type AdminRepairsTab = "tickets" | "calendar" | "workflow" | "content";
 
 const STATUS_LABELS: Record<string, string> = {
   received: "Received",
@@ -18,6 +18,11 @@ const STATUS_LABELS: Record<string, string> = {
   ready: "Ready for collection",
   collected: "Collected",
   cancelled: "Cancelled",
+  awaiting_approval: "Awaiting approval",
+  approved: "Approved",
+  rejected: "Rejected",
+  unrepairable: "Unrepairable",
+  on_hold: "On hold",
 };
 const STATUS_OPTIONS = Object.keys(STATUS_LABELS);
 
@@ -70,6 +75,7 @@ export default function AdminRepairs({ adminOnly = true }: { adminOnly?: boolean
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <RippleButton variant={tab === "tickets" ? "primary" : "ghost"} onClick={() => setTab("tickets")}>Tickets</RippleButton>
           <RippleButton variant={tab === "calendar" ? "primary" : "ghost"} onClick={() => setTab("calendar")}>Calendar</RippleButton>
+          {adminOnly && <RippleButton variant={tab === "workflow" ? "primary" : "ghost"} onClick={() => setTab("workflow")}>Workflow</RippleButton>}
           {adminOnly && <RippleButton variant={tab === "content" ? "primary" : "ghost"} onClick={() => setTab("content")}>Page Content</RippleButton>}
         </div>
       </div>
@@ -85,19 +91,67 @@ export default function AdminRepairs({ adminOnly = true }: { adminOnly?: boolean
           onOpenTicket={(id) => { setOpenTicketId(id); setTab("tickets"); }}
         />
       )}
+      {tab === "workflow" && adminOnly && <RepairWorkflowSettings />}
       {tab === "content" && <ContentTab />}
     </>
   );
+}
+
+function RepairWorkflowSettings() {
+  const feedback = useFeedback();
+  const [diagnosisSlaHours, setDiagnosisSlaHours] = useState(24);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api<{ diagnosisSlaHours: number }>("/api/admin/repair-workflow")
+      .then((data) => { if (active) setDiagnosisSlaHours(data.diagnosisSlaHours || 24); })
+      .catch((e: any) => { if (active) setError(e?.message || "Repair workflow settings could not be loaded."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      const result = await api<{ diagnosisSlaHours: number }>("/api/admin/repair-workflow", {
+        method: "PUT",
+        body: JSON.stringify({ diagnosisSlaHours }),
+      });
+      setDiagnosisSlaHours(result.diagnosisSlaHours);
+      feedback.success({ title: "Workflow saved", message: "New technician assignments will use this diagnosis target." });
+    } catch (e: any) {
+      setError(e?.message || "Repair workflow settings could not be saved.");
+      feedback.error({ title: "Workflow not saved", message: e?.message || "Please try again." });
+    } finally { setSaving(false); }
+  }
+
+  return <section aria-labelledby="repair-workflow-heading">
+    <h2 id="repair-workflow-heading">Repair workflow</h2>
+    <p className="muted" style={{ maxWidth: "70ch" }}>Set the target for a technician to record a diagnosis after assignment. Missed targets raise the ticket priority and notify the assigned technician and admin once per day. On-hold tickets pause the diagnosis target and use their own review date.</p>
+    {loading ? <div role="status"><Spinner /></div> : <div className="panel" style={{ maxWidth: 680 }}>
+      <div className="field" style={{ maxWidth: 280 }}><label htmlFor="repair-diagnosis-sla">Diagnosis target (hours)</label><input id="repair-diagnosis-sla" type="number" min={1} max={168} step={1} value={diagnosisSlaHours} onChange={(e) => setDiagnosisSlaHours(Number(e.target.value))} /></div>
+      <p className="muted" style={{ marginTop: 0 }}>Range: 1–168 hours. The default is 24 hours. This setting applies when a ticket is assigned or taken off hold; existing deadlines stay as they are.</p>
+      {error && <p role="alert" className="error-text">{error}</p>}
+      <RippleButton onClick={save} loading={saving} disabled={loading || !Number.isInteger(diagnosisSlaHours) || diagnosisSlaHours < 1 || diagnosisSlaHours > 168}>Save workflow settings</RippleButton>
+    </div>}
+  </section>;
 }
 
 // ===================== TICKETS =====================
 
 interface TicketForm {
   status: string;
+  priority: string;
   assignedTo: string;
   etaAt: string;
   scheduledAt: string;
   diagnosis: string;
+  holdReason: string;
+  holdRemindAt: string;
   hardwareValue: string;
   softwareInstall: boolean;
   softwareLicense: boolean;
@@ -167,10 +221,13 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       }
       setForm({
         status: d.status || "received",
+        priority: d.priority || "normal",
         assignedTo: d.assignedTo != null ? String(d.assignedTo) : "",
         etaAt: d.etaAt ? String(d.etaAt).slice(0, 10) : "",
         scheduledAt: d.scheduledAt ? String(d.scheduledAt).replace(" ", "T").slice(0, 16) : "",
         diagnosis: d.diagnosis || "",
+        holdReason: d.holdReason || "",
+        holdRemindAt: d.holdRemindAt ? (() => { const date = new Date(d.holdRemindAt); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16); })() : "",
         hardwareValue: String(d.hardwareValue || 0),
         softwareInstall: Boolean(d.softwareInstall),
         softwareLicense: Boolean(d.softwareLicense),
@@ -203,10 +260,13 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
         method: "PATCH",
         body: JSON.stringify({
           status: form.status,
+          priority: form.priority,
           assignedTo: form.assignedTo ? Number(form.assignedTo) : null,
           etaAt: form.etaAt || null,
           scheduledAt: form.scheduledAt || null,
           diagnosis: form.diagnosis,
+          holdReason: form.holdReason,
+          holdRemindAt: form.holdRemindAt ? new Date(form.holdRemindAt).toISOString() : null,
           hardwareValue: Number(form.hardwareValue) || 0,
           softwareInstall: form.softwareInstall,
           softwareLicense: form.softwareLicense,
@@ -293,11 +353,12 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       ) : (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>#</th><th>Customer</th><th>Device</th><th>Status</th><th>Technician</th><th>ETA</th><th>Scheduled</th><th>Quote</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Priority</th><th>Customer</th><th>Device</th><th>Status</th><th>Technician</th><th>ETA</th><th>Scheduled</th><th>Quote</th><th></th></tr></thead>
             <tbody>
               {tickets.map((t) => (
                 <tr key={t.id}>
                   <td>{t.id}</td>
+                  <td><span className="plan-status" style={t.priority === "critical" ? { background: "var(--danger-light)", color: "var(--danger-text)" } : t.priority === "high" ? { background: "var(--warning-light)", color: "var(--warning-text)" } : undefined}>{String(t.priority || "normal").toUpperCase()}</span></td>
                   <td>{t.customerName || ""}</td>
                   <td>{t.deviceType ? [t.deviceBrand, t.deviceType, t.deviceModel].filter(Boolean).join(" ") : "—"}{t.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {t.serialNumber}</span>}</td>
                   <td>{statusBadge(t.status)}</td>
@@ -319,7 +380,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
                 </tr>
               ))}
               {tickets.length === 0 && (
-                <tr><td colSpan={9}><EmptyState icon="repairs" title="No repair tickets" description="No repair tickets match the current filters. Clear the filters to see all tickets." actionLabel="Clear filters" onAction={() => { setStatusFilter(""); setTechFilter(""); }} /></td></tr>
+                <tr><td colSpan={10}><EmptyState icon="repairs" title="No repair tickets" description="No repair tickets match the current filters. Clear the filters to see all tickets." actionLabel="Clear filters" onAction={() => { setStatusFilter(""); setTechFilter(""); }} /></td></tr>
               )}
             </tbody>
           </table>
@@ -388,10 +449,18 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: "0 0.75rem", marginTop: "1.25rem" }}>
             <div className="field"><label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>{STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}</select></label></div>
+            <div className="field"><label>Priority<select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></label></div>
             <div className="field"><label>Technician<select value={form.assignedTo} onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}><option value="">Unassigned</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.username}</option>)}</select></label></div>
             <div className="field"><label>ETA date<input type="date" value={form.etaAt} onChange={(e) => setForm({ ...form, etaAt: e.target.value })} /></label></div>
             <div className="field"><label>Schedule (calendar)<input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} /></label></div>
           </div>
+
+          {form.status === "on_hold" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: "0 0.75rem", padding: "0.75rem 0", borderTop: "1px solid var(--border)" }}>
+            <div className="field"><label>Why is this on hold? <span aria-hidden="true">*</span><textarea rows={2} maxLength={500} required value={form.holdReason} onChange={(e) => setForm({ ...form, holdReason: e.target.value })} placeholder="For example, waiting for the customer's approval" /></label></div>
+            <div className="field"><label>Remind technician on <span aria-hidden="true">*</span><input type="datetime-local" required value={form.holdRemindAt} onChange={(e) => setForm({ ...form, holdRemindAt: e.target.value })} /></label><small className="muted">After this time, the assigned technician and admin receive a daily reminder until the ticket leaves On hold.</small></div>
+          </div>}
+
+          {detail.diagnosisDueAt && !detail.diagnosis && <p className="muted" role="status">Diagnosis target: {new Date(detail.diagnosisDueAt).toLocaleString("en-GB")} · Priority rises if the target is missed.</p>}
 
           <div className="field"><label>Diagnosis<textarea rows={3} value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} /></label></div>
 
