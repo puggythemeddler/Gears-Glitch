@@ -1472,14 +1472,21 @@ app.delete("/api/rates", adminAuthMiddleware, requirePermission("settings:update
 // ============ STOREFRONT LAYOUT ============
 
 const STORE_THEMES = ["default", "kenyan", "modern", "custom"];
+const STORE_MASCOTS = ["gearhead", "kenya-gearhead", "uganda-gearhead", "tanzania-gearhead", "lion", "elephant", "leopard", "rhino", "buffalo", "zebra", "cat", "none"] as const;
 
 function parseJsonSetting(value: string | null, fallback: any): any {
   try { return JSON.parse(value || "null"); } catch { return fallback; }
 }
 
+async function getConfiguredStoreMascot(): Promise<string> {
+  const value = await getStoreSetting("store_mascot");
+  return STORE_MASCOTS.includes(value as typeof STORE_MASCOTS[number]) ? value! : "gearhead";
+}
+
 app.get("/api/storefront-config", asyncHandler(async (_req: Request, res: Response) => {
   const layout = await getStoreSetting("store_layout") || "original";
   const theme = await getStoreSetting("store_theme") || "default";
+  const mascot = await getConfiguredStoreMascot();
   let banners: any[] = [];
   try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let features: any[] = [];
@@ -1499,12 +1506,13 @@ app.get("/api/storefront-config", asyncHandler(async (_req: Request, res: Respon
       };
     }
   } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
-  res.json({ layout, theme, themeCustom, banners, features, hero, layoutConfig });
+  res.json({ layout, theme, themeCustom, banners, features, hero, mascot, layoutConfig });
 }));
 
 app.get("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
   const layout = await getStoreSetting("store_layout") || "original";
   const theme = await getStoreSetting("store_theme") || "default";
+  const mascot = await getConfiguredStoreMascot();
   let banners: any[] = [];
   try { banners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let features: any[] = [];
@@ -1512,16 +1520,17 @@ app.get("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("
   let hero: any = { enabled: true };
   try { hero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   const themeCustom = parseJsonSetting(await getStoreSetting("store_theme_custom"), null);
-  res.json({ layout, theme, themeCustom, banners, features, hero });
+  res.json({ layout, theme, themeCustom, banners, features, hero, mascot });
 }));
 
 app.put("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
-  const { layout, banners, features, hero, theme, themeCustom } = req.body || {};
+  const { layout, banners, features, hero, theme, themeCustom, mascot } = req.body || {};
   if (banners !== undefined && !isArr(banners)) { res.status(400).json({ error: "banners must be an array." }); return; }
   if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "features must be an array." }); return; }
   if (hero !== undefined && (typeof hero !== "object" || hero === null)) { res.status(400).json({ error: "hero must be an object." }); return; }
   if (theme !== undefined && (typeof theme !== "string" || !STORE_THEMES.includes(theme))) { res.status(400).json({ error: "Invalid theme. Choose one of: " + STORE_THEMES.join(", ") + "." }); return; }
   if (themeCustom !== undefined && (typeof themeCustom !== "object" || themeCustom === null)) { res.status(400).json({ error: "themeCustom must be an object." }); return; }
+  if (mascot !== undefined && (typeof mascot !== "string" || !STORE_MASCOTS.includes(mascot as typeof STORE_MASCOTS[number]))) { res.status(400).json({ error: "Invalid mascot. Choose one from the storefront mascot library." }); return; }
   if (layout) {
     const validLayout = await queryOne("SELECT id FROM storefront_layouts WHERE layout_key = $1", [layout]);
     if (!validLayout) { res.status(400).json({ error: "Invalid layout key." }); return; }
@@ -1541,8 +1550,10 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("
   }
   if (theme !== undefined) await setStoreSetting("store_theme", theme);
   if (themeCustom !== undefined) await setStoreSetting("store_theme_custom", JSON.stringify(themeCustom));
+  if (mascot !== undefined) await setStoreSetting("store_mascot", mascot);
   const currentLayout = await getStoreSetting("store_layout") || "original";
   const currentTheme = await getStoreSetting("store_theme") || "default";
+  const currentMascot = await getConfiguredStoreMascot();
   let currentBanners: any[] = [];
   try { currentBanners = JSON.parse(await getStoreSetting("store_banners") || "[]"); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   let currentFeatures: any[] = [];
@@ -1550,7 +1561,7 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("
   let currentHero: any = { enabled: true };
   try { currentHero = JSON.parse(await getStoreSetting("hero_config") || '{"enabled":true}'); } catch { console.warn("[settings] Failed to parse settings, using defaults"); }
   const currentThemeCustom = parseJsonSetting(await getStoreSetting("store_theme_custom"), null);
-  res.json({ layout: currentLayout, theme: currentTheme, themeCustom: currentThemeCustom, banners: currentBanners, features: currentFeatures, hero: currentHero });
+  res.json({ layout: currentLayout, theme: currentTheme, themeCustom: currentThemeCustom, banners: currentBanners, features: currentFeatures, hero: currentHero, mascot: currentMascot });
 }));
 
 // ============ STOREFRONT LAYOUTS REGISTRY ============

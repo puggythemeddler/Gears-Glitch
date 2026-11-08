@@ -24,6 +24,8 @@ import TemplateGallery from "./TemplateGallery";
 import TemplateLivePreview from "./TemplateLivePreview";
 import { TEMPLATE_REGISTRY, instantiateTemplateConfig } from "@/lib/templates";
 import type { StorefrontTemplate } from "@/lib/templates";
+import MascotPicker from "./MascotPicker";
+import type { MascotId } from "@/lib/mascots";
 
 type Section = NonNullable<DynamicLayoutConfig["sections"]>[number];
 
@@ -238,7 +240,7 @@ function InlineEditOverlay({ fid, rect }: { fid: string; rect: { top: number; le
 }
 
 export default function StorefrontBuilder() {
-  const { refreshLayouts, refreshConfig, layout: activeLayout } = useLayout();
+  const { refreshLayouts, refreshConfig, layout: activeLayout, mascot, setMascot, configLoading } = useLayout();
   const [layouts, setLayouts] = useState<LayoutRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [label, setLabel] = useState("");
@@ -269,10 +271,28 @@ export default function StorefrontBuilder() {
   const [unpublished, setUnpublished] = useState(false);
   const [device, setDevice] = useState<Device>("desktop");
   const [paletteQuery, setPaletteQuery] = useState("");
-  const [tab, setTab] = useState<"content" | "design" | "layout" | "templates">("content");
+  const [tab, setTab] = useState<"content" | "design" | "layout" | "mascot" | "templates">("content");
+  const [draftMascot, setDraftMascot] = useState<MascotId>(mascot);
+  const [mascotSaving, setMascotSaving] = useState(false);
+  const [mascotMessage, setMascotMessage] = useState("");
   const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<StorefrontTemplate | null>(null);
   const [financingEnabled, setFinancingEnabled] = useState(false);
+
+  useEffect(() => { setDraftMascot(mascot); }, [mascot]);
+
+  async function saveMascotChoice() {
+    setMascotSaving(true);
+    setMascotMessage("");
+    try {
+      await setMascot(draftMascot);
+      setMascotMessage(draftMascot === "none" ? "Mascots removed from this storefront." : "Mascot updated on this storefront.");
+    } catch (e: any) {
+      setMascotMessage(`Could not update mascot: ${e.message || "Please try again."}`);
+    } finally {
+      setMascotSaving(false);
+    }
+  }
 
   // Live preview of the design tokens. The engine emits the same custom
   // properties on `.dynamic-layout` for the published storefront; scoping them
@@ -997,8 +1017,8 @@ export default function StorefrontBuilder() {
   const renderLayoutSettings = () => (
     <>
       <div style={{ display: "flex", gap: "0.35rem", borderBottom: "1px solid var(--border)", marginBottom: "1rem" }}>
-        {(["content", "design", "templates"] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setTab(t)} style={{ ...tabChip, ...(tab === t ? tabChipActive : {}) }}>{t === "content" ? "Hero" : t === "design" ? "Design" : "Templates"}</button>
+        {(["content", "design", "mascot", "templates"] as const).map((t) => (
+          <button key={t} type="button" onClick={() => setTab(t)} style={{ ...tabChip, ...(tab === t ? tabChipActive : {}) }}>{t === "content" ? "Hero" : t === "mascot" ? "Mascot" : t === "design" ? "Design" : "Templates"}</button>
         ))}
       </div>
 
@@ -1014,6 +1034,23 @@ export default function StorefrontBuilder() {
           onPreview={(t) => { setPreviewTemplate(t); setSelectedSection(null); setEditField(null); setEditRect(null); }}
           onRevert={revertTemplate}
         />
+      )}
+
+      {tab === "mascot" && (
+        <div>
+          <h3 style={{ margin: "0 0 .35rem", fontSize: ".95rem" }}>Choose your storefront mascot</h3>
+          <p style={{ margin: "0 0 1rem", color: "var(--text-secondary)", fontSize: ".78rem", lineHeight: 1.5 }}>
+            Preview the options, then apply one across your store. Choosing <strong>No mascot</strong> removes mascot illustrations while leaving your pages and products unchanged.
+          </p>
+          <MascotPicker value={draftMascot} onChange={(value) => { setDraftMascot(value); setMascotMessage(""); }} disabled={mascotSaving || configLoading} />
+          <div style={{ display: "grid", gap: ".45rem", marginTop: "1rem" }}>
+            <RippleButton onClick={saveMascotChoice} loading={mascotSaving} disabled={mascotSaving || configLoading || draftMascot === mascot}>
+              {mascotSaving ? "Applying…" : draftMascot === mascot ? "Mascot is up to date" : "Apply mascot to storefront"}
+            </RippleButton>
+            <p role="status" aria-live="polite" style={{ minHeight: "1.2em", margin: 0, color: "var(--text-secondary)", fontSize: ".75rem" }}>{configLoading ? "Loading this site's saved mascot…" : mascotMessage}</p>
+            <p style={{ margin: 0, color: "var(--text-tertiary)", fontSize: ".7rem", lineHeight: 1.45 }}>The choice applies to every visitor for this client site only. You can change it or remove it at any time.</p>
+          </div>
+        </div>
       )}
 
       {tab === "content" && (<>
