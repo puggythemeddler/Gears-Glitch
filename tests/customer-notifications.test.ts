@@ -195,7 +195,7 @@ describe("customer notification service (P1)", { skip: !HAS_DB && "TEST_DATABASE
     assert.equal(await getWarrantyReminderDays(), 30);
   });
 
-  it("customer communication preferences default to opt-in and persist opt-outs", async () => {
+  it("customer communication preferences default WhatsApp to opt-out and persist both choices", async () => {
     const email = `prefs-${Date.now()}@example.com`;
     const inserted = await query(
       `INSERT INTO customers (name, email, password_hash) VALUES ('Prefs Test', $1, 'x') RETURNING id`,
@@ -203,6 +203,10 @@ describe("customer notification service (P1)", { skip: !HAS_DB && "TEST_DATABASE
     );
     const id = Number(inserted.rows[0].id);
     try {
+      assert.deepEqual(await getCustomerCommPrefs(id), { email: true, whatsapp: false });
+
+      const optedIn = await updateCustomerCommPrefs(id, { whatsapp: true });
+      assert.equal(optedIn.whatsapp, true);
       assert.deepEqual(await getCustomerCommPrefs(id), { email: true, whatsapp: true });
 
       const updated = await updateCustomerCommPrefs(id, { whatsapp: false });

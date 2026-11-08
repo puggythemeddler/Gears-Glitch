@@ -26,6 +26,7 @@ let fakeBackend: Server | null = null;
 let fakeBackendUrl = "";
 let db: typeof import("../server/db") | null = null;
 let capturedControlPlaneKey = ""; // set by the fake backend's proxied handlers
+let capturedSyncedPlan: any = null;
 
 function fakeClientBackend(): Promise<{ server: Server; url: string }> {
   return new Promise((resolve) => {
@@ -35,6 +36,15 @@ function fakeClientBackend(): Promise<{ server: Server; url: string }> {
         res.end(JSON.stringify(obj));
       };
       const url = req.url || "";
+      if (url === "/api/plans/sync" && req.method === "PUT") {
+        let body = "";
+        req.on("data", (chunk) => { body += chunk; });
+        req.on("end", () => {
+          capturedSyncedPlan = JSON.parse(body)?.plans?.[0] || null;
+          return json(200, { ok: true });
+        });
+        return;
+      }
       if (url.startsWith("/api/shop/subscription/requests/")) {
         capturedControlPlaneKey = String(req.headers["x-control-plane-key"] || "");
         return json(200, { plan: "growth" });
@@ -214,6 +224,75 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
       body: JSON.stringify({ plan: { id: "ok-plan", name: "OK Plan", syncToOthers: false } }),
     });
     assert.equal(res.status, 200);
+  });
+
+  it("does not let a tenant credential inspect or approve sharing requests", async () => {
+    const list = await fetch(`${baseUrl}/api/plan-sync-proposals`, { headers: { "x-control-plane-key": CLIENT_SECRET } });
+    assert.equal(list.status, 403);
+    const approve = await fetch(`${baseUrl}/api/plan-sync-proposals/1/approve`, {
+      method: "POST",
+      headers: { "x-control-plane-key": CLIENT_SECRET },
+    });
+    assert.equal(approve.status, 403);
+  });
+
+  it("holds tenant plan changes for admin approval before cross-client distribution", async () => {
+    const client: any = await db!.queryOne("SELECT id FROM clients WHERE domain = 'fake.example.com'");
+    const recipientDomain = `recipient-${Date.now()}.example.com`;
+    const proposalPlanId = `shared-${Date.now()}`;
+    await db!.query(
+      `INSERT INTO clients (name, domain, admin_email, render_service_url, cp_secret, status)
+       VALUES ('Plan Recipient', $1, 'recipient@example.com', $2, 'cp_test_recipient_secret', 'active')`,
+      [recipientDomain, fakeBackendUrl]
+    );
+    await db!.query(
+      `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others)
+       VALUES ($1, 'Original shared plan', '', 10, NULL, 1, 20, 1, '[]', true, 1)`,
+      [proposalPlanId]
+    );
+    capturedSyncedPlan = null;
+    try {
+      const submitted = await fetch(`${baseUrl}/api/plans/sync-up`, {
+        method: "POST",
+        headers: { "x-control-plane-key": CLIENT_SECRET, "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: { id: proposalPlanId, name: "Unreviewed replacement", price: 9999, syncToOthers: true } }),
+      });
+      assert.equal(submitted.status, 202);
+      const pending: any = await db!.queryOne("SELECT id, status FROM plan_sync_proposals WHERE client_id = $1 AND plan_id = $2 ORDER BY id DESC LIMIT 1", [client.id, proposalPlanId]);
+      assert.equal(pending.status, "pending");
+      const beforeApproval: any = await db!.queryOne("SELECT name, price FROM custom_plans WHERE id = $1", [proposalPlanId]);
+      assert.equal(beforeApproval.name, "Original shared plan");
+      assert.equal(Number(beforeApproval.price), 10);
+
+      const queue = await fetch(`${baseUrl}/api/plan-sync-proposals`, { headers: { Authorization: `Bearer ${token}` } });
+      assert.equal(queue.status, 200);
+      assert.ok((await queue.json() as any).proposals.some((proposal: any) => proposal.id === pending.id));
+
+      const approved = await fetch(`${baseUrl}/api/plan-sync-proposals/${pending.id}/approve`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assert.equal(approved.status, 200);
+      const result: any = await approved.json();
+      assert.equal(result.status, "approved");
+      assert.equal(result.results.length, 1);
+      assert.equal(result.results[0].success, true);
+      assert.equal(capturedSyncedPlan.id, proposalPlanId);
+      assert.equal(capturedSyncedPlan.name, "Unreviewed replacement");
+      const afterApproval: any = await db!.queryOne("SELECT name, price FROM custom_plans WHERE id = $1", [proposalPlanId]);
+      assert.equal(afterApproval.name, "Unreviewed replacement");
+      assert.equal(Number(afterApproval.price), 9999);
+
+      const repeated = await fetch(`${baseUrl}/api/plan-sync-proposals/${pending.id}/approve`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assert.equal(repeated.status, 409, "an approved proposal cannot be replayed");
+    } finally {
+      await db!.query("DELETE FROM plan_sync_proposals WHERE client_id = $1 AND plan_id = $2", [client.id, proposalPlanId]);
+      await db!.query("DELETE FROM custom_plans WHERE id = $1", [proposalPlanId]);
+      await db!.query("DELETE FROM clients WHERE domain = $1", [recipientDomain]);
+    }
   });
 
   it("proxy routes write awaited audit rows (upgrade-request, invoice pay, invoice generate)", async () => {

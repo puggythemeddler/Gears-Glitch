@@ -10,7 +10,7 @@ import jwt from "jsonwebtoken";
 import { generateSecret, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
 import rateLimit from "express-rate-limit";
-import { initControlPlaneDb, queryAll, queryOne, query, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
+import { initControlPlaneDb, queryAll, queryOne, query, withTransaction, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
 import { encryptSecret, decryptSecret, lookupVariant, encryptionKeyConfigured, describeEncryptionSource } from "./cp-secrets";
 import { corsPolicyMiddleware, parseAllowedOrigins } from "./cors-policy";
 import { initOpsCenterDb, aggregateUsageForClients } from "./ops-db";
@@ -20,6 +20,7 @@ import { createCallbackToken, getDarajaConfig, hashCallbackToken, initiateSandbo
 import { processRenewalInvoiceCandidate, type RenewalInvoiceCandidate } from "./recurring-invoices";
 import { isValidUsageExtensionDays, paidProformaRenewal, proformaFollowupSchedule } from "./proforma-followups";
 import { assignCloudinaryFolders, newCloudinaryFolder } from "./cloudinary-folders";
+import { normalizeClientPlanProposal } from "./plan-sync-proposals";
 import {
   provisionClient,
   deployAllClients,
@@ -87,6 +88,18 @@ const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "producti
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: "Too many auth attempts. Try again later." } });
 // Low limit on destructive / provisioning endpoints to slow abuse and fat-finger.
 const destructiveLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "Too many requests. Try again later." } });
+// Control-plane APIs are internet-facing and often perform database or provider
+// work. Keep a generous per-IP ceiling for normal dashboard use while retaining
+// the stricter route-specific auth/action limits above. Heartbeats already have
+// their own limiter; health checks must remain available to the host platform.
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 900,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === "/health" || req.path === "/heartbeat",
+  message: { error: "Too many requests. Try again later." },
+});
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -113,7 +126,11 @@ app.use(helmet({
 // UI in /public is same-origin and needs no entry; tenant backends talk
 // server-to-server via x-control-plane-key and never use browser CORS.
 app.use(corsPolicyMiddleware(parseAllowedOrigins(process.env.ALLOWED_ORIGINS)));
-app.use(express.json());
+// Apply the limiter before parsing request bodies so rejected traffic does not
+// consume JSON parsing work. One megabyte comfortably covers current admin API
+// payloads and prevents unbounded JSON bodies from exhausting process memory.
+app.use("/api", apiLimiter);
+app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "..", "..", "public")));
 
 // ─── AUTH: API KEY + JWT SESSION ──────────────────────────
@@ -1944,9 +1961,9 @@ app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, a
 });
 
 // Receive a plan a client admin opted to share ("sync to other clients") and
-// distribute it to every other active client. The originating client is
-// identified by its control-plane key so it is not re-pushed.
-app.post("/api/plans/sync-up", requireAuth, async (req, res) => {
+// queue it for control-plane review. Client credentials can never write the
+// shared plan catalog or trigger fleet-wide distribution directly.
+app.post("/api/plans/sync-up", destructiveLimiter, requireAuth, async (req, res) => {
   try {
     // This endpoint distributes plans to every active client, so only an
     // authenticated CLIENT (via its control-plane key) may call it. A signed-in
@@ -1955,44 +1972,128 @@ app.post("/api/plans/sync-up", requireAuth, async (req, res) => {
       res.status(403).json({ error: "A client control-plane key is required for plan sync" });
       return;
     }
-    const plan = req.body?.plan;
-    if (!plan || !plan.id || !plan.name) { res.status(400).json({ error: "Plan (id, name) required" }); return; }
-    if (plan.syncToOthers === false) { res.json({ message: "Plan is not marked to sync to other clients." }); return; }
+    if (req.body?.plan?.syncToOthers === false) {
+      res.json({ message: "Plan is saved locally and was not submitted for sharing." });
+      return;
+    }
+    const plan = normalizeClientPlanProposal(req.body?.plan);
+    if (!plan) { res.status(400).json({ error: "A valid plan marked for sharing is required." }); return; }
 
-    const key = (req.headers["x-control-plane-key"] as string) || "";
-    const origin = await queryOne("SELECT id, name FROM clients WHERE cp_secret = $1 OR cp_secret = $2", [key, lookupVariant(key)]);
-
-    await query(
-      `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10, sync_to_others=$11`,
-      [plan.id, plan.name, plan.description || "", plan.price || 0, plan.priceAnnual || null, plan.tierLevel || 1, plan.maxProducts ?? 50, plan.maxBranches ?? 1, JSON.stringify(plan.features || []), plan.isActive !== undefined ? plan.isActive : true, plan.syncToOthers !== false ? 1 : 0]
+    const clientId = Number((req as any).user?.id);
+    const origin = await queryOne("SELECT id FROM clients WHERE id = $1", [clientId]);
+    if (!origin) { res.status(401).json({ error: "The client identity is no longer active." }); return; }
+    const pendingCount: any = await queryOne("SELECT COUNT(*) AS count FROM plan_sync_proposals WHERE client_id = $1 AND status = 'pending'", [clientId]);
+    if (Number(pendingCount?.count || 0) >= 20) { res.status(429).json({ error: "This client already has the maximum number of pending sharing requests." }); return; }
+    const proposal = await queryOne(
+      "INSERT INTO plan_sync_proposals (client_id, plan_id, payload) VALUES ($1, $2, $3::jsonb) RETURNING id, status, created_at",
+      [clientId, plan.id, JSON.stringify(plan)]
     );
+    res.status(202).json({ proposal, message: "Plan saved locally and submitted for control-plane approval. It will not reach other clients until approved." });
+  } catch (err: any) {
+    console.error("[api] Plan proposal error:", err.message);
+    res.status(500).json({ error: "Failed to submit plan for review" });
+  }
+});
 
-    const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active' AND render_service_url != ''");
-    const payload = [{ ...plan, isActive: plan.isActive !== undefined ? plan.isActive : true }];
-    const results: { name: string; success: boolean; error?: string }[] = [];
-    for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
-      if (origin && origin.id === c.id) continue;
+app.get("/api/plan-sync-proposals", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const proposals = await queryAll(
+      `SELECT p.id, p.client_id, c.name AS client_name, p.plan_id, p.payload, p.status,
+              p.delivery_results, p.created_at, p.reviewed_at, p.reviewed_by,
+              current.name AS existing_plan_name, current.price AS existing_plan_price
+       FROM plan_sync_proposals p JOIN clients c ON c.id = p.client_id
+       LEFT JOIN custom_plans current ON current.id = p.plan_id
+       ORDER BY CASE WHEN p.status = 'pending' THEN 0 ELSE 1 END, p.created_at DESC LIMIT 100`
+    );
+    res.json({ proposals });
+  } catch (err: any) {
+    console.error("[api] Plan proposal list error:", err.message);
+    res.status(500).json({ error: "Failed to load plan proposals" });
+  }
+});
+
+app.post("/api/plan-sync-proposals/:id/reject", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const proposalId = Number(req.params.id);
+    if (!Number.isSafeInteger(proposalId) || proposalId <= 0) { res.status(400).json({ error: "Invalid proposal ID" }); return; }
+    const proposal = await queryOne(
+      `UPDATE plan_sync_proposals SET status = 'rejected', reviewed_at = NOW(), reviewed_by = $2
+       WHERE id = $1 AND status = 'pending' RETURNING id, client_id, plan_id`,
+      [proposalId, (req as any).user.username]
+    );
+    if (!proposal) { res.status(409).json({ error: "Proposal is missing or has already been reviewed." }); return; }
+    await auditLog(req, "reject_plan_sync_proposal", "plan_sync_proposal", proposal.id, proposal.plan_id, `Client ${proposal.client_id}`);
+    res.json({ ok: true, status: "rejected" });
+  } catch (err: any) {
+    console.error("[api] Reject plan proposal error:", err.message);
+    res.status(500).json({ error: "Failed to reject plan proposal" });
+  }
+});
+
+app.post("/api/plan-sync-proposals/:id/approve", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const proposalId = Number(req.params.id);
+    if (!Number.isSafeInteger(proposalId) || proposalId <= 0) { res.status(400).json({ error: "Invalid proposal ID" }); return; }
+    const review = await withTransaction(async (client) => {
+      const selected = await client.query(
+        "SELECT id, client_id, plan_id, payload FROM plan_sync_proposals WHERE id = $1 AND status = 'pending' FOR UPDATE",
+        [proposalId]
+      );
+      const claimed = selected.rows[0];
+      if (!claimed) return { status: "missing" as const };
+
+      const plan = normalizeClientPlanProposal(claimed.payload);
+      if (!plan) {
+        await client.query(
+          "UPDATE plan_sync_proposals SET status = 'rejected', reviewed_at = NOW(), reviewed_by = $2 WHERE id = $1",
+          [proposalId, (req as any).user.username]
+        );
+        return { status: "invalid" as const };
+      }
+
+      // The shared catalog update and approval state commit together. If either
+      // write fails, the request remains pending and the global plan is intact.
+      await client.query(
+        `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1)
+         ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10, sync_to_others=1`,
+        [plan.id, plan.name, plan.description, plan.price, plan.priceAnnual, plan.tierLevel, plan.maxProducts, plan.maxBranches, JSON.stringify(plan.features), plan.isActive]
+      );
+      await client.query(
+        "UPDATE plan_sync_proposals SET status = 'approved', reviewed_at = NOW(), reviewed_by = $2 WHERE id = $1",
+        [proposalId, (req as any).user.username]
+      );
+      return { status: "approved" as const, claimed, plan };
+    });
+    if (review.status === "missing") { res.status(409).json({ error: "Proposal is missing or has already been reviewed." }); return; }
+    if (review.status === "invalid") {
+      res.status(422).json({ error: "Stored proposal is invalid and was rejected." });
+      return;
+    }
+    const { claimed, plan } = review;
+
+    const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active' AND render_service_url != '' AND id <> $1", [claimed.client_id]);
+    const results: { clientId: number; name: string; success: boolean }[] = [];
+    for (const client of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
       try {
-        const r = await fetch(`${c.render_service_url}/api/plans/sync`, {
+        const response = await fetch(`${client.render_service_url}/api/plans/sync`, {
           method: "PUT",
-          headers: cpHeaders(c.cp_secret, { "Content-Type": "application/json" }),
-          body: JSON.stringify({ plans: payload }),
+          headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+          body: JSON.stringify({ plans: [plan] }),
           signal: AbortSignal.timeout(15000),
         });
-        results.push({ name: c.name, success: r.ok });
-      } catch (e: any) {
-        console.error(`[api] Plan sync-up failed for "${c.name}":`, e.message);
-        results.push({ name: c.name, success: false, error: "Plan sync failed" });
+        results.push({ clientId: client.id, name: client.name, success: response.ok });
+      } catch (error: any) {
+        console.error(`[plan-sync] Approved proposal delivery failed for client ${client.id}:`, error?.message || "request failed");
+        results.push({ clientId: client.id, name: client.name, success: false });
       }
     }
-    const ok = results.filter((r) => r.success).length;
-    console.log(`[plan-sync] sync-up for "${plan.id}" from ${origin ? origin.name : "unknown client"}: ${ok}/${results.length} client(s) updated`);
-    res.json({ message: `Synced plan to ${ok} other client(s).`, results });
+    await query("UPDATE plan_sync_proposals SET delivery_results = $2::jsonb WHERE id = $1", [proposalId, JSON.stringify(results)]);
+    await auditLog(req, "approve_plan_sync_proposal", "plan_sync_proposal", proposalId, plan.id, `Distributed to ${results.filter((result) => result.success).length}/${results.length} clients`);
+    res.json({ ok: true, status: "approved", results });
   } catch (err: any) {
-    console.error("[api] Plan sync-up error:", err.message);
-    res.status(500).json({ error: "Failed to sync plan" });
+    console.error("[api] Approve plan proposal error:", err.message);
+    res.status(500).json({ error: "Failed to approve plan proposal" });
   }
 });
 

@@ -1,11 +1,18 @@
 import fs from "fs";
 import path from "path";
-import { Transform } from "stream";
+import { Readable, Transform } from "stream";
 import multer from "multer";
+import sharp from "sharp";
+import { scanUploadBuffer } from "./malware-scan";
 import { v2 as cloudinary } from "cloudinary";
 import type { UploadApiOptions, UploadApiResponse } from "cloudinary";
 
 const UPLOAD_DIR: string = path.join(__dirname, "..", "data", "uploads");
+// Finite resource bounds still prevent storage/decompression abuse while
+// allowing high-resolution product and marketing photography.
+const MAX_UPLOAD_BYTES = Number(process.env.MAX_IMAGE_UPLOAD_BYTES) || 25 * 1024 * 1024;
+const MAX_IMAGE_PIXELS = Number(process.env.MAX_IMAGE_PIXELS) || 60_000_000;
+const MAX_SANITIZED_IMAGE_BYTES = Number(process.env.MAX_SANITIZED_IMAGE_BYTES) || 60 * 1024 * 1024;
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -49,13 +56,48 @@ class DynamicStorage implements multer.StorageEngine {
   }
 
   _handleFile(req: any, file: Express.Multer.File, cb: (error?: Error | null, info?: Partial<Express.Multer.File>) => void): void {
-    if (_cloudinaryConfigured) {
-      const storage = makeCloudinaryStorage(this.folder, this.filenameFn);
-      storage._handleFile(req, file, cb);
-    } else {
-      const storage = makeLocalDiskStorage(this.filenameFn);
-      storage._handleFile(req, file, cb);
-    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let settled = false;
+    const finish = (error?: Error | null, info?: Partial<Express.Multer.File>) => {
+      if (settled) return;
+      settled = true;
+      cb(error, info);
+    };
+
+    file.stream.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_UPLOAD_BYTES) {
+        file.stream.destroy(new Error("Image exceeds the configured upload limit (25 MB by default)."));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    file.stream.once("error", (error: Error) => finish(error));
+    file.stream.once("end", async () => {
+      if (settled) return;
+      try {
+        const sanitized = await sanitizeImageBuffer(Buffer.concat(chunks, size));
+        // Storage engines only ever receive freshly encoded WebP bytes. This
+        // prevents appended payloads/polyglots and metadata from being stored.
+        const safeFile = {
+          ...file,
+          originalname: `${path.parse(file.originalname).name || "upload"}.webp`,
+          mimetype: "image/webp",
+          size: sanitized.length,
+          stream: Readable.from([sanitized]),
+        } as Express.Multer.File;
+        const storage = _cloudinaryConfigured
+          ? makeCloudinaryStorage(this.folder, this.filenameFn)
+          : makeLocalDiskStorage(this.filenameFn);
+        storage._handleFile(req, safeFile, (error, info) => {
+          if (error) return finish(error);
+          finish(null, { ...info, size: sanitized.length, mimetype: "image/webp" } as Partial<Express.Multer.File>);
+        });
+      } catch (error: any) {
+        finish(new Error("Invalid or unsafe image. Upload a valid JPEG, PNG, WebP, or static GIF."));
+      }
+    });
   }
 
   _removeFile(req: any, file: Express.Multer.File, cb: (error: Error | null) => void): void {
@@ -79,13 +121,11 @@ class CloudinaryStorageEngine implements multer.StorageEngine {
   }
 
   private buildParams(req: any, file: Express.Multer.File): UploadApiOptions {
-    const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
-    const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"].includes(ext) ? ext : ".jpg";
     const base = this.filenameFn(req, file);
     return {
       folder: `${cloudinaryFolder}/${this.folder}`,
       public_id: base.replace(/\.[^.]+$/, ""),
-      format: safeExt.replace(".", ""),
+      format: "webp",
       resource_type: "image",
     };
   }
@@ -142,7 +182,7 @@ function imageFileFilter(_req: any, file: Express.Multer.File, cb: multer.FileFi
   // stores behave identically - previously Cloudinary accepted it while
   // local-disk silently failed the magic-byte check.
   if (file.mimetype === "image/svg+xml") {
-    return cb(new Error("SVG files are not supported. Use PNG, JPEG, WebP, GIF, or ICO."));
+    return cb(new Error("SVG files are not supported. Use JPEG, PNG, WebP, or a static GIF."));
   }
   cb(null, true);
 }
@@ -156,10 +196,6 @@ const IMAGE_MAGIC_BYTES: { [key: string]: number[] } = {
   png: [0x89, 0x50, 0x4E, 0x47],
   gif: [0x47, 0x49, 0x46, 0x38],
   webp: [0x52, 0x49, 0x46, 0x46],
-  bmp: [0x42, 0x4D],
-  ico: [0x00, 0x00, 0x01, 0x00],
-  tiffLe: [0x49, 0x49, 0x2A, 0x00],
-  tiffBe: [0x4D, 0x4D, 0x00, 0x2A],
 };
 
 function validateImageMagicBytes(buffer: Buffer): boolean {
@@ -168,6 +204,35 @@ function validateImageMagicBytes(buffer: Buffer): boolean {
     if (magic.every((byte, i) => buffer[i] === byte)) return true;
   }
   return false;
+}
+
+// Decode untrusted image bytes and re-encode only supported raster formats.
+// Decoder limits cap decompression work; WebP output drops appended payloads
+// and metadata so the stored asset is not the original attacker-controlled file.
+export async function sanitizeImageBuffer(input: Buffer): Promise<Buffer> {
+  if (!input.length || input.length > MAX_UPLOAD_BYTES || !validateImageMagicBytes(input)) {
+    throw new Error("Unsupported image bytes.");
+  }
+  // Scan the original upload before invoking an image decoder or storage.
+  await scanUploadBuffer(input);
+  const inputOptions = { failOn: "warning" as const, limitInputPixels: MAX_IMAGE_PIXELS, animated: true };
+  const metadata = await sharp(input, inputOptions).metadata();
+  if (!metadata.format || !["jpeg", "png", "webp", "gif"].includes(metadata.format)) {
+    throw new Error("Unsupported image format.");
+  }
+  if (!metadata.width || !metadata.height || metadata.pages && metadata.pages > 1) {
+    throw new Error("Animated or invalid images are not supported.");
+  }
+  const output = await sharp(input, { ...inputOptions, animated: false })
+    .rotate()
+    // Lossless output preserves all decoded pixels while still stripping
+    // metadata and any appended payload bytes from the stored file.
+    .webp({ lossless: true, effort: 4 })
+    .toBuffer();
+  if (!output.length || output.length > MAX_SANITIZED_IMAGE_BYTES) {
+    throw new Error("Sanitized image exceeds the output limit.");
+  }
+  return output;
 }
 
 // Streams pass-through transform that inspects the leading bytes of an upload
@@ -237,11 +302,25 @@ function runMulter(uploadFn: (req: any, res: any, cb: (err?: any) => void) => vo
   });
 }
 
-const MULTER_OPTS = { limits: { fileSize: 5 * 1024 * 1024 } };
+const MULTER_OPTS = { limits: { fileSize: MAX_UPLOAD_BYTES } };
+const uploadProductImport = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.originalname.toLowerCase().endsWith(".csv")) return cb(new Error("Product imports must be CSV files."));
+    cb(null, true);
+  },
+}).single("file");
+
+export async function scanProductImportBuffer(buffer: Buffer): Promise<void> {
+  if (!buffer.length || buffer.includes(0)) throw new Error("The import file is not valid CSV text.");
+  await scanUploadBuffer(buffer);
+}
 
 function safeExt(file: Express.Multer.File, fallback: string) {
-  const ext = path.extname(file.originalname).toLowerCase() || fallback;
-  return [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"].includes(ext) ? ext : fallback;
+  void file;
+  void fallback;
+  return ".webp";
 }
 
 const uploadProductImage = multer({
@@ -299,7 +378,7 @@ const uploadLayoutHeroImage = multer({
 
 function imageUrlForProduct(productId: string): string {
   if (_cloudinaryConfigured) return "";
-  const extensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+  const extensions = [".webp", ".jpg", ".jpeg", ".png", ".gif"];
   let bestFile = "";
   let bestTime = 0;
   for (const ext of extensions) {
@@ -336,14 +415,45 @@ function getUploadedUrl(req: any): string {
   return `/uploads/${file.filename}`;
 }
 
+function cloudinaryPublicIdForDeletion(imageUrl: string, folder: string): string | null {
+  try {
+    const url = new URL(imageUrl);
+    if (url.protocol !== "https:" || url.hostname !== "res.cloudinary.com" || url.port || url.username || url.password) return null;
+    const parts = decodeURIComponent(url.pathname).split("/").filter(Boolean);
+    const uploadIndex = parts.findIndex((part, index) => part === "upload" && parts[index - 1] === "image");
+    if (uploadIndex < 0) return null;
+
+    // Cloudinary's uploader returns versioned URLs. Requiring the version
+    // marker avoids guessing where optional transformation components end.
+    const versionIndex = parts.findIndex((part, index) => index > uploadIndex && /^v\d+$/.test(part));
+    if (versionIndex < 0 || versionIndex === parts.length - 1) return null;
+    const publicIdParts = parts.slice(versionIndex + 1);
+    const lastPart = publicIdParts[publicIdParts.length - 1];
+    publicIdParts[publicIdParts.length - 1] = lastPart.replace(/\.[^.]+$/, "");
+    if (publicIdParts.some((part) => !part || part === "." || part === ".." || part.includes("\\"))) return null;
+
+    const publicId = publicIdParts.join("/");
+    const ownedFolder = folder.replace(/^\/+|\/+$/g, "");
+    if (!ownedFolder || (publicId !== ownedFolder && !publicId.startsWith(`${ownedFolder}/`))) return null;
+    return publicId;
+  } catch {
+    return null;
+  }
+}
+
 async function deleteCloudinaryImage(imageUrl: string): Promise<void> {
   if (!_cloudinaryConfigured || !imageUrl) return;
   try {
-    const match = imageUrl.match(/\/upload\/(?:v\d+\/)?(.+?)\.\w+$/);
-    if (!match) return;
-    const publicId = match[1];
+    // Only destroy assets in this service's configured Cloudinary folder.
+    // All tenants share the provider account today, so accepting an arbitrary
+    // URL here would let a tenant admin target another tenant's public ID.
+    const publicId = cloudinaryPublicIdForDeletion(imageUrl, cloudinaryFolder);
+    if (!publicId) {
+      console.warn("[Upload] Skipped Cloudinary deletion outside the configured folder.");
+      return;
+    }
     await cloudinary.uploader.destroy(publicId);
-    console.log("[Upload] Deleted Cloudinary image:", publicId);
+    console.log("[Upload] Deleted Cloudinary image from the configured folder.");
   } catch (e: any) {
     console.warn("[Upload] Cloudinary delete failed:", e.message || e);
   }
@@ -371,4 +481,4 @@ async function removeUploadedAsset(file: Express.Multer.File | undefined, url?: 
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes, magicByteGuard };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, uploadProductImport, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes, magicByteGuard, cloudinaryPublicIdForDeletion };

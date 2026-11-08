@@ -3,6 +3,7 @@ import { getSettings, upsertWhatsAppConversation, getWhatsAppConversationByPhone
 import { claimWebhookEvent, completeWebhookClaim, failWebhookClaim, type WebhookClaim } from "./integrations-store";
 import { normalizePhone, isValidKenyanPhone } from "./phone";
 import { isWhatsAppSendingAllowed, detectOptOutKeyword, recordOptOut, type MessageCategory } from "./whatsapp-consent";
+import { scanUploadBuffer } from "./malware-scan";
 
 // Re-exported for backwards compatibility (many callers/tests import these from
 // server/whatsapp). The implementation lives in server/phone.ts.
@@ -76,24 +77,66 @@ export async function downloadWhatsAppMedia(mediaId: string): Promise<{ ok: bool
   const s = await getSettings();
   if (!s.whatsappAccessToken) return { ok: false, error: "WhatsApp not configured" };
   try {
-    const url = `https://graph.facebook.com/${s.whatsappApiVersion || "v21.0"}/${mediaId}`;
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(mediaId)) return { ok: false, error: "Invalid media ID" };
+    const version = s.whatsappApiVersion || "v21.0";
+    if (!/^v\d+\.\d+$/.test(version)) return { ok: false, error: "Invalid WhatsApp API version" };
+    const url = `https://graph.facebook.com/${version}/${encodeURIComponent(mediaId)}`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${s.whatsappAccessToken}` },
+      signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) return { ok: false, error: `Failed to get media URL: ${res.status}` };
     const meta = await res.json() as any;
-    const downloadUrl = meta?.url;
-    const mime = meta?.mime_type || "application/octet-stream";
+    const downloadUrl = typeof meta?.url === "string" ? meta.url : "";
+    const mime = typeof meta?.mime_type === "string" ? meta.mime_type.split(";")[0].trim().toLowerCase() : "application/octet-stream";
     let filename = meta?.filename || "";
     if (!downloadUrl) return { ok: false, error: "No download URL in response" };
+    // Meta's media endpoint currently returns lookaside.fbsbx.com URLs. Never
+    // forward the tenant's bearer token to an arbitrary URL or follow a redirect.
+    const mediaUrl = new URL(downloadUrl);
+    if (mediaUrl.protocol !== "https:" || mediaUrl.username || mediaUrl.password || mediaUrl.port ||
+        !(mediaUrl.hostname === "fbsbx.com" || mediaUrl.hostname.endsWith(".fbsbx.com"))) {
+      return { ok: false, error: "Media URL host is not allowed" };
+    }
+    const maxBytes = 16 * 1024 * 1024;
+    const declaredSize = Number(meta?.file_size);
+    if (Number.isFinite(declaredSize) && declaredSize > maxBytes) return { ok: false, error: "Media exceeds the 16 MB size limit." };
     const dl = await fetch(downloadUrl, {
       headers: { Authorization: `Bearer ${s.whatsappAccessToken}` },
+      redirect: "manual",
+      signal: AbortSignal.timeout(30_000),
     });
     if (!dl.ok) return { ok: false, error: `Download failed: ${dl.status}` };
-    const buf = Buffer.from(await dl.arrayBuffer());
-    // Security: cap stored media size (16 MB) to protect the database and prevent
-    // malicious oversized uploads from abusing the media storage.
-    if (buf.length > 16 * 1024 * 1024) return { ok: false, error: "Media exceeds the 16 MB size limit." };
+    const responseSize = Number(dl.headers.get("content-length"));
+    if (Number.isFinite(responseSize) && responseSize > maxBytes) return { ok: false, error: "Media exceeds the 16 MB size limit." };
+    if (!dl.body) return { ok: false, error: "Media download returned an empty response." };
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const reader = dl.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const bytes = Buffer.from(value);
+        size += bytes.length;
+        if (size > maxBytes) {
+          await reader.cancel();
+          return { ok: false, error: "Media exceeds the 16 MB size limit." };
+        }
+        chunks.push(bytes);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const buf = Buffer.concat(chunks, size);
+    if (!buf.length) return { ok: false, error: "Media download returned an empty file." };
+    if (typeof meta?.sha256 === "string" && /^[a-f0-9]{64}$/i.test(meta.sha256)) {
+      const expected = Buffer.from(meta.sha256, "hex");
+      const actual = crypto.createHash("sha256").update(buf).digest();
+      if (!crypto.timingSafeEqual(expected, actual)) return { ok: false, error: "Media integrity check failed." };
+    }
+    // If ClamAV is configured, scan inbound WhatsApp media before it is stored.
+    await scanUploadBuffer(buf);
     // Sanitize the remote filename: strip path separators, control chars and quotes
     // so it can never inject content into HTML or Content-Disposition headers.
     filename = String(filename || "").replace(/[\r\n\x00-\x1f"/\\]/g, "").replace(/\.+/g, ".").trim().slice(0, 128);
@@ -406,6 +449,13 @@ async function processInboundMessage(msg: any, value: any): Promise<void> {
   const customer = await findCustomerByPhone(from);
   const provider = await findProviderByPhone(from);
 
+  // A phone number present in both merchant directories cannot be linked to
+  // one inbox safely. Keep the inbound audit record but do not cross-route it.
+  if (customer && provider) {
+    console.warn("[whatsapp] Inbound message has ambiguous customer/provider phone ownership; left unlinked.");
+    return;
+  }
+
   if (customer) {
     const existingConvo = await getWhatsAppConversationByPhone(from);
     await upsertWhatsAppConversation(from, "customer", customer.id, customer.name || contactName, "inbound");
@@ -518,7 +568,7 @@ export async function verifyWhatsAppWebhook(mode: string, token: string, challen
 
 export async function verifyWhatsAppChallenge(mode: string, verifyToken: string, challenge: string): Promise<{ ok: boolean; response?: string }> {
   const settings = await getSettings();
-  if (mode === "subscribe" && verifyToken === settings.whatsappVerifyToken) {
+  if (mode === "subscribe" && isCustomWhatsAppVerifyTokenConfigured(settings.whatsappVerifyToken) && verifyToken === settings.whatsappVerifyToken) {
     return { ok: true, response: challenge };
   }
   return { ok: false };
@@ -529,6 +579,10 @@ export async function verifyWhatsAppChallenge(mode: string, verifyToken: string,
 // admin UI needs to know whether a *custom* token exists without ever being told
 // the token itself (GET /api/settings redacts it).
 export const DEFAULT_WHATSAPP_VERIFY_TOKEN = "gear-glitch-wa-verify";
+
+export function isCustomWhatsAppVerifyTokenConfigured(token: string | null | undefined): boolean {
+  return typeof token === "string" && token.trim().length > 0 && token.trim() !== DEFAULT_WHATSAPP_VERIFY_TOKEN;
+}
 
 export async function getWhatsAppConfig(): Promise<{
   enabled: boolean;
@@ -547,7 +601,7 @@ export async function getWhatsAppConfig(): Promise<{
     configured: !!(s.whatsappPhoneNumberId && s.whatsappAccessToken),
     phoneNumberId: s.whatsappPhoneNumberId,
     businessAccountId: s.whatsappBusinessAccountId,
-    verifyTokenConfigured: !!s.whatsappVerifyToken && s.whatsappVerifyToken !== DEFAULT_WHATSAPP_VERIFY_TOKEN,
+    verifyTokenConfigured: isCustomWhatsAppVerifyTokenConfigured(s.whatsappVerifyToken),
     webhookUrl: apiBase ? `${apiBase}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp",
   };
 }

@@ -425,7 +425,7 @@ import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, 
 import { publicBaseUrl } from "./public-url";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
 import { validateLayoutConfig } from "./template-validate";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, uploadProductImport, scanProductImportBuffer, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes } from "./upload";
 import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
 import { MAX_PRODUCT_IMAGES, MAX_REPAIR_IMAGES, withinImageLimit, productImageLimitMessage, repairImageLimitMessage } from "./image-limits";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
@@ -1845,7 +1845,7 @@ app.post("/api/admin/about-us/image", adminAuthMiddleware, requirePermission("ab
 }));
 
 app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
-  const { storeName, phone, email, currency, taxRate, mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaShortcode, mpesaTillNumber, mpesaEnv, googleClientId, kraPin, etimsSerialPrefix, cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret, cloudinaryFolder } = req.body || {};
+  const { storeName, phone, email, currency, taxRate, mpesaConsumerKey, mpesaConsumerSecret, mpesaPasskey, mpesaShortcode, mpesaTillNumber, mpesaEnv, googleClientId, kraPin, etimsSerialPrefix, cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret } = req.body || {};
   if (storeName !== undefined && !String(storeName).trim()) {
     res.status(400).json({ error: "Store name is required." });
     return;
@@ -1864,7 +1864,7 @@ app.put("/api/settings", adminAuthMiddleware, requirePermission("settings:update
   if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
   if (taxRate !== undefined && !isNonNegNum(Number(taxRate))) { res.status(400).json({ error: "Tax rate must be a non-negative number." }); return; }
   if (currency !== undefined && !/^[A-Za-z]{3}$/.test(String(currency || "").trim())) { res.status(400).json({ error: "Currency must be a 3-letter code, e.g. KES." }); return; }
-  const settings = await updateSettings({ storeName, phone, email, currency, taxRate, paymentMethods: req.body.paymentMethods, cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret, cloudinaryFolder }) as any;
+  const settings = await updateSettings({ storeName, phone, email, currency, taxRate, paymentMethods: req.body.paymentMethods, cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret }) as any;
   if (googleClientId !== undefined) {
     await setStoreSetting("google_client_id", String(googleClientId).trim());
     settings.googleClientId = await getStoreSetting("google_client_id") || "";
@@ -2147,11 +2147,11 @@ app.post("/api/admin/plans", adminAuthMiddleware, asyncHandler(async (req: Reque
     if (maxProducts !== undefined && !isInt(Number(maxProducts))) { res.status(400).json({ error: "Max products must be an integer." }); return; }
     if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "Features must be an array." }); return; }
     if (await getSubscriptionPlan(id)) { res.status(409).json({ error: "A plan with this ID already exists." }); return; }
-    const plan = await createSubscriptionPlan({ id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches: 1, features, isActive: true, syncToOthers: syncToOthers !== false });
+    const plan = await createSubscriptionPlan({ id, name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches: 1, features, isActive: true, syncToOthers: syncToOthers === true });
     if (!plan) { res.status(500).json({ error: "Failed to create plan." }); return; }
     try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "plan", id, { name }, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
-    await pushPlanToControlPlane(plan);
-    res.status(201).json({ plan });
+    const shareRequest = await pushPlanToControlPlane(plan);
+    res.status(201).json({ plan, shareRequest });
   } catch (err: any) {
     console.error("[plan create]", err?.message || err);
     res.status(500).json({ error: "Failed to create plan." });
@@ -2168,31 +2168,33 @@ app.put("/api/admin/plans/:id", adminAuthMiddleware, asyncHandler(async (req: Re
     const plan = await updateSubscriptionPlan(String(req.params.id), updates);
     if (!plan) { res.status(404).json({ error: "Plan not found." }); return; }
     try { await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "plan", String(req.params.id), { changes: Object.keys(req.body || {}) }, (req as any).user.role); } catch { console.warn("[audit] Failed to write audit log"); }
-    await pushPlanToControlPlane(plan);
-    res.json({ plan });
+    const shareRequest = await pushPlanToControlPlane(plan);
+    res.json({ plan, shareRequest });
   } catch (err: any) {
     console.error("[plan update]", err?.message || err);
     res.status(500).json({ error: "Failed to update plan." });
   }
 }));
 
-// When a client admin creates/edits a plan marked "sync to other clients",
-// notify the control plane so it can register the plan and distribute it
-// to every other active client.
-async function pushPlanToControlPlane(plan: any): Promise<void> {
-  if (!plan || plan.syncToOthers === false) return;
+// Client plan sharing only submits a proposal. The control-plane admin reviews
+// it before the shared catalog or any other tenant is changed.
+async function pushPlanToControlPlane(plan: any): Promise<{ status: "not_requested" | "unavailable" | "pending" | "failed" }> {
+  if (!plan || plan.syncToOthers !== true) return { status: "not_requested" };
   const cpUrl = (process.env.CONTROL_PLANE_URL || "").replace(/\/+$/, "");
   const cpSecret = process.env.CONTROL_PLANE_SECRET || "";
-  if (!cpUrl || !cpSecret) return;
+  if (!cpUrl || !cpSecret) return { status: "unavailable" };
   try {
     const res = await fetch(`${cpUrl}/api/plans/sync-up`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-control-plane-key": cpSecret },
       body: JSON.stringify({ plan }),
     });
-    if (!res.ok) console.warn(`[plan-sync] Control plane rejected plan "${plan.id}": ${res.status}`);
+    if (res.status === 202) return { status: "pending" };
+    console.warn(`[plan-sync] Control plane rejected plan "${plan.id}": ${res.status}`);
+    return { status: "failed" };
   } catch (e: any) {
     console.warn("[plan-sync] Failed to notify control plane:", e.message);
+    return { status: "failed" };
   }
 }
 
@@ -4908,7 +4910,23 @@ app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create
 }));
 
 app.post("/api/products/import", ownerAuthMiddleware, requirePermission("product:create"), asyncHandler(async (req: Request, res: Response) => {
-  const { products } = req.body || {};
+  await runMulter(uploadProductImport, req, res);
+  if (!req.file?.buffer) { res.status(400).json({ error: "Choose a CSV file to import." }); return; }
+  try {
+    await scanProductImportBuffer(req.file.buffer);
+  } catch (error: any) {
+    const message = String(error?.message || "The CSV file could not be verified.");
+    const infected = message.includes("flagged as malware");
+    res.status(infected ? 400 : 503).json({ error: message });
+    return;
+  }
+  let products: any[];
+  try {
+    products = JSON.parse(String(req.body?.products || ""));
+  } catch {
+    res.status(400).json({ error: "The parsed product rows are invalid." });
+    return;
+  }
   if (!Array.isArray(products) || products.length === 0) {
     res.status(400).json({ error: "Request body must contain a non-empty products array." });
     return;
@@ -6049,6 +6067,8 @@ app.get("/api/customer/preferences", customerAuthMiddleware, asyncHandler(async 
     findCustomerById(customerId),
   ]);
   const consent = await getWhatsAppConsentPreferences(customer?.phone || "");
+  // The channel preference is a secondary stop switch; the consent table is the
+  // authoritative source for each WhatsApp category.
   const marketing = prefs.whatsapp && consent.marketing;
   const transactional = prefs.whatsapp && consent.transactional;
   res.json({
@@ -6077,6 +6097,8 @@ app.put("/api/customer/preferences", customerAuthMiddleware, asyncHandler(async 
   let transactional: boolean | undefined;
   if (hasCategoryChoice || hasLegacyChoice) {
     const current = await getWhatsAppConsentPreferences(customer.phone || "");
+    // Older clients submitted one WhatsApp checkbox whose accompanying copy
+    // described order/service updates. Keep that as transactional-only consent.
     marketing = hasLegacyChoice ? false : whatsappMarketing ?? current.marketing;
     transactional = hasLegacyChoice ? whatsapp === true : whatsappTransactional ?? current.transactional;
     if ((marketing || transactional) && !customer.phone) {
@@ -7316,12 +7338,12 @@ app.get("/api/purchases/:id/pdf", requirePdfAuth("po-pdf", "id", "purchaseId", [
 
 // ============ REPORTS ============
 app.get("/api/reports/tech-performance", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
-  const from = req.query.from as string | undefined;
-  const to = req.query.to as string | undefined;
-  const params: any[] = [];
-  let dateFilter = "";
-  if (from) { dateFilter += ` AND rt.created_at::timestamp >= $${params.length + 1}`; params.push(from); }
-  if (to) { dateFilter += ` AND rt.created_at::timestamp <= $${params.length + 1}`; params.push(to + "T23:59:59"); }
+  const from = String(req.query.from || "1970-01-01");
+  const to = String(req.query.to || "2099-12-31");
+  const range = parseDateRange(from, to);
+  if (!range) { res.status(400).json({ error: "Invalid date range. Use yyyy-mm-dd." }); return; }
+  const params = [range.from, range.to];
+  const dateFilter = ` AND rt.created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND rt.created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')`;
   const rows = await queryAll(
     `SELECT u.id AS "staffId", u.username AS "staffName",
       COUNT(CASE WHEN rt.status = 'completed' THEN 1 END) AS "ticketsCompleted",

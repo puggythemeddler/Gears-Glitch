@@ -11,6 +11,7 @@ import { provisionAdminUser } from "./admin-provisioning";
 import { DEFAULT_ROLES } from "./permissions";
 import { calculateInvoicePeriod } from "./invoice-period";
 import { resolveCloudinaryConfig } from "./cloudinary-config";
+import { normalizePhone } from "./phone";
 
 // Settings keys whose values are secrets and must be encrypted at rest. Values
 // written through the settings layer are stored as `enc:v1:` ciphertext and
@@ -1258,7 +1259,9 @@ async function getSettings(): Promise<Settings> {
     whatsappPhoneNumberId: s.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || "",
     whatsappAccessToken: s.whatsappAccessToken || process.env.WHATSAPP_ACCESS_TOKEN || "",
     whatsappAppSecret: s.whatsappAppSecret || process.env.WHATSAPP_APP_SECRET || "",
-    whatsappVerifyToken: s.whatsappVerifyToken || process.env.WHATSAPP_VERIFY_TOKEN || "gear-glitch-wa-verify",
+    // No shared/default verification token: webhook verification stays closed
+    // until each merchant configures a private value.
+    whatsappVerifyToken: s.whatsappVerifyToken || process.env.WHATSAPP_VERIFY_TOKEN || "",
     whatsappBusinessAccountId: s.whatsappBusinessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
     whatsappApiVersion: s.whatsappApiVersion || process.env.WHATSAPP_API_VERSION || "v21.0",
     adminWhatsAppEnabled: s.adminWhatsAppEnabled === "true",
@@ -1277,7 +1280,7 @@ async function setPaymentMethods(methods: PaymentMethod[]): Promise<void> {
 }
 
 async function updateSettings(updates: { [key: string]: any }): Promise<Settings> {
-  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "cloudinaryFolder", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled", "whatsappEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId", "whatsappApiVersion", "adminWhatsAppEnabled", "adminWhatsAppPhone"];
+  const allowed = ["storeName", "phone", "email", "currency", "storeLogo", "storeFavicon", "taxRate", "backupImagesToDb", "cloudinaryCloudName", "cloudinaryApiKey", "cloudinaryApiSecret", "logoPosition", "emailSender", "emailSenderName", "emailNotificationsEnabled", "whatsappEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId", "whatsappApiVersion", "adminWhatsAppEnabled", "adminWhatsAppPhone"];
   // Secrets are never returned to the browser by GET /api/settings, so the
   // settings forms submit them as empty strings. Treat an empty value as "keep
   // the currently stored secret" instead of wiping it.
@@ -4236,13 +4239,29 @@ async function getWhatsAppStats(): Promise<{ totalSent: number; totalReceived: n
 }
 
 async function findCustomerByPhone(phone: string): Promise<any | null> {
-  const digits = phone.replace(/\D/g, "");
-  return await queryOne("SELECT id, name, email, phone FROM customers WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE $1 AND is_active = 1", [`%${digits.slice(-9)}%`]) || null;
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  const suffix = normalized.slice(-9);
+  const candidates = await queryAll(
+    "SELECT id, name, email, phone FROM customers WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 9) = $1 AND is_active = 1",
+    [suffix]
+  );
+  const exact = candidates.filter((row: any) => normalizePhone(row.phone || "") === normalized);
+  // Do not arbitrarily route a private inbound message when duplicate customer
+  // records claim the same number; an operator can clean up the ambiguity.
+  return exact.length === 1 ? exact[0] : null;
 }
 
 async function findProviderByPhone(phone: string): Promise<any | null> {
-  const digits = phone.replace(/\D/g, "");
-  return await queryOne("SELECT id, company_name, contact_name, phone FROM providers WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE $1", [`%${digits.slice(-9)}%`]) || null;
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  const suffix = normalized.slice(-9);
+  const candidates = await queryAll(
+    "SELECT id, company_name, contact_name, phone FROM providers WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 9) = $1",
+    [suffix]
+  );
+  const exact = candidates.filter((row: any) => normalizePhone(row.phone || "") === normalized);
+  return exact.length === 1 ? exact[0] : null;
 }
 
 async function storeWhatsAppMedia(waMessageId: string, phoneNumber: string, mimeType: string, mediaData: string, filename: string): Promise<void> {

@@ -38,7 +38,7 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 **Findings:**
 - JWTs in localStorage (`customerStoreToken`, `computerStoreToken`, `providerToken`) — XSS ⇒ session theft; no revocation/`jti`; no rotation on password change. (P2)
 - Reset/magic tokens reusable within validity window. (P1)
-- No account lockout; only a global 20/15min auth rate limit. (P2)
+- No account-based lockout; tenant auth endpoints use a default 10/15min per-IP limiter (configurable), and control-plane login uses 20/15min per IP. Limits are process-local. (P2)
 
 ---
 
@@ -83,12 +83,12 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 ### Control-plane secrets at rest (IMPLEMENTED 2026-09-24)
 - **Status:** the P1 plaintext-at-rest gap is **fixed** in `control-plane/server/cp-secrets.ts`. The CP now encrypts `clients.cp_secret`, `clients.neon_db_url`, `cp_users.api_key`, `cp_users.totp_secret`, `smtp_config.pass`, and `cloudinary_config.api_secret` as deterministic `enc:v1:` AES-256-GCM ciphertext (keyed via HMAC-SHA256 IV — SIV-style) whenever a key source is configured.
 - **Key source (priority):** `CP_SECRETS_KEY` (≥16 chars) → else `JWT_SECRET` (≥16 chars) → else plaintext writes with a loud startup warning (dev only). `describeEncryptionSource()` and the boot log state which source is active (never the key itself).
-- **Why it stays a dual-read, not a migration:** `requireAuth` resolves the `client` role with `WHERE cp_secret = $1 OR cp_secret = $2` (second branch = deterministic cipher of the presented plaintext), so legacy plaintext rows and fresh ciphertext rows coexist with zero schema change and zero data migration. On the tenant side the key authenticates as **tenant admin** (`server/auth.ts` `controlPlaneAuthMiddleware`/`allowControlPlane` sets role `admin`) for plan sync, suspend/resume, invoice view/email/generate/pay, feature overrides, and subscription approve/reject — and outbound headers are always re-derived to plaintext inside the single `cpHeaders()` choke point (`control-plane/server/provision.ts`), so ciphertext is never forwarded.
+- **Compatibility and migration:** `requireAuth` resolves the `client` role with `WHERE cp_secret = $1 OR cp_secret = $2` (second branch = deterministic cipher of the presented plaintext), preserving compatibility with any legacy plaintext rows without a schema change. The dedicated `control-plane/scripts/migrate-secrets-at-rest.ts` dry-run/apply script migrates legacy values transactionally; the operator reported its apply completed on 2026-10-25 with 7 secret rows encrypted (counts only). On the tenant side the key authenticates as **tenant admin** (`server/auth.ts` `controlPlaneAuthMiddleware`/`allowControlPlane` sets role `admin`) for plan sync, suspend/resume, invoice view/email/generate/pay, feature overrides, and subscription approve/reject — and outbound headers are always re-derived to plaintext inside the single `cpHeaders()` choke point (`control-plane/server/provision.ts`), so ciphertext is never forwarded.
 - **Failure mode is loud, by design:** a `decryptSecret` that cannot decrypt (missing/unstable key, corrupted value) **throws** — never returns ciphertext as "plaintext" — so an outbound header can't be silently garbled. The tenant-side secret-store pattern's silent-fallback is deliberately not repeated here.
-- **Recovery consequence (operator guidance):** the effective key must stay stable. Changing key source after writes makes old ciphertext fail loudly; re-enter affected secrets through the UI (SMTP, Cloudinary, users, push-secret) to re-encrypt under the current key. Set `CP_SECRETS_KEY` before deploying this change if you want a dedicated key (otherwise the `JWT_SECRET` fallback applies automatically).
+- **Recovery and rotation limitation:** the effective key must stay stable. Changing the key source after writes makes old ciphertext fail loudly. The current `enc:v1:` format does not identify a key version, and the migration script migrates plaintext rows but does not re-encrypt ciphertext under a replacement key. Do **not** rotate `CP_SECRETS_KEY` directly. A supported rotation requires a separately tested key-versioned format/keyring and transactional re-encryption that can decrypt with the old key, write with the new key, verify every row, and retain rollback capability before retiring the old key. If a key is lost before that exists, restore the original key; if that is impossible, recover affected credentials individually (including re-enrolling 2FA) rather than treating the ciphertext as recoverable. The Render startup log and operator migration output confirm the dedicated source was active during the reported migration; no key values belong in this document.
 - Smoke-rest: A read of the CP database (dump, replica, SQL-injection read, compromised DB creds) now leaks ciphertext for these six fields. Remaining plaintext at rest is limited to non-secret metadata; `cp_users.password_hash` stays bcrypt(cost 12) — deliberately not encrypted (hash). Tenant `CONTROL_PLANE_SECRET` exists only as a platform env var (never stored in the tenant database).
 - Verification: unit suite `control-plane/tests/cp-secrets.test.ts` (13 tests: determinism, dual-lookup equivalence, plaintext passthrough, key-change/corruption throw paths, no-key compat mode) plus DB-gated end-to-end cases in `control-plane/tests/cp-auth-gated.test.ts` (encrypted `cp_secret` row still authenticates, outbound header is original plaintext, encrypted api_key login + requireAuth). Run locally (not DB-gated) and in CI.
-- Remaining operator action: set `CP_SECRETS_KEY` (≥16 chars) on the CP Render service — see `ACTION_ITEMS.md`.
+- Operator status (2026-10-25): Render startup reported `CP_SECRETS_KEY` as the active encryption source, and the operator reported a successful migration of seven secret rows. Keep the active key stable; a versioned key-rotation migration is not yet implemented.
 
 ---
 
@@ -111,7 +111,7 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 
 ## 7. File uploads
 
-- `server/upload.ts`: magic-byte validation (not just extension), server-generated filenames, 5MB cap, SVG rejected at the mimetype filter (both storage modes) — positive.
+- `server/upload.ts`: JPEG/PNG/WebP/static-GIF uploads are validated by content and decoded with bounded Sharp limits (default 25MB input, 60MP, 60MB output); SVG and non-image bytes are rejected. Images are encoded as lossless WebP so the stored pixels do not receive another lossy compression pass. ClamAV INSTREAM scanning is supported for original images and product-import CSV files when `CLAMAV_HOST` (and optional `CLAMAV_PORT`, default 3310) is configured. Until an engine is provisioned, scanning is deferred and a warning is logged; non-image files remain rejected and image bytes are decoded and sanitized before storage. Set `UPLOAD_SCAN_REQUIRED=true` to reject uploads/imports when no scanner is available. If a configured scanner is unavailable or flags a file, processing fails. Malware scanning reduces known-malware risk but cannot identify every novel threat or malicious content represented as ordinary pixels. Scanner hosting, signatures, timeout behavior, and production smoke verification remain required before claiming antivirus coverage.
 - ~**P1:** `backupImageToDb` path traversal~ **RESOLVED** — local branch path-confinement plus remote-branch SSRF hardening (`server/media-policy.ts`): https-only origin allowlist, DNS private/loopback block, `redirect:"manual"`, 15s timeout, 8MB cap, magic-byte payload check; `tests/media-policy.test.ts`.
 - ~**P2:** `/uploads` unauthenticated, no CSP/nosniff; SVG accepted upstream~ **RESOLVED** — nosniff on `/uploads`; SVG disallowed consistently in both storage modes (`tests/upload-policy.test.ts`); control-plane `img-src` narrowed from `https:` to the one origin the dashboard uses (`control-plane/tests/csp.test.ts`).
 
@@ -119,9 +119,10 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 
 ## 8. Transport / headers / rate limiting
 
-- Tenant server: `helmet`, CORS, CSRF double-submit, 1MB body limit, `apiLimiter` 200/15m + `authLimiter` 20/15m. Positive.
-- `trust proxy:1` allows `X-Forwarded-For` spoofing → rate-limit bypass (P2).
-- Control plane: **no rate limiting** (P1).
+- Render provides automatic edge DDoS filtering for hosted web services; Vercel provides automatic DDoS mitigation for deployments. These are platform protections, not a guarantee against targeted application-layer abuse.
+- Tenant server: `helmet`, CORS, CSRF double-submit, 1MB JSON body limit, `apiLimiter` 200/15m + `authLimiter` 10/15m (configurable via `AUTH_RATE_MAX`) for password, registration, alternate sign-in, and reset routes. Newsletter and contact submissions have a 6/15m cap; analytics routes have tighter caps. Limits use the default in-memory store, so counts are process-local and reset on restart; use a shared store before scaling to multiple instances.
+- Tenant and control-plane apps use `trust proxy:1`. Render documents the forwarded client IP, but the exact proxy/header chain must be verified for the deployed services before treating IP-based limits as spoof-resistant. Do not trust arbitrary forwarded headers without confirming the edge overwrites them.
+- Control plane: auth limit 20/15m, destructive-action limit 30/15m, new general API limit 900/15m, heartbeat limit 300/min, and JSON body cap 1MB. These limits also use in-memory stores and are process-local. A shared store and runtime verification remain follow-up work before multi-instance scaling.
 
 ---
 
@@ -155,7 +156,7 @@ Customer/staff ◀──JWT── Tenants's own server (isolated DB per tenant)
 - [ ] P0: irreversible client delete guarded
 - [x] P1: WhatsApp media endpoint authenticated
 - [x] P1: `backupImageToDb` path traversal fixed (local path-confinement + remote SSRF allowlist/DNS block, 2026-09-29)
-- [ ] P1: CP rate limiting + SSL CA verify + stable JWT_SECRET
+- [~] P1: CP rate limiting added (process-local; shared-store and proxy-chain verification pending) + SSL CA verify + stable JWT_SECRET
 - [ ] P1: reset/magic tokens made single-use
 - [ ] P1: redact M-Pesa config
 - [ ] P2: `trust proxy` scoped; open-redirect fixed; JWT(s) out of URLs
