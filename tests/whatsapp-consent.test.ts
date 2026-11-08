@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 
 import { bootstrapTestDatabase } from "../server/test-db";
-import { detectOptOutKeyword, isWhatsAppSendingAllowed, recordOptOut, recordConsentGrant } from "../server/whatsapp-consent";
+import { detectOptOutKeyword, getWhatsAppConsentPreferences, isWhatsAppSendingAllowed, recordOptOut, recordConsentGrant, saveWhatsAppConsentPreferences } from "../server/whatsapp-consent";
 import { sendWhatsAppMessage, sendWhatsAppDocument, sendWhatsAppDocumentMessage, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage } from "../server/whatsapp";
 import { processPendingDelivery } from "../server/notification-service";
 import { enqueueDelivery, listPendingDeliveries } from "../server/integrations-store";
@@ -84,12 +84,30 @@ describe("whatsapp consent policy (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL n
 
   // ── absent consent ──
   test("no consent row authorises nothing: transactional and marketing are both denied", async () => {
+    assert.deepEqual(await getWhatsAppConsentPreferences("0712345678"), { marketing: false, transactional: false });
     const t = await isWhatsAppSendingAllowed("0712345678", "transactional");
     assert.equal(t.allowed, false);
     assert.equal(t.policyDenied, true);
     assert.equal(t.authorization, "none");
     const m = await isWhatsAppSendingAllowed("0712345678", "marketing");
     assert.equal(m.allowed, false);
+  });
+
+  test("customer preferences grant only selected categories and an all-off choice opts out", async () => {
+    assert.deepEqual(await saveWhatsAppConsentPreferences("0712345678", { marketing: false, transactional: true }), {
+      marketing: false,
+      transactional: true,
+    });
+    assert.equal((await isWhatsAppSendingAllowed("0712345678", "transactional")).allowed, true);
+    assert.equal((await isWhatsAppSendingAllowed("0712345678", "marketing")).allowed, false);
+
+    assert.deepEqual(await saveWhatsAppConsentPreferences("0712345678", { marketing: false, transactional: false }), {
+      marketing: false,
+      transactional: false,
+    });
+    const denied = await isWhatsAppSendingAllowed("0712345678", "transactional");
+    assert.equal(denied.allowed, false);
+    assert.equal(denied.optedOut, true);
   });
 
   // ── explicit transactional authorisation ──

@@ -494,13 +494,19 @@ function CustomerProfileForm({ profile, onSaved }: { profile: any; onSaved: (p: 
 
 function CustomerNotifications() {
   const feedback = useFeedback();
-  const [prefs, setPrefs] = useState<{ email: boolean; whatsapp: boolean } | null>(null);
+  const [prefs, setPrefs] = useState<{
+    email: boolean;
+    whatsapp: boolean;
+    whatsappTransactional: boolean;
+    whatsappMarketing: boolean;
+    hasWhatsappPhone: boolean;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api<{ email: boolean; whatsapp: boolean }>("/api/customer/preferences")
+    api<{ email: boolean; whatsapp: boolean; whatsappTransactional: boolean; whatsappMarketing: boolean; hasWhatsappPhone: boolean }>("/api/customer/preferences")
       .then((p) => { setPrefs(p); setLoading(false); })
       .catch(() => setLoading(false));
     api<{ logs: any[] }>("/api/customer/notifications")
@@ -512,7 +518,7 @@ function CustomerNotifications() {
     if (!prefs) return;
     setSaving(true);
     try {
-      const updated = await api<{ email: boolean; whatsapp: boolean }>("/api/customer/preferences", {
+      const updated = await api<{ email: boolean; whatsapp: boolean; whatsappTransactional: boolean; whatsappMarketing: boolean; hasWhatsappPhone: boolean }>("/api/customer/preferences", {
         method: "PUT",
         body: JSON.stringify(prefs),
       });
@@ -525,7 +531,7 @@ function CustomerNotifications() {
   return (
     <>
       <h2>Notifications</h2>
-      <p className="muted" style={{ fontSize: "0.85rem" }}>Choose how we keep you updated about orders, warranties and repairs.</p>
+      <p className="muted" style={{ fontSize: "0.85rem" }}>Choose which messages you want to receive. WhatsApp choices are separate and optional.</p>
       {loading || !prefs ? <p className="muted">Loading…</p> : (
         <div className="panel" style={{ maxWidth: 480, marginBottom: "1.5rem" }}>
           <div className="field">
@@ -536,10 +542,20 @@ function CustomerNotifications() {
           </div>
           <div className="field">
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <input type="checkbox" checked={prefs.whatsapp} onChange={(e) => setPrefs({ ...prefs, whatsapp: e.target.checked })} style={{ width: "auto" }} />
-              WhatsApp notifications
+              <input type="checkbox" checked={prefs.whatsappTransactional} disabled={!prefs.hasWhatsappPhone} onChange={(e) => setPrefs({ ...prefs, whatsappTransactional: e.target.checked })} style={{ width: "auto" }} />
+              Order and service updates on WhatsApp
             </label>
+            <p className="muted" style={{ margin: "0.25rem 0 0 1.5rem", fontSize: "0.8rem" }}>Order, delivery, repair, and warranty updates.</p>
           </div>
+          <div className="field">
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input type="checkbox" checked={prefs.whatsappMarketing} disabled={!prefs.hasWhatsappPhone} onChange={(e) => setPrefs({ ...prefs, whatsappMarketing: e.target.checked })} style={{ width: "auto" }} />
+              Offers and product news on WhatsApp
+            </label>
+            <p className="muted" style={{ margin: "0.25rem 0 0 1.5rem", fontSize: "0.8rem" }}>Promotions and product announcements. This choice does not affect service updates.</p>
+          </div>
+          {!prefs.hasWhatsappPhone && <p className="muted" role="status" style={{ fontSize: "0.82rem" }}>Add a phone number to your account before opting in to WhatsApp.</p>}
+          <p className="muted" style={{ fontSize: "0.8rem" }}>You can change these choices at any time. Reply STOP to opt out of all WhatsApp messages.</p>
           <button className="btn btn-sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save preferences"}</button>
         </div>
       )}

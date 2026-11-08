@@ -66,6 +66,11 @@ export interface ConsentRow {
   transactional_allowed: boolean;
 }
 
+export interface WhatsAppConsentPreferences {
+  marketing: boolean;
+  transactional: boolean;
+}
+
 export interface ConsentDecision {
   allowed: boolean;
   reason: string;
@@ -88,6 +93,19 @@ async function getConsent(phone: string): Promise<ConsentRow | undefined> {
       LIMIT 1`,
     [normalized]
   );
+}
+
+// Customer-facing preferences are opt-in only. A STOP opt-out overrides any
+// previously granted category until the customer explicitly opts in again.
+export async function getWhatsAppConsentPreferences(phone: string): Promise<WhatsAppConsentPreferences> {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return { marketing: false, transactional: false };
+  const row = await getConsent(normalized);
+  if (!row || row.opted_out_at) return { marketing: false, transactional: false };
+  return {
+    marketing: row.marketing_allowed === true,
+    transactional: row.transactional_allowed === true,
+  };
 }
 
 // True when the recipient has initiated a conversation within the Meta 24-hour
@@ -215,4 +233,21 @@ export async function recordConsentGrant(phone: string, source: string, opts: { 
     [normalized, source, marketing, transactional]
   );
   return true;
+}
+
+// Save an authenticated customer's explicit choices. Granting either category
+// clears an earlier STOP only because the customer has actively opted in again;
+// selecting neither category records a full opt-out.
+export async function saveWhatsAppConsentPreferences(
+  phone: string,
+  preferences: WhatsAppConsentPreferences
+): Promise<WhatsAppConsentPreferences> {
+  const normalized = normalizePhone(phone);
+  if (!normalized) throw new Error("A valid phone number is required for WhatsApp consent.");
+  if (preferences.marketing || preferences.transactional) {
+    await recordConsentGrant(normalized, "customer_preferences", preferences);
+  } else {
+    await recordOptOut(normalized, "customer_preferences");
+  }
+  return await getWhatsAppConsentPreferences(normalized);
 }
