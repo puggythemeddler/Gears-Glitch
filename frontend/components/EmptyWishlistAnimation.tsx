@@ -1,3 +1,6 @@
+import GearHeadFace from "@/components/GearHeadFace";
+import GearHeadTorso from "@/components/GearHeadTorso";
+
 export default function EmptyWishlistAnimation() {
   return (
     <div className="ew-scene" aria-hidden="true">
@@ -24,7 +27,7 @@ export default function EmptyWishlistAnimation() {
         {/* Gear-head mascot — shrugging */}
         <g className="ew-mascot">
           {/* torso */}
-          <rect x="44" y="106" width="54" height="52" rx="16" fill="var(--surface)" stroke="var(--border)" strokeWidth="2.5" />
+          <GearHeadTorso x={44} y={106} width={54} height={52} />
           {/* feet */}
           <rect x="50" y="154" width="18" height="12" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
           <rect x="76" y="154" width="18" height="12" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
@@ -36,17 +39,9 @@ export default function EmptyWishlistAnimation() {
           <circle cx="122" cy="94" r="6" fill="var(--primary)" />
           {/* head */}
           <g className="ew-head">
-            {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
-              <rect key={a} x="63.5" y="50" width="7" height="10" rx="2" fill="var(--primary)" transform={`rotate(${a} 71 78)`} />
-            ))}
-            <circle cx="71" cy="78" r="24" fill="var(--primary)" />
-            <circle cx="71" cy="78" r="17" fill="var(--surface)" />
-            <circle cx="71" cy="78" r="6.5" fill="var(--primary)" />
-            <circle cx="71" cy="78" r="3" fill="var(--surface)" />
-            {/* sad/neutral face */}
-            <circle cx="63" cy="73" r="2.4" fill="var(--text)" />
-            <circle cx="79" cy="73" r="2.4" fill="var(--text)" />
-            <path d="M64 86 q7 -4 14 0" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" />
+            <g transform="translate(71 78) scale(.6)">
+              <GearHeadFace expression="hopeful" />
+            </g>
           </g>
         </g>
       </svg>

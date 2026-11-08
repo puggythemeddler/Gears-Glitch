@@ -1,3 +1,6 @@
+import GearHeadFace from "@/components/GearHeadFace";
+import GearHeadTorso from "@/components/GearHeadTorso";
+
 function SighPuff() {
   return (
     <g className="ec-sigh" fill="var(--text-tertiary)">
@@ -65,7 +68,7 @@ export default function EmptyCartAnimation() {
           <rect x="96" y="196" width="20" height="13" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
           <rect x="130" y="196" width="20" height="13" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
           {/* Torso */}
-          <rect x="88" y="150" width="70" height="50" rx="16" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
+          <GearHeadTorso x={88} y={150} width={70} height={50} />
           {/* Hanging arm */}
           <path d="M94 162 q-10 12 -6 24" fill="none" stroke="var(--primary)" strokeWidth="8" strokeLinecap="round" />
           {/* Facepalm arm — hand pressed to the side of the head */}
@@ -75,26 +78,9 @@ export default function EmptyCartAnimation() {
           </g>
           {/* Head — gear, face looking right toward the tipped cart */}
           <g className="ec-head">
-            {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
-              <rect
-                key={a}
-                x="118.5"
-                y="96"
-                width="7"
-                height="10"
-                rx="2"
-                fill="var(--primary)"
-                transform={`rotate(${a} 122 126)`}
-              />
-            ))}
-            <circle cx="122" cy="126" r="25" fill="var(--primary)" />
-            <circle cx="122" cy="126" r="18" fill="var(--surface)" />
-            <circle cx="122" cy="126" r="7" fill="var(--primary)" />
-            <circle cx="122" cy="126" r="3.5" fill="var(--surface)" />
-            {/* Face — looking right, worried */}
-            <circle cx="132" cy="121" r="2.6" fill="var(--text)" />
-            <circle cx="140" cy="126" r="2.6" fill="var(--text)" />
-            <path d="M130 133 q4 4 8 0 M138 133 q4 4 8 0" fill="none" stroke="var(--text)" strokeWidth="1.8" strokeLinecap="round" />
+            <g transform="translate(122 126) scale(.62)">
+              <GearHeadFace expression="concerned" />
+            </g>
           </g>
           <SighPuff />
         </g>

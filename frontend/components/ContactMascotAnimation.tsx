@@ -1,7 +1,10 @@
+import GearHeadFace from "@/components/GearHeadFace";
+import GearHeadTorso from "@/components/GearHeadTorso";
+
 export default function ContactMascotAnimation() {
   return (
     <div className="ct-scene" aria-hidden="true">
-      <svg viewBox="0 0 360 220" width="300" height="184">
+      <svg viewBox="120 65 195 135" width="300" height="184">
         {/* Desk */}
         <line x1="40" y1="190" x2="320" y2="190" stroke="var(--border)" strokeWidth="2" strokeLinecap="round" />
 
@@ -18,29 +21,12 @@ export default function ContactMascotAnimation() {
         {/* Gear-head mascot — watching, holding a handset */}
         <g className="ct-mascot">
           {/* torso */}
-          <rect x="136" y="134" width="50" height="56" rx="16" fill="var(--surface)" stroke="var(--border)" strokeWidth="2.5" />
+          <GearHeadTorso x={136} y={134} width={50} height={56} />
           {/* head */}
           <g className="ct-head">
-            {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
-              <rect
-                key={a}
-                x="157.5"
-                y="83"
-                width="7"
-                height="10"
-                rx="2"
-                fill="var(--primary)"
-                transform={`rotate(${a} 161 116)`}
-              />
-            ))}
-            <circle cx="161" cy="116" r="28" fill="var(--primary)" />
-            <circle cx="161" cy="116" r="20" fill="var(--surface)" />
-            <circle cx="161" cy="116" r="8" fill="var(--primary)" />
-            <circle cx="161" cy="116" r="4" fill="var(--surface)" />
-            {/* face — calm, looking slightly right toward the phone */}
-            <circle cx="172" cy="110" r="2.8" fill="var(--text)" />
-            <circle cx="180" cy="115" r="2.8" fill="var(--text)" />
-            <path d="M170 124 q6 5 12 0" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" />
+            <g transform="translate(161 116) scale(.7)">
+              <GearHeadFace expression="listening" />
+            </g>
           </g>
         </g>
 
