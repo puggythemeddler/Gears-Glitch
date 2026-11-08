@@ -61,8 +61,9 @@ export default function MyRepairsPage() {
           <a key={t.id} href={`/repair-ticket?id=${t.id}`} className="order-item" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "0.5rem", flexWrap: "wrap" }}>
               <div>
-                <strong>#{t.id}</strong> — {t.deviceType}
+                <strong>#{t.id}</strong> — {[t.deviceBrand, t.deviceType].filter(Boolean).join(" ")}
                 {t.deviceModel ? ` (${t.deviceModel})` : ""}
+                {t.issueSummary ? <span className="muted" style={{ display: "block" }}>{t.issueSummary}</span> : null}
                 <StatusBadge status={t.status} domain="repairs" />
               </div>
               <span className="muted">{new Date(t.createdAt).toLocaleDateString("en-GB")}</span>

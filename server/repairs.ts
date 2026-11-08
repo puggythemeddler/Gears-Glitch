@@ -14,8 +14,13 @@ interface TicketRow {
   customer_name?: string;
   customer_email?: string;
   device_type: string;
+  device_brand: string;
   device_model: string;
+  serial_number: string;
+  issue_summary: string;
   issue_description: string;
+  requested_visit_date: string;
+  requested_visit_time: string;
   status: string;
   assigned_to: number | null;
   assigned_name?: string | null;
@@ -63,8 +68,13 @@ interface Ticket {
   customerName: string;
   customerEmail: string;
   deviceType: string;
+  deviceBrand: string;
   deviceModel: string;
+  serialNumber: string;
+  issueSummary: string;
   issueDescription: string;
+  requestedVisitDate: string;
+  requestedVisitTime: string;
   status: string;
   statusLabel: string;
   assignedTo: number | null;
@@ -260,8 +270,13 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     customerName: extras.customerName || row.customer_name || "",
     customerEmail: extras.customerEmail || row.customer_email || "",
     deviceType: row.device_type,
+    deviceBrand: row.device_brand || "",
     deviceModel: row.device_model || "",
+    serialNumber: row.serial_number || "",
+    issueSummary: row.issue_summary || "",
     issueDescription: row.issue_description,
+    requestedVisitDate: row.requested_visit_date || "",
+    requestedVisitTime: row.requested_visit_time || "",
     status: row.status,
     statusLabel: STATUS_LABELS[row.status] || row.status,
     assignedTo: row.assigned_to,
@@ -322,10 +337,24 @@ async function loadTicketDetails(ticketId: string): Promise<Ticket | null> {
 async function createRepairTicket(customerId: number, data: any): Promise<TicketResult> {
   const id = await generateTicketId();
   const deviceType = String(data.deviceType || "").trim();
-  const issueDescription = String(data.issueDescription || "").trim();
+  const deviceBrand = String(data.deviceBrand || "").trim().slice(0, 100);
+  const deviceModel = String(data.deviceModel || "").trim().slice(0, 150);
+  const serialNumber = String(data.serialNumber || "").trim().slice(0, 100);
+  const requestedVisitDate = String(data.requestedVisitDate || "").trim();
+  const requestedVisitTime = String(data.requestedVisitTime || "").trim();
+  const issueDescription = String(data.issueDescription || "").trim().slice(0, 5000);
+  const issueSummary = String(data.issueSummary || "").trim().slice(0, 200) || issueDescription.slice(0, 200);
+  const customerNotes = String(data.notes || "").trim().slice(0, 2000);
 
   if (!deviceType || !issueDescription) {
     return { ok: false, error: "Device type and problem description are required." };
+  }
+  const parsedVisitDate = requestedVisitDate ? new Date(`${requestedVisitDate}T00:00:00.000Z`) : null;
+  if (requestedVisitDate && (!/^\d{4}-\d{2}-\d{2}$/.test(requestedVisitDate) || Number.isNaN(parsedVisitDate?.getTime()) || parsedVisitDate?.toISOString().slice(0, 10) !== requestedVisitDate)) {
+    return { ok: false, error: "Preferred visit date must be a valid date." };
+  }
+  if (requestedVisitTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(requestedVisitTime)) {
+    return { ok: false, error: "Preferred visit time must use 24-hour time." };
   }
 
   const repairType = data.repairType ? String(data.repairType).trim() : null;
@@ -346,9 +375,9 @@ async function createRepairTicket(customerId: number, data: any): Promise<Ticket
   const etaHours = Math.max(1, Number(await getStoreSetting("repair_eta_hours")) || 48);
 
   await query(
-    `INSERT INTO repair_tickets (id, customer_id, device_type, device_model, issue_description, repair_type, status, eta_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, 'received', (NOW() + make_interval(hours => $7))::text, NOW()::text, NOW()::text)`,
-    [id, customerId, deviceType, String(data.deviceModel || "").trim(), fullDescription, repairType, etaHours]
+    `INSERT INTO repair_tickets (id, customer_id, device_type, device_brand, device_model, serial_number, issue_summary, issue_description, customer_notes, requested_visit_date, requested_visit_time, repair_type, status, eta_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'received', (NOW() + make_interval(hours => $13))::text, NOW()::text, NOW()::text)`,
+    [id, customerId, deviceType, deviceBrand, deviceModel, serialNumber, issueSummary, fullDescription, customerNotes, requestedVisitDate, requestedVisitTime, repairType, etaHours]
   );
 
   await recalculateTicketCost(id);

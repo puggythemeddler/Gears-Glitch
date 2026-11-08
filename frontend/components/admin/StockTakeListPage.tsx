@@ -13,15 +13,28 @@ export default function StockTakeListPage() {
   const [branches, setBranches] = useState<any[]>([]);
   const [stockBranchFilter, setStockBranchFilter] = useState<number | null>(null);
   const [branchStockSummary, setBranchStockSummary] = useState<any[]>([]);
+  const [branchStockError, setBranchStockError] = useState("");
+  const [branchStockLoading, setBranchStockLoading] = useState(false);
 
   useEffect(() => {
     api<{ branches: any[] }>("/api/admin/branches").then(d => setBranches(d.branches || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (stockBranchFilter) {
-      api<any>(`/api/admin/stock/by-branch/${stockBranchFilter}`).then(setBranchStockSummary).catch(() => {});
+    if (!stockBranchFilter) {
+      setBranchStockSummary([]);
+      setBranchStockError("");
+      return;
     }
+    let cancelled = false;
+    setBranchStockLoading(true);
+    setBranchStockError("");
+    setBranchStockSummary([]);
+    api<any>(`/api/admin/stock/by-branch/${stockBranchFilter}`)
+      .then((d) => { if (!cancelled) setBranchStockSummary(d); })
+      .catch((e: any) => { if (!cancelled) setBranchStockError(e?.message || "Branch stock could not be loaded."); })
+      .finally(() => { if (!cancelled) setBranchStockLoading(false); });
+    return () => { cancelled = true; };
   }, [stockBranchFilter]);
 
   async function startSession() {
@@ -68,6 +81,8 @@ export default function StockTakeListPage() {
         </div>
       </div>
 
+      {stockBranchLoading && <p role="status" className="muted">Loading branch stock…</p>}
+      {stockBranchError && <ErrorMsg msg={stockBranchError} />}
       {stockBranchFilter && branchStockSummary.length > 0 && (
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <h3 style={{ marginTop: 0, fontSize: "0.95rem" }}>Current Stock at {branches.find((b: any) => b.id === stockBranchFilter)?.name || "Selected Branch"}</h3>

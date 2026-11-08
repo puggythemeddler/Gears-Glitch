@@ -165,6 +165,9 @@ function mapApplication(r: any): any {
 export async function createApplication(input: ApplicationInput, actor: Actor): Promise<any> {
   const config = await getFinancingConfig();
   if (!config.enabled) throw new Error("Financing is not enabled");
+  if (config.guarantorRequired && (!String(input.guarantorName || "").trim() || !String(input.guarantorPhone || "").trim())) {
+    throw new Error("A guarantor name and phone number are required for this financing plan");
+  }
   if (!Number.isInteger(input.customerId) || input.customerId <= 0) throw new Error("customerId is required");
   const customer = await findCustomerById(input.customerId);
   if (!customer) throw new Error("Customer not found");

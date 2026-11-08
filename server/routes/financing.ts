@@ -14,7 +14,7 @@ import { getFinancingConfig, saveFinancingConfig, isFrequency, FINANCING_FEATURE
 import { requireShopFeature, getEffectiveFeatures, checkBranchFeature } from "../feature-access";
 import { featureListIncludes } from "../feature-rules";
 import { getDocumentBranding, agreementHtml, scheduleHtml, statementHtml, receiptHtml } from "../financing/documents";
-import { calculateFinancing, resolveDeposit } from "../financing/calculator";
+import { calculateFinancing, resolveDeposit, validateTerms } from "../financing/calculator";
 import { toCents } from "../financing/types";
 import type { FinancingPaymentMethod } from "../financing/types";
 import {
@@ -118,6 +118,7 @@ router.get("/options", asyncHandler(async (req: Request, res: Response) => {
     chargePercent: config.chargePercent,
     allowedPaymentMethods: config.allowedPaymentMethods,
     onlineApplicationAllowed: config.onlineApplicationAllowed,
+    guarantorRequired: config.guarantorRequired,
   });
 }));
 
@@ -131,11 +132,50 @@ router.get("/public/quote", asyncHandler(async (req: Request, res: Response) => 
   if (!productId) { res.status(400).json({ error: "productId is required" }); return; }
   const product = await getProduct(productId);
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  if (config.eligibleCategoryIds && !config.eligibleCategoryIds.includes(product.category)) {
+    res.status(400).json({ error: "This product category is not eligible for financing." });
+    return;
+  }
   const cashPriceCents = toCents(product.salePrice && product.salePrice > 0 ? product.salePrice : product.price);
-  const frequency = isFrequency(req.query.frequency) ? req.query.frequency : config.permittedFrequencies[0];
-  const termCount = Math.min(Math.max(Number(req.query.termCount) || config.minTerm, config.minTerm), config.maxTerm);
-  const depositPercent = config.depositPercentMin ?? 0;
+  const rawFrequency = req.query.frequency;
+  const frequency = rawFrequency == null ? config.permittedFrequencies[0] : isFrequency(rawFrequency) ? rawFrequency : null;
+  if (!frequency || !config.permittedFrequencies.includes(frequency)) {
+    res.status(400).json({ error: "Choose a permitted payment frequency." });
+    return;
+  }
+  const rawTermCount = req.query.termCount == null ? config.minTerm : Number(req.query.termCount);
+  if (!Number.isInteger(rawTermCount) || rawTermCount < config.minTerm || rawTermCount > config.maxTerm) {
+    res.status(400).json({ error: `Choose between ${config.minTerm} and ${config.maxTerm} instalments.` });
+    return;
+  }
+  const rawDepositPercent = req.query.depositPercent == null ? (config.depositPercentMin ?? 0) : Number(req.query.depositPercent);
+  if (!Number.isFinite(rawDepositPercent) || rawDepositPercent < (config.depositPercentMin ?? 0) || rawDepositPercent > (config.depositPercentMax ?? 100)) {
+    res.status(400).json({ error: `Deposit must be between ${config.depositPercentMin ?? 0}% and ${config.depositPercentMax ?? 100}%.` });
+    return;
+  }
+  const termCount = rawTermCount;
+  const depositPercent = rawDepositPercent;
   const depositCents = resolveDeposit(cashPriceCents, null, depositPercent);
+  const intervalDays = frequency === "custom" ? Number(req.query.intervalDays) : null;
+  if (frequency === "custom" && (!Number.isInteger(intervalDays) || intervalDays! < 1 || intervalDays! > 365)) {
+    res.status(400).json({ error: "For a custom schedule, choose an interval from 1 to 365 days." });
+    return;
+  }
+  const startDate = new Date().toISOString().slice(0, 10);
+  const termInput = {
+    cashPriceCents,
+    depositCents,
+    chargeModel: config.chargeModel,
+    chargeFixedCents: config.chargeFixedCents,
+    chargePercent: config.chargePercent,
+    frequency,
+    intervalDays,
+    termCount,
+    startDate,
+    firstDueDate: null,
+  };
+  const termErrors = validateTerms(termInput, config);
+  if (termErrors.length) { res.status(400).json({ error: termErrors.map((e) => e.message).join("; ") }); return; }
   const quote = calculateFinancing({
     cashPriceCents,
     depositCents,
@@ -143,9 +183,9 @@ router.get("/public/quote", asyncHandler(async (req: Request, res: Response) => 
     chargeFixedCents: config.chargeFixedCents,
     chargePercent: config.chargePercent,
     frequency,
-    intervalDays: null,
+    intervalDays,
     termCount,
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate,
     firstDueDate: null,
   });
   res.json({ ...quote, depositPercent, currency: config.currency, possessionModel: config.possessionModel });

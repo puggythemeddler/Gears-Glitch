@@ -15,6 +15,8 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [stockBranchFilter, setStockBranchFilter] = useState<number | null>(null);
   const [branchStockSummary, setBranchStockSummary] = useState<any[]>([]);
+  const [branchStockLoading, setBranchStockLoading] = useState(false);
+  const [branchStockError, setBranchStockError] = useState("");
   const [branches, setBranches] = useState<any[]>([]);
   const [search, setSearch] = useState("");
 
@@ -23,9 +25,20 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   }, []);
 
   useEffect(() => {
-    if (stockBranchFilter) {
-      api<any>(`/api/admin/stock/by-branch/${stockBranchFilter}`).then(setBranchStockSummary).catch(() => {});
+    if (!stockBranchFilter) {
+      setBranchStockSummary([]);
+      setBranchStockError("");
+      return;
     }
+    let cancelled = false;
+    setBranchStockLoading(true);
+    setBranchStockError("");
+    setBranchStockSummary([]);
+    api<any>(`/api/admin/stock/by-branch/${stockBranchFilter}`)
+      .then((d) => { if (!cancelled) setBranchStockSummary(d); })
+      .catch((e: any) => { if (!cancelled) setBranchStockError(e?.message || "Branch stock could not be loaded."); })
+      .finally(() => { if (!cancelled) setBranchStockLoading(false); });
+    return () => { cancelled = true; };
   }, [stockBranchFilter]);
 
   useEffect(() => {
@@ -132,7 +145,9 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
       )}
 
       <h3>Current Stock Levels</h3>
-      <div className="table-wrap">
+      {stockBranchFilter && branchStockLoading ? <Spinner /> : null}
+      {stockBranchFilter && branchStockError ? <ErrorMsg msg={branchStockError} /> : null}
+      {(!stockBranchFilter || (!branchStockLoading && !branchStockError)) && <div className="table-wrap">
         <DataTable<any>
           ariaLabel="Current stock levels"
           columns={[
@@ -158,7 +173,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
           rowKey={(i) => i.productId ?? i.id}
           empty={<EmptyState icon="stock" title={items.length === 0 ? "No stock data" : "No matches"} description={items.length === 0 ? "Stock levels will appear here once products are added." : `No products match "${search}".`} actionLabel={items.length === 0 ? "" : "Clear search"} onAction={() => setSearch("")} />}
         />
-      </div>
+      </div>}
     </>
   );
 }
