@@ -128,7 +128,7 @@ export default function AboutUsPage() {
           </div>
           <div className="field">
             <label>Banner Image</label>
-            <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={uploadImage} />
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display: "none" }} onChange={uploadImage} />
             <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap" }}>
               {data.image ? (
                 <Media src={data.image} alt="About banner" width={160} height={90} fit="cover" fallbackLabel="About banner" style={{ width: 160, height: 90, objectFit: "cover", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }} />

@@ -93,8 +93,11 @@ section). **No commit or push was made in either pass — the working tree is su
 
 ## 5. Open knowns (accurate as of this pass)
 
-- **Operator action:** set `CP_SECRETS_KEY` (≥16 chars) on the CP Render service (or accept the
-  `JWT_SECRET` fallback); re-enter previously-written secrets via the UI if you switch sources later.
+- **Operator status (2026-10-25):** the Render startup log reported `CP_SECRETS_KEY` as the active
+  encryption source, and the operator reported the one-time migration committed seven secret rows.
+  Keep that key stable. The current `enc:v1:` format has no key ID and no in-place ciphertext
+  re-encryption procedure; do not replace the key until a versioned keyring/migration is implemented
+  and tested. See `SECURITY_MODEL.md` §5.
 - **P0/pass-gate** M-Pesa `SIM`-prefixed `checkoutRequestId` auto-confirm must stay production-gated.
 - **Frontend baseline:** the 2 committed typecheck errors are genuine defects (wrong `ConfirmOptions`
   prop + view-setter type) — filed for the §5 fix in this pass.

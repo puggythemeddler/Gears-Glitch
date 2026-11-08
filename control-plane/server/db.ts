@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { encryptSecret, decryptSecret } from "./cp-secrets";
 
 // SSL is enforced with CA verification by default. Set
@@ -13,6 +13,21 @@ export async function query(text: string, params?: any[]) {
   const client = await pool.connect();
   try {
     return await client.query(text, params);
+  } finally {
+    client.release();
+  }
+}
+
+export async function withTransaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await run(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
   } finally {
     client.release();
   }
@@ -130,6 +145,7 @@ export async function initControlPlaneDb() {
       neon_project_id TEXT DEFAULT '',
       neon_db_name TEXT DEFAULT '',
       neon_db_url TEXT DEFAULT '',
+      cloudinary_folder TEXT DEFAULT '',
       render_service_id TEXT DEFAULT '',
       render_service_url TEXT DEFAULT '',
       vercel_project_id TEXT DEFAULT '',
@@ -240,6 +256,22 @@ export async function initControlPlaneDb() {
       is_active BOOLEAN DEFAULT true,
       sync_to_others INTEGER DEFAULT 1,
       created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  // Tenant plan-sharing is a proposal workflow: client keys may create a
+  // pending row, but only a control-plane admin may publish it fleet-wide.
+  await query(`
+    CREATE TABLE IF NOT EXISTS plan_sync_proposals (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      plan_id TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','publishing','approved','rejected')),
+      delivery_results JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      reviewed_at TIMESTAMP,
+      reviewed_by TEXT DEFAULT ''
     )
   `);
 

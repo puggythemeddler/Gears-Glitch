@@ -17,7 +17,7 @@ These require access to external dashboards (Neon, Cloudinary, Render, Vercel). 
 - [ ] **Set store names on existing clients** — clients provisioned before the `STORE_NAME` fix are seeded with the "Gear&Glitch" default, so their browser tab title and og tags show the wrong brand. Each such client should set its name once in **Admin → Settings → Store Info** (or set `STORE_NAME` on its Render service + redeploy). New clients are handled automatically by provisioning.
 - [ ] **Clear demo data from clients provisioned before the `SEED_DEMO_DATA` fix** — such clients booted with the default category taxonomy + demo product catalog (`server/products.json`). New clients now boot empty; for the older ones, select the rows in **Admin → Categories** / **Admin → Products** and use **Delete Selected** (products with sales/stock/serial history must be deactivated instead). Demo provider/customer logins were never seeded in production, so only categories/products need clearing.
 
-- [ ] **Set `CP_SECRETS_KEY` on the control-plane Render service (operator action; resolves the secrets-at-rest P1)** — encryption-at-rest is now **implemented** (`control-plane/server/cp-secrets.ts`): `clients.cp_secret`, `clients.neon_db_url`, `cp_users.api_key`, `cp_users.totp_secret`, `smtp_config.pass`, and `cloudinary_config.api_secret` are stored as deterministic `enc:v1:` AES-256-GCM whenever a key is configured. On deployment the CP auto-falls back to `JWT_SECRET` (≥16 chars) so existing installs get encryption with no config change; because a later switch to `CP_SECRETS_KEY` would make `JWT_SECRET`-encrypted values fail loudly (they must be re-entered through the UI), set `CP_SECRETS_KEY` **before** writing any secrets, or accept the fallback. (Language note: the old remediation plan's `cp_secret_lookup` column + rotation was superseded by a **dual-branch `col = $1 OR col = enc($1)`** lookup with no schema change.) See `SECURITY_MODEL.md` §5.
+- [x] **Set `CP_SECRETS_KEY` on the control-plane Render service** — verified 2026-10-25 from the Render startup log (active source reported as `CP_SECRETS_KEY`) and the migration output (7 secret rows committed, counts only). The key value is intentionally not recorded here. Keep this key stable: the current format has no key ID/keyring, so changing it makes existing ciphertext unreadable. See `SECURITY_MODEL.md` §5 for the rotation limitation and safe future path.
 
 ## Medium
 
@@ -96,3 +96,76 @@ psql "$SCRATCH_NEON_CONNECTION_STRING" -c "SELECT max(version) FROM schema_migra
 Acceptance: counters match the pre-backup prod counters (log them before the drill), rows for a known customer/invoice resolve, and no `ERROR` lines appear (ON_ERROR_STOP forces failure loudly). Then point a **scratch** Render service at the scratch DB and smoke the storefront/POS logins before discarding the scratch project.
 
 **Result (2026-10-12):** `mumbo-instruments-and-electron_2026-10-12.sql.gz` (31,954 B) decompressed to 285,832 B and restored into a fresh local PostgreSQL 17 instance with **no `ERROR`/`FATAL` lines** — 93 `public` tables, `products` 32, `customers` 0, `orders` 0, `invoices` 1, `schema_migrations` head `0029_normalize_layout_section_types`. Findings: (1) target must be PG 17+; (2) a non-Neon target needs Neon's roles pre-created. A Neon scratch project satisfies both, so the earlier documented procedure is sound; the local run is an equivalent artifact-level validation. `PRODUCTION_READINESS_CURRENT.md` updated accordingly.
+
+---
+
+## Master Project Recovery and Release-Readiness Task List
+
+This inventory is based on the updated recovery plan supplied on 2026-10-25. The boxes below track **audits/reviews to perform**; they are not claims that the underlying feature is absent or broken. Reconcile findings against the current branch, pull requests, deployments, and test evidence before changing a status or implementing a fix. Preserve the safety rules in the recovery plan: read-only audit first, no production data changes, and no commit/push/merge/deploy without approval.
+
+### P0 — Security and launch blockers
+
+- [x] **S01 Dependency audit** — 2026-10-26: full and `--omit=dev` npm audits passed for root, frontend, and control-plane; all six reported 0 vulnerabilities.
+- [x] **S02 `body-parser` / `qs`** — 2026-10-26: control-plane installed path is `express@4.22.3 → body-parser@1.20.9 → qs@6.16.1`, with direct `qs@6.16.1`; current full and production audits report 0 vulnerabilities.
+- [x] **S03 Production encryption** — dedicated `CP_SECRETS_KEY` source and seven-row migration confirmed from Render/startup and migration output. Encryption uses a separate key source from JWT signing. Safe rotation limitation/runbook documented in `SECURITY_MODEL.md` §5; no key rotation was performed.
+- [~] **S04 Tenant isolation — implementation complete; DB-backed verification pending (2026-10-26):** plan-sharing requests from a tenant now create bounded pending proposals; only a control-plane admin can approve/reject, and approval is the only path that updates the shared catalog and distributes to other active tenants. This closes the prior plan-ID overwrite path from tenant credentials. New provisioned clients receive immutable `gear-glitch/client-{clientId}` Cloudinary folders. Existing clients retain their recorded/legacy folder so their current image URLs remain valid. Evidence: root typecheck, control-plane typecheck, focused folder/proposal tests, and full database-free suites pass; no production data or tenant services were changed. The real HTTP + PostgreSQL proposal/approval test is gated and was skipped because no disposable `CONTROL_PLANE_DATABASE_URL` is configured. Before marking S04 fully verified, run that suite against a disposable control-plane DB and verify an existing client's Cloudinary folder remains unchanged in a safe test environment.
+  - **Media boundary follow-up:** uploads/deletions are restricted to the service's configured Cloudinary folder (`server/upload.ts` around lines 339–377), but provisioning derives that folder from a normalized client name (`control-plane/server/provision.ts` around lines 91, 231, 570–597), while the client registry makes `domain` unique but not `name` (`control-plane/server/db.ts` around lines 123–126). This can produce the same folder for distinct tenants with colliding names; confirm whether the provider permits both services to provision before treating this as exploitable. Prefer an immutable unique client identifier for folders.
+- [ ] **S05 Backup and disaster recovery:** verify independent backup storage, retention, recovery objectives, restore evidence, and drill schedule.
+- [ ] **S06 Production data hygiene:** define a safe review for default credentials, test accounts, fixtures, and privileged accounts; do not auto-delete records.
+- [ ] **S07 Legal readiness:** review privacy, terms, cookies, retention, export, and deletion documents; identify placeholders and required legal decisions.
+- [ ] **S08 Content safety:** verify validation, escaping, and safe rendering for Website Studio, CMS, About Us, marketing, and dynamic-layout content.
+
+### P1 — WhatsApp and business operations
+
+- [ ] **B01 Merchant-owned WhatsApp:** verify onboarding, credential storage, webhook checks, consent, opt-outs, templates, messaging windows, delivery, retries, and revocation.
+- [ ] **B02 WhatsApp tenant isolation:** verify credentials, inbound/outbound routing, webhooks, and message history cannot cross tenants.
+- [ ] **B03 WhatsApp lifecycle:** test connect, reconnect, expired/invalid credentials, disconnect, revoked permissions, and webhook failures with mocks/test accounts.
+- [ ] **B04 Subscription lifecycle:** review billing periods, plan changes, renewals, expiry, suspension/reactivation, payment failures, entitlements, and grace periods.
+- [ ] **B05 Proforma reconciliation:** verify invoice conversion, payment matching, follow-ups, duplicate prevention, customer notices, and failure recovery.
+- [ ] **B06 Control-plane email:** recheck the Render SMTP limitation and document compatible alternatives; do not change providers without approval.
+- [ ] **B07 POS mobile checkout:** review PR #17 status/diff/checks and test mobile and desktop checkout behavior; do not merge without approval.
+- [ ] **B08 Client provisioning:** test the full onboarding and recovery lifecycle with non-production resources only.
+
+### P2 — Website Studio, storefront, and frontend
+
+- [ ] **W01 Studio regression:** verify section create/edit/delete/reorder, typography, colors, backgrounds, hero/media, save/reload/publish, and theme compatibility.
+- [ ] **W02 Responsive behavior:** check Studio and published stores on desktop, tablet, and mobile, including overflow, touch, menus, controls, and images.
+- [ ] **W03 Dynamic block registry:** review allowed blocks, schemas, data binding, safe rendering, legacy layouts, unsupported blocks, and error recovery.
+- [ ] **W04 Layout compatibility:** test existing themes and saved custom layouts against newer styling controls.
+- [ ] **W05 Hero media:** verify product-image selection, upload, preview, persistence, publishing, replacement, invalid media handling, and mobile rendering.
+- [ ] **W06 Accessibility:** check keyboard use, focus, contrast, labels, reduced motion, responsive text, and error messaging.
+- [ ] **W07 Framework compatibility:** verify the current Next.js/React versions and run relevant type checks, builds, tests, and browser checks.
+- [ ] **W08 Marketing site:** review positioning, claims, plans, calls to action, mobile usability, metadata, contact, and onboarding.
+- [ ] **W09 Pricing and tiers:** document existing plan/pricing configuration and business decisions still needed; do not invent final prices.
+
+### P2 — Codex, tooling, and release pipeline
+
+- [ ] **C01 Skills:** verify installed skills and relevant tool availability; reconcile duplicates/deferred skills against migration records.
+- [ ] **C02 Semgrep:** verify the Windows certificate/execution issue is resolved and run a repository scan.
+- [ ] **C03 Snyk:** verify CLI authentication state, permissions, and a successful dependency analysis without printing credentials.
+- [ ] **C04 Playwright:** verify package/browser versions, test configuration, and end-to-end coverage.
+- [ ] **C05 Workspace preservation:** inspect local staged, unstaged, and untracked work before any implementation; preserve it.
+- [ ] **C06 Progress register:** maintain task ID, category, priority, status, evidence, dependencies, blockers, next action, verification, and completion date in this checklist.
+- [ ] **C07 CI/deployment readiness:** review GitHub Actions, Vercel/Render config, environment validation, migration safety, test gates, and rollback.
+- [ ] **PR review:** check the current state, diff, checks, conflicts, and risk of PR #14 (control-plane follow-up timestamp comparison); do not merge without approval.
+- [ ] **Test baseline:** record fresh, safe test results with commands, working directories, exit codes, failures, and environment blockers; treat historical counts as historical.
+
+### P3 — Commercial and operational readiness
+
+- [ ] **L01 Malware scanning:** ClamAV INSTREAM integration is available but scanning is deferred until a scanner is provisioned; without `CLAMAV_HOST`, a warning is logged and the validated/sanitized upload flow continues. Configure a reachable ClamAV service later, then set `UPLOAD_SCAN_REQUIRED=true` and verify signatures, timeouts, and production behavior.
+- [~] **L02 Image processing:** server-side content validation and lossless WebP re-encoding for JPEG/PNG/WebP/static GIF; defaults now allow 25MB uploads, 60MP decode, and 60MB output. Still verify corrupt/polyglot rejection, failure cleanup, Cloudinary/local parity, and deployed behavior.
+- [ ] **L03 Cloudinary:** verify hardened upload flow in an approved test environment.
+- [ ] **L04 Recovery drill:** plan a safe restore exercise using the existing runbook; never overwrite production without approval.
+- [ ] **L05 Data export/deletion:** review customer/merchant export, account deletion, retention, backup retention, and legal requirements.
+- [ ] **L06 Business outreach:** prepare WhatsApp/email/demo/trial/follow-up materials; send nothing without approval.
+- [ ] **L07 Production smoke plan:** document safe checks for onboarding, auth, storefront, inventory, POS, checkout, payments, invoices, subscriptions, WhatsApp, Studio, backups, permissions, and tenant isolation.
+- [ ] **L08 Release sign-off:** define evidence required for internal development, staging, controlled pilot, and public commercial launch; keep legal/security gates explicit.
+
+### Final planned implementation milestone — Website Studio full storefront customization
+
+- [ ] **Expand Website Studio beyond the homepage** after the audit and higher-priority launch work are complete. Stage the work as follows:
+  - [ ] Add storewide controls for brand colors, typography/type scale, buttons, corner radius, and spacing, applied consistently across storefront pages.
+  - [ ] Add header/footer controls for logo, announcement bar, navigation, search/account controls, footer columns, and mobile navigation.
+  - [ ] Extend validated section templates to category, product, repairs, and About pages; keep cart/checkout layout constrained to safe branding options.
+  - [ ] Support tenant-scoped drafts, responsive previews, explicit publish, version history, and rollback.
+  - [ ] Restrict saved layouts to schema-validated components/settings (no arbitrary HTML or JavaScript); verify tenant isolation, permissions, accessibility, responsiveness, and publish/rollback behavior with automated tests.

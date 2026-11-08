@@ -142,7 +142,7 @@ async function getSentChannels(idempotencyKey: string): Promise<Set<Notification
 // ─── Customer communication preferences (opt-outs) ────────────────────────────
 // Stored as a JSON object on customers.comm_prefs, e.g. {"email":false}.
 export async function getCustomerCommPrefs(customerId: number): Promise<{ email: boolean; whatsapp: boolean }> {
-  const prefs = { email: true, whatsapp: true };
+  const prefs = { email: true, whatsapp: false };
   if (!customerId) return prefs;
   try {
     const { queryOne } = await import("./db-helpers");
@@ -150,7 +150,7 @@ export async function getCustomerCommPrefs(customerId: number): Promise<{ email:
     if (row?.comm_prefs) {
       const parsed = JSON.parse(row.comm_prefs);
       if (parsed?.email === false) prefs.email = false;
-      if (parsed?.whatsapp === false) prefs.whatsapp = false;
+      if (parsed?.whatsapp === true) prefs.whatsapp = true;
     }
   } catch { /* keep defaults (opt-in) */ }
   return prefs;

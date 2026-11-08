@@ -409,7 +409,14 @@
           <button class="btn btn-primary btn-sm" data-admin onclick="showPlanModal()">+ Create Plan</button>
         </div>
       </div>
-      <p class="tab-intro">Manage subscription plans with feature toggles. Toggle features on/off per plan, then sync to push changes to all clients.</p>
+      <p class="tab-intro">Manage the shared catalog. Client plan changes arrive below as requests and require your approval before they reach other stores.</p>
+      <section class="card" style="margin-bottom:1.25rem;padding:1rem" aria-labelledby="plan-proposals-heading">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap">
+          <div><h3 id="plan-proposals-heading" style="margin:0">Client plan sharing requests</h3><p class="tab-intro" style="margin:0.35rem 0 0">Client admins can request to share a plan. Nothing reaches other clients until you approve it.</p></div>
+          <button class="btn btn-ghost btn-sm" onclick="loadPlanProposals()">Refresh requests</button>
+        </div>
+        <div id="plan-proposals-list" style="margin-top:0.85rem"><div class="empty"><p>Loading requests…</p></div></div>
+      </section>
       <div id="plans-list"></div>
     </div>
 
@@ -765,7 +772,7 @@
         <div class="field"><label for="plan-max-branches">Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
         <div class="field" style="display:flex;align-items:end;gap:1rem;flex-wrap:wrap">
           <label style="margin:0"><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label>
-          <label style="margin:0" title="When on, client admins who create/edit this plan will have it distributed to all other clients"><input type="checkbox" id="plan-sync-others" checked> Sync to other clients</label>
+          <label style="margin:0" title="When on, client admins may submit changes to this plan for control-plane approval"><input type="checkbox" id="plan-sync-others" checked> Allow client sharing requests</label>
         </div>
       </div>
       <div class="field"><label for="plan-desc">Description</label><input type="text" id="plan-desc" placeholder="e.g. For small shops"></div>
@@ -1990,6 +1997,62 @@
       } catch { document.getElementById("plans-list").innerHTML = '<div class="empty"><p>Failed to load plans.</p></div>'; }
     }
 
+    async function loadPlanProposals() {
+      const container = document.getElementById("plan-proposals-list");
+      try {
+        const data = await api("/api/plan-sync-proposals");
+        const proposals = data.proposals || [];
+        if (!proposals.length) { container.innerHTML = '<div class="empty"><p>No plan sharing requests.</p></div>'; return; }
+        container.innerHTML = proposals.map((proposal) => {
+          const plan = proposal.payload || {};
+          const existingPlanWarning = proposal.existing_plan_name
+            ? `<p style="color:var(--warning-text,var(--text-secondary));font-size:0.8rem;margin:0.35rem 0 0"><strong>Replaces shared plan:</strong> ${esc(proposal.existing_plan_name)} — KES ${Number(proposal.existing_plan_price || 0).toLocaleString()}/month</p>`
+            : '<p style="color:var(--text-secondary);font-size:0.8rem;margin:0.35rem 0 0">Creates a new shared plan.</p>';
+          const delivery = Array.isArray(proposal.delivery_results) ? proposal.delivery_results : [];
+          const pending = proposal.status === "pending";
+          const sent = delivery.filter((result) => result.success).length;
+          const failed = delivery.length - sent;
+          const details = proposal.status === "approved"
+            ? `<p class="tab-intro" style="margin:0.35rem 0 0">Published to ${sent}/${delivery.length} other clients${failed ? `; ${failed} failed. Use Sync All to Clients to retry delivery.` : ""}</p>`
+            : proposal.status === "rejected" ? '<p class="tab-intro" style="margin:0.35rem 0 0">Rejected by control-plane admin.</p>' : '';
+          return `<article style="border:1px solid var(--border);border-radius:var(--radius);padding:0.85rem;margin-top:0.65rem">
+            <div style="display:flex;justify-content:space-between;gap:1rem;align-items:start;flex-wrap:wrap">
+              <div><strong>${esc(plan.name || proposal.plan_id)}</strong> <span style="color:var(--text-muted)">(${esc(proposal.plan_id)})</span>
+                <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.25rem">From ${esc(proposal.client_name)} · KES ${Number(plan.price || 0).toLocaleString()}/month · ${plan.isActive === false ? "inactive" : "active"}</div>
+                <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.25rem">${esc(plan.description || "No description")}</div>${pending ? existingPlanWarning : ""}${details}
+              </div>
+              <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap"><span class="badge">${esc(proposal.status)}</span>
+                ${pending ? `<button class="btn btn-primary btn-sm" onclick="reviewPlanProposal(${Number(proposal.id)}, 'approve')">Approve & distribute</button><button class="btn btn-ghost btn-sm" onclick="reviewPlanProposal(${Number(proposal.id)}, 'reject')">Reject</button>` : ""}
+              </div>
+            </div>
+          </article>`;
+        }).join("");
+      } catch (error) {
+        container.innerHTML = `<div class="empty"><p>${esc(error && error.message ? error.message : "Failed to load requests.")}</p></div>`;
+      }
+    }
+
+    function reviewPlanProposal(id, decision) {
+      const approve = decision === "approve";
+      confirmDialog({
+        title: approve ? "Approve plan sharing?" : "Reject plan request?",
+        message: approve ? "Publish this request to the shared plan catalog and distribute it to all other active clients?" : "Reject this sharing request? The client's local plan will remain unchanged.",
+        confirmLabel: approve ? "Approve & distribute" : "Reject request",
+        danger: !approve,
+        onConfirm: async () => {
+          try {
+            const data = await api(`/api/plan-sync-proposals/${id}/${decision}`, { method: "POST" });
+            if (approve) {
+              const results = data.results || [];
+              toast(`Approved. Delivered to ${results.filter((item) => item.success).length}/${results.length} other clients${results.some((item) => !item.success) ? "; use Sync All to retry failures." : "."}`);
+            } else toast("Plan sharing request rejected.");
+            loadPlanProposals();
+            if (approve) loadPlans();
+          } catch (error) { toast("Review failed: " + (error && error.message ? error.message : "request could not be completed"), "error"); }
+        }
+      });
+    }
+
     function showPlanModal(plan) {
       editingPlanId = plan ? plan.id : null;
       editingPlanFeatures = plan ? parsePlanFeatures(plan.features) : [];
@@ -3204,7 +3267,7 @@
       document.getElementById("tab-settings").style.display = tab === "settings" ? "" : "none";
       document.getElementById("tab-ops").style.display = tab === "ops" ? "" : "none";
       document.getElementById("tab-client-detail").style.display = tab === "client-detail" ? "" : "none";
-      if (tab === "plans") loadPlans();
+      if (tab === "plans") { loadPlans(); loadPlanProposals(); }
       if (tab === "changelog") loadChangelog();
       if (tab === "deploys") loadDeploys();
       if (tab === "backups") loadBackups();

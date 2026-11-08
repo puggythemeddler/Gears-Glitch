@@ -12,6 +12,7 @@ import {
   signaturesMatch,
   verifyWhatsAppSignature,
   handleWhatsAppWebhook,
+  isCustomWhatsAppVerifyTokenConfigured,
   whatsAppWebhookHttpStatus,
   type WhatsAppWebhookResult,
 } from "../server/whatsapp";
@@ -104,6 +105,15 @@ describe("whatsapp signature", () => {
     assert.equal(await verifyWhatsAppSignature(raw, "sha256=zz"), false);
     assert.equal(await verifyWhatsAppSignature(raw, "sha256=" + "a".repeat(63)), false);
     assert.equal(await verifyWhatsAppSignature(Buffer.alloc(0), "sha256=" + "a".repeat(64)), false);
+  });
+});
+
+describe("whatsapp webhook verification token", () => {
+  test("requires a non-empty custom token instead of the built-in fallback", () => {
+    assert.equal(isCustomWhatsAppVerifyTokenConfigured(""), false);
+    assert.equal(isCustomWhatsAppVerifyTokenConfigured("   "), false);
+    assert.equal(isCustomWhatsAppVerifyTokenConfigured("gear-glitch-wa-verify"), false);
+    assert.equal(isCustomWhatsAppVerifyTokenConfigured("merchant-specific-random-token"), true);
   });
 });
 

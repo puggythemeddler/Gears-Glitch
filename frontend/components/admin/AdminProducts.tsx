@@ -76,7 +76,10 @@ export default function AdminProducts() {
       }
       if (errors.length > 0) { setImportMsg(`Error: ${errors.length} row(s) with errors:\n${errors.slice(0, 10).join("\n")}${errors.length > 10 ? `\n...and ${errors.length - 10} more` : ""}`); setImporting(false); return; }
       if (rows.length === 0) { setImportMsg("Error: No valid rows to import"); setImporting(false); return; }
-      const res = await api<{ imported: number }>("/api/products/import", { method: "POST", body: JSON.stringify({ products: rows }) });
+      const importPayload = new FormData();
+      importPayload.append("file", file);
+      importPayload.append("products", JSON.stringify(rows));
+      const res = await api<{ imported: number }>("/api/products/import", { method: "POST", body: importPayload });
       setImportMsg(`Success: Imported ${res.imported} product(s)`);
       refetch();
       if (importFileRef.current) importFileRef.current.value = "";
@@ -283,7 +286,7 @@ export default function AdminProducts() {
               <div style={{ marginBottom: "0.75rem", textAlign: "center" }}>
                 {editing?.imageUrl && <Media src={editing.imageUrl} alt="" width={300} height={180} fit="cover" fallbackLabel="Primary image" style={{ maxWidth: 300, maxHeight: 180, borderRadius: 8, objectFit: "cover", marginBottom: "0.5rem" }} />}
                 <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap" }}>
-                  <label style={{ fontSize: "0.85rem", cursor: "pointer" }}>Replace primary image<input type="file" accept="image/*" style={{ display: "block", margin: "0.25rem auto" }} onChange={(e) => { const f = e.target.files?.[0]; if (f && editing) uploadPrimaryImage(editing.id, f); }} /></label>
+                  <label style={{ fontSize: "0.85rem", cursor: "pointer" }}>Replace primary image<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display: "block", margin: "0.25rem auto" }} onChange={(e) => { const f = e.target.files?.[0]; if (f && editing) uploadPrimaryImage(editing.id, f); }} /></label>
                   {editing?.imageUrl && <RippleButton size="small" variant="danger" type="button" onClick={async () => { if (!editing || !(await confirmDialog({ message: "Remove primary image?", confirmLabel: "Remove", danger: true }))) return; try { await api(`/api/products/${encodeURIComponent(editing.id)}/image`, { method: "DELETE" }); refetch(); } catch (err: any) { feedback.error({ title: "Image not removed", message: "Failed: " + err.message }); } }}>Remove image</RippleButton>}
                 </div>
               </div>
@@ -322,7 +325,7 @@ export default function AdminProducts() {
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="serialTracking" defaultChecked={editing?.serialTracking ?? false} /> Track serial numbers (scan serials at sale)</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="taxable" defaultChecked={editing?.taxable !== false} /> Taxable (eTims-compatible)</label></div>
             <div className="field"><label>Warranty duration (months)<input name="warrantyDuration" type="number" min="0" defaultValue={editing?.warrantyDuration || 0} /></label></div>
-            <div className="field"><label>Add images (multiple)<input type="file" ref={galleryRef} accept="image/*" multiple disabled={gallery.length >= maxImages} /></label><p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>{gallery.length} of {maxImages} images used{gallery.length >= maxImages ? " — limit reached" : ""}.</p></div>
+            <div className="field"><label>Add images (multiple)<input type="file" ref={galleryRef} accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={gallery.length >= maxImages} /></label><p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>{gallery.length} of {maxImages} images used{gallery.length >= maxImages ? " — limit reached" : ""}.</p></div>
             {specFields.length > 0 ? (
               <div>
                 <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Specifications</p>

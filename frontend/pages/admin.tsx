@@ -2107,7 +2107,7 @@ function AdminPlans() {
   const feedback = useFeedback();
   const [editing, setEditing] = useState<SubscriptionPlan | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, syncToOthers: true, features: [] as string[] });
+  const [form, setForm] = useState({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, syncToOthers: false, features: [] as string[] });
   const [customInput, setCustomInput] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -2124,7 +2124,7 @@ function AdminPlans() {
 
   function openNew() {
     setEditing(null);
-    setForm({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, syncToOthers: true, features: [] });
+    setForm({ id: "", name: "", price: 0, priceAnnual: 0, maxProducts: 10, syncToOthers: false, features: [] });
     setShowForm(true);
   }
 
@@ -2160,15 +2160,21 @@ function AdminPlans() {
         syncToOthers: form.syncToOthers,
         features: form.features,
       };
+      let response: any;
       if (editing) {
-        await api(`/api/admin/plans/${encodeURIComponent(editing.id)}`, { method: "PUT", body: JSON.stringify(body) });
+        response = await api(`/api/admin/plans/${encodeURIComponent(editing.id)}`, { method: "PUT", body: JSON.stringify(body) });
       } else {
-        await api("/api/admin/plans", { method: "POST", body: JSON.stringify(body) });
+        response = await api("/api/admin/plans", { method: "POST", body: JSON.stringify(body) });
       }
       setShowForm(false);
       setEditing(null);
       refetch();
-      feedback.success(editing ? "Plan updated." : "Plan created.");
+      const shareStatus = response?.shareRequest?.status;
+      feedback.success(shareStatus === "pending"
+        ? "Plan saved locally. Sharing request sent for control-plane approval."
+        : shareStatus === "unavailable" || shareStatus === "failed"
+          ? "Plan saved locally, but the sharing request could not be delivered."
+          : editing ? "Plan updated." : "Plan created.");
     } catch (err: any) { feedback.error(err.message); }
     finally { setSaving(false); }
   }
@@ -2204,7 +2210,7 @@ function AdminPlans() {
               <div className="field" style={{ display: "flex", alignItems: "end" }}>
                 <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
                   <input type="checkbox" checked={form.syncToOthers} onChange={(e) => setForm({ ...form, syncToOthers: e.target.checked })} />
-                  Sync to other clients
+                  Submit for control-plane approval to share
                 </label>
               </div>
             </div>
@@ -4081,7 +4087,7 @@ function AdminStoreInfo() {
                 <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>Upload a PNG, ICO, SVG, JPEG, or WEBP file to replace the favicon.</p>
               </div>
             </div>
-            <input type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.ico,.svg" onChange={handleFaviconChange} />
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleFaviconChange} />
             <RippleButton type="button" onClick={handleFaviconUpload} loading={faviconUploading} disabled={!faviconFile}>Upload favicon</RippleButton>
             {faviconMsg && <p style={{ margin: 0, color: faviconMsg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)" }}>{faviconMsg}</p>}
           </div>
@@ -4324,7 +4330,6 @@ function AdminImageStorage({ initial }: { initial: any }) {
           cloudinaryCloudName: fd.get("cloudinaryCloudName"),
           cloudinaryApiKey: fd.get("cloudinaryApiKey"),
           cloudinaryApiSecret: fd.get("cloudinaryApiSecret"),
-          cloudinaryFolder: fd.get("cloudinaryFolder"),
         }),
       });
       setMsg("Image storage settings saved.");
@@ -4338,7 +4343,7 @@ function AdminImageStorage({ initial }: { initial: any }) {
         <div className="field"><label>Cloud Name<input name="cloudinaryCloudName" defaultValue={initial?.cloudinaryCloudName || ""} placeholder="e.g. dxxxxxxx" /></label></div>
         <div className="field"><label>API Key<input name="cloudinaryApiKey" defaultValue={initial?.cloudinaryApiKey || ""} placeholder="Cloudinary API key" /></label></div>
         <div className="field"><label>API Secret<input name="cloudinaryApiSecret" type="password" defaultValue={initial?.cloudinaryApiSecret || ""} placeholder="Cloudinary API secret" /></label></div>
-        <div className="field"><label>Folder<input name="cloudinaryFolder" defaultValue={initial?.cloudinaryFolder || "gear-glitch"} placeholder="gear-glitch" /></label></div>
+        <p className="muted" style={{ margin: 0 }}>Upload folder is managed per store by the control plane.</p>
       </div>
       <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
         <input type="checkbox" name="backupImagesToDb" defaultChecked={initial?.backupImagesToDb || false} style={{ width: 18, height: 18 }} />

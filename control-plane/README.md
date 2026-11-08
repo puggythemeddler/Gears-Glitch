@@ -22,7 +22,7 @@ npm run dev             # http://localhost:4000
 | `JWT_SECRET` | In production | JWT signing secret — the server hard-fails startup if unset or weak in production (dev fallback only outside production). Also serves as the encryption-at-rest key source when `CP_SECRETS_KEY` is not set (must be ≥16 chars) |
 | `CP_SECRETS_KEY` | No (recommended) | Dedicated AES-256-GCM key for secrets at rest (≥16 chars). Overrides the `JWT_SECRET` fallback so at-rest encryption is independent of the session-signing key. Set BEFORE writing secrets, or re-enter secrets via the UI after changing it |
 | `ALLOWED_ORIGINS` | No | Comma-separated browser-origin allowlist for the dashboard CORS policy (same-origin is always allowed; unspecified origins fail closed) |
-| `CP_ADMIN_PASSWORD` | No | Default admin password (defaults to `gearglitch2024`) |
+| `CP_ADMIN_PASSWORD` | No | Password used only when creating the initial `admin` account. If unset, the server generates a temporary random password and prints it once at first boot; set this variable before a fresh database is initialized to supply the initial password. It does not reset an existing account. |
 | `OPERATOR_ADMIN_EMAIL` | No | Default admin email for new clients (defaults to `admin@gearandglitch.com`) |
 | `RENDER_API_KEY` | Yes | Render API key for provisioning/suspending services |
 | `RENDER_API_URL` | No | Defaults to `https://api.render.com/v1` |
@@ -238,14 +238,11 @@ The reverse direction works too: every client gets a `CONTROL_PLANE_URL` env var
 
 > **At-rest note:** `clients.cp_secret` (and the other secret columns above) are stored **encrypted** (`enc:v1:` AES-256-GCM) when `CP_SECRETS_KEY` or a ≥16-char `JWT_SECRET` is present; legacy plaintext rows are read transparently via a dual-branch lookup and every outbound `x-control-plane-key` is plaintext. A failing decrypt is loud (500), never a silently-garbled header. See `SECURITY_MODEL.md` §5.
 
-## Client-Created Plan Sync
+## Client Plan Sharing Requests
 
-Client admins can create/edit plans on their own backend. Each plan has a **"Sync to other clients"** checkbox (default on). When an admin saves a synced plan, the client backend calls `POST /api/plans/sync-up` on the control plane, which:
+Client admins can create and edit plans on their own backend. Sharing is off for new plans by default. If enabled, the client submits a validated proposal through `POST /api/plans/sync-up`; the control plane records it as **pending** and does not modify the shared catalog or contact other clients. A control-plane admin reviews the request in the Plans tab, then explicitly approves or rejects it. Approval updates the shared catalog and distributes the plan to other active clients; delivery results are shown in the review panel. Use the admin-only **Sync All to Clients** action to retry any failed deliveries. Local plans remain local unless submitted and approved.
 
-1. Upserts the plan into `custom_plans` (preserving `sync_to_others`, active state, features).
-2. Pushes that plan to every other active client via the existing `PUT /api/plans/sync` path (the originating client is skipped).
-
-Plans that are not marked to sync are still saved locally on the creating client but are never distributed. The control plane's own plan editor has the same checkbox, and plan cards show a **"Syncs to clients"** badge. Control-plane `POST /api/plans/sync-all` still distributes all plans to all active clients regardless of the flag.
+Newly provisioned client media uses `gear-glitch/client-<control-plane-client-id>` as its Cloudinary namespace. The control plane stores that assignment so credential syncs preserve it. Existing clients retain unique legacy namespaces; a credential sync assigns an ID-based namespace to clients with a missing or duplicated folder. Existing uploaded image URLs continue to point at their original Cloudinary assets; the namespace change applies to new uploads. The tenant settings API does not accept folder changes; `CLOUDINARY_FOLDER` from the service environment takes precedence over legacy stored settings.
 
 Newly provisioned client media uses `gear-glitch/client-<control-plane-client-id>` as its Cloudinary namespace. Credential sync preserves unique legacy folders and assigns an ID-based namespace to clients with a missing or duplicated folder. Existing uploaded image URLs are not rewritten; the namespace change applies to new uploads. The tenant settings API does not accept folder changes; `CLOUDINARY_FOLDER` from the service environment takes precedence over legacy stored settings.
 
@@ -311,7 +308,10 @@ JWT sessions are re-validated against the DB on every request — the role on th
 | PUT | `/api/plans/:id` | Update plan |
 | DELETE | `/api/plans/:id` | Delete plan |
 | POST | `/api/plans/sync-all` | Push plans to all active clients |
-| POST | `/api/plans/sync-up` | Receive a plan from a client (marked to sync) and distribute it to the other clients — **client key only** (`x-control-plane-key`); a browser session is rejected with 403 |
+| POST | `/api/plans/sync-up` | Accept a validated plan-sharing proposal — **client key only** (`x-control-plane-key`); does not publish or distribute |
+| GET | `/api/plan-sync-proposals` | List recent proposals for control-plane admins |
+| POST | `/api/plan-sync-proposals/:id/approve` | Approve and distribute a pending plan proposal (control-plane admin only) |
+| POST | `/api/plan-sync-proposals/:id/reject` | Reject a pending plan proposal (control-plane admin only) |
 
 ### Operations
 | Method | Endpoint | Description |
