@@ -408,6 +408,8 @@ CREATE TABLE IF NOT EXISTS repair_tickets (
   parts_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
   software_install INTEGER NOT NULL DEFAULT 0,
   software_license INTEGER NOT NULL DEFAULT 0,
+  software_license_product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
+  software_license_price NUMERIC(12,2) NOT NULL DEFAULT 0,
   total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
   quote_sent_at TEXT,
   quote_responded_at TEXT,

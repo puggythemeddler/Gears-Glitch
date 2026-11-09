@@ -116,7 +116,7 @@ export default function RepairTicketPage() {
               {ticket.laborCost > 0 && <tr><td>Labor</td><td style={{ textAlign: "right" }}>{new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(ticket.laborCost)}</td></tr>}
               {ticket.partsCost > 0 && <tr><td>Parts</td><td style={{ textAlign: "right" }}>{new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(ticket.partsCost)}</td></tr>}
               {ticket.softwareInstall && <tr><td>Software installation</td><td style={{ textAlign: "right" }}>Included</td></tr>}
-              {ticket.softwareLicense && <tr><td>Software license</td><td style={{ textAlign: "right" }}>Included</td></tr>}
+              {ticket.softwareLicense && <tr><td>{ticket.softwareLicenseProductName || "Software license"}</td><td style={{ textAlign: "right" }}>{new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 2 }).format(Number(ticket.softwareLicensePrice) || 0)}</td></tr>}
               <tr style={{ fontWeight: 700 }}><td>Total</td><td style={{ textAlign: "right" }}>{new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(ticket.totalCost)}</td></tr>
             </tbody>
           </table>

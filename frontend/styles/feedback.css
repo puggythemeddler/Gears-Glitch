@@ -232,8 +232,8 @@
 
 @media (max-width: 560px) {
   .feedback-root {
-    top: auto;
-    bottom: var(--space-4);
+    top: calc(var(--header-height, 0px) + env(safe-area-inset-top, 0px) + var(--space-3));
+    bottom: auto;
     left: var(--space-3);
     right: var(--space-3);
     width: auto;

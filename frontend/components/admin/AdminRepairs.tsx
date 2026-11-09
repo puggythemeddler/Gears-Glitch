@@ -6,6 +6,7 @@ import Icon from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatPrice, Spinner } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
+import type { Product } from "@/lib/types";
 
 type AdminRepairsTab = "tickets" | "calendar" | "workflow" | "content";
 
@@ -62,6 +63,17 @@ function fmtDate(s: string) {
     return new Date(y, m - 1, d).toLocaleDateString("en-GB");
   }
   return new Date(s).toLocaleDateString("en-GB");
+}
+
+function isSoftwareLicenseProduct(product: Product): boolean {
+  return /software|licen[cs]e|windows|microsoft\s*365|office|antivirus|operating\s*system|activation\s*key/i.test(
+    [product.name, product.category, product.subcategory].join(" ")
+  );
+}
+
+function softwareLicenseProductPrice(product: Product): number {
+  const salePrice = Number(product.salePrice);
+  return salePrice > 0 ? salePrice : Number(product.price) || 0;
 }
 
 export default function AdminRepairs({ adminOnly = true, canManagePayments = false, canVoidPayments = false }: { adminOnly?: boolean; canManagePayments?: boolean; canVoidPayments?: boolean }) {
@@ -157,13 +169,15 @@ interface TicketForm {
   holdRemindAt: string;
   hardwareValue: string;
   softwareInstall: boolean;
-  softwareLicense: boolean;
+  softwareLicenseSelection: string;
+  softwareLicensePrice: number;
 }
 
 function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { openId: string | null; onOpen: (id: string | null) => void; canManagePayments: boolean; canVoidPayments: boolean }) {
   const feedback = useFeedback();
   const [tickets, setTickets] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [techFilter, setTechFilter] = useState("");
   const [detail, setDetail] = useState<any>(null);
@@ -205,6 +219,16 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
     api<{ staff: any[] }>("/api/staff/technicians").then((d) => setStaff(d.staff || [])).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    api<{ products: Product[] }>("/api/products?includeHidden=1")
+      .then((d) => setProducts(d.products || []))
+      .catch(() => setProducts([]));
+  }, []);
+
+  const licenseProducts = products
+    .filter((product) => isSoftwareLicenseProduct(product) || product.id === detail?.softwareLicenseProductId)
+    .sort((a, b) => `${a.category} ${a.name}`.localeCompare(`${b.category} ${b.name}`));
+
   async function loadDetail(id: string) {
     setDetailLoading(true);
     setDetailError("");
@@ -245,7 +269,8 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
         holdRemindAt: d.holdRemindAt ? (() => { const date = new Date(d.holdRemindAt); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16); })() : "",
         hardwareValue: String(d.hardwareValue || 0),
         softwareInstall: Boolean(d.softwareInstall),
-        softwareLicense: Boolean(d.softwareLicense),
+        softwareLicenseSelection: d.softwareLicenseProductId || (d.softwareLicense ? "__legacy__" : ""),
+        softwareLicensePrice: Number(d.softwareLicensePrice) || 0,
       });
     } catch (e: any) {
       setDetail(null);
@@ -285,7 +310,8 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
           holdRemindAt: form.holdRemindAt ? new Date(form.holdRemindAt).toISOString() : null,
           hardwareValue: Number(form.hardwareValue) || 0,
           softwareInstall: form.softwareInstall,
-          softwareLicense: form.softwareLicense,
+          softwareLicense: Boolean(form.softwareLicenseSelection),
+          softwareLicenseProductId: form.softwareLicenseSelection === "__legacy__" ? null : form.softwareLicenseSelection || null,
         }),
       });
       await loadDetail(detail.id);
@@ -551,10 +577,30 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
               <input type="checkbox" checked={form.softwareInstall} onChange={(e) => setForm({ ...form, softwareInstall: e.target.checked })} />
               Software install (+KES 800)
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", alignSelf: "end", marginBottom: "1rem", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.softwareLicense} onChange={(e) => setForm({ ...form, softwareLicense: e.target.checked })} />
-              Software license (+KES 2,500)
-            </label>
+            <div className="field">
+              <label>Licensed software product (optional)
+                <select
+                  value={form.softwareLicenseSelection}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const selected = products.find((product) => product.id === value);
+                    setForm({
+                      ...form,
+                      softwareLicenseSelection: value,
+                      softwareLicensePrice: selected ? softwareLicenseProductPrice(selected) : value === "__legacy__" ? form.softwareLicensePrice : 0,
+                    });
+                  }}
+                >
+                  <option value="">No software license</option>
+                  {form.softwareLicenseSelection === "__legacy__" && <option value="__legacy__">Keep saved legacy charge · {formatPrice(form.softwareLicensePrice)}</option>}
+                  {form.softwareLicenseSelection && form.softwareLicenseSelection !== "__legacy__" && !licenseProducts.some((product) => product.id === form.softwareLicenseSelection) && <option value={form.softwareLicenseSelection}>Saved catalog product unavailable</option>}
+                  {licenseProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · {formatPrice(softwareLicenseProductPrice(product))}</option>)}
+                </select>
+              </label>
+              {form.softwareLicenseSelection && form.softwareLicenseSelection !== "__legacy__" && <small className="muted">Uses the product’s sale price, or its regular price if no sale price is set. This ticket’s saved price is {formatPrice(form.softwareLicensePrice)}; changing other ticket details will keep that snapshot.</small>}
+              {form.softwareLicenseSelection === "__legacy__" && <small className="muted">This older ticket has no linked catalog item. Its saved amount is kept until you replace or remove it.</small>}
+              {!licenseProducts.length && !form.softwareLicenseSelection && <small className="muted">Add license products to the catalog under a Software or License category to select them here.</small>}
+            </div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
