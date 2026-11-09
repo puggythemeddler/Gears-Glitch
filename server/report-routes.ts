@@ -274,26 +274,72 @@ router.get("/repairs", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Reque
   const from = String(req.query.from || allTimeRange().from);
   const to = String(req.query.to || allTimeRange().to);
   const range = parseDateRange(from, to) ?? allTimeRange();
+  const rangeWhere = `created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')`;
+  const rangeParams = [range.from, range.to];
   const byStatus = await queryAll(
     `SELECT status, COUNT(*)::int AS tickets,
-       COALESCE(SUM(total_cost), 0) AS revenue
+       COALESCE(SUM(total_cost) FILTER (WHERE status = 'collected'), 0) AS collected_ticket_value
      FROM repair_tickets
-      WHERE created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')
+      WHERE ${rangeWhere}
      GROUP BY status ORDER BY tickets DESC`,
-    [range.from, range.to]
+    rangeParams
   );
-  const statuses = (byStatus || []).map((r: any) => ({ status: r.status, tickets: Number(r.tickets || 0), revenue: money(r.revenue) }));
+  const statuses = (byStatus || []).map((r: any) => ({ status: r.status, tickets: Number(r.tickets || 0), collected_ticket_value: money(r.collected_ticket_value) }));
   const summaryRow = await queryOne(
     `SELECT COUNT(*)::int AS tickets,
        COUNT(*) FILTER (WHERE status = 'collected')::int AS completed,
        COUNT(*) FILTER (WHERE status IN ('cancelled','rejected'))::int AS cancelled,
-       COALESCE(SUM(total_cost) FILTER (WHERE status = 'collected'), 0) AS revenue,
+       COUNT(*) FILTER (WHERE status NOT IN ('collected','cancelled','rejected'))::int AS open_tickets,
+       COALESCE(SUM(total_cost) FILTER (WHERE status = 'collected'), 0) AS collected_ticket_value,
        COALESCE(AVG(EXTRACT(EPOCH FROM (completed_at::timestamp - created_at::timestamp)) / 86400.0) FILTER (WHERE status = 'collected' AND completed_at IS NOT NULL), 0) AS avg_turnover_days,
-       COUNT(*) FILTER (WHERE status = 'collected' AND completed_at IS NOT NULL)::int AS with_turnover
+       COUNT(*) FILTER (WHERE status = 'collected' AND completed_at IS NOT NULL)::int AS with_turnover,
+       COUNT(*) FILTER (WHERE diagnosis_recorded_at IS NOT NULL AND diagnosis_due_at IS NOT NULL)::int AS diagnosis_sla_measured,
+       COUNT(*) FILTER (WHERE diagnosis_recorded_at IS NOT NULL AND diagnosis_due_at IS NOT NULL AND diagnosis_recorded_at::timestamptz <= diagnosis_due_at::timestamptz)::int AS diagnosis_on_time,
+       COUNT(*) FILTER (WHERE diagnosis_recorded_at IS NOT NULL AND diagnosis_due_at IS NOT NULL AND diagnosis_recorded_at::timestamptz > diagnosis_due_at::timestamptz)::int AS diagnosis_late,
+       COUNT(*) FILTER (WHERE diagnosis_due_at IS NOT NULL AND diagnosis_due_at::timestamptz <= NOW() AND COALESCE(diagnosis,'') = '' AND status IN ('received','diagnosing'))::int AS diagnosis_overdue
      FROM repair_tickets
-      WHERE created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')`,
-    [range.from, range.to]
+      WHERE ${rangeWhere}`,
+    rangeParams
   ) as any;
+  const paymentSummary = await queryOne(
+    `SELECT COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'payment' AND voiding.id IS NULL),0) AS received,
+            COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'refund' AND voiding.id IS NULL),0) AS refunded,
+            COUNT(*) FILTER (WHERE rp.kind = 'void')::int AS voided_entries
+     FROM repair_payments rp
+     LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+     WHERE rp.created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi')
+       AND rp.created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')`,
+    rangeParams
+  ) as any;
+  const byTechnician = await queryAll(
+    `SELECT COALESCE(u.username, 'Unassigned') AS technician,
+       COUNT(*)::int AS tickets,
+       COUNT(*) FILTER (WHERE t.status NOT IN ('collected','cancelled','rejected'))::int AS open_tickets,
+       COUNT(*) FILTER (WHERE t.status = 'collected')::int AS completed,
+       COALESCE(SUM(t.total_cost) FILTER (WHERE t.status = 'collected'), 0) AS collected_ticket_value,
+       COALESCE(AVG(EXTRACT(EPOCH FROM (t.completed_at::timestamp - t.created_at::timestamp)) / 86400.0) FILTER (WHERE t.status = 'collected' AND t.completed_at IS NOT NULL), 0) AS avg_turnover_days
+     FROM repair_tickets t LEFT JOIN users u ON u.id = t.assigned_to
+     WHERE t.${rangeWhere}
+     GROUP BY COALESCE(u.username, 'Unassigned') ORDER BY tickets DESC`,
+    rangeParams
+  );
+  const byPriority = await queryAll(
+    `SELECT COALESCE(NULLIF(priority,''), 'normal') AS priority, COUNT(*)::int AS tickets,
+       COUNT(*) FILTER (WHERE status NOT IN ('collected','cancelled','rejected'))::int AS open_tickets,
+       COUNT(*) FILTER (WHERE status = 'collected')::int AS completed,
+       COALESCE(SUM(total_cost) FILTER (WHERE status = 'collected'), 0) AS collected_ticket_value
+     FROM repair_tickets WHERE ${rangeWhere}
+     GROUP BY COALESCE(NULLIF(priority,''), 'normal') ORDER BY CASE COALESCE(NULLIF(priority,''), 'normal') WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END`,
+    rangeParams
+  );
+  const byRepairType = await queryAll(
+    `SELECT COALESCE(NULLIF(repair_type,''), 'Unspecified') AS repair_type, COUNT(*)::int AS tickets,
+       COUNT(*) FILTER (WHERE status = 'collected')::int AS completed,
+       COALESCE(SUM(total_cost) FILTER (WHERE status = 'collected'), 0) AS collected_ticket_value
+     FROM repair_tickets WHERE ${rangeWhere}
+     GROUP BY COALESCE(NULLIF(repair_type,''), 'Unspecified') ORDER BY tickets DESC`,
+    rangeParams
+  );
   res.json({
     from: range.from,
     to: range.to,
@@ -301,11 +347,26 @@ router.get("/repairs", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Reque
       tickets: Number(summaryRow?.tickets || 0),
       completed: Number(summaryRow?.completed || 0),
       cancelled: Number(summaryRow?.cancelled || 0),
-      revenue: money(summaryRow?.revenue),
+      open_tickets: Number(summaryRow?.open_tickets || 0),
+      collected_ticket_value: money(summaryRow?.collected_ticket_value),
+      revenue: money(summaryRow?.collected_ticket_value),
       avg_turnover_days: summaryRow && Number(summaryRow.with_turnover) > 0 ? r2(Number(summaryRow.avg_turnover_days || 0)) : null,
+      diagnosis_sla_measured: Number(summaryRow?.diagnosis_sla_measured || 0),
+      diagnosis_on_time: Number(summaryRow?.diagnosis_on_time || 0),
+      diagnosis_late: Number(summaryRow?.diagnosis_late || 0),
+      diagnosis_overdue: Number(summaryRow?.diagnosis_overdue || 0),
+    },
+    payments: {
+      received: money(paymentSummary?.received),
+      refunded: money(paymentSummary?.refunded),
+      net_received: money(Number(paymentSummary?.received || 0) - Number(paymentSummary?.refunded || 0)),
+      voided_entries: Number(paymentSummary?.voided_entries || 0),
     },
     statuses,
-    note: "Completed counts only tickets with status 'collected' (completed_at is stamped on collection). Other statuses await completion.",
+    technicians: (byTechnician || []).map((r: any) => ({ technician: r.technician, tickets: Number(r.tickets || 0), open_tickets: Number(r.open_tickets || 0), completed: Number(r.completed || 0), collected_ticket_value: money(r.collected_ticket_value), avg_turnover_days: Number(r.completed) > 0 ? r2(Number(r.avg_turnover_days || 0)) : null })),
+    priorities: (byPriority || []).map((r: any) => ({ priority: r.priority, tickets: Number(r.tickets || 0), open_tickets: Number(r.open_tickets || 0), completed: Number(r.completed || 0), collected_ticket_value: money(r.collected_ticket_value) })),
+    repair_types: (byRepairType || []).map((r: any) => ({ repair_type: r.repair_type, tickets: Number(r.tickets || 0), completed: Number(r.completed || 0), collected_ticket_value: money(r.collected_ticket_value) })),
+    note: "Completed means status 'collected'. Collected ticket value is the saved ticket total, not a payment. Recorded receipts/refunds come from the staff-entered repair ledger, exclude voided entries, and are not automatically confirmed by M-Pesa or another provider. Diagnosis SLA is measured only for tickets with a recorded diagnosis timestamp and due target; older records may have no measurement.",
   });
 }));
 
@@ -314,15 +375,28 @@ router.get("/repairs/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(asyn
   const to = String(req.query.to || allTimeRange().to);
   const range = parseDateRange(from, to) ?? allTimeRange();
   const rows = await queryAll(
-    `SELECT status, COUNT(*)::int AS tickets, COALESCE(SUM(total_cost), 0) AS revenue
-     FROM repair_tickets
-     WHERE created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')
-     GROUP BY status ORDER BY tickets DESC`,
+    `SELECT t.id, t.status, COALESCE(NULLIF(t.priority,''),'normal') AS priority,
+       COALESCE(u.username,'Unassigned') AS technician, COALESCE(t.repair_type,'') AS repair_type,
+       t.total_cost, t.created_at, t.completed_at, t.diagnosis_due_at, t.diagnosis_recorded_at,
+       CASE WHEN t.status = 'collected' THEN t.total_cost ELSE 0 END AS collected_ticket_value,
+       COALESCE(pay.received,0) AS recorded_received, COALESCE(pay.refunded,0) AS recorded_refunded
+     FROM repair_tickets t LEFT JOIN users u ON u.id = t.assigned_to
+     LEFT JOIN (
+       SELECT rp.ticket_id,
+              SUM(rp.amount) FILTER (WHERE rp.kind = 'payment' AND voiding.id IS NULL) AS received,
+              SUM(rp.amount) FILTER (WHERE rp.kind = 'refund' AND voiding.id IS NULL) AS refunded,
+              COUNT(*) FILTER (WHERE rp.kind = 'void') AS voided_entries
+       FROM repair_payments rp
+       LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+       GROUP BY rp.ticket_id
+     ) pay ON pay.ticket_id = t.id
+     WHERE t.created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND t.created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')
+     ORDER BY t.created_at DESC`,
     [range.from, range.to]
   );
   const csv = toCsv(
-    (rows || []).map((r: any) => ({ status: r.status, tickets: Number(r.tickets || 0), revenue: money(r.revenue) })),
-    [{ key: "status", label: "Status" }, { key: "tickets", label: "Tickets" }, { key: "revenue", label: "Revenue" }]
+    (rows || []).map((r: any) => ({ id: r.id, status: r.status, priority: r.priority, technician: r.technician, repair_type: r.repair_type, ticket_value: money(r.total_cost), collected_ticket_value: money(r.collected_ticket_value), recorded_received_to_date: money(r.recorded_received), recorded_refunded_to_date: money(r.recorded_refunded), recorded_net_to_date: money(Number(r.recorded_received || 0) - Number(r.recorded_refunded || 0)), voided_entries_to_date: Number(r.voided_entries || 0), created_at: r.created_at, completed_at: r.completed_at || "", diagnosis_due_at: r.diagnosis_due_at || "", diagnosis_recorded_at: r.diagnosis_recorded_at || "" })),
+    [{ key: "id", label: "Ticket ID" }, { key: "status", label: "Status" }, { key: "priority", label: "Priority" }, { key: "technician", label: "Technician" }, { key: "repair_type", label: "Repair type" }, { key: "ticket_value", label: "Ticket value" }, { key: "collected_ticket_value", label: "Collected ticket value" }, { key: "recorded_received_to_date", label: "Recorded payments to date" }, { key: "recorded_refunded_to_date", label: "Recorded refunds to date" }, { key: "recorded_net_to_date", label: "Recorded net received to date" }, { key: "voided_entries_to_date", label: "Voided entries to date" }, { key: "created_at", label: "Created" }, { key: "completed_at", label: "Collected at" }, { key: "diagnosis_due_at", label: "Diagnosis due" }, { key: "diagnosis_recorded_at", label: "Diagnosis recorded" }]
   );
   sendCsv(res, `repairs-${range.from}-to-${range.to}.csv`, csv);
 }));

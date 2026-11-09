@@ -403,6 +403,12 @@ import {
   recalculateTicketCost,
   sendRepairQuote,
   respondToRepairQuote,
+  runRepairWorkflowSweep,
+  customerSafeRepairTicket,
+  RepairPaymentError,
+  listRepairPaymentLedger,
+  recordRepairLedgerEntry,
+  voidRepairLedgerEntry,
 } from "./repairs";
 import warrantyRouter from "./warranty";
 import reportRouter from "./report-routes";
@@ -419,7 +425,7 @@ import { upsertOauthAccount, acquireWebhookEvent, markWebhookProcessed, markWebh
 import { handleWhatsAppWebhook, whatsAppWebhookHttpStatus, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { getWhatsAppConsentPreferences, saveWhatsAppConsentPreferences } from "./whatsapp-consent";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs, enqueueOrderInvoiceDelivery, startNotificationQueueWorker } from "./notification-service";
-import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
+import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerRepairMessage, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, setWhatsAppTemplateApproval, trackPageView, getVisitorStats } from "./db";
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
 import { publicBaseUrl } from "./public-url";
@@ -690,6 +696,9 @@ defineAudit("/api/repairs/:id/parts", "repair_part", { method: "POST" });
 defineAudit("/api/repairs/:id/parts/:partId", "repair_part");
 defineAudit("/api/repairs/:id/updates", "repair", { action: "updated", method: "POST" });
 defineAudit("/api/repairs/:id/send-quote", "repair", { action: "quote_sent", method: "POST" });
+defineAudit("/api/repairs/:id/payments", "repair_payment", { action: "recorded", method: "POST" });
+defineAudit("/api/repairs/:id/payments/:paymentId/void", "repair_payment", { action: "voided", method: "POST" });
+defineAudit("/api/admin/repair-workflow", "settings", { action: "repair_workflow_updated", method: "PUT" });
 // Purchases
 defineAudit("/api/purchases", "purchase");
 defineAudit("/api/purchases/:id", "purchase");
@@ -6693,6 +6702,21 @@ app.get("/api/staff/technicians", staffAuthMiddleware, requirePermission("staff:
   res.json({ staff: await listStaff() });
 }));
 
+app.get("/api/admin/repair-workflow", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+  const diagnosisSlaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
+  res.json({ diagnosisSlaHours });
+}));
+
+app.put("/api/admin/repair-workflow", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+  const diagnosisSlaHours = Number(req.body?.diagnosisSlaHours);
+  if (!Number.isInteger(diagnosisSlaHours) || diagnosisSlaHours < 1 || diagnosisSlaHours > 168) {
+    res.status(400).json({ error: "Diagnosis SLA must be a whole number from 1 to 168 hours." });
+    return;
+  }
+  await setStoreSetting("repair_diagnosis_sla_hours", String(diagnosisSlaHours));
+  res.json({ diagnosisSlaHours });
+}));
+
 app.get("/api/backoffice/stats", staffAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (_req: Request, res: Response) => {
   res.json(await getDashboardStats());
 }));
@@ -6828,18 +6852,18 @@ app.get("/api/repairs/mine", customerAuthMiddleware, requireShopFeature("Repair 
 
   if (page || pageSize || status) {
     const p = await listRepairsForCustomerPaged((req as any).customer.sub, { status, page: page || 1, pageSize: pageSize || 10 });
-    res.json(p);
+    res.json({ ...p, tickets: p.tickets.map(customerSafeRepairTicket) });
     return;
   }
 
-  res.json({ tickets: await listRepairsForCustomer((req as any).customer.sub) });
+    res.json({ tickets: (await listRepairsForCustomer((req as any).customer.sub)).map(customerSafeRepairTicket) });
 }));
 
 app.get("/api/repairs/mine/:id", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   const ticket = await loadTicketDetails(String(req.params.id));
   if (!ticket || ticket.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Ticket not found." }); return; }
   const visibleUpdates = ticket.updates.filter((u) => u.customerVisible);
-  res.json({ ...ticket, updates: visibleUpdates, workNotes: undefined });
+  res.json({ ...customerSafeRepairTicket(ticket), updates: visibleUpdates });
 }));
 
 app.post("/api/repairs/mine/:id/message", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
@@ -6848,7 +6872,22 @@ app.post("/api/repairs/mine/:id/message", customerAuthMiddleware, requireShopFea
     if (!ticket || ticket.customerId !== (req as any).customer.sub) { res.status(404).json({ error: "Ticket not found." }); return; }
     const { message } = req.body || {};
     if (!message || !String(message).trim()) { res.status(400).json({ error: "Message is required." }); return; }
-    await addRepairUpdate(String(req.params.id), null, "customer_note", String(message).trim(), true);
+    const updateId = await addRepairUpdate(String(req.params.id), null, "customer_note", String(message).trim(), true);
+    const updateText = String(message).trim().slice(0, 4000);
+    try {
+      if (ticket.assignedTo) {
+        const assigned = await queryOne("SELECT id, username, email FROM users WHERE id = $1", [ticket.assignedTo]) as any;
+        if (assigned?.email) await notify({
+          event: "repair.staff_update", entityType: "repair", entityId: ticket.id,
+          subject: `Customer message on repair ${ticket.id}`,
+          bodyText: `Customer ${ticket.customerName || "Customer"} sent a message on repair ${ticket.id}: ${updateText}`,
+          bodyHtml: `<p>Customer ${escapeHtmlUtil(ticket.customerName || "Customer")} sent a message on repair ${escapeHtmlUtil(ticket.id)}:</p><p>${escapeHtmlUtil(updateText).replace(/\n/g, "<br>")}</p>`,
+          audience: "staff", recipientEmail: String(assigned.email), recipientName: assigned.username || "Technician",
+          idempotencyKey: `repair.staff_update:${ticket.id}:${updateId}:customer`,
+        });
+      }
+      await notify({ event: "repair.staff_update", entityType: "repair", entityId: ticket.id, subject: `Customer message on repair ${ticket.id}`, bodyText: `Customer ${ticket.customerName || "Customer"} sent a message on repair ${ticket.id}: ${updateText}`, bodyHtml: `<p>Customer ${escapeHtmlUtil(ticket.customerName || "Customer")} sent a message on repair ${escapeHtmlUtil(ticket.id)}:</p><p>${escapeHtmlUtil(updateText).replace(/\n/g, "<br>")}</p>`, idempotencyKey: `repair.staff_update:${ticket.id}:${updateId}:admin` });
+    } catch (err: any) { console.warn("[repair] customer message notification failed:", err?.message || err); }
     res.status(201).json({ ok: true });
   } catch (err: any) {
     console.error("[repair message send]", err?.message || err);
@@ -6877,6 +6916,38 @@ app.get("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:view"
   const ticket = await loadTicketDetails(String(req.params.id));
   if (!ticket) { res.status(404).json({ error: "Ticket not found." }); return; }
   res.json(ticket);
+}));
+
+app.get("/api/repairs/:id/payments", staffAuthMiddleware, requirePermission("repair:view"), requirePermission("repair:payment"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  const ledger = await listRepairPaymentLedger(String(req.params.id));
+  if (!ledger) { res.status(404).json({ error: "Ticket not found." }); return; }
+  res.json(ledger);
+}));
+
+app.post("/api/repairs/:id/payments", staffAuthMiddleware, requirePermission("repair:update"), requirePermission("repair:payment"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    await recordRepairLedgerEntry(String(req.params.id), { ...(req.body || {}), staffId: Number((req as any).user.sub) });
+    const ledger = await listRepairPaymentLedger(String(req.params.id));
+    if (!ledger) { res.status(404).json({ error: "Ticket not found." }); return; }
+    res.status(201).json(ledger);
+  } catch (err: any) {
+    if (err instanceof RepairPaymentError) { res.status(400).json({ error: err.message }); return; }
+    console.error("[repair payment ledger]", err?.message || err);
+    res.status(500).json({ error: "Repair payment could not be recorded." });
+  }
+}));
+
+app.post("/api/repairs/:id/payments/:paymentId/void", staffAuthMiddleware, requirePermission("repair:view"), requirePermission("repair:payment"), requirePermission("repair:payment:void"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    await voidRepairLedgerEntry(String(req.params.id), req.params.paymentId, { ...(req.body || {}), staffId: Number((req as any).user.sub) });
+    const ledger = await listRepairPaymentLedger(String(req.params.id));
+    if (!ledger) { res.status(404).json({ error: "Ticket not found." }); return; }
+    res.json(ledger);
+  } catch (err: any) {
+    if (err instanceof RepairPaymentError) { res.status(400).json({ error: err.message }); return; }
+    console.error("[repair payment void]", err?.message || err);
+    res.status(500).json({ error: "Repair payment entry could not be voided." });
+  }
 }));
 
 app.patch("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
@@ -6923,19 +6994,60 @@ app.patch("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:upd
           statusLabel: newStatus,
         });
       } catch (err: any) { console.warn("[repair] customer status notification failed:", err?.message || err); }
+      if (combined.assignedTo && Number(combined.assignedTo) !== Number((req as any).user.sub)) {
+        try {
+          const assigned = await queryOne("SELECT id, username, email FROM users WHERE id = $1", [combined.assignedTo]) as any;
+          if (assigned?.email) await notify({
+            event: "repair.staff_update", entityType: "repair", entityId: String(combined.id),
+            subject: `Repair ${combined.id} status changed`,
+            bodyText: `Repair ${combined.id} status changed to ${newStatus}. Please review the ticket and update the customer if needed.`,
+            audience: "staff", recipientEmail: String(assigned.email), recipientName: assigned.username || "Technician",
+            idempotencyKey: `repair.staff_update:${combined.id}:status:${newStatus}:${String(combined.updatedAt || Date.now())}`,
+          });
+        } catch (err: any) { console.warn("[repair] assigned technician status notification failed:", err?.message || err); }
+      }
     } catch (_err: any) { console.warn("[repair] status notification failed:", _err?.message || _err); }
+  }
+  if (before && Number((result as any).assignedTo || 0) !== Number(before.assignedTo || 0) && (result as any).assignedTo) {
+    try {
+      const assigned = await queryOne("SELECT id, username, email FROM users WHERE id = $1", [(result as any).assignedTo]) as any;
+      const email = String(assigned?.email || "").trim();
+      if (email) {
+        await notify({
+          event: "repair.assigned",
+          entityType: "repair",
+          entityId: String((result as any).id),
+          subject: `Repair ${String((result as any).id)} assigned to you`,
+          bodyText: `Repair ${String((result as any).id)} has been assigned to ${assigned.username || "you"}. Please review the ticket and record the diagnosis within the store's diagnosis target.`,
+          audience: "staff",
+          recipientEmail: email,
+          recipientName: assigned.username || "Technician",
+          idempotencyKey: `repair.assigned:${String((result as any).id)}:${assigned.id}:${Date.now()}`,
+        });
+      }
+      await notifyCustomerRepairUpdate({
+        ticketId: String((result as any).id),
+        customerId: (result as any).customerId,
+        customerName: (result as any).customerName,
+        customerEmail: (result as any).customerEmail,
+        deviceType: (result as any).deviceType,
+        deviceModel: (result as any).deviceModel,
+        serialNumber: (result as any).serialNumber || "",
+        statusLabel: "Technician assigned",
+      });
+    } catch (err: any) { console.warn("[repair] assignment notification failed:", err?.message || err); }
   }
   res.json(result);
 }));
 
 app.post("/api/repairs/:id/parts", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
-  const result = await addRepairPart(String(req.params.id), req.body || {});
+  const result = await addRepairPart(String(req.params.id), req.body || {}, (req as any).user.sub);
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.status(201).json(result.part);
 }));
 
 app.delete("/api/repairs/:id/parts/:partId", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
-  const removed = await removeRepairPart(String(req.params.id), Number(req.params.partId));
+  const removed = await removeRepairPart(String(req.params.id), Number(req.params.partId), (req as any).user.sub);
   if (!removed) { res.status(404).json({ error: "Part not found." }); return; }
   res.status(204).end();
 }));
@@ -6946,7 +7058,27 @@ app.post("/api/repairs/:id/updates", staffAuthMiddleware, requirePermission("rep
     res.status(400).json({ error: "Message is required." });
     return;
   }
-  await addRepairUpdate(String(req.params.id), (req as any).user.sub, "note", String(message).trim(), Boolean(customerVisible));
+  const ticket = await loadTicketDetails(String(req.params.id));
+  if (!ticket) { res.status(404).json({ error: "Ticket not found." }); return; }
+  const text = String(message).trim().slice(0, 4000);
+  const updateId = await addRepairUpdate(String(req.params.id), (req as any).user.sub, "note", text, Boolean(customerVisible));
+  try {
+    if (customerVisible) await notifyCustomerRepairMessage({
+      ticketId: ticket.id, updateId, customerId: ticket.customerId, customerName: ticket.customerName,
+      customerEmail: ticket.customerEmail, message: text,
+    });
+    if (ticket.assignedTo && Number(ticket.assignedTo) !== Number((req as any).user.sub)) {
+      const assigned = await queryOne("SELECT id, username, email FROM users WHERE id = $1", [ticket.assignedTo]) as any;
+      if (assigned?.email) await notify({
+        event: "repair.staff_update", entityType: "repair", entityId: ticket.id,
+        subject: `New update on repair ${ticket.id}`,
+        bodyText: `A ${customerVisible ? "customer-visible update" : "internal note"} was added to repair ${ticket.id}: ${text}`,
+        bodyHtml: `<p>A ${customerVisible ? "customer-visible update" : "internal note"} was added to repair ${escapeHtmlUtil(ticket.id)}:</p><p>${escapeHtmlUtil(text).replace(/\n/g, "<br>")}</p>`,
+        audience: "staff", recipientEmail: String(assigned.email), recipientName: assigned.username || "Technician",
+        idempotencyKey: `repair.staff_update:${ticket.id}:${updateId}:staff`,
+      });
+    }
+  } catch (err: any) { console.warn("[repair] update notification failed:", err?.message || err); }
   res.status(201).json({ ok: true });
 }));
 
@@ -8926,6 +9058,31 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       };
       sweepWarranties();
       setInterval(sweepWarranties, 6 * 60 * 60 * 1000);
+
+      // Repair diagnosis SLA escalation and on-hold follow-ups. Rows are
+      // claimed atomically by the sweep and each notification uses a durable
+      // daily idempotency key, so overlapping instances do not spam recipients.
+      const sweepRepairWorkflow = async () => {
+        try {
+          const due = await runRepairWorkflowSweep();
+          const dayKey = new Date().toISOString().slice(0, 10);
+          for (const t of due.diagnosisEscalated) {
+            const message = `Repair ${t.id} has passed its diagnosis target. Priority has been raised to ${t.priority}; please record the diagnosis or update the customer.`;
+            const bodyHtml = `<p>${escapeHtmlUtil(message)}</p>`;
+            if (t.assigned_email) await notify({ event: "repair.diagnosis_overdue", entityType: "repair", entityId: t.id, subject: `Diagnosis overdue: repair ${t.id}`, bodyText: message, bodyHtml, audience: "staff", recipientEmail: t.assigned_email, recipientName: t.assigned_name || "Technician", idempotencyKey: `repair.diagnosis_overdue:${t.id}:${dayKey}:staff` });
+            await notify({ event: "repair.diagnosis_overdue", entityType: "repair", entityId: t.id, subject: `Diagnosis overdue: repair ${t.id}`, bodyText: message, bodyHtml, idempotencyKey: `repair.diagnosis_overdue:${t.id}:${dayKey}:admin` });
+          }
+          for (const t of due.holdReminders) {
+            const message = `Repair ${t.id} remains on hold. Reason: ${t.hold_reason || "Not provided"}. Review the ticket, update its reminder date, or resume/escalate the work.`;
+            const bodyHtml = `<p>${escapeHtmlUtil(message)}</p>`;
+            if (t.assigned_email) await notify({ event: "repair.hold_reminder", entityType: "repair", entityId: t.id, subject: `On-hold repair needs review: ${t.id}`, bodyText: message, bodyHtml, audience: "staff", recipientEmail: t.assigned_email, recipientName: t.assigned_name || "Technician", idempotencyKey: `repair.hold_reminder:${t.id}:${dayKey}:staff` });
+            await notify({ event: "repair.hold_reminder", entityType: "repair", entityId: t.id, subject: `On-hold repair needs review: ${t.id}`, bodyText: message, bodyHtml, idempotencyKey: `repair.hold_reminder:${t.id}:${dayKey}:admin` });
+          }
+          if (due.diagnosisEscalated.length || due.holdReminders.length) console.log(`[repair-workflow] diagnosis-escalated=${due.diagnosisEscalated.length} hold-reminders=${due.holdReminders.length}`);
+        } catch (err: any) { console.error("[repair-workflow] Sweep error:", err?.message || err); }
+      };
+      void sweepRepairWorkflow();
+      setInterval(sweepRepairWorkflow, 15 * 60 * 1000).unref();
 
       // M-Pesa held-stock timeout: any pending_payment order that never received
       // a payment callback releases its held stock after 15 minutes so inventory

@@ -22,11 +22,18 @@ interface TicketRow {
   requested_visit_date: string;
   requested_visit_time: string;
   status: string;
+  priority: string;
   assigned_to: number | null;
   assigned_name?: string | null;
   eta_at: string;
   scheduled_at: string | null;
   diagnosis: string;
+  diagnosis_due_at: string | null;
+  diagnosis_recorded_at: string | null;
+  diagnosis_last_reminded_at: string | null;
+  hold_reason: string;
+  hold_remind_at: string | null;
+  hold_last_reminded_at: string | null;
   work_notes: string;
   customer_notes: string;
   repair_type: string | null;
@@ -77,11 +84,18 @@ interface Ticket {
   requestedVisitTime: string;
   status: string;
   statusLabel: string;
+  priority: string;
   assignedTo: number | null;
   assignedName: string | null;
   etaAt: string;
   scheduledAt: string | null;
   diagnosis: string;
+  diagnosisDueAt: string | null;
+  diagnosisRecordedAt: string | null;
+  diagnosisLastRemindedAt: string | null;
+  holdReason: string;
+  holdRemindAt: string | null;
+  holdLastRemindedAt: string | null;
   workNotes: string;
   customerNotes: string;
   repairType: string | null;
@@ -100,6 +114,12 @@ interface Ticket {
   completedAt: string | null;
   parts: Part[];
   updates: RepairUpdate[];
+}
+
+export function customerSafeRepairTicket(ticket: Ticket): any {
+  const customerTicket: any = { ...ticket };
+  for (const key of ["workNotes", "priority", "diagnosisDueAt", "diagnosisRecordedAt", "diagnosisLastRemindedAt", "holdReason", "holdRemindAt", "holdLastRemindedAt"]) delete customerTicket[key];
+  return customerTicket;
 }
 
 interface TicketResult {
@@ -137,10 +157,13 @@ interface DashboardStats {
 
 interface TicketUpdates {
   status?: string;
+  priority?: string;
   assignedTo?: number | null;
   etaAt?: string | null;
   scheduledAt?: string | null;
   diagnosis?: string;
+  holdReason?: string;
+  holdRemindAt?: string | null;
   workNotes?: string;
   customerNotes?: string;
   deviceType?: string;
@@ -154,7 +177,7 @@ interface TicketUpdates {
 
 const STATUSES: string[] = [
   "received", "diagnosing", "waiting_parts", "awaiting_approval", "approved",
-  "in_progress", "quality_check", "ready", "unrepairable", "collected", "cancelled", "rejected",
+  "in_progress", "quality_check", "ready", "unrepairable", "collected", "cancelled", "rejected", "on_hold",
 ];
 
 const STATUS_LABELS: { [key: string]: string } = {
@@ -170,7 +193,10 @@ const STATUS_LABELS: { [key: string]: string } = {
   collected: "Collected",
   cancelled: "Cancelled",
   rejected: "Rejected",
+  on_hold: "On hold",
 };
+
+const PRIORITIES = ["low", "normal", "high", "critical"] as const;
 
 function isValidStatus(status: string): boolean {
   return STATUSES.includes(status);
@@ -181,18 +207,19 @@ function isValidStatus(status: string): boolean {
 // rejected server-side. A ticket may always stay on its current status (idempotent
 // saves), and 'cancelled'/'collected' are terminal once reached.
 const VALID_TRANSITIONS: { [from: string]: string[] } = {
-  received: ["received", "diagnosing", "awaiting_approval", "cancelled"],
-  diagnosing: ["diagnosing", "waiting_parts", "awaiting_approval", "in_progress", "quality_check", "ready", "rejected", "unrepairable", "cancelled"],
-  waiting_parts: ["waiting_parts", "diagnosing", "awaiting_approval", "approved", "in_progress", "cancelled"],
-  awaiting_approval: ["awaiting_approval", "approved", "rejected", "diagnosing", "in_progress", "waiting_parts", "cancelled"],
-  approved: ["approved", "in_progress", "waiting_parts", "diagnosing", "quality_check", "ready", "unrepairable", "cancelled"],
-  in_progress: ["in_progress", "quality_check", "waiting_parts", "awaiting_approval", "approved", "ready", "cancelled"],
-  quality_check: ["quality_check", "in_progress", "ready", "unrepairable", "cancelled"],
-  ready: ["ready", "quality_check", "collected", "unrepairable", "cancelled"],
-  unrepairable: ["unrepairable", "collected", "cancelled"],
+  received: ["received", "diagnosing", "awaiting_approval", "on_hold", "cancelled"],
+  diagnosing: ["diagnosing", "waiting_parts", "awaiting_approval", "in_progress", "quality_check", "ready", "rejected", "unrepairable", "on_hold", "cancelled"],
+  waiting_parts: ["waiting_parts", "diagnosing", "awaiting_approval", "approved", "in_progress", "on_hold", "cancelled"],
+  awaiting_approval: ["awaiting_approval", "approved", "rejected", "diagnosing", "in_progress", "waiting_parts", "on_hold", "cancelled"],
+  approved: ["approved", "in_progress", "waiting_parts", "diagnosing", "quality_check", "ready", "unrepairable", "on_hold", "cancelled"],
+  in_progress: ["in_progress", "quality_check", "waiting_parts", "awaiting_approval", "approved", "ready", "on_hold", "cancelled"],
+  quality_check: ["quality_check", "in_progress", "ready", "unrepairable", "on_hold", "cancelled"],
+  ready: ["ready", "quality_check", "collected", "unrepairable", "on_hold", "cancelled"],
+  unrepairable: ["unrepairable", "collected", "on_hold", "cancelled"],
   collected: ["collected"],
   cancelled: ["cancelled"],
   rejected: ["rejected", "collected", "diagnosing", "cancelled"],
+  on_hold: ["on_hold", "received", "diagnosing", "waiting_parts", "awaiting_approval", "approved", "in_progress", "quality_check", "ready", "unrepairable", "cancelled"],
 };
 
 function isValidTransition(from: string | undefined, to: string): boolean {
@@ -279,11 +306,18 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     requestedVisitTime: row.requested_visit_time || "",
     status: row.status,
     statusLabel: STATUS_LABELS[row.status] || row.status,
+    priority: row.priority || "normal",
     assignedTo: row.assigned_to,
     assignedName: extras.assignedName || row.assigned_name || null,
     etaAt: row.eta_at,
     scheduledAt: row.scheduled_at,
     diagnosis: row.diagnosis || "",
+    diagnosisDueAt: row.diagnosis_due_at || null,
+    diagnosisRecordedAt: row.diagnosis_recorded_at || null,
+    diagnosisLastRemindedAt: row.diagnosis_last_reminded_at || null,
+    holdReason: row.hold_reason || "",
+    holdRemindAt: row.hold_remind_at || null,
+    holdLastRemindedAt: row.hold_last_reminded_at || null,
     workNotes: row.work_notes || "",
     customerNotes: row.customer_notes || "",
     repairType: row.repair_type || null,
@@ -539,6 +573,18 @@ async function listCalendarRepairs(from: string, to: string, assignedTo?: number
 async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staffId?: number): Promise<Ticket | { error: string } | null> {
   const existing = await loadTicketDetails(ticketId);
   if (!existing) return null;
+  const nextStatus = updates.status ?? existing.status;
+  const nextHoldReason = String(updates.holdReason ?? existing.holdReason ?? "").trim().slice(0, 500);
+  const nextHoldRemindAt = updates.holdRemindAt === undefined ? existing.holdRemindAt : updates.holdRemindAt;
+  const assignedChanged = updates.assignedTo !== undefined && Number(updates.assignedTo || 0) !== Number(existing.assignedTo || 0);
+  if (updates.priority !== undefined && !PRIORITIES.includes(updates.priority as any)) return { error: "Priority must be low, normal, high, or critical." };
+  if (nextStatus === "on_hold") {
+    if (!nextHoldReason) return { error: "Add a reason before putting this ticket on hold." };
+    const holdDate = nextHoldRemindAt ? new Date(nextHoldRemindAt) : null;
+    const reminderChanged = updates.holdRemindAt !== undefined;
+    const enteringHold = existing.status !== "on_hold";
+    if (!holdDate || Number.isNaN(holdDate.getTime()) || ((enteringHold || reminderChanged) && holdDate.getTime() <= Date.now())) return { error: "Choose a future reminder date before putting this ticket on hold." };
+  }
 
   const fields: string[] = [];
   const params: any[] = [];
@@ -554,10 +600,26 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
       fields.push("completed_at = NOW()::text");
     }
   }
+  if (updates.priority !== undefined && updates.priority !== existing.priority) {
+    fields.push(`priority = $${idx}`);
+    params.push(updates.priority);
+    idx++;
+  }
   if (updates.assignedTo !== undefined) {
     fields.push(`assigned_to = $${idx}`);
     params.push(updates.assignedTo || null);
     idx++;
+    if (assignedChanged && updates.diagnosis === undefined && nextStatus !== "on_hold") {
+      if (updates.assignedTo && !String(updates.diagnosis ?? existing.diagnosis).trim()) {
+        const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
+        fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
+        params.push(slaHours);
+        idx++;
+      } else {
+        fields.push("diagnosis_due_at = NULL");
+      }
+      fields.push("diagnosis_last_reminded_at = NULL");
+    }
   }
   if (updates.etaAt !== undefined) {
     fields.push(`eta_at = $${idx}`);
@@ -573,6 +635,44 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
     fields.push(`diagnosis = $${idx}`);
     params.push(updates.diagnosis);
     idx++;
+    const diagnosisText = String(updates.diagnosis).trim();
+    const previousDiagnosis = String(existing.diagnosis || "").trim();
+    if (nextStatus !== "on_hold" && diagnosisText && !previousDiagnosis) {
+      fields.push("diagnosis_recorded_at = NOW()::text");
+      fields.push("diagnosis_last_reminded_at = NULL");
+    } else if (nextStatus !== "on_hold" && !diagnosisText) {
+      fields.push("diagnosis_recorded_at = NULL");
+      fields.push("diagnosis_last_reminded_at = NULL");
+    }
+    if (nextStatus !== "on_hold" && !diagnosisText && (assignedChanged || !existing.diagnosisDueAt || previousDiagnosis) && (updates.assignedTo !== undefined ? updates.assignedTo : existing.assignedTo) && !["collected", "cancelled", "on_hold"].includes(nextStatus)) {
+      const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
+      fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
+      params.push(slaHours);
+      idx++;
+    } else if (nextStatus !== "on_hold" && diagnosisText && !previousDiagnosis && !existing.diagnosisDueAt) {
+      fields.push("diagnosis_due_at = NULL");
+    }
+  }
+  if (nextStatus === "on_hold") {
+    fields.push("diagnosis_due_at = NULL");
+    fields.push(`hold_reason = $${idx}`); params.push(nextHoldReason); idx++;
+    fields.push(`hold_remind_at = $${idx}`); params.push(new Date(String(nextHoldRemindAt)).toISOString()); idx++;
+    if (existing.status !== "on_hold") {
+      fields.push("hold_started_at = NOW()::text");
+      fields.push("hold_last_reminded_at = NULL");
+    }
+  } else if (existing.status === "on_hold") {
+    fields.push("hold_reason = ''");
+    fields.push("hold_remind_at = NULL");
+    fields.push("hold_started_at = NULL");
+    fields.push("hold_last_reminded_at = NULL");
+    if (!assignedChanged && !String(updates.diagnosis ?? existing.diagnosis).trim() && existing.assignedTo) {
+      const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
+      fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
+      params.push(slaHours);
+      idx++;
+      fields.push("diagnosis_last_reminded_at = NULL");
+    }
   }
   if (updates.workNotes !== undefined) {
     fields.push(`work_notes = $${idx}`);
@@ -664,19 +764,293 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
       false
     );
   }
+  if (updates.priority !== undefined && updates.priority !== existing.priority) {
+    await addRepairUpdate(ticketId, staffId || null, "priority", `Priority changed from ${existing.priority || "normal"} to ${updates.priority}.`, false);
+  }
+  if (updates.etaAt !== undefined && String(updates.etaAt || "") !== String(existing.etaAt || "")) {
+    await addRepairUpdate(ticketId, staffId || null, "eta_updated", `Estimated completion date changed to ${updates.etaAt || "not set"}.`, false);
+  }
+  if (updates.scheduledAt !== undefined && String(updates.scheduledAt || "") !== String(existing.scheduledAt || "")) {
+    await addRepairUpdate(ticketId, staffId || null, "schedule_updated", `Repair schedule changed to ${updates.scheduledAt || "not scheduled"}.`, false);
+  }
+  if (Math.abs(Number(existing.totalCost || 0) - Number(totalCost || 0)) >= 0.01) {
+    await addRepairUpdate(ticketId, staffId || null, "quote_updated", `Repair estimate changed from ${Number(existing.totalCost || 0).toFixed(2)} to ${Number(totalCost || 0).toFixed(2)}.`, false);
+  }
+  if (updates.diagnosis !== undefined && String(updates.diagnosis).trim() !== String(existing.diagnosis || "").trim()) {
+    await addRepairUpdate(ticketId, staffId || null, "diagnosis", String(updates.diagnosis).trim() ? "Diagnosis recorded or updated." : "Diagnosis cleared; the diagnosis target restarted.", false);
+  }
+  if (nextStatus === "on_hold" && existing.status !== "on_hold") {
+    await addRepairUpdate(ticketId, staffId || null, "hold", `Ticket placed on hold. Reason: ${nextHoldReason}. Review due ${new Date(String(nextHoldRemindAt)).toLocaleString("en-GB", { timeZone: "Africa/Nairobi" })}.`, false);
+  } else if (nextStatus === "on_hold" && (nextHoldReason !== existing.holdReason || String(nextHoldRemindAt || "") !== String(existing.holdRemindAt || ""))) {
+    await addRepairUpdate(ticketId, staffId || null, "hold_review_updated", `On-hold reason or review date updated. Review due ${new Date(String(nextHoldRemindAt)).toLocaleString("en-GB", { timeZone: "Africa/Nairobi" })}.`, false);
+  } else if (existing.status === "on_hold" && nextStatus !== "on_hold") {
+    await addRepairUpdate(ticketId, staffId || null, "hold_released", `Ticket resumed with status ${STATUS_LABELS[nextStatus] || nextStatus}.`, false);
+  }
 
   return await loadTicketDetails(ticketId);
 }
 
-async function addRepairUpdate(ticketId: string, staffId: number | null, updateType: string, message: string, customerVisible: boolean = false): Promise<void> {
-  await query(
-    `INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [ticketId, staffId, updateType, message, customerVisible ? 1 : 0]
-  );
+export async function runRepairWorkflowSweep(): Promise<{ diagnosisEscalated: any[]; holdReminders: any[] }> {
+  const diagnosisEscalated = await queryAll(`
+    WITH due AS (
+      SELECT t.id, t.assigned_to FROM repair_tickets t
+      WHERE t.assigned_to IS NOT NULL AND t.diagnosis_due_at IS NOT NULL
+        AND t.diagnosis_due_at::timestamptz <= NOW()
+        AND t.diagnosis = '' AND t.status IN ('received', 'diagnosing')
+        AND (t.diagnosis_last_reminded_at IS NULL OR t.diagnosis_last_reminded_at::timestamptz <= NOW() - INTERVAL '23 hours')
+      ORDER BY t.diagnosis_due_at LIMIT 50 FOR UPDATE SKIP LOCKED
+    )
+    UPDATE repair_tickets t SET
+      priority = CASE t.priority WHEN 'low' THEN 'normal' WHEN 'normal' THEN 'high' WHEN 'high' THEN 'critical' ELSE 'critical' END,
+      diagnosis_last_reminded_at = NOW()::text,
+      updated_at = NOW()::text
+    FROM due d LEFT JOIN users u ON u.id = d.assigned_to
+    WHERE t.id = d.id
+    RETURNING t.id, t.priority, u.username AS assigned_name, u.email AS assigned_email
+  `) as any[];
+
+  const holdReminders = await queryAll(`
+    WITH due AS (
+      SELECT t.id, t.assigned_to FROM repair_tickets t
+      WHERE t.status = 'on_hold' AND t.hold_remind_at IS NOT NULL
+        AND t.hold_remind_at::timestamptz <= NOW()
+        AND (t.hold_last_reminded_at IS NULL OR t.hold_last_reminded_at::timestamptz <= NOW() - INTERVAL '23 hours')
+      ORDER BY t.hold_remind_at LIMIT 50 FOR UPDATE SKIP LOCKED
+    )
+    UPDATE repair_tickets t SET hold_last_reminded_at = NOW()::text, updated_at = NOW()::text
+    FROM due d LEFT JOIN users u ON u.id = d.assigned_to
+    WHERE t.id = d.id
+    RETURNING t.id, t.hold_reason, t.priority, u.username AS assigned_name, u.email AS assigned_email
+  `) as any[];
+  return { diagnosisEscalated, holdReminders };
 }
 
-async function addRepairPart(ticketId: string, data: any): Promise<TicketResult> {
+const REPAIR_PAYMENT_METHODS = ["cash", "mpesa", "card", "bank_transfer", "other"] as const;
+type RepairPaymentKind = "payment" | "refund";
+
+export class RepairPaymentError extends Error {
+  constructor(message: string) { super(message); this.name = "RepairPaymentError"; }
+}
+
+function moneyToCents(value: unknown): number {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 9_999_999_999.99) throw new RepairPaymentError("Enter an amount greater than zero with no more than two decimal places.");
+  const cents = Math.round(amount * 100);
+  if (Math.abs(amount - cents / 100) > 0.000001) throw new RepairPaymentError("Enter an amount with no more than two decimal places.");
+  return cents;
+}
+
+export async function listRepairPaymentLedger(ticketId: string): Promise<any | null> {
+  const ticket = await queryOne("SELECT total_cost FROM repair_tickets WHERE id = $1", [ticketId]) as any;
+  if (!ticket) return null;
+  const entries = await queryAll(
+    `SELECT rp.id, rp.kind, rp.amount, rp.payment_method, rp.reference, rp.related_payment_id,
+            original.reference AS related_reference, rp.reason, rp.created_at,
+            rp.created_by AS created_by_id, u.username AS created_by,
+            voiding.id AS voided_by_entry_id, voiding.reason AS void_reason,
+            voiding.created_at AS voided_at, voider.username AS voided_by
+     FROM repair_payments rp
+     LEFT JOIN repair_payments original ON original.id = rp.related_payment_id
+     LEFT JOIN users u ON u.id = rp.created_by
+     LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+     LEFT JOIN users voider ON voider.id = voiding.created_by
+     WHERE rp.ticket_id = $1 ORDER BY rp.created_at DESC, rp.id DESC`,
+    [ticketId]
+  );
+  const totals = await queryOne(
+    `SELECT COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'payment' AND voiding.id IS NULL),0) AS received,
+            COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'refund' AND voiding.id IS NULL),0) AS refunded,
+            COUNT(voiding.id)::int AS voided_entries
+     FROM repair_payments rp
+     LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+     WHERE rp.ticket_id = $1 AND rp.kind IN ('payment','refund')`,
+    [ticketId]
+  ) as any;
+  const received = Number(totals?.received || 0);
+  const refunded = Number(totals?.refunded || 0);
+  const netReceived = Math.max(0, Math.round((received - refunded) * 100) / 100);
+  const estimate = Math.max(0, Number(ticket.total_cost || 0));
+  return {
+    entries: entries.map((r: any) => ({
+      id: Number(r.id), kind: r.kind, amount: Number(r.amount), paymentMethod: r.payment_method,
+      reference: r.reference, relatedPaymentId: r.related_payment_id == null ? null : Number(r.related_payment_id),
+      relatedReference: r.related_reference || null, reason: r.reason || "", createdAt: r.created_at,
+      createdById: r.created_by_id == null ? null : Number(r.created_by_id), createdBy: r.created_by || "Staff",
+      voided: r.voided_by_entry_id != null, voidedAt: r.voided_at || null,
+      voidReason: r.void_reason || "", voidedBy: r.voided_by || null,
+    })),
+    summary: { estimate, received, refunded, netReceived, balance: Math.max(0, Math.round((estimate - netReceived) * 100) / 100), voidedEntries: Number(totals?.voided_entries || 0) },
+  };
+}
+
+export async function recordRepairLedgerEntry(ticketId: string, input: {
+  kind: RepairPaymentKind; amount: unknown; paymentMethod?: unknown; reference: unknown;
+  relatedPaymentId?: unknown; reason?: unknown; idempotencyKey: unknown; staffId: number;
+}): Promise<any> {
+  const amountCents = moneyToCents(input.amount);
+  const kind = input.kind;
+  if (kind !== "payment" && kind !== "refund") throw new RepairPaymentError("Choose payment or refund.");
+  const reference = String(input.reference ?? "").trim().slice(0, 128);
+  if (!reference) throw new RepairPaymentError("Enter the receipt or refund reference.");
+  const idempotencyKey = String(input.idempotencyKey ?? "").trim().slice(0, 128);
+  if (!idempotencyKey) throw new RepairPaymentError("The request key is missing. Please retry.");
+  const reason = String(input.reason ?? "").trim().slice(0, 500);
+  if (kind === "refund" && !reason) throw new RepairPaymentError("Enter a reason for the refund.");
+  const relatedPaymentId = input.relatedPaymentId == null ? null : Number(input.relatedPaymentId);
+  if (kind === "refund" && (!Number.isSafeInteger(relatedPaymentId) || Number(relatedPaymentId) <= 0)) throw new RepairPaymentError("Choose the original payment to refund.");
+  let paymentMethod = String(input.paymentMethod ?? "").trim().toLowerCase();
+  if (!REPAIR_PAYMENT_METHODS.includes(paymentMethod as any)) throw new RepairPaymentError("Choose a supported payment method.");
+
+  try {
+  return await transaction(async (client) => {
+    const prior = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+    if (prior) {
+      const matches = String(prior.ticket_id) === ticketId && prior.kind === kind && Math.round(Number(prior.amount) * 100) === amountCents && prior.reference === reference && prior.payment_method === paymentMethod && String(prior.reason || "") === reason && (prior.related_payment_id == null ? null : Number(prior.related_payment_id)) === relatedPaymentId;
+      if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+      return prior;
+    }
+
+    const ticket = (await client.query("SELECT id, total_cost, status FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId])).rows?.[0] as any;
+    if (!ticket) throw new RepairPaymentError("Repair ticket not found.");
+    const afterLock = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+    if (afterLock) {
+      const matches = String(afterLock.ticket_id) === ticketId && afterLock.kind === kind && Math.round(Number(afterLock.amount) * 100) === amountCents && afterLock.reference === reference && afterLock.payment_method === paymentMethod && String(afterLock.reason || "") === reason && (afterLock.related_payment_id == null ? null : Number(afterLock.related_payment_id)) === relatedPaymentId;
+      if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+      return afterLock;
+    }
+    if (kind === "payment") {
+      if (["cancelled", "rejected"].includes(String(ticket.status))) throw new RepairPaymentError("A payment cannot be recorded against a cancelled or rejected repair.");
+      const sums = (await client.query(
+        `SELECT COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'payment' AND voiding.id IS NULL),0) AS received,
+                COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'refund' AND voiding.id IS NULL),0) AS refunded
+         FROM repair_payments rp
+         LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+         WHERE rp.ticket_id = $1 AND rp.kind IN ('payment','refund')`, [ticketId]
+      )).rows?.[0] as any;
+      const netCents = Math.round((Number(sums?.received || 0) - Number(sums?.refunded || 0)) * 100);
+      const estimateCents = Math.max(0, Math.round(Number(ticket.total_cost || 0) * 100));
+      if (amountCents > estimateCents - netCents) throw new RepairPaymentError(`Payment exceeds the remaining repair estimate (${Math.max(0, (estimateCents - netCents) / 100).toFixed(2)}). Update and approve the estimate before recording more.`);
+    } else {
+      const original = (await client.query("SELECT id, ticket_id, amount, payment_method FROM repair_payments WHERE id = $1 AND kind = 'payment' FOR UPDATE", [relatedPaymentId])).rows?.[0] as any;
+      if (!original || original.ticket_id !== ticketId) throw new RepairPaymentError("The selected payment does not belong to this repair.");
+      const originalVoid = (await client.query("SELECT id FROM repair_payments WHERE kind = 'void' AND related_payment_id = $1", [relatedPaymentId])).rows?.[0];
+      if (originalVoid) throw new RepairPaymentError("A refund cannot be linked to a voided receipt.");
+      if (paymentMethod !== original.payment_method) throw new RepairPaymentError("Refund method must match the original payment method.");
+      const refunded = (await client.query(
+        `SELECT COALESCE(SUM(rp.amount),0) AS total FROM repair_payments rp
+         LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+         WHERE rp.kind = 'refund' AND rp.related_payment_id = $1 AND voiding.id IS NULL`, [relatedPaymentId]
+      )).rows?.[0] as any;
+      const refundableCents = Math.round((Number(original.amount) - Number(refunded?.total || 0)) * 100);
+      if (amountCents > refundableCents) throw new RepairPaymentError(`Refund exceeds the remaining amount on this receipt (${Math.max(0, refundableCents / 100).toFixed(2)}).`);
+    }
+
+    const inserted = (await client.query(
+      `INSERT INTO repair_payments (ticket_id, kind, amount, payment_method, reference, related_payment_id, reason, idempotency_key, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING id, kind, amount, payment_method, reference, related_payment_id, reason, created_at`,
+      [ticketId, kind, amountCents / 100, paymentMethod, reference, relatedPaymentId, reason, idempotencyKey, input.staffId]
+    )).rows?.[0] as any;
+    if (!inserted) {
+      const raced = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+      const matches = raced && String(raced.ticket_id) === ticketId && raced.kind === kind && Math.round(Number(raced.amount) * 100) === amountCents && raced.reference === reference && raced.payment_method === paymentMethod && String(raced.reason || "") === reason && (raced.related_payment_id == null ? null : Number(raced.related_payment_id)) === relatedPaymentId;
+      if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+      return raced;
+    }
+    const message = kind === "payment"
+      ? `Repair payment recorded: KES ${(amountCents / 100).toFixed(2)} via ${paymentMethod} (reference ${reference}).`
+      : `Repair refund recorded: KES ${(amountCents / 100).toFixed(2)} via ${paymentMethod} (reference ${reference}); reason: ${reason}.`;
+    await client.query(
+      "INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible) VALUES ($1,$2,$3,$4,0)",
+      [ticketId, input.staffId, kind === "payment" ? "payment_received" : "payment_refunded", message]
+    );
+    return { ...inserted, created_by: null };
+  });
+  } catch (err: any) {
+    if (err?.code === "23505") throw new RepairPaymentError("That reference has already been recorded for this ticket and payment method.");
+    throw err;
+  }
+}
+
+export async function voidRepairLedgerEntry(ticketId: string, entryId: unknown, input: {
+  reason: unknown; idempotencyKey: unknown; staffId: number;
+}): Promise<void> {
+  const targetId = Number(entryId);
+  if (!Number.isSafeInteger(targetId) || targetId <= 0) throw new RepairPaymentError("Choose a valid payment or refund entry.");
+  const reason = String(input.reason ?? "").trim().slice(0, 500);
+  if (!reason) throw new RepairPaymentError("Enter a reason for voiding this entry.");
+  const idempotencyKey = String(input.idempotencyKey ?? "").trim().slice(0, 128);
+  if (!idempotencyKey) throw new RepairPaymentError("The request key is missing. Please retry.");
+
+  try {
+    await transaction(async (client) => {
+      const prior = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+      if (prior) {
+        const matches = String(prior.ticket_id) === ticketId && prior.kind === "void" && Number(prior.related_payment_id) === targetId && String(prior.reason || "") === reason;
+        if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+        return;
+      }
+
+      const ticket = (await client.query("SELECT id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId])).rows?.[0];
+      if (!ticket) throw new RepairPaymentError("Repair ticket not found.");
+      const afterLock = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+      if (afterLock) {
+        const matches = String(afterLock.ticket_id) === ticketId && afterLock.kind === "void" && Number(afterLock.related_payment_id) === targetId && String(afterLock.reason || "") === reason;
+        if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+        return;
+      }
+      const target = (await client.query(
+        "SELECT id, kind, amount, payment_method FROM repair_payments WHERE id = $1 AND ticket_id = $2 FOR UPDATE",
+        [targetId, ticketId]
+      )).rows?.[0] as any;
+      if (!target || !["payment", "refund"].includes(String(target.kind))) throw new RepairPaymentError("Only a payment or refund entry on this ticket can be voided.");
+      const priorVoid = (await client.query("SELECT id FROM repair_payments WHERE kind = 'void' AND related_payment_id = $1", [targetId])).rows?.[0];
+      if (priorVoid) throw new RepairPaymentError("This ledger entry has already been voided.");
+
+      if (target.kind === "payment") {
+        const activeRefund = (await client.query(
+          `SELECT 1 FROM repair_payments refund
+           LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = refund.id
+           WHERE refund.kind = 'refund' AND refund.related_payment_id = $1 AND voiding.id IS NULL LIMIT 1`,
+          [targetId]
+        )).rows?.[0];
+        if (activeRefund) throw new RepairPaymentError("Void the related refund first. A receipt with an active refund cannot be voided.");
+      }
+
+      const reference = `VOID-${targetId}-${idempotencyKey}`.slice(0, 128);
+      const inserted = (await client.query(
+        `INSERT INTO repair_payments (ticket_id, kind, amount, payment_method, reference, related_payment_id, reason, idempotency_key, created_by)
+         VALUES ($1, 'void', $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id`,
+        [ticketId, target.amount, target.payment_method, reference, targetId, reason, idempotencyKey, input.staffId]
+      )).rows?.[0];
+      if (!inserted) {
+        const raced = (await client.query("SELECT ticket_id, related_payment_id, reason, kind FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+        if (raced && String(raced.ticket_id) === ticketId && raced.kind === "void" && Number(raced.related_payment_id) === targetId && String(raced.reason || "") === reason) return;
+        throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+      }
+      const message = `Repair ${target.kind} entry ${targetId} voided (${reference}). Reason: ${reason}.`;
+      await client.query(
+        "INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible) VALUES ($1,$2,'payment_voided',$3,0)",
+        [ticketId, input.staffId, message]
+      );
+    });
+  } catch (err: any) {
+    if (err instanceof RepairPaymentError) throw err;
+    if (err?.code === "23505") throw new RepairPaymentError("This ledger entry has already been voided.");
+    throw err;
+  }
+}
+
+async function addRepairUpdate(ticketId: string, staffId: number | null, updateType: string, message: string, customerVisible: boolean = false): Promise<number> {
+  const row = await queryOne(
+    `INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [ticketId, staffId, updateType, message, customerVisible ? 1 : 0]
+  ) as { id: number };
+  return Number(row.id);
+}
+
+async function addRepairPart(ticketId: string, data: any, staffId?: number): Promise<TicketResult> {
   const desc = String(data.description || "").trim();
   if (!desc) return { ok: false, error: "Part description is required." };
 
@@ -724,14 +1098,16 @@ async function addRepairPart(ticketId: string, data: any): Promise<TicketResult>
   await recalculateTicketCost(ticketId);
 
   const partRow = await queryOne("SELECT * FROM repair_parts_used WHERE id = $1", [partId]) as any;
+  await addRepairUpdate(ticketId, staffId || null, "part_added", `Part added: ${desc} × ${qty} (unit cost ${Number(cost).toFixed(2)}).`, false);
   return { ok: true, part: mapPart(partRow) };
 }
 
-async function removeRepairPart(ticketId: string, partId: number): Promise<boolean> {
-  const part = await queryOne("SELECT product_id, quantity FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]) as any;
+async function removeRepairPart(ticketId: string, partId: number, staffId?: number): Promise<boolean> {
+  const part = await queryOne("SELECT description, product_id, quantity, unit_cost FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]) as any;
   const r = await query("DELETE FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]);
   if ((r.rowCount ?? 0) > 0) {
     await recalculateTicketCost(ticketId);
+    await addRepairUpdate(ticketId, staffId || null, "part_removed", `Part removed: ${part?.description || "part"} × ${Number(part?.quantity) || 1}.`, false);
     if (part?.product_id) {
       const qty = Number(part.quantity) || 1;
       try {

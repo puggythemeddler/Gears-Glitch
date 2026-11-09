@@ -30,6 +30,8 @@ const PERMISSIONS: PermissionMap = {
   "repair:update": "Update repairs",
   "repair:assign": "Assign repairs to technicians",
   "repair:cancel": "Cancel repairs",
+  "repair:payment": "Record and refund repair payments",
+  "repair:payment:void": "Void repair payment or refund entries",
   "product:list": "View products",
   "product:create": "Create products",
   "product:update": "Update products",
@@ -89,7 +91,7 @@ const DEFAULT_ROLES: DefaultRoles = {
   admin: [
     "staff:list", "staff:create", "staff:update", "staff:delete",
     "repair:list", "repair:create", "repair:view", "repair:update",
-    "repair:assign", "repair:cancel",
+    "repair:assign", "repair:cancel", "repair:payment", "repair:payment:void",
     "product:list", "product:create", "product:update", "product:delete",
     "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer",
     "settings:view", "settings:update",
@@ -124,7 +126,7 @@ const DEFAULT_ROLES: DefaultRoles = {
     "invoice:view", "invoice:download",
     "credit_note:view", "credit_note:create",
     "quote:view", "quote:create",
-    "order:view", "customer:view",
+    "order:view", "customer:view", "repair:payment",
     "financing:view", "financing:manage", "financing:payment",
   ],
   provider: [
@@ -139,7 +141,7 @@ const DEFAULT_ROLES: DefaultRoles = {
   owner: [
     "staff:list", "staff:create", "staff:update", "staff:delete",
     "repair:list", "repair:create", "repair:view", "repair:update",
-    "repair:assign", "repair:cancel",
+    "repair:assign", "repair:cancel", "repair:payment", "repair:payment:void",
     "product:list", "product:create", "product:update", "product:delete",
     "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer",
     "settings:view", "settings:update",

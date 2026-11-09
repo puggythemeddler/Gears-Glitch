@@ -7,7 +7,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatPrice, Spinner } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 
-type AdminRepairsTab = "tickets" | "calendar" | "content";
+type AdminRepairsTab = "tickets" | "calendar" | "workflow" | "content";
 
 const STATUS_LABELS: Record<string, string> = {
   received: "Received",
@@ -18,6 +18,11 @@ const STATUS_LABELS: Record<string, string> = {
   ready: "Ready for collection",
   collected: "Collected",
   cancelled: "Cancelled",
+  awaiting_approval: "Awaiting approval",
+  approved: "Approved",
+  rejected: "Rejected",
+  unrepairable: "Unrepairable",
+  on_hold: "On hold",
 };
 const STATUS_OPTIONS = Object.keys(STATUS_LABELS);
 
@@ -59,7 +64,7 @@ function fmtDate(s: string) {
   return new Date(s).toLocaleDateString("en-GB");
 }
 
-export default function AdminRepairs({ adminOnly = true }: { adminOnly?: boolean }) {
+export default function AdminRepairs({ adminOnly = true, canManagePayments = false, canVoidPayments = false }: { adminOnly?: boolean; canManagePayments?: boolean; canVoidPayments?: boolean }) {
   const [tab, setTab] = useState<AdminRepairsTab>("tickets");
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
 
@@ -70,6 +75,7 @@ export default function AdminRepairs({ adminOnly = true }: { adminOnly?: boolean
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <RippleButton variant={tab === "tickets" ? "primary" : "ghost"} onClick={() => setTab("tickets")}>Tickets</RippleButton>
           <RippleButton variant={tab === "calendar" ? "primary" : "ghost"} onClick={() => setTab("calendar")}>Calendar</RippleButton>
+          {adminOnly && <RippleButton variant={tab === "workflow" ? "primary" : "ghost"} onClick={() => setTab("workflow")}>Workflow</RippleButton>}
           {adminOnly && <RippleButton variant={tab === "content" ? "primary" : "ghost"} onClick={() => setTab("content")}>Page Content</RippleButton>}
         </div>
       </div>
@@ -78,6 +84,8 @@ export default function AdminRepairs({ adminOnly = true }: { adminOnly?: boolean
         <TicketsTab
           openId={openTicketId}
           onOpen={setOpenTicketId}
+          canManagePayments={canManagePayments}
+          canVoidPayments={canVoidPayments}
         />
       )}
       {tab === "calendar" && (
@@ -85,25 +93,73 @@ export default function AdminRepairs({ adminOnly = true }: { adminOnly?: boolean
           onOpenTicket={(id) => { setOpenTicketId(id); setTab("tickets"); }}
         />
       )}
+      {tab === "workflow" && adminOnly && <RepairWorkflowSettings />}
       {tab === "content" && <ContentTab />}
     </>
   );
+}
+
+function RepairWorkflowSettings() {
+  const feedback = useFeedback();
+  const [diagnosisSlaHours, setDiagnosisSlaHours] = useState(24);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api<{ diagnosisSlaHours: number }>("/api/admin/repair-workflow")
+      .then((data) => { if (active) setDiagnosisSlaHours(data.diagnosisSlaHours || 24); })
+      .catch((e: any) => { if (active) setError(e?.message || "Repair workflow settings could not be loaded."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      const result = await api<{ diagnosisSlaHours: number }>("/api/admin/repair-workflow", {
+        method: "PUT",
+        body: JSON.stringify({ diagnosisSlaHours }),
+      });
+      setDiagnosisSlaHours(result.diagnosisSlaHours);
+      feedback.success({ title: "Workflow saved", message: "New technician assignments will use this diagnosis target." });
+    } catch (e: any) {
+      setError(e?.message || "Repair workflow settings could not be saved.");
+      feedback.error({ title: "Workflow not saved", message: e?.message || "Please try again." });
+    } finally { setSaving(false); }
+  }
+
+  return <section aria-labelledby="repair-workflow-heading">
+    <h2 id="repair-workflow-heading">Repair workflow</h2>
+    <p className="muted" style={{ maxWidth: "70ch" }}>Set the target for a technician to record a diagnosis after assignment. Missed targets raise the ticket priority and notify the assigned technician and admin once per day. On-hold tickets pause the diagnosis target and use their own review date.</p>
+    {loading ? <div role="status"><Spinner /></div> : <div className="panel" style={{ maxWidth: 680 }}>
+      <div className="field" style={{ maxWidth: 280 }}><label htmlFor="repair-diagnosis-sla">Diagnosis target (hours)</label><input id="repair-diagnosis-sla" type="number" min={1} max={168} step={1} value={diagnosisSlaHours} onChange={(e) => setDiagnosisSlaHours(Number(e.target.value))} /></div>
+      <p className="muted" style={{ marginTop: 0 }}>Range: 1–168 hours. The default is 24 hours. This setting applies when a ticket is assigned or taken off hold; existing deadlines stay as they are.</p>
+      {error && <p role="alert" className="error-text">{error}</p>}
+      <RippleButton onClick={save} loading={saving} disabled={loading || !Number.isInteger(diagnosisSlaHours) || diagnosisSlaHours < 1 || diagnosisSlaHours > 168}>Save workflow settings</RippleButton>
+    </div>}
+  </section>;
 }
 
 // ===================== TICKETS =====================
 
 interface TicketForm {
   status: string;
+  priority: string;
   assignedTo: string;
   etaAt: string;
   scheduledAt: string;
   diagnosis: string;
+  holdReason: string;
+  holdRemindAt: string;
   hardwareValue: string;
   softwareInstall: boolean;
   softwareLicense: boolean;
 }
 
-function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: string | null) => void }) {
+function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { openId: string | null; onOpen: (id: string | null) => void; canManagePayments: boolean; canVoidPayments: boolean }) {
   const feedback = useFeedback();
   const [tickets, setTickets] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
@@ -122,6 +178,11 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
   const [assetSerials, setAssetSerials] = useState<any[]>([]);
   const [assetWarranties, setAssetWarranties] = useState<any[]>([]);
   const [assetLoading, setAssetLoading] = useState(false);
+  const [paymentLedger, setPaymentLedger] = useState<any>(null);
+  const [paymentError, setPaymentError] = useState("");
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentRequestKey, setPaymentRequestKey] = useState("");
+  const [paymentForm, setPaymentForm] = useState({ kind: "payment", amount: "", paymentMethod: "mpesa", reference: "", relatedPaymentId: "", reason: "" });
 
   async function loadList() {
     setLoading(true);
@@ -148,9 +209,15 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
     setDetailError("");
     setDetail(null);
     setForm(null);
+    setPaymentLedger(null);
+    setPaymentError("");
     try {
       const d = await api<any>(`/api/repairs/${id}`);
       setDetail(d);
+      if (canManagePayments) {
+        try { setPaymentLedger(await api<any>(`/api/repairs/${id}/payments`)); }
+        catch (e: any) { setPaymentError(e?.message || "The repair payment ledger could not be loaded."); }
+      }
       if (d.customerId) {
         setAssetLoading(true);
         const [s, w] = await Promise.all([
@@ -167,10 +234,13 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       }
       setForm({
         status: d.status || "received",
+        priority: d.priority || "normal",
         assignedTo: d.assignedTo != null ? String(d.assignedTo) : "",
         etaAt: d.etaAt ? String(d.etaAt).slice(0, 10) : "",
         scheduledAt: d.scheduledAt ? String(d.scheduledAt).replace(" ", "T").slice(0, 16) : "",
         diagnosis: d.diagnosis || "",
+        holdReason: d.holdReason || "",
+        holdRemindAt: d.holdRemindAt ? (() => { const date = new Date(d.holdRemindAt); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16); })() : "",
         hardwareValue: String(d.hardwareValue || 0),
         softwareInstall: Boolean(d.softwareInstall),
         softwareLicense: Boolean(d.softwareLicense),
@@ -203,10 +273,13 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
         method: "PATCH",
         body: JSON.stringify({
           status: form.status,
+          priority: form.priority,
           assignedTo: form.assignedTo ? Number(form.assignedTo) : null,
           etaAt: form.etaAt || null,
           scheduledAt: form.scheduledAt || null,
           diagnosis: form.diagnosis,
+          holdReason: form.holdReason,
+          holdRemindAt: form.holdRemindAt ? new Date(form.holdRemindAt).toISOString() : null,
           hardwareValue: Number(form.hardwareValue) || 0,
           softwareInstall: form.softwareInstall,
           softwareLicense: form.softwareLicense,
@@ -267,6 +340,64 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
     } catch (e: any) { feedback.error({ title: "Update not added", message: e.message }); }
   }
 
+  async function saveRepairPayment() {
+    if (!detail) return;
+    setPaymentSaving(true);
+    setPaymentError("");
+    try {
+      const requestKey = paymentRequestKey || crypto.randomUUID();
+      if (!paymentRequestKey) setPaymentRequestKey(requestKey);
+      const selectedOriginal = paymentLedger?.entries?.find((entry: any) => String(entry.id) === paymentForm.relatedPaymentId);
+      const entry = await api<any>(`/api/repairs/${detail.id}/payments`, {
+        method: "POST",
+        body: JSON.stringify({
+          kind: paymentForm.kind,
+          amount: paymentForm.amount,
+          paymentMethod: paymentForm.kind === "refund" ? selectedOriginal?.paymentMethod : paymentForm.paymentMethod,
+          reference: paymentForm.reference,
+          relatedPaymentId: paymentForm.kind === "refund" ? Number(paymentForm.relatedPaymentId) : null,
+          reason: paymentForm.reason,
+          idempotencyKey: requestKey,
+        }),
+      });
+      setPaymentLedger(entry);
+      setPaymentForm({ kind: "payment", amount: "", paymentMethod: "mpesa", reference: "", relatedPaymentId: "", reason: "" });
+      setPaymentRequestKey("");
+      await loadDetail(detail.id);
+      feedback.success({ title: paymentForm.kind === "payment" ? "Payment recorded" : "Refund recorded", message: "The repair ledger and internal ticket history have been updated." });
+    } catch (e: any) {
+      setPaymentError(e?.message || "The ledger entry could not be saved.");
+      feedback.error({ title: "Ledger entry not saved", message: e?.message || "Please review the amount, reference and remaining balance." });
+    } finally { setPaymentSaving(false); }
+  }
+
+  async function voidPaymentEntry(entry: any) {
+    if (!detail || !canVoidPayments || entry.voided || entry.kind === "void") return;
+    if (!window.confirm(`Void ${entry.kind} ${entry.reference} for ${formatPrice(entry.amount)}? The original record will remain in the audit history.`)) return;
+    const reason = window.prompt("Enter the reason for voiding this entry:")?.trim();
+    if (!reason) return;
+    setPaymentSaving(true);
+    setPaymentError("");
+    try {
+      const ledger = await api<any>(`/api/repairs/${detail.id}/payments/${entry.id}/void`, {
+        method: "POST",
+        body: JSON.stringify({ reason, idempotencyKey: crypto.randomUUID() }),
+      });
+      setPaymentLedger(ledger);
+      await loadDetail(detail.id);
+      feedback.success({ title: "Entry voided", message: "The original entry remains in history and is excluded from active totals." });
+    } catch (e: any) {
+      setPaymentError(e?.message || "The entry could not be voided.");
+      feedback.error({ title: "Entry not voided", message: e?.message || "Please review the entry and try again." });
+    } finally { setPaymentSaving(false); }
+  }
+
+  const paymentRefundedByReceipt = new Map<number, number>();
+  for (const entry of paymentLedger?.entries || []) if (entry.kind === "refund" && !entry.voided && entry.relatedPaymentId != null) {
+    paymentRefundedByReceipt.set(entry.relatedPaymentId, (paymentRefundedByReceipt.get(entry.relatedPaymentId) || 0) + Number(entry.amount || 0));
+  }
+  const refundableReceipts = (paymentLedger?.entries || []).filter((entry: any) => entry.kind === "payment" && !entry.voided && Number(entry.amount) - (paymentRefundedByReceipt.get(Number(entry.id)) || 0) > 0.009);
+
   const partsTotal = Array.isArray(detail?.parts)
     ? detail.parts.reduce((s: number, p: any) => s + (Number(p.unitCost) || 0) * (Number(p.quantity) || 1), 0)
     : 0;
@@ -293,11 +424,12 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       ) : (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>#</th><th>Customer</th><th>Device</th><th>Status</th><th>Technician</th><th>ETA</th><th>Scheduled</th><th>Quote</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Priority</th><th>Customer</th><th>Device</th><th>Status</th><th>Technician</th><th>ETA</th><th>Scheduled</th><th>Quote</th><th></th></tr></thead>
             <tbody>
               {tickets.map((t) => (
                 <tr key={t.id}>
                   <td>{t.id}</td>
+                  <td><span className="plan-status" style={t.priority === "critical" ? { background: "var(--danger-light)", color: "var(--danger-text)" } : t.priority === "high" ? { background: "var(--warning-light)", color: "var(--warning-text)" } : undefined}>{String(t.priority || "normal").toUpperCase()}</span></td>
                   <td>{t.customerName || ""}</td>
                   <td>{t.deviceType ? [t.deviceBrand, t.deviceType, t.deviceModel].filter(Boolean).join(" ") : "—"}{t.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {t.serialNumber}</span>}</td>
                   <td>{statusBadge(t.status)}</td>
@@ -319,7 +451,7 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
                 </tr>
               ))}
               {tickets.length === 0 && (
-                <tr><td colSpan={9}><EmptyState icon="repairs" title="No repair tickets" description="No repair tickets match the current filters. Clear the filters to see all tickets." actionLabel="Clear filters" onAction={() => { setStatusFilter(""); setTechFilter(""); }} /></td></tr>
+                <tr><td colSpan={10}><EmptyState icon="repairs" title="No repair tickets" description="No repair tickets match the current filters. Clear the filters to see all tickets." actionLabel="Clear filters" onAction={() => { setStatusFilter(""); setTechFilter(""); }} /></td></tr>
               )}
             </tbody>
           </table>
@@ -388,10 +520,18 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: "0 0.75rem", marginTop: "1.25rem" }}>
             <div className="field"><label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>{STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}</select></label></div>
+            <div className="field"><label>Priority<select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></label></div>
             <div className="field"><label>Technician<select value={form.assignedTo} onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}><option value="">Unassigned</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.username}</option>)}</select></label></div>
             <div className="field"><label>ETA date<input type="date" value={form.etaAt} onChange={(e) => setForm({ ...form, etaAt: e.target.value })} /></label></div>
             <div className="field"><label>Schedule (calendar)<input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} /></label></div>
           </div>
+
+          {form.status === "on_hold" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: "0 0.75rem", padding: "0.75rem 0", borderTop: "1px solid var(--border)" }}>
+            <div className="field"><label>Why is this on hold? <span aria-hidden="true">*</span><textarea rows={2} maxLength={500} required value={form.holdReason} onChange={(e) => setForm({ ...form, holdReason: e.target.value })} placeholder="For example, waiting for the customer's approval" /></label></div>
+            <div className="field"><label>Remind technician on <span aria-hidden="true">*</span><input type="datetime-local" required value={form.holdRemindAt} onChange={(e) => setForm({ ...form, holdRemindAt: e.target.value })} /></label><small className="muted">After this time, the assigned technician and admin receive a daily reminder until the ticket leaves On hold.</small></div>
+          </div>}
+
+          {detail.diagnosisDueAt && !detail.diagnosis && <p className="muted" role="status">Diagnosis target: {new Date(detail.diagnosisDueAt).toLocaleString("en-GB")} · Priority rises if the target is missed.</p>}
 
           <div className="field"><label>Diagnosis<textarea rows={3} value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} /></label></div>
 
@@ -426,6 +566,36 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
               {quoteAccepted ? "Customer accepted the quote" : quoteDeclined ? "Customer declined the quote" : "Quote sent to customer — awaiting response"}
             </div>
           )}
+
+          {canManagePayments && <section aria-labelledby="repair-payments-heading" style={{ marginTop: "1.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
+            <h4 id="repair-payments-heading" style={{ margin: "0 0 0.35rem" }}>Payments &amp; refunds</h4>
+            <p className="muted" style={{ marginTop: 0 }}>Staff-entered reconciliation only. A saved entry is not confirmation from M-Pesa, a bank, or a card provider. Voids keep the original record and require a separate permission.</p>
+            {paymentError && <p role="alert" className="error-text">{paymentError}</p>}
+            {paymentLedger ? <>
+              <div className="stat-grid" style={{ marginBottom: "0.75rem" }}>
+                <div><div className="input-label">Current estimate</div><strong>{formatPrice(paymentLedger.summary.estimate)}</strong></div>
+                <div><div className="input-label">Recorded received</div><strong>{formatPrice(paymentLedger.summary.received)}</strong></div>
+                <div><div className="input-label">Recorded refunds</div><strong>{formatPrice(paymentLedger.summary.refunded)}</strong></div>
+                <div><div className="input-label">Net recorded</div><strong>{formatPrice(paymentLedger.summary.netReceived)}</strong></div>
+                <div><div className="input-label">Remaining vs estimate</div><strong>{formatPrice(paymentLedger.summary.balance)}</strong></div>
+                <div><div className="input-label">Voided entries</div><strong>{paymentLedger.summary.voidedEntries}</strong></div>
+              </div>
+              {paymentLedger.entries.length > 0 && <div className="table-wrap" style={{ marginBottom: "0.75rem" }}><table className="data-table">
+                <thead><tr><th>Recorded</th><th>Entry</th><th>Status</th><th>Method</th><th>Reference</th><th>Related entry</th><th>Reason</th><th>By</th><th style={{ textAlign: "right" }}>Amount</th><th></th></tr></thead>
+                <tbody>{paymentLedger.entries.map((entry: any) => <tr key={entry.id}>
+                  <td>{new Date(entry.createdAt).toLocaleString("en-GB")}</td><td>{entry.kind === "payment" ? "Payment" : entry.kind === "refund" ? "Refund" : "Void"}</td><td>{entry.voided ? `Voided${entry.voidedBy ? ` by ${entry.voidedBy}` : ""}` : entry.kind === "void" ? "Audit entry" : "Active"}</td><td>{entry.paymentMethod}</td><td>{entry.reference}</td><td>{entry.relatedReference || "—"}</td><td>{entry.kind === "void" ? entry.reason : entry.voided ? entry.voidReason : entry.reason || "—"}</td><td>{entry.createdBy}</td><td style={{ textAlign: "right" }}>{formatPrice(entry.amount)}</td><td>{canVoidPayments && entry.kind !== "void" && !entry.voided && <RippleButton size="small" variant="danger" loading={paymentSaving} onClick={() => voidPaymentEntry(entry)}>Void</RippleButton>}</td>
+                </tr>)}</tbody>
+              </table></div>}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(170px, 100%), 1fr))", alignItems: "end", gap: "0 0.75rem" }}>
+                <div className="field"><label htmlFor="repair-ledger-kind">Entry type</label><select id="repair-ledger-kind" value={paymentForm.kind} onChange={(e) => setPaymentForm({ ...paymentForm, kind: e.target.value, relatedPaymentId: "" })}><option value="payment">Payment received</option><option value="refund">Refund issued</option></select></div>
+                <div className="field"><label htmlFor="repair-ledger-amount">Amount (KES)</label><input id="repair-ledger-amount" type="number" min="0.01" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} /></div>
+                {paymentForm.kind === "payment" ? <div className="field"><label htmlFor="repair-ledger-method">Method</label><select id="repair-ledger-method" value={paymentForm.paymentMethod} onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}><option value="mpesa">M-Pesa</option><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></div> : <div className="field"><label htmlFor="repair-ledger-original">Original receipt</label><select id="repair-ledger-original" value={paymentForm.relatedPaymentId} onChange={(e) => setPaymentForm({ ...paymentForm, relatedPaymentId: e.target.value })}><option value="">Choose receipt</option>{refundableReceipts.map((receipt: any) => <option key={receipt.id} value={receipt.id}>{receipt.reference} · {receipt.paymentMethod} · refundable {formatPrice(Number(receipt.amount) - (paymentRefundedByReceipt.get(Number(receipt.id)) || 0))}</option>)}</select></div>}
+                <div className="field"><label htmlFor="repair-ledger-reference">Receipt / refund reference</label><input id="repair-ledger-reference" maxLength={128} value={paymentForm.reference} onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })} /></div>
+                {paymentForm.kind === "refund" && <div className="field"><label htmlFor="repair-ledger-reason">Refund reason</label><input id="repair-ledger-reason" maxLength={500} value={paymentForm.reason} onChange={(e) => setPaymentForm({ ...paymentForm, reason: e.target.value })} /></div>}
+                <RippleButton onClick={saveRepairPayment} loading={paymentSaving} disabled={!paymentLedger || (paymentForm.kind === "refund" && (!paymentForm.relatedPaymentId || !paymentForm.reason.trim())) || !paymentForm.amount || !paymentForm.reference.trim()}>{paymentForm.kind === "payment" ? "Record payment" : "Record refund"}</RippleButton>
+              </div>
+            </> : <p className="muted" role="status">{paymentError ? "Ledger unavailable." : "Loading payment ledger…"}</p>}
+          </section>}
 
           <div style={{ marginTop: "1.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
             <h4 style={{ margin: 0, display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
