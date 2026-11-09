@@ -18,6 +18,12 @@ import { buildRepairQuotePdf } from "../server/repair-quote-pdf";
 const TICKET_ID = "REP-QUOTE-VERSION-TEST-001";
 const CUSTOMER_EMAIL = "repair-quote-version-test@example.invalid";
 
+async function cleanupTestTicket() {
+  // repair_updates references tickets without cascading, so remove history first.
+  await query("DELETE FROM repair_updates WHERE ticket_id = $1", [TICKET_ID]);
+  await query("DELETE FROM repair_tickets WHERE id = $1", [TICKET_ID]);
+}
+
 describe("repair quote PDF rendering", () => {
   it("produces a non-empty PDF with the quote version and expiry terms", { skip: process.platform === "win32" && "Bundled @sparticuz/chromium is Linux-only; PDF rendering runs in Linux CI/hosting" }, async () => {
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
@@ -48,13 +54,16 @@ describe("repair quote versions (disposable test DB)", { skip: !HAS_DB && "TEST_
   });
 
   after(async () => {
-    await query("DELETE FROM repair_tickets WHERE id = $1", [TICKET_ID]);
-    if (customerId > 0) await query("DELETE FROM customers WHERE id = $1", [customerId]);
-    await closePool();
+    try {
+      await cleanupTestTicket();
+      if (customerId > 0) await query("DELETE FROM customers WHERE id = $1", [customerId]);
+    } finally {
+      await closePool();
+    }
   });
 
   it("retains each PDF and snapshot, restricts download to its customer, and expires responses", async () => {
-    await query("DELETE FROM repair_tickets WHERE id = $1", [TICKET_ID]);
+    await cleanupTestTicket();
     await query(
       `INSERT INTO repair_tickets (id, customer_id, device_type, issue_description, status, eta_at, labor_cost, parts_cost, total_cost)
        VALUES ($1, $2, 'Laptop', 'Quote version test', 'received', NOW()::text, 1250, 0, 1250)`,
@@ -110,7 +119,7 @@ describe("repair quote versions (disposable test DB)", { skip: !HAS_DB && "TEST_
   });
 
   it("refuses a quote when the estimate changed after the staff view was loaded", async () => {
-    await query("DELETE FROM repair_tickets WHERE id = $1", [TICKET_ID]);
+    await cleanupTestTicket();
     await query(
       `INSERT INTO repair_tickets (id, customer_id, device_type, issue_description, status, eta_at, total_cost)
        VALUES ($1, $2, 'Laptop', 'Stale quote test', 'received', NOW()::text, 1400)`,
