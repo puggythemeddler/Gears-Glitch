@@ -151,6 +151,7 @@ interface TicketForm {
   assignedTo: string;
   etaAt: string;
   scheduledAt: string;
+  scheduledDurationMinutes: number;
   diagnosis: string;
   holdReason: string;
   holdRemindAt: string;
@@ -238,6 +239,7 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
         assignedTo: d.assignedTo != null ? String(d.assignedTo) : "",
         etaAt: d.etaAt ? String(d.etaAt).slice(0, 10) : "",
         scheduledAt: d.scheduledAt ? String(d.scheduledAt).replace(" ", "T").slice(0, 16) : "",
+        scheduledDurationMinutes: Number(d.scheduledDurationMinutes) || 60,
         diagnosis: d.diagnosis || "",
         holdReason: d.holdReason || "",
         holdRemindAt: d.holdRemindAt ? (() => { const date = new Date(d.holdRemindAt); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16); })() : "",
@@ -277,6 +279,7 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
           assignedTo: form.assignedTo ? Number(form.assignedTo) : null,
           etaAt: form.etaAt || null,
           scheduledAt: form.scheduledAt || null,
+          scheduledDurationMinutes: form.scheduledDurationMinutes,
           diagnosis: form.diagnosis,
           holdReason: form.holdReason,
           holdRemindAt: form.holdRemindAt ? new Date(form.holdRemindAt).toISOString() : null,
@@ -524,6 +527,7 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
             <div className="field"><label>Technician<select value={form.assignedTo} onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}><option value="">Unassigned</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.username}</option>)}</select></label></div>
             <div className="field"><label>ETA date<input type="date" value={form.etaAt} onChange={(e) => setForm({ ...form, etaAt: e.target.value })} /></label></div>
             <div className="field"><label>Schedule (calendar)<input type="datetime-local" value={form.scheduledAt} onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} /></label></div>
+            <div className="field"><label>Appointment length (minutes)<input type="number" min={15} max={480} step={15} value={form.scheduledDurationMinutes} onChange={(e) => setForm({ ...form, scheduledDurationMinutes: Number(e.target.value) })} /><small className="muted">15 minutes to 8 hours. Default: 60 minutes.</small></label></div>
           </div>
 
           {form.status === "on_hold" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: "0 0.75rem", padding: "0.75rem 0", borderTop: "1px solid var(--border)" }}>
@@ -763,7 +767,7 @@ function CalendarTab({ onOpenTicket }: { onOpenTicket: (id: string) => void }) {
                       <strong>{t.id}</strong>
                       <div>{t.deviceType || ""}{t.deviceModel ? " " + t.deviceModel : ""}</div>
                       {t.assignedName && <div className="muted" style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}><Icon name="user" size={12} /> {t.assignedName}</div>}
-                      <div>{t.scheduledAt ? new Date(t.scheduledAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""} {statusBadge(t.status)}</div>
+                      <div>{t.scheduledAt ? (() => { const start = new Date(t.scheduledAt); const end = new Date(start.getTime() + (Number(t.scheduledDurationMinutes) || 60) * 60000); const fmt = (date: Date) => date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); return `${fmt(start)}–${fmt(end)} · ${Number(t.scheduledDurationMinutes) || 60} min`; })() : ""} {statusBadge(t.status)}</div>
                     </button>
                   ))
                 )}

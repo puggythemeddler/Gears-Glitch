@@ -27,6 +27,7 @@ interface TicketRow {
   assigned_name?: string | null;
   eta_at: string;
   scheduled_at: string | null;
+  scheduled_duration_minutes: number;
   diagnosis: string;
   diagnosis_due_at: string | null;
   diagnosis_recorded_at: string | null;
@@ -89,6 +90,7 @@ interface Ticket {
   assignedName: string | null;
   etaAt: string;
   scheduledAt: string | null;
+  scheduledDurationMinutes: number;
   diagnosis: string;
   diagnosisDueAt: string | null;
   diagnosisRecordedAt: string | null;
@@ -161,6 +163,7 @@ interface TicketUpdates {
   assignedTo?: number | null;
   etaAt?: string | null;
   scheduledAt?: string | null;
+  scheduledDurationMinutes?: number;
   diagnosis?: string;
   holdReason?: string;
   holdRemindAt?: string | null;
@@ -311,6 +314,7 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     assignedName: extras.assignedName || row.assigned_name || null,
     etaAt: row.eta_at,
     scheduledAt: row.scheduled_at,
+    scheduledDurationMinutes: Number(row.scheduled_duration_minutes) || 60,
     diagnosis: row.diagnosis || "",
     diagnosisDueAt: row.diagnosis_due_at || null,
     diagnosisRecordedAt: row.diagnosis_recorded_at || null,
@@ -577,6 +581,15 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   const nextHoldReason = String(updates.holdReason ?? existing.holdReason ?? "").trim().slice(0, 500);
   const nextHoldRemindAt = updates.holdRemindAt === undefined ? existing.holdRemindAt : updates.holdRemindAt;
   const assignedChanged = updates.assignedTo !== undefined && Number(updates.assignedTo || 0) !== Number(existing.assignedTo || 0);
+  const nextSchedule = updates.scheduledAt === undefined ? existing.scheduledAt : updates.scheduledAt;
+  const nextDuration = updates.scheduledDurationMinutes === undefined ? existing.scheduledDurationMinutes : Number(updates.scheduledDurationMinutes);
+  const nextAssignee = updates.assignedTo === undefined ? existing.assignedTo : (updates.assignedTo || null);
+  const scheduleChanged =
+    (updates.scheduledAt !== undefined && String(updates.scheduledAt || "") !== String(existing.scheduledAt || "")) ||
+    assignedChanged ||
+    (updates.scheduledDurationMinutes !== undefined && nextDuration !== existing.scheduledDurationMinutes);
+  if (!Number.isInteger(nextDuration) || nextDuration < 15 || nextDuration > 480) return { error: "Appointment length must be between 15 minutes and 8 hours." };
+  if (nextSchedule && Number.isNaN(new Date(nextSchedule).getTime())) return { error: "Choose a valid appointment date and time." };
   if (updates.priority !== undefined && !PRIORITIES.includes(updates.priority as any)) return { error: "Priority must be low, normal, high, or critical." };
   if (nextStatus === "on_hold") {
     if (!nextHoldReason) return { error: "Add a reason before putting this ticket on hold." };
@@ -629,6 +642,11 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   if (updates.scheduledAt !== undefined) {
     fields.push(`scheduled_at = $${idx}`);
     params.push(updates.scheduledAt || null);
+    idx++;
+  }
+  if (updates.scheduledDurationMinutes !== undefined) {
+    fields.push(`scheduled_duration_minutes = $${idx}`);
+    params.push(nextDuration);
     idx++;
   }
   if (updates.diagnosis !== undefined) {
@@ -743,7 +761,36 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   fields.push("updated_at = NOW()::text");
 
   params.push(ticketId);
-  await query(`UPDATE repair_tickets SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+  const updateSql = `UPDATE repair_tickets SET ${fields.join(", ")} WHERE id = $${idx}`;
+  if (scheduleChanged && nextSchedule && nextAssignee && !["collected", "cancelled"].includes(nextStatus)) {
+    const scheduleResult = await transaction(async (client) => {
+      await client.query("SELECT id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId]);
+      // Serialize every appointment write for this technician. Without this
+      // transaction-scoped lock, two concurrent saves could both pass the
+      // overlap query and double-book the same slot.
+      await client.query("SELECT pg_advisory_xact_lock(927361, $1::integer)", [nextAssignee]);
+      const conflict = (await client.query(
+        `SELECT id, scheduled_at, scheduled_duration_minutes
+         FROM repair_tickets
+         WHERE assigned_to = $1 AND id <> $2
+           AND scheduled_at IS NOT NULL
+           AND status NOT IN ('collected', 'cancelled')
+           AND scheduled_at::timestamp < $3::timestamp + make_interval(mins => $4)
+           AND scheduled_at::timestamp + make_interval(mins => scheduled_duration_minutes) > $3::timestamp
+         ORDER BY scheduled_at::timestamp ASC LIMIT 1`,
+        [nextAssignee, ticketId, nextSchedule, nextDuration]
+      )).rows?.[0];
+      if (conflict) {
+        const start = String(conflict.scheduled_at).replace("T", " ").slice(0, 16);
+        return { error: `This technician is already booked on repair #${conflict.id} at ${start} for ${conflict.scheduled_duration_minutes} minutes. Choose another time or technician.`, conflict: true };
+      }
+      await client.query(updateSql, params);
+      return null;
+    });
+    if (scheduleResult) return scheduleResult;
+  } else {
+    await query(updateSql, params);
+  }
 
   if (updates.status && updates.status !== existing.status) {
     await addRepairUpdate(
