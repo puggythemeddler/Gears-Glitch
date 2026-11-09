@@ -14,6 +14,7 @@ import {
   respondToRepairQuote,
 } from "../server/repairs";
 import { buildRepairQuotePdf } from "../server/repair-quote-pdf";
+import { closeBrowser } from "../server/pdf";
 
 const TICKET_ID = "REP-QUOTE-VERSION-TEST-001";
 const CUSTOMER_EMAIL = "repair-quote-version-test@example.invalid";
@@ -25,6 +26,11 @@ async function cleanupTestTicket() {
 }
 
 describe("repair quote PDF rendering", () => {
+  after(async () => {
+    // The shared Chromium instance keeps Node alive after the test runner ends.
+    await closeBrowser();
+  });
+
   it("produces a non-empty PDF with the quote version and expiry terms", { skip: process.platform === "win32" && "Bundled @sparticuz/chromium is Linux-only; PDF rendering runs in Linux CI/hosting" }, async () => {
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
     const pdf = await buildRepairQuotePdf({
