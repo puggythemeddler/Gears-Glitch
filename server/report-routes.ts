@@ -275,6 +275,7 @@ router.get("/repairs", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Reque
   const to = String(req.query.to || allTimeRange().to);
   const range = parseDateRange(from, to) ?? allTimeRange();
   const rangeWhere = `created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')`;
+  const technicianRangeWhere = `t.created_at::timestamptz >= ($1::date::timestamp AT TIME ZONE 'Africa/Nairobi') AND t.created_at::timestamptz < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Nairobi')`;
   const rangeParams = [range.from, range.to];
   const byStatus = await queryAll(
     `SELECT status, COUNT(*)::int AS tickets,
@@ -319,7 +320,7 @@ router.get("/repairs", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Reque
        COALESCE(SUM(t.total_cost) FILTER (WHERE t.status = 'collected'), 0) AS collected_ticket_value,
        COALESCE(AVG(EXTRACT(EPOCH FROM (t.completed_at::timestamp - t.created_at::timestamp)) / 86400.0) FILTER (WHERE t.status = 'collected' AND t.completed_at IS NOT NULL), 0) AS avg_turnover_days
      FROM repair_tickets t LEFT JOIN users u ON u.id = t.assigned_to
-     WHERE t.${rangeWhere}
+     WHERE ${technicianRangeWhere}
      GROUP BY COALESCE(u.username, 'Unassigned') ORDER BY tickets DESC`,
     rangeParams
   );
