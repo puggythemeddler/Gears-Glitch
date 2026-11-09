@@ -114,6 +114,9 @@ export interface RepairTicket {
   partsCost?: number;
   hardwareValue?: number;
   quoteSentAt?: string | null;
+  quoteVersion?: number | null;
+  quoteExpiresAt?: string | null;
+  quoteDeliveryStatus?: string | null;
   quoteRespondedAt?: string | null;
   quoteResponse?: string | null;
   updates?: RepairUpdate[];
