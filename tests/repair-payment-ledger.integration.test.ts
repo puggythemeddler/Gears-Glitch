@@ -69,6 +69,7 @@ describe("repair payment ledger integration (DB)", { skip: !HAS_DB && "TEST_DATA
 
   beforeEach(async () => {
     await query("DELETE FROM repair_payments WHERE ticket_id = $1", [TICKET]);
+    await query("DELETE FROM repair_updates WHERE ticket_id = $1", [TICKET]);
     await query("DELETE FROM repair_tickets WHERE id = $1", [TICKET]);
     await query(
       `INSERT INTO repair_tickets (id, customer_id, device_type, issue_description, status, eta_at, total_cost)
@@ -79,6 +80,7 @@ describe("repair payment ledger integration (DB)", { skip: !HAS_DB && "TEST_DATA
 
   after(async () => {
     await query("DELETE FROM repair_payments WHERE ticket_id = $1", [TICKET]);
+    await query("DELETE FROM repair_updates WHERE ticket_id = $1", [TICKET]);
     await query("DELETE FROM repair_tickets WHERE id = $1", [TICKET]);
     if (staffId > 0) await query("DELETE FROM users WHERE id = $1", [staffId]);
     await closePool();
