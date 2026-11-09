@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatPrice, Spinner } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import type { Product } from "@/lib/types";
+import { isSoftwareLicenseProduct, softwareLicenseProductPrice } from "@/lib/repairLicenseProducts";
 
 type AdminRepairsTab = "tickets" | "calendar" | "workflow" | "content";
 
@@ -63,17 +64,6 @@ function fmtDate(s: string) {
     return new Date(y, m - 1, d).toLocaleDateString("en-GB");
   }
   return new Date(s).toLocaleDateString("en-GB");
-}
-
-function isSoftwareLicenseProduct(product: Product): boolean {
-  return /software|licen[cs]e|windows|microsoft\s*365|office|antivirus|operating\s*system|activation\s*key/i.test(
-    [product.name, product.category, product.subcategory].join(" ")
-  );
-}
-
-function softwareLicenseProductPrice(product: Product): number {
-  const salePrice = Number(product.salePrice);
-  return salePrice > 0 ? salePrice : Number(product.price) || 0;
 }
 
 export default function AdminRepairs({ adminOnly = true, canManagePayments = false, canVoidPayments = false }: { adminOnly?: boolean; canManagePayments?: boolean; canVoidPayments?: boolean }) {
