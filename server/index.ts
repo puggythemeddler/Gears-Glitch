@@ -6954,7 +6954,7 @@ app.patch("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:upd
   const before = await loadTicketDetails(String(req.params.id));
   const result = await updateRepairTicket(String(req.params.id), req.body || {}, (req as any).user.sub);
   if (!result) { res.status(404).json({ error: "Ticket not found." }); return; }
-  if ((result as any).error) { res.status(400).json({ error: (result as any).error }); return; }
+  if ((result as any).error) { res.status((result as any).conflict ? 409 : 400).json({ error: (result as any).error }); return; }
   // Admin notification when a repair status changes (idempotent: only fires on an actual transition).
   if (before && req.body?.status && req.body.status !== before.status) {
     try {

@@ -389,6 +389,7 @@ CREATE TABLE IF NOT EXISTS repair_tickets (
   branch_id INTEGER REFERENCES branches(id),
   eta_at TEXT NOT NULL,
   scheduled_at TEXT,
+  scheduled_duration_minutes INTEGER NOT NULL DEFAULT 60 CONSTRAINT repair_tickets_schedule_duration_range CHECK (scheduled_duration_minutes BETWEEN 15 AND 480),
   diagnosis TEXT NOT NULL DEFAULT '',
   diagnosis_due_at TEXT,
   diagnosis_recorded_at TEXT,
