@@ -825,6 +825,222 @@ export async function runRepairWorkflowSweep(): Promise<{ diagnosisEscalated: an
   return { diagnosisEscalated, holdReminders };
 }
 
+const REPAIR_PAYMENT_METHODS = ["cash", "mpesa", "card", "bank_transfer", "other"] as const;
+type RepairPaymentKind = "payment" | "refund";
+
+export class RepairPaymentError extends Error {
+  constructor(message: string) { super(message); this.name = "RepairPaymentError"; }
+}
+
+function moneyToCents(value: unknown): number {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 9_999_999_999.99) throw new RepairPaymentError("Enter an amount greater than zero with no more than two decimal places.");
+  const cents = Math.round(amount * 100);
+  if (Math.abs(amount - cents / 100) > 0.000001) throw new RepairPaymentError("Enter an amount with no more than two decimal places.");
+  return cents;
+}
+
+export async function listRepairPaymentLedger(ticketId: string): Promise<any | null> {
+  const ticket = await queryOne("SELECT total_cost FROM repair_tickets WHERE id = $1", [ticketId]) as any;
+  if (!ticket) return null;
+  const entries = await queryAll(
+    `SELECT rp.id, rp.kind, rp.amount, rp.payment_method, rp.reference, rp.related_payment_id,
+            original.reference AS related_reference, rp.reason, rp.created_at,
+            rp.created_by AS created_by_id, u.username AS created_by,
+            voiding.id AS voided_by_entry_id, voiding.reason AS void_reason,
+            voiding.created_at AS voided_at, voider.username AS voided_by
+     FROM repair_payments rp
+     LEFT JOIN repair_payments original ON original.id = rp.related_payment_id
+     LEFT JOIN users u ON u.id = rp.created_by
+     LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+     LEFT JOIN users voider ON voider.id = voiding.created_by
+     WHERE rp.ticket_id = $1 ORDER BY rp.created_at DESC, rp.id DESC`,
+    [ticketId]
+  );
+  const totals = await queryOne(
+    `SELECT COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'payment' AND voiding.id IS NULL),0) AS received,
+            COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'refund' AND voiding.id IS NULL),0) AS refunded,
+            COUNT(voiding.id)::int AS voided_entries
+     FROM repair_payments rp
+     LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+     WHERE rp.ticket_id = $1 AND rp.kind IN ('payment','refund')`,
+    [ticketId]
+  ) as any;
+  const received = Number(totals?.received || 0);
+  const refunded = Number(totals?.refunded || 0);
+  const netReceived = Math.max(0, Math.round((received - refunded) * 100) / 100);
+  const estimate = Math.max(0, Number(ticket.total_cost || 0));
+  return {
+    entries: entries.map((r: any) => ({
+      id: Number(r.id), kind: r.kind, amount: Number(r.amount), paymentMethod: r.payment_method,
+      reference: r.reference, relatedPaymentId: r.related_payment_id == null ? null : Number(r.related_payment_id),
+      relatedReference: r.related_reference || null, reason: r.reason || "", createdAt: r.created_at,
+      createdById: r.created_by_id == null ? null : Number(r.created_by_id), createdBy: r.created_by || "Staff",
+      voided: r.voided_by_entry_id != null, voidedAt: r.voided_at || null,
+      voidReason: r.void_reason || "", voidedBy: r.voided_by || null,
+    })),
+    summary: { estimate, received, refunded, netReceived, balance: Math.max(0, Math.round((estimate - netReceived) * 100) / 100), voidedEntries: Number(totals?.voided_entries || 0) },
+  };
+}
+
+export async function recordRepairLedgerEntry(ticketId: string, input: {
+  kind: RepairPaymentKind; amount: unknown; paymentMethod?: unknown; reference: unknown;
+  relatedPaymentId?: unknown; reason?: unknown; idempotencyKey: unknown; staffId: number;
+}): Promise<any> {
+  const amountCents = moneyToCents(input.amount);
+  const kind = input.kind;
+  if (kind !== "payment" && kind !== "refund") throw new RepairPaymentError("Choose payment or refund.");
+  const reference = String(input.reference ?? "").trim().slice(0, 128);
+  if (!reference) throw new RepairPaymentError("Enter the receipt or refund reference.");
+  const idempotencyKey = String(input.idempotencyKey ?? "").trim().slice(0, 128);
+  if (!idempotencyKey) throw new RepairPaymentError("The request key is missing. Please retry.");
+  const reason = String(input.reason ?? "").trim().slice(0, 500);
+  if (kind === "refund" && !reason) throw new RepairPaymentError("Enter a reason for the refund.");
+  const relatedPaymentId = input.relatedPaymentId == null ? null : Number(input.relatedPaymentId);
+  if (kind === "refund" && (!Number.isSafeInteger(relatedPaymentId) || Number(relatedPaymentId) <= 0)) throw new RepairPaymentError("Choose the original payment to refund.");
+  let paymentMethod = String(input.paymentMethod ?? "").trim().toLowerCase();
+  if (!REPAIR_PAYMENT_METHODS.includes(paymentMethod as any)) throw new RepairPaymentError("Choose a supported payment method.");
+
+  try {
+  return await transaction(async (client) => {
+    const prior = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+    if (prior) {
+      const matches = String(prior.ticket_id) === ticketId && prior.kind === kind && Math.round(Number(prior.amount) * 100) === amountCents && prior.reference === reference && prior.payment_method === paymentMethod && String(prior.reason || "") === reason && (prior.related_payment_id == null ? null : Number(prior.related_payment_id)) === relatedPaymentId;
+      if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+      return prior;
+    }
+
+    const ticket = (await client.query("SELECT id, total_cost, status FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId])).rows?.[0] as any;
+    if (!ticket) throw new RepairPaymentError("Repair ticket not found.");
+    const afterLock = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+    if (afterLock) {
+      const matches = String(afterLock.ticket_id) === ticketId && afterLock.kind === kind && Math.round(Number(afterLock.amount) * 100) === amountCents && afterLock.reference === reference && afterLock.payment_method === paymentMethod && String(afterLock.reason || "") === reason && (afterLock.related_payment_id == null ? null : Number(afterLock.related_payment_id)) === relatedPaymentId;
+      if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+      return afterLock;
+    }
+    if (kind === "payment") {
+      if (["cancelled", "rejected"].includes(String(ticket.status))) throw new RepairPaymentError("A payment cannot be recorded against a cancelled or rejected repair.");
+      const sums = (await client.query(
+        `SELECT COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'payment' AND voiding.id IS NULL),0) AS received,
+                COALESCE(SUM(rp.amount) FILTER (WHERE rp.kind = 'refund' AND voiding.id IS NULL),0) AS refunded
+         FROM repair_payments rp
+         LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+         WHERE rp.ticket_id = $1 AND rp.kind IN ('payment','refund')`, [ticketId]
+      )).rows?.[0] as any;
+      const netCents = Math.round((Number(sums?.received || 0) - Number(sums?.refunded || 0)) * 100);
+      const estimateCents = Math.max(0, Math.round(Number(ticket.total_cost || 0) * 100));
+      if (amountCents > estimateCents - netCents) throw new RepairPaymentError(`Payment exceeds the remaining repair estimate (${Math.max(0, (estimateCents - netCents) / 100).toFixed(2)}). Update and approve the estimate before recording more.`);
+    } else {
+      const original = (await client.query("SELECT id, ticket_id, amount, payment_method FROM repair_payments WHERE id = $1 AND kind = 'payment' FOR UPDATE", [relatedPaymentId])).rows?.[0] as any;
+      if (!original || original.ticket_id !== ticketId) throw new RepairPaymentError("The selected payment does not belong to this repair.");
+      const originalVoid = (await client.query("SELECT id FROM repair_payments WHERE kind = 'void' AND related_payment_id = $1", [relatedPaymentId])).rows?.[0];
+      if (originalVoid) throw new RepairPaymentError("A refund cannot be linked to a voided receipt.");
+      if (paymentMethod !== original.payment_method) throw new RepairPaymentError("Refund method must match the original payment method.");
+      const refunded = (await client.query(
+        `SELECT COALESCE(SUM(rp.amount),0) AS total FROM repair_payments rp
+         LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = rp.id
+         WHERE rp.kind = 'refund' AND rp.related_payment_id = $1 AND voiding.id IS NULL`, [relatedPaymentId]
+      )).rows?.[0] as any;
+      const refundableCents = Math.round((Number(original.amount) - Number(refunded?.total || 0)) * 100);
+      if (amountCents > refundableCents) throw new RepairPaymentError(`Refund exceeds the remaining amount on this receipt (${Math.max(0, refundableCents / 100).toFixed(2)}).`);
+    }
+
+    const inserted = (await client.query(
+      `INSERT INTO repair_payments (ticket_id, kind, amount, payment_method, reference, related_payment_id, reason, idempotency_key, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING id, kind, amount, payment_method, reference, related_payment_id, reason, created_at`,
+      [ticketId, kind, amountCents / 100, paymentMethod, reference, relatedPaymentId, reason, idempotencyKey, input.staffId]
+    )).rows?.[0] as any;
+    if (!inserted) {
+      const raced = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+      const matches = raced && String(raced.ticket_id) === ticketId && raced.kind === kind && Math.round(Number(raced.amount) * 100) === amountCents && raced.reference === reference && raced.payment_method === paymentMethod && String(raced.reason || "") === reason && (raced.related_payment_id == null ? null : Number(raced.related_payment_id)) === relatedPaymentId;
+      if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+      return raced;
+    }
+    const message = kind === "payment"
+      ? `Repair payment recorded: KES ${(amountCents / 100).toFixed(2)} via ${paymentMethod} (reference ${reference}).`
+      : `Repair refund recorded: KES ${(amountCents / 100).toFixed(2)} via ${paymentMethod} (reference ${reference}); reason: ${reason}.`;
+    await client.query(
+      "INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible) VALUES ($1,$2,$3,$4,0)",
+      [ticketId, input.staffId, kind === "payment" ? "payment_received" : "payment_refunded", message]
+    );
+    return { ...inserted, created_by: null };
+  });
+  } catch (err: any) {
+    if (err?.code === "23505") throw new RepairPaymentError("That reference has already been recorded for this ticket and payment method.");
+    throw err;
+  }
+}
+
+export async function voidRepairLedgerEntry(ticketId: string, entryId: unknown, input: {
+  reason: unknown; idempotencyKey: unknown; staffId: number;
+}): Promise<void> {
+  const targetId = Number(entryId);
+  if (!Number.isSafeInteger(targetId) || targetId <= 0) throw new RepairPaymentError("Choose a valid payment or refund entry.");
+  const reason = String(input.reason ?? "").trim().slice(0, 500);
+  if (!reason) throw new RepairPaymentError("Enter a reason for voiding this entry.");
+  const idempotencyKey = String(input.idempotencyKey ?? "").trim().slice(0, 128);
+  if (!idempotencyKey) throw new RepairPaymentError("The request key is missing. Please retry.");
+
+  try {
+    await transaction(async (client) => {
+      const prior = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+      if (prior) {
+        const matches = String(prior.ticket_id) === ticketId && prior.kind === "void" && Number(prior.related_payment_id) === targetId && String(prior.reason || "") === reason;
+        if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+        return;
+      }
+
+      const ticket = (await client.query("SELECT id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId])).rows?.[0];
+      if (!ticket) throw new RepairPaymentError("Repair ticket not found.");
+      const afterLock = (await client.query("SELECT * FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+      if (afterLock) {
+        const matches = String(afterLock.ticket_id) === ticketId && afterLock.kind === "void" && Number(afterLock.related_payment_id) === targetId && String(afterLock.reason || "") === reason;
+        if (!matches) throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+        return;
+      }
+      const target = (await client.query(
+        "SELECT id, kind, amount, payment_method FROM repair_payments WHERE id = $1 AND ticket_id = $2 FOR UPDATE",
+        [targetId, ticketId]
+      )).rows?.[0] as any;
+      if (!target || !["payment", "refund"].includes(String(target.kind))) throw new RepairPaymentError("Only a payment or refund entry on this ticket can be voided.");
+      const priorVoid = (await client.query("SELECT id FROM repair_payments WHERE kind = 'void' AND related_payment_id = $1", [targetId])).rows?.[0];
+      if (priorVoid) throw new RepairPaymentError("This ledger entry has already been voided.");
+
+      if (target.kind === "payment") {
+        const activeRefund = (await client.query(
+          `SELECT 1 FROM repair_payments refund
+           LEFT JOIN repair_payments voiding ON voiding.kind = 'void' AND voiding.related_payment_id = refund.id
+           WHERE refund.kind = 'refund' AND refund.related_payment_id = $1 AND voiding.id IS NULL LIMIT 1`,
+          [targetId]
+        )).rows?.[0];
+        if (activeRefund) throw new RepairPaymentError("Void the related refund first. A receipt with an active refund cannot be voided.");
+      }
+
+      const reference = `VOID-${targetId}-${idempotencyKey}`.slice(0, 128);
+      const inserted = (await client.query(
+        `INSERT INTO repair_payments (ticket_id, kind, amount, payment_method, reference, related_payment_id, reason, idempotency_key, created_by)
+         VALUES ($1, 'void', $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id`,
+        [ticketId, target.amount, target.payment_method, reference, targetId, reason, idempotencyKey, input.staffId]
+      )).rows?.[0];
+      if (!inserted) {
+        const raced = (await client.query("SELECT ticket_id, related_payment_id, reason, kind FROM repair_payments WHERE idempotency_key = $1", [idempotencyKey])).rows?.[0] as any;
+        if (raced && String(raced.ticket_id) === ticketId && raced.kind === "void" && Number(raced.related_payment_id) === targetId && String(raced.reason || "") === reason) return;
+        throw new RepairPaymentError("This request key was already used for a different ledger entry.");
+      }
+      const message = `Repair ${target.kind} entry ${targetId} voided (${reference}). Reason: ${reason}.`;
+      await client.query(
+        "INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible) VALUES ($1,$2,'payment_voided',$3,0)",
+        [ticketId, input.staffId, message]
+      );
+    });
+  } catch (err: any) {
+    if (err instanceof RepairPaymentError) throw err;
+    if (err?.code === "23505") throw new RepairPaymentError("This ledger entry has already been voided.");
+    throw err;
+  }
+}
+
 async function addRepairUpdate(ticketId: string, staffId: number | null, updateType: string, message: string, customerVisible: boolean = false): Promise<number> {
   const row = await queryOne(
     `INSERT INTO repair_updates (ticket_id, staff_id, update_type, message, customer_visible)

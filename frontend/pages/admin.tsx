@@ -771,7 +771,7 @@ export default function AdminPage() {
             {view === "whatsapp-settings" && <WhatsAppSettings />}
             {view === "notifications-settings" && <NotificationSettings />}
             {view === "category-positioning" && <CategoryPositioningPage />}
-            {view === "repairs" && <AdminRepairs adminOnly={staffRole === "admin"} />}
+            {view === "repairs" && <AdminRepairs adminOnly={staffRole === "admin"} canManagePayments={staffRole === "admin" || staffPermissions.includes("repair:payment")} canVoidPayments={staffRole === "admin" || staffPermissions.includes("repair:payment:void")} />}
             {view === "warranties" && <AdminWarranties />}
             {view === "financing" && <AdminFinancing />}
             {view === "help" && <HelpPanel />}
@@ -7706,7 +7706,7 @@ function ReportRepairs() {
     <ReportScreen
       title="Repairs"
       endpoint="/api/reports/repairs"
-      note="Collected ticket value is the saved ticket total for tickets marked collected, not a confirmed payment. Repair payments and refunds are not yet linked to tickets. Diagnosis SLA results include only records with a captured due date and diagnosis time."
+      note="Collected ticket value is the saved estimate for tickets marked collected, not a payment. Recorded receipts and refunds are staff-entered, exclude voided entries, and are not confirmed by M-Pesa or another provider. Voids are retained in ticket history. Diagnosis SLA results include only records with a captured due date and diagnosis time."
       exportPath={(qs) => `/api/reports/repairs/export.csv?${qs}`}
     >
       {(r) => (
@@ -7717,6 +7717,10 @@ function ReportRepairs() {
             <ReportStat value={r.summary.completed} label="Collected tickets" />
             <ReportStat value={r.summary.cancelled} label="Cancelled / rejected" />
             <ReportStat value={formatPrice(r.summary.collected_ticket_value)} label="Collected ticket value" />
+            <ReportStat value={formatPrice(r.payments?.received || 0)} label="Recorded payments" />
+            <ReportStat value={formatPrice(r.payments?.refunded || 0)} label="Recorded refunds" />
+            <ReportStat value={formatPrice(r.payments?.net_received || 0)} label="Net recorded received" />
+            <ReportStat value={r.payments?.voided_entries || 0} label="Voided ledger entries" />
             <ReportStat value={r.summary.avg_turnover_days === null ? "\u2014" : r.summary.avg_turnover_days + " days"} label="Avg turnaround" />
             <ReportStat value={`${r.summary.diagnosis_on_time}/${r.summary.diagnosis_sla_measured}`} label="Diagnosis on time" />
             <ReportStat value={r.summary.diagnosis_overdue} label="Diagnoses overdue" />

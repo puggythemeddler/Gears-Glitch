@@ -405,6 +405,10 @@ import {
   respondToRepairQuote,
   runRepairWorkflowSweep,
   customerSafeRepairTicket,
+  RepairPaymentError,
+  listRepairPaymentLedger,
+  recordRepairLedgerEntry,
+  voidRepairLedgerEntry,
 } from "./repairs";
 import warrantyRouter from "./warranty";
 import reportRouter from "./report-routes";
@@ -692,6 +696,8 @@ defineAudit("/api/repairs/:id/parts", "repair_part", { method: "POST" });
 defineAudit("/api/repairs/:id/parts/:partId", "repair_part");
 defineAudit("/api/repairs/:id/updates", "repair", { action: "updated", method: "POST" });
 defineAudit("/api/repairs/:id/send-quote", "repair", { action: "quote_sent", method: "POST" });
+defineAudit("/api/repairs/:id/payments", "repair_payment", { action: "recorded", method: "POST" });
+defineAudit("/api/repairs/:id/payments/:paymentId/void", "repair_payment", { action: "voided", method: "POST" });
 defineAudit("/api/admin/repair-workflow", "settings", { action: "repair_workflow_updated", method: "PUT" });
 // Purchases
 defineAudit("/api/purchases", "purchase");
@@ -6910,6 +6916,38 @@ app.get("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:view"
   const ticket = await loadTicketDetails(String(req.params.id));
   if (!ticket) { res.status(404).json({ error: "Ticket not found." }); return; }
   res.json(ticket);
+}));
+
+app.get("/api/repairs/:id/payments", staffAuthMiddleware, requirePermission("repair:view"), requirePermission("repair:payment"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  const ledger = await listRepairPaymentLedger(String(req.params.id));
+  if (!ledger) { res.status(404).json({ error: "Ticket not found." }); return; }
+  res.json(ledger);
+}));
+
+app.post("/api/repairs/:id/payments", staffAuthMiddleware, requirePermission("repair:update"), requirePermission("repair:payment"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    await recordRepairLedgerEntry(String(req.params.id), { ...(req.body || {}), staffId: Number((req as any).user.sub) });
+    const ledger = await listRepairPaymentLedger(String(req.params.id));
+    if (!ledger) { res.status(404).json({ error: "Ticket not found." }); return; }
+    res.status(201).json(ledger);
+  } catch (err: any) {
+    if (err instanceof RepairPaymentError) { res.status(400).json({ error: err.message }); return; }
+    console.error("[repair payment ledger]", err?.message || err);
+    res.status(500).json({ error: "Repair payment could not be recorded." });
+  }
+}));
+
+app.post("/api/repairs/:id/payments/:paymentId/void", staffAuthMiddleware, requirePermission("repair:view"), requirePermission("repair:payment"), requirePermission("repair:payment:void"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    await voidRepairLedgerEntry(String(req.params.id), req.params.paymentId, { ...(req.body || {}), staffId: Number((req as any).user.sub) });
+    const ledger = await listRepairPaymentLedger(String(req.params.id));
+    if (!ledger) { res.status(404).json({ error: "Ticket not found." }); return; }
+    res.json(ledger);
+  } catch (err: any) {
+    if (err instanceof RepairPaymentError) { res.status(400).json({ error: err.message }); return; }
+    console.error("[repair payment void]", err?.message || err);
+    res.status(500).json({ error: "Repair payment entry could not be voided." });
+  }
 }));
 
 app.patch("/api/repairs/:id", staffAuthMiddleware, requirePermission("repair:update"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {

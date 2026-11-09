@@ -64,7 +64,7 @@ function fmtDate(s: string) {
   return new Date(s).toLocaleDateString("en-GB");
 }
 
-export default function AdminRepairs({ adminOnly = true }: { adminOnly?: boolean }) {
+export default function AdminRepairs({ adminOnly = true, canManagePayments = false, canVoidPayments = false }: { adminOnly?: boolean; canManagePayments?: boolean; canVoidPayments?: boolean }) {
   const [tab, setTab] = useState<AdminRepairsTab>("tickets");
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
 
@@ -84,6 +84,8 @@ export default function AdminRepairs({ adminOnly = true }: { adminOnly?: boolean
         <TicketsTab
           openId={openTicketId}
           onOpen={setOpenTicketId}
+          canManagePayments={canManagePayments}
+          canVoidPayments={canVoidPayments}
         />
       )}
       {tab === "calendar" && (
@@ -157,7 +159,7 @@ interface TicketForm {
   softwareLicense: boolean;
 }
 
-function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: string | null) => void }) {
+function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { openId: string | null; onOpen: (id: string | null) => void; canManagePayments: boolean; canVoidPayments: boolean }) {
   const feedback = useFeedback();
   const [tickets, setTickets] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
@@ -176,6 +178,11 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
   const [assetSerials, setAssetSerials] = useState<any[]>([]);
   const [assetWarranties, setAssetWarranties] = useState<any[]>([]);
   const [assetLoading, setAssetLoading] = useState(false);
+  const [paymentLedger, setPaymentLedger] = useState<any>(null);
+  const [paymentError, setPaymentError] = useState("");
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentRequestKey, setPaymentRequestKey] = useState("");
+  const [paymentForm, setPaymentForm] = useState({ kind: "payment", amount: "", paymentMethod: "mpesa", reference: "", relatedPaymentId: "", reason: "" });
 
   async function loadList() {
     setLoading(true);
@@ -202,9 +209,15 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
     setDetailError("");
     setDetail(null);
     setForm(null);
+    setPaymentLedger(null);
+    setPaymentError("");
     try {
       const d = await api<any>(`/api/repairs/${id}`);
       setDetail(d);
+      if (canManagePayments) {
+        try { setPaymentLedger(await api<any>(`/api/repairs/${id}/payments`)); }
+        catch (e: any) { setPaymentError(e?.message || "The repair payment ledger could not be loaded."); }
+      }
       if (d.customerId) {
         setAssetLoading(true);
         const [s, w] = await Promise.all([
@@ -326,6 +339,64 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
       feedback.success({ title: "Update added" });
     } catch (e: any) { feedback.error({ title: "Update not added", message: e.message }); }
   }
+
+  async function saveRepairPayment() {
+    if (!detail) return;
+    setPaymentSaving(true);
+    setPaymentError("");
+    try {
+      const requestKey = paymentRequestKey || crypto.randomUUID();
+      if (!paymentRequestKey) setPaymentRequestKey(requestKey);
+      const selectedOriginal = paymentLedger?.entries?.find((entry: any) => String(entry.id) === paymentForm.relatedPaymentId);
+      const entry = await api<any>(`/api/repairs/${detail.id}/payments`, {
+        method: "POST",
+        body: JSON.stringify({
+          kind: paymentForm.kind,
+          amount: paymentForm.amount,
+          paymentMethod: paymentForm.kind === "refund" ? selectedOriginal?.paymentMethod : paymentForm.paymentMethod,
+          reference: paymentForm.reference,
+          relatedPaymentId: paymentForm.kind === "refund" ? Number(paymentForm.relatedPaymentId) : null,
+          reason: paymentForm.reason,
+          idempotencyKey: requestKey,
+        }),
+      });
+      setPaymentLedger(entry);
+      setPaymentForm({ kind: "payment", amount: "", paymentMethod: "mpesa", reference: "", relatedPaymentId: "", reason: "" });
+      setPaymentRequestKey("");
+      await loadDetail(detail.id);
+      feedback.success({ title: paymentForm.kind === "payment" ? "Payment recorded" : "Refund recorded", message: "The repair ledger and internal ticket history have been updated." });
+    } catch (e: any) {
+      setPaymentError(e?.message || "The ledger entry could not be saved.");
+      feedback.error({ title: "Ledger entry not saved", message: e?.message || "Please review the amount, reference and remaining balance." });
+    } finally { setPaymentSaving(false); }
+  }
+
+  async function voidPaymentEntry(entry: any) {
+    if (!detail || !canVoidPayments || entry.voided || entry.kind === "void") return;
+    if (!window.confirm(`Void ${entry.kind} ${entry.reference} for ${formatPrice(entry.amount)}? The original record will remain in the audit history.`)) return;
+    const reason = window.prompt("Enter the reason for voiding this entry:")?.trim();
+    if (!reason) return;
+    setPaymentSaving(true);
+    setPaymentError("");
+    try {
+      const ledger = await api<any>(`/api/repairs/${detail.id}/payments/${entry.id}/void`, {
+        method: "POST",
+        body: JSON.stringify({ reason, idempotencyKey: crypto.randomUUID() }),
+      });
+      setPaymentLedger(ledger);
+      await loadDetail(detail.id);
+      feedback.success({ title: "Entry voided", message: "The original entry remains in history and is excluded from active totals." });
+    } catch (e: any) {
+      setPaymentError(e?.message || "The entry could not be voided.");
+      feedback.error({ title: "Entry not voided", message: e?.message || "Please review the entry and try again." });
+    } finally { setPaymentSaving(false); }
+  }
+
+  const paymentRefundedByReceipt = new Map<number, number>();
+  for (const entry of paymentLedger?.entries || []) if (entry.kind === "refund" && !entry.voided && entry.relatedPaymentId != null) {
+    paymentRefundedByReceipt.set(entry.relatedPaymentId, (paymentRefundedByReceipt.get(entry.relatedPaymentId) || 0) + Number(entry.amount || 0));
+  }
+  const refundableReceipts = (paymentLedger?.entries || []).filter((entry: any) => entry.kind === "payment" && !entry.voided && Number(entry.amount) - (paymentRefundedByReceipt.get(Number(entry.id)) || 0) > 0.009);
 
   const partsTotal = Array.isArray(detail?.parts)
     ? detail.parts.reduce((s: number, p: any) => s + (Number(p.unitCost) || 0) * (Number(p.quantity) || 1), 0)
@@ -495,6 +566,36 @@ function TicketsTab({ openId, onOpen }: { openId: string | null; onOpen: (id: st
               {quoteAccepted ? "Customer accepted the quote" : quoteDeclined ? "Customer declined the quote" : "Quote sent to customer — awaiting response"}
             </div>
           )}
+
+          {canManagePayments && <section aria-labelledby="repair-payments-heading" style={{ marginTop: "1.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
+            <h4 id="repair-payments-heading" style={{ margin: "0 0 0.35rem" }}>Payments &amp; refunds</h4>
+            <p className="muted" style={{ marginTop: 0 }}>Staff-entered reconciliation only. A saved entry is not confirmation from M-Pesa, a bank, or a card provider. Voids keep the original record and require a separate permission.</p>
+            {paymentError && <p role="alert" className="error-text">{paymentError}</p>}
+            {paymentLedger ? <>
+              <div className="stat-grid" style={{ marginBottom: "0.75rem" }}>
+                <div><div className="input-label">Current estimate</div><strong>{formatPrice(paymentLedger.summary.estimate)}</strong></div>
+                <div><div className="input-label">Recorded received</div><strong>{formatPrice(paymentLedger.summary.received)}</strong></div>
+                <div><div className="input-label">Recorded refunds</div><strong>{formatPrice(paymentLedger.summary.refunded)}</strong></div>
+                <div><div className="input-label">Net recorded</div><strong>{formatPrice(paymentLedger.summary.netReceived)}</strong></div>
+                <div><div className="input-label">Remaining vs estimate</div><strong>{formatPrice(paymentLedger.summary.balance)}</strong></div>
+                <div><div className="input-label">Voided entries</div><strong>{paymentLedger.summary.voidedEntries}</strong></div>
+              </div>
+              {paymentLedger.entries.length > 0 && <div className="table-wrap" style={{ marginBottom: "0.75rem" }}><table className="data-table">
+                <thead><tr><th>Recorded</th><th>Entry</th><th>Status</th><th>Method</th><th>Reference</th><th>Related entry</th><th>Reason</th><th>By</th><th style={{ textAlign: "right" }}>Amount</th><th></th></tr></thead>
+                <tbody>{paymentLedger.entries.map((entry: any) => <tr key={entry.id}>
+                  <td>{new Date(entry.createdAt).toLocaleString("en-GB")}</td><td>{entry.kind === "payment" ? "Payment" : entry.kind === "refund" ? "Refund" : "Void"}</td><td>{entry.voided ? `Voided${entry.voidedBy ? ` by ${entry.voidedBy}` : ""}` : entry.kind === "void" ? "Audit entry" : "Active"}</td><td>{entry.paymentMethod}</td><td>{entry.reference}</td><td>{entry.relatedReference || "—"}</td><td>{entry.kind === "void" ? entry.reason : entry.voided ? entry.voidReason : entry.reason || "—"}</td><td>{entry.createdBy}</td><td style={{ textAlign: "right" }}>{formatPrice(entry.amount)}</td><td>{canVoidPayments && entry.kind !== "void" && !entry.voided && <RippleButton size="small" variant="danger" loading={paymentSaving} onClick={() => voidPaymentEntry(entry)}>Void</RippleButton>}</td>
+                </tr>)}</tbody>
+              </table></div>}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(170px, 100%), 1fr))", alignItems: "end", gap: "0 0.75rem" }}>
+                <div className="field"><label htmlFor="repair-ledger-kind">Entry type</label><select id="repair-ledger-kind" value={paymentForm.kind} onChange={(e) => setPaymentForm({ ...paymentForm, kind: e.target.value, relatedPaymentId: "" })}><option value="payment">Payment received</option><option value="refund">Refund issued</option></select></div>
+                <div className="field"><label htmlFor="repair-ledger-amount">Amount (KES)</label><input id="repair-ledger-amount" type="number" min="0.01" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} /></div>
+                {paymentForm.kind === "payment" ? <div className="field"><label htmlFor="repair-ledger-method">Method</label><select id="repair-ledger-method" value={paymentForm.paymentMethod} onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}><option value="mpesa">M-Pesa</option><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></div> : <div className="field"><label htmlFor="repair-ledger-original">Original receipt</label><select id="repair-ledger-original" value={paymentForm.relatedPaymentId} onChange={(e) => setPaymentForm({ ...paymentForm, relatedPaymentId: e.target.value })}><option value="">Choose receipt</option>{refundableReceipts.map((receipt: any) => <option key={receipt.id} value={receipt.id}>{receipt.reference} · {receipt.paymentMethod} · refundable {formatPrice(Number(receipt.amount) - (paymentRefundedByReceipt.get(Number(receipt.id)) || 0))}</option>)}</select></div>}
+                <div className="field"><label htmlFor="repair-ledger-reference">Receipt / refund reference</label><input id="repair-ledger-reference" maxLength={128} value={paymentForm.reference} onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })} /></div>
+                {paymentForm.kind === "refund" && <div className="field"><label htmlFor="repair-ledger-reason">Refund reason</label><input id="repair-ledger-reason" maxLength={500} value={paymentForm.reason} onChange={(e) => setPaymentForm({ ...paymentForm, reason: e.target.value })} /></div>}
+                <RippleButton onClick={saveRepairPayment} loading={paymentSaving} disabled={!paymentLedger || (paymentForm.kind === "refund" && (!paymentForm.relatedPaymentId || !paymentForm.reason.trim())) || !paymentForm.amount || !paymentForm.reference.trim()}>{paymentForm.kind === "payment" ? "Record payment" : "Record refund"}</RippleButton>
+              </div>
+            </> : <p className="muted" role="status">{paymentError ? "Ledger unavailable." : "Loading payment ledger…"}</p>}
+          </section>}
 
           <div style={{ marginTop: "1.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
             <h4 style={{ margin: 0, display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
