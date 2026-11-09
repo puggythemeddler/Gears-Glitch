@@ -46,6 +46,9 @@ interface TicketRow {
   parts_cost: number;
   software_install: number;
   software_license: number;
+  software_license_product_id: string | null;
+  software_license_price: number;
+  software_license_product_name?: string | null;
   total_cost: number;
   quote_sent_at: string | null;
   quote_responded_at: string | null;
@@ -112,6 +115,9 @@ interface Ticket {
   partsCost: number;
   softwareInstall: boolean;
   softwareLicense: boolean;
+  softwareLicenseProductId: string | null;
+  softwareLicenseProductName: string;
+  softwareLicensePrice: number;
   totalCost: number;
   quoteSentAt: string | null;
   quoteVersion: number | null;
@@ -184,6 +190,7 @@ interface TicketUpdates {
   hardwareValue?: number;
   softwareInstall?: boolean;
   softwareLicense?: boolean;
+  softwareLicenseProductId?: string | null;
 }
 
 const STATUSES: string[] = [
@@ -282,7 +289,7 @@ async function getRepairTypeName(typeId: string | null): Promise<string> {
   return row?.name || "";
 }
 
-async function calculateRepairCost(typeId: string | null, hardwareValue: number, partsCost: number, softwareInstall: boolean, softwareLicense: boolean): Promise<number> {
+async function calculateRepairCost(typeId: string | null, hardwareValue: number, partsCost: number, softwareInstall: boolean, softwareLicensePrice: number): Promise<number> {
   let total = 0;
   if (typeId) {
     const rt = await queryOne("SELECT base_price FROM repair_types WHERE id = $1", [typeId]) as { base_price?: number } | undefined;
@@ -292,12 +299,11 @@ async function calculateRepairCost(typeId: string | null, hardwareValue: number,
     }
   }
   total += partsCost;
-  // R-6: software labor fees are store-configurable via settings, falling back to
-  // the historical KES defaults (800 install / 2500 license) when unset.
+  // Software installation remains a store-configurable service fee. License
+  // prices are supplied separately from a catalog product snapshot.
   const installFee = Number(await getStoreSetting("repair_software_install_fee")) || 800;
-  const licenseFee = Number(await getStoreSetting("repair_software_license_fee")) || 2500;
-  if (softwareInstall && !softwareLicense) total += installFee;
-  if (softwareLicense) total += licenseFee;
+  if (softwareInstall && softwareLicensePrice <= 0) total += installFee;
+  total += Math.max(0, Number(softwareLicensePrice) || 0);
   return total;
 }
 
@@ -341,6 +347,9 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     partsCost: row.parts_cost || 0,
     softwareInstall: Boolean(row.software_install),
     softwareLicense: Boolean(row.software_license),
+    softwareLicenseProductId: row.software_license_product_id || null,
+    softwareLicenseProductName: row.software_license_product_name || "",
+    softwareLicensePrice: Number(row.software_license_price) || 0,
     totalCost: row.total_cost || 0,
     quoteSentAt: row.quote_sent_at || null,
     quoteVersion: extras.quoteVersion ?? null,
@@ -359,10 +368,11 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
 async function loadTicketDetails(ticketId: string): Promise<Ticket | null> {
   const row = await queryOne(
     `SELECT t.*, c.name AS customer_name, c.email AS customer_email,
-            u.username AS assigned_name
+            u.username AS assigned_name, lp.name AS software_license_product_name
      FROM repair_tickets t
      JOIN customers c ON c.id = t.customer_id
      LEFT JOIN users u ON u.id = t.assigned_to
+     LEFT JOIN products lp ON lp.id = t.software_license_product_id
      WHERE t.id = $1`,
     [ticketId]
   ) as TicketRow | undefined;
@@ -650,6 +660,55 @@ async function listCalendarRepairs(from: string, to: string, assignedTo?: number
 async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staffId?: number): Promise<Ticket | { error: string } | null> {
   const existing = await loadTicketDetails(ticketId);
   if (!existing) return null;
+  const licenseChanged = updates.softwareLicense !== undefined || updates.softwareLicenseProductId !== undefined;
+  let nextSoftwareLicense = existing.softwareLicense;
+  let nextLicenseProductId = existing.softwareLicenseProductId;
+  let nextLicensePrice = existing.softwareLicensePrice;
+
+  if (updates.softwareLicenseProductId !== undefined) {
+    const requestedProductId = String(updates.softwareLicenseProductId || "").trim();
+    if (requestedProductId) {
+      if (requestedProductId === existing.softwareLicenseProductId && existing.softwareLicense) {
+        // Ordinary ticket edits must keep the accepted quote's catalog-price
+        // snapshot. Selecting another product is what intentionally reprices it.
+        nextSoftwareLicense = true;
+        nextLicenseProductId = existing.softwareLicenseProductId;
+        nextLicensePrice = existing.softwareLicensePrice;
+      } else {
+        const product = await queryOne(
+          "SELECT id, name, price, sale_price FROM products WHERE id = $1",
+          [requestedProductId]
+        ) as any;
+        if (!product) return { error: "That software license product is no longer in the catalog. Refresh the ticket and choose another." };
+        const catalogPrice = Number(product.sale_price) > 0 ? Number(product.sale_price) : Number(product.price);
+        if (!Number.isFinite(catalogPrice) || catalogPrice < 0) return { error: "The selected catalog product has an invalid selling price." };
+        nextSoftwareLicense = true;
+        nextLicenseProductId = String(product.id);
+        nextLicensePrice = Math.round(catalogPrice * 100) / 100;
+      }
+    } else if (updates.softwareLicense === false) {
+      nextSoftwareLicense = false;
+      nextLicenseProductId = null;
+      nextLicensePrice = 0;
+    } else if (existing.softwareLicense && !existing.softwareLicenseProductId) {
+      // A pre-catalog license charge is kept at its saved historical amount
+      // until staff replace it with a catalog product or remove it.
+      nextSoftwareLicense = true;
+      nextLicenseProductId = null;
+    } else if (existing.softwareLicense) {
+      return { error: "Choose a catalog license product or remove the license from this estimate." };
+    } else {
+      nextSoftwareLicense = false;
+      nextLicenseProductId = null;
+      nextLicensePrice = 0;
+    }
+  } else if (updates.softwareLicense === false) {
+    nextSoftwareLicense = false;
+    nextLicenseProductId = null;
+    nextLicensePrice = 0;
+  } else if (updates.softwareLicense === true && !existing.softwareLicense) {
+    return { error: "Choose the licensed software product from the catalog before adding its price." };
+  }
   const nextStatus = updates.status ?? existing.status;
   const nextHoldReason = String(updates.holdReason ?? existing.holdReason ?? "").trim().slice(0, 500);
   const nextHoldRemindAt = updates.holdRemindAt === undefined ? existing.holdRemindAt : updates.holdRemindAt;
@@ -808,9 +867,15 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
     params.push(updates.softwareInstall ? 1 : 0);
     idx++;
   }
-  if (updates.softwareLicense !== undefined) {
+  if (licenseChanged) {
     fields.push(`software_license = $${idx}`);
-    params.push(updates.softwareLicense ? 1 : 0);
+    params.push(nextSoftwareLicense ? 1 : 0);
+    idx++;
+    fields.push(`software_license_product_id = $${idx}`);
+    params.push(nextLicenseProductId);
+    idx++;
+    fields.push(`software_license_price = $${idx}`);
+    params.push(nextLicensePrice);
     idx++;
   }
 
@@ -821,9 +886,8 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   const repairType = updates.repairType !== undefined ? updates.repairType : existing.repairType;
   const hwValue = updates.hardwareValue !== undefined ? updates.hardwareValue : existing.hardwareValue;
   const swInstall = updates.softwareInstall !== undefined ? updates.softwareInstall : existing.softwareInstall;
-  const swLicense = updates.softwareLicense !== undefined ? updates.softwareLicense : existing.softwareLicense;
-  const totalCost = await calculateRepairCost(repairType, hwValue, partsCost, swInstall, swLicense);
-  const laborCost = totalCost - partsCost;
+  const totalCost = await calculateRepairCost(repairType, hwValue, partsCost, swInstall, nextLicensePrice);
+  const laborCost = totalCost - partsCost - nextLicensePrice;
 
   fields.push(`labor_cost = $${idx}`);
   params.push(laborCost);
@@ -1301,8 +1365,8 @@ async function recalculateTicketCost(ticketId: string): Promise<void> {
   if (!ticket) return;
   const pCost = await queryOne("SELECT COALESCE(SUM(quantity * unit_cost), 0) AS c FROM repair_parts_used WHERE ticket_id = $1", [ticketId]) as { c: number };
   const partsCost = pCost?.c || 0;
-  const totalCost = await calculateRepairCost(ticket.repairType, ticket.hardwareValue, partsCost, ticket.softwareInstall, ticket.softwareLicense);
-  const laborCost = totalCost - partsCost;
+  const totalCost = await calculateRepairCost(ticket.repairType, ticket.hardwareValue, partsCost, ticket.softwareInstall, ticket.softwareLicensePrice);
+  const laborCost = totalCost - partsCost - ticket.softwareLicensePrice;
   const quoteInvalidation = ticket.quoteSentAt && Math.abs(Number(ticket.totalCost || 0) - Number(totalCost || 0)) >= 0.01
     ? ", quote_sent_at = NULL, quote_response = NULL, quote_responded_at = NULL"
     : "";
