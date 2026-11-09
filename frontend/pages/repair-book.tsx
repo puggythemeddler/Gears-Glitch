@@ -6,6 +6,16 @@ const SYMPTOMS = ["Won't turn on", "Slow performance", "Overheating", "Screen cr
 
 const DEVICE_TYPES = ["Laptop", "Desktop PC", "MacBook", "Tablet", "Printer", "Other"];
 
+function purchasedDeviceType(category: string): string | null {
+  const value = category.trim().toLowerCase();
+  if (value.includes("mac")) return "MacBook";
+  if (value.includes("laptop")) return "Laptop";
+  if (value.includes("desktop") || value === "pc" || value.includes("workstation")) return "Desktop PC";
+  if (value.includes("tablet")) return "Tablet";
+  if (value.includes("printer")) return "Printer";
+  return null;
+}
+
 function getCheckedSymptoms(checkboxes: NodeListOf<HTMLInputElement>): string[] {
   const result: string[] = [];
   checkboxes.forEach((cb) => { if (cb.checked) result.push(cb.value); });
@@ -18,6 +28,10 @@ export default function RepairBookPage() {
   const [mounted, setMounted] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [serviceName, setServiceName] = useState("");
+  const [serviceKind, setServiceKind] = useState<"diagnosis_repair" | "planned_service">("diagnosis_repair");
+  const [devices, setDevices] = useState<Array<{ orderItemId: number; name: string; productId: string; quantity: number; category: string; serialNumbers: string[] }>>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [selectedOrderItemId, setSelectedOrderItemId] = useState("");
   const repairTypeRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -28,6 +42,15 @@ export default function RepairBookPage() {
       requireCustomerLogin();
     }
   }, []);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    setDevicesLoading(true);
+    api<{ devices: typeof devices }>("/api/repairs/my-devices")
+      .then((result) => setDevices(result.devices || []))
+      .catch(() => setDevices([]))
+      .finally(() => setDevicesLoading(false));
+  }, [loggedIn]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -64,7 +87,7 @@ export default function RepairBookPage() {
     setSubmitting(true);
     setStatusMsg(null);
     const fd = new FormData(e.currentTarget);
-    const symptoms = getCheckedSymptoms(e.currentTarget.querySelectorAll("input[name='symptoms']"));
+    const symptoms = serviceKind === "diagnosis_repair" ? getCheckedSymptoms(e.currentTarget.querySelectorAll("input[name='symptoms']")) : [];
 
     try {
       const ticket = await api("/api/repairs", {
@@ -81,9 +104,11 @@ export default function RepairBookPage() {
           requestedVisitTime: fd.get("requestedVisitTime"),
           notes: fd.get("notes"),
           repairType: repairTypeRef.current,
+          serviceKind: fd.get("serviceKind"),
+          orderItemId: fd.get("orderItemId") || null,
         }),
       });
-      setStatusMsg({ text: `Repair ticket #${ticket.id} submitted! Redirecting...` });
+      setStatusMsg({ text: `${serviceKind === "planned_service" ? "Service request" : "Repair ticket"} #${ticket.id} submitted! Redirecting...` });
       setTimeout(() => { window.location.href = "/my-repairs"; }, 2500);
     } catch (err: any) {
       setStatusMsg({ text: err.message, error: true });
@@ -109,20 +134,38 @@ export default function RepairBookPage() {
 
       <form onSubmit={handleSubmit} className="auth-form" style={{ maxWidth: 600 }}>
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
+          <legend style={{ fontWeight: 600, color: "var(--primary)" }}>What do you need?</legend>
+          <div className="field"><label>Request type<select name="serviceKind" value={serviceKind} onChange={(e) => setServiceKind(e.target.value as typeof serviceKind)} style={{ width: "100%" }}><option value="diagnosis_repair">Diagnose or repair a problem</option><option value="planned_service">Software, installation, or upgrade</option></select></label></div>
+          <p className="muted" style={{ marginBottom: 0 }}>{serviceKind === "diagnosis_repair" ? "We’ll assess the fault and keep you updated on the diagnosis." : "Tell us what you want installed or upgraded. This is handled as a planned service, without a hardware diagnosis deadline."}</p>
+        </fieldset>
+
+        <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
           <legend style={{ fontWeight: 600, color: "var(--primary)" }}>Device information</legend>
+          <div className="field"><label>Which device did you buy from this store?<select name="orderItemId" value={selectedOrderItemId} onChange={(e) => {
+            const itemId = e.target.value;
+            setSelectedOrderItemId(itemId);
+            const selected = devices.find((device) => String(device.orderItemId) === itemId);
+            const model = document.querySelector<HTMLInputElement>("input[name='deviceModel']");
+            const serial = document.querySelector<HTMLInputElement>("input[name='serialNumber']");
+            const type = document.querySelector<HTMLSelectElement>("select[name='deviceType']");
+            if (model) model.value = selected?.name || "";
+            if (serial) serial.value = selected?.serialNumbers?.[0] || "";
+            const guessedType = purchasedDeviceType(String(selected?.category || ""));
+            if (type && guessedType) type.value = guessedType;
+          }} style={{ width: "100%" }}><option value="">Other device / not purchased here</option>{devices.map((device) => <option key={device.orderItemId} value={device.orderItemId}>{device.name}{device.quantity > 1 ? ` · qty ${device.quantity}` : ""}{device.serialNumbers?.length ? ` · SN ${device.serialNumbers.join(", ")}` : ""}</option>)}</select></label><small className="muted">{devicesLoading ? "Loading your eligible purchases…" : devices.length ? "Choosing a purchase links the request to your order. You can still edit the device details below." : "No completed store purchases were found. You can enter the device details below."}</small></div>
           <div className="field"><label>Device type *<select name="deviceType" required style={{ width: "100%" }}><option value="">Select…</option>{DEVICE_TYPES.map((d) => <option key={d}>{d}</option>)}</select></label></div>
-          <div className="field"><label>Brand *<input name="deviceBrand" style={{ width: "100%" }} required /></label></div>
+          <div className="field"><label>Brand (if known)<input name="deviceBrand" style={{ width: "100%" }} /></label></div>
           <div className="field"><label>Model<input name="deviceModel" style={{ width: "100%" }} /></label></div>
-          <div className="field"><label>Serial number<input name="serialNumber" style={{ width: "100%" }} /></label></div>
+          <div className="field"><label>Serial number (if available)<input name="serialNumber" style={{ width: "100%" }} /></label></div>
         </fieldset>
 
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
-          <legend style={{ fontWeight: 600, color: "var(--primary)" }}>Issue details</legend>
-          <div className="field"><label>Issue summary *<input name="issueSummary" style={{ width: "100%" }} required /></label></div>
-          <div className="field"><label>Detailed description *<textarea name="issueDescription" rows={4} style={{ width: "100%" }} required placeholder="Describe the issue in detail..." /></label></div>
+          <legend style={{ fontWeight: 600, color: "var(--primary)" }}>{serviceKind === "diagnosis_repair" ? "Problem details" : "Service details"}</legend>
+          <div className="field"><label>{serviceKind === "diagnosis_repair" ? "Problem summary *" : "Service requested *"}<input name="issueSummary" style={{ width: "100%" }} required placeholder={serviceKind === "planned_service" ? "For example, install Windows or upgrade RAM" : "Briefly describe the fault"} /></label></div>
+          <div className="field"><label>{serviceKind === "diagnosis_repair" ? "Describe the problem *" : "Installation or upgrade details *"}<textarea name="issueDescription" rows={4} style={{ width: "100%" }} required placeholder={serviceKind === "planned_service" ? "Tell us what software or upgrade you need, including preferences or compatibility details." : "Describe what happened and when it started..."} /></label></div>
         </fieldset>
 
-        <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
+        {serviceKind === "diagnosis_repair" && <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
           <legend style={{ fontWeight: 600, color: "var(--primary)" }}>Symptoms</legend>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.5rem" }}>
             {SYMPTOMS.map((s) => (
@@ -131,7 +174,7 @@ export default function RepairBookPage() {
               </label>
             ))}
           </div>
-        </fieldset>
+        </fieldset>}
 
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
           <legend style={{ fontWeight: 600, color: "var(--primary)" }}>Scheduling</legend>

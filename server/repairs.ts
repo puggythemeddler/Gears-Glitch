@@ -17,6 +17,8 @@ interface TicketRow {
   device_brand: string;
   device_model: string;
   serial_number: string;
+  order_item_id: number | null;
+  service_kind: string;
   issue_summary: string;
   issue_description: string;
   requested_visit_date: string;
@@ -79,6 +81,8 @@ interface Ticket {
   deviceBrand: string;
   deviceModel: string;
   serialNumber: string;
+  orderItemId: number | null;
+  serviceKind: "diagnosis_repair" | "planned_service";
   issueSummary: string;
   issueDescription: string;
   requestedVisitDate: string;
@@ -303,6 +307,8 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     deviceBrand: row.device_brand || "",
     deviceModel: row.device_model || "",
     serialNumber: row.serial_number || "",
+    orderItemId: row.order_item_id == null ? null : Number(row.order_item_id),
+    serviceKind: row.service_kind === "planned_service" ? "planned_service" : "diagnosis_repair",
     issueSummary: row.issue_summary || "",
     issueDescription: row.issue_description,
     requestedVisitDate: row.requested_visit_date || "",
@@ -383,9 +389,17 @@ async function createRepairTicket(customerId: number, data: any): Promise<Ticket
   const issueDescription = String(data.issueDescription || "").trim().slice(0, 5000);
   const issueSummary = String(data.issueSummary || "").trim().slice(0, 200) || issueDescription.slice(0, 200);
   const customerNotes = String(data.notes || "").trim().slice(0, 2000);
+  if (data.serviceKind !== undefined && !["diagnosis_repair", "planned_service"].includes(data.serviceKind)) {
+    return { ok: false, error: "Choose a valid repair or planned service request type." };
+  }
+  const serviceKind = data.serviceKind === "planned_service" ? "planned_service" : "diagnosis_repair";
+  const orderItemId = data.orderItemId == null || data.orderItemId === "" ? null : Number(data.orderItemId);
 
   if (!deviceType || !issueDescription) {
-    return { ok: false, error: "Device type and problem description are required." };
+    return { ok: false, error: "Device type and request details are required." };
+  }
+  if (orderItemId !== null && (!Number.isInteger(orderItemId) || orderItemId < 1)) {
+    return { ok: false, error: "Select a valid purchased device." };
   }
   const parsedVisitDate = requestedVisitDate ? new Date(`${requestedVisitDate}T00:00:00.000Z`) : null;
   if (requestedVisitDate && (!/^\d{4}-\d{2}-\d{2}$/.test(requestedVisitDate) || Number.isNaN(parsedVisitDate?.getTime()) || parsedVisitDate?.toISOString().slice(0, 10) !== requestedVisitDate)) {
@@ -393,6 +407,26 @@ async function createRepairTicket(customerId: number, data: any): Promise<Ticket
   }
   if (requestedVisitTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(requestedVisitTime)) {
     return { ok: false, error: "Preferred visit time must use 24-hour time." };
+  }
+
+  if (orderItemId !== null) {
+    const purchasedItem = await queryOne(
+      `SELECT oi.id, oi.serial_number, o.id AS order_id
+       FROM order_items oi JOIN orders o ON o.id = oi.order_id
+       WHERE oi.id = $1 AND o.customer_id = $2 AND oi.cancelled = 0
+         AND (o.status IN ('paid', 'shipped', 'delivered') OR o.paid_at IS NOT NULL OR COALESCE(o.mpesa_receipt, '') <> '')`,
+      [orderItemId, customerId]
+    ) as { id: number; serial_number: string; order_id: number } | undefined;
+    if (!purchasedItem) return { ok: false, error: "That item is not part of one of your completed purchases." };
+    const enteredSerial = serialNumber.trim();
+    if (enteredSerial) {
+      const serialRows = await queryAll(
+        "SELECT serial_number FROM serial_numbers WHERE order_item_id = $1 AND order_id = $2 AND status = 'sold'",
+        [orderItemId, purchasedItem.order_id]
+      ) as { serial_number: string }[];
+      const knownSerials = [...serialRows.map((row) => row.serial_number), ...String(purchasedItem.serial_number || "").split(",").map((value) => value.trim())].filter(Boolean);
+      if (knownSerials.length && !knownSerials.includes(enteredSerial)) return { ok: false, error: "Choose a serial number linked to that purchased item." };
+    }
   }
 
   const repairType = data.repairType ? String(data.repairType).trim() : null;
@@ -413,9 +447,9 @@ async function createRepairTicket(customerId: number, data: any): Promise<Ticket
   const etaHours = Math.max(1, Number(await getStoreSetting("repair_eta_hours")) || 48);
 
   await query(
-    `INSERT INTO repair_tickets (id, customer_id, device_type, device_brand, device_model, serial_number, issue_summary, issue_description, customer_notes, requested_visit_date, requested_visit_time, repair_type, status, eta_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'received', (NOW() + make_interval(hours => $13))::text, NOW()::text, NOW()::text)`,
-    [id, customerId, deviceType, deviceBrand, deviceModel, serialNumber, issueSummary, fullDescription, customerNotes, requestedVisitDate, requestedVisitTime, repairType, etaHours]
+    `INSERT INTO repair_tickets (id, customer_id, device_type, device_brand, device_model, serial_number, order_item_id, service_kind, issue_summary, issue_description, customer_notes, requested_visit_date, requested_visit_time, repair_type, status, eta_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'received', (NOW() + make_interval(hours => $15))::text, NOW()::text, NOW()::text)`,
+    [id, customerId, deviceType, deviceBrand, deviceModel, serialNumber, orderItemId, serviceKind, issueSummary, fullDescription, customerNotes, requestedVisitDate, requestedVisitTime, repairType, etaHours]
   );
 
   await recalculateTicketCost(id);
@@ -453,6 +487,34 @@ async function listRepairsForCustomer(customerId: number): Promise<Ticket[]> {
     tickets.push(ticket);
   }
   return tickets;
+}
+
+async function listCustomerRepairDevices(customerId: number): Promise<any[]> {
+  const rows = await queryAll(
+    `SELECT oi.id AS order_item_id, oi.name AS item_name, oi.product_id,
+            oi.quantity, oi.serial_number AS stored_serial_numbers,
+            o.id AS order_id, o.created_at AS purchased_at, p.category,
+            COALESCE(array_agg(DISTINCT sn.serial_number) FILTER (WHERE sn.serial_number IS NOT NULL), ARRAY[]::text[]) AS serial_numbers
+     FROM orders o
+     JOIN order_items oi ON oi.order_id = o.id
+     LEFT JOIN products p ON p.id = oi.product_id
+     LEFT JOIN serial_numbers sn ON sn.order_item_id = oi.id AND sn.order_id = o.id AND sn.status = 'sold'
+     WHERE o.customer_id = $1 AND oi.cancelled = 0
+       AND (o.status IN ('paid', 'shipped', 'delivered') OR o.paid_at IS NOT NULL OR COALESCE(o.mpesa_receipt, '') <> '')
+     GROUP BY oi.id, oi.name, oi.product_id, oi.quantity, oi.serial_number, o.id, o.created_at, p.category
+     ORDER BY o.created_at DESC, oi.id DESC`,
+    [customerId]
+  ) as any[];
+  return rows.map((row) => ({
+    orderItemId: Number(row.order_item_id),
+    name: String(row.item_name || "Purchased device"),
+    productId: String(row.product_id || ""),
+    quantity: Number(row.quantity) || 1,
+    category: String(row.category || ""),
+    purchasedAt: row.purchased_at,
+    orderId: Number(row.order_id),
+    serialNumbers: [...new Set([...(row.serial_numbers || []), ...String(row.stored_serial_numbers || "").split(",").map((value: string) => value.trim())].filter(Boolean))],
+  }));
 }
 
 async function listRepairsForCustomerPaged(customerId: number, options: CustomerPagedFilter = {}): Promise<PagedResult> {
@@ -584,6 +646,7 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   const nextSchedule = updates.scheduledAt === undefined ? existing.scheduledAt : updates.scheduledAt;
   const nextDuration = updates.scheduledDurationMinutes === undefined ? existing.scheduledDurationMinutes : Number(updates.scheduledDurationMinutes);
   const nextAssignee = updates.assignedTo === undefined ? existing.assignedTo : (updates.assignedTo || null);
+  const nextServiceKind = existing.serviceKind;
   const scheduleChanged =
     (updates.scheduledAt !== undefined && String(updates.scheduledAt || "") !== String(existing.scheduledAt || "")) ||
     assignedChanged ||
@@ -623,7 +686,9 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
     params.push(updates.assignedTo || null);
     idx++;
     if (assignedChanged && updates.diagnosis === undefined && nextStatus !== "on_hold") {
-      if (updates.assignedTo && !String(updates.diagnosis ?? existing.diagnosis).trim()) {
+      if (nextServiceKind === "planned_service") {
+        fields.push("diagnosis_due_at = NULL");
+      } else if (updates.assignedTo && !String(updates.diagnosis ?? existing.diagnosis).trim()) {
         const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
         fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
         params.push(slaHours);
@@ -662,7 +727,7 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
       fields.push("diagnosis_recorded_at = NULL");
       fields.push("diagnosis_last_reminded_at = NULL");
     }
-    if (nextStatus !== "on_hold" && !diagnosisText && (assignedChanged || !existing.diagnosisDueAt || previousDiagnosis) && (updates.assignedTo !== undefined ? updates.assignedTo : existing.assignedTo) && !["collected", "cancelled", "on_hold"].includes(nextStatus)) {
+    if (nextServiceKind === "diagnosis_repair" && nextStatus !== "on_hold" && !diagnosisText && (assignedChanged || !existing.diagnosisDueAt || previousDiagnosis) && (updates.assignedTo !== undefined ? updates.assignedTo : existing.assignedTo) && !["collected", "cancelled", "on_hold"].includes(nextStatus)) {
       const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
       fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
       params.push(slaHours);
@@ -684,7 +749,7 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
     fields.push("hold_remind_at = NULL");
     fields.push("hold_started_at = NULL");
     fields.push("hold_last_reminded_at = NULL");
-    if (!assignedChanged && !String(updates.diagnosis ?? existing.diagnosis).trim() && existing.assignedTo) {
+    if (nextServiceKind === "diagnosis_repair" && !assignedChanged && !String(updates.diagnosis ?? existing.diagnosis).trim() && existing.assignedTo) {
       const slaHours = Math.min(168, Math.max(1, Number(await getStoreSetting("repair_diagnosis_sla_hours")) || 24));
       fields.push(`diagnosis_due_at = (NOW() + make_interval(hours => $${idx}))::text`);
       params.push(slaHours);
@@ -1226,6 +1291,7 @@ export {
   createRepairTicket,
   loadTicketDetails,
   listRepairsForCustomer,
+  listCustomerRepairDevices,
   listRepairsForCustomerPaged,
   listRepairsForStaff,
   listCalendarRepairs,

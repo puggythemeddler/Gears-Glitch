@@ -85,7 +85,7 @@ export default function RepairTicketPage() {
         </ol>
       </nav>
 
-      <h1>Repair ticket #{ticket.id}</h1>
+      <h1>{ticket.serviceKind === "planned_service" ? "Service request" : "Repair ticket"} #{ticket.id}</h1>
 
       <div className="card" style={{ marginBottom: "1.5rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -95,9 +95,10 @@ export default function RepairTicketPage() {
         <table className="data-table">
           <tbody>
             <tr><td>Device</td><td>{[ticket.deviceBrand, ticket.deviceType, ticket.deviceModel].filter(Boolean).join(" ")}</td></tr>
+            <tr><td>Request type</td><td>{ticket.serviceKind === "planned_service" ? "Planned software, installation, or upgrade" : "Diagnosis or repair"}</td></tr>
             {ticket.serialNumber && <tr><td>Serial number</td><td>{ticket.serialNumber}</td></tr>}
-            {ticket.issueSummary && <tr><td>Issue summary</td><td>{ticket.issueSummary}</td></tr>}
-            <tr><td>Issue details</td><td>{ticket.issueDescription}</td></tr>
+            {ticket.issueSummary && <tr><td>{ticket.serviceKind === "planned_service" ? "Service requested" : "Problem summary"}</td><td>{ticket.issueSummary}</td></tr>}
+            <tr><td>{ticket.serviceKind === "planned_service" ? "Service details" : "Problem details"}</td><td>{ticket.issueDescription}</td></tr>
             {(ticket.requestedVisitDate || ticket.requestedVisitTime) && <tr><td>Requested drop-off</td><td>{[ticket.requestedVisitDate, ticket.requestedVisitTime].filter(Boolean).join(" · ")} (awaiting shop confirmation)</td></tr>}
             {ticket.etaAt && <tr><td>Estimated completion</td><td>{formatDate(ticket.etaAt)}</td></tr>}
           </tbody>

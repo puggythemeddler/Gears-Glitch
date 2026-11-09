@@ -95,6 +95,8 @@ export interface OrderItem {
 export interface RepairTicket {
   id: string;
   customerId: number;
+  orderItemId?: number | null;
+  serviceKind?: "diagnosis_repair" | "planned_service";
   deviceType: string;
   deviceBrand?: string;
   deviceModel: string;
