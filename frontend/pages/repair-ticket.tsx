@@ -19,6 +19,8 @@ export default function RepairTicketPage() {
   const [msg, setMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [quoteResp, setQuoteResp] = useState<string | null>(null);
+  const quoteRecorded = ticket?.quoteDeliveryStatus === "sent" && !!ticket?.quoteSentAt;
+  const quoteExpired = quoteRecorded && (!ticket?.quoteExpiresAt || Date.parse(String(ticket.quoteExpiresAt)) <= Date.now());
   usePageTitle(ticket ? `Repair ticket #${ticket.id}` : "Repair ticket");
 
   useEffect(() => {
@@ -105,9 +107,10 @@ export default function RepairTicketPage() {
         </table>
       </div>
 
-      {ticket.quoteSentAt && (
+      {quoteRecorded && (
         <div className="card" style={{ marginBottom: "1.5rem", border: "2px solid var(--primary)" }}>
-          <h3 style={{ marginTop: 0 }}>Cost estimate</h3>
+          <h3 style={{ marginTop: 0 }}>Cost estimate · version {ticket.quoteVersion}</h3>
+          <p className="muted">Valid until {new Date(String(ticket.quoteExpiresAt)).toLocaleDateString("en-KE", { year: "numeric", month: "long", day: "numeric" })}</p>
           <table className="data-table">
             <tbody>
               {ticket.laborCost > 0 && <tr><td>Labor</td><td style={{ textAlign: "right" }}>{new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(ticket.laborCost)}</td></tr>}
@@ -117,7 +120,8 @@ export default function RepairTicketPage() {
               <tr style={{ fontWeight: 700 }}><td>Total</td><td style={{ textAlign: "right" }}>{new Intl.NumberFormat("en", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(ticket.totalCost)}</td></tr>
             </tbody>
           </table>
-          {!ticket.quoteResponse ? (
+          {!quoteExpired && <a className="btn btn-secondary" style={{ display: "inline-flex", marginTop: "0.5rem" }} href={`/api/repairs/mine/${encodeURIComponent(String(id))}/quote.pdf`}>Download estimate PDF</a>}
+          {!ticket.quoteResponse && !quoteExpired ? (
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
               <button className="btn" onClick={() => handleQuote("accepted")} disabled={!!quoteResp}>
                 {quoteResp === "accepted" ? "Accepting..." : "Accept estimate"}
@@ -126,13 +130,17 @@ export default function RepairTicketPage() {
                 {quoteResp === "declined" ? "Declining..." : "Decline"}
               </button>
             </div>
-          ) : (
+          ) : ticket.quoteResponse ? (
             <p style={{ margin: "0.5rem 0 0", fontWeight: 600, color: ticket.quoteResponse === "accepted" ? "var(--primary)" : "var(--danger)" }}>
-              You {ticket.quoteResponse === "accepted" ? "accepted" : "declined"} this estimate.
+              You {ticket.quoteResponse === "accepted" ? "accepted" : "declined"} estimate version {ticket.quoteVersion}.
             </p>
-          )}
+          ) : <p role="status" className="muted">This estimate has expired. Please contact the store for an updated estimate.</p>}
         </div>
       )}
+      {ticket.quoteSentAt && ticket.quoteDeliveryStatus === "sending" && <div className="card" role="status" style={{ marginBottom: "1.5rem" }}>Your estimate PDF is being sent. Refresh this page in a moment to view it.</div>}
+      {ticket.quoteSentAt && !ticket.quoteDeliveryStatus && <div className="card" role="status" style={{ marginBottom: "1.5rem" }}>The store needs to prepare a current PDF estimate before you can review or respond.</div>}
+      {ticket.quoteDeliveryStatus === "sent" && !ticket.quoteSentAt && <div className="card" role="status" style={{ marginBottom: "1.5rem" }}>Estimate version {ticket.quoteVersion} is no longer current. Please wait for an updated estimate from the store.</div>}
+      {ticket.quoteDeliveryStatus === "expired" && <div className="card" role="status" style={{ marginBottom: "1.5rem" }}>Estimate version {ticket.quoteVersion} has expired. Please contact the store for an updated estimate.</div>}
 
       <h3>Updates</h3>
       {(ticket.updates || []).length === 0 ? (

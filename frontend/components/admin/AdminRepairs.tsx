@@ -300,7 +300,7 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
     try {
       await api(`/api/repairs/${detail.id}/send-quote`, { method: "POST" });
       await loadDetail(detail.id);
-      feedback.success({ title: "Quote sent", message: `The quote for repair #${detail.id} was sent to the customer.` });
+      feedback.success({ title: "Quote PDF emailed", message: `The estimate PDF for repair #${detail.id} was emailed to the customer.` });
     } catch (e: any) { feedback.error({ title: "Quote not sent", message: e.message }); }
   }
 
@@ -404,7 +404,9 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
   const partsTotal = Array.isArray(detail?.parts)
     ? detail.parts.reduce((s: number, p: any) => s + (Number(p.unitCost) || 0) * (Number(p.quantity) || 1), 0)
     : 0;
-  const quoteSent = !!detail?.quoteSentAt;
+  const quotePending = detail?.quoteDeliveryStatus === "sending" && !!detail?.quoteSentAt && Date.now() - Date.parse(String(detail.quoteSentAt)) < 30 * 60 * 1000;
+  const quoteActive = detail?.quoteDeliveryStatus === "sent" && !!detail?.quoteSentAt && Date.parse(String(detail.quoteExpiresAt || "")) > Date.now();
+  const quoteSent = quotePending || quoteActive;
   const quoteAccepted = detail?.quoteResponse === "accepted";
   const quoteDeclined = detail?.quoteResponse === "declined";
 
@@ -441,9 +443,11 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
                   <td>{t.etaAt ? fmtDate(t.etaAt) : "—"}</td>
                   <td>{t.scheduledAt ? new Date(t.scheduledAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                   <td>
-                    {t.quoteSentAt ? (
+                    {t.quoteDeliveryStatus === "expired" ? (
+                      <span className="plan-status" style={{ background: "var(--danger-light)", color: "var(--danger-text)" }}>Expired · v{t.quoteVersion}</span>
+                    ) : t.quoteSentAt ? (
                       <span className="plan-status" style={{ background: t.quoteResponse === "accepted" ? "var(--success-light)" : t.quoteResponse === "declined" ? "var(--danger-light)" : "var(--warning-light)", color: t.quoteResponse === "accepted" ? "var(--success-text)" : t.quoteResponse === "declined" ? "var(--danger-text)" : "var(--warning-text)" }}>
-                        {t.quoteResponse || "Sent"}
+                        {t.quoteResponse || "Sent"}{t.quoteVersion ? ` · v${t.quoteVersion}` : " · legacy"}
                       </span>
                     ) : "—"}
                   </td>
@@ -557,7 +561,7 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <RippleButton onClick={saveDetail} loading={saving}>Save changes</RippleButton>
               <RippleButton variant="secondary" onClick={sendQuote} disabled={quoteSent}>
-                {quoteSent ? "Quote sent" : "Send quote to customer"}
+                {quotePending ? "Sending quote…" : quoteActive ? `Quote v${detail.quoteVersion} sent` : detail.quoteDeliveryStatus === "sent" ? "Send updated estimate" : "Send quote PDF to customer"}
               </RippleButton>
             </div>
             {detail.totalCost > 0 && (
@@ -569,9 +573,10 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
           </div>
           {quoteSent && (
             <div style={{ marginTop: "0.75rem", padding: "0.5rem 0.75rem", borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)", background: quoteAccepted ? "var(--success-light)" : quoteDeclined ? "var(--danger-light)" : "var(--warning-light)", color: quoteAccepted ? "var(--success-text)" : quoteDeclined ? "var(--danger-text)" : "var(--warning-text)" }}>
-              {quoteAccepted ? "Customer accepted the quote" : quoteDeclined ? "Customer declined the quote" : "Quote sent to customer — awaiting response"}
+              {quotePending ? `Quote v${detail.quoteVersion} is being emailed.` : quoteAccepted ? `Customer accepted quote v${detail.quoteVersion}` : quoteDeclined ? `Customer declined quote v${detail.quoteVersion}` : `Quote v${detail.quoteVersion} sent — awaiting response. Expires ${new Date(String(detail.quoteExpiresAt)).toLocaleDateString("en-KE")}.`}
             </div>
           )}
+          {!quoteSent && detail.quoteDeliveryStatus === "expired" && <p role="status" className="muted">Quote v{detail.quoteVersion} expired on {new Date(String(detail.quoteExpiresAt)).toLocaleDateString("en-KE")}. Send an updated estimate when ready.</p>}
 
           {canManagePayments && <section aria-labelledby="repair-payments-heading" style={{ marginTop: "1.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>
             <h4 id="repair-payments-heading" style={{ margin: "0 0 0.35rem" }}>Payments &amp; refunds</h4>

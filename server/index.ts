@@ -402,7 +402,9 @@ import {
   listRepairTypes,
   calculateRepairCost,
   recalculateTicketCost,
-  sendRepairQuote,
+  createRepairQuoteVersion,
+  finishRepairQuoteVersion,
+  loadCustomerRepairQuotePdf,
   respondToRepairQuote,
   runRepairWorkflowSweep,
   customerSafeRepairTicket,
@@ -439,6 +441,7 @@ import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shippin
 import { getMpesaConfig, updateMpesaConfig, stkPush, isMpesaConfigured, queryStatus, callbackBaseUrl } from "./mpesa";
 import bcrypt from "bcryptjs";
 import { htmlToPdf, closeBrowser, warmPdf } from "./pdf";
+import { buildRepairQuotePdf } from "./repair-quote-pdf";
 import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml, addCalendarMonthsClamped } from "./routes/shared";
 import { sendOrderInvoiceEmail } from "./order-invoice";
 
@@ -6871,6 +6874,17 @@ app.get("/api/repairs/mine/:id", customerAuthMiddleware, requireShopFeature("Rep
   res.json({ ...customerSafeRepairTicket(ticket), updates: visibleUpdates });
 }));
 
+app.get("/api/repairs/mine/:id/quote.pdf", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  const ticketId = String(req.params.id);
+  const quote = await loadCustomerRepairQuotePdf(ticketId, Number((req as any).customer.sub));
+  if (!quote) { res.status(404).json({ error: "No current, unexpired estimate PDF was found." }); return; }
+  const safeReference = ticketId.replace(/[^A-Za-z0-9_-]/g, "_");
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="repair-quote-${safeReference}-v${quote.version}.pdf"`);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.send(quote.pdf);
+}));
+
 app.post("/api/repairs/mine/:id/message", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const ticket = await loadTicketDetails(String(req.params.id));
@@ -7129,35 +7143,91 @@ app.delete("/api/repairs/:id/images/:imageId", staffAuthMiddleware, requirePermi
 }));
 
 app.post("/api/repairs/:id/send-quote", staffAuthMiddleware, requirePermission("quote:create"), requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
-  const ok = await sendRepairQuote(String(req.params.id));
-  if (!ok) { res.status(404).json({ error: "Ticket not found." }); return; }
+  const ticketId = String(req.params.id);
+  const ticket = await loadTicketDetails(ticketId);
+  if (!ticket) { res.status(404).json({ error: "Ticket not found." }); return; }
+  if (ticket.quoteSentAt && ticket.quoteDeliveryStatus === "sent" && Date.parse(String(ticket.quoteExpiresAt || "")) > Date.now()) {
+    res.status(409).json({ error: "An unexpired quote has already been sent for this estimate." }); return;
+  }
+  const customerEmail = String(ticket.customerEmail || "").trim();
+  if (!isEmail(customerEmail)) { res.status(400).json({ error: "Add a valid customer email before sending the quote." }); return; }
+  const commPrefs = await getCustomerCommPrefs(Number(ticket.customerId));
+  if (!commPrefs.email) { res.status(409).json({ error: "The customer has opted out of email. Ask them to update their communication preferences before sending a quote." }); return; }
+  const settings = await getSettings();
+  const storeName = settings.storeName || "My Shop";
+  const currency = settings.currency || "KES";
+  const baseUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+
+  const quoteTicket = ticket;
+  const latestEmail = String(quoteTicket.customerEmail || "").trim();
+  if (!isEmail(latestEmail) || latestEmail !== customerEmail) {
+    res.status(409).json({ error: "The customer's email changed. Refresh the ticket and confirm the address before sending." }); return;
+  }
+
+  const calculatedPartsCost = quoteTicket.parts.reduce((sum, part) => sum + (Number(part.quantity) || 1) * (Number(part.unitCost) || 0), 0);
+  if (Math.abs(calculatedPartsCost - Number(quoteTicket.partsCost || 0)) >= 0.01) {
+    res.status(409).json({ error: "The estimate is being updated. Refresh the ticket and try again." }); return;
+  }
+  const quoteVersion = Number(quoteTicket.quoteVersion || 0) + 1;
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+  let pdf: Buffer;
   try {
-    const t = await loadTicketDetails(String(req.params.id)) as any;
-    if (t) {
-      const settings = await getSettings();
-      const dashboardUrl = `${(process.env.FRONTEND_URL || process.env.BASE_URL || "").replace(/\/$/, "")}/admin`;
-      const { subject, html } = repairQuoteAdminEmail(
-        String(t.id),
-        t.customerName || "Customer",
-        t.deviceType || "",
-        t.deviceModel || "",
-        Number(t.totalCost) || 0,
-        settings.currency || "KES",
-        dashboardUrl,
-        settings.storeName || "My Shop"
-      );
-      await notify({
-        event: "repair.quote_sent",
-        entityType: "repair",
-        entityId: String(t.id),
-        subject,
-        bodyText: `Repair quote ${t.id} sent to ${t.customerName || "Customer"} (${settings.currency || "KES"} ${(Number(t.totalCost) || 0).toFixed(2)}).`,
-        bodyHtml: html,
-        metadata: { ticketId: String(t.id), totalCost: Number(t.totalCost) || 0 }
-      });
-    }
+    pdf = await buildRepairQuotePdf(quoteTicket, settings, { version: quoteVersion, expiresAt });
+  } catch (err: any) {
+    console.error("[repair] quote PDF generation failed:", err?.message || err);
+    res.status(500).json({ error: "Could not prepare the quote PDF. No email was sent." }); return;
+  }
+  const latestCommPrefs = await getCustomerCommPrefs(Number(quoteTicket.customerId));
+  if (!latestCommPrefs.email) { res.status(409).json({ error: "The customer opted out of email while the estimate was being prepared. No email was sent." }); return; }
+  const versionRecord = await createRepairQuoteVersion({
+    ticketId,
+    expectedTotal: Number(quoteTicket.totalCost) || 0,
+    expectedVersion: quoteVersion,
+    recipientEmail: latestEmail,
+    snapshot: {
+      reference: ticketId, customerName: quoteTicket.customerName, deviceType: quoteTicket.deviceType,
+      deviceBrand: quoteTicket.deviceBrand, deviceModel: quoteTicket.deviceModel, issueSummary: quoteTicket.issueSummary,
+      laborCost: Number(quoteTicket.laborCost) || 0, partsCost: Number(quoteTicket.partsCost) || 0,
+      totalCost: Number(quoteTicket.totalCost) || 0, currency, storeName,
+      parts: quoteTicket.parts.map((part) => ({ description: part.description, quantity: Number(part.quantity) || 1, unitCost: Number(part.unitCost) || 0 })),
+      preparedAt: new Date().toISOString(),
+    },
+    pdf,
+    expiresAt,
+  });
+  if (!versionRecord) { res.status(409).json({ error: "The estimate changed or another quote was sent. Refresh the ticket and try again." }); return; }
+  const safeReference = ticketId.replace(/[^A-Za-z0-9_-]/g, "_");
+  const subject = `Repair estimate ${ticketId} — ${storeName}`;
+  const portalUrl = baseUrl ? `${baseUrl}/my-repairs` : "/my-repairs";
+  const html = `<div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#20242a;line-height:1.6;max-width:620px;margin:auto"><h2 style="color:#b83f0c">Your repair estimate is ready</h2><p>Hello ${escapeHtmlUtil(String(quoteTicket.customerName || "Customer"))},</p><p>Attached is the PDF estimate for repair <strong>${escapeHtmlUtil(ticketId)}</strong> (${escapeHtmlUtil([quoteTicket.deviceBrand, quoteTicket.deviceType, quoteTicket.deviceModel].filter(Boolean).join(" ") || "your device")}). The estimated total is <strong>${escapeHtmlUtil(currency)} ${Number(quoteTicket.totalCost || 0).toFixed(2)}</strong>.</p><p>This is an estimate, not an invoice or proof of payment. Please review the estimate and accept or decline it in <a href="${escapeHtmlUtil(portalUrl)}">My Repairs</a>. Work should begin only after your approval. Any additional work or cost requires your approval.</p><p>Regards,<br>${escapeHtmlUtil(storeName)}</p></div>`;
+  let sent = false;
+  try {
+    sent = await sendEmail(latestEmail, subject, html, "repair_quote", [{ filename: `repair-quote-${safeReference}.pdf`, content: pdf, contentType: "application/pdf" }]);
+  } catch (err: any) {
+    console.error("[repair] quote email failed:", err?.message || err);
+  }
+  if (!sent) {
+    await finishRepairQuoteVersion(versionRecord.id, false);
+    res.status(503).json({ error: "The quote email could not be sent. Check email delivery settings and try again." }); return;
+  }
+  try { await finishRepairQuoteVersion(versionRecord.id, true); }
+  catch (err: any) { console.error("[repair] customer email sent but quote delivery history could not be completed:", err?.message || err); }
+  try {
+    const dashboardUrl = `${baseUrl}/admin`;
+    const { subject: adminSubject, html: adminHtml } = repairQuoteAdminEmail(
+      ticketId, quoteTicket.customerName || "Customer", quoteTicket.deviceType || "", quoteTicket.deviceModel || "",
+      Number(quoteTicket.totalCost) || 0, currency, dashboardUrl, storeName
+    );
+    await notify({
+      event: "repair.quote_sent", entityType: "repair", entityId: ticketId,
+      subject: adminSubject,
+      bodyText: `Repair estimate ${ticketId} emailed to ${quoteTicket.customerName || "Customer"} (${currency} ${(Number(quoteTicket.totalCost) || 0).toFixed(2)}).`,
+      bodyHtml: adminHtml,
+      metadata: { ticketId, totalCost: Number(quoteTicket.totalCost) || 0 }
+    });
   } catch (_err: any) { console.warn("[repair] quote notification failed:", _err?.message || _err); }
-  res.json({ ok: true });
+  res.json({ ok: true, delivery: "sent", quoteVersion: versionRecord.version, expiresAt });
 }));
 
 app.post("/api/repairs/:id/quote-response", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
@@ -7168,6 +7238,12 @@ app.post("/api/repairs/:id/quote-response", customerAuthMiddleware, requireShopF
   const ticket = await loadTicketDetails(String(req.params.id));
   if (!ticket || ticket.customerId !== (req as any).customer.sub) {
     res.status(404).json({ error: "Ticket not found." }); return;
+  }
+  if (ticket.quoteDeliveryStatus !== "sent" || !ticket.quoteSentAt) {
+    res.status(400).json({ error: "There is no delivered estimate to respond to." }); return;
+  }
+  if (!ticket.quoteExpiresAt || Date.parse(String(ticket.quoteExpiresAt)) <= Date.now()) {
+    res.status(410).json({ error: "This estimate has expired. Please ask the store for an updated estimate." }); return;
   }
   const ok = await respondToRepairQuote(String(req.params.id), response);
   if (!ok) { res.status(400).json({ error: "No quote to respond to." }); return; }
@@ -9083,6 +9159,8 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
             if (t.assigned_email) await notify({ event: "repair.hold_reminder", entityType: "repair", entityId: t.id, subject: `On-hold repair needs review: ${t.id}`, bodyText: message, bodyHtml, audience: "staff", recipientEmail: t.assigned_email, recipientName: t.assigned_name || "Technician", idempotencyKey: `repair.hold_reminder:${t.id}:${dayKey}:staff` });
             await notify({ event: "repair.hold_reminder", entityType: "repair", entityId: t.id, subject: `On-hold repair needs review: ${t.id}`, bodyText: message, bodyHtml, idempotencyKey: `repair.hold_reminder:${t.id}:${dayKey}:admin` });
           }
+          if (due.quotesExpired.length) console.log(`[repair-workflow] quotes-expired=${due.quotesExpired.length}`);
+          if (due.quotesSuperseded.length) console.log(`[repair-workflow] quotes-superseded=${due.quotesSuperseded.length}`);
           if (due.diagnosisEscalated.length || due.holdReminders.length) console.log(`[repair-workflow] diagnosis-escalated=${due.diagnosisEscalated.length} hold-reminders=${due.holdReminders.length}`);
         } catch (err: any) { console.error("[repair-workflow] Sweep error:", err?.message || err); }
       };

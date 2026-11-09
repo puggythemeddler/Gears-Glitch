@@ -1,5 +1,6 @@
 import { query, queryOne, queryAll, transaction } from "./db-helpers";
 import { getStoreSetting } from "./db";
+import { createHash } from "node:crypto";
 
 interface RepairType {
   id: string;
@@ -113,6 +114,9 @@ interface Ticket {
   softwareLicense: boolean;
   totalCost: number;
   quoteSentAt: string | null;
+  quoteVersion: number | null;
+  quoteExpiresAt: string | null;
+  quoteDeliveryStatus: string | null;
   quoteRespondedAt: string | null;
   quoteResponse: string | null;
   createdAt: string;
@@ -339,6 +343,9 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     softwareLicense: Boolean(row.software_license),
     totalCost: row.total_cost || 0,
     quoteSentAt: row.quote_sent_at || null,
+    quoteVersion: extras.quoteVersion ?? null,
+    quoteExpiresAt: extras.quoteExpiresAt ?? null,
+    quoteDeliveryStatus: extras.quoteDeliveryStatus ?? null,
     quoteRespondedAt: row.quote_responded_at || null,
     quoteResponse: row.quote_response || null,
     createdAt: row.created_at,
@@ -374,8 +381,12 @@ async function loadTicketDetails(ticketId: string): Promise<Ticket | null> {
     [ticketId]
   );
   const updates: RepairUpdate[] = updateRows.map((u: any) => mapUpdate(u, u.staff_name));
+  const quote = await queryOne(
+    "SELECT version, expires_at, delivery_status FROM repair_quote_versions WHERE ticket_id = $1 ORDER BY version DESC LIMIT 1",
+    [ticketId]
+  ) as any;
 
-  return mapTicket(row, { parts, updates });
+  return mapTicket(row, { parts, updates, quoteVersion: quote ? Number(quote.version) : null, quoteExpiresAt: quote?.expires_at || null, quoteDeliveryStatus: quote?.delivery_status || null });
 }
 
 async function createRepairTicket(customerId: number, data: any): Promise<TicketResult> {
@@ -823,6 +834,19 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   fields.push(`total_cost = $${idx}`);
   params.push(totalCost);
   idx++;
+  const estimateChanged = Math.abs(Number(existing.totalCost || 0) - Number(totalCost || 0)) >= 0.01;
+  const quoteDetailsChanged =
+    (updates.deviceType !== undefined && updates.deviceType !== existing.deviceType) ||
+    (updates.deviceModel !== undefined && updates.deviceModel !== existing.deviceModel) ||
+    (updates.issueDescription !== undefined && updates.issueDescription !== existing.issueDescription);
+  const quoteInvalidated = !!existing.quoteSentAt && (estimateChanged || quoteDetailsChanged);
+  if (quoteInvalidated) {
+    // A customer response applies only to the exact estimate they received.
+    // Any change to the price or quoted device/request requires an explicit resend.
+    fields.push("quote_sent_at = NULL");
+    fields.push("quote_response = NULL");
+    fields.push("quote_responded_at = NULL");
+  }
   fields.push("updated_at = NOW()::text");
 
   params.push(ticketId);
@@ -830,6 +854,10 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   if (scheduleChanged && nextSchedule && nextAssignee && !["collected", "cancelled"].includes(nextStatus)) {
     const scheduleResult = await transaction(async (client) => {
       await client.query("SELECT id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId]);
+      if (quoteInvalidated) {
+        const quoteInFlight = (await client.query("SELECT 1 FROM repair_quote_versions WHERE ticket_id = $1 AND delivery_status = 'sending' LIMIT 1", [ticketId])).rows?.[0];
+        if (quoteInFlight) return { error: "A quote email is being sent. Wait for it to finish before changing the estimate.", conflict: true };
+      }
       // Serialize every appointment write for this technician. Without this
       // transaction-scoped lock, two concurrent saves could both pass the
       // overlap query and double-book the same slot.
@@ -849,12 +877,22 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
         const start = String(conflict.scheduled_at).replace("T", " ").slice(0, 16);
         return { error: `This technician is already booked on repair #${conflict.id} at ${start} for ${conflict.scheduled_duration_minutes} minutes. Choose another time or technician.`, conflict: true };
       }
-      await client.query(updateSql, params);
+      const updated = await client.query(updateSql, params);
+      if ((updated.rowCount ?? 0) === 0) return { error: "The repair ticket could not be updated. Refresh it and try again.", conflict: true };
       return null;
     });
     if (scheduleResult) return scheduleResult;
   } else {
-    await query(updateSql, params);
+    const writeResult = await transaction(async (client) => {
+      await client.query("SELECT id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId]);
+      if (quoteInvalidated) {
+        const quoteInFlight = (await client.query("SELECT 1 FROM repair_quote_versions WHERE ticket_id = $1 AND delivery_status = 'sending' LIMIT 1", [ticketId])).rows?.[0];
+        if (quoteInFlight) return { conflict: true };
+      }
+      const updated = await client.query(updateSql, params);
+      return { conflict: (updated.rowCount ?? 0) === 0 };
+    });
+    if (writeResult.conflict) return { error: "A quote email may be in progress or the ticket changed. Refresh it and try again." };
   }
 
   if (updates.status && updates.status !== existing.status) {
@@ -885,8 +923,11 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   if (updates.scheduledAt !== undefined && String(updates.scheduledAt || "") !== String(existing.scheduledAt || "")) {
     await addRepairUpdate(ticketId, staffId || null, "schedule_updated", `Repair schedule changed to ${updates.scheduledAt || "not scheduled"}.`, false);
   }
-  if (Math.abs(Number(existing.totalCost || 0) - Number(totalCost || 0)) >= 0.01) {
-    await addRepairUpdate(ticketId, staffId || null, "quote_updated", `Repair estimate changed from ${Number(existing.totalCost || 0).toFixed(2)} to ${Number(totalCost || 0).toFixed(2)}.`, false);
+  if (quoteInvalidated) {
+    const message = estimateChanged
+      ? `Repair estimate changed from ${Number(existing.totalCost || 0).toFixed(2)} to ${Number(totalCost || 0).toFixed(2)}; the prior quote is no longer current.`
+      : "The quoted device or request details changed; the prior quote is no longer current.";
+    await addRepairUpdate(ticketId, staffId || null, "quote_updated", message, false);
   }
   if (updates.diagnosis !== undefined && String(updates.diagnosis).trim() !== String(existing.diagnosis || "").trim()) {
     await addRepairUpdate(ticketId, staffId || null, "diagnosis", String(updates.diagnosis).trim() ? "Diagnosis recorded or updated." : "Diagnosis cleared; the diagnosis target restarted.", false);
@@ -902,7 +943,7 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
   return await loadTicketDetails(ticketId);
 }
 
-export async function runRepairWorkflowSweep(): Promise<{ diagnosisEscalated: any[]; holdReminders: any[] }> {
+export async function runRepairWorkflowSweep(): Promise<{ diagnosisEscalated: any[]; holdReminders: any[]; quotesExpired: any[]; quotesSuperseded: any[] }> {
   const diagnosisEscalated = await queryAll(`
     WITH due AS (
       SELECT t.id, t.assigned_to FROM repair_tickets t
@@ -934,7 +975,19 @@ export async function runRepairWorkflowSweep(): Promise<{ diagnosisEscalated: an
     WHERE t.id = d.id
     RETURNING t.id, t.hold_reason, t.priority, u.username AS assigned_name, u.email AS assigned_email
   `) as any[];
-  return { diagnosisEscalated, holdReminders };
+  const quotesExpired = await queryAll(
+    `UPDATE repair_quote_versions SET delivery_status = 'expired', delivery_result = 'expired'
+     WHERE delivery_status = 'sent' AND expires_at <= NOW()
+     RETURNING ticket_id, version`
+  ) as any[];
+  const quotesSuperseded = await queryAll(
+    `UPDATE repair_quote_versions q SET delivery_status = 'superseded', delivery_result = 'estimate_changed'
+     FROM repair_tickets t
+     WHERE t.id = q.ticket_id AND q.delivery_status = 'sent' AND q.expires_at > NOW()
+       AND t.quote_sent_at IS DISTINCT FROM q.reservation_token
+     RETURNING q.ticket_id, q.version`
+  ) as any[];
+  return { diagnosisEscalated, holdReminders, quotesExpired, quotesSuperseded };
 }
 
 const REPAIR_PAYMENT_METHODS = ["cash", "mpesa", "card", "bank_transfer", "other"] as const;
@@ -1177,6 +1230,9 @@ async function addRepairPart(ticketId: string, data: any, staffId?: number): Pro
   let partId: number;
   try {
     partId = await transaction(async (client) => {
+      await client.query("SELECT id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId]);
+      const quoteInFlight = (await client.query("SELECT 1 FROM repair_quote_versions WHERE ticket_id = $1 AND delivery_status = 'sending' LIMIT 1", [ticketId])).rows?.[0];
+      if (quoteInFlight) throw new Error("A quote email is being sent. Wait for it to finish before changing the estimate parts.");
       if (productId) {
         const level = (await client.query("SELECT quantity_in_stock, quantity_reserved FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL FOR UPDATE", [productId])).rows?.[0] as any;
         // Guarded atomic deduction — rowCount 0 means insufficient stock on hand.
@@ -1215,28 +1271,29 @@ async function addRepairPart(ticketId: string, data: any, staffId?: number): Pro
 }
 
 async function removeRepairPart(ticketId: string, partId: number, staffId?: number): Promise<boolean> {
-  const part = await queryOne("SELECT description, product_id, quantity, unit_cost FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]) as any;
-  const r = await query("DELETE FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]);
-  if ((r.rowCount ?? 0) > 0) {
-    await recalculateTicketCost(ticketId);
-    await addRepairUpdate(ticketId, staffId || null, "part_removed", `Part removed: ${part?.description || "part"} × ${Number(part?.quantity) || 1}.`, false);
-    if (part?.product_id) {
-      const qty = Number(part.quantity) || 1;
-      try {
-        await transaction(async (client) => {
-          await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, part.product_id]);
-          await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, part.product_id]);
-          await client.query(
-            "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'restock', $2, 'repair', $3, $4)",
-            [part.product_id, qty, ticketId, `Repair part removed #${ticketId}`]
-          );
-        });
-      } catch (e: any) {
-        console.warn("[repairs] Failed to restore part stock:", e?.message);
-      }
+  const part = await transaction(async (client) => {
+    await client.query("SELECT id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId]);
+    const quoteInFlight = (await client.query("SELECT 1 FROM repair_quote_versions WHERE ticket_id = $1 AND delivery_status = 'sending' LIMIT 1", [ticketId])).rows?.[0];
+    if (quoteInFlight) throw new Error("A quote email is being sent. Wait for it to finish before changing the estimate parts.");
+    const row = (await client.query("SELECT description, product_id, quantity FROM repair_parts_used WHERE id = $1 AND ticket_id = $2 FOR UPDATE", [partId, ticketId])).rows?.[0] as any;
+    if (!row) return null;
+    const deleted = await client.query("DELETE FROM repair_parts_used WHERE id = $1 AND ticket_id = $2", [partId, ticketId]);
+    if ((deleted.rowCount ?? 0) === 0) return null;
+    if (row.product_id) {
+      const qty = Number(row.quantity) || 1;
+      await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, row.product_id]);
+      await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, row.product_id]);
+      await client.query(
+        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'restock', $2, 'repair', $3, $4)",
+        [row.product_id, qty, ticketId, `Repair part removed #${ticketId}`]
+      );
     }
-  }
-  return (r.rowCount ?? 0) > 0;
+    return row;
+  });
+  if (!part) return false;
+  await recalculateTicketCost(ticketId);
+  await addRepairUpdate(ticketId, staffId || null, "part_removed", `Part removed: ${part.description || "part"} × ${Number(part.quantity) || 1}.`, false);
+  return true;
 }
 
 async function recalculateTicketCost(ticketId: string): Promise<void> {
@@ -1246,7 +1303,10 @@ async function recalculateTicketCost(ticketId: string): Promise<void> {
   const partsCost = pCost?.c || 0;
   const totalCost = await calculateRepairCost(ticket.repairType, ticket.hardwareValue, partsCost, ticket.softwareInstall, ticket.softwareLicense);
   const laborCost = totalCost - partsCost;
-  await query("UPDATE repair_tickets SET labor_cost = $1, parts_cost = $2, total_cost = $3, updated_at = NOW()::text WHERE id = $4", [laborCost, partsCost, totalCost, ticketId]);
+  const quoteInvalidation = ticket.quoteSentAt && Math.abs(Number(ticket.totalCost || 0) - Number(totalCost || 0)) >= 0.01
+    ? ", quote_sent_at = NULL, quote_response = NULL, quote_responded_at = NULL"
+    : "";
+  await query(`UPDATE repair_tickets SET labor_cost = $1, parts_cost = $2, total_cost = $3${quoteInvalidation}, updated_at = NOW()::text WHERE id = $4`, [laborCost, partsCost, totalCost, ticketId]);
 }
 
 async function getDashboardStats(): Promise<DashboardStats> {
@@ -1268,18 +1328,112 @@ async function listRepairTypes(): Promise<RepairType[]> {
   return await queryAll("SELECT id, name, description, base_price AS \"basePrice\" FROM repair_types ORDER BY name") as RepairType[];
 }
 
-async function sendRepairQuote(ticketId: string): Promise<boolean> {
-  const ticket = await loadTicketDetails(ticketId);
-  if (!ticket) return false;
-  await query(`UPDATE repair_tickets SET quote_sent_at = NOW()::text, updated_at = NOW()::text WHERE id = $1`, [ticketId]);
-  await addRepairUpdate(ticketId, null, "quote_sent", "A cost estimate has been sent. Please review and respond.", true);
+interface RepairQuoteVersionResult { id: number; version: number; reservationToken: string; }
+
+/** Persist the immutable estimate and reserve its send in one transaction. */
+async function createRepairQuoteVersion(input: {
+  ticketId: string; expectedTotal: number; expectedVersion: number; recipientEmail: string;
+  snapshot: Record<string, unknown>; pdf: Buffer; expiresAt: string;
+}): Promise<RepairQuoteVersionResult | null> {
+  const pdfSha256 = createHash("sha256").update(input.pdf).digest("hex");
+  return transaction(async (client) => {
+    const ticket = (await client.query("SELECT quote_sent_at, total_cost FROM repair_tickets WHERE id = $1 FOR UPDATE", [input.ticketId])).rows?.[0] as any;
+    if (!ticket || Math.abs(Number(ticket.total_cost || 0) - input.expectedTotal) >= 0.01) return null;
+
+    const parts = (await client.query("SELECT description, quantity, unit_cost FROM repair_parts_used WHERE ticket_id = $1 ORDER BY id", [input.ticketId])).rows as any[];
+    const actualParts = parts.map((part) => ({ description: String(part.description || "Part"), quantity: Number(part.quantity) || 1, unitCost: Number(part.unit_cost) || 0 }));
+    const snapshotParts = Array.isArray(input.snapshot.parts) ? input.snapshot.parts : [];
+    if (JSON.stringify(actualParts) !== JSON.stringify(snapshotParts)) return null;
+    const storedPartsCost = parts.reduce((sum, part) => sum + (Number(part.quantity) || 1) * (Number(part.unit_cost) || 0), 0);
+    if (Math.abs(storedPartsCost - Number((await client.query("SELECT parts_cost FROM repair_tickets WHERE id = $1", [input.ticketId])).rows?.[0]?.parts_cost || 0)) >= 0.01) return null;
+
+    const previous = (await client.query(
+      "SELECT id, version, delivery_status, expires_at, created_at FROM repair_quote_versions WHERE ticket_id = $1 ORDER BY version DESC LIMIT 1 FOR UPDATE",
+      [input.ticketId]
+    )).rows?.[0] as any;
+    if (ticket.quote_sent_at && previous?.delivery_status === "sent" && new Date(previous.expires_at).getTime() > Date.now()) return null;
+    if (previous?.delivery_status === "sending" && new Date(previous.created_at).getTime() > Date.now() - 30 * 60 * 1000) return null;
+    if (previous?.delivery_status === "sending") {
+      await client.query("UPDATE repair_quote_versions SET delivery_status = 'failed', delivery_result = 'send_timed_out' WHERE id = $1", [previous.id]);
+    }
+    if (previous?.delivery_status === "sent") await client.query("UPDATE repair_quote_versions SET delivery_status = CASE WHEN expires_at <= NOW() THEN 'expired' ELSE 'superseded' END WHERE id = $1", [previous.id]);
+
+    const nextVersion = Number((await client.query("SELECT COALESCE(MAX(version), 0) + 1 AS version FROM repair_quote_versions WHERE ticket_id = $1", [input.ticketId])).rows?.[0]?.version || 1);
+    if (nextVersion !== input.expectedVersion) return null;
+    const reserved = (await client.query(
+      `UPDATE repair_tickets SET quote_sent_at = NOW()::text, quote_response = NULL, quote_responded_at = NULL, updated_at = NOW()::text
+       WHERE id = $1 RETURNING quote_sent_at`, [input.ticketId]
+    )).rows?.[0] as any;
+    const reservationToken = String(reserved?.quote_sent_at || "");
+    if (!reservationToken) throw new Error("Could not reserve repair quote send.");
+    const inserted = (await client.query(
+      `INSERT INTO repair_quote_versions
+        (ticket_id, version, recipient_email, quote_snapshot, pdf_content, pdf_sha256, reservation_token, delivery_status, delivery_result, expires_at)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, 'sending', 'pending', $8::timestamptz)
+       RETURNING id`,
+      [input.ticketId, nextVersion, input.recipientEmail, JSON.stringify({ ...input.snapshot, version: nextVersion, expiresAt: input.expiresAt }), input.pdf, pdfSha256, reservationToken, input.expiresAt]
+    )).rows?.[0] as any;
+    return { id: Number(inserted.id), version: nextVersion, reservationToken };
+  });
+}
+
+async function finishRepairQuoteVersion(versionId: number, sent: boolean): Promise<boolean> {
+  const result = await transaction(async (client) => {
+    const version = (await client.query("SELECT ticket_id, version, reservation_token, delivery_status FROM repair_quote_versions WHERE id = $1 FOR UPDATE", [versionId])).rows?.[0] as any;
+    if (!version || version.delivery_status !== "sending") return null;
+    if (!sent) {
+      await client.query("UPDATE repair_quote_versions SET delivery_status = 'failed', delivery_result = 'email_not_delivered' WHERE id = $1", [versionId]);
+      await client.query(
+        `UPDATE repair_tickets SET quote_sent_at = NULL, quote_response = NULL, quote_responded_at = NULL, updated_at = NOW()::text
+         WHERE id = $1 AND quote_sent_at = $2`, [version.ticket_id, version.reservation_token]
+      );
+      return { sent: false, ticketId: String(version.ticket_id), version: Number(version.version) };
+    }
+    await client.query("UPDATE repair_quote_versions SET delivery_status = 'sent', delivery_result = 'sent', sent_at = NOW() WHERE id = $1", [versionId]);
+    return { sent: true, ticketId: String(version.ticket_id), version: Number(version.version) };
+  });
+  if (!result?.sent) return false;
+  await addRepairUpdate(result.ticketId, null, "quote_sent", `Repair estimate v${result.version} PDF emailed. Please review and respond before it expires.`, true);
   return true;
 }
 
+async function loadCustomerRepairQuotePdf(ticketId: string, customerId: number): Promise<{ version: number; pdf: Buffer } | null> {
+  const row = await queryOne(
+    `SELECT q.version, q.pdf_content
+     FROM repair_quote_versions q
+     JOIN repair_tickets t ON t.id = q.ticket_id
+     WHERE q.ticket_id = $1 AND t.customer_id = $2
+       AND t.quote_sent_at = q.reservation_token
+       AND q.delivery_status = 'sent' AND q.expires_at > NOW()
+     ORDER BY q.version DESC LIMIT 1`,
+    [ticketId, customerId]
+  ) as any;
+  if (!row?.pdf_content) return null;
+  return { version: Number(row.version), pdf: Buffer.isBuffer(row.pdf_content) ? row.pdf_content : Buffer.from(row.pdf_content) };
+}
+
 async function respondToRepairQuote(ticketId: string, response: "accepted" | "declined"): Promise<boolean> {
-  const ticket = await loadTicketDetails(ticketId);
-  if (!ticket || !ticket.quoteSentAt) return false;
-  await query(`UPDATE repair_tickets SET quote_response = $1, quote_responded_at = NOW()::text, updated_at = NOW()::text WHERE id = $2`, [response, ticketId]);
+  const result = await transaction(async (client) => {
+    const ticket = (await client.query("SELECT customer_id, quote_sent_at FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId])).rows?.[0] as any;
+    if (!ticket?.quote_sent_at) return false;
+    const version = (await client.query(
+      `SELECT id, version, reservation_token FROM repair_quote_versions
+       WHERE ticket_id = $1 AND delivery_status = 'sent' AND expires_at > NOW()
+       ORDER BY version DESC LIMIT 1 FOR UPDATE`, [ticketId]
+    )).rows?.[0] as any;
+    if (!version || version.reservation_token !== String(ticket.quote_sent_at)) return false;
+    const updated = await client.query(
+      "UPDATE repair_quote_versions SET response = $1, responded_at = NOW() WHERE id = $2 AND response IS NULL",
+      [response, version.id]
+    );
+    if ((updated.rowCount ?? 0) === 0) return false;
+    await client.query(
+      "UPDATE repair_tickets SET quote_response = $1, quote_responded_at = NOW()::text, updated_at = NOW()::text WHERE id = $2 AND quote_sent_at = $3",
+      [response, ticketId, version.reservation_token]
+    );
+    return true;
+  });
+  if (!result) return false;
   await addRepairUpdate(ticketId, null, "quote_" + response, `Customer ${response} the cost estimate.`, true);
   return true;
 }
@@ -1303,6 +1457,8 @@ export {
   listRepairTypes,
   calculateRepairCost,
   recalculateTicketCost,
-  sendRepairQuote,
+  createRepairQuoteVersion,
+  finishRepairQuoteVersion,
+  loadCustomerRepairQuotePdf,
   respondToRepairQuote,
 };
