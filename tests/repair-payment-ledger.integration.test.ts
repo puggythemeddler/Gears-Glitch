@@ -11,16 +11,16 @@ import { listRepairPaymentLedger, recordRepairLedgerEntry, voidRepairLedgerEntry
 import { DEFAULT_ROLES } from "../server/permissions";
 
 const TICKET = "REP-LEDGER-TEST-001";
-const STAFF_ID = 900001;
+let staffId = 0;
 
 describe("repair payment ledger input validation", () => {
   it("rejects invalid amounts before opening a database transaction", async () => {
     await assert.rejects(
-      recordRepairLedgerEntry(TICKET, { kind: "payment", amount: "10.001", reference: "x", idempotencyKey: "x", staffId: STAFF_ID }),
+      recordRepairLedgerEntry(TICKET, { kind: "payment", amount: "10.001", reference: "x", idempotencyKey: "x", staffId: 0 }),
       (error: unknown) => error instanceof RepairPaymentError && /no more than two decimal places/.test(error.message)
     );
     await assert.rejects(
-      recordRepairLedgerEntry(TICKET, { kind: "payment", amount: 0, reference: "x", idempotencyKey: "x", staffId: STAFF_ID }),
+      recordRepairLedgerEntry(TICKET, { kind: "payment", amount: 0, reference: "x", idempotencyKey: "x", staffId: 0 }),
       (error: unknown) => error instanceof RepairPaymentError && /greater than zero/.test(error.message)
     );
   });
@@ -57,6 +57,14 @@ describe("repair payment ledger integration (DB)", { skip: !HAS_DB && "TEST_DATA
        ON CONFLICT (email) DO NOTHING`
     );
     customerId = Number((await queryOne("SELECT id FROM customers WHERE email = 'repair-ledger-test@example.invalid'"))?.id);
+    const staff = await queryOne(
+      `INSERT INTO users (username, email, password_hash, role)
+       VALUES ('repair-ledger-test-staff', 'repair-ledger-staff@example.invalid', 'test', 'technician')
+       ON CONFLICT (username) DO UPDATE SET email = EXCLUDED.email
+       RETURNING id`
+    );
+    staffId = Number(staff?.id);
+    assert.ok(staffId > 0, "ledger integration test staff account must exist");
   });
 
   beforeEach(async () => {
@@ -72,6 +80,7 @@ describe("repair payment ledger integration (DB)", { skip: !HAS_DB && "TEST_DATA
   after(async () => {
     await query("DELETE FROM repair_payments WHERE ticket_id = $1", [TICKET]);
     await query("DELETE FROM repair_tickets WHERE id = $1", [TICKET]);
+    if (staffId > 0) await query("DELETE FROM users WHERE id = $1", [staffId]);
     await closePool();
   });
 
@@ -81,7 +90,7 @@ describe("repair payment ledger integration (DB)", { skip: !HAS_DB && "TEST_DATA
     paymentMethod: "mpesa",
     reference: "LEDGER-RECEIPT-1",
     idempotencyKey: "ledger-request-1",
-    staffId: STAFF_ID,
+    staffId,
     ...overrides,
   });
 
@@ -148,7 +157,7 @@ describe("repair payment ledger integration (DB)", { skip: !HAS_DB && "TEST_DATA
 
   it("voids an entry append-only, idempotently, and excludes it from active totals", async () => {
     const payment = await recordRepairLedgerEntry(TICKET, entry());
-    const voidInput = { reason: "Wrong ticket selected", idempotencyKey: "ledger-void-1", staffId: STAFF_ID };
+    const voidInput = { reason: "Wrong ticket selected", idempotencyKey: "ledger-void-1", staffId };
     await voidRepairLedgerEntry(TICKET, payment.id, voidInput);
     await voidRepairLedgerEntry(TICKET, payment.id, voidInput);
 
@@ -160,7 +169,7 @@ describe("repair payment ledger integration (DB)", { skip: !HAS_DB && "TEST_DATA
     assert.equal(ledger.summary.netReceived, 0);
     assert.equal(ledger.summary.voidedEntries, 1);
     await assert.rejects(
-      voidRepairLedgerEntry(TICKET, payment.id, { reason: "Trying second void", idempotencyKey: "ledger-void-duplicate", staffId: STAFF_ID }),
+      voidRepairLedgerEntry(TICKET, payment.id, { reason: "Trying second void", idempotencyKey: "ledger-void-duplicate", staffId }),
       (error: unknown) => error instanceof RepairPaymentError && /already been voided/.test(error.message)
     );
     await assert.rejects(
@@ -175,11 +184,11 @@ describe("repair payment ledger integration (DB)", { skip: !HAS_DB && "TEST_DATA
     const payment = await recordRepairLedgerEntry(TICKET, entry());
     const refund = await recordRepairLedgerEntry(TICKET, entry({ kind: "refund", amount: "100", reference: "LEDGER-REFUND-3", idempotencyKey: "ledger-refund-3", relatedPaymentId: payment.id, reason: "Test refund" }));
     await assert.rejects(
-      voidRepairLedgerEntry(TICKET, payment.id, { reason: "Correction", idempotencyKey: "ledger-void-receipt-first", staffId: STAFF_ID }),
+      voidRepairLedgerEntry(TICKET, payment.id, { reason: "Correction", idempotencyKey: "ledger-void-receipt-first", staffId }),
       (error: unknown) => error instanceof RepairPaymentError && /Void the related refund first/.test(error.message)
     );
-    await voidRepairLedgerEntry(TICKET, refund.id, { reason: "Refund entry was mistaken", idempotencyKey: "ledger-void-refund-first", staffId: STAFF_ID });
-    await voidRepairLedgerEntry(TICKET, payment.id, { reason: "Receipt entry was mistaken", idempotencyKey: "ledger-void-payment-second", staffId: STAFF_ID });
+    await voidRepairLedgerEntry(TICKET, refund.id, { reason: "Refund entry was mistaken", idempotencyKey: "ledger-void-refund-first", staffId });
+    await voidRepairLedgerEntry(TICKET, payment.id, { reason: "Receipt entry was mistaken", idempotencyKey: "ledger-void-payment-second", staffId });
 
     const ledger = await listRepairPaymentLedger(TICKET);
     assert.equal(ledger.summary.received, 0);
