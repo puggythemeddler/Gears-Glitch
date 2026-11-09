@@ -35,7 +35,7 @@ export default function MyRepairsPage() {
           <li><span aria-current="page">My repairs</span></li>
         </ol>
       </nav>
-      <h1>My repair tickets</h1>
+      <h1>My service requests</h1>
       {fetchError && <p className="product-error">{fetchError}</p>}
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
@@ -52,9 +52,9 @@ export default function MyRepairsPage() {
       ) : tickets.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon"><Icon name="wrench" size={28} /></div>
-          <div className="empty-state-title">No repair tickets</div>
-          <div className="empty-state-desc">You haven't booked any repairs yet.</div>
-          <a href="/repair-book" className="btn btn-primary">Book a repair</a>
+          <div className="empty-state-title">No service requests</div>
+          <div className="empty-state-desc">You haven't requested a repair, installation, or upgrade yet.</div>
+          <a href="/repair-book" className="btn btn-primary">Request a service</a>
         </div>
       ) : (
         tickets.map((t) => (
@@ -63,6 +63,7 @@ export default function MyRepairsPage() {
               <div>
                 <strong>#{t.id}</strong> — {[t.deviceBrand, t.deviceType].filter(Boolean).join(" ")}
                 {t.deviceModel ? ` (${t.deviceModel})` : ""}
+                <span className="plan-status" style={{ display: "inline-block", marginLeft: "0.5rem" }}>{t.serviceKind === "planned_service" ? "Planned service" : "Diagnosis / repair"}</span>
                 {t.issueSummary ? <span className="muted" style={{ display: "block" }}>{t.issueSummary}</span> : null}
                 <StatusBadge status={t.status} domain="repairs" />
               </div>
@@ -73,7 +74,7 @@ export default function MyRepairsPage() {
         ))
       )}
       <div style={{ marginTop: "1.5rem" }}>
-        <a href="/repair-book" className="btn btn-primary">Book another repair</a>
+        <a href="/repair-book" className="btn btn-primary">Request another service</a>
       </div>
     </>
   );

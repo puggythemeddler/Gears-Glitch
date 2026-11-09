@@ -388,6 +388,7 @@ import {
 import {
   STATUS_LABELS,
   createRepairTicket,
+  listCustomerRepairDevices,
   loadTicketDetails,
   listRepairsForCustomer,
   listRepairsForCustomerPaged,
@@ -6723,6 +6724,10 @@ app.get("/api/backoffice/stats", staffAuthMiddleware, requirePermission("reports
 
 app.get("/api/repairs/types", requireShopFeature("Repair ticketing"), asyncHandler(async (_req: Request, res: Response) => {
   res.json({ types: await listRepairTypes() });
+}));
+
+app.get("/api/repairs/my-devices", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
+  res.json({ devices: await listCustomerRepairDevices((req as any).customer.sub) });
 }));
 
 // ============ REPAIRS PAGE CONTENT ============

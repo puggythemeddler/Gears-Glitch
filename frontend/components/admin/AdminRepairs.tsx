@@ -427,12 +427,13 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
       ) : (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>#</th><th>Priority</th><th>Customer</th><th>Device</th><th>Status</th><th>Technician</th><th>ETA</th><th>Scheduled</th><th>Quote</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Priority</th><th>Request</th><th>Customer</th><th>Device</th><th>Status</th><th>Technician</th><th>ETA</th><th>Scheduled</th><th>Quote</th><th></th></tr></thead>
             <tbody>
               {tickets.map((t) => (
                 <tr key={t.id}>
                   <td>{t.id}</td>
                   <td><span className="plan-status" style={t.priority === "critical" ? { background: "var(--danger-light)", color: "var(--danger-text)" } : t.priority === "high" ? { background: "var(--warning-light)", color: "var(--warning-text)" } : undefined}>{String(t.priority || "normal").toUpperCase()}</span></td>
+                  <td><span className="plan-status">{t.serviceKind === "planned_service" ? "Planned service" : "Diagnosis / repair"}</span></td>
                   <td>{t.customerName || ""}</td>
                   <td>{t.deviceType ? [t.deviceBrand, t.deviceType, t.deviceModel].filter(Boolean).join(" ") : "—"}{t.serialNumber && <span className="muted" style={{ display: "block", fontSize: "0.75rem" }}>SN {t.serialNumber}</span>}</td>
                   <td>{statusBadge(t.status)}</td>
@@ -454,7 +455,7 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
                 </tr>
               ))}
               {tickets.length === 0 && (
-                <tr><td colSpan={10}><EmptyState icon="repairs" title="No repair tickets" description="No repair tickets match the current filters. Clear the filters to see all tickets." actionLabel="Clear filters" onAction={() => { setStatusFilter(""); setTechFilter(""); }} /></td></tr>
+                <tr><td colSpan={11}><EmptyState icon="repairs" title="No repair tickets" description="No repair tickets match the current filters. Clear the filters to see all tickets." actionLabel="Clear filters" onAction={() => { setStatusFilter(""); setTechFilter(""); }} /></td></tr>
               )}
             </tbody>
           </table>
@@ -470,6 +471,7 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
             <div style={{ minWidth: 0, maxWidth: "70ch" }}>
               <h3 style={{ margin: 0 }}>Ticket #{detail.id} — {[detail.deviceBrand, detail.deviceType, detail.deviceModel].filter(Boolean).join(" ")}</h3>
+              <span className="plan-status" style={{ marginTop: "0.4rem" }}>{detail.serviceKind === "planned_service" ? "Planned service · no diagnosis deadline" : "Diagnosis / repair"}</span>
               {detail.issueSummary && <p style={{ margin: "0.5rem 0 0", fontWeight: 600 }}>{detail.issueSummary}</p>}
               <p className="muted" style={{ margin: "0.35rem 0 0" }}>{detail.issueDescription}</p>
             </div>
@@ -537,7 +539,7 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
 
           {detail.diagnosisDueAt && !detail.diagnosis && <p className="muted" role="status">Diagnosis target: {new Date(detail.diagnosisDueAt).toLocaleString("en-GB")} · Priority rises if the target is missed.</p>}
 
-          <div className="field"><label>Diagnosis<textarea rows={3} value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} /></label></div>
+          <div className="field"><label>{detail.serviceKind === "planned_service" ? "Service / installation notes (optional)" : "Diagnosis"}<textarea rows={3} value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} /></label></div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: "0 0.75rem" }}>
             <div className="field"><label>Hardware value (KES)<input type="number" min={0} value={form.hardwareValue} onChange={(e) => setForm({ ...form, hardwareValue: e.target.value })} /></label></div>

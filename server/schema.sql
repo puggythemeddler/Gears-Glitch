@@ -379,6 +379,8 @@ CREATE TABLE IF NOT EXISTS repair_tickets (
   device_brand TEXT NOT NULL DEFAULT '',
   device_model TEXT NOT NULL DEFAULT '',
   serial_number TEXT NOT NULL DEFAULT '',
+  order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+  service_kind TEXT NOT NULL DEFAULT 'diagnosis_repair' CONSTRAINT repair_tickets_service_kind_check CHECK (service_kind IN ('diagnosis_repair', 'planned_service')),
   issue_summary TEXT NOT NULL DEFAULT '',
   issue_description TEXT NOT NULL,
   requested_visit_date TEXT NOT NULL DEFAULT '',
