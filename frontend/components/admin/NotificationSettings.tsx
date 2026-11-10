@@ -30,6 +30,8 @@ const EVENT_LABELS: Record<string, string> = {
   "warranty.customer_update": "Warranty update (customer)",
   "warranty.expiry_reminder": "Warranty expiry reminder (customer)",
   "warranty.expired": "Warranty expired (customer)",
+  "software_license.expiry_reminder": "Software license renewal due (admin)",
+  "software_license.expired": "Software license expired (admin)",
   "invoice.created": "Invoice generated",
   "invoice.paid": "Invoice paid",
   "invoice.overdue": "Invoice overdue",
@@ -138,6 +140,7 @@ export default function NotificationSettings() {
     { label: "Customers", events: ["customer.created", "customer.login"] },
     { label: "Repairs", events: ["repair.created", "repair.status_changed", "repair.customer_update", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled"] },
     { label: "Warranties", events: ["warranty.created", "warranty.status_changed", "warranty.customer_update", "warranty.expiry_reminder", "warranty.expired", "warranty.approved", "warranty.rejected", "warranty.resolved"] },
+    { label: "Software licenses", events: ["software_license.expiry_reminder", "software_license.expired"] },
     { label: "Invoices & Subscriptions", events: ["invoice.created", "invoice.paid", "invoice.overdue", "subscription.changed", "subscription.expiring", "subscription.expired"] },
   ];
 

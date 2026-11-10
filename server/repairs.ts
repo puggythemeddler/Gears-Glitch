@@ -49,6 +49,7 @@ interface TicketRow {
   software_license_product_id: string | null;
   software_license_price: number;
   software_license_product_name?: string | null;
+  software_license_items?: any;
   total_cost: number;
   quote_sent_at: string | null;
   quote_responded_at: string | null;
@@ -118,6 +119,7 @@ interface Ticket {
   softwareLicenseProductId: string | null;
   softwareLicenseProductName: string;
   softwareLicensePrice: number;
+  softwareLicenseItems: Array<{ productId: string | null; name: string; price: number }>;
   totalCost: number;
   quoteSentAt: string | null;
   quoteVersion: number | null;
@@ -136,6 +138,14 @@ export function customerSafeRepairTicket(ticket: Ticket): any {
   const customerTicket: any = { ...ticket };
   for (const key of ["workNotes", "priority", "diagnosisDueAt", "diagnosisRecordedAt", "diagnosisLastRemindedAt", "holdReason", "holdRemindAt", "holdLastRemindedAt"]) delete customerTicket[key];
   return customerTicket;
+}
+
+export function totalSoftwareLicensePrice(items: Array<{ price: unknown }>): number {
+  const cents = items.reduce((sum, item) => {
+    const price = Number(item?.price);
+    return sum + (Number.isFinite(price) && price > 0 ? Math.round(price * 100) : 0);
+  }, 0);
+  return cents / 100;
 }
 
 interface TicketResult {
@@ -191,6 +201,8 @@ interface TicketUpdates {
   softwareInstall?: boolean;
   softwareLicense?: boolean;
   softwareLicenseProductId?: string | null;
+  softwareLicenseProductIds?: string[];
+  keepLegacySoftwareLicense?: boolean;
 }
 
 const STATUSES: string[] = [
@@ -308,6 +320,16 @@ async function calculateRepairCost(typeId: string | null, hardwareValue: number,
 }
 
 async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
+  const savedLicenseItems = (Array.isArray(row.software_license_items) ? row.software_license_items : []).map((item: any) => ({
+    productId: item?.productId ? String(item.productId) : null,
+    name: String(item?.name || "Software license"),
+    price: Number(item?.price) || 0,
+  }));
+  const softwareLicenseItems = savedLicenseItems.length ? savedLicenseItems : row.software_license ? [{
+    productId: row.software_license_product_id || null,
+    name: row.software_license_product_name || "Software license",
+    price: Number(row.software_license_price) || 0,
+  }] : [];
   return {
     id: row.id,
     customerId: row.customer_id,
@@ -350,6 +372,7 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     softwareLicenseProductId: row.software_license_product_id || null,
     softwareLicenseProductName: row.software_license_product_name || "",
     softwareLicensePrice: Number(row.software_license_price) || 0,
+    softwareLicenseItems,
     totalCost: row.total_cost || 0,
     quoteSentAt: row.quote_sent_at || null,
     quoteVersion: extras.quoteVersion ?? null,
@@ -660,12 +683,36 @@ async function listCalendarRepairs(from: string, to: string, assignedTo?: number
 async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staffId?: number): Promise<Ticket | { error: string } | null> {
   const existing = await loadTicketDetails(ticketId);
   if (!existing) return null;
-  const licenseChanged = updates.softwareLicense !== undefined || updates.softwareLicenseProductId !== undefined;
+  const licenseChanged = updates.softwareLicense !== undefined || updates.softwareLicenseProductId !== undefined || updates.softwareLicenseProductIds !== undefined;
   let nextSoftwareLicense = existing.softwareLicense;
   let nextLicenseProductId = existing.softwareLicenseProductId;
   let nextLicensePrice = existing.softwareLicensePrice;
+  let nextLicenseItems = existing.softwareLicenseItems;
 
-  if (updates.softwareLicenseProductId !== undefined) {
+  if (updates.softwareLicenseProductIds !== undefined) {
+    if (!Array.isArray(updates.softwareLicenseProductIds)) return { error: "Software license products must be a list." };
+    const requestedIds = [...new Set(updates.softwareLicenseProductIds.map((id) => String(id || "").trim()).filter(Boolean))];
+    if (requestedIds.length > 20) return { error: "Choose no more than 20 software license products." };
+    const currentById = new Map(existing.softwareLicenseItems.filter((item) => item.productId).map((item) => [item.productId!, item]));
+    const nextItems: Array<{ productId: string | null; name: string; price: number }> = [];
+    for (const productId of requestedIds) {
+      const current = currentById.get(productId);
+      if (current) { nextItems.push(current); continue; }
+      const product = await queryOne("SELECT id, name, price, sale_price FROM products WHERE id = $1", [productId]) as any;
+      if (!product) return { error: "A selected software license product is no longer in the catalog. Refresh the ticket and try again." };
+      const catalogPrice = Number(product.sale_price) > 0 ? Number(product.sale_price) : Number(product.price);
+      if (!Number.isFinite(catalogPrice) || catalogPrice < 0) return { error: "A selected catalog product has an invalid selling price." };
+      nextItems.push({ productId: String(product.id), name: String(product.name), price: Math.round(catalogPrice * 100) / 100 });
+    }
+    // Keep a historical pre-catalog charge only while its checkbox remains selected.
+    if (updates.keepLegacySoftwareLicense && existing.softwareLicense) {
+      nextItems.push(...existing.softwareLicenseItems.filter((item) => !item.productId));
+    }
+    nextLicenseItems = nextItems;
+    nextSoftwareLicense = nextItems.length > 0;
+    nextLicenseProductId = nextItems[0]?.productId || null;
+    nextLicensePrice = totalSoftwareLicensePrice(nextItems);
+  } else if (updates.softwareLicenseProductId !== undefined) {
     const requestedProductId = String(updates.softwareLicenseProductId || "").trim();
     if (requestedProductId) {
       if (requestedProductId === existing.softwareLicenseProductId && existing.softwareLicense) {
@@ -674,6 +721,7 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
         nextSoftwareLicense = true;
         nextLicenseProductId = existing.softwareLicenseProductId;
         nextLicensePrice = existing.softwareLicensePrice;
+        nextLicenseItems = existing.softwareLicenseItems;
       } else {
         const product = await queryOne(
           "SELECT id, name, price, sale_price FROM products WHERE id = $1",
@@ -685,11 +733,13 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
         nextSoftwareLicense = true;
         nextLicenseProductId = String(product.id);
         nextLicensePrice = Math.round(catalogPrice * 100) / 100;
+        nextLicenseItems = [{ productId: String(product.id), name: String(product.name), price: nextLicensePrice }];
       }
     } else if (updates.softwareLicense === false) {
       nextSoftwareLicense = false;
       nextLicenseProductId = null;
       nextLicensePrice = 0;
+      nextLicenseItems = [];
     } else if (existing.softwareLicense && !existing.softwareLicenseProductId) {
       // A pre-catalog license charge is kept at its saved historical amount
       // until staff replace it with a catalog product or remove it.
@@ -701,11 +751,13 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
       nextSoftwareLicense = false;
       nextLicenseProductId = null;
       nextLicensePrice = 0;
+      nextLicenseItems = [];
     }
   } else if (updates.softwareLicense === false) {
     nextSoftwareLicense = false;
     nextLicenseProductId = null;
     nextLicensePrice = 0;
+    nextLicenseItems = [];
   } else if (updates.softwareLicense === true && !existing.softwareLicense) {
     return { error: "Choose the licensed software product from the catalog before adding its price." };
   }
@@ -876,6 +928,9 @@ async function updateRepairTicket(ticketId: string, updates: TicketUpdates, staf
     idx++;
     fields.push(`software_license_price = $${idx}`);
     params.push(nextLicensePrice);
+    idx++;
+    fields.push(`software_license_items = $${idx}::jsonb`);
+    params.push(JSON.stringify(nextLicenseItems));
     idx++;
   }
 

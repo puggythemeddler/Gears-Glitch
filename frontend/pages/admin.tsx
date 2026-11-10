@@ -40,6 +40,7 @@ import BranchPicker from "@/components/BranchPicker";
 import { setBranchState, type BranchOption } from "@/lib/branches";
 import { reportDateRange, reportToday, reportYearStart, type ReportRangePreset } from "@/lib/reporting-date";
 import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
+import { isSoftwareLicenseProduct } from "@/lib/repairLicenseProducts";
 
 export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
 
@@ -1388,6 +1389,20 @@ function AdminOrders() {
   const [refundMsg, setRefundMsg] = useState("");
   const [serialInputs, setSerialInputs] = useState<Record<number, string>>({});
   const [linking, setLinking] = useState<number | null>(null);
+  const [licenseSaving, setLicenseSaving] = useState<number | null>(null);
+
+  function updateLicenseDraft(itemId: number, patch: Record<string, any>) {
+    setSelected((current: any) => current ? ({ ...current, items: current.items.map((item: any) => item.id === itemId ? { ...item, ...patch } : item) }) : current);
+  }
+
+  async function saveLicenseTracking(item: any) {
+    setLicenseSaving(item.id);
+    try {
+      await api(`/api/admin/order-items/${item.id}/software-license`, { method: "PATCH", body: JSON.stringify({ renewalType: item.licenseRenewalType || "unknown", expiresAt: item.licenseExpiresAt || null, notes: item.licenseNotes || "" }) });
+      feedback.success("Software license tracking saved.");
+    } catch (e: any) { feedback.error({ title: "License details not saved", message: e.message || "Please check the expiry date and notes." }); }
+    finally { setLicenseSaving(null); }
+  }
 
   async function linkSerial(itemId: number, serialNumber: string) {
     const code = String(serialNumber || "").trim();
@@ -1567,7 +1582,7 @@ function AdminOrders() {
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Warranty</th><th>Serial</th><th></th></tr></thead>
+            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Warranty</th><th>License renewal</th><th>Serial</th><th></th></tr></thead>
             <tbody>
               {(o.items || []).map((item: any, i: number) => (
                 <tr key={item.id || i}>
@@ -1594,6 +1609,19 @@ function AdminOrders() {
                       ) : null}
                       <span>{item.hasWarranty ? "mo" : ""}</span>
                     </div>
+                  </td>
+                  <td>
+                    {isSoftwareLicenseProduct({ name: item.name, category: item.category, subcategory: item.subcategory }) ? (
+                      <div style={{ minWidth: 190, display: "grid", gap: "0.35rem" }}>
+                        <select aria-label={`Renewal type for ${item.name}`} value={item.licenseRenewalType || "unknown"} onChange={(e) => updateLicenseDraft(item.id, { licenseRenewalType: e.target.value })}>
+                          <option value="unknown">Term not recorded</option><option value="renewable">Renewable</option><option value="perpetual">Perpetual / non-renewable</option>
+                        </select>
+                        {item.licenseRenewalType === "renewable" && <input aria-label={`Expiry date for ${item.name}`} type="date" value={item.licenseExpiresAt || ""} onChange={(e) => updateLicenseDraft(item.id, { licenseExpiresAt: e.target.value })} />}
+                        {item.licenseRenewalType === "perpetual" && <input aria-label={`Non-renewable license note for ${item.name}`} maxLength={1000} placeholder="Why it does not renew" value={item.licenseNotes || ""} onChange={(e) => updateLicenseDraft(item.id, { licenseNotes: e.target.value })} />}
+                        {(item.licenseRenewalType === "renewable" || item.licenseRenewalType === "perpetual") && <RippleButton size="small" variant="ghost" loading={licenseSaving === item.id} disabled={licenseSaving !== null} onClick={() => saveLicenseTracking(item)}>Save license terms</RippleButton>}
+                        {item.licenseRenewalType === "unknown" && <small className="muted">Set whether this license renews, then add its expiry date or a perpetual-term note.</small>}
+                      </div>
+                    ) : "—"}
                   </td>
                   <td>
                     {item.serialNumber ? (
