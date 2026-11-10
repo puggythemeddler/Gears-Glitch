@@ -9,6 +9,7 @@
 import { getSettings, getOrder, getStoreSetting, setStoreSetting, findCustomerById, findCustomerByEmail } from "./db";
 import { queryAll, queryOne, getPool } from "./db-helpers";
 import { notify } from "./notification-service";
+import type { NotificationContext } from "./notification-service";
 import {
   welcomeCustomerEmail,
   orderProcessedCustomerEmail,
@@ -461,6 +462,76 @@ export async function runWarrantyNotificationSweep(): Promise<{ reminders: numbe
   }
 }
 
+type SoftwareLicenseReminderRow = {
+  order_item_id: number;
+  order_id: number;
+  product_name: string | null;
+  license_expires_at: string | null;
+  license_renewal_type?: string | null;
+  cancelled?: boolean | number | null;
+  order_status?: string | null;
+  customer_name: string | null;
+};
+
+/** Build the store-only reminder for a synthetic or database sale row. */
+export function buildSoftwareLicenseReminder(
+  row: SoftwareLicenseReminderRow,
+  today: string,
+): { notification: NotificationContext; expired: boolean } | null {
+  if (row.license_renewal_type !== "renewable") return null;
+  if (row.cancelled === true || Number(row.cancelled) === 1) return null;
+  if (["cancelled", "pending", "pending_payment", "refunded"].includes(String(row.order_status || "").toLowerCase())) return null;
+
+  const expiry = String(row.license_expires_at || "").slice(0, 10);
+  const timing = classifySoftwareLicenseExpiry(expiry, today);
+  if (timing.status === "unknown" || timing.status === "not_due") return null;
+
+  const daysLeft = timing.daysLeft!;
+  const expired = timing.status === "expired";
+  const event = expired ? "software_license.expired" : "software_license.expiry_reminder";
+  const idempotencyKey = `${event}:order_item:${row.order_item_id}:${expiry}`;
+  const customer = String(row.customer_name || "Customer");
+  const product = String(row.product_name || "Software license");
+  const orderLink = `${baseUrl()}/admin?view=orders`;
+  const subject = expired ? `Software license expired: ${product}` : `Software license renewal due: ${product}`;
+  const bodyText = expired
+    ? `${product} for ${customer} (order #${row.order_id}) expired on ${expiry}. Review the order and prepare a renewal quote if appropriate.`
+    : `${product} for ${customer} (order #${row.order_id}) expires ${daysLeft === 0 ? "today" : `in ${daysLeft} days`} (${expiry}). Review the order and prepare a renewal quote if appropriate.`;
+  const bodyHtml = `<p>${bodyText.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch] || ch))}</p><p><a href="${orderLink}">Open orders</a></p>`;
+
+  return {
+    expired,
+    notification: {
+      event,
+      entityType: "order_item",
+      entityId: Number(row.order_item_id),
+      subject,
+      bodyText,
+      bodyHtml,
+      audience: "admin",
+      idempotencyKey,
+    },
+  };
+}
+
+/** Evaluate rows separately from persistence/delivery; tests inject a sink. */
+export async function dispatchSoftwareLicenseReminders(
+  rows: SoftwareLicenseReminderRow[],
+  today: string,
+  deliver: (notification: NotificationContext) => Promise<void> = notify,
+): Promise<{ reminders: number; expired: number; checked: number }> {
+  let reminders = 0;
+  let expired = 0;
+  for (const row of rows) {
+    const built = buildSoftwareLicenseReminder(row, today);
+    if (!built) continue;
+    await deliver(built.notification);
+    if (built.expired) expired++;
+    else reminders++;
+  }
+  return { reminders, expired, checked: rows.length };
+}
+
 // Notify the store team about renewable software licenses. Customer messages
 // are intentionally not sent here: admins review the record and prepare an
 // explicit renewal quote through the normal quote workflow.
@@ -477,7 +548,8 @@ export async function runSoftwareLicenseReminderSweep(): Promise<{ reminders: nu
   try {
   const rows = await queryAll(`
     SELECT oi.id AS order_item_id, oi.order_id, oi.name AS product_name,
-           oi.license_expires_at, o.customer_name, o.customer_email
+           oi.license_expires_at, oi.license_renewal_type, oi.cancelled,
+           o.status AS order_status, o.customer_name
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id
     WHERE oi.license_renewal_type = 'renewable'
@@ -487,28 +559,7 @@ export async function runSoftwareLicenseReminderSweep(): Promise<{ reminders: nu
     ORDER BY oi.license_expires_at ASC
   `) as any[];
   const today = new Date().toISOString().slice(0, 10);
-  let reminders = 0;
-  let expired = 0;
-  for (const row of rows) {
-    const expiry = String(row.license_expires_at || "").slice(0, 10);
-    const timing = classifySoftwareLicenseExpiry(expiry, today);
-    if (timing.status === "unknown" || timing.status === "not_due") continue;
-    const daysLeft = timing.daysLeft!;
-    const isExpired = timing.status === "expired";
-    const event = isExpired ? "software_license.expired" : "software_license.expiry_reminder";
-    const key = `${event}:order_item:${row.order_item_id}:${expiry}`;
-    const customer = String(row.customer_name || "Customer");
-    const product = String(row.product_name || "Software license");
-    const orderLink = `${baseUrl()}/admin?view=orders`;
-    const subject = isExpired ? `Software license expired: ${product}` : `Software license renewal due: ${product}`;
-    const message = isExpired
-      ? `${product} for ${customer} (order #${row.order_id}) expired on ${expiry}. Review the order and prepare a renewal quote if appropriate.`
-      : `${product} for ${customer} (order #${row.order_id}) expires ${daysLeft === 0 ? "today" : `in ${daysLeft} days`} (${expiry}). Review the order and prepare a renewal quote if appropriate.`;
-    const html = `<p>${message.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch] || ch))}</p><p><a href="${orderLink}">Open orders</a></p>`;
-    await notify({ event, entityType: "order_item", entityId: Number(row.order_item_id), subject, bodyText: message, bodyHtml: html, idempotencyKey: key });
-    if (isExpired) expired++; else reminders++;
-  }
-  return { reminders, expired, checked: rows.length };
+  return await dispatchSoftwareLicenseReminders(rows, today);
   } finally {
     if (locked && lock) {
       try { await lock.query("SELECT pg_advisory_unlock($1)", [lockKey]); } catch { /* best effort */ }
