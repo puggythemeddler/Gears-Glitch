@@ -773,6 +773,13 @@ code, pre {
 }
 
 .brand:hover { text-decoration: none; color: var(--primary); }
+.brand-placeholder {
+  display: inline-block;
+  width: 7.5rem;
+  height: 1em;
+  border-radius: 3px;
+  background: var(--surface);
+}
 
 .cart-badge {
   display: inline-flex;
@@ -5587,6 +5594,13 @@ a.hero-promotion:focus-visible {
   font-size: 1.15rem;
   color: var(--text);
   letter-spacing: -0.01em;
+}
+.footer-brand-placeholder {
+  display: block;
+  width: 10rem;
+  height: 1.15rem;
+  border-radius: 3px;
+  background: var(--surface);
 }
 .footer-logo { width: 180px; height: auto; }
 .footer-tagline { margin: 0; max-width: 36ch; color: var(--text-secondary); font-size: 0.875rem; line-height: 1.6; }

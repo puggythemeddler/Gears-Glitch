@@ -5,8 +5,10 @@ import { ProductCard } from "@/components/ProductCard";
 import { Media } from "@/components/Media";
 import Icon from "@/components/icons";
 import type { Product } from "@/lib/types";
+import { useApp } from "@/lib/app-context";
 
 export default function CampaignPage() {
+  const { settings } = useApp();
   const router = useRouter();
   const { slug } = router.query;
   const [campaign, setCampaign] = useState<any | null>(null);
@@ -42,7 +44,7 @@ export default function CampaignPage() {
   return (
     <>
       <Head>
-        <title>{campaign?.title || "Campaign"} — My Shop</title>
+        <title>{campaign?.title || "Campaign"} — {settings?.storeName || "Store"}</title>
         {campaign?.description ? <meta name="description" content={campaign.description} /> : null}
       </Head>
       {loading ? (

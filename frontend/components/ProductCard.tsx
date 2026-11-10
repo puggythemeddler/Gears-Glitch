@@ -23,7 +23,10 @@ export function ProductCard({ product }: ProductCardProps) {
     <Link href={`/product?id=${encodeURIComponent(product.id)}`} className="product-card">
       {product.imageUrl ? (
         <div className="product-card__img-wrap">
-          <Media src={product.imageUrl} alt={product.imageAlt || product.name} width={400} height={300} fit="cover" fallbackLabel={product.name} className="product-card__img" />
+          {/* The card link already includes the product name as text. Treat its
+              thumbnail as decorative so stale image-alt metadata cannot give
+              screen-reader users a conflicting product name. */}
+          <Media src={product.imageUrl} alt="" width={400} height={300} fit="cover" fallbackLabel={product.name} className="product-card__img" />
         </div>
       ) : (
         <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", borderRadius: "var(--radius-sm)", fontSize: "2rem", fontWeight: 700, color: "var(--border)", marginBottom: "0.75rem" }}>

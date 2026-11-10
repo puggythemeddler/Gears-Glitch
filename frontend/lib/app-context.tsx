@@ -60,6 +60,7 @@ interface AppState {
   userName: string;
   isDark: boolean;
   settings: Settings | null;
+  settingsLoaded: boolean;
   cartCount: number;
   selectedCurrency: string;
   exchangeRates: Record<string, number>;
@@ -92,6 +93,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     userName: "",
     isDark: true,
     settings: null,
+    settingsLoaded: false,
     cartCount: 0,
     selectedCurrency: "",
     exchangeRates: {},
@@ -178,14 +180,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   function refreshSettings() {
     api<any>("/api/public-settings").then((d) => {
+      setState((s) => ({ ...s, settings: d || null, settingsLoaded: true }));
       if (d) {
-        setState((s) => ({ ...s, settings: d }));
         applyFavicon(d.storeFavicon || DEFAULT_FAVICON);
         if (d.storeName && document.title === "Welcome to our store") {
           document.title = d.storeName;
         }
       }
     }).catch(() => {
+      setState((s) => ({ ...s, settingsLoaded: true }));
       applyFavicon(DEFAULT_FAVICON);
     });
   }

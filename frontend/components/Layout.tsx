@@ -44,7 +44,7 @@ const STATIC_NAV_LINKS = [
 ];
 
 export default function Layout({ children, activeNav }: LayoutProps) {
-  const { isLoggedIn, userName, cartCount, settings, isDark, toggleDark, logout } = useApp();
+  const { isLoggedIn, userName, cartCount, settings, settingsLoaded, isDark, toggleDark, logout } = useApp();
   const [isStaff, setIsStaff] = useState(false);
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [subcategories, setSubcategories] = useState<any[]>([]);
@@ -248,15 +248,19 @@ export default function Layout({ children, activeNav }: LayoutProps) {
 
   if (hideHeader) return <>{children}</>;
 
+  const storeName = settings?.storeName?.trim() || (settingsLoaded ? "Store" : "");
+  const brandLabel = storeName || "Store home";
+  const brandPlaceholder = <span className="brand-placeholder" aria-hidden="true" />;
+
   const defaultHeader = (
     <header className="site-header">
       <div className="header-inner">
         <div className="header-left">
-          <Link className="brand" href="/" onClick={closeMobile} aria-label={settings?.storeName || "My Shop"}>
+          <Link className="brand" href="/" onClick={closeMobile} aria-label={brandLabel}>
             {settings?.storeLogo && (
-              <Media src={settings.storeLogo} alt={settings.storeName || "Store"} width={160} height={40} loading="eager" fit="contain" className="site-logo" />
+              <Media src={settings.storeLogo} alt={storeName || "Store"} width={160} height={40} loading="eager" fit="contain" className="site-logo" />
             )}
-            {!settings?.storeLogo && <span>{settings?.storeName || "My Shop"}</span>}
+            {!settings?.storeLogo && (storeName ? <span>{storeName}</span> : brandPlaceholder)}
           </Link>
           {springboardMenuEnabled && <div className={`springboard-wrap${springboardPinned ? " pinned" : ""}`}>
             <button
@@ -527,9 +531,9 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             <div className="footer-grid">
               <div className="footer-brand">
                 {settings?.storeLogo ? (
-                  <Media src={settings.storeLogo} alt={settings.storeName || "Store"} width={180} height={44} fit="contain" className="footer-logo" />
+                  <Media src={settings.storeLogo} alt={storeName || "Store"} width={180} height={44} fit="contain" className="footer-logo" />
                 ) : (
-                  <span className="footer-brand-name">{settings?.storeName || "My Shop"}</span>
+                  storeName ? <span className="footer-brand-name">{storeName}</span> : <span className="footer-brand-name footer-brand-placeholder" aria-hidden="true" />
                 )}
                 <p className="footer-tagline">Kenya&apos;s trusted tech platform for gaming PCs, laptops, graphics cards, servers and accessories &mdash; plus real repairs with live tracking.</p>
                 {(settings?.storePhone || settings?.storeEmail) && (
@@ -557,7 +561,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
               ))}
             </div>
             <div className="footer-bottom">
-              <span>&copy; {new Date().getFullYear()} {settings?.storeName || "My Shop"}. All rights reserved.</span>
+              <span>&copy; {new Date().getFullYear()} {storeName || "Store"}. All rights reserved.</span>
               <span className="footer-payments">M-Pesa &middot; Visa &middot; Mastercard &middot; Bank transfer</span>
             </div>
           </div>

@@ -74,7 +74,12 @@ export default function ProductPage() {
           setSubcategories(subs);
         }).catch(() => {});
       }
-    }).catch((e) => { setProduct(null); setLoadError(e.message || "Failed to load product."); });
+    }).catch((e) => {
+      setProduct(null);
+      setLoadError(e?.status === 429
+        ? "The catalogue is temporarily rate-limited. Please wait a little before trying again."
+        : e.message || "Failed to load product.");
+    });
   }, [id]);
 
   useEffect(() => {
@@ -223,7 +228,10 @@ export default function ProductPage() {
   }
 
   const currentImage = images[currentIndex];
-  const alt = product.imageAlt || product.name;
+  // Product name is the stable description for this product's gallery. Stored
+  // image-alt text can become stale when a product is renamed or an image is
+  // replaced, so it must not identify a different model to assistive tech.
+  const alt = product.name;
 
   return (
     <>
