@@ -4,6 +4,7 @@ export interface Product {
   createdAt?: string;
   price: number;
   salePrice?: number | null;
+  costPrice?: number | null;
   currency: string;
   imageUrl: string;
   imageAlt?: string;

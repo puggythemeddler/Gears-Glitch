@@ -165,7 +165,7 @@ describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "TEST
       fromBranchId: 9131, toBranchId: 9132, productId: "tf-prod", quantity: 5, notes: "move", createdBy: 1,
     });
     const completed = await completeStockTransfer((transfer as any).id);
-    assert.equal(completed, true, "transfer completes");
+    assert.equal(completed.ok, true, "transfer completes");
 
     const moved = await queryOne(`SELECT branch_id FROM serial_numbers WHERE serial_number = 'TF-SER-1'`) as any;
     assert.equal(Number(moved.branch_id), 9132, "in-stock serial moves with the transfer");

@@ -52,6 +52,7 @@ import {
   recordStockMovement,
   getStockMovements,
   getLowStockItems,
+  getReorderSuggestions,
   listCategories,
   listPosCategories,
   getCategory,
@@ -143,7 +144,6 @@ import {
   reversePurchaseOrderReceive,
   recallPurchaseOrder,
   markPurchaseOrderReceived,
-  autoReorderLowStock,
   getProductByBarcode,
   listSerials,
   getSerialByNumber,
@@ -2420,8 +2420,8 @@ app.get("/api/admin/stock/product/:productId/branches", ownerAuthMiddleware, req
 
 app.put("/api/admin/stock/transfer/:id/complete", ownerAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req, res) => {
   const id = parseInt(String(req.params.id), 10);
-  const ok = await completeStockTransfer(id);
-  if (!ok) return res.status(400).json({ error: "Transfer cannot be completed (pending status required or insufficient stock)" });
+  const result = await completeStockTransfer(id);
+  if (!result.ok) return res.status(result.error?.includes("unreserved") ? 409 : 400).json({ error: result.error || "Transfer could not be completed." });
   res.json({ ok: true, message: "Transfer completed. Stock moved between branches." });
 }));
 
@@ -6626,8 +6626,11 @@ app.put("/api/stock/:productId", ownerAuthMiddleware, requirePermission("stock:u
     if (!isNonNegNum(Number(req.body.lowStockThreshold))) { res.status(400).json({ error: "lowStockThreshold must be a non-negative number." }); return; }
     updates.lowStockThreshold = Number(req.body.lowStockThreshold);
   }
-  await updateStockLevel(String(req.params.productId), updates.quantityInStock ?? 0);
-  const stock = await getStockLevel(String(req.params.productId));
+  if (Object.keys(updates).length === 0) { res.status(400).json({ error: "Provide quantityInStock or lowStockThreshold to update." }); return; }
+  const branchId = req.body.branchId === undefined || req.body.branchId === null || req.body.branchId === "" ? undefined : Number(req.body.branchId);
+  if (branchId !== undefined && !isPosInt(branchId)) { res.status(400).json({ error: "branchId must be a positive integer." }); return; }
+  await updateStockLevel(String(req.params.productId), updates, branchId);
+  const stock = await getStockLevel(String(req.params.productId), branchId);
   res.json(stock);
 }));
 
@@ -6651,16 +6654,23 @@ app.post("/api/stock-transfers", adminAuthMiddleware, requirePermission("stock:t
   if (!isPosInt(Number(toBranchId))) { res.status(400).json({ error: "toBranchId must be a positive integer." }); return; }
   if (!isStr(productId)) { res.status(400).json({ error: "Product ID must be a valid string." }); return; }
   if (!isPosInt(Number(quantity))) { res.status(400).json({ error: "Quantity must be a positive integer." }); return; }
-  if (fromBranchId === toBranchId) {
+  if (Number(fromBranchId) === Number(toBranchId)) {
     res.status(400).json({ error: "Source and destination branches must be different." }); return;
   }
-  const transfer = await createStockTransfer({ fromBranchId, toBranchId, productId, quantity, notes, createdBy: (req as any).user?.sub });
+  const source = await getStockLevel(String(productId), Number(fromBranchId));
+  const sourceOnHand = Number((source as any)?.quantity_in_stock ?? (source as any)?.quantityInStock ?? 0);
+  const sourceReserved = Number((source as any)?.quantity_reserved ?? (source as any)?.quantityReserved ?? 0);
+  const available = Math.max(0, sourceOnHand - sourceReserved);
+  if (Number(quantity) > available) {
+    res.status(409).json({ error: `Only ${available} unreserved unit(s) are available at the source branch; ${Number(quantity)} requested.` }); return;
+  }
+  const transfer = await createStockTransfer({ fromBranchId: Number(fromBranchId), toBranchId: Number(toBranchId), productId, quantity: Number(quantity), notes, createdBy: (req as any).user?.sub });
   res.status(201).json({ transfer });
 }));
 
 app.post("/api/stock-transfers/:id/complete", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
-  const ok = await completeStockTransfer(Number(req.params.id));
-  if (!ok) { res.status(400).json({ error: "Transfer not found or already completed." }); return; }
+  const result = await completeStockTransfer(Number(req.params.id));
+  if (!result.ok) { res.status(result.error?.includes("unreserved") ? 409 : 400).json({ error: result.error || "Transfer could not be completed." }); return; }
   res.json({ ok: true });
 }));
 
@@ -7295,6 +7305,11 @@ app.post("/api/repairs/:id/quote-response", customerAuthMiddleware, requireShopF
 }));
 
 // ============ PURCHASE ORDERS ============
+app.get("/api/admin/purchase-products", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  const products = await listProducts(undefined, undefined, true);
+  res.json({ products: products.map((product: any) => ({ id: product.id, name: product.name, price: product.price, costPrice: product.costPrice ?? null })) });
+}));
+
 app.get("/api/purchases", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   res.json({ orders: await listPurchaseOrders() });
 }));
@@ -7304,6 +7319,15 @@ app.post("/api/purchases", adminAuthMiddleware, asyncHandler(async (req: Request
   if (body.supplierId !== undefined && !isPosInt(Number(body.supplierId))) { res.status(400).json({ error: "supplierId must be a positive integer." }); return; }
   if (body.items !== undefined && !isArr(body.items)) { res.status(400).json({ error: "items must be an array." }); return; }
   if (body.notes !== undefined && (typeof body.notes !== "string" || body.notes.length > 1000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
+  if (!isStr(body.supplierName) || body.supplierName.trim().length === 0) { res.status(400).json({ error: "Select an active supplier." }); return; }
+  const activeSupplier = (await listSuppliers()).find((supplier: any) => Boolean(supplier.is_active) && String(supplier.name).trim().toLowerCase() === String(body.supplierName).trim().toLowerCase());
+  if (!activeSupplier) { res.status(400).json({ error: "Purchase orders must use an active supplier from the supplier list." }); return; }
+  if (!Array.isArray(body.items) || body.items.length === 0) { res.status(400).json({ error: "Add at least one product to the purchase order." }); return; }
+  for (const item of body.items) {
+    if (!isStr(item?.productId) || !isPosInt(Number(item?.quantityOrdered)) || !isNonNegNum(Number(item?.unitCost))) {
+      res.status(400).json({ error: "Each purchase order item needs a product, positive quantity, and supplier-quoted non-negative unit cost." }); return;
+    }
+  }
   const po = await createPurchaseOrder({ ...body, createdBy: (req as any).user.sub });
   res.status(201).json(po);
 }));
@@ -7338,9 +7362,12 @@ app.post("/api/purchases/:id/items", adminAuthMiddleware, asyncHandler(async (re
   res.status(201).json(item);
 }));
 
+app.get("/api/admin/reorder-suggestions", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ suggestions: await getReorderSuggestions() });
+}));
+
 app.post("/api/admin/auto-reorder", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-  const result = await autoReorderLowStock();
-  res.json(result);
+  res.status(409).json({ error: "Automatic purchase-order creation is disabled. Review reorder suggestions, select an active supplier, and confirm real unit costs before placing an order." });
 }));
 
 app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -8757,11 +8784,15 @@ app.get("/api/stock-on-hand/current", adminAuthMiddleware, requirePermission("st
 }));
 
 app.get("/api/stock-on-hand/history", adminAuthMiddleware, requirePermission("stock:on_hand"), asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ dates: await listStockSnapshotDates() });
+  const branchId = _req.query.branchId === undefined || _req.query.branchId === "" ? undefined : Number(_req.query.branchId);
+  if (branchId !== undefined && !isPosInt(branchId)) { res.status(400).json({ error: "branchId must be a positive integer." }); return; }
+  res.json({ dates: await listStockSnapshotDates(branchId) });
 }));
 
 app.get("/api/stock-on-hand/:date", adminAuthMiddleware, requirePermission("stock:on_hand"), asyncHandler(async (req: Request, res: Response) => {
-  const snapshot = await getStockSnapshot(String(req.params.date));
+  const branchId = req.query.branchId === undefined || req.query.branchId === "" ? undefined : Number(req.query.branchId);
+  if (branchId !== undefined && !isPosInt(branchId)) { res.status(400).json({ error: "branchId must be a positive integer." }); return; }
+  const snapshot = await getStockSnapshot(String(req.params.date), branchId);
   if (snapshot.items.length === 0) { res.status(404).json({ error: "No snapshot for this date." }); return; }
   res.json(snapshot);
 }));
@@ -8769,8 +8800,10 @@ app.get("/api/stock-on-hand/:date", adminAuthMiddleware, requirePermission("stoc
 app.post("/api/stock-on-hand/snapshot", adminAuthMiddleware, requirePermission("stock:on_hand"), asyncHandler(async (req: Request, res: Response) => {
   const date = req.body?.date || new Date().toISOString().slice(0, 10);
   if (req.body?.date && !/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.date))) { res.status(400).json({ error: "Date must be in YYYY-MM-DD format." }); return; }
-  await createStockSnapshot(date);
-  res.json({ ok: true, date });
+  const branchId = req.body?.branchId === undefined || req.body?.branchId === null || req.body?.branchId === "" ? undefined : Number(req.body.branchId);
+  if (branchId !== undefined && !isPosInt(branchId)) { res.status(400).json({ error: "branchId must be a positive integer." }); return; }
+  await createStockSnapshot(date, branchId);
+  res.json({ ok: true, date, branchId: branchId ?? null });
 }));
 
 // ============ SPEC TEMPLATES ============
