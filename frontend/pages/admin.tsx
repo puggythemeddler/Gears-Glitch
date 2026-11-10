@@ -4478,7 +4478,7 @@ function AdminFooterConfig() {
     fetch("/api/settings/footer-config").then(r => r.json()).then(d => {
       setConfig(d.footerConfig || {
         columns: [
-          { title: "Shop", links: [{ label: "PCs", href: "/pc" }, { label: "Laptops", href: "/laptops" }, { label: "Graphics Cards", href: "/graphics-cards" }, { label: "Servers", href: "/servers" }, { label: "Printers", href: "/printers" }] },
+          { title: "Shop", links: [{ label: "PCs", href: "/group/pcs" }, { label: "Laptops", href: "/group/laptops" }, { label: "Graphics Cards", href: "/graphics-cards" }, { label: "Servers", href: "/group/servers" }, { label: "Printers", href: "/printers" }] },
           { title: "Account", links: [{ label: "Cart", href: "/cart" }, { label: "Wishlist", href: "/wishlist" }, { label: "Dashboard", href: "/dashboard" }, { label: "Repairs", href: "/repairs" }] },
           { title: "Company", links: [{ label: "About Us", href: "/about" }, { label: "Contact", href: "/contact" }] },
         ]

@@ -10,7 +10,8 @@ import MarqueeBanner from "./MarqueeBanner";
 import Icon from "./icons";
 import { Media } from "./Media";
 import { useFeature } from "@/lib/features";
-import { getStorefrontCategories } from "@/lib/storefront-data";
+import { getStorefrontCategories, getStorefrontGroups } from "@/lib/storefront-data";
+import type { ProductGroup } from "@/lib/types";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -18,11 +19,6 @@ interface LayoutProps {
 }
 
 const NAV_LINKS = [
-  { id: "pc", label: "PCs", href: "/pc" },
-  { id: "laptops", label: "Laptops", href: "/laptops" },
-  { id: "graphics-cards", label: "Graphics Cards", href: "/graphics-cards" },
-  { id: "servers", label: "Servers", href: "/servers" },
-  { id: "printers", label: "Printers", href: "/printers" },
   { id: "repairs", label: "Repairs", href: "/repairs" },
   { id: "cart", label: "Cart", href: "/cart" },
   { id: "wishlist", label: "Wishlist", href: "/wishlist" },
@@ -48,6 +44,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [isStaff, setIsStaff] = useState(false);
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [subcategories, setSubcategories] = useState<any[]>([]);
+  const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [springboardOpen, setSpringboardOpen] = useState(false);
@@ -89,6 +86,12 @@ export default function Layout({ children, activeNav }: LayoutProps) {
       setSubcategories(data.subcategories);
       setCategoriesLoaded(true);
     }).catch(() => { setCategoriesLoaded(true); });
+  }, []);
+
+  useEffect(() => {
+    getStorefrontGroups()
+      .then((groups) => setProductGroups(groups.filter((group) => group.isActive)))
+      .catch(() => setProductGroups([]));
   }, []);
 
   useEffect(() => {
@@ -235,6 +238,34 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const isPublicStorefront = ["home", "pc", "laptops", "graphics-cards", "servers", "printers"].includes(activeNav ?? "");
   const isThemedLayout = isPublicStorefront && !configLoading && (layout === "amazon" || layout === "jumia");
   const springboardMenuEnabled = settings?.springboardMenu === true;
+  const selectedProductGroup = router.pathname === "/group/[slug]"
+    ? (Array.isArray(router.query.slug) ? router.query.slug[0] : router.query.slug) || ""
+    : "";
+
+  function renderProductGroupPicker(className: string) {
+    return (
+      <label className={`product-group-picker ${className}`}>
+        <span className="product-group-picker-label">Browse by group</span>
+        <select
+          className="product-group-picker-select"
+          aria-label="Browse product group"
+          value={selectedProductGroup}
+          disabled={productGroups.length === 0}
+          onChange={(event) => {
+            const groupId = event.currentTarget.value;
+            if (!groupId) return;
+            void router.push(`/group/${encodeURIComponent(groupId)}`);
+            setMobileOpen(false);
+            setSpringboardOpen(false);
+            setOpenSubMenu(null);
+          }}
+        >
+          <option value="" disabled>{productGroups.length ? "Select a product group" : "Groups unavailable"}</option>
+          {productGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+        </select>
+      </label>
+    );
+  }
 
   function closeMobile() { setMobileOpen(false); setOpenSubMenu(null); if (!springboardPinned) setSpringboardOpen(false); }
 
@@ -298,6 +329,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                     <Icon name="mapPin" size={14} />
                   </button>
                 </div>
+                {renderProductGroupPicker("springboard-group-picker")}
                 {categories.map((cat) => {
                   const subs = subcategories.filter((s) => Array.isArray(s.category_ids) && s.category_ids.includes(cat.id));
                   const isOpen = openSubMenu === cat.id;
@@ -443,6 +475,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
               {link.label}
             </Link>
           ))}
+          {renderProductGroupPicker("desktop-group-picker")}
         </nav>
       )}
       <nav className={`main-nav-mobile${mobileOpen ? " open" : ""}`} aria-label="Mobile navigation">
@@ -459,6 +492,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             )}
           </Link>
         ))}
+        {!springboardMenuEnabled && renderProductGroupPicker("mobile-group-picker")}
         <div className="mobile-nav-divider" />
         {/* On phones the header sheds the settings button to keep itself two
             rows tall, so theme and currency have to live here instead. */}
