@@ -159,8 +159,7 @@ interface TicketForm {
   holdRemindAt: string;
   hardwareValue: string;
   softwareInstall: boolean;
-  softwareLicenseSelection: string;
-  softwareLicensePrice: number;
+  softwareLicenseSelections: string[];
 }
 
 function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { openId: string | null; onOpen: (id: string | null) => void; canManagePayments: boolean; canVoidPayments: boolean }) {
@@ -259,8 +258,7 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
         holdRemindAt: d.holdRemindAt ? (() => { const date = new Date(d.holdRemindAt); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16); })() : "",
         hardwareValue: String(d.hardwareValue || 0),
         softwareInstall: Boolean(d.softwareInstall),
-        softwareLicenseSelection: d.softwareLicenseProductId || (d.softwareLicense ? "__legacy__" : ""),
-        softwareLicensePrice: Number(d.softwareLicensePrice) || 0,
+        softwareLicenseSelections: (d.softwareLicenseItems || []).map((item: any) => item.productId ? String(item.productId) : "__legacy__"),
       });
     } catch (e: any) {
       setDetail(null);
@@ -300,8 +298,9 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
           holdRemindAt: form.holdRemindAt ? new Date(form.holdRemindAt).toISOString() : null,
           hardwareValue: Number(form.hardwareValue) || 0,
           softwareInstall: form.softwareInstall,
-          softwareLicense: Boolean(form.softwareLicenseSelection),
-          softwareLicenseProductId: form.softwareLicenseSelection === "__legacy__" ? null : form.softwareLicenseSelection || null,
+          softwareLicense: form.softwareLicenseSelections.length > 0,
+          softwareLicenseProductIds: form.softwareLicenseSelections.filter((id) => id !== "__legacy__"),
+          keepLegacySoftwareLicense: form.softwareLicenseSelections.includes("__legacy__"),
         }),
       });
       await loadDetail(detail.id);
@@ -567,30 +566,21 @@ function TicketsTab({ openId, onOpen, canManagePayments, canVoidPayments }: { op
               <input type="checkbox" checked={form.softwareInstall} onChange={(e) => setForm({ ...form, softwareInstall: e.target.checked })} />
               Software install (+KES 800)
             </label>
-            <div className="field">
-              <label>Licensed software product (optional)
-                <select
-                  value={form.softwareLicenseSelection}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    const selected = products.find((product) => product.id === value);
-                    setForm({
-                      ...form,
-                      softwareLicenseSelection: value,
-                      softwareLicensePrice: selected ? softwareLicenseProductPrice(selected) : value === "__legacy__" ? form.softwareLicensePrice : 0,
-                    });
-                  }}
-                >
-                  <option value="">No software license</option>
-                  {form.softwareLicenseSelection === "__legacy__" && <option value="__legacy__">Keep saved legacy charge · {formatPrice(form.softwareLicensePrice)}</option>}
-                  {form.softwareLicenseSelection && form.softwareLicenseSelection !== "__legacy__" && !licenseProducts.some((product) => product.id === form.softwareLicenseSelection) && <option value={form.softwareLicenseSelection}>Saved catalog product unavailable</option>}
-                  {licenseProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · {formatPrice(softwareLicenseProductPrice(product))}</option>)}
-                </select>
-              </label>
-              {form.softwareLicenseSelection && form.softwareLicenseSelection !== "__legacy__" && <small className="muted">Uses the product’s sale price, or its regular price if no sale price is set. This ticket’s saved price is {formatPrice(form.softwareLicensePrice)}; changing other ticket details will keep that snapshot.</small>}
-              {form.softwareLicenseSelection === "__legacy__" && <small className="muted">This older ticket has no linked catalog item. Its saved amount is kept until you replace or remove it.</small>}
-              {!licenseProducts.length && !form.softwareLicenseSelection && <small className="muted">Add license products to the catalog under a Software or License category to select them here.</small>}
-            </div>
+            <fieldset className="field" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "0.75rem" }}>
+              <legend>Licensed software products (optional)</legend>
+              {detail.softwareLicenseItems?.some((item: any) => !item.productId) && <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.5rem" }}><input type="checkbox" checked={form.softwareLicenseSelections.includes("__legacy__")} onChange={(e) => setForm({ ...form, softwareLicenseSelections: e.target.checked ? [...form.softwareLicenseSelections, "__legacy__"] : form.softwareLicenseSelections.filter((id) => id !== "__legacy__") })} /> Keep existing non-catalog license charge · {formatPrice(detail.softwareLicensePrice)}</label>}
+              {licenseProducts.map((product) => <label key={product.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.4rem" }}>
+                <input type="checkbox" checked={form.softwareLicenseSelections.includes(product.id)} onChange={(e) => {
+                  const selected = new Set(form.softwareLicenseSelections.filter((id) => id !== "__legacy__"));
+                  if (e.target.checked) selected.add(product.id); else selected.delete(product.id);
+                  const legacy = form.softwareLicenseSelections.includes("__legacy__") ? ["__legacy__"] : [];
+                  setForm({ ...form, softwareLicenseSelections: [...legacy, ...selected] });
+                }} />
+                {product.name} · {formatPrice(softwareLicenseProductPrice(product))}
+              </label>)}
+              {form.softwareLicenseSelections.some((id) => id !== "__legacy__") && <small className="muted">Multiple products can be selected. Each uses its catalog price when first added; saved ticket prices remain as snapshots on later edits.</small>}
+              {!licenseProducts.length && !form.softwareLicenseSelections.length && <small className="muted">Add license products to the catalog under a Software or License category to select them here.</small>}
+            </fieldset>
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem", borderTop: "1px solid var(--border)", paddingTop: "1.25rem" }}>

@@ -40,6 +40,16 @@ export function isoDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+export function classifySoftwareLicenseExpiry(expiresAt: string | null | undefined, today: string): { status: "unknown" | "due" | "expired" | "not_due"; daysLeft: number | null } {
+  const expiry = String(expiresAt || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry) || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return { status: "unknown", daysLeft: null };
+  const expiryUtc = Date.parse(`${expiry}T00:00:00Z`);
+  const todayUtc = Date.parse(`${today}T00:00:00Z`);
+  if (!Number.isFinite(expiryUtc) || !Number.isFinite(todayUtc) || new Date(expiryUtc).toISOString().slice(0, 10) !== expiry || new Date(todayUtc).toISOString().slice(0, 10) !== today) return { status: "unknown", daysLeft: null };
+  const daysLeft = Math.floor((expiryUtc - todayUtc) / 86400000);
+  return { status: daysLeft < 0 ? "expired" : daysLeft <= 30 ? "due" : "not_due", daysLeft };
+}
+
 // Mirrors the authoritative warranty register computation: prefer the expiry
 // snapshotted at sale (order item, then serial), else derive from the sale date
 // with whole-calendar-month addition and month-end clamping.
@@ -446,6 +456,62 @@ export async function runWarrantyNotificationSweep(): Promise<{ reminders: numbe
   } finally {
     if (lock) {
       try { await lock.query("SELECT pg_advisory_unlock($1)", [WARRANTY_SWEEP_LOCK_KEY]); } catch { /* best-effort */ }
+      lock.release();
+    }
+  }
+}
+
+// Notify the store team about renewable software licenses. Customer messages
+// are intentionally not sent here: admins review the record and prepare an
+// explicit renewal quote through the normal quote workflow.
+export async function runSoftwareLicenseReminderSweep(): Promise<{ reminders: number; expired: number; checked: number }> {
+  const lockKey = 72748822;
+  let lock: any = null;
+  let locked = false;
+  try {
+    lock = await getPool().connect();
+    const result = await lock.query("SELECT pg_try_advisory_lock($1) AS locked", [lockKey]);
+    locked = !!result?.rows?.[0]?.locked;
+    if (!locked) return { reminders: 0, expired: 0, checked: 0 };
+  } catch { /* durable idempotency still protects retries if advisory locks are unavailable */ }
+  try {
+  const rows = await queryAll(`
+    SELECT oi.id AS order_item_id, oi.order_id, oi.name AS product_name,
+           oi.license_expires_at, o.customer_name, o.customer_email
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
+    WHERE oi.license_renewal_type = 'renewable'
+      AND oi.license_expires_at IS NOT NULL
+      AND oi.cancelled = 0
+      AND o.status NOT IN ('cancelled', 'pending', 'pending_payment', 'refunded')
+    ORDER BY oi.license_expires_at ASC
+  `) as any[];
+  const today = new Date().toISOString().slice(0, 10);
+  let reminders = 0;
+  let expired = 0;
+  for (const row of rows) {
+    const expiry = String(row.license_expires_at || "").slice(0, 10);
+    const timing = classifySoftwareLicenseExpiry(expiry, today);
+    if (timing.status === "unknown" || timing.status === "not_due") continue;
+    const daysLeft = timing.daysLeft!;
+    const isExpired = timing.status === "expired";
+    const event = isExpired ? "software_license.expired" : "software_license.expiry_reminder";
+    const key = `${event}:order_item:${row.order_item_id}:${expiry}`;
+    const customer = String(row.customer_name || "Customer");
+    const product = String(row.product_name || "Software license");
+    const orderLink = `${baseUrl()}/admin?view=orders`;
+    const subject = isExpired ? `Software license expired: ${product}` : `Software license renewal due: ${product}`;
+    const message = isExpired
+      ? `${product} for ${customer} (order #${row.order_id}) expired on ${expiry}. Review the order and prepare a renewal quote if appropriate.`
+      : `${product} for ${customer} (order #${row.order_id}) expires ${daysLeft === 0 ? "today" : `in ${daysLeft} days`} (${expiry}). Review the order and prepare a renewal quote if appropriate.`;
+    const html = `<p>${message.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch] || ch))}</p><p><a href="${orderLink}">Open orders</a></p>`;
+    await notify({ event, entityType: "order_item", entityId: Number(row.order_item_id), subject, bodyText: message, bodyHtml: html, idempotencyKey: key });
+    if (isExpired) expired++; else reminders++;
+  }
+  return { reminders, expired, checked: rows.length };
+  } finally {
+    if (locked && lock) {
+      try { await lock.query("SELECT pg_advisory_unlock($1)", [lockKey]); } catch { /* best effort */ }
       lock.release();
     }
   }

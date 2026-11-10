@@ -45,6 +45,8 @@ export type NotificationEvent =
   | "warranty.customer_update"
   | "warranty.expiry_reminder"
   | "warranty.expired"
+  | "software_license.expiry_reminder"
+  | "software_license.expired"
   | "invoice.created"
   | "invoice.paid"
   | "invoice.overdue"
@@ -93,6 +95,8 @@ const DEFAULT_PREFERENCES: Record<NotificationEvent, { email: boolean; whatsapp:
   "warranty.customer_update": { email: true, whatsapp: false },
   "warranty.expiry_reminder": { email: true, whatsapp: true },
   "warranty.expired":       { email: true, whatsapp: false },
+  "software_license.expiry_reminder": { email: true, whatsapp: false },
+  "software_license.expired": { email: true, whatsapp: false },
   "invoice.created":        { email: true, whatsapp: false },
   "invoice.paid":           { email: true, whatsapp: false },
   "invoice.overdue":        { email: true, whatsapp: false },

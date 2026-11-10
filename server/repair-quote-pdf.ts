@@ -16,9 +16,10 @@ export async function buildRepairQuotePdf(ticket: any, settings: any, quote: { v
   const partsRows = parts.length
     ? parts.map((part: any) => `<tr><td>${escapeHtml(String(part.description || "Part"))}</td><td>${Number(part.quantity) || 1}</td><td>${money(part.unitCost, currency)}</td><td>${money((Number(part.quantity) || 1) * (Number(part.unitCost) || 0), currency)}</td></tr>`).join("")
     : `<tr><td colspan="4" class="muted">No parts are included in this estimate.</td></tr>`;
-  const licenseRow = ticket.softwareLicense
-    ? `<tr><td>${escapeHtml(String(ticket.softwareLicenseProductName || "Software license"))}</td><td>1</td><td>${money(ticket.softwareLicensePrice, currency)}</td><td>${money(ticket.softwareLicensePrice, currency)}</td></tr>`
-    : "";
+  const licenseItems = Array.isArray(ticket.softwareLicenseItems) && ticket.softwareLicenseItems.length
+    ? ticket.softwareLicenseItems
+    : ticket.softwareLicense ? [{ name: ticket.softwareLicenseProductName || "Software license", price: ticket.softwareLicensePrice }] : [];
+  const licenseRows = licenseItems.map((item: any) => `<tr><td>${escapeHtml(String(item.name || "Software license"))}</td><td>1</td><td>${money(item.price, currency)}</td><td>${money(item.price, currency)}</td></tr>`).join("");
   const logo = renderStoreLogo(String(settings?.storeLogo || ""), String(settings?.logoPosition || "top-left"), storeName, process.env.FRONTEND_URL || process.env.BASE_URL || "");
   const created = new Date().toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi", year: "numeric", month: "long", day: "numeric" });
   const expires = new Date(quote.expiresAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi", year: "numeric", month: "long", day: "numeric" });
@@ -30,7 +31,7 @@ export async function buildRepairQuotePdf(ticket: any, settings: any, quote: { v
     <div class="head"><div>${logo}<h1>Repair estimate</h1><div>${escapeHtml(storeName)}</div></div><div class="meta"><strong>Reference</strong><br>${escapeHtml(String(ticket.id))}<br><strong>Quote version</strong> ${quote.version}<br><span class="muted">Prepared ${escapeHtml(created)} · Valid until ${escapeHtml(expires)}</span></div></div>
     <div class="box"><strong>Customer</strong><br>${escapeHtml(String(ticket.customerName || "Customer"))}<br><br><strong>Device</strong><br>${escapeHtml(device)}<br><br><strong>Request</strong><br>${escapeHtml(issue)}</div>
     <table><thead><tr><th>Description</th><th>Qty</th><th>Unit cost</th><th>Line total</th></tr></thead><tbody>
-      <tr><td>Service and listed add-ons</td><td>1</td><td>${money(ticket.laborCost, currency)}</td><td>${money(ticket.laborCost, currency)}</td></tr>${licenseRow}${partsRows}
+      <tr><td>Service and listed add-ons</td><td>1</td><td>${money(ticket.laborCost, currency)}</td><td>${money(ticket.laborCost, currency)}</td></tr>${licenseRows}${partsRows}
     </tbody></table>
     <div class="total">Estimated total: ${money(ticket.totalCost, currency)}</div>
     <div class="notice"><strong>Estimate only.</strong> This document is not an invoice or proof of payment. It is valid until ${escapeHtml(expires)}. Please review and accept the estimate in your customer repair portal before work begins. Any additional work or cost requires your approval.</div>

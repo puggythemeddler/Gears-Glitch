@@ -428,7 +428,7 @@ import { upsertOauthAccount, acquireWebhookEvent, markWebhookProcessed, markWebh
 import { handleWhatsAppWebhook, whatsAppWebhookHttpStatus, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { getWhatsAppConsentPreferences, saveWhatsAppConsentPreferences } from "./whatsapp-consent";
 import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs, enqueueOrderInvoiceDelivery, startNotificationQueueWorker } from "./notification-service";
-import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerRepairMessage, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
+import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerRepairMessage, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, runSoftwareLicenseReminderSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, setWhatsAppTemplateApproval, trackPageView, getVisitorStats } from "./db";
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
 import { publicBaseUrl } from "./public-url";
@@ -3740,6 +3740,27 @@ app.patch("/api/admin/order-items/:id/warranty", ownerAuthMiddleware, requirePer
   const row = await queryOne("SELECT order_id FROM order_items WHERE id = $1", [itemId]) as any;
   if (!row) { res.status(404).json({ error: "Order item not found." }); return; }
   await updateOrderItemWarranty(row.order_id, itemId, Boolean(hasWarranty), Number(warrantyDuration) || 0);
+  res.json({ ok: true });
+}));
+
+app.patch("/api/admin/order-items/:id/software-license", ownerAuthMiddleware, requirePermission("order:view"), asyncHandler(async (req: Request, res: Response) => {
+  const itemId = Number(req.params.id);
+  if (!Number.isInteger(itemId) || itemId <= 0) { res.status(400).json({ error: "Invalid order item." }); return; }
+  const row = await queryOne(`SELECT oi.id, oi.order_id, oi.cancelled, p.name, p.category, p.subcategory
+    FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.id = $1`, [itemId]) as any;
+  if (!row) { res.status(404).json({ error: "Order item not found." }); return; }
+  if (row.cancelled) { res.status(409).json({ error: "A refunded line cannot be tracked for renewal." }); return; }
+  const licenseText = `${row.name} ${row.category} ${row.subcategory}`;
+  if (!/\b(?:software|licen[cs]e|antivirus|operating\s+system|activation\s+key)\b|\bmicrosoft\s*(?:365|office)\b|\boffice\s*(?:365|20\d{2})\b/i.test(licenseText)) {
+    res.status(400).json({ error: "Only software or license catalog products can have renewal tracking." }); return;
+  }
+  const { renewalType, expiresAt, notes } = req.body || {};
+  if (!["unknown", "renewable", "perpetual"].includes(String(renewalType))) { res.status(400).json({ error: "Choose renewable, perpetual, or unknown." }); return; }
+  const expiry = String(expiresAt || "").trim();
+  if (renewalType === "renewable" && !/^\d{4}-\d{2}-\d{2}$/.test(expiry)) { res.status(400).json({ error: "Add the license expiry date for a renewable license." }); return; }
+  if (expiry && (!/^\d{4}-\d{2}-\d{2}$/.test(expiry) || Number.isNaN(Date.parse(`${expiry}T00:00:00Z`)) || new Date(`${expiry}T00:00:00Z`).toISOString().slice(0, 10) !== expiry)) { res.status(400).json({ error: "Enter a valid license expiry date." }); return; }
+  if (renewalType === "perpetual" && !String(notes || "").trim()) { res.status(400).json({ error: "Add a note explaining the non-renewable or perpetual license term." }); return; }
+  await query("UPDATE order_items SET license_renewal_type = $1, license_expires_at = $2, license_notes = $3 WHERE id = $4", [renewalType, renewalType === "renewable" ? expiry : null, String(notes || "").trim().slice(0, 1000), itemId]);
   res.json({ ok: true });
 }));
 
@@ -9139,6 +9160,15 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       };
       sweepWarranties();
       setInterval(sweepWarranties, 6 * 60 * 60 * 1000);
+
+      const sweepSoftwareLicenses = async () => {
+        try {
+          const result = await runSoftwareLicenseReminderSweep();
+          if (result.reminders || result.expired) console.log(`[software-license-notify] reminders=${result.reminders} expired=${result.expired} checked=${result.checked}`);
+        } catch (err: any) { console.error("[software-license-notify] Sweep error:", err?.message || err); }
+      };
+      void sweepSoftwareLicenses();
+      setInterval(sweepSoftwareLicenses, 6 * 60 * 60 * 1000).unref();
 
       // Repair diagnosis SLA escalation and on-hold follow-ups. Rows are
       // claimed atomically by the sweep and each notification uses a durable
