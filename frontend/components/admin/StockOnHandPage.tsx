@@ -192,7 +192,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
             <label>View Stock on Hand for Date</label>
             <input type="date" value={snapshotDate} onChange={(e) => setSnapshotDate(e.target.value)} />
           </div>
-          <RippleButton size="small" onClick={viewSnapshot} loading={loadingSnapshot}>View</RippleButton>
+          <RippleButton size="small" onClick={() => viewSnapshot()} loading={loadingSnapshot}>View</RippleButton>
           <RippleButton size="small" onClick={takeSnapshot}>Snapshot Today</RippleButton>
         </div>
         {dates.length > 0 && (
