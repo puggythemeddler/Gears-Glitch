@@ -641,10 +641,14 @@ CREATE TABLE IF NOT EXISTS stock_snapshots (
   product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   product_name TEXT NOT NULL,
   quantity INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (NOW()::text),
-  UNIQUE(snapshot_date, product_id)
+  branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 CREATE INDEX IF NOT EXISTS idx_stock_snapshots_date ON stock_snapshots(snapshot_date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_snapshots_global_unique
+  ON stock_snapshots(snapshot_date, product_id) WHERE branch_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_snapshots_branch_unique
+  ON stock_snapshots(snapshot_date, product_id, branch_id) WHERE branch_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS audit_log (
   id SERIAL PRIMARY KEY,

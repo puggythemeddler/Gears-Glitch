@@ -19,12 +19,22 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   const [branchStockError, setBranchStockError] = useState("");
   const [branches, setBranches] = useState<any[]>([]);
   const [search, setSearch] = useState("");
+  const [thresholdDrafts, setThresholdDrafts] = useState<Record<string, string>>({});
+  const [thresholdBaselines, setThresholdBaselines] = useState<Record<string, number>>({});
+  const [editingThreshold, setEditingThreshold] = useState<string | null>(null);
+  const [savingThreshold, setSavingThreshold] = useState<string | null>(null);
+  const [reorderSuggestions, setReorderSuggestions] = useState<any[] | null>(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
 
   useEffect(() => {
     api<{ branches: any[] }>("/api/admin/branches").then(d => setBranches(d.branches || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
+    setThresholdDrafts({});
+    setThresholdBaselines({});
+    setEditingThreshold(null);
+    setSnapshot(null);
     if (!stockBranchFilter) {
       setBranchStockSummary([]);
       setBranchStockError("");
@@ -42,14 +52,17 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   }, [stockBranchFilter]);
 
   useEffect(() => {
-    api<{ dates: any[] }>("/api/stock-on-hand/history").then(d => setDates(d.dates || [])).catch(() => {});
-  }, []);
+    const params = stockBranchFilter ? `?branchId=${stockBranchFilter}` : "";
+    api<{ dates: any[] }>(`/api/stock-on-hand/history${params}`).then(d => setDates(d.dates || [])).catch(() => {});
+  }, [stockBranchFilter]);
 
-  async function viewSnapshot() {
-    if (!snapshotDate) return;
+  function branchQuery() { return stockBranchFilter ? `?branchId=${stockBranchFilter}` : ""; }
+
+  async function viewSnapshot(dateToLoad = snapshotDate) {
+    if (!dateToLoad) return;
     setLoadingSnapshot(true);
     try {
-      const data = await api<any>(`/api/stock-on-hand/${snapshotDate}`);
+      const data = await api<any>(`/api/stock-on-hand/${dateToLoad}${branchQuery()}`);
       setSnapshot(data);
     } catch (err: any) {
       setSnapshot(null);
@@ -60,19 +73,69 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   async function takeSnapshot() {
     try {
       const today = new Date().toISOString().slice(0, 10);
-      await api("/api/stock-on-hand/snapshot", { method: "POST", body: JSON.stringify({ date: today }) });
+      await api("/api/stock-on-hand/snapshot", { method: "POST", body: JSON.stringify({ date: today, branchId: stockBranchFilter ?? undefined }) });
       setSnapshotDate(today);
-      const data = await api<any>(`/api/stock-on-hand/${today}`);
+      const data = await api<any>(`/api/stock-on-hand/${today}${branchQuery()}`);
       setSnapshot(data);
-      api<{ dates: any[] }>("/api/stock-on-hand/history").then(d => setDates(d.dates || [])).catch(() => {});
-      feedback.success({ title: "Snapshot taken" });
+      api<{ dates: any[] }>(`/api/stock-on-hand/history${branchQuery()}`).then(d => setDates(d.dates || [])).catch(() => {});
+      feedback.success({ title: "Snapshot saved", message: stockBranchFilter ? "This branch’s stock was recorded." : "All location quantities, including unassigned stock, were combined into one snapshot." });
     } catch (err: any) { feedback.error({ title: "Snapshot not taken", message: err.message }); }
+  }
+
+  async function saveThreshold(productId: string, currentThreshold: number) {
+    const key = `${stockBranchFilter ?? "global"}:${productId}`;
+    const raw = thresholdDrafts[key] ?? String(currentThreshold);
+    const threshold = Number(raw);
+    if (!Number.isInteger(threshold) || threshold < 0) {
+      feedback.error({ title: "Invalid threshold", message: "Enter a whole number of zero or more." });
+      return;
+    }
+    setSavingThreshold(key);
+    try {
+      await api(`/api/stock/${encodeURIComponent(productId)}`, {
+        method: "PUT", body: JSON.stringify({ lowStockThreshold: threshold, branchId: stockBranchFilter ?? null }),
+      });
+      if (stockBranchFilter) setBranchStockSummary((current) => current.map((item) => String(item.productId ?? item.id) === productId ? { ...item, lowStockThreshold: threshold } : item));
+      setThresholdDrafts((previous) => { const next = { ...previous }; delete next[key]; return next; });
+      setThresholdBaselines((previous) => { const next = { ...previous }; delete next[key]; return next; });
+      setEditingThreshold(null);
+      feedback.success({ title: "Threshold saved", message: stockBranchFilter ? "This branch’s low stock alert level was updated." : "The global stock threshold was updated." });
+    } catch (err: any) {
+      feedback.error({ title: "Threshold not saved", message: err?.message || "Please try again." });
+    } finally { setSavingThreshold(null); }
+  }
+
+  async function beginThresholdEdit(productId: string, displayedThreshold: number) {
+    const key = `${stockBranchFilter ?? "global"}:${productId}`;
+    try {
+      let baseline = displayedThreshold;
+      if (!stockBranchFilter) {
+        const stock = await api<any>(`/api/stock/${encodeURIComponent(productId)}`);
+        baseline = Number(stock?.lowStockThreshold ?? stock?.low_stock_threshold ?? 5);
+      }
+      setThresholdBaselines((previous) => ({ ...previous, [key]: baseline }));
+      setThresholdDrafts((previous) => ({ ...previous, [key]: String(baseline) }));
+      setEditingThreshold(key);
+    } catch (err: any) {
+      feedback.error({ title: "Threshold could not be loaded", message: err?.message || "Please try again." });
+    }
+  }
+
+  async function loadReorderSuggestions() {
+    setLoadingSuggestions(true);
+    try {
+      const result = await api<{ suggestions: any[] }>("/api/admin/reorder-suggestions");
+      setReorderSuggestions(result.suggestions || []);
+    } catch (err: any) {
+      feedback.error({ title: "Suggestions unavailable", message: err?.message || "Please try again." });
+    } finally { setLoadingSuggestions(false); }
   }
 
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
   const items = stockBranchFilter ? branchStockSummary : (sData?.items || []);
-  const lowStock = items.filter((i: any) => (i.quantityInStock ?? i.quantity_in_stock ?? 0) <= (i.lowStockThreshold ?? i.low_stock_threshold ?? 0));
+  const availableStock = (item: any) => Math.max(0, (item.quantityInStock ?? item.quantity_in_stock ?? 0) - (item.quantityReserved ?? item.quantity_reserved ?? 0));
+  const lowStock = items.filter((i: any) => availableStock(i) <= (i.lowStockThreshold ?? i.low_stock_threshold ?? 0));
   const filteredItems = search.trim() ? items.filter((i: any) => (i.name || "").toLowerCase().includes(search.trim().toLowerCase())) : items;
 
   return (
@@ -95,13 +158,30 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
         </div>
       </div>
 
-      {lowStock.length > 0 && (
+      {(lowStock.length > 0 || showAutoReorder) && (
         <div className="panel" style={{ marginBottom: "1rem", background: "var(--warning-light)", borderColor: "var(--warning, #d97706)", color: "var(--warning-text)" }}>
-          <strong>{lowStock.length}</strong> item(s) at or below low stock threshold.
-          {showAutoReorder && (
-            <RippleButton size="small" onClick={async () => {
-              try { const r = await api<any>("/api/admin/auto-reorder", { method: "POST" }); feedback.success({ title: "Auto-reorder created", message: `${r.created} items created (${r.skipped} already on order)` }); } catch (e: any) { feedback.error({ title: "Auto-reorder not created", message: e.message }); }
-            }} style={{ marginLeft: "0.75rem" }}>Auto Reorder</RippleButton>
+          {lowStock.length > 0 ? <><strong>{lowStock.length}</strong> item(s) at or below the combined low stock threshold.</> : <span>Review low stock by location; a healthy total can hide shortages at an individual branch.</span>}
+          {showAutoReorder && <RippleButton size="small" loading={loadingSuggestions} onClick={loadReorderSuggestions} style={{ marginLeft: "0.75rem" }}>Review reorder suggestions</RippleButton>}
+        </div>
+      )}
+
+      {reorderSuggestions && (
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <h3 style={{ marginTop: 0 }}>Reorder suggestions</h3>
+          <p style={{ color: "var(--text-secondary)" }}>These are planning estimates only. No order has been created. Choose a real supplier and confirm each unit cost in Purchase Orders before placing an order.</p>
+          {reorderSuggestions.length === 0 ? <EmptyState icon="stock" title="No reorder suggestions" description="Current stock is above the saved thresholds." /> : (
+            <div className="table-wrap"><DataTable<any>
+              ariaLabel="Reorder suggestions"
+              columns={[
+                { key: "product", label: "Product", render: (i) => i.name },
+                { key: "branch", label: "Location", render: (i) => i.branchName || "Global stock" },
+                { key: "available", label: "Available", align: "right", render: (i) => i.availableToTransfer },
+                { key: "threshold", label: "Threshold", align: "right", render: (i) => i.lowStockThreshold },
+                { key: "suggested", label: "Suggested qty", align: "right", render: (i) => <strong>{i.suggestedQuantity}</strong> },
+                { key: "cost", label: "Catalog cost", align: "right", render: (i) => i.costPrice == null ? "Not set" : formatPrice(i.costPrice) },
+              ]}
+              rows={reorderSuggestions} rowKey={(i) => `${i.productId}:${i.branchId ?? "global"}`}
+            /></div>
           )}
         </div>
       )}
@@ -117,8 +197,8 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
         </div>
         {dates.length > 0 && (
           <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-            {dates.map((d: any) => (
-              <RippleButton key={d.date} size="small" variant="ghost" onClick={() => { setSnapshotDate(d.date); viewSnapshot(); }}>
+          {dates.map((d: any) => (
+              <RippleButton key={d.date} size="small" variant="ghost" onClick={() => { setSnapshotDate(d.date); viewSnapshot(d.date); }}>
                 {d.date}
               </RippleButton>
             ))}
@@ -156,16 +236,30 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
             { key: "qty", label: "In Stock", sortable: true, align: "right", value: (i) => i.quantityInStock ?? i.quantity_in_stock ?? 0, render: (i) => <strong>{i.quantityInStock ?? i.quantity_in_stock ?? 0}</strong> },
             { key: "reserved", label: "Reserved", sortable: true, align: "right", value: (i) => i.quantityReserved ?? i.quantity_reserved ?? 0, render: (i) => i.quantityReserved ?? i.quantity_reserved ?? 0 },
             { key: "sold", label: "Sold", sortable: true, align: "right", value: (i) => i.quantitySold ?? i.quantity_sold ?? 0, render: (i) => i.quantitySold ?? i.quantity_sold ?? 0 },
-            { key: "threshold", label: "Threshold", sortable: true, align: "right", value: (i) => i.lowStockThreshold ?? i.low_stock_threshold ?? 0, render: (i) => i.lowStockThreshold ?? i.low_stock_threshold ?? 0 },
+            { key: "threshold", label: "Low stock threshold", sortable: true, align: "right", value: (i) => i.lowStockThreshold ?? i.low_stock_threshold ?? 0, render: (i) => {
+              const threshold = i.lowStockThreshold ?? i.low_stock_threshold ?? 0;
+              const productId = String(i.productId ?? i.id);
+              const key = `${stockBranchFilter ?? "global"}:${productId}`;
+              const baseline = thresholdBaselines[key] ?? threshold;
+              if (editingThreshold !== key) return <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "0.35rem" }}>
+                <span title={stockBranchFilter ? "Threshold for the selected branch" : "Combined threshold across locations"}>{stockBranchFilter ? threshold : `Combined: ${threshold}`}</span>
+                <RippleButton size="small" variant="ghost" onClick={() => beginThresholdEdit(productId, threshold)}>{stockBranchFilter ? "Edit" : "Global threshold"}</RippleButton>
+              </div>;
+              const draft = thresholdDrafts[key] ?? String(baseline);
+              return <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.35rem", alignItems: "center" }}>
+                <input aria-label={`${stockBranchFilter ? "Branch" : "Global"} low stock threshold for ${i.name}`} type="number" min="0" step="1" value={draft} onChange={(e) => setThresholdDrafts((previous) => ({ ...previous, [key]: e.target.value }))} style={{ width: 76 }} />
+                {draft !== String(baseline) && <RippleButton size="small" loading={savingThreshold === key} onClick={() => saveThreshold(productId, baseline)}>Save</RippleButton>}
+                <RippleButton size="small" variant="ghost" onClick={() => setEditingThreshold(null)}>Cancel</RippleButton>
+              </div>;
+            } },
             {
               key: "status",
               label: "Status",
               sortable: true,
-              value: (i) => (i.quantityInStock ?? i.quantity_in_stock ?? 0) <= (i.lowStockThreshold ?? i.low_stock_threshold ?? 0) ? "Low" : "OK",
+              value: (i) => availableStock(i) <= (i.lowStockThreshold ?? i.low_stock_threshold ?? 0) ? "Low" : "OK",
               render: (i) => {
-                const qty = i.quantityInStock ?? i.quantity_in_stock ?? 0;
                 const threshold = i.lowStockThreshold ?? i.low_stock_threshold ?? 0;
-                return qty <= threshold ? <span style={{ color: "var(--danger)", fontWeight: 600 }}>Low</span> : <span style={{ color: "var(--success)" }}>OK</span>;
+                return availableStock(i) <= threshold ? <span style={{ color: "var(--danger)", fontWeight: 600 }}>Low</span> : <span style={{ color: "var(--success)" }}>OK</span>;
               },
             },
           ]}

@@ -6104,7 +6104,7 @@ function AdminStockTransfers() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ fromBranchId: "", toBranchId: "", productId: "", quantity: "", notes: "" });
   const [creating, setCreating] = useState(false);
-  const [sourceStock, setSourceStock] = useState<number | null>(null);
+  const [sourceStock, setSourceStock] = useState<{ onHand: number; reserved: number; available: number } | null>(null);
   const [destStock, setDestStock] = useState<number | null>(null);
   const [loadingStockCheck, setLoadingStockCheck] = useState(false);
 
@@ -6118,7 +6118,9 @@ function AdminStockTransfers() {
     api<any>(`/api/admin/stock/by-branch/${form.fromBranchId}`).then((data: any) => {
       const items = data.items || data || [];
       const found = Array.isArray(items) ? items.find((i: any) => String(i.productId ?? i.id) === String(form.productId)) : null;
-      setSourceStock(found ? (found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0);
+      const onHand = found ? Number(found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0;
+      const reserved = found ? Number(found.quantityReserved ?? found.quantity_reserved ?? 0) : 0;
+      setSourceStock({ onHand, reserved, available: Math.max(0, onHand - reserved) });
     }).catch(() => setSourceStock(null)).finally(() => setLoadingStockCheck(false));
   }, [form.fromBranchId, form.productId]);
 
@@ -6133,6 +6135,10 @@ function AdminStockTransfers() {
 
   async function createTransfer(e: React.FormEvent) {
     e.preventDefault();
+    if (sourceStock && Number(form.quantity) > sourceStock.available) {
+      feedback.error(`Only ${sourceStock.available} unreserved unit(s) are available at the source branch.`);
+      return;
+    }
     setCreating(true);
     try {
       await api("/api/stock-transfers", {
@@ -6176,8 +6182,8 @@ function AdminStockTransfers() {
             {form.fromBranchId && form.productId && (
               <div style={{ display: "flex", gap: "1rem", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
                 <div style={{ padding: "0.4rem 0.75rem", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)" }}>
-                  <span style={{ color: "var(--text-secondary)" }}>Source stock: </span>
-                  <strong>{loadingStockCheck ? "..." : sourceStock ?? "—"}</strong>
+                  <span style={{ color: "var(--text-secondary)" }}>Source on hand / reserved / transferable: </span>
+                  <strong>{loadingStockCheck ? "..." : sourceStock ? `${sourceStock.onHand} / ${sourceStock.reserved} / ${sourceStock.available}` : "—"}</strong>
                 </div>
                 {form.toBranchId && (
                   <div style={{ padding: "0.4rem 0.75rem", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)" }}>
@@ -6187,14 +6193,14 @@ function AdminStockTransfers() {
                 )}
               </div>
             )}
-            {sourceStock !== null && form.quantity && Number(form.quantity) > sourceStock && (
+            {sourceStock !== null && form.quantity && Number(form.quantity) > sourceStock.available && (
               <div style={{ padding: "0.5rem 0.75rem", borderRadius: 6, background: "var(--warning-light)", color: "var(--warning-text)", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
-                Warning: Source branch only has {sourceStock} unit(s) in stock. Transfer quantity ({form.quantity}) exceeds available stock.
+                Only {sourceStock.available} unreserved unit(s) can be transferred. {sourceStock.reserved} unit(s) are reserved, so this quantity cannot be created.
               </div>
             )}
             <div className="field"><label>Notes<textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} /></label></div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              <RippleButton type="submit" loading={creating}>Create Transfer</RippleButton>
+              <RippleButton type="submit" loading={creating} disabled={loadingStockCheck || Boolean(sourceStock && Number(form.quantity) > sourceStock.available)}>Create Transfer</RippleButton>
               <RippleButton variant="secondary" onClick={() => setShowForm(false)}>Cancel</RippleButton>
             </div>
           </form>
@@ -6633,7 +6639,7 @@ function AdminPurchases() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [form, setForm] = useState({ supplierName: "", notes: "" });
-  const [formItems, setFormItems] = useState<{ productId: string; productName: string; quantity: number; unitCost: number }[]>([]);
+  const [formItems, setFormItems] = useState<{ productId: string; productName: string; quantity: number; unitCost: number | "" }[]>([]);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -6662,7 +6668,7 @@ function AdminPurchases() {
     try {
       const [sRes, pRes] = await Promise.all([
         api<{ suppliers: any[] }>("/api/admin/suppliers").catch(() => ({ suppliers: [] })),
-        api<{ products: any[] }>("/api/products?includeHidden=1").catch(() => ({ products: [] })),
+        api<{ products: any[] }>("/api/admin/purchase-products").catch(() => ({ products: [] })),
       ]);
       setSuppliers(sRes.suppliers || []);
       setProducts(pRes.products || []);
@@ -6684,7 +6690,7 @@ function AdminPurchases() {
 
   function addFormItem(p: any) {
     if (formItems.find((i) => i.productId === p.id)) return;
-    setFormItems([...formItems, { productId: p.id, productName: p.name, quantity: 1, unitCost: Number(p.price) || 0 }]);
+    setFormItems([...formItems, { productId: p.id, productName: p.name, quantity: 1, unitCost: p.costPrice == null ? "" : Number(p.costPrice) }]);
     setSearch("");
   }
 
@@ -6692,17 +6698,21 @@ function AdminPurchases() {
 
   function updateFormItem(idx: number, field: string, value: any) {
     const copy = [...formItems];
-    (copy[idx] as any)[field] = field === "quantity" ? Math.max(1, Number(value)) : Number(value);
+    (copy[idx] as any)[field] = field === "quantity" ? Math.max(1, Number(value)) : value === "" ? "" : Number(value);
     setFormItems(copy);
   }
 
   async function createOrder() {
     if (!form.supplierName || formItems.length === 0) return;
+    if (formItems.some((item) => item.unitCost === "" || !Number.isFinite(Number(item.unitCost)) || Number(item.unitCost) < 0)) {
+      setMsg("Enter the supplier-quoted unit cost for every item before creating this purchase order.");
+      return;
+    }
     setSaving(true);
     try {
       await api("/api/purchases", { method: "POST", body: JSON.stringify({
         supplierName: form.supplierName, notes: form.notes,
-        items: formItems.map((i) => ({ productId: i.productId, quantityOrdered: i.quantity, unitCost: i.unitCost })),
+        items: formItems.map((i) => ({ productId: i.productId, quantityOrdered: i.quantity, unitCost: Number(i.unitCost) })),
       })});
       setCreating(false); setForm({ supplierName: "", notes: "" }); setFormItems([]);
       loadOrders();
@@ -7065,7 +7075,10 @@ function AdminPurchases() {
                     <tr key={idx}>
                       <td>{item.productName}</td>
                       <td><input type="number" min="1" value={item.quantity} onChange={(e) => updateFormItem(idx, "quantity", e.target.value)} style={{ width: 60 }} /></td>
-                      <td><input type="number" min="0" step="0.01" value={item.unitCost} onChange={(e) => updateFormItem(idx, "unitCost", e.target.value)} style={{ width: 100 }} /></td>
+                      <td>
+                        <input type="number" min="0" step="0.01" required aria-label={`Supplier unit cost for ${item.productName}`} value={item.unitCost} onChange={(e) => updateFormItem(idx, "unitCost", e.target.value)} style={{ width: 100 }} />
+                        {item.unitCost === "" && <small style={{ display: "block", color: "var(--warning-text)" }}>Enter the supplier quote; no catalog cost is saved.</small>}
+                      </td>
                       <td><RippleButton size="small" variant="danger" aria-label="Remove item" onClick={() => removeFormItem(idx)}>✕</RippleButton></td>
                     </tr>
                   ))}
@@ -7073,7 +7086,7 @@ function AdminPurchases() {
               </table>
             </div>
           )}
-          <RippleButton onClick={createOrder} loading={saving} disabled={!form.supplierName || formItems.length === 0}>Create Purchase Order</RippleButton>
+          <RippleButton onClick={createOrder} loading={saving} disabled={!form.supplierName || formItems.length === 0 || formItems.some((item) => item.unitCost === "")}>Create Purchase Order</RippleButton>
         </div>
       </>
     );

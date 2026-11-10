@@ -204,7 +204,12 @@ interface LowStockItem {
   productId: string;
   name: string;
   price: number;
+  costPrice: number | null;
+  branchId: number | null;
+  branchName: string | null;
   quantityInStock: number;
+  quantityReserved: number;
+  availableToTransfer: number;
   lowStockThreshold: number;
 }
 
@@ -567,6 +572,7 @@ interface StockSnapshot {
   productId: string;
   productName: string;
   quantity: number;
+  branchId: number | null;
   createdAt: string;
 }
 
@@ -1594,23 +1600,27 @@ async function getStockLevel(productId: string, branchId?: number): Promise<Stoc
   return await queryOne("SELECT * FROM stock_levels WHERE product_id = $1", [productId]) as StockLevel | undefined;
 }
 
-async function updateStockLevel(productId: string, quantityInStock: number, branchId?: number): Promise<void> {
+async function updateStockLevel(productId: string, updates: { quantityInStock?: number; lowStockThreshold?: number }, branchId?: number): Promise<void> {
   // Atomic upsert â€” single statement, no read-then-write race. Conflict targets
   // match the partial unique indexes on stock_levels (branch_id IS NULL = global,
   // branch_id IS NOT NULL = per-branch).
   if (branchId !== undefined) {
     await query(
       `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-       VALUES ($1, $2, $3, 0, 0, 5)
-       ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_in_stock = $3, updated_at = NOW()::text`,
-      [productId, branchId, quantityInStock]
+       VALUES ($1, $2, COALESCE($3, 0), 0, 0, COALESCE($4, 5))
+       ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET
+         quantity_in_stock = COALESCE($3, stock_levels.quantity_in_stock),
+         low_stock_threshold = COALESCE($4, stock_levels.low_stock_threshold), updated_at = NOW()::text`,
+      [productId, branchId, updates.quantityInStock ?? null, updates.lowStockThreshold ?? null]
     );
   } else {
     await query(
       `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-       VALUES ($1, $2, 0, 0, 5)
-       ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`,
-      [productId, quantityInStock]
+       VALUES ($1, COALESCE($2, 0), 0, 0, COALESCE($3, 5))
+       ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET
+         quantity_in_stock = COALESCE($2, stock_levels.quantity_in_stock),
+         low_stock_threshold = COALESCE($3, stock_levels.low_stock_threshold), updated_at = NOW()::text`,
+      [productId, updates.quantityInStock ?? null, updates.lowStockThreshold ?? null]
     );
   }
 }
@@ -1628,10 +1638,25 @@ async function getStockMovements(productId: string): Promise<StockMovement[]> {
 
 async function getLowStockItems(): Promise<LowStockItem[]> {
   const rows = await queryAll(
-    `SELECT s.product_id AS "productId", p.name, p.price, s.quantity_in_stock AS "quantityInStock", s.low_stock_threshold AS "lowStockThreshold"
-     FROM stock_levels s JOIN products p ON p.id = s.product_id WHERE s.quantity_in_stock <= s.low_stock_threshold ORDER BY s.quantity_in_stock ASC`
+    `SELECT s.product_id AS "productId", p.name, p.price, p.cost_price AS "costPrice",
+       s.branch_id AS "branchId", b.name AS "branchName",
+       s.quantity_in_stock AS "quantityInStock", s.quantity_reserved AS "quantityReserved",
+       GREATEST(s.quantity_in_stock - s.quantity_reserved, 0) AS "availableToTransfer",
+       s.low_stock_threshold AS "lowStockThreshold"
+     FROM stock_levels s JOIN products p ON p.id = s.product_id
+     LEFT JOIN branches b ON b.id = s.branch_id
+     WHERE s.quantity_in_stock - s.quantity_reserved <= s.low_stock_threshold
+     ORDER BY s.quantity_in_stock - s.quantity_reserved ASC`
   ) as any[];
   return rows;
+}
+
+async function getReorderSuggestions(): Promise<(LowStockItem & { suggestedQuantity: number })[]> {
+  const items = await getLowStockItems();
+  return items.map((item) => ({
+    ...item,
+    suggestedQuantity: Math.max(0, item.lowStockThreshold * 2 - item.availableToTransfer),
+  }));
 }
 
 async function createStockTransfer(data: { fromBranchId: number; toBranchId: number; productId: string; quantity: number; notes?: string; createdBy?: number }): Promise<StockTransfer> {
@@ -1650,7 +1675,7 @@ async function listStockTransfers(): Promise<StockTransfer[]> {
   return await queryAll("SELECT * FROM stock_transfers ORDER BY created_at DESC") as StockTransfer[];
 }
 
-async function completeStockTransfer(id: number): Promise<boolean> {
+async function completeStockTransfer(id: number): Promise<{ ok: boolean; error?: string }> {
   return await transaction(async (client) => {
     // Serialize concurrent completions of the same transfer and read the current
     // status inside the transaction so a duplicate complete is a no-op.
@@ -1659,16 +1684,20 @@ async function completeStockTransfer(id: number): Promise<boolean> {
       [id]
     );
     const transfer = transferRes.rows?.[0] as any;
-    if (!transfer || transfer.status !== 'pending') return false;
+    if (!transfer || transfer.status !== 'pending') return { ok: false, error: "Transfer not found or is no longer pending." };
 
     // Lock the source row so concurrent transfers can never double-spend.
     const sourceRes = await client.query(
-      "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE",
+      "SELECT quantity_in_stock, COALESCE(quantity_reserved, 0) AS quantity_reserved FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE",
       [transfer.product_id, transfer.from_branch_id]
     );
     const sourceLevel = sourceRes.rows?.[0] as any;
     const sourceQty = sourceLevel ? Number(sourceLevel.quantity_in_stock) : 0;
-    if (sourceQty < Number(transfer.quantity)) return false;
+    const reservedQty = sourceLevel ? Number(sourceLevel.quantity_reserved) : 0;
+    const availableQty = Math.max(0, sourceQty - reservedQty);
+    if (availableQty < Number(transfer.quantity)) {
+      return { ok: false, error: `Only ${availableQty} unreserved unit(s) are available at the source branch; ${Number(transfer.quantity)} requested.` };
+    }
 
     const qty = Number(transfer.quantity);
     await client.query(
@@ -1710,7 +1739,7 @@ async function completeStockTransfer(id: number): Promise<boolean> {
     );
 
     const result = await client.query("UPDATE stock_transfers SET status = 'completed', completed_at = NOW()::text WHERE id = $1 AND status = 'pending'", [id]);
-    return (result.rowCount ?? 0) > 0;
+    return { ok: (result.rowCount ?? 0) > 0 };
   });
 }
 
@@ -3479,12 +3508,6 @@ async function markPurchaseOrderReceived(id: number, serialsByItem: { [itemId: n
   return { ok: true, order: await getPurchaseOrder(id) };
 }
 
-async function autoReorderLowStock(): Promise<PurchaseOrder | null> {
-  const lowItems = await getLowStockItems();
-  if (lowItems.length === 0) return null;
-  return await createPurchaseOrder({ supplierName: "Auto-Reorder System", notes: "Auto-generated reorder for low stock items", items: lowItems.map((i) => ({ productId: i.productId, quantityOrdered: i.lowStockThreshold * 2, unitCost: i.price * 0.6 })) });
-}
-
 async function getTechPerformanceReport(): Promise<TechPerformanceReport[]> {
   return await queryAll(
     `SELECT u.id AS "staffId", u.username AS "staffName",
@@ -3557,7 +3580,13 @@ async function getStockSummary(groupId?: string): Promise<{ productId: string; n
       COALESCE(sl.quantity_sold, 0) AS "quantitySold",
       COALESCE(sl.low_stock_threshold, 5) AS "lowStockThreshold"
     FROM products p
-    LEFT JOIN stock_levels sl ON sl.product_id = p.id${where}
+    LEFT JOIN (
+      SELECT product_id, SUM(quantity_in_stock)::integer AS quantity_in_stock,
+        SUM(quantity_reserved)::integer AS quantity_reserved,
+        SUM(quantity_sold)::integer AS quantity_sold,
+        SUM(low_stock_threshold)::integer AS low_stock_threshold
+      FROM stock_levels GROUP BY product_id
+    ) sl ON sl.product_id = p.id${where}
     ORDER BY p.name`,
     params
   );
@@ -3856,7 +3885,7 @@ async function applyStockTakeAdjustments(sessionId: number): Promise<number> {
     const currentQty = current ? Number(current.quantity_in_stock) : 0;
     const diff = item.counted_quantity - currentQty;
     if (diff === 0) continue;
-    await updateStockLevel(item.product_id, Math.max(0, item.counted_quantity), branchId || undefined);
+    await updateStockLevel(item.product_id, { quantityInStock: Math.max(0, item.counted_quantity) }, branchId || undefined);
     await recordStockMovement(item.product_id, "stock_take_adjust", diff, "stock_take", String(sessionId), `Stock take #${sessionId} adjustment`, undefined, branchId || undefined);
     adjusted++;
   }
@@ -3881,28 +3910,42 @@ async function deleteStockTakeSession(sessionId: number): Promise<{ ok: boolean;
   return { ok: true };
 }
 
-async function createStockSnapshot(snapshotDate?: string): Promise<boolean> {
+async function createStockSnapshot(snapshotDate?: string, branchId?: number): Promise<boolean> {
   const date = snapshotDate || new Date().toISOString().slice(0, 10);
-  await query("DELETE FROM stock_snapshots WHERE snapshot_date = $1", [date]);
-  await query(
-    `INSERT INTO stock_snapshots (snapshot_date, product_id, product_name, quantity)
-     SELECT $1, sl.product_id, p.name, sl.quantity_in_stock
-     FROM stock_levels sl JOIN products p ON p.id = sl.product_id`, [date]
-  );
+  await query("DELETE FROM stock_snapshots WHERE snapshot_date = $1 AND branch_id IS NOT DISTINCT FROM $2", [date, branchId ?? null]);
+  if (branchId !== undefined) {
+    await query(
+      `INSERT INTO stock_snapshots (snapshot_date, product_id, product_name, quantity, branch_id)
+       SELECT $1, sl.product_id, p.name, sl.quantity_in_stock, $2
+       FROM stock_levels sl JOIN products p ON p.id = sl.product_id WHERE sl.branch_id = $2`, [date, branchId]
+    );
+  } else {
+    await query(
+      `INSERT INTO stock_snapshots (snapshot_date, product_id, product_name, quantity, branch_id)
+       SELECT $1, sl.product_id, p.name, SUM(sl.quantity_in_stock)::integer, NULL
+       FROM stock_levels sl JOIN products p ON p.id = sl.product_id
+       GROUP BY sl.product_id, p.name`, [date]
+    );
+  }
   return true;
 }
 
-async function getStockSnapshot(snapshotDate: string): Promise<{ date: string; items: { productId: string; productName: string; quantity: number }[] }> {
-  const rows = await queryAll("SELECT * FROM stock_snapshots WHERE snapshot_date = $1 ORDER BY product_name", [snapshotDate]) as any[];
-  return { date: snapshotDate, items: rows.map((r: any) => ({ productId: r.product_id, productName: r.product_name, quantity: r.quantity })) };
+async function getStockSnapshot(snapshotDate: string, branchId?: number): Promise<{ date: string; branchId: number | null; items: { productId: string; productName: string; quantity: number }[] }> {
+  const rows = await queryAll("SELECT * FROM stock_snapshots WHERE snapshot_date = $1 AND branch_id IS NOT DISTINCT FROM $2 ORDER BY product_name", [snapshotDate, branchId ?? null]) as any[];
+  return { date: snapshotDate, branchId: branchId ?? null, items: rows.map((r: any) => ({ productId: r.product_id, productName: r.product_name, quantity: Number(r.quantity) })) };
 }
 
-async function listStockSnapshotDates(): Promise<{ date: string; createdAt: string }[]> {
-  return await queryAll("SELECT DISTINCT snapshot_date AS date, MAX(created_at) AS \"createdAt\" FROM stock_snapshots GROUP BY snapshot_date ORDER BY snapshot_date DESC") as any[];
+async function listStockSnapshotDates(branchId?: number): Promise<{ date: string; createdAt: string }[]> {
+  return await queryAll("SELECT snapshot_date AS date, MAX(created_at) AS \"createdAt\" FROM stock_snapshots WHERE branch_id IS NOT DISTINCT FROM $1 GROUP BY snapshot_date ORDER BY snapshot_date DESC", [branchId ?? null]) as any[];
 }
 
 async function getCurrentStockLevels(): Promise<{ productId: string; productName: string; quantity: number }[]> {
-  return await queryAll("SELECT p.id AS \"productId\", p.name AS \"productName\", COALESCE(sl.quantity_in_stock, 0) AS quantity FROM products p LEFT JOIN stock_levels sl ON sl.product_id = p.id ORDER BY p.name") as any[];
+  return await queryAll(
+    `SELECT p.id AS "productId", p.name AS "productName", COALESCE(sl.quantity, 0) AS quantity
+     FROM products p LEFT JOIN (
+       SELECT product_id, SUM(quantity_in_stock)::integer AS quantity FROM stock_levels GROUP BY product_id
+     ) sl ON sl.product_id = p.id ORDER BY p.name`
+  ) as any[];
 }
 
 async function getShopPlan(): Promise<SubscriptionPlan | undefined> {
@@ -4618,7 +4661,7 @@ export {
   getProductImages, addProductImage, deleteProductImage, setProductImageOrder, setPrimaryImage,
   getMessagesForCustomer, getMessagesForProvider, sendMessage, markMessageRead, getUnreadMessageCount, listAllMessages,
   getCartItems, getCartCount, addToCart, setCartQuantity, removeFromCart, clearCart, generateProductId,
-  getStockLevel, updateStockLevel, recordStockMovement, getStockMovements, getLowStockItems,
+  getStockLevel, updateStockLevel, recordStockMovement, getStockMovements, getLowStockItems, getReorderSuggestions,
   createStockTransfer, getStockTransfer, listStockTransfers, completeStockTransfer, rejectStockTransfer,
   listSubscriptionPlans, getSubscriptionPlan, createSubscriptionPlan, updateSubscriptionPlan, deleteSubscriptionPlan,
   listBranches, getBranch, createBranch, updateBranch, deleteBranch, getBranchCount, getMaxBranchesForShop, canCreateBranch,
@@ -4643,7 +4686,7 @@ export {
   createOrderInvoice, listOrderInvoices, markOrderInvoicePaid,
   createCreditNote, submitCreditNoteToEtims, getCreditNote, listCreditNotes,
   getRepairImages, addRepairImage, deleteRepairImage,
-  createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, reversePurchaseOrderReceive, recallPurchaseOrder, markPurchaseOrderReceived, autoReorderLowStock,
+  createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, reversePurchaseOrderReceive, recallPurchaseOrder, markPurchaseOrderReceived,
   getTechPerformanceReport, getSalesReport, getPurchaseReport, getSalesReportWithRange,
   getStockSummary, getStockSummaryByBranch, getEmployeeSalesPerformance, getTechnicianRepairStats,
   getProductByBarcode, listSerials, getSerialByNumber, createSerial, generateSerials, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,
