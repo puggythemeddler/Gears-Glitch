@@ -1,4 +1,4 @@
-import type { Product } from "./types";
+import type { Product, ProductGroup } from "./types";
 import { api } from "./api";
 
 const PRODUCT_CACHE_TTL_MS = 15_000;
@@ -82,5 +82,12 @@ export function getStorefrontCategories(): Promise<StorefrontCategories> {
       categories: data.categories || [],
       subcategories: data.subcategories || [],
     };
+  });
+}
+
+export function getStorefrontGroups(): Promise<ProductGroup[]> {
+  return cachedRequest("storefront:groups", CATEGORY_CACHE_TTL_MS, async () => {
+    const response = await api<{ groups: ProductGroup[] }>("/api/groups");
+    return response.groups || [];
   });
 }
