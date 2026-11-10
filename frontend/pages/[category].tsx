@@ -4,7 +4,7 @@ import { useRouter } from "next/router";
 import { ProductCard, getProducts } from "@/components/ProductCard";
 import type { Product } from "@/lib/types";
 import { Pagination, EmptyState, ErrorState } from "@/components/ui";
-import { getStorefrontCategories } from "@/lib/storefront-data";
+import { getStorefrontCategories, getStorefrontGroups } from "@/lib/storefront-data";
 
 const PAGE_SIZE = 20;
 
@@ -42,19 +42,37 @@ export default function CategoryPage() {
     let cancelled = false;
     setLoading(true);
     setError("");
-    getProducts(categoryId)
-      .then((p) => { if (!cancelled) setProducts(p); })
+    setCatName("");
+    setSubcategories([]);
+
+    // Some legacy storefront links (for example /laptops) use a product-group
+    // slug even though they are not category IDs. Prefer a real category when
+    // both exist, then fall back to a matching group before showing an empty page.
+    getStorefrontCategories()
+      .then(async (data) => {
+        const category = data.categories.find((item) => item.id === categoryId);
+        if (category) {
+          if (!cancelled) {
+            setCatName(category.label);
+            setSubcategories(data.subcategories.filter((item) => Array.isArray(item.category_ids) && item.category_ids.includes(categoryId)));
+          }
+          return getProducts(categoryId);
+        }
+
+        const groups = await getStorefrontGroups();
+        const group = groups.find((item) => item.isActive && item.id === categoryId);
+        if (group) {
+          if (!cancelled) setCatName(group.name);
+          return getProducts(undefined, group.id);
+        }
+
+        return getProducts(categoryId);
+      })
+      .catch(() => getProducts(categoryId))
+      .then((items) => { if (!cancelled) setProducts(items); })
       .catch(() => { if (!cancelled) setError("Failed to load products."); })
       .finally(() => { if (!cancelled) setLoading(false); });
 
-    // Category labels and chips are useful, but should not hold product cards
-    // behind a second request.
-    getStorefrontCategories().then((data) => {
-      if (cancelled) return;
-      const c = data.categories.find((item) => item.id === categoryId);
-      if (c) setCatName(c.label);
-      setSubcategories(data.subcategories.filter((item) => Array.isArray(item.category_ids) && item.category_ids.includes(categoryId)));
-    }).catch(() => {});
     return () => { cancelled = true; };
   }, [router.isReady, categoryId]);
 
