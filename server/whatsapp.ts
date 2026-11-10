@@ -584,6 +584,13 @@ export function isCustomWhatsAppVerifyTokenConfigured(token: string | null | und
   return typeof token === "string" && token.trim().length > 0 && token.trim() !== DEFAULT_WHATSAPP_VERIFY_TOKEN;
 }
 
+export function buildWhatsAppWebhookUrl(baseUrl: string | null | undefined, renderExternalUrl?: string | null): string {
+  const explicitBase = String(baseUrl || "").trim();
+  const renderBase = String(renderExternalUrl || "").trim();
+  const normalizedBase = (explicitBase || renderBase).replace(/\/+$/, "");
+  return normalizedBase ? `${normalizedBase}/api/webhooks/whatsapp` : "";
+}
+
 export async function getWhatsAppConfig(): Promise<{
   enabled: boolean;
   configured: boolean;
@@ -593,16 +600,17 @@ export async function getWhatsAppConfig(): Promise<{
   webhookUrl: string;
 }> {
   const s = await getSettings();
-  // The webhook is a server-to-server endpoint and must resolve to the API host
-  // (BASE_URL), NOT the storefront origin (FRONTEND_URL / window.location).
-  const apiBase = String(process.env.BASE_URL || "").trim().replace(/\/$/, "");
+  // The webhook is a server-to-server endpoint and must resolve to this
+  // tenant's API host, NOT the storefront origin. Render supplies a unique
+  // external URL for each service; BASE_URL may override it for custom domains.
+
   return {
     enabled: s.whatsappEnabled,
     configured: !!(s.whatsappPhoneNumberId && s.whatsappAccessToken),
     phoneNumberId: s.whatsappPhoneNumberId,
     businessAccountId: s.whatsappBusinessAccountId,
     verifyTokenConfigured: isCustomWhatsAppVerifyTokenConfigured(s.whatsappVerifyToken),
-    webhookUrl: apiBase ? `${apiBase}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp",
+    webhookUrl: buildWhatsAppWebhookUrl(process.env.BASE_URL, process.env.RENDER_EXTERNAL_URL),
   };
 }
 

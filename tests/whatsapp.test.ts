@@ -9,6 +9,7 @@ import {
   isValidKenyanPhone,
   isWithin24Hours,
   buildWhatsAppSignature,
+  buildWhatsAppWebhookUrl,
   signaturesMatch,
   verifyWhatsAppSignature,
   handleWhatsAppWebhook,
@@ -105,6 +106,21 @@ describe("whatsapp signature", () => {
     assert.equal(await verifyWhatsAppSignature(raw, "sha256=zz"), false);
     assert.equal(await verifyWhatsAppSignature(raw, "sha256=" + "a".repeat(63)), false);
     assert.equal(await verifyWhatsAppSignature(Buffer.alloc(0), "sha256=" + "a".repeat(64)), false);
+  });
+});
+
+describe("WhatsApp webhook URL builder", () => {
+  test("prefers the explicit tenant API base and normalizes trailing slashes", () => {
+    assert.equal(buildWhatsAppWebhookUrl("https://custom-api.example.com/", "https://tenant-api.onrender.com"), "https://custom-api.example.com/api/webhooks/whatsapp");
+  });
+
+  test("uses Render's service URL when no explicit API base is configured", () => {
+    assert.equal(buildWhatsAppWebhookUrl("", "https://tenant-api.onrender.com/"), "https://tenant-api.onrender.com/api/webhooks/whatsapp");
+  });
+
+  test("returns no URL instead of a misleading relative storefront URL when no API base exists", () => {
+    assert.equal(buildWhatsAppWebhookUrl("", ""), "");
+    assert.equal(buildWhatsAppWebhookUrl(undefined), "");
   });
 });
 
