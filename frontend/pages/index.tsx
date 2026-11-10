@@ -101,6 +101,7 @@ export default function HomePage() {
         </div>
       )}
       <LayoutEngine
+        key={q}
         page="home"
         products={filtered}
         allProducts={products}
