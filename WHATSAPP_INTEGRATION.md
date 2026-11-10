@@ -22,6 +22,7 @@ hard-coding one.
 ## Webhook
 
 - Endpoint: `GET/POST /api/webhooks/whatsapp`
+- The admin setup page uses an absolute backend URL from `BASE_URL` or Render's per-service `RENDER_EXTERNAL_URL`; it never substitutes the storefront origin. If neither API base is available, it leaves the URL blank and disables copying.
 - Inbound verification handshake is the standard Meta challenge (`hub.challenge`).
 - **POSTs require a valid `x-hub-signature-256`.** The signature is HMAC-SHA256 of the
   raw request body using the App Secret. A missing, malformed or invalid signature is

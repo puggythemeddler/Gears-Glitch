@@ -190,12 +190,9 @@ export default function WhatsAppSettings() {
     } catch (e: any) { setIntResult("Error: " + e.message); }
   }
 
-  // Prefer the server-computed backend webhook URL (BASE_URL + path). Falling
-  // back to window.location.origin is only a local-dev convenience — on a split
-  // deployment the browser origin is the storefront, not the API that receives
-  // Meta's webhook.
-  const webhookUrl = config?.webhookUrl
-    || (typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/whatsapp` : "/api/webhooks/whatsapp");
+  // Use only the backend-provided absolute URL. A relative URL resolves to the
+  // storefront origin on split deployments and is not a valid Meta webhook.
+  const webhookUrl = config?.webhookUrl || "";
 
   if (loading) return <Spinner />;
 
@@ -270,9 +267,9 @@ export default function WhatsAppSettings() {
         </p>
         <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginBottom: "0.75rem" }}>
           <code style={{ display: "block", padding: "0.5rem 0.75rem", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: "0.8rem", wordBreak: "break-all", flex: 1 }}>
-            {webhookUrl}
+            {webhookUrl || "API webhook URL is unavailable. Set BASE_URL, or confirm this backend is running on Render, then reload."}
           </code>
-          <RippleButton size="small" variant="ghost" onClick={async () => { try { await navigator.clipboard.writeText(webhookUrl); feedback.success({ title: "Webhook URL copied" }); } catch {} }} aria-label="Copy webhook URL">Copy</RippleButton>
+          <RippleButton size="small" variant="ghost" disabled={!webhookUrl} onClick={async () => { try { await navigator.clipboard.writeText(webhookUrl); feedback.success({ title: "Webhook URL copied" }); } catch {} }} aria-label="Copy webhook URL">Copy</RippleButton>
         </div>
         <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
           Verify Token: {config?.verifyTokenConfigured

@@ -118,7 +118,7 @@ This inventory is based on the updated recovery plan supplied on 2026-10-25. The
 ### P1 — WhatsApp and business operations
 
 - [ ] **B01 Merchant-owned WhatsApp:** verify onboarding, credential storage, webhook checks, consent, opt-outs, templates, messaging windows, delivery, retries, and revocation.
-- [ ] **B02 WhatsApp tenant isolation:** verify credentials, inbound/outbound routing, webhooks, and message history cannot cross tenants.
+- [~] **B02 WhatsApp tenant isolation — source/config review complete; safe runtime isolation verification pending.** Provisioning assigns each Render service its own `DATABASE_URL` and random `JWT_SECRET`; tenant settings encrypt WhatsApp credentials with the tenant encryption key; the settings API redacts tokens and secrets; each service handles and verifies its own webhook; consent, conversations, and message history use that service's database. Do not mark fully verified until two disposable tenants prove that credentials, inbound/outbound routing, webhooks, and history cannot cross scopes.
 - [ ] **B03 WhatsApp lifecycle:** test connect, reconnect, expired/invalid credentials, disconnect, revoked permissions, and webhook failures with mocks/test accounts.
 - [ ] **B04 Subscription lifecycle:** review billing periods, plan changes, renewals, expiry, suspension/reactivation, payment failures, entitlements, and grace periods.
 - [ ] **B05 Proforma reconciliation:** verify invoice conversion, payment matching, follow-ups, duplicate prevention, customer notices, and failure recovery.
