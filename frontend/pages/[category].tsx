@@ -60,7 +60,8 @@ export default function CategoryPage() {
         }
 
         const groups = await getStorefrontGroups();
-        const group = groups.find((item) => item.isActive && item.id === categoryId);
+        const groupId = categoryId === "pc" ? "pcs" : categoryId;
+        const group = groups.find((item) => item.isActive && item.id === groupId);
         if (group) {
           if (!cancelled) setCatName(group.name);
           return getProducts(undefined, group.id);

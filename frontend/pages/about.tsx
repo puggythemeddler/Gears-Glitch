@@ -205,7 +205,7 @@ export default function AboutPage() {
         <section className="about-cta" aria-label="Explore">
           <p>Ready to find your next device?</p>
           <div className="about-cta-row">
-            <a className="btn btn-primary btn-lg" href="/laptops">Shop Laptops</a>
+            <a className="btn btn-primary btn-lg" href="/group/laptops">Shop Laptops</a>
             <a className="btn btn-secondary btn-lg" href="/repairs">Book a Repair</a>
             <a className="btn btn-ghost btn-lg" href="/contact">Contact Us</a>
           </div>
