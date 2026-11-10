@@ -548,12 +548,14 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                   <div className="footer-col-title">{col.title}</div>
                   <div className="footer-col-links">
                     {(col.links || []).map((link: any, li: number) => {
-                      const label = link.label || link.href || "";
-                      const external = /^(https?:)?\/\//i.test(link.href || "");
+                      const href = typeof link?.href === "string" ? link.href.trim() : "";
+                      if (!href || href === "#") return null;
+                      const label = link.label || href;
+                      const external = /^(https?:)?\/\//i.test(href);
                       return external ? (
-                        <a key={li} href={link.href} className="footer-link" target="_blank" rel="noopener noreferrer">{label}</a>
+                        <a key={li} href={href} className="footer-link" target="_blank" rel="noopener noreferrer">{label}</a>
                       ) : (
-                        <Link key={li} href={link.href || "#"} className="footer-link">{label}</Link>
+                        <Link key={li} href={href} className="footer-link">{label}</Link>
                       );
                     })}
                   </div>
