@@ -19,7 +19,7 @@ export default function CmsPageView() {
   const router = useRouter();
   const slug = typeof router.query.slug === "string" ? router.query.slug : "";
   const { settings } = useApp();
-  const siteName = settings?.storeName || "My Shop";
+  const siteName = settings?.storeName || "Store";
 
   const [page, setPage] = useState<PublicPage | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "missing" | "error">("loading");

@@ -64,7 +64,7 @@ export default function AboutPage() {
     );
   }
 
-  const storeName = settings?.storeName || "My Shop";
+  const storeName = settings?.storeName || "Store";
   const email = settings?.email || "";
   const phone = settings?.phone || "";
   const waPhone = phone.replace(/[^0-9]/g, "");
