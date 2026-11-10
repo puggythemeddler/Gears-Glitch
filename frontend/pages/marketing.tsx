@@ -680,7 +680,7 @@ function MarketingContent() {
             { icon: "store", title: "Counter and online sales", desc: "A barcode-friendly POS, an online storefront, and campaign pages — all reading from the same stock and the same customers." },
             { icon: "card", title: "Payments that reconcile themselves", desc: "M-Pesa pushes straight to the till with a real confirmation before a sale completes. Cash and bank transfers are tracked the same way." },
             { icon: "fileText", title: "Tax-clear documents", desc: "Quotes convert to invoices in one click. Every receipt carries an itemised VAT breakdown and clear tax totals." },
-            { icon: "sliders", title: "Listings that sort and filter", desc: "Storefront categories, groups, and campaigns sort by newest, price, or name, filter what you see, and page through results 12 at a time — no endless scroll." },
+            { icon: "sliders", title: "Product lists that stay easy to browse", desc: "Categories, groups, and campaign pages offer Featured, Newest, price, and name sorting, with 20 products per page." },
             { icon: "monitor", title: "A calm storefront that matches your brand", desc: "A clean, flat hero in your brand colors that follows each visitor's device theme. No flashy countdowns, glow, or effects — just the products, front and centre." },
             { icon: "briefcase", title: "An admin workspace built for work", desc: "A focused staff portal: operational dashboard with revenue and needs-attention lists, sortable tables, semantic status colors, and keyboard-friendly controls. No gimmicks." },
           ]}
