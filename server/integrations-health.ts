@@ -73,8 +73,11 @@ export async function getIntegrationsHealth(): Promise<IntegrationHealthEntry[]>
       provider: "whatsapp",
       label: "WhatsApp Business",
       configured,
-      connected: configured && !!s.whatsappEnabled,
-      status: !configured ? "not_configured" : s.whatsappEnabled ? "connected" : "disabled",
+      // Credentials being present and the feature being enabled do not prove
+      // Meta accepted the token. Keep this as configured until Test Connection
+      // performs a live Graph API check.
+      connected: false,
+      status: !configured ? "not_configured" : s.whatsappEnabled ? "configured" : "disabled",
       meta: { phoneNumberId: s.whatsappPhoneNumberId, apiVersion: s.whatsappApiVersion },
     });
   } catch (err: any) {

@@ -34,7 +34,7 @@ interface GmailStatus {
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   connected: { text: "Connected", cls: "badge-success" },
-  configured: { text: "Configured", cls: "badge-success" },
+  configured: { text: "Configured", cls: "badge-default" },
   not_configured: { text: "Not configured", cls: "badge-default" },
   disabled: { text: "Disabled", cls: "badge-default" },
   token_expired: { text: "Needs re-connect", cls: "badge-warning" },
