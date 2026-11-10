@@ -354,7 +354,14 @@ export function HomePage({ products, hero }: {
 
   const HOME_PAGE_SIZE = 20;
   const sortedProducts = [...products];
-  if (homeSort === "price-asc") sortedProducts.sort((a, b) => effectivePrice(a) - effectivePrice(b));
+  if (homeSort === "newest") sortedProducts.sort((a, b) => {
+    const aCreated = a.createdAt ? Date.parse(a.createdAt) : Number.NEGATIVE_INFINITY;
+    const bCreated = b.createdAt ? Date.parse(b.createdAt) : Number.NEGATIVE_INFINITY;
+    const aTime = Number.isFinite(aCreated) ? aCreated : Number.NEGATIVE_INFINITY;
+    const bTime = Number.isFinite(bCreated) ? bCreated : Number.NEGATIVE_INFINITY;
+    return bTime - aTime;
+  });
+  else if (homeSort === "price-asc") sortedProducts.sort((a, b) => effectivePrice(a) - effectivePrice(b));
   else if (homeSort === "price-desc") sortedProducts.sort((a, b) => effectivePrice(b) - effectivePrice(a));
   else if (homeSort === "name") sortedProducts.sort((a, b) => a.name.localeCompare(b.name));
 
