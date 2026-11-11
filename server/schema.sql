@@ -256,12 +256,28 @@ CREATE TABLE IF NOT EXISTS stock_transfers (
   status TEXT NOT NULL DEFAULT 'pending',
   notes TEXT,
   created_by INTEGER,
+  dispatched_by INTEGER REFERENCES users(id),
+  received_by INTEGER REFERENCES users(id),
+  dispatched_at TEXT,
+  received_at TEXT,
+  dispatch_notes TEXT NOT NULL DEFAULT '',
+  receive_notes TEXT NOT NULL DEFAULT '',
   completed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (from_branch_id) REFERENCES branches(id),
   FOREIGN KEY (to_branch_id) REFERENCES branches(id),
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
   FOREIGN KEY (created_by) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS stock_disposals (
+  id SERIAL PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  branch_id INTEGER NOT NULL REFERENCES branches(id),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  reason TEXT NOT NULL CHECK (reason IN ('damaged', 'expired', 'missing', 'theft', 'recalled', 'other')),
+  notes TEXT NOT NULL DEFAULT '',
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 
 CREATE TABLE IF NOT EXISTS providers (
@@ -550,7 +566,7 @@ CREATE TABLE IF NOT EXISTS serial_numbers (
   asset_tag TEXT,
   product_id TEXT NOT NULL,
   branch_id INTEGER,
-  status TEXT NOT NULL DEFAULT 'in_stock',
+  status TEXT NOT NULL DEFAULT 'in_stock' CHECK (status IN ('in_stock','in_transit','sold','void','reserved')),
   purchase_order_item_id INTEGER,
   order_id INTEGER,
   order_item_id INTEGER,
@@ -562,6 +578,17 @@ CREATE TABLE IF NOT EXISTS serial_numbers (
   FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL,
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,
   FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS stock_transfer_serials (
+  transfer_id INTEGER NOT NULL REFERENCES stock_transfers(id) ON DELETE CASCADE,
+  serial_id INTEGER NOT NULL REFERENCES serial_numbers(id) ON DELETE RESTRICT,
+  PRIMARY KEY (transfer_id, serial_id)
+);
+CREATE TABLE IF NOT EXISTS stock_disposal_serials (
+  disposal_id INTEGER NOT NULL REFERENCES stock_disposals(id) ON DELETE CASCADE,
+  serial_id INTEGER NOT NULL REFERENCES serial_numbers(id) ON DELETE RESTRICT,
+  PRIMARY KEY (disposal_id, serial_id),
+  UNIQUE (serial_id)
 );
 CREATE INDEX IF NOT EXISTS idx_serial_numbers_status ON serial_numbers(status);
 CREATE INDEX IF NOT EXISTS idx_serial_numbers_product ON serial_numbers(product_id);
@@ -634,6 +661,7 @@ CREATE TABLE IF NOT EXISTS stock_take_items (
   system_quantity INTEGER NOT NULL DEFAULT 0,
   counted_quantity INTEGER,
   variance INTEGER NOT NULL DEFAULT 0,
+  variance_reason TEXT,
   notes TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   UNIQUE (session_id, product_id)

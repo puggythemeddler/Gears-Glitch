@@ -31,7 +31,7 @@ describe("POS and stock integrity (disposable DB)", { skip: !HAS_DB && "TEST_DAT
 
   it("applies a stock take once in its completion transaction", async () => {
     const session = await createStockTakeSession(`qa-stock-integrity-${runId}`);
-    await recordStockCount(session.id, productId, 4, "fixture count");
+    await recordStockCount(session.id, productId, 4, "fixture count", "count_error");
     const completion = await completeStockTakeSession(session.id);
     assert.deepEqual(completion, { ok: true, adjusted: 1 });
 

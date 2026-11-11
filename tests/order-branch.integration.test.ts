@@ -144,9 +144,13 @@ describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "TEST
   });
 
   it("completing a stock transfer reattributes in-stock serials to the target branch (BN3 transfer)", async () => {
+    // Upgrade the legacy status constraint: dispatch temporarily moves serials
+    // into transit before receipt assigns the destination branch.
+    await query(load("0049_serial_transfer_in_transit.sql"));
     await seedBranch(9131);
     await seedBranch(9132);
     await seedProduct("tf-prod");
+    await query("UPDATE products SET serial_tracking = 1 WHERE id = $1", ["tf-prod"]);
     // createStockTransfer records created_by → users(id); the suite never seeds
     // users, so create the staff row the FK requires (mirrors a live POS staff session).
     await query(
@@ -162,7 +166,7 @@ describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "TEST
        VALUES ('TF-SER-2', 'tf-prod', 9131, 'sold')`);
 
     const transfer = await createStockTransfer({
-      fromBranchId: 9131, toBranchId: 9132, productId: "tf-prod", quantity: 5, notes: "move", createdBy: 1,
+      fromBranchId: 9131, toBranchId: 9132, productId: "tf-prod", quantity: 1, notes: "move", createdBy: 1,
     });
     const completed = await completeStockTransfer((transfer as any).id);
     assert.equal(completed.ok, true, "transfer completes");

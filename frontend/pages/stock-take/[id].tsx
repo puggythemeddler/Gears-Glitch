@@ -16,6 +16,8 @@ export default function StockTakeSessionPage() {
   const [session, setSession] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [counts, setCounts] = useState<Record<string, string>>({});
+  const [varianceReasons, setVarianceReasons] = useState<Record<string, string>>({});
+  const [varianceNotes, setVarianceNotes] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [report, setReport] = useState<any>(null);
@@ -37,6 +39,11 @@ export default function StockTakeSessionPage() {
       const data = await api<any>(`/api/stock-take/${id}`);
       setSession(data.session);
       setItems(data.items || []);
+      const reasons: Record<string, string> = {};
+      const notes: Record<string, string> = {};
+      (data.items || []).forEach((item: any) => { if (item.varianceReason) reasons[item.productId] = item.varianceReason; if (item.notes) notes[item.productId] = item.notes; });
+      setVarianceReasons(reasons);
+      setVarianceNotes(notes);
       const c: Record<string, string> = {};
       (data.items || []).forEach((item: any) => { if (item.countedQuantity !== null) c[item.productId] = String(item.countedQuantity); });
       setCounts(c);
@@ -81,7 +88,7 @@ export default function StockTakeSessionPage() {
     setSaving(true);
     setMsg("");
     try {
-      const data = await api<any>(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId, countedQuantity: qty }) });
+      const data = await api<any>(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId, countedQuantity: qty, varianceReason: varianceReasons[productId] || undefined, notes: varianceNotes[productId] || "" }) });
       if (data.items) setItems(data.items);
     } catch (err: any) { setMsg("Error: " + err.message); }
     finally { setSaving(false); }
@@ -109,6 +116,10 @@ export default function StockTakeSessionPage() {
       const qty = raw !== undefined && raw.trim() !== "" ? Number(raw) : Number(item.countedQuantity);
       return qty !== Number(item.systemQuantity);
     });
+    const missingReason = changedItems.find((item: any) => !varianceReasons[item.productId] && !item.varianceReason);
+    if (missingReason) { setMsg(`Choose a variance reason for ${missingReason.productName}.`); return; }
+    const missingOtherNote = changedItems.find((item: any) => (varianceReasons[item.productId] || item.varianceReason) === "other" && !String(varianceNotes[item.productId] ?? item.notes ?? "").trim());
+    if (missingOtherNote) { setMsg(`Add a note explaining the variance for ${missingOtherNote.productName}.`); return; }
     const confirmed = await confirmDialog({
       title: "Apply stock count?",
       message: `This will update on-hand stock for ${changedItems.length} item${changedItems.length === 1 ? "" : "s"}. ${countedItems.length} of ${items.length} items have been counted; uncounted items will be left unchanged. Review the variances above before continuing.`,
@@ -123,7 +134,12 @@ export default function StockTakeSessionPage() {
         return raw !== undefined && raw.trim() !== "" && Number(raw) !== item.countedQuantity;
       });
       for (const item of unsavedItems) {
-        await api(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId: item.productId, countedQuantity: Number(counts[item.productId]) }) });
+        await api(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId: item.productId, countedQuantity: Number(counts[item.productId]), varianceReason: varianceReasons[item.productId] || item.varianceReason || undefined, notes: varianceNotes[item.productId] ?? item.notes ?? "" }) });
+      }
+      for (const item of changedItems) {
+        if (!unsavedItems.some((unsaved) => unsaved.productId === item.productId)) {
+          await api(`/api/stock-take/${id}/count`, { method: "POST", body: JSON.stringify({ productId: item.productId, countedQuantity: Number(counts[item.productId] ?? item.countedQuantity), varianceReason: varianceReasons[item.productId] || item.varianceReason, notes: varianceNotes[item.productId] ?? item.notes ?? "" }) });
+        }
       }
       const data = await api<any>(`/api/stock-take/${id}/complete`, { method: "POST" });
       setMsg("Stock take completed and stock levels adjusted!");
@@ -260,6 +276,30 @@ export default function StockTakeSessionPage() {
                   </span>
                 ),
               },
+              {
+                key: "varianceReason",
+                label: "Variance reason",
+                render: (r) => {
+                  const currentCount = counts[r.productId] === undefined ? r.countedQuantity : Number(counts[r.productId]);
+                  const changed = currentCount !== null && Number(currentCount) !== Number(r.systemQuantity);
+                  if (!changed) return <span className="muted">—</span>;
+                  return session.status === "in_progress" ? (
+                    <div style={{ minWidth: 190 }}>
+                      <select aria-label={`Reason for ${r.productName} variance`} value={varianceReasons[r.productId] ?? r.varianceReason ?? ""} onChange={(e) => { const reason = e.target.value; setVarianceReasons((prev) => ({ ...prev, [r.productId]: reason })); }}>
+                        <option value="">Select reason</option>
+                        <option value="count_error">Counting error</option>
+                        <option value="receiving_error">Receiving error</option>
+                        <option value="unrecorded_sale">Unrecorded sale</option>
+                        <option value="unrecorded_transfer">Unrecorded transfer</option>
+                        <option value="damage_or_expiry">Damage or expiry</option>
+                        <option value="theft_or_loss">Theft or loss</option>
+                        <option value="other">Other</option>
+                      </select>
+                      {(varianceReasons[r.productId] ?? r.varianceReason) === "other" && <textarea aria-label={`Explain variance for ${r.productName}`} rows={2} maxLength={1000} placeholder="Explain this variance" value={varianceNotes[r.productId] ?? r.notes ?? ""} onChange={(e) => setVarianceNotes((prev) => ({ ...prev, [r.productId]: e.target.value }))} />}
+                    </div>
+                  ) : <span>{String(varianceReasons[r.productId] ?? r.varianceReason ?? "").replaceAll("_", " ")}{r.notes ? ` — ${r.notes}` : ""}</span>;
+                },
+              },
             ]}
             rows={items}
             rowKey={(r) => r.productId}
@@ -299,6 +339,7 @@ export default function StockTakeSessionPage() {
                   { key: "product", label: "Product", sortable: true, value: (r) => r.productName, render: (r) => r.productName },
                   { key: "system", label: "System", sortable: true, align: "right", value: (r) => r.systemQuantity, render: (r) => <span style={{ textAlign: "right" }}>{r.systemQuantity}</span> },
                   { key: "counted", label: "Counted", sortable: true, align: "right", value: (r) => r.countedQuantity, render: (r) => <span style={{ textAlign: "right" }}>{r.countedQuantity}</span> },
+                  { key: "reason", label: "Reason", render: (r) => `${String(r.varianceReason || "—").replaceAll("_", " ")}${r.notes ? ` — ${r.notes}` : ""}` },
                   {
                     key: "variance",
                     label: "Variance",

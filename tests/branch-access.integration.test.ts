@@ -30,6 +30,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   let child: ChildProcess | null = null;
   let base = "";
+  let listeningPort = 0;
   const childLog: string[] = [];
 
   const runId = Date.now().toString(36).slice(-6);
@@ -69,6 +70,16 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
       await sleep(1500);
     }
     return false;
+  }
+
+  async function waitForListeningPort(timeoutMs = 240000): Promise<number | null> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (listeningPort > 0) return listeningPort;
+      if (child?.exitCode !== null && child?.exitCode !== undefined) return null;
+      await sleep(100);
+    }
+    return null;
   }
 
   // A cookie jar per identity, plus CSRF mirroring: mutating routes sit behind
@@ -133,14 +144,14 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
   let staffId = 0;
 
   before(async () => {
-    const port = 20000 + Math.floor(Math.random() * 20000);
-    base = `http://127.0.0.1:${port}`;
-
     child = spawn(process.execPath, [tsxCli, "server/index.ts"], {
       cwd: repoRoot,
       env: {
         ...(process.env as any),
-        PORT: String(port),
+        // Let the OS select a free port only once the server has finished its
+        // database boot. A port selected before migrations can be taken while
+        // this process is still starting.
+        PORT: "0",
         NODE_ENV: "test",
         DATABASE_URL: process.env.DATABASE_URL || "",
         JWT_SECRET: process.env.JWT_SECRET || "qa-branch-test-jwt-secret-4c1d8a2b9e7f",
@@ -163,9 +174,18 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
       } as any,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    child.stdout?.on("data", (d) => { const s = String(d).trim(); if (s) childLog.push(s.slice(0, 400)); });
+    child.stdout?.on("data", (d) => {
+      const s = String(d).trim();
+      if (s) childLog.push(s.slice(0, 400));
+      const match = s.match(/Server running on port (\d+)/);
+      if (match) listeningPort = Number(match[1]);
+    });
     child.stderr?.on("data", (d) => { const s = String(d).trim(); if (s) childLog.push(s.slice(0, 400)); });
     child.on("exit", (code) => childLog.push(`[child exit: ${code}]`));
+
+    const port = await waitForListeningPort();
+    assert.ok(port, `server never started listening.\nRecent child output:\n${childLog.slice(-40).join("\n")}`);
+    base = `http://127.0.0.1:${port}`;
 
     const ready = await waitForHealth(`${base}/api/health`);
     assert.ok(ready, `server never became healthy.\nRecent child output:\n${childLog.slice(-40).join("\n")}`);
