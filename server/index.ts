@@ -98,6 +98,8 @@ import {
   getOrderByCheckoutRequest,
   confirmOrderPayment,
   releaseOrderHeldStock,
+  settlePosOrderWithCash,
+  cancelPosOrder,
   holdStockForOrder,
   recordProductView,
   getPopularProducts,
@@ -2396,15 +2398,57 @@ app.get("/api/admin/branches/:id/features", ownerAuthMiddleware, requirePermissi
 
 // ============ PER-BRANCH STOCK ============
 
+/** Resolve a requested stock location against the account's current grants. */
+async function authorizeStockBranch(req: Request, res: Response, requestedBranchId: unknown, allowGlobal = false): Promise<number | null | undefined> {
+  const user = (req as any).user || {};
+  const role = String(user.role || "");
+  const unrestricted = isUnrestrictedBranchRole(role);
+  const requested = requestedBranchId === undefined || requestedBranchId === null || requestedBranchId === "" ? null : Number(requestedBranchId);
+  if (requested !== null && !isPosInt(requested)) {
+    res.status(400).json({ error: "branchId must be a positive integer." });
+    return undefined;
+  }
+  if (requested === null && allowGlobal && unrestricted) return null;
+  let branchId = requested;
+  const branches = await getUserBranches(Number(user.sub), role);
+  if (branchId === null && user.activeBranchId != null) branchId = Number(user.activeBranchId);
+  if (branchId === null && branches.length === 1) branchId = branches[0].id;
+  if (branchId === null) {
+    res.status(400).json({ error: "Select a branch before managing stock." });
+    return undefined;
+  }
+  if (!branches.some((branch) => branch.id === branchId)) {
+    res.status(403).json({ error: "Your account is not assigned to that branch." });
+    return undefined;
+  }
+  return branchId;
+}
+
+async function authorizeStockTake(req: Request, res: Response, id: number): Promise<any | null> {
+  const session = await getStockTakeSession(id);
+  if (!session) {
+    res.status(404).json({ error: "Stock take session not found." });
+    return null;
+  }
+  if (session.branchId == null && !isUnrestrictedBranchRole(String((req as any).user?.role || ""))) {
+    res.status(403).json({ error: "This stock take has no branch assignment; ask an owner or admin to review it." });
+    return null;
+  }
+  if (session.branchId != null && (await authorizeStockBranch(req, res, Number(session.branchId))) === undefined) return null;
+  return session;
+}
+
 app.get("/api/admin/stock/by-branch/:branchId", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req, res) => {
   const branchId = parseInt(String(req.params.branchId), 10);
+  if ((await authorizeStockBranch(req, res, branchId)) === undefined) return;
   const summary = await getStockSummaryByBranch(branchId);
   res.json(summary);
 }));
 
 app.get("/api/admin/stock/product/:productId/branches", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req, res) => {
   const productId = String(req.params.productId);
-  const branches = await listBranches();
+  const allowed = new Set((await getUserBranches(Number((req as any).user?.sub), String((req as any).user?.role || ""))).map((b) => b.id));
+  const branches = (await listBranches()).filter((branch) => allowed.has(branch.id));
   const levels: any[] = [];
   for (const branch of branches) {
     const level = await getStockLevel(productId, branch.id);
@@ -2420,6 +2464,10 @@ app.get("/api/admin/stock/product/:productId/branches", ownerAuthMiddleware, req
 
 app.put("/api/admin/stock/transfer/:id/complete", ownerAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req, res) => {
   const id = parseInt(String(req.params.id), 10);
+  const transfer = await getStockTransfer(id);
+  if (!transfer) return res.status(404).json({ error: "Transfer not found." });
+  if ((await authorizeStockBranch(req, res, Number(transfer.fromBranchId))) === undefined) return;
+  if ((await authorizeStockBranch(req, res, Number(transfer.toBranchId))) === undefined) return;
   const result = await completeStockTransfer(id);
   if (!result.ok) return res.status(result.error?.includes("unreserved") ? 409 : 400).json({ error: result.error || "Transfer could not be completed." });
   res.json({ ok: true, message: "Transfer completed. Stock moved between branches." });
@@ -2633,6 +2681,28 @@ async function pushPosStk(req: Request, orderId: number, amount: number, mpesaPh
   }
 }
 
+async function posOrderBranchAccess(req: Request, res: Response, order: any): Promise<boolean> {
+  const user = (req as any).user || {};
+  if (order.source !== "pos") {
+    res.status(409).json({ error: "This action is only available for POS sales." });
+    return false;
+  }
+  if (order.branchId == null && !isUnrestrictedBranchRole(String(user.role || ""))) {
+    res.status(403).json({ error: "This legacy sale has no branch assignment; ask an owner or admin to reconcile it." });
+    return false;
+  }
+  try {
+    await requireBranchContext(Number(user.sub), String(user.role || ""), user.activeBranchId, order.branchId);
+    return true;
+  } catch (err) {
+    if (err instanceof BranchAccessError) {
+      res.status(403).json({ error: err.message, branches: err.branches });
+      return false;
+    }
+    throw err;
+  }
+}
+
 app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { customerName, customerId: selectedCustomerId, paymentMethod, tenderedAmount, items, idempotencyKey, branchId: branchIdInput, mpesaPhone } = req.body || {};
@@ -2828,13 +2898,12 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
             const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.id]);
             if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
             if (bid) {
-              await client.query(
-                `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-                 VALUES ($1, $2, 0, 0, 0, 5)
-                 ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $3, 0), updated_at = NOW()::text
-                 WHERE stock_levels.quantity_in_stock >= $3`,
-                [item.id, bid, item.quantity]
+              const branchRes = await client.query(
+                `UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1, updated_at = NOW()::text
+                  WHERE product_id = $2 AND branch_id = $3 AND quantity_in_stock >= $1`,
+                [item.quantity, item.id, bid]
               );
+              if ((branchRes.rowCount ?? 0) !== 1) throw new Error(`Insufficient branch stock for ${item.name}; refresh the stock count and retry.`);
             } else {
               await client.query(
                 `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
@@ -2982,15 +3051,17 @@ app.post("/api/pos/orders/:id/pay-cash", posAuthMiddleware, asyncHandler(async (
   if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid order id." }); return; }
   const order = await getOrder(id);
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
-  const tenderedAmount = Number(req.body?.tenderedAmount) || 0;
-  if (order.status === "pending_payment" || order.status === "pending") {
-    await confirmOrderPayment(id);
+  if (!(await posOrderBranchAccess(req, res, order))) return;
+  const tenderedAmount = Number(req.body?.tenderedAmount);
+  const payment = await settlePosOrderWithCash(id, tenderedAmount);
+  if (!payment.ok) {
+    const status = /not found/i.test(payment.error || "") ? 404 : /no longer|only a pending/i.test(payment.error || "") ? 409 : 400;
+    res.status(status).json({ error: payment.error || "Cash payment could not be recorded." });
+    return;
   }
-  await query("UPDATE orders SET payment_method = 'cash', tendered_amount = $1, status = 'paid', paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text WHERE id = $2", [tenderedAmount, order.id]);
   try { notifyCustomerOrderProcessed(order.id).catch(() => {}); } catch { /* ignore */ }
   try { enqueueOrderInvoiceDelivery(order.id, "paid").catch(() => {}); } catch {}
-  const change = tenderedAmount > order.subtotal ? tenderedAmount - order.subtotal : 0;
-  res.json({ order: { ...order, status: "paid", paymentMethod: "cash", tenderedAmount }, change });
+  res.json({ order: { ...order, status: "paid", paymentMethod: "cash", tenderedAmount }, change: payment.change || 0 });
 }));
 
 app.post("/api/pos/orders/:id/cancel", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -2998,11 +3069,13 @@ app.post("/api/pos/orders/:id/cancel", posAuthMiddleware, asyncHandler(async (re
   if (!Number.isInteger(id)) { res.status(400).json({ error: "Invalid order id." }); return; }
   const order = await getOrder(id);
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
-  if (order.status === "paid" || order.status === "delivered") {
-    res.status(409).json({ error: "This order is already paid and cannot be cancelled." }); return;
+  if (!(await posOrderBranchAccess(req, res, order))) return;
+  const cancellation = await cancelPosOrder(id);
+  if (!cancellation.ok) {
+    const status = /not found/i.test(cancellation.error || "") ? 404 : /no longer|only a pending/i.test(cancellation.error || "") ? 409 : 400;
+    res.status(status).json({ error: cancellation.error || "POS sale could not be cancelled." });
+    return;
   }
-  await releaseOrderHeldStock(id);
-  await updateOrderStatus(id, "cancelled");
   res.json({ order: { ...order, status: "cancelled" } });
 }));
 
@@ -6602,17 +6675,26 @@ app.put("/api/staff/:id/permissions", adminAuthMiddleware, asyncHandler(async (r
 
 app.get("/api/stock/low-items", ownerAuthMiddleware, requirePermission("stock:view_low"), asyncHandler(async (req: Request, res: Response) => {
   const items = await getLowStockItems();
+  if (!isUnrestrictedBranchRole(String((req as any).user?.role || ""))) {
+    const allowed = new Set((await getUserBranches(Number((req as any).user?.sub), String((req as any).user?.role || ""))).map((b) => b.id));
+    res.json({ items: items.filter((item: any) => item.branchId != null && allowed.has(Number(item.branchId))) });
+    return;
+  }
   res.json({ items });
 }));
 
-app.get("/api/stock", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/stock", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
   const products = await listProducts(undefined, undefined, true);
-  const stock = await Promise.all(products.map((p) => getStockLevel(p.id)));
+  const branchId = await authorizeStockBranch(req, res, req.query.branchId, true);
+  if (branchId === undefined) return;
+  const stock = await Promise.all(products.map((p) => getStockLevel(p.id, branchId ?? undefined)));
   res.json({ stock });
 }));
 
 app.get("/api/stock/:productId", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
-  const stock = await getStockLevel(String(req.params.productId));
+  const branchId = await authorizeStockBranch(req, res, req.query.branchId, true);
+  if (branchId === undefined) return;
+  const stock = await getStockLevel(String(req.params.productId), branchId ?? undefined);
   res.json(stock);
 }));
 
@@ -6627,10 +6709,10 @@ app.put("/api/stock/:productId", ownerAuthMiddleware, requirePermission("stock:u
     updates.lowStockThreshold = Number(req.body.lowStockThreshold);
   }
   if (Object.keys(updates).length === 0) { res.status(400).json({ error: "Provide quantityInStock or lowStockThreshold to update." }); return; }
-  const branchId = req.body.branchId === undefined || req.body.branchId === null || req.body.branchId === "" ? undefined : Number(req.body.branchId);
-  if (branchId !== undefined && !isPosInt(branchId)) { res.status(400).json({ error: "branchId must be a positive integer." }); return; }
-  await updateStockLevel(String(req.params.productId), updates, branchId);
-  const stock = await getStockLevel(String(req.params.productId), branchId);
+  const branchId = await authorizeStockBranch(req, res, req.body.branchId, true);
+  if (branchId === undefined) return;
+  await updateStockLevel(String(req.params.productId), updates, branchId ?? undefined);
+  const stock = await getStockLevel(String(req.params.productId), branchId ?? undefined);
   res.json(stock);
 }));
 
@@ -7373,9 +7455,11 @@ app.post("/api/admin/auto-reorder", adminAuthMiddleware, asyncHandler(async (_re
 app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { quantityReceived, serials, branchId } = req.body || {};
   if (!quantityReceived || !isPosInt(Number(quantityReceived))) { res.status(400).json({ error: "quantityReceived must be a positive integer." }); return; }
+  if (branchId !== undefined && branchId !== null && branchId !== "" && !isPosInt(Number(branchId))) { res.status(400).json({ error: "branchId must be a positive integer." }); return; }
   const serialList = Array.isArray(serials) ? serials.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
   if (serialList.length > Number(quantityReceived)) { res.status(400).json({ error: "More serials than quantity received." }); return; }
-  await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived), serialList, branchId ? Number(branchId) : undefined);
+  const result = await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived), serialList, branchId ? Number(branchId) : undefined);
+  if (!result.ok) { res.status(/not found/i.test(result.error || "") ? 404 : 409).json({ error: result.error }); return; }
   res.json({ ok: true });
 }));
 
@@ -8652,7 +8736,9 @@ app.get("/api/reports/visitors", ownerAuthMiddleware, requirePermission("reports
 
 app.get("/api/reports/stock-summary", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
   const groupId = req.query.group_id ? String(req.query.group_id) : undefined;
-  res.json({ items: await getStockSummary(groupId) });
+  const branchId = await authorizeStockBranch(req, res, req.query.branch_id, true);
+  if (branchId === undefined) return;
+  res.json({ items: await getStockSummary(groupId, branchId ?? undefined) });
 }));
 
 app.get("/api/reports/employee-sales", ownerAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
@@ -8682,9 +8768,13 @@ app.get("/api/reports/technician-repairs", ownerAuthMiddleware, requirePermissio
 
 // ============ STOCK TAKE ============
 
-app.get("/api/stock-take", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/stock-take", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
   try {
-    res.json({ sessions: await listStockTakeSessions() });
+    const sessions = await listStockTakeSessions();
+    const user = (req as any).user || {};
+    if (isUnrestrictedBranchRole(String(user.role || ""))) { res.json({ sessions }); return; }
+    const allowed = new Set((await getUserBranches(Number(user.sub), String(user.role || ""))).map((b) => b.id));
+    res.json({ sessions: sessions.filter((s: any) => s.branchId != null && allowed.has(Number(s.branchId))) });
   } catch (err: any) {
     console.error("[stock-take list]", err?.message || err);
     res.status(500).json({ error: "Failed to load sessions." });
@@ -8694,7 +8784,9 @@ app.get("/api/stock-take", ownerAuthMiddleware, requirePermission("stock:list"),
 app.post("/api/stock-take/start", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { notes, branchId } = req.body || {};
-    const session = await createStockTakeSession(notes || "", (req as any).user.sub, branchId ? Number(branchId) : undefined);
+    const resolvedBranchId = await authorizeStockBranch(req, res, branchId, true);
+    if (resolvedBranchId === undefined) return;
+    const session = await createStockTakeSession(notes || "", (req as any).user.sub, resolvedBranchId ?? undefined);
     if (!session) { res.status(500).json({ error: "Failed to create stock take session." }); return; }
     const items = await getStockTakeItems(session.id);
     res.status(201).json({ session, items });
@@ -8706,8 +8798,8 @@ app.post("/api/stock-take/start", ownerAuthMiddleware, requirePermission("stock:
 
 app.get("/api/stock-take/:id", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const session = await getStockTakeSession(Number(req.params.id));
-    if (!session) { res.status(404).json({ error: "Session not found." }); return; }
+    const session = await authorizeStockTake(req, res, Number(req.params.id));
+    if (!session) return;
     const items = await getStockTakeItems(Number(req.params.id));
     res.json({ session, items });
   } catch (err: any) {
@@ -8718,6 +8810,8 @@ app.get("/api/stock-take/:id", ownerAuthMiddleware, requirePermission("stock:lis
 
 app.post("/api/stock-take/:id/count", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
   try {
+    const session = await authorizeStockTake(req, res, Number(req.params.id));
+    if (!session) return;
     const { productId, countedQuantity, notes } = req.body || {};
     if (!productId || countedQuantity === undefined) { res.status(400).json({ error: "productId and countedQuantity are required." }); return; }
     if (!isStr(productId)) { res.status(400).json({ error: "productId must be a valid string." }); return; }
@@ -8728,17 +8822,19 @@ app.post("/api/stock-take/:id/count", ownerAuthMiddleware, requirePermission("st
     res.json({ ok: true, items });
   } catch (err: any) {
     console.error("[stock-take count]", err?.message || err);
-    res.status(500).json({ error: "Failed to record count." });
+    const status = /not found/i.test(String(err?.message)) ? 404 : /in-progress|in progress/i.test(String(err?.message)) ? 409 : 500;
+    res.status(status).json({ error: status === 500 ? "Failed to record count." : err.message });
   }
 }));
 
 app.post("/api/stock-take/:id/complete", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const ok = await completeStockTakeSession(Number(req.params.id));
-    if (!ok) { res.status(400).json({ error: "Cannot complete session." }); return; }
-    const adjusted = await applyStockTakeAdjustments(Number(req.params.id));
+    const sessionBefore = await authorizeStockTake(req, res, Number(req.params.id));
+    if (!sessionBefore) return;
+    const completion = await completeStockTakeSession(Number(req.params.id));
+    if (!completion.ok) { res.status(409).json({ error: "This stock take is no longer in progress." }); return; }
     const report = await getStockTakeVarianceReport(Number(req.params.id));
-    (report as any).adjusted = adjusted;
+    (report as any).adjusted = completion.adjusted;
     const session = await getStockTakeSession(Number(req.params.id));
     res.json({ ok: true, report, session });
   } catch (err: any) {
@@ -8749,16 +8845,22 @@ app.post("/api/stock-take/:id/complete", ownerAuthMiddleware, requirePermission(
 
 app.post("/api/stock-take/:id/apply", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
   try {
+    const session = await authorizeStockTake(req, res, Number(req.params.id));
+    if (!session) return;
     const adjusted = await applyStockTakeAdjustments(Number(req.params.id));
+    if (adjusted === null) { res.status(409).json({ error: "Stock take adjustments have already been applied." }); return; }
     res.json({ ok: true, adjusted });
   } catch (err: any) {
     console.error("[stock-take apply]", err?.message || err);
-    res.status(500).json({ error: "Failed to apply adjustments." });
+    const status = /not found/i.test(String(err?.message)) ? 404 : /complete/i.test(String(err?.message)) ? 409 : 500;
+    res.status(status).json({ error: status === 500 ? "Failed to apply adjustments." : err.message });
   }
 }));
 
 app.get("/api/stock-take/:id/report", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
   try {
+    const session = await authorizeStockTake(req, res, Number(req.params.id));
+    if (!session) return;
     res.json(await getStockTakeVarianceReport(Number(req.params.id)));
   } catch (err: any) {
     console.error("[stock-take report]", err?.message || err);
@@ -8768,6 +8870,8 @@ app.get("/api/stock-take/:id/report", ownerAuthMiddleware, requirePermission("st
 
 app.delete("/api/stock-take/:id", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
   try {
+    const session = await authorizeStockTake(req, res, Number(req.params.id));
+    if (!session) return;
     const result = await deleteStockTakeSession(Number(req.params.id));
     if (!result.ok) { res.status(400).json({ error: result.error }); return; }
     res.json({ ok: true });
