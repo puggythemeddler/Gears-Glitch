@@ -39,8 +39,8 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
       [productId]
     );
     await query(
-      `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold) VALUES ($1, 100, 0, 0)
-       ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = 100, quantity_reserved = 0, quantity_sold = 0`,
+      `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold) VALUES ($1, 10, 0, 0)
+       ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = 10, quantity_reserved = 0, quantity_sold = 0`,
       [productId]
     );
     return { customerId: cust.id, productId };
@@ -183,6 +183,7 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
     await linkSerialsToOrderItem(item, ["SN-RET-001"]);
     // Simulate stock held at checkout: 10 -> 9 on hand.
     await query("UPDATE products SET stock_on_hand = stock_on_hand - 1 WHERE id = $1", [productId]);
+    await query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - 1 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
 
     await createRefund({ orderId: order, orderItemId: item, amount: 100, reason: "return" });
 
@@ -200,13 +201,13 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
     const order = await makeOrder(customerId, "pending_payment");
     await makeItem(order, productId, 2, 100);
     await query("UPDATE products SET stock_on_hand = stock_on_hand - 2 WHERE id = $1", [productId]);
-    await query("UPDATE stock_levels SET quantity_in_stock = 98, quantity_reserved = 2 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
+    await query("UPDATE stock_levels SET quantity_in_stock = 8, quantity_reserved = 2 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
     await query("UPDATE orders SET checkout_request_id = 'CB-TEST-1' WHERE id = $1", [order]);
 
     await updateOrderMpesaStatus("CB-TEST-1", 0, "RCPT-1");
     const afterFirst = await stockState(productId);
     assert.equal(afterFirst.reserved, 0, "reserved moved to sold after payment");
-    assert.equal(afterFirst.inStock, 96, "in-stock decremented by 2 once");
+    assert.equal(afterFirst.inStock, 6, "available stock decremented by 2 once after reservation clears");
 
     await updateOrderMpesaStatus("CB-TEST-1", 0, "RCPT-1");
     const afterSecond = await stockState(productId);
@@ -237,13 +238,13 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
     await makeSerial(productId, "SN-CAN-001");
     await linkSerialsToOrderItem(item, ["SN-CAN-001"]);
     await query("UPDATE products SET stock_on_hand = stock_on_hand - 1 WHERE id = $1", [productId]);
-    await query("UPDATE stock_levels SET quantity_in_stock = 99 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
+    await query("UPDATE stock_levels SET quantity_in_stock = 9 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
 
     const ok1 = await updateOrderStatus(order, "cancelled");
     assert.equal(ok1, true);
     const after1 = await stockState(productId);
     assert.equal(after1.stockOnHand, 10, "stock restored after cancel");
-    assert.equal(after1.inStock, 100, "in-stock restored after cancel");
+    assert.equal(after1.inStock, 10, "in-stock restored after cancel");
     const s = await serialStatus("SN-CAN-001");
     assert.equal(s.status, "in_stock", "serial freed after cancel");
 
@@ -257,6 +258,7 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
     const order = await makeOrder(customerId, "paid");
     const item = await makeItem(order, productId, 1, 100);
     await query("UPDATE products SET stock_on_hand = stock_on_hand - 1 WHERE id = $1", [productId]);
+    await query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - 1 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
 
     assert.equal(await cancelOrderItemQuantity(item, 0), true);
     const after1 = await stockState(productId);
