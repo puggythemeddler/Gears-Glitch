@@ -62,8 +62,91 @@ async function transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T
   }
 }
 
+/**
+ * Split a SQL script at statement terminators without splitting quoted strings,
+ * comments, or PostgreSQL dollar-quoted function bodies. PostgreSQL parses a
+ * multi-statement simple-query string before executing its statements, so a
+ * later index can fail to resolve a column that an earlier ALTER in the same
+ * string would add. Running statements in order lets legacy-schema repairs take
+ * effect before dependent indexes are planned.
+ */
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let start = 0;
+  let i = 0;
+  let singleQuoted = false;
+  let backslashEscapes = false;
+  let doubleQuoted = false;
+  let lineComment = false;
+  let blockCommentDepth = 0;
+  let dollarTag: string | null = null;
+
+  while (i < sql.length) {
+    const char = sql[i];
+    const next = sql[i + 1];
+
+    if (lineComment) {
+      if (char === "\n") lineComment = false;
+      i++;
+      continue;
+    }
+    if (blockCommentDepth > 0) {
+      if (char === "/" && next === "*") { blockCommentDepth++; i += 2; continue; }
+      if (char === "*" && next === "/") { blockCommentDepth--; i += 2; continue; }
+      i++;
+      continue;
+    }
+    if (dollarTag) {
+      if (sql.startsWith(dollarTag, i)) { i += dollarTag.length; dollarTag = null; continue; }
+      i++;
+      continue;
+    }
+    if (singleQuoted) {
+      if (char === "'" && next === "'") { i += 2; continue; }
+      if (backslashEscapes && char === "\\") { i += 2; continue; }
+      if (char === "'") singleQuoted = false;
+      i++;
+      continue;
+    }
+    if (doubleQuoted) {
+      if (char === '"' && next === '"') { i += 2; continue; }
+      if (char === '"') doubleQuoted = false;
+      i++;
+      continue;
+    }
+
+    if (char === "-" && next === "-") { lineComment = true; i += 2; continue; }
+    if (char === "/" && next === "*") { blockCommentDepth = 1; i += 2; continue; }
+    if (char === "'") {
+      const prefix = sql[i - 1];
+      const beforePrefix = sql[i - 2];
+      backslashEscapes = (prefix === "E" || prefix === "e") && !/[A-Za-z0-9_$]/.test(beforePrefix || " ");
+      singleQuoted = true;
+      i++;
+      continue;
+    }
+    if (char === '"') { doubleQuoted = true; i++; continue; }
+    if (char === "$" && !/[A-Za-z0-9_$]/.test(sql[i - 1] || " ")) {
+      const match = sql.slice(i).match(/^\$([A-Za-z_][A-Za-z0-9_]*|)\$/);
+      if (match) { dollarTag = match[0]; i += dollarTag.length; continue; }
+    }
+    if (char === ";") {
+      const statement = sql.slice(start, i).trim();
+      if (statement) statements.push(statement);
+      start = i + 1;
+    }
+    i++;
+  }
+
+  const finalStatement = sql.slice(start).trim();
+  if (finalStatement) statements.push(finalStatement);
+  return statements;
+}
+
 async function runSchema(schemaSql: string): Promise<void> {
-  await query(schemaSql);
+  for (const statement of splitSqlStatements(schemaSql)) {
+    await query(statement);
+  }
 }
 
 function closePool(): Promise<void> {
@@ -75,4 +158,4 @@ function closePool(): Promise<void> {
   return Promise.resolve();
 }
 
-export { getPool, query, queryOne, queryAll, transaction, runSchema, closePool };
+export { getPool, query, queryOne, queryAll, transaction, runSchema, closePool, splitSqlStatements };
