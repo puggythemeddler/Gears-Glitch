@@ -183,6 +183,7 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
     await linkSerialsToOrderItem(item, ["SN-RET-001"]);
     // Simulate stock held at checkout: 10 -> 9 on hand.
     await query("UPDATE products SET stock_on_hand = stock_on_hand - 1 WHERE id = $1", [productId]);
+    await query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - 1 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
 
     await createRefund({ orderId: order, orderItemId: item, amount: 100, reason: "return" });
 
@@ -257,6 +258,7 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
     const order = await makeOrder(customerId, "paid");
     const item = await makeItem(order, productId, 1, 100);
     await query("UPDATE products SET stock_on_hand = stock_on_hand - 1 WHERE id = $1", [productId]);
+    await query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - 1 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
 
     assert.equal(await cancelOrderItemQuantity(item, 0), true);
     const after1 = await stockState(productId);
