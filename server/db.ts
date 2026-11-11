@@ -1597,7 +1597,7 @@ async function getStockLevel(productId: string, branchId?: number): Promise<Stoc
   if (branchId !== undefined) {
     return await queryOne("SELECT * FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [productId, branchId]) as StockLevel | undefined;
   }
-  return await queryOne("SELECT * FROM stock_levels WHERE product_id = $1", [productId]) as StockLevel | undefined;
+  return await queryOne("SELECT * FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [productId]) as StockLevel | undefined;
 }
 
 async function updateStockLevel(productId: string, updates: { quantityInStock?: number; lowStockThreshold?: number }, branchId?: number): Promise<void> {
@@ -1668,7 +1668,11 @@ async function createStockTransfer(data: { fromBranchId: number; toBranchId: num
 }
 
 async function getStockTransfer(id: number): Promise<StockTransfer | undefined> {
-  return await queryOne("SELECT * FROM stock_transfers WHERE id = $1", [id]) as StockTransfer | undefined;
+  return await queryOne(
+    `SELECT *, from_branch_id AS "fromBranchId", to_branch_id AS "toBranchId", product_id AS "productId",
+            created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt"
+       FROM stock_transfers WHERE id = $1`, [id]
+  ) as StockTransfer | undefined;
 }
 
 async function listStockTransfers(): Promise<StockTransfer[]> {
@@ -2891,6 +2895,59 @@ async function confirmOrderPayment(orderId: number): Promise<void> {
   });
 }
 
+async function settlePosOrderWithCash(orderId: number, tenderedAmount: number): Promise<{ ok: boolean; error?: string; change?: number }> {
+  return await transaction(async (client) => {
+    const order = (await client.query(
+      `SELECT id, branch_id, source, status, subtotal, shipping_fee, discount_amount, gift_card_amount
+         FROM orders WHERE id = $1 FOR UPDATE`,
+      [orderId]
+    )).rows?.[0] as any;
+    if (!order) return { ok: false, error: "Order not found." };
+    if (order.source !== "pos") return { ok: false, error: "Only a pending POS sale can be switched to cash." };
+    if (order.status !== "pending_payment" && order.status !== "pending") {
+      return { ok: false, error: "This POS sale is no longer awaiting payment." };
+    }
+    const due = Math.max(0,
+      Number(order.subtotal || 0) + Number(order.shipping_fee || 0)
+      - Number(order.discount_amount || 0) - Number(order.gift_card_amount || 0)
+    );
+    if (!Number.isFinite(tenderedAmount) || tenderedAmount <= 0 || tenderedAmount < due) {
+      return { ok: false, error: "Cash tendered must cover the amount due." };
+    }
+    if (!(await isOrderStockHeld(client, orderId))) return { ok: false, error: "This POS sale has no active stock hold and cannot be switched to cash." };
+    await deductReservedStockForOrder(client, order);
+    const updated = await client.query(
+      `UPDATE orders SET payment_method = 'cash', tendered_amount = $1, status = 'paid',
+         paid_at = COALESCE(paid_at, NOW()::text), updated_at = NOW()::text
+       WHERE id = $2 AND status IN ('pending_payment', 'pending') RETURNING id`,
+      [tenderedAmount, orderId]
+    );
+    if ((updated.rowCount ?? 0) !== 1) throw new Error("POS sale changed while recording cash; retry after refreshing.");
+    return { ok: true, change: Math.max(0, tenderedAmount - due) };
+  });
+}
+
+async function cancelPosOrder(orderId: number): Promise<{ ok: boolean; error?: string }> {
+  return await transaction(async (client) => {
+    const order = (await client.query(
+      "SELECT id, branch_id, source, status FROM orders WHERE id = $1 FOR UPDATE", [orderId]
+    )).rows?.[0] as any;
+    if (!order) return { ok: false, error: "Order not found." };
+    if (order.source !== "pos") return { ok: false, error: "Only a pending POS sale can be cancelled here." };
+    if (order.status !== "pending_payment" && order.status !== "pending") {
+      return { ok: false, error: "This POS sale is no longer awaiting payment." };
+    }
+    if (!(await isOrderStockHeld(client, orderId))) return { ok: false, error: "This POS sale has no active stock hold and cannot be cancelled here." };
+    await releaseReservedStockForOrder(client, order);
+    const updated = await client.query(
+      "UPDATE orders SET status = 'cancelled', updated_at = NOW()::text WHERE id = $1 AND status IN ('pending_payment', 'pending') RETURNING id",
+      [orderId]
+    );
+    if ((updated.rowCount ?? 0) !== 1) throw new Error("POS sale changed while cancelling; refresh and retry.");
+    return { ok: true };
+  });
+}
+
 async function releaseOrderHeldStock(orderId: number): Promise<void> {
   await transaction(async (client) => {
     const order = (await client.query("SELECT id, branch_id, status FROM orders WHERE id = $1 FOR UPDATE", [orderId])).rows?.[0] as any;
@@ -3388,18 +3445,28 @@ async function updatePurchaseOrderStatus(id: number, status: string): Promise<bo
   return (result.rowCount ?? 0) > 0;
 }
 
-async function receivePurchaseOrderItem(itemId: number, quantityReceived: number, serials?: string[], branchId?: number): Promise<void> {
+async function receivePurchaseOrderItem(itemId: number, quantityReceived: number, serials?: string[], branchId?: number): Promise<{ ok: boolean; error?: string }> {
   // Single transaction: PO item update + serial inserts + atomic stock upsert and
   // movement commit (or roll back) together. Locks the PO item row and uses
   // relative (+delta) atomic stock updates so concurrent receives cannot lose stock.
-  await transaction(async (client) => {
+  if (!Number.isInteger(quantityReceived) || quantityReceived < 0) return { ok: false, error: "Received quantity must be a non-negative whole number." };
+  return await transaction(async (client) => {
     const itemRes = await client.query(
-      "SELECT product_id, quantity_received, serial_numbers FROM purchase_order_items WHERE id = $1 FOR UPDATE",
+      `SELECT poi.product_id, poi.quantity_received, poi.quantity_ordered, poi.serial_numbers,
+              po.status AS purchase_order_status, po.deleted_at
+         FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.purchase_order_id
+        WHERE poi.id = $1 FOR UPDATE OF poi, po`,
       [itemId]
     );
     const item = itemRes.rows?.[0] as any;
-    if (!item) return;
+    if (!item) return { ok: false, error: "Purchase order item not found." };
+    if (item.deleted_at || item.purchase_order_status === "cancelled") return { ok: false, error: "This purchase order is cancelled or deleted." };
+    if (!["pending", "ordered"].includes(String(item.purchase_order_status))) return { ok: false, error: "Only pending or ordered purchase orders can receive stock." };
     const previousReceived = Number(item.quantity_received) || 0;
+    const ordered = Number(item.quantity_ordered) || 0;
+    if (quantityReceived > ordered) return { ok: false, error: `Received quantity cannot exceed the ${ordered} unit(s) ordered.` };
+    if (quantityReceived < previousReceived) return { ok: false, error: "Received quantity cannot be reduced here; use the purchase receive reversal workflow." };
+    if (serials && serials.length > quantityReceived) return { ok: false, error: "More serials than quantity received." };
     const delta = quantityReceived - previousReceived;
 
     await client.query(
@@ -3445,6 +3512,7 @@ async function receivePurchaseOrderItem(itemId: number, quantityReceived: number
         [item.product_id, "purchase_receive", delta, "purchase_order", String(itemId), `Received ${delta} units from PO item #${itemId}`, null, branchId ?? null]
       );
     }
+    return { ok: true };
   });
 }
 
@@ -3502,7 +3570,8 @@ async function markPurchaseOrderReceived(id: number, serialsByItem: { [itemId: n
       if (!gen.ok || !gen.serials) return { ok: false, error: gen.error || "Failed to generate serial numbers." };
       serialList = serialList.concat(gen.serials.map((s) => s.serialNumber));
     }
-    await receivePurchaseOrderItem(item.id, remaining, serialList, branchId);
+    const received = await receivePurchaseOrderItem(item.id, Number(item.quantityReceived || 0) + remaining, serialList, branchId);
+    if (!received.ok) return { ok: false, error: received.error };
   }
   await updatePurchaseOrderStatus(id, "received");
   return { ok: true, order: await getPurchaseOrder(id) };
@@ -3569,7 +3638,21 @@ async function getPurchaseReport(): Promise<PurchaseReport> {
   return { totalOrders: Number(row?.total_orders || 0), totalSpent: Number(row?.total_spent || 0), pendingOrders: Number(row?.pending_orders || 0), receivedOrders: Number(row?.received_orders || 0) };
 }
 
-async function getStockSummary(groupId?: string): Promise<{ productId: string; name: string; category: string; quantityInStock: number; quantityReserved: number; quantitySold: number; lowStockThreshold: number }[]> {
+async function getStockSummary(groupId?: string, branchId?: number): Promise<{ productId: string; name: string; category: string; quantityInStock: number; quantityReserved: number; quantitySold: number; lowStockThreshold: number }[]> {
+  if (branchId !== undefined) {
+    const params: any[] = [branchId];
+    let where = "";
+    if (groupId && groupId !== "all") { where = " WHERE p.group_id = $2"; params.push(groupId); }
+    return await queryAll(
+      `SELECT p.id AS "productId", p.name, p.category,
+        COALESCE(sl.quantity_in_stock, 0) AS "quantityInStock",
+        COALESCE(sl.quantity_reserved, 0) AS "quantityReserved",
+        COALESCE(sl.quantity_sold, 0) AS "quantitySold",
+        COALESCE(sl.low_stock_threshold, 5) AS "lowStockThreshold"
+       FROM products p LEFT JOIN stock_levels sl ON sl.product_id = p.id AND sl.branch_id = $1${where}
+       ORDER BY p.name`, params
+    );
+  }
   const params: any[] = [];
   let where = "";
   if (groupId && groupId !== "all") { where = " WHERE p.group_id = $1"; params.push(groupId); }
@@ -3625,41 +3708,37 @@ async function getTechnicianRepairStats(): Promise<any[]> {
 }
 
 async function createStockTakeSession(notes?: string, createdBy?: number, branchId?: number): Promise<StockTakeSession> {
-  const result = await query("INSERT INTO stock_take_sessions (status, notes, created_by) VALUES ('in_progress', $1, $2) RETURNING *", [notes || "", createdBy || null]);
-  const session = result.rows[0] as StockTakeSession;
-  if (branchId) {
-    try { await query("UPDATE stock_take_sessions SET branch_id = $1 WHERE id = $2", [branchId, session.id]); } catch {}
-  }
-  try {
-    if (branchId) {
-      await query(
+  return await transaction(async (client) => {
+    const result = await client.query(
+      "INSERT INTO stock_take_sessions (status, notes, created_by, branch_id) VALUES ('in_progress', $1, $2, $3) RETURNING *",
+      [notes || "", createdBy || null, branchId ?? null]
+    );
+    const session = result.rows[0] as StockTakeSession;
+    if (branchId != null) {
+      await client.query(
         `INSERT INTO stock_take_items (session_id, product_id, product_name, system_quantity, counted_quantity, variance, notes)
          SELECT $1, p.id, p.name, COALESCE(sl.quantity_in_stock, 0), NULL, 0, ''
-         FROM products p
-         INNER JOIN stock_levels sl ON sl.product_id = p.id AND sl.branch_id = $2
-         ON CONFLICT (session_id, product_id) DO NOTHING`,
-        [session.id, branchId]
+         FROM products p LEFT JOIN stock_levels sl ON sl.product_id = p.id AND sl.branch_id = $2
+         ON CONFLICT (session_id, product_id) DO NOTHING`, [session.id, branchId]
       );
     } else {
-      await query(
+      await client.query(
         `INSERT INTO stock_take_items (session_id, product_id, product_name, system_quantity, counted_quantity, variance, notes)
          SELECT $1, p.id, p.name, COALESCE(sl.quantity_in_stock, 0), NULL, 0, ''
-         FROM products p
-         LEFT JOIN stock_levels sl ON sl.product_id = p.id
-         ON CONFLICT (session_id, product_id) DO NOTHING`,
-        [session.id]
+         FROM products p LEFT JOIN stock_levels sl ON sl.product_id = p.id AND sl.branch_id IS NULL
+         ON CONFLICT (session_id, product_id) DO NOTHING`, [session.id]
       );
     }
-  } catch (e) { console.error("[stock-take] auto-populate products failed:", e); }
-  return session;
+    return session;
+  });
 }
 
 async function getStockTakeSession(id: number): Promise<StockTakeSession | undefined> {
-  return await queryOne(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt" FROM stock_take_sessions WHERE id = $1`, [id]) as StockTakeSession | undefined;
+  return await queryOne(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", applied_at AS "appliedAt", created_at AS "createdAt" FROM stock_take_sessions WHERE id = $1`, [id]) as StockTakeSession | undefined;
 }
 
 async function listStockTakeSessions(): Promise<StockTakeSession[]> {
-  return await queryAll(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt" FROM stock_take_sessions ORDER BY created_at DESC`) as StockTakeSession[];
+  return await queryAll(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", applied_at AS "appliedAt", created_at AS "createdAt" FROM stock_take_sessions ORDER BY created_at DESC`) as StockTakeSession[];
 }
 
 async function getStockTakeItems(sessionId: number): Promise<StockTakeItem[]> {
@@ -3673,23 +3752,68 @@ async function getStockTakeItems(sessionId: number): Promise<StockTakeItem[]> {
 }
 
 async function recordStockCount(sessionId: number, productId: string, countedQuantity: number, notes?: string): Promise<void> {
-  const session = await queryOne("SELECT branch_id FROM stock_take_sessions WHERE id = $1", [sessionId]) as any;
-  const branchId = session?.branch_id || null;
-  const systemRow = branchId
-    ? await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [productId, branchId])
-    : await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [productId]) as any;
-  const systemQuantity = systemRow ? Number(systemRow.quantity_in_stock) : 0;
-  await query(
-    `INSERT INTO stock_take_items (session_id, product_id, product_name, system_quantity, counted_quantity, variance, notes)
-     VALUES ($1, $2, (SELECT name FROM products WHERE id = $2), $3, $4, $5, $6)
-     ON CONFLICT (session_id, product_id) DO UPDATE SET counted_quantity = $4, variance = $5, notes = $6`,
-    [sessionId, productId, systemQuantity, countedQuantity, countedQuantity - systemQuantity, notes || ""]
-  );
+  await transaction(async (client) => {
+    const session = (await client.query("SELECT branch_id, status FROM stock_take_sessions WHERE id = $1 FOR UPDATE", [sessionId])).rows?.[0] as any;
+    if (!session) throw new Error("Stock take session not found.");
+    if (session.status !== "in_progress") throw new Error("Counts can only be recorded on an in-progress stock take.");
+    const branchId = session.branch_id == null ? null : Number(session.branch_id);
+    const systemRow = (await client.query(
+      branchId == null ? "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL" : "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2",
+      branchId == null ? [productId] : [productId, branchId]
+    )).rows?.[0] as any;
+    const systemQuantity = systemRow ? Number(systemRow.quantity_in_stock) : 0;
+    const result = await client.query(
+      `INSERT INTO stock_take_items (session_id, product_id, product_name, system_quantity, counted_quantity, variance, notes)
+       SELECT $1, p.id, p.name, $3, $4, $5, $6 FROM products p WHERE p.id = $2
+       ON CONFLICT (session_id, product_id) DO UPDATE SET counted_quantity = $4, variance = $5, notes = $6`,
+      [sessionId, productId, systemQuantity, countedQuantity, countedQuantity - systemQuantity, notes || ""]
+    );
+    if ((result.rowCount ?? 0) === 0) throw new Error("Product not found.");
+  });
 }
 
-async function completeStockTakeSession(id: number): Promise<boolean> {
-  const result = await query("UPDATE stock_take_sessions SET status = 'completed', completed_at = NOW()::text WHERE id = $1 AND status = 'in_progress'", [id]);
-  return (result.rowCount ?? 0) > 0;
+async function completeStockTakeSession(id: number): Promise<{ ok: boolean; adjusted: number }> {
+  return await transaction(async (client) => {
+    const session = (await client.query("SELECT id, status, branch_id, applied_at FROM stock_take_sessions WHERE id = $1 FOR UPDATE", [id])).rows?.[0] as any;
+    if (!session || session.status !== "in_progress" || session.applied_at) return { ok: false, adjusted: 0 };
+    const items = (await client.query("SELECT product_id, counted_quantity FROM stock_take_items WHERE session_id = $1 AND counted_quantity IS NOT NULL ORDER BY product_id FOR UPDATE", [id])).rows as any[];
+    let adjusted = 0;
+    for (const item of items) {
+      const branchId = session.branch_id == null ? null : Number(session.branch_id);
+      const currentRes = await client.query(
+        branchId == null
+          ? "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL FOR UPDATE"
+          : "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE",
+        branchId == null ? [item.product_id] : [item.product_id, branchId]
+      );
+      const currentQty = currentRes.rows?.[0] ? Number(currentRes.rows[0].quantity_in_stock) : 0;
+      const counted = Number(item.counted_quantity);
+      const diff = counted - currentQty;
+      if (diff === 0) continue;
+      if (branchId == null) {
+        await client.query(
+          `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+           VALUES ($1, $2, 0, 0, 5)
+           ON CONFLICT (product_id) WHERE branch_id IS NULL
+           DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`, [item.product_id, counted]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+           VALUES ($1, $2, $3, 0, 0, 5)
+           ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL
+           DO UPDATE SET quantity_in_stock = $3, updated_at = NOW()::text`, [item.product_id, branchId, counted]
+        );
+      }
+      await client.query(
+        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'stock_take_adjust', $2, 'stock_take', $3, $4, $5)",
+        [item.product_id, diff, String(id), `Stock take #${id} adjustment`, branchId]
+      );
+      adjusted++;
+    }
+    await client.query("UPDATE stock_take_sessions SET status = 'completed', completed_at = NOW()::text, applied_at = NOW()::text WHERE id = $1", [id]);
+    return { ok: true, adjusted };
+  });
 }
 
 async function snapshotStockLevels(): Promise<void> {
@@ -3873,23 +3997,34 @@ async function providerHasFeature(providerId: number, feature: string): Promise<
   return features.some((f) => f.toLowerCase().trim() === feature.toLowerCase().trim());
 }
 
-async function applyStockTakeAdjustments(sessionId: number): Promise<number> {
-  const session = await queryOne("SELECT * FROM stock_take_sessions WHERE id = $1", [sessionId]) as any;
-  const branchId = session?.branch_id || null;
-  const items = await queryAll("SELECT * FROM stock_take_items WHERE session_id = $1 AND counted_quantity IS NOT NULL", [sessionId]) as any[];
-  let adjusted = 0;
-  for (const item of items) {
-    const current = branchId
-      ? await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [item.product_id, branchId])
-      : await queryOne("SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [item.product_id]);
-    const currentQty = current ? Number(current.quantity_in_stock) : 0;
-    const diff = item.counted_quantity - currentQty;
-    if (diff === 0) continue;
-    await updateStockLevel(item.product_id, { quantityInStock: Math.max(0, item.counted_quantity) }, branchId || undefined);
-    await recordStockMovement(item.product_id, "stock_take_adjust", diff, "stock_take", String(sessionId), `Stock take #${sessionId} adjustment`, undefined, branchId || undefined);
-    adjusted++;
-  }
-  return adjusted;
+async function applyStockTakeAdjustments(sessionId: number): Promise<number | null> {
+  return await transaction(async (client) => {
+    const session = (await client.query("SELECT id, status, branch_id, applied_at FROM stock_take_sessions WHERE id = $1 FOR UPDATE", [sessionId])).rows?.[0] as any;
+    if (!session) throw new Error("Stock take session not found.");
+    if (session.status !== "completed") throw new Error("Complete the stock take before applying adjustments.");
+    if (session.applied_at) return null;
+    const items = (await client.query("SELECT product_id, counted_quantity FROM stock_take_items WHERE session_id = $1 AND counted_quantity IS NOT NULL ORDER BY product_id FOR UPDATE", [sessionId])).rows as any[];
+    let adjusted = 0;
+    for (const item of items) {
+      const branchId = session.branch_id == null ? null : Number(session.branch_id);
+      const currentRes = await client.query(
+        branchId == null ? "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL FOR UPDATE" : "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE",
+        branchId == null ? [item.product_id] : [item.product_id, branchId]
+      );
+      const currentQty = currentRes.rows?.[0] ? Number(currentRes.rows[0].quantity_in_stock) : 0;
+      const counted = Number(item.counted_quantity);
+      const diff = counted - currentQty;
+      if (!diff) continue;
+      const upsert = branchId == null
+        ? `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, 0, 0, 5) ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`
+        : `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, $3, 0, 0, 5) ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_in_stock = $3, updated_at = NOW()::text`;
+      await client.query(upsert, branchId == null ? [item.product_id, counted] : [item.product_id, branchId, counted]);
+      await client.query("INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'stock_take_adjust', $2, 'stock_take', $3, $4, $5)", [item.product_id, diff, String(sessionId), `Stock take #${sessionId} adjustment`, branchId]);
+      adjusted++;
+    }
+    await client.query("UPDATE stock_take_sessions SET applied_at = NOW()::text WHERE id = $1 AND applied_at IS NULL", [sessionId]);
+    return adjusted;
+  });
 }
 
 async function getStockTakeVarianceReport(sessionId: number): Promise<{ totalItems: number; counted: number; withVariance: number; totalVariance: number; items: StockTakeItem[] }> {
@@ -4680,6 +4815,7 @@ export {
   listAbandonedCarts, recordCartRecoveryReminder, listCartRecoveryReminders,
   createRefund, listRefunds, getRefundTotal, cancelOrderItemQuantity,
   createOrder, getOrder, updateOrderItemWarranty, listOrders, updateOrderStatus, updateOrderDetails, updateOrderMpesaStatus, getOrderByCheckoutRequest, cancelOrderItem, confirmOrderPayment, releaseOrderHeldStock, holdStockForOrder, isOrderStockHeld,
+  settlePosOrderWithCash, cancelPosOrder,
   recordProductView, getPopularProducts, getTotalViews,
   createInvoice, getInvoice, listInvoices, markInvoicePaid, deleteUnpaidInvoice, generateProviderInvoice, getInvoiceRevenue, searchInvoices, markOverdueInvoices, getOverdueInvoices, getInvoiceStats, exportInvoicesCsv,
   getEtimsMode, generateEtimsInvoiceNumber, createEtimsSalesTransaction,

@@ -457,4 +457,78 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
     }
     assert.equal(all.length > 0, true, "sanity: there were branches to deactivate");
   });
+
+  it("scopes stock operations and POS payment recovery to the assigned branch and order type", async () => {
+    const owner = jar();
+    await call(owner, "/api/csrf-token");
+    await loginAs(owner, `qa-branch-owner-${runId}`, "qa-Branch-Owner-2026!");
+    const grantsBefore = await call(owner, `/api/admin/staff/${staffId}/branches`);
+    assert.equal(grantsBefore.status, 200, JSON.stringify(grantsBefore.body));
+    const originalBranchIds = grantsBefore.body.branchIds as number[];
+    const narrowed = await call(owner, `/api/admin/staff/${staffId}/branches`, { method: "PUT", json: { branchIds: [branchA] } });
+    assert.equal(narrowed.status, 200, JSON.stringify(narrowed.body));
+
+    const { Pool } = require("pg");
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    let customerId = 0;
+    const orderIds: number[] = [];
+    try {
+      const customer = await pool.query(
+        "INSERT INTO customers (name, email, password_hash) VALUES ($1, $2, '') RETURNING id",
+        [`QA branch guard ${runId}`, `qa-branch-guard-${runId}@qa.local`]
+      );
+      customerId = Number(customer.rows[0].id);
+      const makeOrder = async (source: string, branchId: number, status: string) => {
+        const result = await pool.query(
+          `INSERT INTO orders (customer_id, customer_name, status, subtotal, branch_id, source)
+           VALUES ($1, 'QA branch guard', $2, 100, $3, $4) RETURNING id`,
+          [customerId, status, branchId, source]
+        );
+        const id = Number(result.rows[0].id);
+        orderIds.push(id);
+        return id;
+      };
+      const crossBranchPosOrder = await makeOrder("pos", branchC, "pending_payment");
+      const insufficientCashOrder = await makeOrder("pos", branchA, "pending_payment");
+      const storefrontOrder = await makeOrder("storefront", branchA, "pending");
+
+      const staff = jar();
+      await call(staff, "/api/csrf-token");
+      const login = await loginAs(staff, USERNAME, PASSWORD, branchA);
+      assert.equal(login.status, 200, JSON.stringify(login.body));
+
+      const allowedStock = await call(staff, `/api/admin/stock/by-branch/${branchA}`);
+      assert.equal(allowedStock.status, 200, JSON.stringify(allowedStock.body));
+      const deniedStock = await call(staff, `/api/admin/stock/by-branch/${branchC}`);
+      assert.equal(deniedStock.status, 403, JSON.stringify(deniedStock.body));
+      const deniedStockUpdate = await call(staff, "/api/stock/qa-missing-product", { method: "PUT", json: { branchId: branchC, quantityInStock: 1 } });
+      assert.equal(deniedStockUpdate.status, 403, JSON.stringify(deniedStockUpdate.body));
+      const deniedStockReport = await call(staff, `/api/reports/stock-summary?branch_id=${branchC}`);
+      assert.equal(deniedStockReport.status, 403, JSON.stringify(deniedStockReport.body));
+      const branchLevels = await call(staff, "/api/admin/stock/product/qa-missing-product/branches");
+      assert.equal(branchLevels.status, 200, JSON.stringify(branchLevels.body));
+      assert.deepEqual((branchLevels.body || []).map((row: any) => Number(row.branchId)), [branchA]);
+
+      const crossBranchPay = await call(staff, `/api/pos/orders/${crossBranchPosOrder}/pay-cash`, { method: "POST", json: { tenderedAmount: 100 } });
+      assert.equal(crossBranchPay.status, 403, JSON.stringify(crossBranchPay.body));
+      const crossBranchCancel = await call(staff, `/api/pos/orders/${crossBranchPosOrder}/cancel`, { method: "POST", json: {} });
+      assert.equal(crossBranchCancel.status, 403, JSON.stringify(crossBranchCancel.body));
+      const insufficientCash = await call(staff, `/api/pos/orders/${insufficientCashOrder}/pay-cash`, { method: "POST", json: { tenderedAmount: 50 } });
+      assert.equal(insufficientCash.status, 400, JSON.stringify(insufficientCash.body));
+      assert.match(insufficientCash.body.error || "", /cover the amount due/i);
+      const storefrontPay = await call(staff, `/api/pos/orders/${storefrontOrder}/pay-cash`, { method: "POST", json: { tenderedAmount: 100 } });
+      assert.equal(storefrontPay.status, 409, JSON.stringify(storefrontPay.body));
+      const storefrontCancel = await call(staff, `/api/pos/orders/${storefrontOrder}/cancel`, { method: "POST", json: {} });
+      assert.equal(storefrontCancel.status, 409, JSON.stringify(storefrontCancel.body));
+
+      const statuses = await pool.query("SELECT id, status FROM orders WHERE id = ANY($1::int[])", [orderIds]);
+      assert.ok(statuses.rows.every((row: any) => row.status === "pending" || row.status === "pending_payment"));
+    } finally {
+      if (orderIds.length) await pool.query("DELETE FROM orders WHERE id = ANY($1::int[])", [orderIds]);
+      if (customerId) await pool.query("DELETE FROM customers WHERE id = $1", [customerId]);
+      await pool.end();
+      const restored = await call(owner, `/api/admin/staff/${staffId}/branches`, { method: "PUT", json: { branchIds: originalBranchIds } });
+      assert.equal(restored.status, 200, JSON.stringify(restored.body));
+    }
+  });
 });
