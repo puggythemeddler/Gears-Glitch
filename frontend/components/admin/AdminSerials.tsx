@@ -14,6 +14,9 @@ interface SerialRecord {
   product_name?: string;
   product_category?: string;
   product_barcode?: string;
+  serial_kind?: string;
+  asset_tag?: string | null;
+  repair_history?: Array<{ id: string; status: string; createdAt: string; issueSummary: string }>;
   status: string;
   sold_at?: string;
   warranty_expires?: string;
@@ -41,14 +44,10 @@ export default function AdminSerials() {
   const [lookup, setLookup] = useState<SerialRecord | null>(null);
   const [lookupError, setLookupError] = useState("");
   const [lookupLoading, setLookupLoading] = useState(false);
-  const [showGenerate, setShowGenerate] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
-  const [genProduct, setGenProduct] = useState("");
-  const [genCount, setGenCount] = useState("5");
-  const [genResult, setGenResult] = useState<string[]>([]);
-  const [genLoading, setGenLoading] = useState(false);
   const [createSerialNumber, setCreateSerialNumber] = useState("");
+  const [createAssetTag, setCreateAssetTag] = useState("");
   const [createProduct, setCreateProduct] = useState("");
   const [createWarrantyExpiry, setCreateWarrantyExpiry] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
@@ -85,25 +84,13 @@ export default function AdminSerials() {
     }
   }
 
-  async function generate() {
-    if (!genProduct) { feedback.error({ title: "Product not selected", message: "Select a product." }); return; }
-    setGenLoading(true); setGenResult([]);
-    try {
-      const res = await api<{ serials: { serialNumber: string }[] }>("/api/serials/generate", { method: "POST", body: JSON.stringify({ productId: genProduct, count: Number(genCount) || 1 }) });
-      setGenResult((res.serials || []).map((s) => s.serialNumber));
-      feedback.success({ title: "Serials generated" });
-      doRefresh();
-    } catch (e: any) { feedback.error({ title: "Serials not generated", message: e.message }); }
-    finally { setGenLoading(false); }
-  }
-
   async function createOne() {
     if (!createSerialNumber.trim() || !createProduct) { feedback.error({ title: "Serial not added", message: "Serial number and product are required." }); return; }
     setCreateLoading(true);
     try {
-      await api("/api/serials", { method: "POST", body: JSON.stringify({ serialNumber: createSerialNumber.trim(), productId: createProduct, warrantyExpires: createWarrantyExpiry || undefined }) });
+      await api("/api/serials", { method: "POST", body: JSON.stringify({ serialNumber: createSerialNumber.trim(), assetTag: createAssetTag.trim() || undefined, productId: createProduct, warrantyExpires: createWarrantyExpiry || undefined }) });
       feedback.success({ title: "Serial added" });
-      setCreateSerialNumber(""); setCreateProduct(""); setCreateWarrantyExpiry("");
+      setCreateSerialNumber(""); setCreateAssetTag(""); setCreateProduct(""); setCreateWarrantyExpiry("");
       setShowCreate(false);
       doRefresh();
     } catch (e: any) { feedback.error({ title: "Serial not added", message: e.message }); }
@@ -134,14 +121,13 @@ export default function AdminSerials() {
             ref={lookupRef}
             type="text"
             className="input"
-            placeholder="Scan or type a serial number to check warranty..."
+            placeholder="Scan a manufacturer serial or internal asset tag..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); runLookup(); } }}
             style={{ flex: 1, minWidth: 220, fontSize: "0.95rem" }}
           />
           <RippleButton size="small" onClick={runLookup} loading={lookupLoading}>Check</RippleButton>
-          <RippleButton size="small" variant="primary" onClick={() => setShowGenerate(true)}>Generate Serials</RippleButton>
           <RippleButton size="small" onClick={() => setShowCreate(true)}>Add Manual</RippleButton>
         </div>
         {lookupError && <p style={{ color: "var(--danger)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{lookupError}</p>}
@@ -150,6 +136,7 @@ export default function AdminSerials() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>{lookup.serial_number}</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>{lookup.serial_kind === "manufacturer" ? "Manufacturer serial" : "Legacy serial · source not recorded"}{lookup.asset_tag ? ` · Asset tag ${lookup.asset_tag}` : ""}</div>
                 <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{lookup.product_name || lookup.product_id}{lookup.product_category ? ` · ${lookup.product_category}` : ""}</div>
               </div>
               <div style={{ textAlign: "right" }}>
@@ -168,6 +155,7 @@ export default function AdminSerials() {
             {lookup.status === "in_stock" && (
               <div style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>In stock at branch {lookup.branch_id ? `#${lookup.branch_id}` : "(central)"} — available to sell.</div>
             )}
+            {!!lookup.repair_history?.length && <div style={{ marginTop: "0.65rem", fontSize: "0.85rem" }}><strong>Repair history</strong><ul style={{ margin: "0.25rem 0 0", paddingLeft: "1.2rem" }}>{lookup.repair_history.map((ticket) => <li key={ticket.id}>#{ticket.id} · {ticket.issueSummary || "Repair request"} · {ticket.status} · {new Date(ticket.createdAt).toLocaleDateString("en-GB")}</li>)}</ul></div>}
           </div>
         )}
       </div>
@@ -186,11 +174,12 @@ export default function AdminSerials() {
       {loading ? <Spinner /> : (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Serial</th><th>Product</th><th>Status</th><th>Warranty</th><th>Sold to / Order</th><th>Added</th><th></th></tr></thead>
+            <thead><tr><th>Manufacturer serial</th><th>Asset tag</th><th>Product</th><th>Status</th><th>Warranty</th><th>Sold to / Order</th><th>Added</th><th></th></tr></thead>
             <tbody>
               {serials.map((s) => (
                 <tr key={s.id}>
-                  <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{s.serial_number}</td>
+                  <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{s.serial_number}<small style={{ display: "block", fontFamily: "inherit", color: "var(--text-secondary)" }}>{s.serial_kind === "manufacturer" ? "Manufacturer" : "Legacy · source unknown"}</small></td>
+                  <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{s.asset_tag || "—"}</td>
                   <td style={{ fontSize: "0.85rem" }}>{s.product_name || s.product_id}</td>
                   <td><span className={`badge ${s.status === "sold" ? "badge-success" : s.status === "in_stock" ? "badge-info" : "badge-danger"}`} style={{ textTransform: "capitalize" }}>{s.status.replace("_", " ")}</span></td>
                   <td style={{ fontSize: "0.82rem" }}>{s.status === "sold" ? (s.warranty_expires ? new Date(s.warranty_expires).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" }) : "No warranty") : "—"}</td>
@@ -205,37 +194,9 @@ export default function AdminSerials() {
                   </td>
                 </tr>
               ))}
-              {serials.length === 0 && <tr><td colSpan={7}><EmptyState icon="box" title="No serials" description="Generate or add serial numbers, or receive them on a purchase order." /></td></tr>}
+              {serials.length === 0 && <tr><td colSpan={8}><EmptyState icon="box" title="No device records" description="Scan manufacturer serials when receiving tracked hardware, or add a device manually." /></td></tr>}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {showGenerate && (
-        <div style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setShowGenerate(false); setGenResult([]); }}>
-          <div className="panel" style={{ width: "min(480px, 92vw)", padding: "1.25rem" }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Generate Serials</h3>
-            <div className="field"><label>Product
-              <select className="input" value={genProduct} onChange={(e) => setGenProduct(e.target.value)} style={{ width: "100%" }}>
-                <option value="">-- Select product --</option>
-                {products.filter((p) => p.serialTracking).map((p) => <option key={p.id} value={p.id}>{p.name} ({p.id})</option>)}
-              </select>
-            </label></div>
-            <div className="field"><label>Count<input className="input" type="number" min="1" max="500" value={genCount} onChange={(e) => setGenCount(e.target.value)} /></label></div>
-            {genResult.length > 0 && (
-              <div style={{ margin: "0.5rem 0", fontSize: "0.85rem" }}>
-                <div style={{ marginBottom: "0.25rem" }}>Generated:</div>
-                <div style={{ fontFamily: "monospace", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-                  {genResult.map((s) => <span key={s} style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.15rem 0.4rem", fontSize: "0.8rem" }}>{s}</span>)}
-                </div>
-                <p style={{ fontSize: "0.75rem", opacity: 0.6, marginTop: "0.5rem" }}>Print these and stick them on the units. They are now in stock for this product.</p>
-              </div>
-            )}
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <RippleButton variant="primary" loading={genLoading} onClick={generate}>Generate</RippleButton>
-              <RippleButton onClick={() => { setShowGenerate(false); setGenResult([]); }}>Close</RippleButton>
-            </div>
-          </div>
         </div>
       )}
 
@@ -243,7 +204,8 @@ export default function AdminSerials() {
         <div style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowCreate(false)}>
           <div className="panel" style={{ width: "min(460px, 92vw)", padding: "1.25rem" }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0 }}>Add Serial Manually</h3>
-            <div className="field"><label>Serial number<input className="input" value={createSerialNumber} onChange={(e) => setCreateSerialNumber(e.target.value)} placeholder="e.g. SN-000001" /></label></div>
+            <div className="field"><label>Manufacturer serial number<input className="input" value={createSerialNumber} onChange={(e) => setCreateSerialNumber(e.target.value)} placeholder="Read from the device label" /></label></div>
+            <div className="field"><label>Internal asset tag (optional)<input className="input" value={createAssetTag} onChange={(e) => setCreateAssetTag(e.target.value)} placeholder="Your own inventory label" /></label></div>
             <div className="field"><label>Product
               <select className="input" value={createProduct} onChange={(e) => setCreateProduct(e.target.value)} style={{ width: "100%" }}>
                 <option value="">-- Select product --</option>

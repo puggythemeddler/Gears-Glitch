@@ -150,7 +150,6 @@ import {
   listSerials,
   getSerialByNumber,
   createSerial,
-  generateSerials,
   voidSerial,
   linkSerialsToOrderItem,
   linkSerialToOrderItem,
@@ -2787,19 +2786,22 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       if (!product) { res.status(400).json({ error: `Product ${item.productId} not found.` }); return; }
       const qty = Number(item.quantity);
       if (!Number.isInteger(qty) || qty <= 0) { res.status(400).json({ error: `Invalid quantity for ${product.name}.` }); return; }
-      const serials = Array.isArray(item.serials) ? item.serials.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
+      let serials = Array.isArray(item.serials) ? item.serials.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
       if (product.serialTracking) {
         if (serials.length === 0) { res.status(400).json({ error: `${product.name} requires serial number(s). Please scan them.` }); return; }
         if (serials.length !== qty) { res.status(400).json({ error: `Scan ${qty} serial number(s) for ${product.name} (got ${serials.length}).` }); return; }
+        const canonicalSerials: string[] = [];
         for (const sn of serials) {
-          const found = await getSerialByNumber(sn);
+          const found = await getSerialByNumber(sn, false);
           if (!found) { res.status(400).json({ error: `Serial ${sn} not found.` }); return; }
           if (found.product_id !== product.id) { res.status(400).json({ error: `Serial ${sn} does not belong to ${product.name}.` }); return; }
           if (found.status === "sold" || found.status === "void") { res.status(400).json({ error: `Serial ${sn} is no longer available.` }); return; }
           if (found.status === "in_stock" && found.branch_id != null && branchId != null && Number(found.branch_id) !== branchId) {
             res.status(400).json({ error: `Serial ${sn} is stocked at branch ${found.branch_id}, not the selected branch. Transfer it first.` }); return;
           }
+          canonicalSerials.push(String(found.serial_number));
         }
+        serials = canonicalSerials;
       }
       if (branchId) {
         const branchStock = await getStockLevel(item.productId, Number(branchId));
@@ -7453,12 +7455,13 @@ app.post("/api/admin/auto-reorder", adminAuthMiddleware, asyncHandler(async (_re
 }));
 
 app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const { quantityReceived, serials, branchId } = req.body || {};
+  const { quantityReceived, serials, assetTags, branchId } = req.body || {};
   if (!quantityReceived || !isPosInt(Number(quantityReceived))) { res.status(400).json({ error: "quantityReceived must be a positive integer." }); return; }
   if (branchId !== undefined && branchId !== null && branchId !== "" && !isPosInt(Number(branchId))) { res.status(400).json({ error: "branchId must be a positive integer." }); return; }
   const serialList = Array.isArray(serials) ? serials.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
+  const assetTagList = Array.isArray(assetTags) ? assetTags.map((s: any) => String(s || "").trim()) : [];
   if (serialList.length > Number(quantityReceived)) { res.status(400).json({ error: "More serials than quantity received." }); return; }
-  const result = await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived), serialList, branchId ? Number(branchId) : undefined);
+  const result = await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived), serialList, branchId ? Number(branchId) : undefined, assetTagList);
   if (!result.ok) { res.status(/not found/i.test(result.error || "") ? 404 : 409).json({ error: result.error }); return; }
   res.json({ ok: true });
 }));
@@ -7477,25 +7480,17 @@ app.get("/api/serials/lookup/:serialNumber", posAuthMiddleware, asyncHandler(asy
 }));
 
 app.post("/api/serials", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const { serialNumber, productId, branchId, warrantyExpires } = req.body || {};
+  const { serialNumber, assetTag, productId, branchId, warrantyExpires } = req.body || {};
   if (!serialNumber || !String(serialNumber).trim()) { res.status(400).json({ error: "Serial number is required." }); return; }
   if (!productId) { res.status(400).json({ error: "Product is required." }); return; }
   const staff = (req as any).user;
-  const result = await createSerial({ serialNumber, productId, branchId: branchId ? Number(branchId) : null, warrantyExpires, createdBy: staff.sub });
+  const result = await createSerial({ serialNumber, assetTag, productId, branchId: branchId ? Number(branchId) : null, warrantyExpires, createdBy: staff.sub });
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.status(201).json(result.serial);
 }));
 
 app.post("/api/serials/generate", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const { productId, count, purchaseOrderItemId, branchId } = req.body || {};
-  if (!productId) { res.status(400).json({ error: "Product is required." }); return; }
-  const staff = (req as any).user;
-  const result = await generateSerials(productId, Number(count) || 1, staff.sub, {
-    purchaseOrderItemId: purchaseOrderItemId ? Number(purchaseOrderItemId) : undefined,
-    branchId: branchId ? Number(branchId) : undefined,
-  });
-  if (!result.ok) { res.status(400).json({ error: result.error }); return; }
-  res.status(201).json({ serials: result.serials });
+  res.status(410).json({ error: "Generated codes cannot identify a device. Scan its manufacturer serial number and add an optional internal asset tag instead." });
 }));
 
 app.post("/api/serials/:id/void", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -7557,13 +7552,20 @@ app.post("/api/purchases/:id/receive-all", adminAuthMiddleware, asyncHandler(asy
     if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
     const body = req.body || {};
     const serialsByItem: { [itemId: number]: string[] } = {};
+    const assetTagsByItem: { [itemId: number]: string[] } = {};
     if (body.serialsByItem && typeof body.serialsByItem === "object") {
       for (const k of Object.keys(body.serialsByItem)) {
         const arr = Array.isArray(body.serialsByItem[k]) ? body.serialsByItem[k].map((s: any) => String(s || "").trim()).filter(Boolean) : [];
         if (arr.length) serialsByItem[Number(k)] = arr;
       }
     }
-    const result = await markPurchaseOrderReceived(id, serialsByItem);
+    if (body.assetTagsByItem && typeof body.assetTagsByItem === "object") {
+      for (const k of Object.keys(body.assetTagsByItem)) {
+        const arr = Array.isArray(body.assetTagsByItem[k]) ? body.assetTagsByItem[k].map((s: any) => String(s || "").trim()) : [];
+        if (arr.some(Boolean)) assetTagsByItem[Number(k)] = arr;
+      }
+    }
+    const result = await markPurchaseOrderReceived(id, serialsByItem, assetTagsByItem);
     if (!result.ok) { res.status(400).json({ error: result.error }); return; }
     res.json({ ok: true, order: result.order });
   } catch (err: any) {
