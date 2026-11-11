@@ -144,6 +144,9 @@ describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "TEST
   });
 
   it("completing a stock transfer reattributes in-stock serials to the target branch (BN3 transfer)", async () => {
+    // Upgrade the legacy status constraint: dispatch temporarily moves serials
+    // into transit before receipt assigns the destination branch.
+    await query(load("0049_serial_transfer_in_transit.sql"));
     await seedBranch(9131);
     await seedBranch(9132);
     await seedProduct("tf-prod");
