@@ -163,7 +163,7 @@ describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "TEST
        VALUES ('TF-SER-2', 'tf-prod', 9131, 'sold')`);
 
     const transfer = await createStockTransfer({
-      fromBranchId: 9131, toBranchId: 9132, productId: "tf-prod", quantity: 5, notes: "move", createdBy: 1,
+      fromBranchId: 9131, toBranchId: 9132, productId: "tf-prod", quantity: 1, notes: "move", createdBy: 1,
     });
     const completed = await completeStockTransfer((transfer as any).id);
     assert.equal(completed.ok, true, "transfer completes");
