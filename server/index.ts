@@ -452,7 +452,9 @@ import { buildRepairQuotePdf } from "./repair-quote-pdf";
 import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml, addCalendarMonthsClamped } from "./routes/shared";
 import { sendOrderInvoiceEmail } from "./order-invoice";
 
-const PORT: number = Number(process.env.PORT) || 8020;
+const configuredPort = process.env.PORT?.trim();
+const parsedPort = configuredPort ? Number(configuredPort) : 8020;
+const PORT: number = Number.isInteger(parsedPort) && parsedPort >= 0 && parsedPort <= 65535 ? parsedPort : 8020;
 const ROOT: string = path.join(__dirname, "..");
 
 // CSRF protection helpers
@@ -9326,8 +9328,10 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       if (overdueCount > 0) console.log(`[auto-billing] Marked ${overdueCount} overdue invoices on startup.`);
     } catch { console.warn("[server] Failed to mark overdue invoices on startup"); }
 
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+    const server = app.listen(PORT, () => {
+      const address = server.address();
+      const listeningPort = typeof address === "object" && address ? address.port : PORT;
+      console.log(`Server running on port ${listeningPort}`);
       warmPdf();
 
       // Report whether outbound email can actually be delivered. Never fatal:
