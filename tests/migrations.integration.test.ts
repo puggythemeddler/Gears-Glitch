@@ -151,4 +151,22 @@ describe("migration 0013 + boot hardening (DB)", { skip: !HAS_DB && "TEST_DATABA
     const index = await queryOne("SELECT indexname FROM pg_indexes WHERE tablename = 'stock_levels' AND indexname = 'uq_stock_levels_branch'");
     assert.ok(index, "branch-aware stock index is recreated after the compatibility column");
   });
+
+  it("reconciles a legacy stock_snapshots table before creating branch indexes", async () => {
+    // Model a tenant database created before branch-scoped stock snapshots.
+    await query("ALTER TABLE stock_snapshots DROP COLUMN branch_id CASCADE");
+
+    const schema = fs.readFileSync(path.join(__dirname, "..", "server", "schema.sql"), "utf8");
+    await runSchema(schema);
+
+    const col = await queryOne(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'stock_snapshots' AND column_name = 'branch_id'`
+    );
+    assert.ok(col, "schema startup restores stock_snapshots.branch_id before its dependent indexes");
+    const index = await queryOne(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'stock_snapshots' AND indexname = 'idx_stock_snapshots_branch_unique'"
+    );
+    assert.ok(index, "branch-aware snapshot index is recreated after the compatibility column");
+  });
 });

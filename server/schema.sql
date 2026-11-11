@@ -648,6 +648,9 @@ CREATE TABLE IF NOT EXISTS stock_snapshots (
   branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
+-- Existing installations may have this table from before branch scoped
+-- snapshots were introduced. Restore the column before planning its indexes.
+ALTER TABLE stock_snapshots ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE;
 CREATE INDEX IF NOT EXISTS idx_stock_snapshots_date ON stock_snapshots(snapshot_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_snapshots_global_unique
   ON stock_snapshots(snapshot_date, product_id) WHERE branch_id IS NULL;
