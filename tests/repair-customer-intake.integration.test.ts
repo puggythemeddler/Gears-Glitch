@@ -117,7 +117,7 @@ describe("customer repair intake (non-production database)", { skip: !HAS_DB && 
 
   it("keeps diagnosis/repair requests on the configured diagnosis SLA", async () => {
     const result = await createRepairTicket(customerId, {
-      deviceType: "Laptop", issueSummary: "Test fault", issueDescription: "A separate test fixture request.",
+      deviceType: "Laptop", serialNumber, issueSummary: "Test fault", issueDescription: "A separate test fixture request.",
       serviceKind: "diagnosis_repair", orderItemId,
     });
     assert.equal(result.ok, true);
