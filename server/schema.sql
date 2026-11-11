@@ -221,6 +221,10 @@ CREATE TABLE IF NOT EXISTS stock_levels (
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 );
+-- `CREATE TABLE IF NOT EXISTS` does not add columns to an older tenant table.
+-- Reconcile this column before the branch-aware indexes below, because the
+-- versioned migrations run only after the canonical schema has been applied.
+ALTER TABLE stock_levels ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id);
 -- One global row per product (branch_id NULL) or one row per product+branch —
 -- matches migration 0006 so a fresh runSchema() DB is identical to a migrated one.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_levels_global ON stock_levels(product_id) WHERE branch_id IS NULL;
