@@ -137,7 +137,6 @@ CREATE TABLE IF NOT EXISTS user_branches (
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   PRIMARY KEY (user_id, branch_id)
 );
-
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
   customer_id INTEGER NOT NULL,
@@ -178,6 +177,7 @@ CREATE TABLE IF NOT EXISTS orders (
   updated_at TEXT NOT NULL DEFAULT (NOW()::text),
   FOREIGN KEY (customer_id) REFERENCES customers(id)
 );
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
 -- Invoice numbering for order invoices (INV-XXXXX): a dedicated sequence seeded
@@ -942,6 +942,7 @@ CREATE TABLE IF NOT EXISTS page_views (
   device_type TEXT DEFAULT 'desktop',
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE page_views ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_page_views_created ON page_views(created_at);
 CREATE INDEX IF NOT EXISTS idx_page_views_session ON page_views(session_id);
 CREATE INDEX IF NOT EXISTS idx_page_views_branch ON page_views(branch_id);
@@ -1272,6 +1273,7 @@ CREATE TABLE IF NOT EXISTS financing_applications (
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
+ALTER TABLE financing_applications ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_fin_apps_customer ON financing_applications(customer_id);
 CREATE INDEX IF NOT EXISTS idx_fin_apps_branch ON financing_applications(branch_id);
 CREATE INDEX IF NOT EXISTS idx_fin_apps_status ON financing_applications(status);
@@ -1315,6 +1317,7 @@ CREATE TABLE IF NOT EXISTS financing_agreements (
   created_at TEXT NOT NULL DEFAULT (NOW()::text),
   updated_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
+ALTER TABLE financing_agreements ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_fin_agr_customer ON financing_agreements(customer_id);
 CREATE INDEX IF NOT EXISTS idx_fin_agr_branch ON financing_agreements(branch_id);
 CREATE INDEX IF NOT EXISTS idx_fin_agr_status ON financing_agreements(status);

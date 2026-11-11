@@ -134,4 +134,21 @@ describe("migration 0013 + boot hardening (DB)", { skip: !HAS_DB && "TEST_DATABA
     const items = await queryOne("SELECT COUNT(*)::int AS c FROM order_items WHERE product_id = 'rc-prod'") as any;
     assert.equal(Number(items.c), 1, "order history survives untouched");
   });
+
+  it("reconciles a legacy stock_levels table before creating branch indexes", async () => {
+    // Model an existing tenant database created before branch-aware stock.
+    // This runs only against the explicitly validated disposable test database.
+    await query("ALTER TABLE stock_levels DROP COLUMN branch_id CASCADE");
+
+    const schema = fs.readFileSync(path.join(__dirname, "..", "server", "schema.sql"), "utf8");
+    await runSchema(schema);
+
+    const col = await queryOne(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'stock_levels' AND column_name = 'branch_id'`
+    );
+    assert.ok(col, "schema startup restores stock_levels.branch_id before its dependent indexes");
+    const index = await queryOne("SELECT indexname FROM pg_indexes WHERE tablename = 'stock_levels' AND indexname = 'uq_stock_levels_branch'");
+    assert.ok(index, "branch-aware stock index is recreated after the compatibility column");
+  });
 });
