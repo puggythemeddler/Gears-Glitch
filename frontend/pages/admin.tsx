@@ -6100,6 +6100,7 @@ function AdminStockTransfers() {
   const feedback = useFeedback();
   const { data: tData, loading, error, refetch } = useFetch(() => api<{ transfers: any[] }>("/api/stock-transfers"), []);
   const { data: branches } = useFetch(() => api<{ branches: any[] }>("/api/admin/branches"), []);
+  const { data: accessibleBranches } = useFetch(() => api<{ branches: any[] }>("/api/stock-branches"), []);
   const { data: products } = useFetch(() => api<{ products: any[] }>("/api/products?includeHidden=1"), []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ fromBranchId: "", toBranchId: "", productId: "", quantity: "", notes: "" });
@@ -6109,6 +6110,7 @@ function AdminStockTransfers() {
   const [loadingStockCheck, setLoadingStockCheck] = useState(false);
 
   const branchList = branches?.branches || [];
+  const sourceBranchList = accessibleBranches?.branches || [];
   const productList = products?.products || [];
   const transfers = tData?.transfers || [];
 
@@ -6154,7 +6156,11 @@ function AdminStockTransfers() {
   }
 
   async function completeTransfer(id: number) {
-    try { await api(`/api/admin/stock/transfer/${id}/complete`, { method: "PUT" }); refetch(); feedback.success("Transfer completed"); } catch (err: any) { feedback.error(err.message); }
+    try { await api(`/api/stock-transfers/${id}/dispatch`, { method: "POST" }); refetch(); feedback.success("Transfer dispatched", "Source stock was reduced. The destination branch must confirm receipt."); } catch (err: any) { feedback.error(err.message); }
+  }
+
+  async function receiveTransfer(id: number) {
+    try { await api(`/api/stock-transfers/${id}/receive`, { method: "POST" }); refetch(); feedback.success("Transfer received", "Destination stock has been updated."); } catch (err: any) { feedback.error(err.message); }
   }
 
   async function rejectTransfer(id: number) {
@@ -6175,7 +6181,7 @@ function AdminStockTransfers() {
         <div className="panel" style={{ marginBottom: "1rem", maxWidth: 500 }}>
           <h3 style={{ marginTop: 0 }}>New Stock Transfer</h3>
           <form onSubmit={createTransfer}>
-            <div className="field"><label>From Branch<select value={form.fromBranchId} onChange={(e) => setForm({ ...form, fromBranchId: e.target.value })} required><option value="">Select source branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
+            <div className="field"><label>From Branch<select value={form.fromBranchId} onChange={(e) => setForm({ ...form, fromBranchId: e.target.value })} required><option value="">Select source branch</option>{sourceBranchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
             <div className="field"><label>To Branch<select value={form.toBranchId} onChange={(e) => setForm({ ...form, toBranchId: e.target.value })} required><option value="">Select destination branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
             <div className="field"><label>Product<select value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })} required><option value="">Select product</option>{productList.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div>
             <div className="field"><label>Quantity<input type="number" min="1" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} required /></label></div>
@@ -6212,9 +6218,9 @@ function AdminStockTransfers() {
           ariaLabel="Stock transfers"
           columns={[
             { key: "id", label: "ID", value: (t) => `#${t.id}`, render: (t) => <span>#{t.id}</span> },
-            { key: "from", label: "From", sortable: true, value: (t) => branchList.find((b: any) => b.id === t.fromBranchId)?.name || `#${t.fromBranchId}`, render: (t) => branchList.find((b: any) => b.id === t.fromBranchId)?.name || `#${t.fromBranchId}` },
-            { key: "to", label: "To", sortable: true, value: (t) => branchList.find((b: any) => b.id === t.toBranchId)?.name || `#${t.toBranchId}`, render: (t) => branchList.find((b: any) => b.id === t.toBranchId)?.name || `#${t.toBranchId}` },
-            { key: "product", label: "Product", sortable: true, value: (t) => productList.find((p: any) => p.id === t.productId)?.name || t.productId, render: (t) => productList.find((p: any) => p.id === t.productId)?.name || t.productId },
+            { key: "from", label: "From", sortable: true, value: (t) => t.fromBranchName || `#${t.fromBranchId}`, render: (t) => t.fromBranchName || `#${t.fromBranchId}` },
+            { key: "to", label: "To", sortable: true, value: (t) => t.toBranchName || `#${t.toBranchId}`, render: (t) => t.toBranchName || `#${t.toBranchId}` },
+            { key: "product", label: "Product", sortable: true, value: (t) => t.productName || t.productId, render: (t) => t.productName || t.productId },
             { key: "qty", label: "Qty", sortable: true, align: "right", value: (t) => t.quantity, render: (t) => <span style={{ textAlign: "right" }}>{t.quantity}</span> },
             {
               key: "status",
@@ -6222,7 +6228,7 @@ function AdminStockTransfers() {
               sortable: true,
               value: (t) => t.status,
               render: (t) => (
-                <span className="plan-status" style={{ background: t.status === "completed" ? "var(--success-light)" : t.status === "rejected" ? "var(--danger-light)" : "var(--warning-light)", color: t.status === "completed" ? "var(--success-text)" : t.status === "rejected" ? "var(--danger-text)" : "var(--warning-text)" }}>{t.status}</span>
+                <span className="plan-status" style={{ background: t.status === "completed" ? "var(--success-light)" : t.status === "rejected" ? "var(--danger-light)" : "var(--warning-light)", color: t.status === "completed" ? "var(--success-text)" : t.status === "rejected" ? "var(--danger-text)" : "var(--warning-text)" }}>{t.status === "in_transit" ? "In transit" : t.status}</span>
               ),
             },
             { key: "created", label: "Created", value: (t) => new Date(t.createdAt).toISOString(), render: (t) => <span style={{ whiteSpace: "nowrap" }}>{new Date(t.createdAt).toLocaleDateString("en-GB")}</span> },
@@ -6232,10 +6238,10 @@ function AdminStockTransfers() {
               render: (t) => (
                 t.status === "pending" ? (
                   <div style={{ display: "flex", gap: "0.25rem" }}>
-                    <RippleButton size="small" onClick={() => completeTransfer(t.id)}>Complete</RippleButton>
+                    <RippleButton size="small" onClick={() => completeTransfer(t.id)}>Dispatch</RippleButton>
                     <RippleButton size="small" variant="danger" onClick={() => rejectTransfer(t.id)}>Reject</RippleButton>
                   </div>
-                ) : null
+                ) : t.status === "in_transit" ? <RippleButton size="small" onClick={() => receiveTransfer(t.id)}>Confirm receipt</RippleButton> : null
               ),
             },
           ]}
@@ -6583,47 +6589,121 @@ function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: ()
 
 // ===================== STOCK CONTROL =====================
 function AdminStockControl() {
-  const { data: sData, loading, error } = useFetch(() => api<{ items: any[] }>("/api/reports/stock-summary"), []);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const router = useRouter();
+  const feedback = useFeedback();
+  const { data: branchesData } = useFetch(() => api<{ branches: any[] }>("/api/stock-branches"), []);
+  const { data: productsData } = useFetch(() => api<{ products: any[] }>("/api/products?includeHidden=1"), []);
+  const [branchId, setBranchId] = useState("");
+  const [items, setItems] = useState<any[]>([]);
+  const [disposals, setDisposals] = useState<any[]>([]);
+  const [serials, setSerials] = useState<any[]>([]);
+  const [selectedSerials, setSelectedSerials] = useState<number[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [startingCount, setStartingCount] = useState(false);
+  const [disposeForm, setDisposeForm] = useState({ productId: "", quantity: "1", reason: "damaged", notes: "" });
+  const branchList = (branchesData?.branches || []).filter((b: any) => b.isActive !== false);
+  const productList = productsData?.products || [];
+  const selectedProduct = productList.find((p: any) => String(p.id) === disposeForm.productId);
 
-  function toggle(id: string) {
-    setChecked((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  }
+  useEffect(() => {
+    if (!branchId && branchList.length === 1) setBranchId(String(branchList[0].id));
+  }, [branchList.length, branchId]);
 
-  function selectAll() { if (sData?.items) setChecked(new Set(sData.items.map((i) => i.productId))); }
-  function clearAll() { setChecked(new Set()); }
+  useEffect(() => {
+    if (!branchId) { setItems([]); setDisposals([]); return; }
+    setLoading(true); setError("");
+    Promise.all([
+      api<any>(`/api/admin/stock/by-branch/${branchId}`),
+      api<any>(`/api/stock-disposals?branchId=${branchId}`),
+    ]).then(([stock, disposalData]) => {
+      setItems(stock.items || stock || []);
+      setDisposals(disposalData.disposals || []);
+    }).catch((err: any) => setError(err.message || "Could not load branch stock.")).finally(() => setLoading(false));
+  }, [branchId]);
+
+  useEffect(() => {
+    if (!branchId || !selectedProduct?.serialTracking) { setSerials([]); setSelectedSerials([]); return; }
+    api<any>(`/api/stock-disposals/available-serials?branchId=${branchId}&productId=${encodeURIComponent(selectedProduct.id)}`)
+      .then((data) => setSerials(data.serials || [])).catch((err: any) => { setSerials([]); feedback.error(err.message); });
+  }, [branchId, selectedProduct?.id, selectedProduct?.serialTracking]);
 
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
-  const items = sData?.items || [];
+
+  async function submitDisposal(e: React.FormEvent) {
+    e.preventDefault();
+    const qty = Number(disposeForm.quantity);
+    if (!branchId || !disposeForm.productId || !Number.isInteger(qty) || qty < 1) { feedback.error("Choose a branch, product, and positive whole-number quantity."); return; }
+    if (disposeForm.reason === "other" && !disposeForm.notes.trim()) { feedback.error("Add a note for the Other reason."); return; }
+    if (selectedProduct?.serialTracking && selectedSerials.length !== qty) { feedback.error(`Select exactly ${qty} serial record(s).`); return; }
+    if (!(await confirmDialog({ title: "Record stock disposal?", message: `Remove ${qty} ${selectedProduct?.name || "unit(s)"} from available stock and add a permanent disposal record?`, confirmLabel: "Record disposal", danger: true }))) return;
+    setSubmitting(true);
+    try {
+      await api("/api/stock-disposals", { method: "POST", body: JSON.stringify({ branchId: Number(branchId), productId: disposeForm.productId, quantity: qty, reason: disposeForm.reason, notes: disposeForm.notes.trim(), serialIds: selectedSerials }) });
+      feedback.success("Disposal recorded", "Stock and the movement ledger have been updated.");
+      setDisposeForm({ productId: "", quantity: "1", reason: "damaged", notes: "" }); setSelectedSerials([]);
+      const [stock, history] = await Promise.all([api<any>(`/api/admin/stock/by-branch/${branchId}`), api<any>(`/api/stock-disposals?branchId=${branchId}`)]);
+      setItems(stock.items || stock || []); setDisposals(history.disposals || []);
+    } catch (err: any) { feedback.error(err.message || "Could not record disposal."); }
+    finally { setSubmitting(false); }
+  }
+
+  async function startStockTake() {
+    if (!branchId) return;
+    setStartingCount(true);
+    try {
+      const data = await api<any>("/api/stock-take/start", { method: "POST", body: JSON.stringify({ branchId: Number(branchId), notes: "Branch stock count" }) });
+      await router.push(`/stock-take/${data.session.id}`);
+    } catch (err: any) { feedback.error(err.message || "Could not start a stock take."); }
+    finally { setStartingCount(false); }
+  }
 
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Stock Control</h1>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <RippleButton size="small" onClick={selectAll}>Select all</RippleButton>
-          <RippleButton size="small" variant="ghost" onClick={clearAll}>Clear</RippleButton>
-        </div>
+        {branchId && <RippleButton size="small" loading={startingCount} onClick={startStockTake}>Start full stock count</RippleButton>}
       </div>
-      <p className="muted">Tick items you want to count, then go to Stock Take to begin a session.</p>
+      <div className="field" style={{ maxWidth: 360 }}><label>Stock location<select value={branchId} onChange={(e) => setBranchId(e.target.value)}><option value="">Select a branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
+      {!branchId ? <p className="muted">Choose an assigned branch to review its stock and record disposals.</p> : <p className="muted">A stock take starts with this branch’s products. Count what you can verify; items left uncounted stay unchanged.</p>}
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th></th><th>Product</th><th>Category</th><th>System Qty</th><th>Threshold</th></tr></thead>
+          <thead><tr><th>Product</th><th>Category</th><th>System Qty</th><th>Threshold</th></tr></thead>
           <tbody>
-            {items.map((i: any) => (
-              <tr key={i.productId} style={checked.has(i.productId) ? { background: "var(--surface)" } : {}}>
-                <td><input type="checkbox" checked={checked.has(i.productId)} onChange={() => toggle(i.productId)} /></td>
+            {items.map((i: any) => {
+              const id = String(i.productId ?? i.id);
+              return <tr key={id}>
                 <td>{i.name}</td>
                 <td>{i.category || "—"}</td>
-                <td>{i.quantityInStock}</td>
+                <td>{i.quantityInStock ?? i.quantity_in_stock ?? 0}</td>
                 <td>{i.lowStockThreshold}</td>
-              </tr>
-            ))}
+              </tr>;
+            })}
           </tbody>
         </table>
       </div>
-      {checked.size > 0 && <p style={{ marginTop: "0.5rem", opacity: 0.7 }}>{checked.size} item(s) selected for stock take.</p>}
+      {branchId && <section style={{ marginTop: "2rem" }}>
+        <h2>Dispose stock</h2>
+        <p className="muted">Record damaged, expired, missing, stolen, recalled, or otherwise unusable stock. This permanently reduces this branch’s available quantity and keeps an audit entry.</p>
+        <form className="panel" onSubmit={submitDisposal} style={{ maxWidth: 680 }}>
+          <div className="field"><label>Product<select required value={disposeForm.productId} onChange={(e) => { setDisposeForm((f) => ({ ...f, productId: e.target.value })); setSelectedSerials([]); }}><option value="">Select a product</option>{productList.map((p: any) => <option key={p.id} value={p.id}>{p.name}{p.serialTracking ? " · serial-tracked" : ""}</option>)}</select></label></div>
+          <div className="field"><label>Quantity<input type="number" min="1" step="1" required value={disposeForm.quantity} onChange={(e) => setDisposeForm((f) => ({ ...f, quantity: e.target.value }))} /></label></div>
+          <div className="field"><label>Reason<select value={disposeForm.reason} onChange={(e) => setDisposeForm((f) => ({ ...f, reason: e.target.value }))}><option value="damaged">Damaged</option><option value="expired">Expired</option><option value="missing">Missing</option><option value="theft">Theft</option><option value="recalled">Recalled</option><option value="other">Other</option></select></label></div>
+          <div className="field"><label>Notes{disposeForm.reason === "other" ? " (required)" : " (optional)"}<textarea maxLength={1000} rows={3} value={disposeForm.notes} onChange={(e) => setDisposeForm((f) => ({ ...f, notes: e.target.value }))} required={disposeForm.reason === "other"} /></label></div>
+          {selectedProduct?.serialTracking && <div className="field"><label>Manufacturer serials <span className="muted">Select exactly {Number(disposeForm.quantity) || 0}</span></label><div style={{ maxHeight: 180, overflow: "auto", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem" }}>{serials.length ? serials.map((s: any) => <label key={s.id} style={{ display: "flex", gap: ".5rem", alignItems: "center", padding: ".3rem" }}><input type="checkbox" checked={selectedSerials.includes(s.id)} onChange={(e) => setSelectedSerials((prev) => e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id))} />{s.serialNumber}{s.assetTag ? ` · tag ${s.assetTag}` : ""}</label>) : <span className="muted">No in-stock serial records found at this branch.</span>}</div></div>}
+          <RippleButton type="submit" loading={submitting}>Record disposal</RippleButton>
+        </form>
+        <h3 style={{ marginTop: "1.5rem" }}>Recent disposal records</h3>
+        <DataTable<any> ariaLabel="Recent stock disposal records" columns={[
+          { key: "date", label: "Date", render: (d) => new Date(d.createdAt).toLocaleString("en-GB") },
+          { key: "product", label: "Product", render: (d) => d.productName },
+          { key: "quantity", label: "Qty", align: "right", render: (d) => d.quantity },
+          { key: "reason", label: "Reason", render: (d) => `${d.reason}${d.notes ? ` — ${d.notes}` : ""}` },
+          { key: "serials", label: "Serials", render: (d) => Array.isArray(d.serials) ? d.serials.map((s: any) => s.serialNumber).filter(Boolean).join(", ") || "—" : "—" },
+        ]} rows={disposals} rowKey={(d) => d.id} empty={<EmptyState icon="stock" title="No disposals recorded" description="Recorded write-offs will appear here with their reasons and serials." />} />
+      </section>}
     </>
   );
 }

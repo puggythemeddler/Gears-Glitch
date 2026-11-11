@@ -220,6 +220,7 @@ import {
   recordAuditLog,
   listAllAuditLogs,
   listBranches,
+  getBranch,
   createBranch,
   updateBranch,
   deleteBranch,
@@ -232,7 +233,12 @@ import {
   getStockTransfer,
   listStockTransfers,
   completeStockTransfer,
+  dispatchStockTransfer,
+  receiveStockTransfer,
   rejectStockTransfer,
+  listAvailableStockSerials,
+  listStockDisposals,
+  createStockDisposal,
   listClients,
   getClient,
   createClient,
@@ -2397,6 +2403,11 @@ app.get("/api/admin/branches/:id/features", ownerAuthMiddleware, requirePermissi
 
 // ============ PER-BRANCH STOCK ============
 
+app.get("/api/stock-branches", adminAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user || {};
+  res.json({ branches: await getUserBranches(Number(user.sub), String(user.role || "")) });
+}));
+
 /** Resolve a requested stock location against the account's current grants. */
 async function authorizeStockBranch(req: Request, res: Response, requestedBranchId: unknown, allowGlobal = false): Promise<number | null | undefined> {
   const user = (req as any).user || {};
@@ -2467,7 +2478,7 @@ app.put("/api/admin/stock/transfer/:id/complete", ownerAuthMiddleware, requirePe
   if (!transfer) return res.status(404).json({ error: "Transfer not found." });
   if ((await authorizeStockBranch(req, res, Number(transfer.fromBranchId))) === undefined) return;
   if ((await authorizeStockBranch(req, res, Number(transfer.toBranchId))) === undefined) return;
-  const result = await completeStockTransfer(id);
+  const result = await completeStockTransfer(id, Number((req as any).user?.sub));
   if (!result.ok) return res.status(result.error?.includes("unreserved") ? 409 : 400).json({ error: result.error || "Transfer could not be completed." });
   res.json({ ok: true, message: "Transfer completed. Stock moved between branches." });
 }));
@@ -6725,8 +6736,11 @@ app.get("/api/stock/:productId/movements", adminAuthMiddleware, requirePermissio
 
 // ============ STOCK TRANSFERS ============
 
-app.get("/api/stock-transfers", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ transfers: await listStockTransfers() });
+app.get("/api/stock-transfers", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user || {};
+  const allowed = new Set((await getUserBranches(Number(user.sub), String(user.role || ""))).map((b) => b.id));
+  const transfers = await listStockTransfers();
+  res.json({ transfers: transfers.filter((t: any) => allowed.has(Number(t.fromBranchId)) || allowed.has(Number(t.toBranchId))) });
 }));
 
 app.post("/api/stock-transfers", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
@@ -6741,27 +6755,84 @@ app.post("/api/stock-transfers", adminAuthMiddleware, requirePermission("stock:t
   if (Number(fromBranchId) === Number(toBranchId)) {
     res.status(400).json({ error: "Source and destination branches must be different." }); return;
   }
-  const source = await getStockLevel(String(productId), Number(fromBranchId));
-  const sourceOnHand = Number((source as any)?.quantity_in_stock ?? (source as any)?.quantityInStock ?? 0);
-  const sourceReserved = Number((source as any)?.quantity_reserved ?? (source as any)?.quantityReserved ?? 0);
-  const available = Math.max(0, sourceOnHand - sourceReserved);
-  if (Number(quantity) > available) {
-    res.status(409).json({ error: `Only ${available} unreserved unit(s) are available at the source branch; ${Number(quantity)} requested.` }); return;
-  }
-  const transfer = await createStockTransfer({ fromBranchId: Number(fromBranchId), toBranchId: Number(toBranchId), productId, quantity: Number(quantity), notes, createdBy: (req as any).user?.sub });
-  res.status(201).json({ transfer });
+  if ((await authorizeStockBranch(req, res, Number(fromBranchId))) === undefined) return;
+  const destination = await getBranch(Number(toBranchId));
+  if (!destination || !destination.isActive) { res.status(400).json({ error: "Choose an active destination branch." }); return; }
+  try {
+    const transfer = await createStockTransfer({ fromBranchId: Number(fromBranchId), toBranchId: Number(toBranchId), productId, quantity: Number(quantity), notes, createdBy: (req as any).user?.sub });
+    res.status(201).json({ transfer });
+  } catch (err: any) { res.status(409).json({ error: err?.message || "Transfer could not be reserved." }); }
 }));
 
-app.post("/api/stock-transfers/:id/complete", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
-  const result = await completeStockTransfer(Number(req.params.id));
+app.post("/api/stock-transfers/:id/dispatch", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const transfer = await getStockTransfer(id);
+  if (!transfer) { res.status(404).json({ error: "Transfer not found." }); return; }
+  if ((await authorizeStockBranch(req, res, Number(transfer.fromBranchId))) === undefined) return;
+  const notes = String(req.body?.notes || "").trim();
+  if (notes.length > 1000) { res.status(400).json({ error: "Dispatch notes must be at most 1000 characters." }); return; }
+  const result = await dispatchStockTransfer(id, Number((req as any).user?.sub), notes);
   if (!result.ok) { res.status(result.error?.includes("unreserved") ? 409 : 400).json({ error: result.error || "Transfer could not be completed." }); return; }
-  res.json({ ok: true });
+  res.json({ ok: true, status: "in_transit" });
+}));
+
+app.post("/api/stock-transfers/:id/receive", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const transfer = await getStockTransfer(id);
+  if (!transfer) { res.status(404).json({ error: "Transfer not found." }); return; }
+  if ((await authorizeStockBranch(req, res, Number(transfer.toBranchId))) === undefined) return;
+  const notes = String(req.body?.notes || "").trim();
+  if (notes.length > 1000) { res.status(400).json({ error: "Receipt notes must be at most 1000 characters." }); return; }
+  const result = await receiveStockTransfer(id, Number((req as any).user?.sub), notes);
+  if (!result.ok) { res.status(409).json({ error: result.error || "Transfer could not be received." }); return; }
+  res.json({ ok: true, status: "completed" });
 }));
 
 app.post("/api/stock-transfers/:id/reject", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
+  const transfer = await getStockTransfer(Number(req.params.id));
+  if (!transfer) { res.status(404).json({ error: "Transfer not found." }); return; }
+  const user = (req as any).user || {};
+  const allowed = new Set((await getUserBranches(Number(user.sub), String(user.role || ""))).map((b) => b.id));
+  if (!allowed.has(Number(transfer.fromBranchId)) && !allowed.has(Number(transfer.toBranchId))) { res.status(403).json({ error: "Your account is not assigned to either branch on this transfer." }); return; }
   const ok = await rejectStockTransfer(Number(req.params.id));
   if (!ok) { res.status(400).json({ error: "Transfer not found or already completed." }); return; }
   res.json({ ok: true });
+}));
+
+app.get("/api/stock-transfers/available-serials", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
+  const productId = String(req.query.productId || "");
+  const branchId = await authorizeStockBranch(req, res, req.query.branchId);
+  if (branchId === undefined) return;
+  if (!productId) { res.status(400).json({ error: "productId is required." }); return; }
+  res.json({ serials: await listAvailableStockSerials(productId, Number(branchId)) });
+}));
+
+app.get("/api/stock-disposals", adminAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+  const branchId = await authorizeStockBranch(req, res, req.query.branchId);
+  if (branchId === undefined || branchId === null) { if (branchId === null) res.json({ disposals: [] }); return; }
+  res.json({ disposals: await listStockDisposals(Number(branchId)) });
+}));
+
+app.get("/api/stock-disposals/available-serials", adminAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+  const productId = String(req.query.productId || "");
+  const branchId = await authorizeStockBranch(req, res, req.query.branchId);
+  if (branchId === undefined) return;
+  if (!productId) { res.status(400).json({ error: "productId is required." }); return; }
+  res.json({ serials: await listAvailableStockSerials(productId, Number(branchId)) });
+}));
+
+app.post("/api/stock-disposals", adminAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+  const { productId, branchId: requestedBranchId, quantity, reason, notes, serialIds } = req.body || {};
+  const branchId = await authorizeStockBranch(req, res, requestedBranchId);
+  if (branchId === undefined) return;
+  const allowedReasons = ["damaged", "expired", "missing", "theft", "recalled", "other"];
+  if (!isStr(productId) || !isPosInt(Number(quantity)) || !allowedReasons.includes(String(reason))) { res.status(400).json({ error: "Choose a product, a positive whole-number quantity, and a valid disposal reason." }); return; }
+  if (notes !== undefined && !isStr(notes, 1000)) { res.status(400).json({ error: "Notes must be at most 1000 characters." }); return; }
+  if (reason === "other" && !String(notes || "").trim()) { res.status(400).json({ error: "Add a note when the disposal reason is Other." }); return; }
+  if (serialIds !== undefined && (!Array.isArray(serialIds) || serialIds.some((id: any) => !isPosInt(Number(id))))) { res.status(400).json({ error: "serialIds must contain positive whole-number IDs." }); return; }
+  const result = await createStockDisposal({ productId, branchId: Number(branchId), quantity: Number(quantity), reason, notes, serialIds: (serialIds || []).map(Number), createdBy: Number((req as any).user?.sub) });
+  if (!result.ok) { res.status(409).json({ error: result.error || "Disposal could not be recorded." }); return; }
+  res.status(201).json(result);
 }));
 
 // ============ CART ============
@@ -8814,12 +8885,14 @@ app.post("/api/stock-take/:id/count", ownerAuthMiddleware, requirePermission("st
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
     if (!session) return;
-    const { productId, countedQuantity, notes } = req.body || {};
+    const { productId, countedQuantity, notes, varianceReason } = req.body || {};
     if (!productId || countedQuantity === undefined) { res.status(400).json({ error: "productId and countedQuantity are required." }); return; }
     if (!isStr(productId)) { res.status(400).json({ error: "productId must be a valid string." }); return; }
-    if (!isNonNegNum(Number(countedQuantity))) { res.status(400).json({ error: "countedQuantity must be a non-negative number." }); return; }
+    if (!Number.isInteger(Number(countedQuantity)) || Number(countedQuantity) < 0) { res.status(400).json({ error: "countedQuantity must be a non-negative whole number." }); return; }
     if (notes !== undefined && !isStr(notes, 1000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
-    await recordStockCount(Number(req.params.id), String(productId), Number(countedQuantity), notes || "");
+    const allowedReasons = ["count_error", "receiving_error", "unrecorded_sale", "unrecorded_transfer", "damage_or_expiry", "theft_or_loss", "other"];
+    if (varianceReason !== undefined && varianceReason !== null && !allowedReasons.includes(String(varianceReason))) { res.status(400).json({ error: "Choose a valid stock variance reason." }); return; }
+    await recordStockCount(Number(req.params.id), String(productId), Number(countedQuantity), notes || "", varianceReason || undefined);
     const items = await getStockTakeItems(Number(req.params.id));
     res.json({ ok: true, items });
   } catch (err: any) {
@@ -8833,8 +8906,8 @@ app.post("/api/stock-take/:id/complete", ownerAuthMiddleware, requirePermission(
   try {
     const sessionBefore = await authorizeStockTake(req, res, Number(req.params.id));
     if (!sessionBefore) return;
-    const completion = await completeStockTakeSession(Number(req.params.id));
-    if (!completion.ok) { res.status(409).json({ error: "This stock take is no longer in progress." }); return; }
+    const completion = await completeStockTakeSession(Number(req.params.id), Number((req as any).user?.sub));
+    if (!completion.ok) { res.status(409).json({ error: completion.error || "This stock take is no longer in progress." }); return; }
     const report = await getStockTakeVarianceReport(Number(req.params.id));
     (report as any).adjusted = completion.adjusted;
     const session = await getStockTakeSession(Number(req.params.id));
@@ -8849,12 +8922,12 @@ app.post("/api/stock-take/:id/apply", ownerAuthMiddleware, requirePermission("st
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
     if (!session) return;
-    const adjusted = await applyStockTakeAdjustments(Number(req.params.id));
+    const adjusted = await applyStockTakeAdjustments(Number(req.params.id), Number((req as any).user?.sub));
     if (adjusted === null) { res.status(409).json({ error: "Stock take adjustments have already been applied." }); return; }
     res.json({ ok: true, adjusted });
   } catch (err: any) {
     console.error("[stock-take apply]", err?.message || err);
-    const status = /not found/i.test(String(err?.message)) ? 404 : /complete/i.test(String(err?.message)) ? 409 : 500;
+    const status = /not found/i.test(String(err?.message)) ? 404 : /complete|variance reason|note is required/i.test(String(err?.message)) ? 409 : 500;
     res.status(status).json({ error: status === 500 ? "Failed to apply adjustments." : err.message });
   }
 }));
