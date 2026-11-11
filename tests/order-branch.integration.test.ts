@@ -147,6 +147,7 @@ describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "TEST
     await seedBranch(9131);
     await seedBranch(9132);
     await seedProduct("tf-prod");
+    await query("UPDATE products SET serial_tracking = 1 WHERE id = $1", ["tf-prod"]);
     // createStockTransfer records created_by → users(id); the suite never seeds
     // users, so create the staff row the FK requires (mirrors a live POS staff session).
     await query(
