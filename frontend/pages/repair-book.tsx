@@ -29,9 +29,11 @@ export default function RepairBookPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [serviceName, setServiceName] = useState("");
   const [serviceKind, setServiceKind] = useState<"diagnosis_repair" | "planned_service">("diagnosis_repair");
-  const [devices, setDevices] = useState<Array<{ orderItemId: number; name: string; productId: string; quantity: number; category: string; serialNumbers: string[] }>>([]);
+  const [devices, setDevices] = useState<Array<{ orderItemId: number; name: string; productId: string; quantity: number; category: string; serialNumbers: string[]; serials?: Array<{ id: number; serialNumber: string; assetTag?: string | null }> }>>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [selectedOrderItemId, setSelectedOrderItemId] = useState("");
+  const [selectedSerialNumber, setSelectedSerialNumber] = useState("");
+  const selectedDevice = devices.find((device) => String(device.orderItemId) === selectedOrderItemId);
   const repairTypeRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -146,17 +148,16 @@ export default function RepairBookPage() {
             setSelectedOrderItemId(itemId);
             const selected = devices.find((device) => String(device.orderItemId) === itemId);
             const model = document.querySelector<HTMLInputElement>("input[name='deviceModel']");
-            const serial = document.querySelector<HTMLInputElement>("input[name='serialNumber']");
             const type = document.querySelector<HTMLSelectElement>("select[name='deviceType']");
             if (model) model.value = selected?.name || "";
-            if (serial) serial.value = selected?.serialNumbers?.[0] || "";
+            setSelectedSerialNumber(selected?.serialNumbers?.[0] || "");
             const guessedType = purchasedDeviceType(String(selected?.category || ""));
             if (type && guessedType) type.value = guessedType;
           }} style={{ width: "100%" }}><option value="">Other device / not purchased here</option>{devices.map((device) => <option key={device.orderItemId} value={device.orderItemId}>{device.name}{device.quantity > 1 ? ` · qty ${device.quantity}` : ""}{device.serialNumbers?.length ? ` · SN ${device.serialNumbers.join(", ")}` : ""}</option>)}</select></label><small className="muted">{devicesLoading ? "Loading your eligible purchases…" : devices.length ? "Choosing a purchase links the request to your order. You can still edit the device details below." : "No completed store purchases were found. You can enter the device details below."}</small></div>
           <div className="field"><label>Device type *<select name="deviceType" required style={{ width: "100%" }}><option value="">Select…</option>{DEVICE_TYPES.map((d) => <option key={d}>{d}</option>)}</select></label></div>
           <div className="field"><label>Brand (if known)<input name="deviceBrand" style={{ width: "100%" }} /></label></div>
           <div className="field"><label>Model<input name="deviceModel" style={{ width: "100%" }} /></label></div>
-          <div className="field"><label>Serial number (if available)<input name="serialNumber" style={{ width: "100%" }} /></label></div>
+          <div className="field"><label>{selectedDevice?.serialNumbers?.length ? "Which specific device?" : "Manufacturer serial number (if available)"}{selectedDevice?.serialNumbers?.length ? <select name="serialNumber" required value={selectedSerialNumber} onChange={(e) => setSelectedSerialNumber(e.target.value)} style={{ width: "100%" }}><option value="">Select the device serial…</option>{selectedDevice.serialNumbers.map((number) => { const tracked = selectedDevice.serials?.find((item) => item.serialNumber === number); return <option key={number} value={number}>{number}{tracked?.assetTag ? ` · asset tag ${tracked.assetTag}` : ""}</option>; })}</select> : <input name="serialNumber" value={selectedSerialNumber} onChange={(e) => setSelectedSerialNumber(e.target.value)} style={{ width: "100%" }} />}</label><small className="muted">{selectedDevice?.serialNumbers?.length ? "Choose the exact machine so its repair history stays with that device." : "For purchased hardware with a recorded serial, we’ll link this request to that exact unit."}</small></div>
         </fieldset>
 
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>

@@ -3445,7 +3445,7 @@ async function updatePurchaseOrderStatus(id: number, status: string): Promise<bo
   return (result.rowCount ?? 0) > 0;
 }
 
-async function receivePurchaseOrderItem(itemId: number, quantityReceived: number, serials?: string[], branchId?: number): Promise<{ ok: boolean; error?: string }> {
+async function receivePurchaseOrderItem(itemId: number, quantityReceived: number, serials?: string[], branchId?: number, assetTags?: string[]): Promise<{ ok: boolean; error?: string }> {
   // Single transaction: PO item update + serial inserts + atomic stock upsert and
   // movement commit (or roll back) together. Locks the PO item row and uses
   // relative (+delta) atomic stock updates so concurrent receives cannot lose stock.
@@ -3453,8 +3453,10 @@ async function receivePurchaseOrderItem(itemId: number, quantityReceived: number
   return await transaction(async (client) => {
     const itemRes = await client.query(
       `SELECT poi.product_id, poi.quantity_received, poi.quantity_ordered, poi.serial_numbers,
+              p.serial_tracking,
               po.status AS purchase_order_status, po.deleted_at
          FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.purchase_order_id
+         LEFT JOIN products p ON p.id = poi.product_id
         WHERE poi.id = $1 FOR UPDATE OF poi, po`,
       [itemId]
     );
@@ -3466,27 +3468,51 @@ async function receivePurchaseOrderItem(itemId: number, quantityReceived: number
     const ordered = Number(item.quantity_ordered) || 0;
     if (quantityReceived > ordered) return { ok: false, error: `Received quantity cannot exceed the ${ordered} unit(s) ordered.` };
     if (quantityReceived < previousReceived) return { ok: false, error: "Received quantity cannot be reduced here; use the purchase receive reversal workflow." };
-    if (serials && serials.length > quantityReceived) return { ok: false, error: "More serials than quantity received." };
     const delta = quantityReceived - previousReceived;
+    const serialList = (serials || []).map((value) => String(value || "").trim());
+    const tags = (assetTags || []).map((value) => String(value || "").trim());
+    if (serialList.length > delta) return { ok: false, error: "Enter serials only for the newly received units." };
+    if (tags.length > serialList.length) return { ok: false, error: "An asset tag must belong to a unit with a manufacturer serial number." };
+    if (item.serial_tracking && serialList.length !== delta) {
+      return { ok: false, error: `Enter the manufacturer serial number for each of the ${delta} newly received unit(s).` };
+    }
+    if (!item.serial_tracking && serialList.length) return { ok: false, error: "This product is not configured for serial tracking." };
+    if (serialList.some((value) => !value) || new Set(serialList.map((value) => value.toLowerCase())).size !== serialList.length) {
+      return { ok: false, error: "Serial numbers must be non-empty and unique." };
+    }
+    if (serialList.length) {
+      const duplicates = await client.query(
+        "SELECT serial_number FROM serial_numbers WHERE LOWER(BTRIM(serial_number)) = ANY($1::text[]) OR LOWER(BTRIM(asset_tag)) = ANY($1::text[])",
+        [serialList.map((value) => value.toLowerCase())]
+      );
+      if (duplicates.rows.length) return { ok: false, error: `Serial ${duplicates.rows[0].serial_number} is already recorded as a serial or asset tag.` };
+    }
+    const normalizedTags = tags.filter(Boolean);
+    if (new Set(normalizedTags.map((value) => value.toLowerCase())).size !== normalizedTags.length) return { ok: false, error: "Asset tags must be unique." };
+    if (normalizedTags.some((tag) => serialList.some((sn) => sn.toLowerCase() === tag.toLowerCase()))) return { ok: false, error: "A unit's asset tag must be different from its manufacturer serial." };
+    if (normalizedTags.length) {
+      const duplicates = await client.query(
+        "SELECT COALESCE(asset_tag, serial_number) AS used_value FROM serial_numbers WHERE LOWER(BTRIM(asset_tag)) = ANY($1::text[]) OR LOWER(BTRIM(serial_number)) = ANY($1::text[])",
+        [normalizedTags.map((value) => value.toLowerCase())]
+      );
+      if (duplicates.rows.length) return { ok: false, error: `Asset tag ${duplicates.rows[0].used_value} is already in use as a serial or asset tag.` };
+    }
 
+    let existingSerialList: string[] = [];
+    try {
+      const parsed = JSON.parse(item.serial_numbers || "[]");
+      if (Array.isArray(parsed)) existingSerialList = parsed.map((value: any) => String(value));
+    } catch { /* Legacy PO notes remain untouched; new received serials are still saved. */ }
     await client.query(
       "UPDATE purchase_order_items SET quantity_received = $1, serial_numbers = $2 WHERE id = $3",
-      [quantityReceived, serials && serials.length ? JSON.stringify(serials) : item.serial_numbers || "[]", itemId]
+      [quantityReceived, serialList.length ? JSON.stringify([...existingSerialList, ...serialList]) : item.serial_numbers || "[]", itemId]
     );
 
-    if (serials && serials.length) {
-      const productRes = await client.query("SELECT serial_tracking FROM products WHERE id = $1", [item.product_id]);
-      const product = productRes.rows?.[0] as any;
-      if (product && product.serial_tracking) {
-        for (const sn of serials) {
-          const trimmed = String(sn || "").trim();
-          if (!trimmed) continue;
-          await client.query(
-            "INSERT INTO serial_numbers (serial_number, product_id, branch_id, status, purchase_order_item_id) VALUES ($1, $2, $3, 'in_stock', $4) ON CONFLICT (serial_number) DO NOTHING",
-            [trimmed, item.product_id, branchId ?? null, itemId]
-          );
-        }
-      }
+    for (let index = 0; index < serialList.length; index++) {
+      await client.query(
+        "INSERT INTO serial_numbers (serial_number, serial_kind, asset_tag, product_id, branch_id, status, purchase_order_item_id) VALUES ($1, 'manufacturer', $2, $3, $4, 'in_stock', $5)",
+        [serialList[index], tags[index] || null, item.product_id, branchId ?? null, itemId]
+      );
     }
 
     if (delta > 0 && item.product_id) {
@@ -3557,20 +3583,35 @@ async function recallPurchaseOrder(id: number): Promise<{ ok: boolean; error?: s
   return { ok: true };
 }
 
-async function markPurchaseOrderReceived(id: number, serialsByItem: { [itemId: number]: string[] } = {}, branchId?: number): Promise<{ ok: boolean; error?: string; order?: PurchaseOrder }> {
+async function markPurchaseOrderReceived(id: number, serialsByItem: { [itemId: number]: string[] } = {}, assetTagsByItem: { [itemId: number]: string[] } = {}, branchId?: number): Promise<{ ok: boolean; error?: string; order?: PurchaseOrder }> {
   const po = await getPurchaseOrder(id);
   if (!po) return { ok: false, error: "Purchase order not found." };
   if (po.status === "cancelled") return { ok: false, error: "Cannot receive a cancelled purchase order." };
   for (const item of po.items) {
     const remaining = (item.quantityOrdered || 0) - (item.quantityReceived || 0);
-    if (remaining <= 0) continue;
-    let serialList: string[] = (serialsByItem[item.id] || []).map((s: any) => String(s || "").trim()).filter(Boolean).slice(0, remaining);
-    if (item.serialTracking && serialList.length < remaining) {
-      const gen = await generateSerials(item.productId, remaining - serialList.length, undefined, { purchaseOrderItemId: item.id, branchId });
-      if (!gen.ok || !gen.serials) return { ok: false, error: gen.error || "Failed to generate serial numbers." };
-      serialList = serialList.concat(gen.serials.map((s) => s.serialNumber));
+    const serialList = (serialsByItem[item.id] || []).map((s: any) => String(s || "").trim()).filter(Boolean);
+    if (item.serialTracking && serialList.length !== remaining) {
+      return { ok: false, error: `${item.productName}: enter all ${remaining} manufacturer serial number(s) before receiving this purchase order.` };
     }
-    const received = await receivePurchaseOrderItem(item.id, Number(item.quantityReceived || 0) + remaining, serialList, branchId);
+    if (!item.serialTracking && serialList.length) return { ok: false, error: `${item.productName} is not configured for serial tracking.` };
+    if ((assetTagsByItem[item.id] || []).filter(Boolean).length > serialList.length) return { ok: false, error: `${item.productName}: each asset tag must be paired with a manufacturer serial.` };
+  }
+  const allSerials = Object.values(serialsByItem).flat().map((s) => String(s || "").trim()).filter(Boolean);
+  if (new Set(allSerials.map((s) => s.toLowerCase())).size !== allSerials.length) return { ok: false, error: "Manufacturer serial numbers must be unique across the purchase order." };
+  const allTags = Object.values(assetTagsByItem).flat().map((s) => String(s || "").trim()).filter(Boolean);
+  if (new Set(allTags.map((s) => s.toLowerCase())).size !== allTags.length) return { ok: false, error: "Internal asset tags must be unique across the purchase order." };
+  if (allTags.some((tag) => allSerials.some((sn) => sn.toLowerCase() === tag.toLowerCase()))) return { ok: false, error: "An asset tag must be different from every manufacturer serial." };
+  for (const sn of allSerials) {
+    if (await queryOne("SELECT id FROM serial_numbers WHERE LOWER(BTRIM(serial_number)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($1))", [sn])) return { ok: false, error: `Serial ${sn} is already recorded as a serial or asset tag.` };
+  }
+  for (const tag of allTags) {
+    if (await queryOne("SELECT id FROM serial_numbers WHERE LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(serial_number)) = LOWER(BTRIM($1))", [tag])) return { ok: false, error: `Asset tag ${tag} is already in use as a serial or asset tag.` };
+  }
+  for (const item of po.items) {
+    const remaining = (item.quantityOrdered || 0) - (item.quantityReceived || 0);
+    if (remaining <= 0) continue;
+    const serialList: string[] = (serialsByItem[item.id] || []).map((s: any) => String(s || "").trim()).filter(Boolean);
+    const received = await receivePurchaseOrderItem(item.id, Number(item.quantityReceived || 0) + remaining, serialList, branchId, assetTagsByItem[item.id] || []);
     if (!received.ok) return { ok: false, error: received.error };
   }
   await updatePurchaseOrderStatus(id, "received");
@@ -4564,7 +4605,7 @@ function computeWarrantyExpiry(createdAt: string, durationMonths: number): strin
 
 async function listSerials(filters: { search?: string; status?: string; productId?: string; customerId?: number }): Promise<any[]> {
   const where: string[] = []; const params: any[] = []; let idx = 1;
-  if (filters.search) { where.push(`(sn.serial_number ILIKE $${idx} OR p.name ILIKE $${idx} OR p.barcode ILIKE $${idx})`); params.push(`%${filters.search}%`); idx++; }
+  if (filters.search) { where.push(`(sn.serial_number ILIKE $${idx} OR sn.asset_tag ILIKE $${idx} OR p.name ILIKE $${idx} OR p.barcode ILIKE $${idx})`); params.push(`%${filters.search}%`); idx++; }
   if (filters.status) { where.push(`sn.status = $${idx}`); params.push(filters.status); idx++; }
   if (filters.productId) { where.push(`sn.product_id = $${idx}`); params.push(filters.productId); idx++; }
   if (filters.customerId) { where.push(`o.customer_id = $${idx}`); params.push(filters.customerId); idx++; }
@@ -4578,56 +4619,43 @@ async function listSerials(filters: { search?: string; status?: string; productI
   return await queryAll(sql, params) as any[];
 }
 
-async function getSerialByNumber(serialNumber: string): Promise<any | undefined> {
+async function getSerialByNumber(serialNumber: string, includeRepairHistory = true): Promise<any | undefined> {
   if (!serialNumber || !serialNumber.trim()) return undefined;
+  const repairHistorySelect = includeRepairHistory
+    ? `COALESCE((SELECT json_agg(json_build_object('id', rt.id, 'status', rt.status, 'createdAt', rt.created_at, 'issueSummary', rt.issue_summary) ORDER BY rt.created_at DESC)
+                 FROM repair_tickets rt WHERE rt.serial_id = sn.id), '[]'::json) AS repair_history`
+    : "'[]'::json AS repair_history";
   const row = await queryOne(
     `SELECT sn.*, p.name AS product_name, p.category AS product_category, p.barcode AS product_barcode,
        p.has_warranty AS product_has_warranty, p.warranty_duration AS product_warranty_duration,
-       COALESCE(NULLIF(o.invoice_number, ''), o.id::TEXT) AS order_number, o.created_at AS order_created_at, c.name AS customer_name
+       COALESCE(NULLIF(o.invoice_number, ''), o.id::TEXT) AS order_number, o.created_at AS order_created_at, c.name AS customer_name,
+       ${repairHistorySelect}
      FROM serial_numbers sn
      LEFT JOIN products p ON p.id = sn.product_id
      LEFT JOIN orders o ON o.id = sn.order_id
      LEFT JOIN customers c ON c.id = o.customer_id
-     WHERE sn.serial_number = $1 LIMIT 1`,
+     WHERE LOWER(BTRIM(sn.serial_number)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(sn.asset_tag)) = LOWER(BTRIM($1)) LIMIT 1`,
     [serialNumber.trim()]
   );
   return row as any | undefined;
 }
 
-async function createSerial(data: { serialNumber: string; productId: string; branchId?: number | null; status?: string; warrantyExpires?: string; createdBy?: number; purchaseOrderItemId?: number }): Promise<{ ok: boolean; error?: string; serial?: any }> {
+async function createSerial(data: { serialNumber: string; assetTag?: string; productId: string; branchId?: number | null; status?: string; warrantyExpires?: string; createdBy?: number; purchaseOrderItemId?: number }): Promise<{ ok: boolean; error?: string; serial?: any }> {
   const sn = String(data.serialNumber || "").trim();
   if (!sn) return { ok: false, error: "Serial number is required" };
-  const dup = await queryOne("SELECT id FROM serial_numbers WHERE serial_number = $1", [sn]);
+  const dup = await queryOne("SELECT id FROM serial_numbers WHERE LOWER(BTRIM(serial_number)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($1))", [sn]);
   if (dup) return { ok: false, error: "That serial number already exists" };
+  const assetTag = String(data.assetTag || "").trim() || null;
+  if (assetTag && assetTag.toLowerCase() === sn.toLowerCase()) return { ok: false, error: "The internal asset tag must be different from the manufacturer serial." };
+  if (assetTag) {
+    const duplicateTag = await queryOne("SELECT id FROM serial_numbers WHERE LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(serial_number)) = LOWER(BTRIM($1))", [assetTag]);
+    if (duplicateTag) return { ok: false, error: "That internal asset tag is already in use." };
+  }
   const result = await query(
-    "INSERT INTO serial_numbers (serial_number, product_id, branch_id, status, warranty_expires, created_by, purchase_order_item_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
-    [sn, data.productId, data.branchId ?? null, data.status || "in_stock", data.warrantyExpires || null, data.createdBy ?? null, data.purchaseOrderItemId ?? null]
+    "INSERT INTO serial_numbers (serial_number, serial_kind, asset_tag, product_id, branch_id, status, warranty_expires, created_by, purchase_order_item_id) VALUES ($1, 'manufacturer', $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+    [sn, assetTag, data.productId, data.branchId ?? null, data.status || "in_stock", data.warrantyExpires || null, data.createdBy ?? null, data.purchaseOrderItemId ?? null]
   );
   return { ok: true, serial: result.rows[0] };
-}
-
-async function generateSerials(productId: string, count: number, createdBy?: number, opts?: { purchaseOrderItemId?: number; branchId?: number }): Promise<{ ok: boolean; error?: string; serials?: { serialNumber: string }[] }> {
-  const product = await getProduct(productId);
-  if (!product) return { ok: false, error: "Product not found" };
-  const n = Math.max(1, Math.min(Number(count) || 1, 500));
-  const prefix = (product.category || "PRD").replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase() || "PRD";
-  const created: { serialNumber: string }[] = [];
-  try {
-    await transaction(async (client) => {
-      const seq = await client.query("SELECT last_number FROM serial_sequences WHERE prefix = $1 FOR UPDATE", [prefix]);
-      let last = seq.rows[0] ? Number(seq.rows[0].last_number) : 0;
-      for (let i = 0; i < n; i++) {
-        last += 1;
-        const sn = `${prefix}-${String(last).padStart(6, "0")}`;
-        await client.query("INSERT INTO serial_numbers (serial_number, product_id, status, created_by, purchase_order_item_id, branch_id) VALUES ($1, $2, 'in_stock', $3, $4, $5)", [sn, productId, createdBy ?? null, opts?.purchaseOrderItemId ?? null, opts?.branchId ?? null]);
-        created.push({ serialNumber: sn });
-      }
-      await client.query("INSERT INTO serial_sequences (prefix, last_number) VALUES ($1, $2) ON CONFLICT (prefix) DO UPDATE SET last_number = $2", [prefix, last]);
-    });
-  } catch (e: any) {
-    return { ok: false, error: String(e?.message || "Failed to generate serials") };
-  }
-  return { ok: true, serials: created };
 }
 
 async function voidSerial(id: number): Promise<{ ok: boolean; error?: string }> {
@@ -4843,7 +4871,7 @@ export {
   createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, reversePurchaseOrderReceive, recallPurchaseOrder, markPurchaseOrderReceived,
   getTechPerformanceReport, getSalesReport, getPurchaseReport, getSalesReportWithRange,
   getStockSummary, getStockSummaryByBranch, getEmployeeSalesPerformance, getTechnicianRepairStats,
-  getProductByBarcode, listSerials, getSerialByNumber, createSerial, generateSerials, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,
+  getProductByBarcode, listSerials, getSerialByNumber, createSerial, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,
   createStockTakeSession, getStockTakeSession, listStockTakeSessions, getStockTakeItems, recordStockCount, completeStockTakeSession,
   applyStockTakeAdjustments, getStockTakeVarianceReport, deleteStockTakeSession,
   createStockSnapshot, getStockSnapshot, listStockSnapshotDates, getCurrentStockLevels,

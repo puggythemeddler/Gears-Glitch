@@ -18,6 +18,7 @@ interface TicketRow {
   device_brand: string;
   device_model: string;
   serial_number: string;
+  serial_id: number | null;
   order_item_id: number | null;
   service_kind: string;
   issue_summary: string;
@@ -86,6 +87,7 @@ interface Ticket {
   deviceBrand: string;
   deviceModel: string;
   serialNumber: string;
+  serialId: number | null;
   orderItemId: number | null;
   serviceKind: "diagnosis_repair" | "planned_service";
   issueSummary: string;
@@ -339,6 +341,7 @@ async function mapTicket(row: TicketRow, extras: any = {}): Promise<Ticket> {
     deviceBrand: row.device_brand || "",
     deviceModel: row.device_model || "",
     serialNumber: row.serial_number || "",
+    serialId: row.serial_id == null ? null : Number(row.serial_id),
     orderItemId: row.order_item_id == null ? null : Number(row.order_item_id),
     serviceKind: row.service_kind === "planned_service" ? "planned_service" : "diagnosis_repair",
     issueSummary: row.issue_summary || "",
@@ -438,6 +441,7 @@ async function createRepairTicket(customerId: number, data: any): Promise<Ticket
   }
   const serviceKind = data.serviceKind === "planned_service" ? "planned_service" : "diagnosis_repair";
   const orderItemId = data.orderItemId == null || data.orderItemId === "" ? null : Number(data.orderItemId);
+  let serialId: number | null = null;
 
   if (!deviceType || !issueDescription) {
     return { ok: false, error: "Device type and request details are required." };
@@ -455,21 +459,25 @@ async function createRepairTicket(customerId: number, data: any): Promise<Ticket
 
   if (orderItemId !== null) {
     const purchasedItem = await queryOne(
-      `SELECT oi.id, oi.serial_number, o.id AS order_id
+      `SELECT oi.id, oi.serial_number, oi.product_id, o.id AS order_id
        FROM order_items oi JOIN orders o ON o.id = oi.order_id
        WHERE oi.id = $1 AND o.customer_id = $2 AND oi.cancelled = 0
          AND (o.status IN ('paid', 'shipped', 'delivered') OR o.paid_at IS NOT NULL OR COALESCE(o.mpesa_receipt, '') <> '')`,
       [orderItemId, customerId]
-    ) as { id: number; serial_number: string; order_id: number } | undefined;
+    ) as { id: number; serial_number: string; product_id: string; order_id: number } | undefined;
     if (!purchasedItem) return { ok: false, error: "That item is not part of one of your completed purchases." };
+    const serialRows = await queryAll(
+      "SELECT id, serial_number FROM serial_numbers WHERE order_item_id = $1 AND order_id = $2 AND status = 'sold'",
+      [orderItemId, purchasedItem.order_id]
+    ) as { id: number; serial_number: string }[];
     const enteredSerial = serialNumber.trim();
     if (enteredSerial) {
-      const serialRows = await queryAll(
-        "SELECT serial_number FROM serial_numbers WHERE order_item_id = $1 AND order_id = $2 AND status = 'sold'",
-        [orderItemId, purchasedItem.order_id]
-      ) as { serial_number: string }[];
       const knownSerials = [...serialRows.map((row) => row.serial_number), ...String(purchasedItem.serial_number || "").split(",").map((value) => value.trim())].filter(Boolean);
       if (knownSerials.length && !knownSerials.includes(enteredSerial)) return { ok: false, error: "Choose a serial number linked to that purchased item." };
+      const ledgerMatch = serialRows.find((row) => row.serial_number === enteredSerial);
+      if (ledgerMatch) serialId = Number(ledgerMatch.id);
+    } else if (serialRows.length > 0) {
+      return { ok: false, error: "Select the manufacturer serial number for the specific device you need serviced." };
     }
   }
 
@@ -491,9 +499,9 @@ async function createRepairTicket(customerId: number, data: any): Promise<Ticket
   const etaHours = Math.max(1, Number(await getStoreSetting("repair_eta_hours")) || 48);
 
   await query(
-    `INSERT INTO repair_tickets (id, customer_id, device_type, device_brand, device_model, serial_number, order_item_id, service_kind, issue_summary, issue_description, customer_notes, requested_visit_date, requested_visit_time, repair_type, status, eta_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'received', (NOW() + make_interval(hours => $15))::text, NOW()::text, NOW()::text)`,
-    [id, customerId, deviceType, deviceBrand, deviceModel, serialNumber, orderItemId, serviceKind, issueSummary, fullDescription, customerNotes, requestedVisitDate, requestedVisitTime, repairType, etaHours]
+    `INSERT INTO repair_tickets (id, customer_id, device_type, device_brand, device_model, serial_number, serial_id, order_item_id, service_kind, issue_summary, issue_description, customer_notes, requested_visit_date, requested_visit_time, repair_type, status, eta_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'received', (NOW() + make_interval(hours => $16))::text, NOW()::text, NOW()::text)`,
+    [id, customerId, deviceType, deviceBrand, deviceModel, serialNumber, serialId, orderItemId, serviceKind, issueSummary, fullDescription, customerNotes, requestedVisitDate, requestedVisitTime, repairType, etaHours]
   );
 
   await recalculateTicketCost(id);
@@ -538,6 +546,7 @@ async function listCustomerRepairDevices(customerId: number): Promise<any[]> {
     `SELECT oi.id AS order_item_id, oi.name AS item_name, oi.product_id,
             oi.quantity, oi.serial_number AS stored_serial_numbers,
             o.id AS order_id, o.created_at AS purchased_at, p.category,
+            COALESCE(jsonb_agg(DISTINCT jsonb_build_object('id', sn.id, 'serialNumber', sn.serial_number, 'assetTag', sn.asset_tag)) FILTER (WHERE sn.serial_number IS NOT NULL), '[]'::jsonb) AS tracked_serials,
             COALESCE(array_agg(DISTINCT sn.serial_number) FILTER (WHERE sn.serial_number IS NOT NULL), ARRAY[]::text[]) AS serial_numbers
      FROM orders o
      JOIN order_items oi ON oi.order_id = o.id
@@ -557,6 +566,7 @@ async function listCustomerRepairDevices(customerId: number): Promise<any[]> {
     category: String(row.category || ""),
     purchasedAt: row.purchased_at,
     orderId: Number(row.order_id),
+    serials: row.tracked_serials || [],
     serialNumbers: [...new Set([...(row.serial_numbers || []), ...String(row.stored_serial_numbers || "").split(",").map((value: string) => value.trim())].filter(Boolean))],
   }));
 }

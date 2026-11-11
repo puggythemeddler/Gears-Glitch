@@ -386,6 +386,7 @@ CREATE TABLE IF NOT EXISTS repair_tickets (
   device_brand TEXT NOT NULL DEFAULT '',
   device_model TEXT NOT NULL DEFAULT '',
   serial_number TEXT NOT NULL DEFAULT '',
+  serial_id INTEGER,
   order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
   service_kind TEXT NOT NULL DEFAULT 'diagnosis_repair' CONSTRAINT repair_tickets_service_kind_check CHECK (service_kind IN ('diagnosis_repair', 'planned_service')),
   issue_summary TEXT NOT NULL DEFAULT '',
@@ -545,6 +546,8 @@ CREATE INDEX IF NOT EXISTS idx_purchase_items_order ON purchase_order_items(purc
 CREATE TABLE IF NOT EXISTS serial_numbers (
   id SERIAL PRIMARY KEY,
   serial_number TEXT NOT NULL UNIQUE,
+  serial_kind TEXT NOT NULL DEFAULT 'legacy' CHECK (serial_kind IN ('manufacturer', 'legacy')),
+  asset_tag TEXT,
   product_id TEXT NOT NULL,
   branch_id INTEGER,
   status TEXT NOT NULL DEFAULT 'in_stock',
@@ -563,7 +566,6 @@ CREATE TABLE IF NOT EXISTS serial_numbers (
 CREATE INDEX IF NOT EXISTS idx_serial_numbers_status ON serial_numbers(status);
 CREATE INDEX IF NOT EXISTS idx_serial_numbers_product ON serial_numbers(product_id);
 CREATE INDEX IF NOT EXISTS idx_serial_numbers_number ON serial_numbers(serial_number);
-
 -- Running counters for auto-generating unique serial numbers per prefix
 CREATE TABLE IF NOT EXISTS serial_sequences (
   prefix TEXT PRIMARY KEY,
