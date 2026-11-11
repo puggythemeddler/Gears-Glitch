@@ -1690,7 +1690,7 @@ async function listStockTransfers(): Promise<StockTransfer[]> {
     FROM stock_transfers st JOIN branches fb ON fb.id = st.from_branch_id JOIN branches tb ON tb.id = st.to_branch_id JOIN products p ON p.id = st.product_id ORDER BY st.created_at DESC`) as StockTransfer[];
 }
 
-async function dispatchStockTransfer(id: number, actorId: number, notes = ""): Promise<{ ok: boolean; error?: string }> {
+async function dispatchStockTransfer(id: number, actorId?: number | null, notes = ""): Promise<{ ok: boolean; error?: string }> {
   return await transaction(async (client) => {
     const transferRes = await client.query(
       "SELECT from_branch_id, to_branch_id, product_id, quantity, status FROM stock_transfers WHERE id = $1 FOR UPDATE",
@@ -1725,13 +1725,14 @@ async function dispatchStockTransfer(id: number, actorId: number, notes = ""): P
       const moved = await client.query("UPDATE serial_numbers SET status = 'in_transit', branch_id = NULL WHERE id = ANY($1::int[]) AND status = 'in_stock' AND branch_id = $2", [serialIds, transfer.from_branch_id]);
       if ((moved.rowCount ?? 0) !== qty) throw new Error("A selected serial changed while dispatching. The transfer was rolled back; refresh and reconcile.");
     }
-    await client.query("INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'transfer_out', $2, 'stock_transfer', $3, $4, $5, $6)", [transfer.product_id, -qty, String(id), notes || `Transfer #${id} dispatched`, actorId, transfer.from_branch_id]);
-    const result = await client.query("UPDATE stock_transfers SET status = 'in_transit', dispatched_by = $2, dispatched_at = NOW()::text, dispatch_notes = $3 WHERE id = $1 AND status = 'pending'", [id, actorId, notes]);
+    const actor = Number.isInteger(actorId) && Number(actorId) > 0 ? Number(actorId) : null;
+    await client.query("INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'transfer_out', $2, 'stock_transfer', $3, $4, $5, $6)", [transfer.product_id, -qty, String(id), notes || `Transfer #${id} dispatched`, actor, transfer.from_branch_id]);
+    const result = await client.query("UPDATE stock_transfers SET status = 'in_transit', dispatched_by = $2, dispatched_at = NOW()::text, dispatch_notes = $3 WHERE id = $1 AND status = 'pending'", [id, actor, notes]);
     return { ok: (result.rowCount ?? 0) > 0 };
   });
 }
 
-async function receiveStockTransfer(id: number, actorId: number, notes = ""): Promise<{ ok: boolean; error?: string }> {
+async function receiveStockTransfer(id: number, actorId?: number | null, notes = ""): Promise<{ ok: boolean; error?: string }> {
   return await transaction(async (client) => {
     const row = (await client.query("SELECT from_branch_id, to_branch_id, product_id, quantity, status FROM stock_transfers WHERE id = $1 FOR UPDATE", [id])).rows?.[0] as any;
     if (!row || row.status !== 'in_transit') return { ok: false, error: "Transfer is not awaiting receipt." };
@@ -1748,13 +1749,14 @@ async function receiveStockTransfer(id: number, actorId: number, notes = ""): Pr
     const destRes = await client.query("SELECT id FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE", [row.product_id, row.to_branch_id]);
     if (destRes.rows?.[0]) await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [row.quantity, row.product_id, row.to_branch_id]);
     else await client.query("INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, $3, 0, 0, 5)", [row.product_id, row.to_branch_id, row.quantity]);
-    await client.query("INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'transfer_in', $2, 'stock_transfer', $3, $4, $5, $6)", [row.product_id, row.quantity, String(id), notes || `Transfer #${id} received`, actorId, row.to_branch_id]);
-    const result = await client.query("UPDATE stock_transfers SET status = 'completed', received_by = $2, received_at = NOW()::text, receive_notes = $3, completed_at = NOW()::text WHERE id = $1 AND status = 'in_transit'", [id, actorId, notes]);
+    const actor = Number.isInteger(actorId) && Number(actorId) > 0 ? Number(actorId) : null;
+    await client.query("INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'transfer_in', $2, 'stock_transfer', $3, $4, $5, $6)", [row.product_id, row.quantity, String(id), notes || `Transfer #${id} received`, actor, row.to_branch_id]);
+    const result = await client.query("UPDATE stock_transfers SET status = 'completed', received_by = $2, received_at = NOW()::text, receive_notes = $3, completed_at = NOW()::text WHERE id = $1 AND status = 'in_transit'", [id, actor, notes]);
     return { ok: (result.rowCount ?? 0) > 0 };
   });
 }
 
-async function completeStockTransfer(id: number, actorId = 0): Promise<{ ok: boolean; error?: string }> {
+async function completeStockTransfer(id: number, actorId?: number | null): Promise<{ ok: boolean; error?: string }> {
   const dispatched = await dispatchStockTransfer(id, actorId);
   if (!dispatched.ok) return dispatched;
   return receiveStockTransfer(id, actorId);
