@@ -3657,19 +3657,24 @@ async function getStockSummary(groupId?: string, branchId?: number): Promise<{ p
   let where = "";
   if (groupId && groupId !== "all") { where = " WHERE p.group_id = $1"; params.push(groupId); }
   return await queryAll(
-    `SELECT p.id AS "productId", p.name, p.category,
-      COALESCE(sl.quantity_in_stock, 0) AS "quantityInStock",
-      COALESCE(sl.quantity_reserved, 0) AS "quantityReserved",
-      COALESCE(sl.quantity_sold, 0) AS "quantitySold",
-      COALESCE(sl.low_stock_threshold, 5) AS "lowStockThreshold"
-    FROM products p
-    LEFT JOIN (
+    `WITH branch_stock AS (
       SELECT product_id, SUM(quantity_in_stock)::integer AS quantity_in_stock,
         SUM(quantity_reserved)::integer AS quantity_reserved,
         SUM(quantity_sold)::integer AS quantity_sold,
         SUM(low_stock_threshold)::integer AS low_stock_threshold
-      FROM stock_levels GROUP BY product_id
-    ) sl ON sl.product_id = p.id${where}
+      FROM stock_levels WHERE branch_id IS NOT NULL GROUP BY product_id
+    ), global_stock AS (
+      SELECT product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold
+      FROM stock_levels WHERE branch_id IS NULL
+    )
+    SELECT p.id AS "productId", p.name, p.category,
+      CASE WHEN bs.product_id IS NOT NULL THEN bs.quantity_in_stock ELSE COALESCE(gs.quantity_in_stock, 0) END AS "quantityInStock",
+      CASE WHEN bs.product_id IS NOT NULL THEN bs.quantity_reserved ELSE COALESCE(gs.quantity_reserved, 0) END AS "quantityReserved",
+      CASE WHEN bs.product_id IS NOT NULL THEN bs.quantity_sold ELSE COALESCE(gs.quantity_sold, 0) END AS "quantitySold",
+      CASE WHEN bs.product_id IS NOT NULL THEN bs.low_stock_threshold ELSE COALESCE(gs.low_stock_threshold, 5) END AS "lowStockThreshold"
+    FROM products p
+    LEFT JOIN branch_stock bs ON bs.product_id = p.id
+    LEFT JOIN global_stock gs ON gs.product_id = p.id${where}
     ORDER BY p.name`,
     params
   );
@@ -4056,10 +4061,17 @@ async function createStockSnapshot(snapshotDate?: string, branchId?: number): Pr
     );
   } else {
     await query(
-      `INSERT INTO stock_snapshots (snapshot_date, product_id, product_name, quantity, branch_id)
-       SELECT $1, sl.product_id, p.name, SUM(sl.quantity_in_stock)::integer, NULL
-       FROM stock_levels sl JOIN products p ON p.id = sl.product_id
-       GROUP BY sl.product_id, p.name`, [date]
+      `WITH branch_stock AS (
+         SELECT product_id, SUM(quantity_in_stock)::integer AS quantity_in_stock
+         FROM stock_levels WHERE branch_id IS NOT NULL GROUP BY product_id
+       )
+       INSERT INTO stock_snapshots (snapshot_date, product_id, product_name, quantity, branch_id)
+       SELECT $1, p.id, p.name,
+         CASE WHEN bs.product_id IS NOT NULL THEN bs.quantity_in_stock ELSE COALESCE(gs.quantity_in_stock, 0) END,
+         NULL
+       FROM products p
+       LEFT JOIN branch_stock bs ON bs.product_id = p.id
+       LEFT JOIN stock_levels gs ON gs.product_id = p.id AND gs.branch_id IS NULL`, [date]
     );
   }
   return true;
@@ -4076,10 +4088,16 @@ async function listStockSnapshotDates(branchId?: number): Promise<{ date: string
 
 async function getCurrentStockLevels(): Promise<{ productId: string; productName: string; quantity: number }[]> {
   return await queryAll(
-    `SELECT p.id AS "productId", p.name AS "productName", COALESCE(sl.quantity, 0) AS quantity
-     FROM products p LEFT JOIN (
-       SELECT product_id, SUM(quantity_in_stock)::integer AS quantity FROM stock_levels GROUP BY product_id
-     ) sl ON sl.product_id = p.id ORDER BY p.name`
+    `WITH branch_stock AS (
+       SELECT product_id, SUM(quantity_in_stock)::integer AS quantity_in_stock
+       FROM stock_levels WHERE branch_id IS NOT NULL GROUP BY product_id
+     )
+     SELECT p.id AS "productId", p.name AS "productName",
+       CASE WHEN bs.product_id IS NOT NULL THEN bs.quantity_in_stock ELSE COALESCE(gs.quantity_in_stock, 0) END AS quantity
+     FROM products p
+     LEFT JOIN branch_stock bs ON bs.product_id = p.id
+     LEFT JOIN stock_levels gs ON gs.product_id = p.id AND gs.branch_id IS NULL
+     ORDER BY p.name`
   ) as any[];
 }
 
