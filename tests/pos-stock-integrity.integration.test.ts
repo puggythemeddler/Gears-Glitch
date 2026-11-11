@@ -24,6 +24,7 @@ describe("POS and stock integrity (disposable DB)", { skip: !HAS_DB && "TEST_DAT
   after(async () => {
     await query("DELETE FROM stock_take_sessions WHERE notes = $1", [`qa-stock-integrity-${runId}`]);
     await query("DELETE FROM purchase_orders WHERE notes = $1", [`qa-stock-integrity-${runId}`]);
+    await query("DELETE FROM stock_levels WHERE product_id = $1", [productId]);
     await query("DELETE FROM products WHERE id = $1", [productId]);
     await closePool();
   });
@@ -50,6 +51,9 @@ describe("POS and stock integrity (disposable DB)", { skip: !HAS_DB && "TEST_DAT
   });
 
   it("rejects purchase receiving above the ordered quantity without changing stock", async () => {
+    const stockBefore = await queryOne(
+      "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [productId]
+    ) as any;
     const po = await queryOne(
       "INSERT INTO purchase_orders (supplier_name, notes) VALUES ('QA supplier', $1) RETURNING id",
       [`qa-stock-integrity-${runId}`]
@@ -68,6 +72,6 @@ describe("POS and stock integrity (disposable DB)", { skip: !HAS_DB && "TEST_DAT
         WHERE poi.id = $1`, [item.id]
     ) as any;
     assert.equal(Number(quantities.quantity_received), 0);
-    assert.equal(Number(quantities.quantity_in_stock), 10);
+    assert.equal(Number(quantities.quantity_in_stock), Number(stockBefore.quantity_in_stock));
   });
 });
