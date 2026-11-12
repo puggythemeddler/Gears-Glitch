@@ -12,6 +12,7 @@ import { DEFAULT_ROLES } from "./permissions";
 import { calculateInvoicePeriod } from "./invoice-period";
 import { resolveCloudinaryConfig } from "./cloudinary-config";
 import { normalizePhone } from "./phone";
+import { isWithinBranchLimit } from "./branch-limits";
 
 // Settings keys whose values are secrets and must be encrypted at rest. Values
 // written through the settings layer are stored as `enc:v1:` ciphertext and
@@ -1927,9 +1928,8 @@ async function getMaxBranchesForShop(): Promise<number | null> {
 
 async function canCreateBranch(): Promise<boolean> {
   const max = await getMaxBranchesForShop();
-  if (max === null) return true;
   const current = await getBranchCount();
-  return current < max;
+  return isWithinBranchLimit(current, max);
 }
 
 async function getBranchSubscription(branchId: number): Promise<{ planId: string; plan: SubscriptionPlan | null; activatedAt: string | null; expiresAt: string | null; status: string } | null> {
