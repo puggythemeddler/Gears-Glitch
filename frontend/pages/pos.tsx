@@ -113,30 +113,40 @@ export default function POSPage() {
 
   // Re-fetch everything that is branch-scoped: catalogue, categories and the
   // allowed-branch list. Called on mount and after a mid-session branch switch.
-  const reloadCatalog = useCallback(() => {
+  const reloadCatalog = useCallback(async () => {
     setCatalogLoading(true);
     setCatalogError(null);
-    api<{ products: Product[] }>("/api/products?includeHidden=1").then((d) => {
-      setProducts(d.products || []);
-    }).catch((error: unknown) => {
-      setProducts([]);
-      setCatalogError(error instanceof Error ? error.message : "Could not load products. Check your connection and try again.");
-    }).finally(() => setCatalogLoading(false));
-    api<{ categories: { id: string; label: string }[] }>("/api/pos/categories").then((d) => {
+    void api<{ categories: { id: string; label: string }[] }>("/api/pos/categories").then((d) => {
       setCategories(d.categories || []);
     }).catch(() => {});
-    api<{ branches: { id: number; name: string }[] }>("/api/pos/branches").then((d) => {
-      const list = d.branches || [];
+    try {
+      const branchData = await api<{ branches: { id: number; name: string }[]; activeBranchId: number | null }>("/api/pos/branches");
+      const list = branchData.branches || [];
       setBranches(list);
-      // The session branch is authoritative (set at login or via the switcher).
-      // /api/pos/branches is already scoped to it, so this is only a sanity
-      // check; the server rejects any checkout whose branchId is not the claim.
-      const saved = getActiveBranchId();
-      const match = list.find((b) => b.id === saved);
-      const resolved = match ? match.id : list.length === 1 ? list[0].id : (saved ?? null);
+      const serverBranchId = branchData.activeBranchId == null ? null : Number(branchData.activeBranchId);
+      const savedBranchId = getActiveBranchId();
+      const resolved = serverBranchId != null && list.some((b) => b.id === serverBranchId)
+        ? serverBranchId
+        : savedBranchId != null && list.some((b) => b.id === savedBranchId)
+          ? savedBranchId
+          : list.length === 1 ? list[0].id : null;
       setBranchState(resolved, list);
       setSelectedBranchId(resolved);
-    }).catch(() => {});
+
+      if (resolved == null) {
+        setProducts([]);
+        setCatalogError(list.length > 1 ? "Choose a branch to see its available stock." : "No active branch is available for this POS account.");
+        return;
+      }
+
+      const d = await api<{ products: Product[] }>(`/api/pos/products?branchId=${encodeURIComponent(resolved)}`);
+      setProducts(d.products || []);
+    } catch (error: unknown) {
+      setProducts([]);
+      setCatalogError(error instanceof Error ? error.message : "Could not load products. Check your connection and try again.");
+    } finally {
+      setCatalogLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -191,7 +201,10 @@ export default function POSPage() {
 
   function addToCart(product: Product) {
     if (mpesaPending) return;
-    if (typeof product.stockOnHand === "number" && product.stockOnHand <= 0) return;
+    if (typeof product.stockOnHand === "number" && product.stockOnHand <= 0) {
+      setStatus({ text: `${product.name} is out of stock at this branch.`, kind: "error" });
+      return;
+    }
     if (product.serialTracking) {
       setSerialModal(product);
       setSerialInput("");
@@ -212,7 +225,11 @@ export default function POSPage() {
     const code = String(raw || "").trim();
     if (!code) return;
     try {
-      const product = await api<Product>(`/api/products/by-barcode/${encodeURIComponent(code)}`);
+      if (selectedBranchId == null) {
+        setStatus({ text: "Choose a branch before scanning products.", kind: "error" });
+        return;
+      }
+      const product = await api<Product>(`/api/pos/products/by-barcode/${encodeURIComponent(code)}?branchId=${encodeURIComponent(selectedBranchId)}`);
       if (product && product.id) {
         setStatus(null);
         if (product.serialTracking) {
@@ -226,13 +243,30 @@ export default function POSPage() {
       }
     } catch { /* not a barcode — try serial below */ }
     try {
-      const serial = await api<any>(`/api/serials/lookup/${encodeURIComponent(code)}`);
+      const serial = await api<any>(`/api/pos/serials/lookup/${encodeURIComponent(code)}?branchId=${encodeURIComponent(selectedBranchId)}`);
       if (serial && serial.product_id) {
         setStatus(null);
+        const product = products.find((p) => p.id === serial.product_id);
+        if (!product || product.stockOnHand <= 0) {
+          setStatus({ text: "That serial’s product has no available stock at this branch.", kind: "error" });
+          return;
+        }
+        if (serial.branch_id != null && Number(serial.branch_id) !== selectedBranchId) {
+          setStatus({ text: "That serial belongs to another branch. Transfer it before selling here.", kind: "error" });
+          return;
+        }
+        const alreadyAdded = cart.find((item) => item.productId === product.id)?.serials?.length || 0;
+        if (alreadyAdded >= product.stockOnHand) {
+          setStatus({ text: `No more ${product.name} units are available at this branch.`, kind: "error" });
+          return;
+        }
         addSerialToCart(serial.product_id, serial.serial_number);
         return;
       }
-    } catch { /* not a serial either */ }
+    } catch (error: any) {
+      setStatus({ text: error?.message || `Not found: ${code}`, kind: "error" });
+      return;
+    }
     setStatus({ text: "Not found: " + code, kind: "error" });
   }
 
@@ -262,15 +296,17 @@ export default function POSPage() {
       return;
     }
     try {
-      const serial = await api<any>(`/api/serials/lookup/${encodeURIComponent(code)}`);
+      if (selectedBranchId == null) { setSerialMsg({ text: "Choose a branch before adding serials.", kind: "error" }); return; }
+      const serial = await api<any>(`/api/pos/serials/lookup/${encodeURIComponent(code)}?branchId=${encodeURIComponent(selectedBranchId)}`);
       if (!serial || !serial.product_id) { setSerialMsg({ text: "Serial not found.", kind: "error" }); return; }
       if (serial.product_id !== serialModal.id) { setSerialMsg({ text: `That serial belongs to ${serial.product_name || "another product"}.`, kind: "error" }); return; }
       if (serial.status === "sold" || serial.status === "void") { setSerialMsg({ text: "That serial is no longer available.", kind: "error" }); return; }
+      if (serial.branch_id != null && Number(serial.branch_id) !== selectedBranchId) { setSerialMsg({ text: "This serial is assigned to another branch. Transfer it before selling here.", kind: "error" }); return; }
       addSerialToCart(serialModal.id, serial.serial_number);
       setSerialInput("");
       setSerialMsg({ text: `Added ${serial.serial_number}.`, kind: "success" });
-    } catch {
-      setSerialMsg({ text: "Serial not found.", kind: "error" });
+    } catch (error: any) {
+      setSerialMsg({ text: error?.message || "Serial not found or unavailable at this branch.", kind: "error" });
     }
   }
 

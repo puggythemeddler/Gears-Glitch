@@ -127,7 +127,9 @@ interface CartItem {
 }
 
 interface StockLevel {
+  id: number;
   productId: string;
+  branchId: number | null;
   quantityInStock: number;
   quantityReserved: number;
   quantitySold: number;
@@ -1596,10 +1598,13 @@ async function clearCart(customerId: number): Promise<void> {
 }
 
 async function getStockLevel(productId: string, branchId?: number): Promise<StockLevel | undefined> {
+  const columns = `id, product_id AS "productId", branch_id AS "branchId",
+    quantity_in_stock AS "quantityInStock", quantity_reserved AS "quantityReserved",
+    quantity_sold AS "quantitySold", low_stock_threshold AS "lowStockThreshold", updated_at AS "updatedAt"`;
   if (branchId !== undefined) {
-    return await queryOne("SELECT * FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [productId, branchId]) as StockLevel | undefined;
+    return await queryOne(`SELECT ${columns} FROM stock_levels WHERE product_id = $1 AND branch_id = $2`, [productId, branchId]) as StockLevel | undefined;
   }
-  return await queryOne("SELECT * FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [productId]) as StockLevel | undefined;
+  return await queryOne(`SELECT ${columns} FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL`, [productId]) as StockLevel | undefined;
 }
 
 async function updateStockLevel(productId: string, updates: { quantityInStock?: number; lowStockThreshold?: number }, branchId?: number): Promise<void> {

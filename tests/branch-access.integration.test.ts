@@ -142,6 +142,9 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
   let activeBranchCount = 0;
   let ownerId = 0;
   let staffId = 0;
+  const fixtureProductId = `qa-pos-stock-${runId}`;
+  const fixtureSerialProductId = `qa-pos-serial-${runId}`;
+  const fixtureSerialNumber = `QA-POS-SERIAL-${runId}`;
 
   before(async () => {
     child = spawn(process.execPath, [tsxCli, "server/index.ts"], {
@@ -221,6 +224,42 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
     branchB = ids[1];
     branchC = ids[2];
 
+    // Give one fixture product different on-hand and reserved quantities at
+    // each branch. POS must expose sellable quantity for its active branch,
+    // never the product's global stock_on_hand value.
+    {
+      const { Pool } = require("pg");
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      try {
+        await pool.query(
+          `INSERT INTO products (id, category, name, price, serial_tracking, stock_on_hand, barcode)
+           VALUES ($1, 'qa', 'POS branch stock fixture', 123, 0, 25, $2)`,
+          [fixtureProductId, `${fixtureProductId}-barcode`]
+        );
+        await pool.query(
+          `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+           VALUES ($1, $2, 5, 2, 0, 1), ($1, $3, 12, 3, 0, 1)`,
+          [fixtureProductId, branchA, branchB]
+        );
+        await pool.query(
+          `INSERT INTO products (id, category, name, price, serial_tracking, stock_on_hand, barcode)
+           VALUES ($1, 'qa', 'POS serial fixture', 456, 1, 4, $2)`,
+          [fixtureSerialProductId, `${fixtureSerialProductId}-barcode`]
+        );
+        await pool.query(
+          `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+           VALUES ($1, $2, 2, 0, 0, 1), ($1, $3, 2, 0, 0, 1)`,
+          [fixtureSerialProductId, branchA, branchB]
+        );
+        await pool.query(
+          "INSERT INTO serial_numbers (serial_number, serial_kind, product_id, branch_id, status) VALUES ($1, 'manufacturer', $2, $3, 'in_stock')",
+          [fixtureSerialNumber, fixtureSerialProductId, branchA]
+        );
+      } finally {
+        await pool.end();
+      }
+    }
+
     ownerId = (await call(owner, "/api/auth/session")).body.sub ?? (await call(owner, "/api/auth/session")).body.userId;
 
     // A fresh staff account. POST /api/staff seeds every active branch, so this
@@ -237,6 +276,21 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
     if (child) {
       child.kill();
       child = null;
+    }
+    try {
+      const { Pool } = require("pg");
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      try {
+        await pool.query("DELETE FROM serial_numbers WHERE serial_number = $1", [fixtureSerialNumber]);
+        await pool.query("DELETE FROM stock_levels WHERE product_id = $1", [fixtureProductId]);
+        await pool.query("DELETE FROM stock_levels WHERE product_id = $1", [fixtureSerialProductId]);
+        await pool.query("DELETE FROM products WHERE id = $1", [fixtureProductId]);
+        await pool.query("DELETE FROM products WHERE id = $1", [fixtureSerialProductId]);
+      } finally {
+        await pool.end();
+      }
+    } catch (e) {
+      console.error(`[branch-access] could not remove fixture POS product: ${(e as Error).message}`);
     }
     if (fixtureBranchIds.length) {
       try {
@@ -341,6 +395,37 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const ids = (r.body.branches || []).map((b: any) => b.id).sort((a: number, b: number) => a - b);
     assert.deepEqual(ids, [branchA, branchB].sort((a, b) => a - b), "POS must not offer the ungranted branch");
+  });
+
+  it("returns POS stock available at the active branch, not the global product count", async () => {
+    const j = jar();
+    await call(j, "/api/csrf-token");
+    await loginAs(j, USERNAME, PASSWORD, branchA);
+
+    const r = await call(j, `/api/pos/products?branchId=${branchA}`);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(Number(r.body.branchId), branchA);
+    const product = (r.body.products || []).find((p: any) => p.id === fixtureProductId);
+    assert.ok(product, "POS catalogue should include the fixture product");
+    assert.equal(Number(product.stockOnHand), 3, "available stock is on hand less reserved at the active branch");
+    assert.notEqual(Number(product.stockOnHand), 25, "the global product count must not leak into the branch till");
+
+    const barcode = await call(j, `/api/pos/products/by-barcode/${fixtureProductId}-barcode?branchId=${branchA}`);
+    assert.equal(barcode.status, 200, JSON.stringify(barcode.body));
+    assert.equal(Number(barcode.body.stockOnHand), 3, "barcode lookups must use the same branch scope");
+
+    const serial = await call(j, `/api/pos/serials/lookup/${fixtureSerialNumber}?branchId=${branchA}`);
+    assert.equal(serial.status, 200, JSON.stringify(serial.body));
+    assert.equal(serial.body.serial_number, fixtureSerialNumber);
+
+    const otherBranchTill = jar();
+    await call(otherBranchTill, "/api/csrf-token");
+    await loginAs(otherBranchTill, USERNAME, PASSWORD, branchB);
+    const wrongBranchSerial = await call(otherBranchTill, `/api/pos/serials/lookup/${fixtureSerialNumber}?branchId=${branchB}`);
+    assert.equal(wrongBranchSerial.status, 404, "serials at a different branch must not be offered for this till");
+
+    const wrongBranch = await call(j, `/api/pos/products?branchId=${branchB}`);
+    assert.equal(wrongBranch.status, 403, "a till cannot load another branch's inventory");
   });
 
   it("rejects a checkout scoped to a branch other than the session's", async () => {
