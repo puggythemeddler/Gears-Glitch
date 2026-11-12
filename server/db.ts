@@ -1775,7 +1775,7 @@ async function listAvailableStockSerials(productId: string, branchId: number): P
 
 async function listStockDisposals(branchId: number): Promise<any[]> {
   return await queryAll(`SELECT d.id, d.product_id AS "productId", p.name AS "productName", d.branch_id AS "branchId", b.name AS "branchName",
-    d.quantity, d.reason, d.notes, d.created_by AS "createdBy", u.name AS "createdByName", d.created_at AS "createdAt",
+    d.quantity, d.reason, d.notes, d.created_by AS "createdBy", u.username AS "createdByName", d.created_at AS "createdAt",
     COALESCE(json_agg(json_build_object('serialNumber', sn.serial_number, 'assetTag', sn.asset_tag)) FILTER (WHERE sn.id IS NOT NULL), '[]') AS serials
     FROM stock_disposals d JOIN products p ON p.id = d.product_id JOIN branches b ON b.id = d.branch_id
     LEFT JOIN users u ON u.id = d.created_by LEFT JOIN stock_disposal_serials ds ON ds.disposal_id = d.id LEFT JOIN serial_numbers sn ON sn.id = ds.serial_id
