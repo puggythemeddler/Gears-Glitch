@@ -159,6 +159,28 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
     assert.match(String(again.error || ""), /already sold/i);
   });
 
+  it("reserved serials cannot be sold through either serial-link path", async () => {
+    const { customerId, productId } = await seed();
+    const order = await makeOrder(customerId);
+    const bulkItem = await makeItem(order, productId);
+    const directItem = await makeItem(order, productId);
+    await query(`INSERT INTO serial_numbers (serial_number, product_id, status) VALUES
+      ('SN-RESERVED-BULK', $1, 'reserved'), ('SN-RESERVED-DIRECT', $1, 'reserved')`, [productId]);
+    const direct = await queryOne("SELECT id FROM serial_numbers WHERE serial_number = 'SN-RESERVED-DIRECT'") as any;
+
+    const bulkResult = await linkSerialsToOrderItem(bulkItem, ["SN-RESERVED-BULK"]);
+    const directResult = await linkSerialToOrderItem(Number(direct.id), directItem);
+
+    assert.equal(bulkResult.ok, false);
+    assert.match(String(bulkResult.error || ""), /not in stock/i);
+    assert.equal(directResult.ok, false);
+    assert.match(String(directResult.error || ""), /not in stock/i);
+    const serials = await queryAll(
+      "SELECT status, order_item_id FROM serial_numbers WHERE serial_number LIKE 'SN-RESERVED-%' ORDER BY serial_number"
+    ) as any[];
+    assert.deepEqual(serials.map((serial) => [serial.status, serial.order_item_id]), [["reserved", null], ["reserved", null]]);
+  });
+
   it("refund cannot exceed remaining balance even under concurrency", async () => {
     const { customerId, productId } = await seed();
     const order = await makeOrder(customerId, "paid");

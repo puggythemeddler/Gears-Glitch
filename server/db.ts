@@ -4828,9 +4828,12 @@ async function linkSerialsToOrderItem(orderItemId: number, serialNumbers: string
       if (serial.product_id !== item.product_id) return { ok: false, error: `Serial ${sn} does not belong to this product` };
       if (serial.status === "sold") return { ok: false, error: `Serial ${sn} is already sold` };
       if (serial.status === "void") return { ok: false, error: `Serial ${sn} has been voided` };
+      // A sale must consume an available unit, never one reserved for another
+      // checkout or currently moving between branches.
+      if (serial.status !== "in_stock") return { ok: false, error: `Serial ${sn} is not in stock and cannot be sold` };
       // BN3: a serial physically stocked at a different branch cannot be sold from
       // this one. Only enforced when both sides are known (legacy rows may be NULL).
-      if (serial.status === "in_stock" && serial.branch_id != null && orderBranch != null && Number(serial.branch_id) !== orderBranch) {
+      if (serial.branch_id != null && orderBranch != null && Number(serial.branch_id) !== orderBranch) {
         return { ok: false, error: `Serial ${sn} is stocked at branch ${serial.branch_id}, not this branch. Transfer it first.` };
       }
       let expires: string | null = null;
@@ -4865,6 +4868,7 @@ async function linkSerialToOrderItem(serialId: number, orderItemId: number): Pro
       if (!serial) return { ok: false, error: "Serial not found" };
       if (serial.status === "sold") return { ok: false, error: "That serial is already sold" };
       if (serial.status === "void") return { ok: false, error: "That serial has been voided" };
+      if (serial.status !== "in_stock") return { ok: false, error: "That serial is not in stock and cannot be sold" };
       const itemRes = await client.query("SELECT order_id, product_id FROM order_items WHERE id = $1", [orderItemId]);
       const item = itemRes.rows?.[0] as any;
       if (!item) return { ok: false, error: "Order item not found" };
@@ -4878,7 +4882,7 @@ async function linkSerialToOrderItem(serialId: number, orderItemId: number): Pro
       if (w && w.has_warranty && w.warranty_duration) {
         expires = computeWarrantyExpiry(order?.created_at || new Date().toISOString(), w.warranty_duration);
       }
-      if (serial.status === "in_stock" && serial.branch_id != null && orderBranch != null && Number(serial.branch_id) !== orderBranch) {
+      if (serial.branch_id != null && orderBranch != null && Number(serial.branch_id) !== orderBranch) {
         return { ok: false, error: `Serial is stocked at branch ${serial.branch_id}, not this branch. Transfer it first.` };
       }
       await client.query("UPDATE serial_numbers SET status = 'sold', order_id = $1, order_item_id = $2, sold_at = NOW()::text, warranty_expires = COALESCE($3, warranty_expires), branch_id = COALESCE($5, branch_id) WHERE id = $4", [item.order_id, orderItemId, expires, serialId, orderBranch]);

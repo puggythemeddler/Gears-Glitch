@@ -2811,8 +2811,8 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
           const found = await getSerialByNumber(sn, false);
           if (!found) { res.status(400).json({ error: `Serial ${sn} not found.` }); return; }
           if (found.product_id !== product.id) { res.status(400).json({ error: `Serial ${sn} does not belong to ${product.name}.` }); return; }
-          if (found.status === "sold" || found.status === "void") { res.status(400).json({ error: `Serial ${sn} is no longer available.` }); return; }
-          if (found.status === "in_stock" && found.branch_id != null && branchId != null && Number(found.branch_id) !== branchId) {
+          if (found.status !== "in_stock") { res.status(400).json({ error: `Serial ${sn} is not in stock or available to sell.` }); return; }
+          if (found.branch_id != null && branchId != null && Number(found.branch_id) !== branchId) {
             res.status(400).json({ error: `Serial ${sn} is stocked at branch ${found.branch_id}, not the selected branch. Transfer it first.` }); return;
           }
           canonicalSerials.push(String(found.serial_number));
