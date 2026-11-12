@@ -224,12 +224,13 @@ export default function POSPage() {
   async function handleScan(raw: string) {
     const code = String(raw || "").trim();
     if (!code) return;
+    const branchId = selectedBranchId;
+    if (branchId == null) {
+      setStatus({ text: "Choose a branch before scanning products.", kind: "error" });
+      return;
+    }
     try {
-      if (selectedBranchId == null) {
-        setStatus({ text: "Choose a branch before scanning products.", kind: "error" });
-        return;
-      }
-      const product = await api<Product>(`/api/pos/products/by-barcode/${encodeURIComponent(code)}?branchId=${encodeURIComponent(selectedBranchId)}`);
+      const product = await api<Product>(`/api/pos/products/by-barcode/${encodeURIComponent(code)}?branchId=${encodeURIComponent(branchId)}`);
       if (product && product.id) {
         setStatus(null);
         if (product.serialTracking) {
@@ -243,15 +244,15 @@ export default function POSPage() {
       }
     } catch { /* not a barcode — try serial below */ }
     try {
-      const serial = await api<any>(`/api/pos/serials/lookup/${encodeURIComponent(code)}?branchId=${encodeURIComponent(selectedBranchId)}`);
+      const serial = await api<any>(`/api/pos/serials/lookup/${encodeURIComponent(code)}?branchId=${encodeURIComponent(branchId)}`);
       if (serial && serial.product_id) {
         setStatus(null);
         const product = products.find((p) => p.id === serial.product_id);
-        if (!product || product.stockOnHand <= 0) {
+        if (!product || typeof product.stockOnHand !== "number" || product.stockOnHand <= 0) {
           setStatus({ text: "That serial’s product has no available stock at this branch.", kind: "error" });
           return;
         }
-        if (serial.branch_id != null && Number(serial.branch_id) !== selectedBranchId) {
+        if (serial.branch_id != null && Number(serial.branch_id) !== branchId) {
           setStatus({ text: "That serial belongs to another branch. Transfer it before selling here.", kind: "error" });
           return;
         }
