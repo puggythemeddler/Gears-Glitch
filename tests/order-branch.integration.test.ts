@@ -143,6 +143,26 @@ describe("order branch + serial branch integrity (DB)", { skip: !HAS_DB && "TEST
     assert.equal(Number(serial.branch_id), 9121, "consumed serial follows the selling branch");
   });
 
+  it("rejects an in-transit serial until the transfer is received", async () => {
+    await query(load("0049_serial_transfer_in_transit.sql"));
+    await seedBranch(9123);
+    const customerId = await seedCustomer("bn3transit@example.com");
+    await seedProduct("bn3-transit-prod");
+    await query("UPDATE products SET serial_tracking = 1 WHERE id = $1", ["bn3-transit-prod"]);
+    await query(
+      `INSERT INTO serial_numbers (serial_number, product_id, status)
+       VALUES ('BN3-SER-TRANSIT', 'bn3-transit-prod', 'in_transit')`);
+
+    const { itemId } = await seedPosOrder(customerId, "bn3-transit-prod", 9123);
+    const res = await linkSerialsToOrderItem(itemId, ["BN3-SER-TRANSIT"]);
+    assert.equal(res.ok, false);
+    assert.match(String(res.error || ""), /not in stock/i);
+
+    const serial = await queryOne(`SELECT status, order_item_id FROM serial_numbers WHERE serial_number = 'BN3-SER-TRANSIT'`) as any;
+    assert.equal(serial.status, "in_transit", "rejected sale does not change transfer state");
+    assert.equal(serial.order_item_id, null, "rejected sale does not attach it to an order");
+  });
+
   it("completing a stock transfer reattributes in-stock serials to the target branch (BN3 transfer)", async () => {
     // Upgrade the legacy status constraint: dispatch temporarily moves serials
     // into transit before receipt assigns the destination branch.

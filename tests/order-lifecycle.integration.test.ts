@@ -193,6 +193,7 @@ describe("order lifecycle (confirmed -> paid guard, automatic invoices) over rea
           await d.q("DELETE FROM customers WHERE id = ANY($1::int[])", [fixtureCustomerIds]);
         }
         if (fixtureProductIds.length) {
+          await d.q("DELETE FROM serial_numbers WHERE product_id = ANY($1::text[])", [fixtureProductIds]);
           for (const pid of fixtureProductIds) {
             await d.q("DELETE FROM stock_levels WHERE product_id = $1", [pid]);
             await d.q("DELETE FROM products WHERE id = $1", [pid]);
@@ -272,6 +273,68 @@ describe("order lifecycle (confirmed -> paid guard, automatic invoices) over rea
       await ed.end();
     }
     assert.equal(invoiceType, "order_invoice", "the paid-trigger email type must be order_invoice");
+  });
+
+  it("allows ordinary non-serial products but rejects reserved and in-transit serials before creating an order", async () => {
+    const owner = jar();
+    await call(owner, "/api/csrf-token");
+    assert.equal((await loginAs(owner, ADMIN_USERNAME, ADMIN_PASSWORD, branchId)).status, 200);
+
+    const prod = await call(owner, "/api/products", {
+      method: "POST",
+      json: { name: `qa-order-serial-product-${runId}`, price: 1000, inStock: true, isNonStock: false, serialTracking: true },
+    });
+    assert.equal(prod.status, 201, `serial product create failed: ${JSON.stringify(prod.body)}`);
+    const productId = String(prod.body.id);
+    fixtureProductIds.push(productId);
+
+    const d = await db();
+    try {
+      await d.q(
+        `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+         VALUES ($1, $2, 10, 0, 0, 5)
+         ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_in_stock = 10, quantity_reserved = 0`,
+        [productId, branchId]
+      );
+      await d.q("UPDATE products SET stock_on_hand = 10 WHERE id = $1", [productId]);
+      await d.q(
+        `INSERT INTO serial_numbers (serial_number, product_id, branch_id, status) VALUES
+         ($1, $3, $4, 'reserved'), ($2, $3, NULL, 'in_transit')`,
+        [`QA-RESERVED-${runId}`, `QA-TRANSIT-${runId}`, productId, branchId]
+      );
+    } finally {
+      await d.end();
+    }
+
+    const before = await db();
+    let orderCountBefore = 0;
+    try {
+      const row = await before.q1("SELECT COUNT(*)::int AS count FROM orders WHERE processed_by = $1", [ADMIN_USERNAME]);
+      orderCountBefore = Number(row.count);
+    } finally {
+      await before.end();
+    }
+
+    for (const serial of [`QA-RESERVED-${runId}`, `QA-TRANSIT-${runId}`]) {
+      const checkout = await call(owner, "/api/pos/checkout", {
+        method: "POST",
+        json: { branchId, paymentMethod: "cash", tenderedAmount: 1000, items: [{ productId, quantity: 1, serials: [serial] }] },
+      });
+      assert.equal(checkout.status, 400, `unavailable serial ${serial} must be rejected: ${JSON.stringify(checkout.body)}`);
+      assert.match(String(checkout.body.error || ""), /not in stock or available/i);
+    }
+
+    const after = await db();
+    try {
+      const row = await after.q1("SELECT COUNT(*)::int AS count FROM orders WHERE processed_by = $1", [ADMIN_USERNAME]);
+      assert.equal(Number(row.count), orderCountBefore, "failed serial attempts must not create orders");
+      const serials = await after.q(
+        "SELECT status, order_id, order_item_id FROM serial_numbers WHERE product_id = $1 ORDER BY serial_number", [productId]
+      );
+      assert.deepEqual(serials.rows.map((serial: any) => [serial.status, serial.order_id, serial.order_item_id]), [["reserved", null, null], ["in_transit", null, null]]);
+    } finally {
+      await after.end();
+    }
   });
 
   it("blocks advancing an UNPAID confirmed order to delivered for a manager, allows the owner", async () => {
