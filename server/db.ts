@@ -4670,20 +4670,50 @@ function computeWarrantyExpiry(createdAt: string, durationMonths: number): strin
   return result.toISOString().slice(0, 10);
 }
 
-async function listSerials(filters: { search?: string; status?: string; productId?: string; customerId?: number }): Promise<any[]> {
+async function listSerials(filters: { search?: string; status?: string; productId?: string; customerId?: number; branchId?: number | null }): Promise<any[]> {
   const where: string[] = []; const params: any[] = []; let idx = 1;
-  if (filters.search) { where.push(`(sn.serial_number ILIKE $${idx} OR sn.asset_tag ILIKE $${idx} OR p.name ILIKE $${idx} OR p.barcode ILIKE $${idx})`); params.push(`%${filters.search}%`); idx++; }
+  if (filters.search) { where.push(`(sn.serial_number ILIKE $${idx} OR sn.legacy_identifier ILIKE $${idx} OR sn.asset_tag ILIKE $${idx} OR p.name ILIKE $${idx} OR p.barcode ILIKE $${idx})`); params.push(`%${filters.search}%`); idx++; }
   if (filters.status) { where.push(`sn.status = $${idx}`); params.push(filters.status); idx++; }
   if (filters.productId) { where.push(`sn.product_id = $${idx}`); params.push(filters.productId); idx++; }
   if (filters.customerId) { where.push(`o.customer_id = $${idx}`); params.push(filters.customerId); idx++; }
+  if (filters.branchId !== undefined) { where.push(`sn.branch_id IS NOT DISTINCT FROM $${idx}`); params.push(filters.branchId); idx++; }
   const sql = `SELECT sn.*, p.name AS product_name, p.category AS product_category, p.barcode AS product_barcode,
-      COALESCE(NULLIF(o.invoice_number, ''), o.id::TEXT) AS order_number, o.created_at AS order_created_at
+      b.name AS branch_name, c.name AS customer_name, COALESCE(NULLIF(o.invoice_number, ''), o.id::TEXT) AS order_number,
+      o.created_at AS order_created_at
     FROM serial_numbers sn
     LEFT JOIN products p ON p.id = sn.product_id
+    LEFT JOIN branches b ON b.id = sn.branch_id
     LEFT JOIN orders o ON o.id = sn.order_id
+    LEFT JOIN customers c ON c.id = o.customer_id
     ${where.length ? "WHERE " + where.join(" AND ") : ""}
     ORDER BY sn.created_at DESC LIMIT 500`;
   return await queryAll(sql, params) as any[];
+}
+
+async function listSerialInventoryDiscrepancies(branchId?: number | null): Promise<any[]> {
+  const params: any[] = [];
+  let branchFilter = "";
+  if (branchId === null) branchFilter = " AND locations.branch_id IS NULL";
+  else if (branchId !== undefined) { params.push(branchId); branchFilter = " AND locations.branch_id = $1"; }
+  return await queryAll(
+    `WITH locations AS (
+       SELECT product_id, branch_id FROM stock_levels
+       UNION
+       SELECT product_id, branch_id FROM serial_numbers WHERE status = 'in_stock'
+     )
+     SELECT p.id AS product_id, p.name AS product_name, locations.branch_id,
+       b.name AS branch_name, COALESCE(sl.quantity_in_stock, 0)::int AS stock_quantity,
+       COUNT(sn.id)::int AS serial_quantity
+     FROM locations
+     JOIN products p ON p.id = locations.product_id AND p.serial_tracking = 1
+     LEFT JOIN branches b ON b.id = locations.branch_id
+     LEFT JOIN stock_levels sl ON sl.product_id = locations.product_id AND sl.branch_id IS NOT DISTINCT FROM locations.branch_id
+     LEFT JOIN serial_numbers sn ON sn.product_id = locations.product_id AND sn.branch_id IS NOT DISTINCT FROM locations.branch_id AND sn.status = 'in_stock'
+     WHERE TRUE${branchFilter}
+     GROUP BY p.id, p.name, locations.branch_id, b.name, sl.quantity_in_stock
+     HAVING COALESCE(sl.quantity_in_stock, 0) <> COUNT(sn.id)
+     ORDER BY b.name NULLS FIRST, p.name`, params
+  ) as any[];
 }
 
 async function getSerialByNumber(serialNumber: string, includeRepairHistory = true): Promise<any | undefined> {
@@ -4694,14 +4724,15 @@ async function getSerialByNumber(serialNumber: string, includeRepairHistory = tr
     : "'[]'::json AS repair_history";
   const row = await queryOne(
     `SELECT sn.*, p.name AS product_name, p.category AS product_category, p.barcode AS product_barcode,
-       p.has_warranty AS product_has_warranty, p.warranty_duration AS product_warranty_duration,
+       p.has_warranty AS product_has_warranty, p.warranty_duration AS product_warranty_duration, b.name AS branch_name,
        COALESCE(NULLIF(o.invoice_number, ''), o.id::TEXT) AS order_number, o.created_at AS order_created_at, c.name AS customer_name,
        ${repairHistorySelect}
      FROM serial_numbers sn
      LEFT JOIN products p ON p.id = sn.product_id
+     LEFT JOIN branches b ON b.id = sn.branch_id
      LEFT JOIN orders o ON o.id = sn.order_id
      LEFT JOIN customers c ON c.id = o.customer_id
-     WHERE LOWER(BTRIM(sn.serial_number)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(sn.asset_tag)) = LOWER(BTRIM($1)) LIMIT 1`,
+       WHERE LOWER(BTRIM(sn.serial_number)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(sn.legacy_identifier)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(sn.asset_tag)) = LOWER(BTRIM($1)) LIMIT 1`,
     [serialNumber.trim()]
   );
   return row as any | undefined;
@@ -4710,19 +4741,61 @@ async function getSerialByNumber(serialNumber: string, includeRepairHistory = tr
 async function createSerial(data: { serialNumber: string; assetTag?: string; productId: string; branchId?: number | null; status?: string; warrantyExpires?: string; createdBy?: number; purchaseOrderItemId?: number }): Promise<{ ok: boolean; error?: string; serial?: any }> {
   const sn = String(data.serialNumber || "").trim();
   if (!sn) return { ok: false, error: "Serial number is required" };
-  const dup = await queryOne("SELECT id FROM serial_numbers WHERE LOWER(BTRIM(serial_number)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($1))", [sn]);
+  const dup = await queryOne("SELECT id FROM serial_numbers WHERE LOWER(BTRIM(serial_number)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(legacy_identifier)) = LOWER(BTRIM($1))", [sn]);
   if (dup) return { ok: false, error: "That serial number already exists" };
   const assetTag = String(data.assetTag || "").trim() || null;
   if (assetTag && assetTag.toLowerCase() === sn.toLowerCase()) return { ok: false, error: "The internal asset tag must be different from the manufacturer serial." };
   if (assetTag) {
-    const duplicateTag = await queryOne("SELECT id FROM serial_numbers WHERE LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(serial_number)) = LOWER(BTRIM($1))", [assetTag]);
+    const duplicateTag = await queryOne("SELECT id FROM serial_numbers WHERE LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(serial_number)) = LOWER(BTRIM($1)) OR LOWER(BTRIM(legacy_identifier)) = LOWER(BTRIM($1))", [assetTag]);
     if (duplicateTag) return { ok: false, error: "That internal asset tag is already in use." };
   }
+  const product = await queryOne("SELECT serial_tracking FROM products WHERE id = $1", [data.productId]) as any;
+  if (!product) return { ok: false, error: "Product not found." };
+  if (!product.serial_tracking) return { ok: false, error: "This product is not configured for serial tracking." };
+  if (data.branchId != null && !await queryOne("SELECT id FROM branches WHERE id = $1 AND is_active = 1", [data.branchId])) return { ok: false, error: "Select an active branch." };
   const result = await query(
     "INSERT INTO serial_numbers (serial_number, serial_kind, asset_tag, product_id, branch_id, status, warranty_expires, created_by, purchase_order_item_id) VALUES ($1, 'manufacturer', $2, $3, $4, $5, $6, $7, $8) RETURNING *",
     [sn, assetTag, data.productId, data.branchId ?? null, data.status || "in_stock", data.warrantyExpires || null, data.createdBy ?? null, data.purchaseOrderItemId ?? null]
   );
   return { ok: true, serial: result.rows[0] };
+}
+
+async function reconcileLegacySerial(id: number, data: { serialNumber: string; assetTag?: string; branchId?: number | null }): Promise<{ ok: boolean; error?: string; serial?: any }> {
+  const serialNumber = String(data.serialNumber || "").trim();
+  if (!serialNumber) return { ok: false, error: "Enter the manufacturer serial read from the device." };
+  const assetTag = String(data.assetTag || "").trim() || null;
+  if (assetTag && assetTag.toLowerCase() === serialNumber.toLowerCase()) return { ok: false, error: "The internal asset tag must differ from the manufacturer serial." };
+  if (assetTag && await queryOne("SELECT id FROM serial_numbers WHERE id <> $1 AND (LOWER(BTRIM(serial_number)) = LOWER(BTRIM($2)) OR LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($2)) OR LOWER(BTRIM(legacy_identifier)) = LOWER(BTRIM($2)))", [id, assetTag])) return { ok: false, error: "That asset tag is already in use." };
+  if (await queryOne("SELECT id FROM serial_numbers WHERE id <> $1 AND (LOWER(BTRIM(serial_number)) = LOWER(BTRIM($2)) OR LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($2)) OR LOWER(BTRIM(legacy_identifier)) = LOWER(BTRIM($2)))", [id, serialNumber])) return { ok: false, error: "That manufacturer serial or identifier is already in use." };
+  return await transaction(async (client) => {
+    const current = (await client.query("SELECT * FROM serial_numbers WHERE id = $1 FOR UPDATE", [id])).rows?.[0] as any;
+    if (!current) return { ok: false, error: "Serial record not found." };
+    if (current.serial_kind !== "legacy") return { ok: false, error: "Only unverified legacy serial records can be reconciled." };
+    if (!new Set(["in_stock", "sold"]).has(current.status)) return { ok: false, error: "Only in-stock or sold legacy records can be reconciled." };
+    if (current.status === "in_stock" && data.branchId === undefined) return { ok: false, error: "Confirm the current branch or central stock location." };
+    const oldIdentifierConflict = await client.query(
+      "SELECT id FROM serial_numbers WHERE id <> $1 AND (LOWER(BTRIM(serial_number)) = LOWER(BTRIM($2)) OR LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($2)) OR LOWER(BTRIM(legacy_identifier)) = LOWER(BTRIM($2))) LIMIT 1",
+      [id, current.serial_number]
+    );
+    if (oldIdentifierConflict.rows?.[0]) return { ok: false, error: "The old identifier conflicts with another device record and cannot be preserved automatically. Ask an admin to review it." };
+    if (data.branchId != null) {
+      const branch = await client.query("SELECT id FROM branches WHERE id = $1 AND is_active = 1", [data.branchId]);
+      if (!branch.rows?.[0]) return { ok: false, error: "Select an active branch." };
+    }
+    const nextLegacyIdentifier = String(current.serial_number || "").toLowerCase() === serialNumber.toLowerCase() ? null : current.serial_number;
+    await client.query(
+      "UPDATE repair_tickets SET serial_id = $1 WHERE serial_id IS NULL AND LOWER(BTRIM(serial_number)) = LOWER(BTRIM($2))",
+      [id, current.serial_number]
+    );
+    const updated = await client.query(
+      `UPDATE serial_numbers SET serial_number = $1, serial_kind = 'manufacturer',
+         legacy_identifier = COALESCE(legacy_identifier, $2), asset_tag = COALESCE($3, asset_tag),
+         branch_id = CASE WHEN status = 'in_stock' THEN $4 ELSE branch_id END
+       WHERE id = $5 RETURNING *`,
+      [serialNumber, nextLegacyIdentifier, assetTag, data.branchId ?? null, id]
+    );
+    return { ok: true, serial: updated.rows[0] };
+  });
 }
 
 async function voidSerial(id: number): Promise<{ ok: boolean; error?: string }> {
@@ -4939,7 +5012,7 @@ export {
   createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, reversePurchaseOrderReceive, recallPurchaseOrder, markPurchaseOrderReceived,
   getTechPerformanceReport, getSalesReport, getPurchaseReport, getSalesReportWithRange,
   getStockSummary, getStockSummaryByBranch, getEmployeeSalesPerformance, getTechnicianRepairStats,
-  getProductByBarcode, listSerials, getSerialByNumber, createSerial, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,
+  getProductByBarcode, listSerials, listSerialInventoryDiscrepancies, getSerialByNumber, createSerial, reconcileLegacySerial, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,
   createStockTakeSession, getStockTakeSession, listStockTakeSessions, getStockTakeItems, recordStockCount, completeStockTakeSession,
   applyStockTakeAdjustments, getStockTakeVarianceReport, deleteStockTakeSession,
   createStockSnapshot, getStockSnapshot, listStockSnapshotDates, getCurrentStockLevels,

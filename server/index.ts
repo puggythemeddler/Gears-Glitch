@@ -148,8 +148,10 @@ import {
   markPurchaseOrderReceived,
   getProductByBarcode,
   listSerials,
+  listSerialInventoryDiscrepancies,
   getSerialByNumber,
   createSerial,
+  reconcileLegacySerial,
   voidSerial,
   linkSerialsToOrderItem,
   linkSerialToOrderItem,
@@ -2662,6 +2664,7 @@ app.get("/api/pos/branches", posAuthMiddleware, asyncHandler(async (req: Request
   res.json({
     branches,
     activeBranchId: user.activeBranchId == null ? null : Number(user.activeBranchId),
+    canViewAllBranches: isUnrestrictedBranchRole(String(user.role || "")),
   });
 }));
 
@@ -7542,8 +7545,30 @@ app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandl
 // ============ SERIAL NUMBERS (warranty tracking, PO intake, sale linking) ============
 
 app.get("/api/serials", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
-  const serials = await listSerials({ search: req.query.q as string | undefined, status: req.query.status as string | undefined, productId: req.query.productId as string | undefined, customerId: req.query.customerId ? Number(req.query.customerId) : undefined });
+  const rawBranch = req.query.branchId;
+  let branchId = rawBranch === "central" ? null : rawBranch ? Number(rawBranch) : undefined;
+  if (branchId !== undefined && branchId !== null && (!Number.isInteger(branchId) || branchId < 1)) { res.status(400).json({ error: "Invalid branch filter." }); return; }
+  const user = (req as any).user;
+  if (!isUnrestrictedBranchRole(String(user.role || ""))) {
+    const allowedBranches = await getUserBranches(Number(user.sub), String(user.role || ""));
+    if (branchId === null || (branchId !== undefined && !allowedBranches.some((branch) => branch.id === branchId))) { res.status(403).json({ error: "You are not assigned to the selected stock location." }); return; }
+    if (branchId === undefined) {
+      const sessionBranch = user.activeBranchId == null ? null : Number(user.activeBranchId);
+      if (sessionBranch != null && allowedBranches.some((branch) => branch.id === sessionBranch)) branchId = sessionBranch;
+      else if (allowedBranches.length === 1) branchId = allowedBranches[0].id;
+      else { res.status(403).json({ error: "Select one of your assigned branches to view serial records." }); return; }
+    }
+  }
+  const serials = await listSerials({ search: req.query.q as string | undefined, status: req.query.status as string | undefined, productId: req.query.productId as string | undefined, customerId: req.query.customerId ? Number(req.query.customerId) : undefined, branchId });
   res.json({ serials });
+}));
+
+app.get("/api/serials/reconciliation", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const rawBranch = req.query.branchId;
+  const branchId = rawBranch === "central" ? null : rawBranch ? Number(rawBranch) : undefined;
+  if (branchId !== undefined && branchId !== null && (!Number.isInteger(branchId) || branchId < 1)) { res.status(400).json({ error: "Invalid branch filter." }); return; }
+  const discrepancies = await listSerialInventoryDiscrepancies(branchId);
+  res.json({ discrepancies });
 }));
 
 app.get("/api/serials/lookup/:serialNumber", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -7556,10 +7581,34 @@ app.post("/api/serials", adminAuthMiddleware, asyncHandler(async (req: Request, 
   const { serialNumber, assetTag, productId, branchId, warrantyExpires } = req.body || {};
   if (!serialNumber || !String(serialNumber).trim()) { res.status(400).json({ error: "Serial number is required." }); return; }
   if (!productId) { res.status(400).json({ error: "Product is required." }); return; }
+  if (!Object.prototype.hasOwnProperty.call(req.body || {}, "branchId")) { res.status(400).json({ error: "Choose the branch or central stock location." }); return; }
+  if (branchId !== null && (!Number.isInteger(Number(branchId)) || Number(branchId) < 1)) { res.status(400).json({ error: "Select a valid branch or central stock location." }); return; }
   const staff = (req as any).user;
+  const allowedBranches = await getUserBranches(Number(staff.sub), String(staff.role || ""));
+  if (branchId === null && !isUnrestrictedBranchRole(String(staff.role || ""))) { res.status(403).json({ error: "Only an admin or owner can assign a device to central stock." }); return; }
+  if (branchId !== null && !allowedBranches.some((branch) => branch.id === Number(branchId))) { res.status(403).json({ error: "You are not assigned to the selected branch." }); return; }
   const result = await createSerial({ serialNumber, assetTag, productId, branchId: branchId ? Number(branchId) : null, warrantyExpires, createdBy: staff.sub });
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.status(201).json(result.serial);
+}));
+
+app.post("/api/serials/:id/reconcile", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { serialNumber, assetTag, branchId, verifiedFromDeviceLabel } = req.body || {};
+  if (verifiedFromDeviceLabel !== true) { res.status(400).json({ error: "Confirm that you checked the manufacturer serial directly on the device." }); return; }
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) { res.status(400).json({ error: "Invalid serial record." }); return; }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "branchId") && branchId !== null && (!Number.isInteger(Number(branchId)) || Number(branchId) < 1)) { res.status(400).json({ error: "Select a valid branch or central stock location." }); return; }
+  const user = (req as any).user;
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "branchId")) {
+    const allowedBranches = await getUserBranches(Number(user.sub), String(user.role || ""));
+    if (branchId === null && !isUnrestrictedBranchRole(String(user.role || ""))) { res.status(403).json({ error: "Only an admin or owner can assign a device to central stock." }); return; }
+    if (branchId !== null && !allowedBranches.some((branch) => branch.id === Number(branchId))) { res.status(403).json({ error: "You are not assigned to the selected branch." }); return; }
+  }
+  const result = await reconcileLegacySerial(id, { serialNumber, assetTag, ...(Object.prototype.hasOwnProperty.call(req.body || {}, "branchId") ? { branchId: branchId ? Number(branchId) : null } : {}) });
+  if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+  try { await logAudit(user.sub, user.username || "Admin", "reconciled", "serial", String(id), { manufacturerSerialVerified: true, branchId: result.serial?.branch_id ?? null, assetTagAdded: Boolean(result.serial?.asset_tag), legacyIdentifierPreserved: Boolean(result.serial?.legacy_identifier) }, user.role); }
+  catch { console.warn("[audit] Failed to write serial reconciliation log"); }
+  res.json(result.serial);
 }));
 
 app.post("/api/serials/generate", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
