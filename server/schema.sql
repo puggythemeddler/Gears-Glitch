@@ -594,9 +594,6 @@ CREATE TABLE IF NOT EXISTS stock_disposal_serials (
 CREATE INDEX IF NOT EXISTS idx_serial_numbers_status ON serial_numbers(status);
 CREATE INDEX IF NOT EXISTS idx_serial_numbers_product ON serial_numbers(product_id);
 CREATE INDEX IF NOT EXISTS idx_serial_numbers_number ON serial_numbers(serial_number);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_serial_numbers_legacy_identifier_unique
-  ON serial_numbers (LOWER(BTRIM(legacy_identifier)))
-  WHERE legacy_identifier IS NOT NULL AND BTRIM(legacy_identifier) <> '';
 -- Running counters for auto-generating unique serial numbers per prefix
 CREATE TABLE IF NOT EXISTS serial_sequences (
   prefix TEXT PRIMARY KEY,
