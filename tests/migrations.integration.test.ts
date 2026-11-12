@@ -169,4 +169,27 @@ describe("migration 0013 + boot hardening (DB)", { skip: !HAS_DB && "TEST_DATABA
     );
     assert.ok(index, "branch-aware snapshot index is recreated after the compatibility column");
   });
+
+  it("applies the serial legacy-identifier migration after schema bootstrap on an old database", async () => {
+    // Existing tenant databases retain their old serial_numbers table when
+    // schema.sql runs. The versioned migration must add this column before
+    // creating its dependent unique index.
+    await query("ALTER TABLE serial_numbers DROP COLUMN legacy_identifier CASCADE");
+
+    const schema = fs.readFileSync(path.join(__dirname, "..", "server", "schema.sql"), "utf8");
+    await runSchema(schema);
+
+    const migration = fs.readFileSync(path.join(__dirname, "..", "server", "migrations", "0050_serial_legacy_reconciliation.sql"), "utf8");
+    await query(migration);
+
+    const col = await queryOne(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'serial_numbers' AND column_name = 'legacy_identifier'`
+    );
+    assert.ok(col, "versioned migration restores serial_numbers.legacy_identifier");
+    const index = await queryOne(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'serial_numbers' AND indexname = 'idx_serial_numbers_legacy_identifier_unique'"
+    );
+    assert.ok(index, "unique legacy-identifier index is created after the column exists");
+  });
 });
