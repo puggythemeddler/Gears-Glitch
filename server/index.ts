@@ -8891,7 +8891,9 @@ app.post("/api/stock-take/:id/count", ownerAuthMiddleware, requirePermission("st
     if (!productId || countedQuantity === undefined) { res.status(400).json({ error: "productId and countedQuantity are required." }); return; }
     if (!isStr(productId)) { res.status(400).json({ error: "productId must be a valid string." }); return; }
     if (!Number.isInteger(Number(countedQuantity)) || Number(countedQuantity) < 0) { res.status(400).json({ error: "countedQuantity must be a non-negative whole number." }); return; }
-    if (notes !== undefined && !isStr(notes, 1000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
+    // Notes are optional for stock counts; the UI sends an empty string until
+    // the user selects a variance reason and, when needed, adds an explanation.
+    if (notes !== undefined && (typeof notes !== "string" || notes.length > 1000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
     const allowedReasons = ["count_error", "receiving_error", "unrecorded_sale", "unrecorded_transfer", "damage_or_expiry", "theft_or_loss", "other"];
     if (varianceReason !== undefined && varianceReason !== null && !allowedReasons.includes(String(varianceReason))) { res.status(400).json({ error: "Choose a valid stock variance reason." }); return; }
     await recordStockCount(Number(req.params.id), String(productId), Number(countedQuantity), notes || "", varianceReason || undefined);
