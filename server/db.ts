@@ -1779,7 +1779,7 @@ async function listStockDisposals(branchId: number): Promise<any[]> {
     COALESCE(json_agg(json_build_object('serialNumber', sn.serial_number, 'assetTag', sn.asset_tag)) FILTER (WHERE sn.id IS NOT NULL), '[]') AS serials
     FROM stock_disposals d JOIN products p ON p.id = d.product_id JOIN branches b ON b.id = d.branch_id
     LEFT JOIN users u ON u.id = d.created_by LEFT JOIN stock_disposal_serials ds ON ds.disposal_id = d.id LEFT JOIN serial_numbers sn ON sn.id = ds.serial_id
-    WHERE d.branch_id = $1 GROUP BY d.id, p.name, b.name, u.name ORDER BY d.created_at DESC LIMIT 100`, [branchId]);
+    WHERE d.branch_id = $1 GROUP BY d.id, p.name, b.name, u.username ORDER BY d.created_at DESC LIMIT 100`, [branchId]);
 }
 
 async function createStockDisposal(data: { productId: string; branchId: number; quantity: number; reason: string; notes?: string; serialIds?: number[]; createdBy: number }): Promise<{ ok: boolean; error?: string; disposal?: any }> {
