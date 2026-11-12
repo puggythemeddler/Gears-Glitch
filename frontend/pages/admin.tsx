@@ -2551,7 +2551,13 @@ function AdminBranches() {
   const [allPlans, setAllPlans] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch("/api/plans/all").then(r => r.json()).then(setAllPlans).catch((e) => console.warn("[admin] Failed to load all plans:", e?.message));
+    fetch("/api/plans/all")
+      .then((r) => r.json())
+      .then((payload) => {
+        const plans = Array.isArray(payload) ? payload : payload?.plans;
+        setAllPlans(Array.isArray(plans) ? plans : []);
+      })
+      .catch((e) => console.warn("[admin] Failed to load all plans:", e?.message));
   }, []);
 
   const owners = sData?.staff?.filter((u) => u.role === "owner") || [];
