@@ -2326,7 +2326,9 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
       await client.query(
         `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
          VALUES ($1, 0, 0, 0, 5)
-         ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text
+         ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET
+           quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0),
+           quantity_sold = quantity_sold + $2, updated_at = NOW()::text
          WHERE stock_levels.quantity_in_stock >= $2`,
         [item.productId, item.quantity]
       );
@@ -2602,6 +2604,26 @@ async function listCartRecoveryReminders(): Promise<any[]> {
 
 // ============ REFUNDS ============
 
+async function refreshStockLevelSoldCount(client: { query(text: string, params?: any[]): Promise<any> }, productId: string, branchId: number | null): Promise<void> {
+  await client.query(
+    `UPDATE stock_levels sl
+        SET quantity_sold = GREATEST(COALESCE((
+          SELECT SUM(CASE
+            WHEN m.movement_type = 'sale' THEN ABS(m.quantity)
+            WHEN m.movement_type = 'restock' AND m.reference_type IN ('cancel', 'refund') THEN -ABS(m.quantity)
+            ELSE 0
+          END)
+          FROM stock_movements m
+          WHERE m.product_id = sl.product_id
+            AND m.branch_id IS NOT DISTINCT FROM sl.branch_id
+            AND (m.movement_type = 'sale' OR (m.movement_type = 'restock' AND m.reference_type IN ('cancel', 'refund')))
+        ), 0), 0)::integer,
+        updated_at = NOW()::text
+      WHERE sl.product_id = $1 AND sl.branch_id IS NOT DISTINCT FROM $2`,
+    [productId, branchId]
+  );
+}
+
 async function createRefund(data: { orderId: number; orderItemId?: number; productId?: string; amount: number; reason: string; createdBy?: number }): Promise<any> {
   return await transaction(async (client) => {
     // Lock the order row: concurrent refunds serialise and can never both use
@@ -2643,6 +2665,7 @@ async function createRefund(data: { orderId: number; orderItemId?: number; produ
           "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'restock', $2, 'refund', $3, $4, $5)",
           [item.product_id, qty, String(data.orderId), `Stock returned after refund #${data.orderId}`, branchRow?.branch_id ?? null]
         );
+        await refreshStockLevelSoldCount(client, item.product_id, branchRow?.branch_id ?? null);
       }
     }
     const result = await client.query(
@@ -2694,6 +2717,7 @@ async function cancelOrderItemQuantity(orderItemId: number, quantity: number): P
       "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'restock', $2, 'cancel', $3, $4, $5)",
       [row.product_id, qty, String(row.order_id), `Line cancelled/refunded #${row.order_id}`, order?.branch_id ?? null]
     );
+    await refreshStockLevelSoldCount(client, row.product_id, order?.branch_id ?? null);
     return true;
   });
 }
@@ -2768,7 +2792,9 @@ async function createOrder(data: { customerId: number; customerName: string; cus
           await client.query(
             `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
              VALUES ($1, 0, 0, 0, 5)
-             ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text
+             ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET
+               quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0),
+               quantity_sold = quantity_sold + $2, updated_at = NOW()::text
              WHERE stock_levels.quantity_in_stock >= $2`,
             [item.productId, qty]
           );
@@ -2892,6 +2918,7 @@ async function updateOrderStatus(id: number, status: string): Promise<boolean> {
             "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'restock', $2, 'cancel', $3, $4, $5)",
             [it.product_id, qty, String(id), `Order cancelled #${id}`, order.branch_id ?? null]
           );
+          await refreshStockLevelSoldCount(client, it.product_id, order.branch_id ?? null);
           lineIds.push(it.id);
         }
         if (lineIds.length) {
@@ -2914,9 +2941,9 @@ async function deductReservedStockForOrder(client: { query(text: string, params?
   for (const item of items.rows || []) {
     const qty = Number(item.quantity);
     if (order.branch_id != null) {
-      await client.query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, order.branch_id]);
+      await client.query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), quantity_sold = quantity_sold + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, order.branch_id]);
     } else {
-      await client.query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
+      await client.query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), quantity_reserved = GREATEST(quantity_reserved - $1, 0), quantity_sold = quantity_sold + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
     }
     await client.query(
       "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5, $6)",
