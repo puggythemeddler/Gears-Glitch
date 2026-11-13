@@ -39,6 +39,17 @@ export default function StockTakeSessionPage() {
       const data = await api<any>(`/api/stock-take/${id}`);
       setSession(data.session);
       setItems(data.items || []);
+      if (data.session?.status === "completed") {
+        const savedReport = await api<any>(`/api/stock-take/${id}/report`);
+        setReport({
+          ...savedReport,
+          adjusted: data.session.appliedAt
+            ? (savedReport.items || []).filter((item: any) => Number(item.variance) !== 0).length
+            : 0,
+        });
+      } else {
+        setReport(null);
+      }
       const reasons: Record<string, string> = {};
       const notes: Record<string, string> = {};
       (data.items || []).forEach((item: any) => { if (item.varianceReason) reasons[item.productId] = item.varianceReason; if (item.notes) notes[item.productId] = item.notes; });
