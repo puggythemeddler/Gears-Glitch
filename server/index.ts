@@ -2668,6 +2668,98 @@ app.get("/api/pos/branches", posAuthMiddleware, asyncHandler(async (req: Request
   });
 }));
 
+// The public catalogue carries global stock totals. The till must instead show
+// only sellable stock at its active branch, otherwise items appear available
+// and checkout rejects them after the cashier has built a cart.
+app.get("/api/pos/products", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  let branchId: number;
+  try {
+    branchId = await requireBranchContext(
+      Number(user.sub),
+      String(user.role || ""),
+      user.activeBranchId,
+      req.query.branchId
+    );
+  } catch (err) {
+    if (err instanceof BranchAccessError) {
+      res.status(403).json({ error: err.message, branches: err.branches, requiresBranch: err.branches.length > 1 });
+      return;
+    }
+    throw err;
+  }
+
+  const products = await listProducts(undefined, undefined, true);
+  const levels = await queryAll(
+    "SELECT product_id, GREATEST(quantity_in_stock - quantity_reserved, 0)::int AS available FROM stock_levels WHERE branch_id = $1",
+    [branchId]
+  ) as { product_id: string; available: number }[];
+  const availableByProduct = new Map(levels.map((row) => [String(row.product_id), Number(row.available)]));
+  res.json({
+    products: products.map((product) => publicProduct({
+      ...product,
+      stockOnHand: availableByProduct.get(String(product.id)) ?? 0,
+    })),
+    branchId,
+    currency: (await getSettings()).currency,
+  });
+}));
+
+app.get("/api/pos/products/by-barcode/:code", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  let branchId: number;
+  try {
+    branchId = await requireBranchContext(
+      Number(user.sub),
+      String(user.role || ""),
+      user.activeBranchId,
+      req.query.branchId
+    );
+  } catch (err) {
+    if (err instanceof BranchAccessError) {
+      res.status(403).json({ error: err.message, branches: err.branches, requiresBranch: err.branches.length > 1 });
+      return;
+    }
+    throw err;
+  }
+  const product = await getProductByBarcode(String(req.params.code || ""));
+  if (!product) { res.status(404).json({ error: "No product matches that barcode." }); return; }
+  const stock = await getStockLevel(product.id, branchId);
+  const available = stock ? Math.max(0, Number(stock.quantityInStock) - (Number(stock.quantityReserved) || 0)) : 0;
+  res.json(publicProduct({ ...product, stockOnHand: available }));
+}));
+
+app.get("/api/pos/serials/lookup/:serialNumber", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  let branchId: number;
+  try {
+    branchId = await requireBranchContext(
+      Number(user.sub),
+      String(user.role || ""),
+      user.activeBranchId,
+      req.query.branchId
+    );
+  } catch (err) {
+    if (err instanceof BranchAccessError) {
+      res.status(403).json({ error: err.message, branches: err.branches, requiresBranch: err.branches.length > 1 });
+      return;
+    }
+    throw err;
+  }
+  const serial = await getSerialByNumber(String(req.params.serialNumber || ""));
+  if (!serial || serial.status !== "in_stock" || (serial.branch_id != null && Number(serial.branch_id) !== branchId)) {
+    res.status(404).json({ error: "No sellable serial matches this branch." });
+    return;
+  }
+  const stock = await getStockLevel(String(serial.product_id), branchId);
+  const available = stock ? Math.max(0, Number(stock.quantityInStock) - (Number(stock.quantityReserved) || 0)) : 0;
+  if (available <= 0) {
+    res.status(409).json({ error: "This product has no available stock at the selected branch." });
+    return;
+  }
+  res.json(serial);
+}));
+
 async function pushPosStk(req: Request, orderId: number, amount: number, mpesaPhone: string): Promise<{ status: "pending" | "failed"; checkoutRequestId?: string | null }> {
   const callbackUrl = `${callbackBaseUrl(req)}/api/mpesa/callback`;
   const accountRef = `POS${orderId}`;
