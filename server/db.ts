@@ -502,6 +502,8 @@ interface PurchaseOrder {
   id: number;
   supplierName: string;
   supplierContact: string;
+  branchId: number | null;
+  branchName: string;
   orderDate: string;
   status: string;
   notes: string;
@@ -3468,10 +3470,10 @@ async function deleteRepairImage(id: number): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
-async function createPurchaseOrder(data: { supplierName: string; supplierContact?: string; notes?: string; createdBy?: number; items: { productId: string; quantityOrdered: number; unitCost: number }[] }): Promise<PurchaseOrder> {
+async function createPurchaseOrder(data: { supplierName: string; supplierContact?: string; branchId: number; notes?: string; createdBy?: number; items: { productId: string; quantityOrdered: number; unitCost: number }[] }): Promise<PurchaseOrder> {
   const result = await query(
-    "INSERT INTO purchase_orders (supplier_name, supplier_contact, status, notes, created_by) VALUES ($1, $2, 'pending', $3, $4) RETURNING id",
-    [data.supplierName, data.supplierContact || "", data.notes || "", data.createdBy || null]
+    "INSERT INTO purchase_orders (supplier_name, supplier_contact, branch_id, status, notes, created_by) VALUES ($1, $2, $3, 'pending', $4, $5) RETURNING id",
+    [data.supplierName, data.supplierContact || "", data.branchId, data.notes || "", data.createdBy || null]
   );
   const poId = result.rows[0].id;
   for (const item of data.items) {
@@ -3481,14 +3483,14 @@ async function createPurchaseOrder(data: { supplierName: string; supplierContact
 }
 
 async function getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> {
-  const row = await queryOne("SELECT * FROM purchase_orders WHERE id = $1", [id]) as any;
+  const row = await queryOne("SELECT po.*, b.name AS branch_name FROM purchase_orders po LEFT JOIN branches b ON b.id = po.branch_id WHERE po.id = $1", [id]) as any;
   if (!row) return undefined;
   const items = await queryAll(
     "SELECT poi.*, p.name AS product_name, p.serial_tracking AS serial_tracking FROM purchase_order_items poi LEFT JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1", [id]
   ) as any[];
   const totalCost = items.reduce((sum, i) => sum + i.quantity_ordered * i.unit_cost, 0);
   return {
-    id: row.id, supplierName: row.supplier_name, supplierContact: row.supplier_contact, orderDate: row.order_date, status: row.status, notes: row.notes, createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at, totalCost,
+    id: row.id, supplierName: row.supplier_name, supplierContact: row.supplier_contact, branchId: row.branch_id == null ? null : Number(row.branch_id), branchName: row.branch_name || "Central / no branch", orderDate: row.order_date, status: row.status, notes: row.notes, createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at, totalCost,
     items: items.map((i) => ({ id: i.id, purchaseOrderId: i.purchase_order_id, productId: i.product_id, productName: i.product_name, quantityOrdered: i.quantity_ordered, quantityReceived: i.quantity_received, unitCost: i.unit_cost, serialTracking: Boolean(i.serial_tracking), serials: (() => { try { return JSON.parse(i.serial_numbers || "[]"); } catch { return []; } })() })),
   };
 }
@@ -3534,7 +3536,22 @@ async function updatePurchaseOrderStatus(id: number, status: string): Promise<bo
   return (result.rowCount ?? 0) > 0;
 }
 
-async function receivePurchaseOrderItem(itemId: number, quantityReceived: number, serials?: string[], branchId?: number, assetTags?: string[]): Promise<{ ok: boolean; error?: string }> {
+async function updatePurchaseOrderBranch(id: number, branchId: number): Promise<{ ok: boolean; error?: string }> {
+  if (!Number.isInteger(id) || id < 1 || !Number.isInteger(branchId) || branchId < 1) return { ok: false, error: "Select a valid active branch." };
+  return await transaction(async (client) => {
+    const order = (await client.query("SELECT status, deleted_at FROM purchase_orders WHERE id = $1 FOR UPDATE", [id])).rows?.[0] as any;
+    if (!order) return { ok: false, error: "Purchase order not found." };
+    if (order.deleted_at || !["pending", "ordered"].includes(String(order.status))) return { ok: false, error: "Stock location can only be changed on an active, unreceived purchase order." };
+    const received = (await client.query("SELECT COALESCE(SUM(quantity_received), 0)::int AS quantity FROM purchase_order_items WHERE purchase_order_id = $1", [id])).rows?.[0] as any;
+    if (Number(received?.quantity || 0) > 0) return { ok: false, error: "Stock location is locked after receiving begins. Recall the receipt before changing its branch." };
+    const branch = await client.query("SELECT id FROM branches WHERE id = $1 AND is_active = 1", [branchId]);
+    if (!branch.rows.length) return { ok: false, error: "Choose an active branch." };
+    await client.query("UPDATE purchase_orders SET branch_id = $1, updated_at = NOW()::text WHERE id = $2", [branchId, id]);
+    return { ok: true };
+  });
+}
+
+async function receivePurchaseOrderItem(itemId: number, quantityReceived: number, serials?: string[], assetTags?: string[]): Promise<{ ok: boolean; error?: string }> {
   // Single transaction: PO item update + serial inserts + atomic stock upsert and
   // movement commit (or roll back) together. Locks the PO item row and uses
   // relative (+delta) atomic stock updates so concurrent receives cannot lose stock.
@@ -3543,7 +3560,7 @@ async function receivePurchaseOrderItem(itemId: number, quantityReceived: number
     const itemRes = await client.query(
       `SELECT poi.product_id, poi.quantity_received, poi.quantity_ordered, poi.serial_numbers,
               p.serial_tracking,
-              po.status AS purchase_order_status, po.deleted_at
+              po.status AS purchase_order_status, po.deleted_at, po.branch_id AS purchase_order_branch_id
          FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.purchase_order_id
          LEFT JOIN products p ON p.id = poi.product_id
         WHERE poi.id = $1 FOR UPDATE OF poi, po`,
@@ -3553,6 +3570,10 @@ async function receivePurchaseOrderItem(itemId: number, quantityReceived: number
     if (!item) return { ok: false, error: "Purchase order item not found." };
     if (item.deleted_at || item.purchase_order_status === "cancelled") return { ok: false, error: "This purchase order is cancelled or deleted." };
     if (!["pending", "ordered"].includes(String(item.purchase_order_status))) return { ok: false, error: "Only pending or ordered purchase orders can receive stock." };
+    const branchId = item.purchase_order_branch_id == null ? undefined : Number(item.purchase_order_branch_id);
+    if (branchId === undefined) return { ok: false, error: "Assign an active branch to this purchase order before receiving stock." };
+    const branch = await client.query("SELECT id FROM branches WHERE id = $1 AND is_active = 1", [branchId]);
+    if (!branch.rows.length) return { ok: false, error: "The purchase order's assigned branch is no longer active. Assign an active branch before receiving stock." };
     const previousReceived = Number(item.quantity_received) || 0;
     const ordered = Number(item.quantity_ordered) || 0;
     if (quantityReceived > ordered) return { ok: false, error: `Received quantity cannot exceed the ${ordered} unit(s) ordered.` };
@@ -3637,7 +3658,7 @@ async function reversePurchaseOrderReceive(poId: number): Promise<{ reversed: nu
   let reversed = 0; let itemCount = 0;
   await transaction(async (client) => {
     const itemsRes = await client.query(
-      "SELECT poi.id, poi.product_id, poi.quantity_received, p.serial_tracking FROM purchase_order_items poi LEFT JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1 AND poi.quantity_received > 0",
+      "SELECT poi.id, poi.product_id, poi.quantity_received, p.serial_tracking, po.branch_id FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.purchase_order_id LEFT JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1 AND poi.quantity_received > 0",
       [poId]
     );
     const items = itemsRes.rows as any[];
@@ -3645,12 +3666,12 @@ async function reversePurchaseOrderReceive(poId: number): Promise<{ reversed: nu
       const qty = Number(item.quantity_received) || 0;
       if (qty <= 0) continue;
       await client.query(
-        "UPDATE stock_levels SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL",
-        [qty, item.product_id]
+        "UPDATE stock_levels SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NOT DISTINCT FROM $3",
+        [qty, item.product_id, item.branch_id == null ? null : Number(item.branch_id)]
       );
       await client.query(
         "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        [item.product_id, "purchase_reverse", -qty, "purchase_order", String(item.id), `Reversed ${qty} units from PO item #${item.id}`, null, null]
+        [item.product_id, "purchase_reverse", -qty, "purchase_order", String(item.id), `Reversed ${qty} units from PO item #${item.id}`, null, item.branch_id == null ? null : Number(item.branch_id)]
       );
       if (item.serial_tracking) {
         await client.query("UPDATE serial_numbers SET status = 'void' WHERE purchase_order_item_id = $1 AND status = 'in_stock'", [item.id]);
@@ -3672,10 +3693,11 @@ async function recallPurchaseOrder(id: number): Promise<{ ok: boolean; error?: s
   return { ok: true };
 }
 
-async function markPurchaseOrderReceived(id: number, serialsByItem: { [itemId: number]: string[] } = {}, assetTagsByItem: { [itemId: number]: string[] } = {}, branchId?: number): Promise<{ ok: boolean; error?: string; order?: PurchaseOrder }> {
+async function markPurchaseOrderReceived(id: number, serialsByItem: { [itemId: number]: string[] } = {}, assetTagsByItem: { [itemId: number]: string[] } = {}): Promise<{ ok: boolean; error?: string; order?: PurchaseOrder }> {
   const po = await getPurchaseOrder(id);
   if (!po) return { ok: false, error: "Purchase order not found." };
   if (po.status === "cancelled") return { ok: false, error: "Cannot receive a cancelled purchase order." };
+  if (po.branchId == null) return { ok: false, error: "Assign an active branch to this purchase order before receiving stock." };
   for (const item of po.items) {
     const remaining = (item.quantityOrdered || 0) - (item.quantityReceived || 0);
     const serialList = (serialsByItem[item.id] || []).map((s: any) => String(s || "").trim()).filter(Boolean);
@@ -3700,7 +3722,7 @@ async function markPurchaseOrderReceived(id: number, serialsByItem: { [itemId: n
     const remaining = (item.quantityOrdered || 0) - (item.quantityReceived || 0);
     if (remaining <= 0) continue;
     const serialList: string[] = (serialsByItem[item.id] || []).map((s: any) => String(s || "").trim()).filter(Boolean);
-    const received = await receivePurchaseOrderItem(item.id, Number(item.quantityReceived || 0) + remaining, serialList, branchId, assetTagsByItem[item.id] || []);
+    const received = await receivePurchaseOrderItem(item.id, Number(item.quantityReceived || 0) + remaining, serialList, assetTagsByItem[item.id] || []);
     if (!received.ok) return { ok: false, error: received.error };
   }
   await updatePurchaseOrderStatus(id, "received");
@@ -5045,7 +5067,7 @@ export {
   createOrderInvoice, listOrderInvoices, markOrderInvoicePaid,
   createCreditNote, submitCreditNoteToEtims, getCreditNote, listCreditNotes,
   getRepairImages, addRepairImage, deleteRepairImage,
-  createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, receivePurchaseOrderItem, reversePurchaseOrderReceive, recallPurchaseOrder, markPurchaseOrderReceived,
+  createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, updatePurchaseOrderBranch, receivePurchaseOrderItem, reversePurchaseOrderReceive, recallPurchaseOrder, markPurchaseOrderReceived,
   getTechPerformanceReport, getSalesReport, getPurchaseReport, getSalesReportWithRange,
   getStockSummary, getStockSummaryByBranch, getEmployeeSalesPerformance, getTechnicianRepairStats,
   getProductByBarcode, listSerials, listSerialInventoryDiscrepancies, getSerialByNumber, createSerial, reconcileLegacySerial, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,

@@ -141,6 +141,7 @@ import {
   restorePurchaseOrder,
   getPurchaseOrder,
   updatePurchaseOrderStatus,
+  updatePurchaseOrderBranch,
   addPurchaseOrderItem,
   receivePurchaseOrderItem,
   reversePurchaseOrderReceive,
@@ -718,6 +719,7 @@ defineAudit("/api/admin/repair-workflow", "settings", { action: "repair_workflow
 defineAudit("/api/purchases", "purchase");
 defineAudit("/api/purchases/:id", "purchase");
 defineAudit("/api/purchases/:id/status", "purchase", { action: "status_changed", method: "PATCH" });
+defineAudit("/api/purchases/:id/branch", "purchase", { action: "stock_location_changed", method: "PATCH" });
 defineAudit("/api/purchases/:id/items", "purchase", { action: "item_added", method: "POST" });
 defineAudit("/api/purchases/:id/recall", "purchase", { action: "recalled", method: "POST" });
 defineAudit("/api/purchases/:id/receive-all", "purchase", { action: "received", method: "POST" });
@@ -7560,6 +7562,10 @@ app.post("/api/repairs/:id/quote-response", customerAuthMiddleware, requireShopF
 }));
 
 // ============ PURCHASE ORDERS ============
+app.get("/api/purchases/branches", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ branches: await listActiveBranches() });
+}));
+
 app.get("/api/admin/purchase-products", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   const products = await listProducts(undefined, undefined, true);
   res.json({ products: products.map((product: any) => ({ id: product.id, name: product.name, price: product.price, costPrice: product.costPrice ?? null })) });
@@ -7572,18 +7578,21 @@ app.get("/api/purchases", adminAuthMiddleware, asyncHandler(async (_req: Request
 app.post("/api/purchases", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const body = req.body || {};
   if (body.supplierId !== undefined && !isPosInt(Number(body.supplierId))) { res.status(400).json({ error: "supplierId must be a positive integer." }); return; }
+  if (body.branchId === undefined || !isPosInt(Number(body.branchId))) { res.status(400).json({ error: "Choose an active branch for this purchase order." }); return; }
   if (body.items !== undefined && !isArr(body.items)) { res.status(400).json({ error: "items must be an array." }); return; }
   if (body.notes !== undefined && (typeof body.notes !== "string" || body.notes.length > 1000)) { res.status(400).json({ error: "notes must be a valid string." }); return; }
   if (!isStr(body.supplierName) || body.supplierName.trim().length === 0) { res.status(400).json({ error: "Select an active supplier." }); return; }
   const activeSupplier = (await listSuppliers()).find((supplier: any) => Boolean(supplier.is_active) && String(supplier.name).trim().toLowerCase() === String(body.supplierName).trim().toLowerCase());
   if (!activeSupplier) { res.status(400).json({ error: "Purchase orders must use an active supplier from the supplier list." }); return; }
+  const activeBranch = (await listActiveBranches()).find((branch) => branch.id === Number(body.branchId));
+  if (!activeBranch) { res.status(400).json({ error: "Choose an active branch for this purchase order." }); return; }
   if (!Array.isArray(body.items) || body.items.length === 0) { res.status(400).json({ error: "Add at least one product to the purchase order." }); return; }
   for (const item of body.items) {
     if (!isStr(item?.productId) || !isPosInt(Number(item?.quantityOrdered)) || !isNonNegNum(Number(item?.unitCost))) {
       res.status(400).json({ error: "Each purchase order item needs a product, positive quantity, and supplier-quoted non-negative unit cost." }); return;
     }
   }
-  const po = await createPurchaseOrder({ ...body, createdBy: (req as any).user.sub });
+  const po = await createPurchaseOrder({ ...body, branchId: Number(body.branchId), createdBy: (req as any).user.sub });
   res.status(201).json(po);
 }));
 
@@ -7608,6 +7617,17 @@ app.patch("/api/purchases/:id/status", adminAuthMiddleware, asyncHandler(async (
   res.json({ ok: true });
 }));
 
+app.patch("/api/purchases/:id/branch", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const branchId = Number((req.body || {}).branchId);
+  if (!isPosInt(id) || !isPosInt(branchId)) { res.status(400).json({ error: "Select a valid active branch." }); return; }
+  const activeBranch = (await listActiveBranches()).find((branch) => branch.id === branchId);
+  if (!activeBranch) { res.status(400).json({ error: "Choose an active branch." }); return; }
+  const result = await updatePurchaseOrderBranch(id, branchId);
+  if (!result.ok) { res.status(/not found/i.test(result.error || "") ? 404 : 409).json({ error: result.error }); return; }
+  res.json({ ok: true, order: await getPurchaseOrder(id) });
+}));
+
 app.post("/api/purchases/:id/items", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const body = req.body || {};
   if (body.name !== undefined && !isStr(body.name)) { res.status(400).json({ error: "Item name must be a valid string." }); return; }
@@ -7628,11 +7648,11 @@ app.post("/api/admin/auto-reorder", adminAuthMiddleware, asyncHandler(async (_re
 app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const { quantityReceived, serials, assetTags, branchId } = req.body || {};
   if (!quantityReceived || !isPosInt(Number(quantityReceived))) { res.status(400).json({ error: "quantityReceived must be a positive integer." }); return; }
-  if (branchId !== undefined && branchId !== null && branchId !== "" && !isPosInt(Number(branchId))) { res.status(400).json({ error: "branchId must be a positive integer." }); return; }
+  if (branchId !== undefined) { res.status(400).json({ error: "Stock location is fixed by the purchase order. Create a new order for a different branch." }); return; }
   const serialList = Array.isArray(serials) ? serials.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
   const assetTagList = Array.isArray(assetTags) ? assetTags.map((s: any) => String(s || "").trim()) : [];
   if (serialList.length > Number(quantityReceived)) { res.status(400).json({ error: "More serials than quantity received." }); return; }
-  const result = await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived), serialList, branchId ? Number(branchId) : undefined, assetTagList);
+  const result = await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived), serialList, assetTagList);
   if (!result.ok) { res.status(/not found/i.test(result.error || "") ? 404 : 409).json({ error: result.error }); return; }
   res.json({ ok: true });
 }));
@@ -7873,6 +7893,7 @@ app.get("/api/purchases/:id/pdf", requirePdfAuth("po-pdf", "id", "purchaseId", [
       <span class="label">${po.status === "received" ? "Receipt" : "Order"}</span>
       <div>Order Date: ${fmtDate(po.orderDate)}</div>
       <div>Created: ${fmtDate(po.createdAt)}</div>
+      <div>Stock Location: ${escapeHtml(po.branchName || "Central / no branch")}</div>
       ${po.status === "received" ? `<div>Received On: ${fmtDate(po.updatedAt)}</div>` : ""}
     </div>
     ${po.notes ? `<div class="notes"><span class="label">Notes</span><div>${escapeHtml(po.notes)}</div></div>` : ""}
