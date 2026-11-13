@@ -567,7 +567,7 @@ CREATE TABLE IF NOT EXISTS serial_numbers (
   asset_tag TEXT,
   product_id TEXT NOT NULL,
   branch_id INTEGER,
-  status TEXT NOT NULL DEFAULT 'in_stock' CHECK (status IN ('in_stock','in_transit','sold','void','reserved')),
+  status TEXT NOT NULL DEFAULT 'in_stock' CHECK (status IN ('in_stock','in_transit','sold','void','reserved','disposed')),
   purchase_order_item_id INTEGER,
   order_id INTEGER,
   order_item_id INTEGER,
