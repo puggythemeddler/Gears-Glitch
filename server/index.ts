@@ -3009,7 +3009,8 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
             if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
             if (bid) {
               const branchRes = await client.query(
-                `UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1, updated_at = NOW()::text
+                `UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1,
+                    quantity_sold = quantity_sold + $1, updated_at = NOW()::text
                   WHERE product_id = $2 AND branch_id = $3 AND quantity_in_stock >= $1`,
                 [item.quantity, item.id, bid]
               );
@@ -3018,7 +3019,9 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
               await client.query(
                 `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
                  VALUES ($1, 0, 0, 0, 5)
-                 ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0), updated_at = NOW()::text
+                 ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET
+                   quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0),
+                   quantity_sold = stock_levels.quantity_sold + $2, updated_at = NOW()::text
                  WHERE stock_levels.quantity_in_stock >= $2`,
                 [item.id, item.quantity]
               );
