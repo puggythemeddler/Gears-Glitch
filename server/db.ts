@@ -2328,7 +2328,7 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
          VALUES ($1, 0, 0, 0, 5)
          ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET
            quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0),
-           quantity_sold = quantity_sold + $2, updated_at = NOW()::text
+           quantity_sold = stock_levels.quantity_sold + $2, updated_at = NOW()::text
          WHERE stock_levels.quantity_in_stock >= $2`,
         [item.productId, item.quantity]
       );
@@ -2794,7 +2794,7 @@ async function createOrder(data: { customerId: number; customerName: string; cus
              VALUES ($1, 0, 0, 0, 5)
              ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET
                quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0),
-               quantity_sold = quantity_sold + $2, updated_at = NOW()::text
+               quantity_sold = stock_levels.quantity_sold + $2, updated_at = NOW()::text
              WHERE stock_levels.quantity_in_stock >= $2`,
             [item.productId, qty]
           );
