@@ -6724,12 +6724,15 @@ function AdminPurchases() {
   const [creating, setCreating] = useState(false);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
-  const [form, setForm] = useState({ supplierName: "", notes: "" });
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [form, setForm] = useState({ supplierName: "", branchId: "", notes: "" });
   const [formItems, setFormItems] = useState<{ productId: string; productName: string; quantity: number; unitCost: number | "" }[]>([]);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [listMode, setListMode] = useState<"active" | "completed" | "deleted">("active");
+  const [branchEditId, setBranchEditId] = useState("");
+  const [savingBranch, setSavingBranch] = useState(false);
   const [receiveInputs, setReceiveInputs] = useState<{ [itemId: number]: number }>({});
   const [receiveSerials, setReceiveSerials] = useState<{ [itemId: number]: string[] }>({});
   const [receiveAssetTags, setReceiveAssetTags] = useState<{ [itemId: number]: string[] }>({});
@@ -6739,6 +6742,14 @@ function AdminPurchases() {
   const [assetTagInput, setAssetTagInput] = useState("");
   const [serialMsg, setSerialMsg] = useState("");
   const [listSearch, setListSearch] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api<{ branches: { id: number; name: string }[] }>("/api/purchases/branches")
+      .then((data) => { if (active) setBranches(data.branches || []); })
+      .catch(() => { if (active) setBranches([]); });
+    return () => { active = false; };
+  }, []);
 
   async function loadOrders(mode?: string) {
     setLoading(true);
@@ -6753,12 +6764,14 @@ function AdminPurchases() {
 
   async function loadFormDeps() {
     try {
-      const [sRes, pRes] = await Promise.all([
+      const [sRes, pRes, bRes] = await Promise.all([
         api<{ suppliers: any[] }>("/api/admin/suppliers").catch(() => ({ suppliers: [] })),
         api<{ products: any[] }>("/api/admin/purchase-products").catch(() => ({ products: [] })),
+        api<{ branches: { id: number; name: string }[] }>("/api/purchases/branches").catch(() => ({ branches: [] })),
       ]);
       setSuppliers(sRes.suppliers || []);
       setProducts(pRes.products || []);
+      setBranches(bRes.branches || []);
     } catch {}
   }
 
@@ -6767,6 +6780,7 @@ function AdminPurchases() {
       const d = await api<any>(`/api/purchases/${id}`);
       const po = d.order || d;
       setViewing(po);
+      setBranchEditId(po.branchId == null ? "" : String(po.branchId));
       const defaults: { [itemId: number]: number } = {};
       (po.items || []).forEach((i: any) => {
         defaults[i.id] = Math.max(0, (i.quantityOrdered || 0) - (i.quantityReceived || 0));
@@ -6790,7 +6804,7 @@ function AdminPurchases() {
   }
 
   async function createOrder() {
-    if (!form.supplierName || formItems.length === 0) return;
+    if (!form.supplierName || !form.branchId || formItems.length === 0) return;
     if (formItems.some((item) => item.unitCost === "" || !Number.isFinite(Number(item.unitCost)) || Number(item.unitCost) < 0)) {
       setMsg("Enter the supplier-quoted unit cost for every item before creating this purchase order.");
       return;
@@ -6798,10 +6812,10 @@ function AdminPurchases() {
     setSaving(true);
     try {
       await api("/api/purchases", { method: "POST", body: JSON.stringify({
-        supplierName: form.supplierName, notes: form.notes,
+        supplierName: form.supplierName, branchId: Number(form.branchId), notes: form.notes,
         items: formItems.map((i) => ({ productId: i.productId, quantityOrdered: i.quantity, unitCost: Number(i.unitCost) })),
       })});
-      setCreating(false); setForm({ supplierName: "", notes: "" }); setFormItems([]);
+      setCreating(false); setForm({ supplierName: "", branchId: "", notes: "" }); setFormItems([]);
       loadOrders();
     } catch (err: any) { setMsg(err.message); }
     setSaving(false);
@@ -6813,6 +6827,18 @@ function AdminPurchases() {
       loadOrder(id); loadOrders();
       feedback.success(`Purchase order marked as ${status}.`);
     } catch (err: any) { setMsg(err.message); }
+  }
+
+  async function savePurchaseOrderBranch() {
+    if (!viewing || !branchEditId) { setMsg("Choose the branch that will hold this stock."); return; }
+    setSavingBranch(true);
+    try {
+      await api(`/api/purchases/${viewing.id}/branch`, { method: "PATCH", body: JSON.stringify({ branchId: Number(branchEditId) }) });
+      await loadOrder(viewing.id);
+      loadOrders();
+      feedback.success("Purchase order stock location saved.");
+    } catch (err: any) { setMsg(err.message); }
+    setSavingBranch(false);
   }
 
   async function confirmMarkReceived() {
@@ -6943,6 +6969,20 @@ function AdminPurchases() {
             <p><strong>Status:</strong> <span className="plan-status" style={{ background: viewing.status === "received" ? "var(--success-light)" : viewing.status === "cancelled" ? "var(--danger-light)" : viewing.status === "ordered" ? "var(--primary-light)" : "var(--warning-light)", color: viewing.status === "received" ? "var(--success-text)" : viewing.status === "cancelled" ? "var(--danger-text)" : viewing.status === "ordered" ? "var(--primary)" : "var(--warning-text)" }}>{viewing.status}</span></p>
             <p><strong>Date:</strong> {formatDate(viewing.orderDate || viewing.order_date)}</p>
             <p><strong>Created:</strong> {formatDate(viewing.createdAt || viewing.created_at)}</p>
+            <p><strong>Stock location:</strong> {viewing.branchName || "Central / no branch"}</p>
+            {(viewing.status === "pending" || viewing.status === "ordered") && receivedUnits === 0 && (
+              <div className="field" style={{ marginTop: "1rem" }}>
+                <label htmlFor="purchase-order-detail-branch">Stock location before receiving</label>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <select id="purchase-order-detail-branch" value={branchEditId} onChange={(e) => setBranchEditId(e.target.value)} style={{ flex: "1 1 220px" }}>
+                    <option value="">Choose an active branch...</option>
+                    {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                  </select>
+                  <RippleButton size="small" onClick={savePurchaseOrderBranch} loading={savingBranch} disabled={!branchEditId || branches.length === 0}>Save location</RippleButton>
+                </div>
+                {branches.length === 0 && <small style={{ color: "var(--warning-text)" }}>No active branches are available.</small>}
+              </div>
+            )}
             {viewing.notes && <p><strong>Notes:</strong> {viewing.notes}</p>}
           </div>
           <div className="panel">
@@ -7106,7 +7146,7 @@ function AdminPurchases() {
       <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h1 style={{ margin: 0 }}>Create Purchase Order</h1>
-          <RippleButton size="small" variant="ghost" onClick={() => { setCreating(false); setForm({ supplierName: "", notes: "" }); setFormItems([]); }}>&larr; Cancel</RippleButton>
+          <RippleButton size="small" variant="ghost" onClick={() => { setCreating(false); setForm({ supplierName: "", branchId: "", notes: "" }); setFormItems([]); }}>&larr; Cancel</RippleButton>
         </div>
         {msg && <ErrorMsg msg={msg} />}
         <div className="panel" style={{ maxWidth: 700 }}>
@@ -7116,6 +7156,15 @@ function AdminPurchases() {
               <option value="">Select supplier...</option>
               {suppliers.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
+          </div>
+          <div className="field">
+            <label htmlFor="purchase-order-branch">Receive into branch</label>
+            <select id="purchase-order-branch" value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })} required>
+              <option value="">Select the branch that will hold this stock...</option>
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </select>
+            <small className="muted">Received quantities and serial numbers will be assigned to this branch for POS sales and stock reports.</small>
+            {branches.length === 0 && <small style={{ display: "block", color: "var(--warning-text)" }}>No active branches are available. Create or activate a branch before creating a purchase order.</small>}
           </div>
           <div className="field">
             <label>Notes</label>
@@ -7154,7 +7203,7 @@ function AdminPurchases() {
               </table>
             </div>
           )}
-          <RippleButton onClick={createOrder} loading={saving} disabled={!form.supplierName || formItems.length === 0 || formItems.some((item) => item.unitCost === "")}>Create Purchase Order</RippleButton>
+          <RippleButton onClick={createOrder} loading={saving} disabled={!form.supplierName || !form.branchId || branches.length === 0 || formItems.length === 0 || formItems.some((item) => item.unitCost === "")}>Create Purchase Order</RippleButton>
         </div>
       </>
     );
@@ -7181,12 +7230,13 @@ function AdminPurchases() {
       {msg && <ErrorMsg msg={msg} />}
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>#</th><th>Supplier</th><th>Items</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Supplier</th><th>Stock location</th><th>Items</th><th>Status</th><th>Date</th><th></th></tr></thead>
           <tbody>
-            {orders.filter((o: any) => !listSearch.trim() || String(o.id).includes(listSearch.trim().toLowerCase()) || (o.supplierName || "").toLowerCase().includes(listSearch.trim().toLowerCase())).map((o: any) => (
+            {orders.filter((o: any) => !listSearch.trim() || String(o.id).includes(listSearch.trim().toLowerCase()) || (o.supplierName || "").toLowerCase().includes(listSearch.trim().toLowerCase()) || (o.branchName || "").toLowerCase().includes(listSearch.trim().toLowerCase())).map((o: any) => (
               <tr key={o.id} style={{ cursor: "pointer" }} tabIndex={0} onClick={() => loadOrder(o.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); loadOrder(o.id); } }}>
                 <td>{o.id}</td>
                 <td>{o.supplierName}</td>
+                <td>{o.branchName || "Central / no branch"}</td>
                 <td>{(o.items || []).length}</td>
                 <td><span className="plan-status" style={{ background: o.status === "received" ? "var(--success-light)" : o.status === "cancelled" ? "var(--danger-light)" : o.status === "ordered" ? "var(--primary-light)" : "var(--warning-light)", color: o.status === "received" ? "var(--success-text)" : o.status === "cancelled" ? "var(--danger-text)" : o.status === "ordered" ? "var(--primary)" : "var(--warning-text)" }}>{o.status}</span></td>
                 <td style={{ whiteSpace: "nowrap" }}>{formatDate(o.orderDate || o.order_date)}</td>
@@ -7200,7 +7250,7 @@ function AdminPurchases() {
                 </td>
               </tr>
             ))}
-            {orders.length === 0 && <tr><td colSpan={6}><EmptyState icon="stock" title={listMode === "deleted" ? "No deleted purchase orders" : listMode === "completed" ? "No completed purchase orders" : "No purchase orders"} description={listMode === "deleted" ? "Deleted purchase orders will appear here." : listMode === "completed" ? "Completed (received) purchase orders will appear here." : "Create a purchase order to start tracking supplier purchases."} /></td></tr>}
+            {orders.length === 0 && <tr><td colSpan={7}><EmptyState icon="stock" title={listMode === "deleted" ? "No deleted purchase orders" : listMode === "completed" ? "No completed purchase orders" : "No purchase orders"} description={listMode === "deleted" ? "Deleted purchase orders will appear here." : listMode === "completed" ? "Completed (received) purchase orders will appear here." : "Create a purchase order to start tracking supplier purchases."} /></td></tr>}
             {orders.length > 0 && !orders.some((o: any) => !listSearch.trim() || String(o.id).includes(listSearch.trim().toLowerCase()) || (o.supplierName || "").toLowerCase().includes(listSearch.trim().toLowerCase())) && <tr><td colSpan={6}><EmptyState icon="stock" title="No matches" description={`No purchase orders match "${listSearch}".`} actionLabel="Clear search" onAction={() => setListSearch("")} /></td></tr>}
           </tbody>
         </table>
