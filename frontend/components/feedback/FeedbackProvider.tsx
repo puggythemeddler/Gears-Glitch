@@ -252,7 +252,21 @@ const TONE_LABEL: Record<FeedbackTone, string> = {
   progress: "WORKING",
 };
 
+function getErrorGuidance(item: FeedbackRecord): string {
+  const text = `${item.title} ${item.message ?? ""} ${item.details ?? ""}`.toLowerCase();
+  if (/\b401\b|session expired|sign in again/.test(text)) return "Your session may have expired. Sign in again, then retry the action.";
+  if (/\b403\b|permission|not allowed|forbidden/.test(text)) return "Your account may not have permission for this action. Ask an administrator to check your role and access.";
+  if (/\b404\b|not found/.test(text)) return "The requested record or page could not be found. Refresh the page and check that the item still exists.";
+  if (/\b409\b|conflict|already exists|duplicate/.test(text)) return "The request conflicts with the latest saved data. Refresh the page, review the current values, and try again.";
+  if (/\b429\b|rate limit|too many requests/.test(text)) return "Too many requests were made in a short time. Wait a moment before trying again.";
+  if (/\b5\d\d\b|server error|failed to fetch|network|timed? ?out|unavailable/.test(text)) return "The service may be temporarily unavailable or your connection may have dropped. Check your connection and retry in a moment.";
+  return "Review the information and try again. If this keeps happening, contact support and include the error details shown here.";
+}
+
 function FeedbackCard({ item, onDismiss }: { item: FeedbackRecord; onDismiss: (id: string) => void }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsId = `feedback-details-${item.id}`;
+  const detailText = item.details || item.message || "No additional error information was returned.";
   return (
     <div
       className={`feedback-card feedback-${item.tone}${item.exiting ? " is-exiting" : ""}${item.variant ? ` feedback-variant-${item.variant}` : ""}`}
@@ -266,6 +280,25 @@ function FeedbackCard({ item, onDismiss }: { item: FeedbackRecord; onDismiss: (i
       <div className="feedback-body">
         <p className="feedback-title">{item.title}</p>
         {item.message && <p className="feedback-message">{item.message}</p>}
+        {item.tone === "error" && (
+          <>
+            <button
+              type="button"
+              className="feedback-details-toggle"
+              aria-expanded={detailsOpen}
+              aria-controls={detailsId}
+              onClick={() => setDetailsOpen((open) => !open)}
+            >
+              {detailsOpen ? "Hide details" : "Show details"}
+            </button>
+            {detailsOpen && (
+              <div className="feedback-details" id={detailsId}>
+                <p><strong>What happened</strong><br />{detailText}</p>
+                <p><strong>What to do</strong><br />{getErrorGuidance(item)}</p>
+              </div>
+            )}
+          </>
+        )}
         {item.action && (
           <button
             type="button"

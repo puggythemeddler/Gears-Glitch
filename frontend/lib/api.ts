@@ -349,7 +349,10 @@ export function clearAllSessions() {
 export class ApiError extends Error {
   readonly status: number;
   constructor(message: string, status: number) {
-    super(message);
+    // Preserve a server-provided explanation while making the HTTP outcome
+    // available to the notification details and its recovery guidance.
+    const hasStatus = /\(HTTP\s+\d{3}\)|\(\d{3}\)/i.test(message);
+    super(hasStatus ? message : `${message} (HTTP ${status})`);
     this.name = "ApiError";
     this.status = status;
   }
