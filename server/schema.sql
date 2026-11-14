@@ -567,7 +567,7 @@ CREATE TABLE IF NOT EXISTS serial_numbers (
   asset_tag TEXT,
   product_id TEXT NOT NULL,
   branch_id INTEGER,
-  status TEXT NOT NULL DEFAULT 'in_stock' CHECK (status IN ('in_stock','in_transit','sold','void','reserved','disposed')),
+  status TEXT NOT NULL DEFAULT 'in_stock' CHECK (status IN ('in_stock','in_transit','sold','void','reserved','disposed','quarantined')),
   purchase_order_item_id INTEGER,
   order_id INTEGER,
   order_item_id INTEGER,
@@ -1050,6 +1050,8 @@ CREATE TABLE IF NOT EXISTS refunds (
   product_id TEXT,
   amount DOUBLE PRECISION NOT NULL DEFAULT 0,
   reason TEXT NOT NULL DEFAULT '',
+  stock_disposition TEXT NOT NULL DEFAULT 'not_returned' CHECK (stock_disposition IN ('not_returned','sellable','quarantine','disposed')),
+  returned_quantity INTEGER NOT NULL DEFAULT 0 CHECK (returned_quantity >= 0),
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );

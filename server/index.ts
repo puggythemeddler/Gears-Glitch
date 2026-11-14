@@ -8660,22 +8660,24 @@ app.post("/api/admin/orders/:id/refunds", ownerAuthMiddleware, requirePermission
     const amount = Number(body.amount);
     if (!isNonNegNum(amount)) { res.status(400).json({ error: "Amount must be a non-negative number." }); return; }
     if (amount <= 0) { res.status(400).json({ error: "Amount must be greater than zero." }); return; }
+    if (!isStr(body.reason, 1000) || !String(body.reason).trim()) { res.status(400).json({ error: "A refund reason is required (up to 1,000 characters)." }); return; }
     const paid = (order.subtotal + order.shippingFee - (order.discountAmount || 0) - order.giftCardAmount) || 0;
     const remaining = Math.max(0, paid - (order.amountRefunded || 0));
     if (amount > remaining) { res.status(400).json({ error: `Refund exceeds remaining balance (${remaining}).` }); return; }
     if (body.orderItemId !== undefined) {
       const item = order.items?.find((i: any) => i.id === Number(body.orderItemId));
       if (!item) { res.status(400).json({ error: "Order item not found." }); return; }
-      if (amount > item.price * item.quantity) { res.status(400).json({ error: "Line refund cannot exceed the line total." }); return; }
+      if (body.stockDisposition !== "sellable" && body.stockDisposition !== "quarantine" && body.stockDisposition !== "disposed") { res.status(400).json({ error: "Choose whether returned stock is sellable, quarantined, or disposed." }); return; }
+      if (Math.round(amount * 100) !== Math.round(Number(item.lineTotal) * 100)) { res.status(400).json({ error: "A line return must refund the full line total. Use an order-level refund for a partial amount without returning stock." }); return; }
     }
-    // createRefund atomically locks the order, validates the remaining balance,
-    // cancels the linked line (restoring stock + serials) and records the refund.
+    // createRefund atomically locks the order, validates the balance and records
+    // the refund together with the selected returned-stock disposition.
     const refund = await createRefund({
       orderId,
       orderItemId: body.orderItemId !== undefined ? Number(body.orderItemId) : undefined,
-      productId: body.productId !== undefined ? String(body.productId) : undefined,
       amount,
-      reason: body.reason !== undefined && isStr(body.reason) ? String(body.reason) : "",
+      reason: String(body.reason).trim(),
+      stockDisposition: body.orderItemId !== undefined ? body.stockDisposition : "not_returned",
       createdBy: (req as any).user.sub,
     });
     res.status(201).json(refund);
