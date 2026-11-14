@@ -154,7 +154,7 @@ describe("order lifecycle (confirmed -> paid guard, automatic invoices) over rea
       let types: string[] = [];
       while (Date.now() < deadline) {
         const rows = await d.q("SELECT type FROM email_logs WHERE to_email = $1 ORDER BY created_at DESC, id DESC", [e]);
-        types = rows.map((row: any) => String(row.type || ""));
+        types = rows.rows.map((row: any) => String(row.type || ""));
         if (expectedTypes.every((type) => types.includes(type))) return types;
         await sleep(150);
       }
