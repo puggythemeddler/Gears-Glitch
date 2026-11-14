@@ -10,7 +10,7 @@ import { Media } from "@/components/Media";
 
 export default function AdminProducts() {
   const feedback = useFeedback();
-  const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
+  const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/admin/products"), []);
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
