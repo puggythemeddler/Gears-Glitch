@@ -113,6 +113,11 @@ interface CustomerWithPassword extends Customer {
   password_hash: string;
 }
 
+interface CustomerDetails extends Customer {
+  orderCount: number;
+  totalSpent: number;
+}
+
 interface CartItem {
   productId: string;
   quantity: number;
@@ -4156,8 +4161,27 @@ async function listActiveCustomers(): Promise<Customer[]> {
   return await queryAll("SELECT id, name, email, phone, is_active, last_login, created_at FROM customers WHERE is_active = 1 ORDER BY name") as Customer[];
 }
 
-async function getCustomerDetails(id: number): Promise<Customer | undefined> {
-  return await findCustomerById(id);
+async function getCustomerDetails(id: number): Promise<CustomerDetails | undefined> {
+  const customer = await findCustomerById(id);
+  if (!customer) return undefined;
+  const stats = await queryOne(
+    `SELECT COUNT(*)::int AS order_count,
+       COALESCE(SUM(GREATEST(
+         (SELECT COALESCE(SUM(oi.price * oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.cancelled = 0)
+         + COALESCE(o.shipping_fee, 0)
+         - COALESCE(o.discount_amount, 0)
+         - COALESCE(o.gift_card_amount, 0)
+         - COALESCE(o.amount_refunded, 0), 0
+       )), 0) AS total_spent
+     FROM orders o
+     WHERE o.customer_id = $1 AND o.status <> 'cancelled'`,
+    [id]
+  ) as any;
+  return {
+    ...customer,
+    orderCount: Number(stats?.order_count) || 0,
+    totalSpent: Number(stats?.total_spent) || 0,
+  };
 }
 
 async function listAllMessages(): Promise<Message[]> {

@@ -1520,6 +1520,8 @@ function AdminOrders() {
     const o = selected;
     const activeSubtotal = (o.items || []).filter((i: any) => !i.cancelled).reduce((s: number, i: any) => s + i.lineTotal, 0);
     const total = activeSubtotal + (o.shippingFee || 0);
+    const customerOrderCount = Number(customerDetail?.orderCount);
+    const customerTotalSpent = Number(customerDetail?.totalSpent);
     return (
       <>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
@@ -1541,7 +1543,7 @@ function AdminOrders() {
                   {customerDetail.last_login && <> &middot; Last login: {new Date(customerDetail.last_login).toLocaleDateString("en-GB")}</>}
                 </p>
                 <p style={{ margin: "0.2rem 0", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                  {customerDetail.orderCount} order{customerDetail.orderCount !== 1 ? "s" : ""} &middot; Total: {formatPrice(customerDetail.totalSpent)}
+                  {Number.isFinite(customerOrderCount) ? customerOrderCount : "—"} order{customerOrderCount !== 1 ? "s" : ""} &middot; Total: {Number.isFinite(customerTotalSpent) ? formatPrice(customerTotalSpent) : "—"}
                 </p>
               </>
             )}
