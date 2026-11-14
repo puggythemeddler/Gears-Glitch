@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
+import { Modal } from "@/components/ui/Modal";
 import RippleButton from "@/components/RippleButton";
 import { usePageTitle } from "@/lib/use-page-title";
 import { formatPrice } from "@/components/admin/shared";
@@ -23,6 +24,7 @@ export default function StockTakeSessionPage() {
   const [deleting, setDeleting] = useState(false);
   const [msg, setMsg] = useState("");
   const [report, setReport] = useState<any>(null);
+  const [completionSummaryOpen, setCompletionSummaryOpen] = useState(false);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
@@ -157,10 +159,11 @@ export default function StockTakeSessionPage() {
         }
       }
       const data = await api<any>(`/api/stock-take/${id}/complete`, { method: "POST" });
-      setMsg("Stock take completed and stock levels adjusted!");
       if (data.report) setReport(data.report);
       if (data.session) setSession(data.session);
       await fetchSession();
+      setMsg("");
+      setCompletionSummaryOpen(true);
     } catch (err: any) { setMsg("Error: " + err.message); }
     finally { setSaving(false); }
   }
@@ -194,6 +197,36 @@ export default function StockTakeSessionPage() {
       input?.focus();
       input?.select();
     });
+  }
+
+  function generateVarianceReport() {
+    if (!report?.items) return;
+    const csvCell = (value: unknown, protectFormula = true) => {
+      let text = String(value ?? "");
+      if (protectFormula && /^[\t\r ]*[=+@-]/.test(text)) text = `'${text}`;
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+    const counted = report.items.filter((item: any) => item.countedQuantity !== null);
+    const rows = [
+      ["Product", "Barcode", "System quantity", "Counted quantity", "Variance", "Variance reason", "Notes", "Unit cost (KES)", "Estimated loss (KES)"].map((cell) => csvCell(cell)).join(","),
+      ...counted.map((item: any) => {
+        const unitCost = item.costPrice === null || item.costPrice === undefined ? null : Number(item.costPrice);
+        const estimatedLoss = unitCost === null ? "" : Math.max(0, -Number(item.variance)) * unitCost;
+        return [
+          csvCell(item.productName), csvCell(item.barcode), csvCell(Number(item.systemQuantity), false),
+          csvCell(Number(item.countedQuantity), false), csvCell(Number(item.variance), false),
+          csvCell(String(item.varianceReason || "").replaceAll("_", " ")), csvCell(item.notes),
+          unitCost === null ? "" : csvCell(unitCost, false), estimatedLoss === "" ? "" : csvCell(estimatedLoss, false),
+        ].join(",");
+      }),
+    ];
+    const blob = new Blob(["\uFEFF", rows.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `stock-take-${session.id}-variance-report.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   if (!authed) {
@@ -437,6 +470,63 @@ export default function StockTakeSessionPage() {
           </div>
         )}
       </div>
+      <Modal
+        open={completionSummaryOpen}
+        onClose={() => setCompletionSummaryOpen(false)}
+        title="Stock take complete"
+        size="lg"
+        footer={(
+          <>
+            <RippleButton variant="secondary" onClick={generateVarianceReport}>Generate report</RippleButton>
+            <RippleButton variant="primary" onClick={() => void router.push("/admin?view=stock-take")}>Okay</RippleButton>
+          </>
+        )}
+      >
+        <p style={{ marginTop: 0 }}>Stock levels have been updated. Review the variance summary below or download the full report.</p>
+        <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+          <div className="stat-card">
+            <div className="stat-card__value">{report?.withVariance ?? 0}</div>
+            <div className="stat-card__label">Items with variance</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card__value">{report?.totalVariance ?? 0}</div>
+            <div className="stat-card__label">Total units over and short</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card__value">{formatPrice(Number(report?.lossAmount || 0))}</div>
+            <div className="stat-card__label">Estimated stock loss at cost</div>
+          </div>
+        </div>
+        {!!report?.unpricedLossItems && (
+          <p className="muted" role="note">
+            {report.unpricedLossItems} shortage item{report.unpricedLossItems === 1 ? " has" : "s have"} no catalog cost price, so {report.unpricedLossItems === 1 ? "its value is" : "their values are"} excluded from the loss estimate.
+          </p>
+        )}
+        {report?.items?.some((item: any) => Number(item.variance) !== 0) ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Product</th><th>System</th><th>Counted</th><th>Variance</th><th>Est. loss</th></tr></thead>
+              <tbody>
+                {report.items.filter((item: any) => Number(item.variance) !== 0).map((item: any) => {
+                  const variance = Number(item.variance);
+                  const loss = item.costPrice === null || item.costPrice === undefined ? null : Math.max(0, -variance) * Number(item.costPrice);
+                  return (
+                    <tr key={item.productId}>
+                      <td>{item.productName}</td>
+                      <td>{item.systemQuantity}</td>
+                      <td>{item.countedQuantity}</td>
+                      <td style={{ color: variance < 0 ? "var(--danger)" : "var(--success)" }}>{variance > 0 ? "+" : ""}{variance}</td>
+                      <td>{loss === null ? "—" : formatPrice(loss)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="panel" style={{ marginBottom: 0 }}>No stock variances were found.</p>
+        )}
+      </Modal>
     </div>
   );
 }
