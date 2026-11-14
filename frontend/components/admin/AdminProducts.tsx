@@ -219,6 +219,7 @@ export default function AdminProducts() {
     const fd = new FormData(e.currentTarget);
     const body: any = {
       name: fd.get("name"), price: Number(fd.get("price")), category: fd.get("category"),
+      costPrice: fd.get("costPrice") === "" ? null : Number(fd.get("costPrice")),
       groupId: fd.get("groupId") || "",
       inStock: fd.get("inStock") === "true", isNonStock: fd.get("isNonStock") === "on",
       isHidden: fd.get("isHidden") === "on",
@@ -293,6 +294,7 @@ export default function AdminProducts() {
             )}
             <div className="field"><label>Name<input name="name" defaultValue={editing?.name} required /></label></div>
             <div className="field"><label>Price (KES)<input name="price" type="number" defaultValue={editing?.price} required /></label></div>
+            <div className="field"><label>Cost price (KES, internal)<input name="costPrice" type="number" step="any" min="0" defaultValue={editing?.costPrice ?? ""} placeholder="Not recorded" /></label><p className="muted" style={{ fontSize: "0.78rem", margin: "0.25rem 0 0" }}>Used for gross profit and markup calculations. This cost is not shown to customers. Clear the field to remove a saved cost.</p></div>
             <div className="field"><label>Sale Price (KES) — leave empty for no sale<input name="salePrice" type="number" step="any" min="0" defaultValue={editing?.salePrice || ""} placeholder="Optional" /></label></div>
             <div className="field">
               <label>Category
