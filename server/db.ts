@@ -562,6 +562,18 @@ interface StockTakeSession {
   branchId: number | null;
   createdBy: number | null;
   completedAt: string | null;
+  appliedAt: string | null;
+  reversedAt: string | null;
+  createdAt: string;
+}
+
+interface StockTakeEvent {
+  id: number;
+  action: "reopened" | "reversed";
+  actorId: number | null;
+  actorName: string;
+  reason: string;
+  details: Record<string, any>;
   createdAt: string;
 }
 
@@ -1466,8 +1478,10 @@ async function updateProduct(id: string, updates: { category?: string; groupId?:
 }
 
 async function deleteProduct(id: string): Promise<boolean> {
-  try { deleteProductImages(id); } catch {}
   try {
+    const stockTakeHistory = await queryOne("SELECT COUNT(*) AS count FROM stock_take_items WHERE product_id = $1", [id]) as any;
+    if (Number(stockTakeHistory?.count || 0) > 0) return false;
+    try { deleteProductImages(id); } catch {}
     // RESTRICT foreign keys (order_items, stock_levels, serials, etc.) make a
     // product with history or stock undeletable on purpose â€” deactivate instead.
     const result = await query("DELETE FROM products WHERE id = $1", [id]);
@@ -4050,11 +4064,11 @@ async function createStockTakeSession(notes?: string, createdBy?: number, branch
 }
 
 async function getStockTakeSession(id: number): Promise<StockTakeSession | undefined> {
-  return await queryOne(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", applied_at AS "appliedAt", created_at AS "createdAt" FROM stock_take_sessions WHERE id = $1`, [id]) as StockTakeSession | undefined;
+  return await queryOne(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", applied_at AS "appliedAt", reversed_at AS "reversedAt", created_at AS "createdAt" FROM stock_take_sessions WHERE id = $1`, [id]) as StockTakeSession | undefined;
 }
 
 async function listStockTakeSessions(): Promise<StockTakeSession[]> {
-  return await queryAll(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", applied_at AS "appliedAt", created_at AS "createdAt" FROM stock_take_sessions ORDER BY created_at DESC`) as StockTakeSession[];
+  return await queryAll(`SELECT id, status, notes, branch_id AS "branchId", created_by AS "createdBy", completed_at AS "completedAt", applied_at AS "appliedAt", reversed_at AS "reversedAt", created_at AS "createdAt" FROM stock_take_sessions ORDER BY created_at DESC`) as StockTakeSession[];
 }
 
 async function getStockTakeItems(sessionId: number): Promise<StockTakeItem[]> {
@@ -4135,7 +4149,7 @@ async function completeStockTakeSession(id: number, actorId?: number): Promise<{
       );
       adjusted++;
     }
-    await client.query("UPDATE stock_take_sessions SET status = 'completed', completed_at = NOW()::text, applied_at = NOW()::text WHERE id = $1", [id]);
+    await client.query("UPDATE stock_take_sessions SET status = 'completed', completed_at = NOW()::text, applied_at = NOW()::text, reversed_at = NULL WHERE id = $1", [id]);
     return { ok: true, adjusted };
   });
 }
@@ -4383,14 +4397,188 @@ async function getStockTakeVarianceReport(sessionId: number): Promise<{ totalIte
   return { totalItems: items.length, counted: counted.length, withVariance: withVariance.length, totalVariance, lossAmount, unpricedLossItems: shortages.length - pricedShortages.length, items };
 }
 
-async function deleteStockTakeSession(sessionId: number): Promise<{ ok: boolean; error?: string }> {
+type StockTakeMovementTotal = { productId: string; branchId: number | null; quantity: number };
+
+async function stockTakeMovementTotals(client: any, sessionId: number): Promise<StockTakeMovementTotal[]> {
+  const rows = await client.query(
+    `SELECT product_id AS "productId", branch_id AS "branchId", SUM(quantity)::integer AS quantity
+     FROM stock_movements
+     WHERE movement_type = 'stock_take_adjust' AND reference_id = $1
+       AND reference_type IN ('stock_take', 'stock_take_reversal')
+     GROUP BY product_id, branch_id`, [String(sessionId)]
+  );
+  return (rows.rows || []).map((row: any) => ({
+    productId: String(row.productId),
+    branchId: row.branchId === null ? null : Number(row.branchId),
+    quantity: Number(row.quantity || 0),
+  }));
+}
+
+function movementTotalKey(item: StockTakeMovementTotal): string {
+  return `${item.branchId ?? "global"}\u0000${item.productId}`;
+}
+
+async function latestStockTakeReopenBaseline(client: any, sessionId: number): Promise<StockTakeMovementTotal[]> {
+  const event = await client.query(
+    "SELECT details FROM stock_take_events WHERE session_id = $1 AND action = 'reopened' ORDER BY id DESC LIMIT 1", [sessionId]
+  );
+  try {
+    const details = JSON.parse(String(event.rows?.[0]?.details || "{}"));
+    return Array.isArray(details.movementTotals) ? details.movementTotals : [];
+  } catch {
+    return [];
+  }
+}
+
+async function getStockTakeRecoveryState(sessionId: number): Promise<{ canReverse: boolean }> {
   const session = await getStockTakeSession(sessionId);
-  if (!session) return { ok: false, error: "Session not found." };
-  const counted = await queryOne("SELECT COUNT(*) AS c FROM stock_take_items WHERE session_id = $1 AND counted_quantity IS NOT NULL", [sessionId]) as any;
-  if (Number(counted?.c || 0) > 0) return { ok: false, error: "Cannot delete session with counted items." };
-  await query("DELETE FROM stock_take_items WHERE session_id = $1", [sessionId]);
-  await query("DELETE FROM stock_take_sessions WHERE id = $1", [sessionId]);
-  return { ok: true };
+  if (!session || session.status !== "completed" || !session.appliedAt || session.reversedAt) return { canReverse: false };
+  const totals = await queryAll(
+    `SELECT product_id AS "productId", branch_id AS "branchId", SUM(quantity)::integer AS quantity
+     FROM stock_movements
+     WHERE movement_type = 'stock_take_adjust' AND reference_id = $1
+       AND reference_type IN ('stock_take', 'stock_take_reversal')
+     GROUP BY product_id, branch_id`, [String(sessionId)]
+  ) as any[];
+  const baselineEvent = await queryOne(
+    "SELECT details FROM stock_take_events WHERE session_id = $1 AND action = 'reopened' ORDER BY id DESC LIMIT 1", [sessionId]
+  ) as any;
+  let baseline: StockTakeMovementTotal[] = [];
+  try { baseline = JSON.parse(String(baselineEvent?.details || "{}")).movementTotals || []; } catch {}
+  const baselineByKey = new Map(baseline.map((item) => [movementTotalKey(item), Number(item.quantity || 0)]));
+  const currentByKey = new Map((totals || []).map((item) => [movementTotalKey({ productId: item.productId, branchId: item.branchId === null ? null : Number(item.branchId), quantity: Number(item.quantity || 0) }), Number(item.quantity || 0)]));
+  const keys = new Set([...baselineByKey.keys(), ...currentByKey.keys()]);
+  return { canReverse: [...keys].some((key) => (currentByKey.get(key) || 0) !== (baselineByKey.get(key) || 0)) };
+}
+
+async function listStockTakeEvents(sessionId: number): Promise<StockTakeEvent[]> {
+  const rows = await queryAll(
+    `SELECT e.id, e.action, e.actor_id AS "actorId", COALESCE(u.username, 'Former user') AS "actorName",
+            e.reason, e.details, e.created_at AS "createdAt"
+     FROM stock_take_events e LEFT JOIN users u ON u.id = e.actor_id
+     WHERE e.session_id = $1 ORDER BY e.id DESC`, [sessionId]
+  ) as StockTakeEvent[];
+  return rows.map((event: any) => {
+    try { return { ...event, details: JSON.parse(String(event.details || "{}")) }; }
+    catch { return { ...event, details: {} }; }
+  });
+}
+
+async function reopenStockTakeSession(sessionId: number, actorId: number, reason: string): Promise<{ ok: boolean; error?: string }> {
+  const cleanReason = String(reason || "").trim();
+  if (cleanReason.length < 10 || cleanReason.length > 1000) return { ok: false, error: "Provide a reopening reason between 10 and 1000 characters." };
+  return await transaction(async (client) => {
+    const sessionResult = await client.query("SELECT * FROM stock_take_sessions WHERE id = $1 FOR UPDATE", [sessionId]);
+    const session = sessionResult.rows?.[0] as any;
+    if (!session) return { ok: false, error: "Stock take session not found." };
+    if (session.status !== "completed") return { ok: false, error: "Only a completed stock take can be reopened." };
+    const itemsResult = await client.query(
+      `SELECT id, product_id AS "productId", product_name AS "productName", system_quantity AS "systemQuantity",
+              counted_quantity AS "countedQuantity", variance, variance_reason AS "varianceReason", notes
+       FROM stock_take_items WHERE session_id = $1 ORDER BY product_id FOR UPDATE`, [sessionId]
+    );
+    const items = itemsResult.rows || [];
+    const movementTotals = await stockTakeMovementTotals(client, sessionId);
+    await client.query(
+      `INSERT INTO stock_take_events (session_id, action, actor_id, reason, details)
+       VALUES ($1, 'reopened', $2, $3, $4)`,
+      [sessionId, actorId, cleanReason, JSON.stringify({ previousCompletedAt: session.completed_at, previousAppliedAt: session.applied_at, items, movementTotals })]
+    );
+    const branchId = session.branch_id == null ? null : Number(session.branch_id);
+    for (const item of items) {
+      const stockResult = await client.query(
+        branchId == null
+          ? "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL FOR UPDATE"
+          : "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE",
+        branchId == null ? [item.productId] : [item.productId, branchId]
+      );
+      const currentQuantity = stockResult.rows?.[0] ? Number(stockResult.rows[0].quantity_in_stock) : 0;
+      await client.query(
+        `UPDATE stock_take_items SET system_quantity = $1, counted_quantity = NULL, variance = 0,
+            variance_reason = NULL, notes = '' WHERE id = $2`, [currentQuantity, item.id]
+      );
+    }
+    await client.query(
+      "UPDATE stock_take_sessions SET status = 'in_progress', completed_at = NULL, applied_at = NULL, reversed_at = NULL WHERE id = $1",
+      [sessionId]
+    );
+    return { ok: true };
+  });
+}
+
+async function reverseStockTakeAdjustments(sessionId: number, actorId: number, reason: string): Promise<{ ok: boolean; reversedItems?: number; error?: string }> {
+  const cleanReason = String(reason || "").trim();
+  if (cleanReason.length < 10 || cleanReason.length > 1000) return { ok: false, error: "Provide a reversal reason between 10 and 1000 characters." };
+  return await transaction(async (client) => {
+    const sessionResult = await client.query("SELECT * FROM stock_take_sessions WHERE id = $1 FOR UPDATE", [sessionId]);
+    const session = sessionResult.rows?.[0] as any;
+    if (!session) return { ok: false, error: "Stock take session not found." };
+    if (session.status !== "completed" || !session.applied_at) return { ok: false, error: "Only an applied, completed stock take can be reversed." };
+    if (session.reversed_at) return { ok: false, error: "This stock take has already been reversed. Reopen it before applying another count." };
+
+    const [currentTotals, baselineTotals] = await Promise.all([
+      stockTakeMovementTotals(client, sessionId),
+      latestStockTakeReopenBaseline(client, sessionId),
+    ]);
+    const currentByKey = new Map(currentTotals.map((item) => [movementTotalKey(item), item]));
+    const baselineByKey = new Map(baselineTotals.map((item) => [movementTotalKey(item), Number(item.quantity || 0)]));
+    const keys = new Set([...currentByKey.keys(), ...baselineByKey.keys()]);
+    const deltas = [...keys].map((key) => {
+      const current = currentByKey.get(key);
+      return {
+        productId: current?.productId || baselineTotals.find((item) => movementTotalKey(item) === key)?.productId || "",
+        branchId: current?.branchId ?? baselineTotals.find((item) => movementTotalKey(item) === key)?.branchId ?? null,
+        quantity: (current?.quantity || 0) - (baselineByKey.get(key) || 0),
+      };
+    }).filter((item) => item.quantity !== 0);
+    if (!deltas.length) return { ok: false, error: "There are no active stock adjustments from this stock take to reverse." };
+
+    const reversalPlan: Array<{ productId: string; branchId: number | null; quantity: number; nextQuantity: number }> = [];
+    for (const delta of deltas) {
+      const stockResult = await client.query(
+        delta.branchId == null
+          ? "SELECT quantity_in_stock, quantity_reserved FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL FOR UPDATE"
+          : "SELECT quantity_in_stock, quantity_reserved FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE",
+        delta.branchId == null ? [delta.productId] : [delta.productId, delta.branchId]
+      );
+      const stock = stockResult.rows?.[0];
+      const currentQuantity = stock ? Number(stock.quantity_in_stock) : 0;
+      const reserved = stock ? Number(stock.quantity_reserved || 0) : 0;
+      const nextQuantity = currentQuantity - delta.quantity;
+      if (nextQuantity < 0 || nextQuantity < reserved) {
+        return { ok: false, error: `Cannot reverse safely: stock for ${delta.productId} has since been used or reserved. Reconcile its current stock before reversing.` };
+      }
+      reversalPlan.push({ productId: delta.productId, branchId: delta.branchId, quantity: -delta.quantity, nextQuantity });
+    }
+
+    for (const item of reversalPlan) {
+      if (item.branchId == null) {
+        await client.query(
+          `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+           VALUES ($1, $2, 0, 0, 5) ON CONFLICT (product_id) WHERE branch_id IS NULL
+           DO UPDATE SET quantity_in_stock = $2, updated_at = NOW()::text`, [item.productId, item.nextQuantity]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+           VALUES ($1, $2, $3, 0, 0, 5) ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL
+           DO UPDATE SET quantity_in_stock = $3, updated_at = NOW()::text`, [item.productId, item.branchId, item.nextQuantity]
+        );
+      }
+      await client.query(
+        `INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id, created_by)
+         VALUES ($1, 'stock_take_adjust', $2, 'stock_take_reversal', $3, $4, $5, $6)`,
+        [item.productId, item.quantity, String(sessionId), `Reversal reason: ${cleanReason}`, item.branchId, actorId]
+      );
+    }
+    await client.query(
+      `INSERT INTO stock_take_events (session_id, action, actor_id, reason, details)
+       VALUES ($1, 'reversed', $2, $3, $4)`,
+      [sessionId, actorId, cleanReason, JSON.stringify({ reversed: reversalPlan })]
+    );
+    await client.query("UPDATE stock_take_sessions SET reversed_at = NOW()::text WHERE id = $1", [sessionId]);
+    return { ok: true, reversedItems: reversalPlan.length };
+  });
 }
 
 async function createStockSnapshot(snapshotDate?: string, branchId?: number): Promise<boolean> {
@@ -5255,7 +5443,7 @@ export {
   getStockSummary, getStockSummaryByBranch, getEmployeeSalesPerformance, getTechnicianRepairStats,
   getProductByBarcode, listSerials, listSerialInventoryDiscrepancies, getSerialByNumber, createSerial, reconcileLegacySerial, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,
   createStockTakeSession, getStockTakeSession, listStockTakeSessions, getStockTakeItems, recordStockCount, completeStockTakeSession,
-  applyStockTakeAdjustments, getStockTakeVarianceReport, deleteStockTakeSession,
+  applyStockTakeAdjustments, getStockTakeVarianceReport, getStockTakeRecoveryState, listStockTakeEvents, reopenStockTakeSession, reverseStockTakeAdjustments,
   createStockSnapshot, getStockSnapshot, listStockSnapshotDates, getCurrentStockLevels,
   logAudit, getAuditLog, addAuditLog, listAuditLogs,
   getShopPlan, setShopPlan,

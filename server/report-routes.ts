@@ -16,6 +16,7 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import { ownerAuthMiddleware } from "./auth";
 import { requirePermission, asyncHandler } from "./routes/shared";
+import { requireShopFeature } from "./feature-access";
 import { queryOne, queryAll } from "./db-helpers";
 import {
   parseDateRange,
@@ -586,9 +587,9 @@ router.get("/valuation/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(as
 
 // ─── Stock take summary ─────────────────────────────────────────────────────
 
-router.get("/stock-take-summary", ownerAuthMiddleware, VIEW, asyncHandler(async (_req: Request, res: Response) => {
+router.get("/stock-take-summary", ownerAuthMiddleware, VIEW, requireShopFeature("Stock take"), asyncHandler(async (_req: Request, res: Response) => {
   const rows = await queryAll(
-    `SELECT s.id, s.status, s.created_at, s.completed_at,
+    `SELECT s.id, s.status, s.created_at, s.completed_at, s.reversed_at,
        COUNT(sti.id)::int AS items,
        COALESCE(SUM(sti.variance), 0)::int AS net_variance_units,
        COALESCE(SUM(ABS(sti.variance)), 0)::int AS gross_variance_units,
@@ -605,6 +606,7 @@ router.get("/stock-take-summary", ownerAuthMiddleware, VIEW, asyncHandler(async 
     status: r.status,
     created_at: r.created_at,
     completed_at: r.completed_at || null,
+    reversed_at: r.reversed_at || null,
     items: Number(r.items || 0),
     net_variance_units: Number(r.net_variance_units || 0),
     gross_variance_units: Number(r.gross_variance_units || 0),
