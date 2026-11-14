@@ -26,6 +26,7 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  applyProductMarkup,
   generateProductId,
   findCustomerByEmail,
   findCustomerById,
@@ -680,6 +681,7 @@ function defineAudit(route: string, entity: string, opts: { action?: string; met
 defineAudit("/api/products", "product");
 defineAudit("/api/products/import", "product", { action: "imported" });
 defineAudit("/api/admin/products/bulk-edit", "product", { action: "bulk_edited" });
+defineAudit("/api/admin/products/apply-markup", "product", { action: "markup_applied" });
 defineAudit("/api/products/:id", "product");
 defineAudit("/api/products/:id/price", "product", { action: "price_changed" });
 defineAudit("/api/products/:id/subcategory", "product", { action: "subcategory_changed" });
@@ -5213,6 +5215,48 @@ app.post("/api/admin/products/bulk-edit", ownerAuthMiddleware, requirePermission
     updated.push(id);
   }
   res.json({ updated: updated.length, notFound });
+}));
+
+app.get("/api/admin/pricing/products", ownerAuthMiddleware, requirePermission("product:update"), asyncHandler(async (_req: Request, res: Response) => {
+  const products = await listProducts(undefined, undefined, true);
+  res.json({ products: products.map((product: any) => ({
+    id: product.id,
+    name: product.name,
+    category: product.category,
+    price: product.price,
+    salePrice: product.salePrice ?? null,
+    costPrice: product.costPrice ?? null,
+    inStock: product.inStock,
+    isHidden: product.isHidden,
+    isNonStock: product.isNonStock,
+  })) });
+}));
+
+app.post("/api/admin/products/apply-markup", ownerAuthMiddleware, requirePermission("product:update"), asyncHandler(async (req: Request, res: Response) => {
+  const { productIds, mode, value, expected } = req.body || {};
+  if (!Array.isArray(productIds) || productIds.length < 1 || productIds.length > 500 || !productIds.every((id: any) => typeof id === "string" && id.length > 0)) {
+    res.status(400).json({ error: "Select between 1 and 500 products." }); return;
+  }
+  if (new Set(productIds).size !== productIds.length) { res.status(400).json({ error: "Product selection contains duplicates." }); return; }
+  if (mode !== "percentage" && mode !== "fixed") { res.status(400).json({ error: "Choose percentage or fixed amount markup." }); return; }
+  if (!isNonNegNum(Number(value)) || Number(value) <= 0 || (mode === "percentage" && Number(value) > 10000)) {
+    res.status(400).json({ error: mode === "percentage" ? "Markup percentage must be greater than 0 and no more than 10,000%." : "Markup amount must be greater than 0." }); return;
+  }
+  if (!expected || typeof expected !== "object" || Array.isArray(expected)) { res.status(400).json({ error: "Refresh the price list and preview changes before applying." }); return; }
+  for (const id of productIds) {
+    const snapshot = expected[id];
+    if (!snapshot || !isNonNegNum(Number(snapshot.price)) || !isNonNegNum(Number(snapshot.costPrice)) || !(snapshot.salePrice === null || isNonNegNum(Number(snapshot.salePrice)))) {
+      res.status(400).json({ error: "Pricing preview is incomplete. Refresh the list and preview changes again." }); return;
+    }
+  }
+  try {
+    const result = await applyProductMarkup(productIds, mode, Number(value), expected);
+    res.json({ updated: result.updated, skipped: result.skipped });
+  } catch (err: any) {
+    const message = String(err?.message || "");
+    const status = /pricing changed/i.test(message) ? 409 : /outside the supported range/i.test(message) ? 400 : 500;
+    res.status(status).json({ error: status === 500 ? "Could not apply markup. No selected prices were changed." : message });
+  }
 }));
 
 app.get("/api/admin/products/:id/price-history", ownerAuthMiddleware, requirePermission("product:list"), asyncHandler(async (req: Request, res: Response) => {
