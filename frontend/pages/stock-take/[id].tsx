@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
+import RippleButton from "@/components/RippleButton";
 import { usePageTitle } from "@/lib/use-page-title";
 import { formatPrice } from "@/components/admin/shared";
 
@@ -19,6 +20,7 @@ export default function StockTakeSessionPage() {
   const [varianceReasons, setVarianceReasons] = useState<Record<string, string>>({});
   const [varianceNotes, setVarianceNotes] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [msg, setMsg] = useState("");
   const [report, setReport] = useState<any>(null);
   const [allProducts, setAllProducts] = useState<any[]>([]);
@@ -165,10 +167,12 @@ export default function StockTakeSessionPage() {
 
   async function deleteSession() {
     if (!(await confirmDialog({ message: "Delete this session? Only possible if no items have been counted.", confirmLabel: "Delete", danger: true }))) return;
+    setDeleting(true);
     try {
       await api(`/api/stock-take/${id}`, { method: "DELETE" });
       router.push("/admin?view=stock-take");
     } catch (err: any) { setMsg("Error: " + err.message); }
+    finally { setDeleting(false); }
   }
 
   const existingProductIds = new Set(items.map((i) => i.productId));
@@ -219,8 +223,8 @@ export default function StockTakeSessionPage() {
           <div style={{ display: "flex", gap: "0.5rem" }}>
             {session.status === "in_progress" && (
               <>
-                <button className="button button-small" onClick={completeSession} disabled={saving}>Complete & Apply</button>
-                <button className="button button-small button-ghost" style={{ color: "var(--danger)" }} onClick={deleteSession}>Delete</button>
+                <RippleButton size="small" variant="primary" onClick={completeSession} loading={saving} disabled={deleting}>Complete &amp; Apply</RippleButton>
+                <RippleButton size="small" variant="danger" onClick={deleteSession} loading={deleting} disabled={saving}>Delete</RippleButton>
               </>
             )}
           </div>
