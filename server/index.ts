@@ -5057,6 +5057,12 @@ app.get("/api/products", asyncHandler(async (req: Request, res: Response) => {
   res.json({ products: products.map(publicProduct), currency: (await getSettings()).currency });
 }));
 
+// Product costs are internal business data. Keep the storefront endpoint above
+// scrubbed, and provide the admin catalog editor a separately authorized feed.
+app.get("/api/admin/products", ownerAuthMiddleware, requirePermission("product:list"), asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ products: await listProducts(undefined, undefined, true) });
+}));
+
 app.get("/api/products/by-barcode/:code", asyncHandler(async (req: Request, res: Response) => {
   const product = await getProductByBarcode(String(req.params.code || ""));
   if (!product) { res.status(404).json({ error: "No product matches that barcode." }); return; }
