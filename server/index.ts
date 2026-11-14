@@ -16,6 +16,7 @@ import helmet from "helmet";
 import crypto from "crypto";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
+import { shouldRejectUnlocatedStockWrite } from "./stock-location-guard";
 import {
   initDb,
   getSettings,
@@ -6935,7 +6936,7 @@ app.put("/api/stock/:productId", ownerAuthMiddleware, requirePermission("stock:u
   if (Object.keys(updates).length === 0) { res.status(400).json({ error: "Provide quantityInStock or lowStockThreshold to update." }); return; }
   const branchId = await authorizeStockBranch(req, res, req.body.branchId, true);
   if (branchId === undefined) return;
-  if (branchId === null && updates.quantityInStock !== undefined && updates.quantityInStock > 0 && await getBranchCount() > 0) {
+  if (shouldRejectUnlocatedStockWrite(branchId, updates.quantityInStock, await getBranchCount())) {
     res.status(409).json({ error: "Stock must be assigned to a branch. Select a branch before setting on-hand quantity." }); return;
   }
   await updateStockLevel(String(req.params.productId), updates, branchId ?? undefined);
