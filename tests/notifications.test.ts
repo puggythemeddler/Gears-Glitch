@@ -2,7 +2,7 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 
 import { query, queryOne } from "../server/db-helpers";
-import { updateNotificationPreferences, listNotificationLog } from "../server/notification-service";
+import { updateNotificationPreferences, listNotificationLog, listOrderCommunicationLog } from "../server/notification-service";
 
 import { bootstrapTestDatabase } from "../server/test-db";
 const HAS_DB = bootstrapTestDatabase();
@@ -65,12 +65,38 @@ describe("notification service (P1)", { skip: !HAS_DB && "TEST_DATABASE_URL not 
     const after = await updateNotificationPreferences({ "warranty.created": { email: true, whatsapp: true } });
     assert.equal(after["order.created"].email, true);
     assert.equal(after["warranty.created"].whatsapp, true);
+    assert.equal(after["order.refunded"].email, true);
+    assert.equal(after["order.refunded"].whatsapp, false);
 
     // Reset so subsequent runs start clean.
     await updateNotificationPreferences({
       "order.created": { email: true, whatsapp: true },
       "warranty.created": { email: true, whatsapp: true },
+      "order.refunded": { email: true, whatsapp: false },
     });
+  });
+
+  it("order communication proof is scoped to the order and includes refund delivery rows", async () => {
+    const orderId = 800000000 + (Date.now() % 100000000);
+    const key = `order.refunded:refund:${orderId}`;
+    try {
+      await query(
+        `INSERT INTO notification_log (event_type, channel, recipient, status, entity_type, entity_id, idempotency_key, provider_message_id)
+         VALUES ('order.refunded', 'email', 'customer@example.test', 'sent', 'order', $1, $2, 'provider-ref-1')`,
+        [orderId, key]
+      );
+      await query(
+        `INSERT INTO notification_log (event_type, channel, recipient, status, entity_type, entity_id, idempotency_key)
+         VALUES ('repair.created', 'email', 'staff@example.test', 'sent', 'repair', $1, $2)`,
+        [orderId, key]
+      );
+      const rows = await listOrderCommunicationLog(orderId);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].event_type, "order.refunded");
+      assert.equal(rows[0].provider_message_id, "provider-ref-1");
+    } finally {
+      await query("DELETE FROM notification_log WHERE entity_id = $1", [orderId]);
+    }
   });
 
   it("notification_log records entries and is fetchable via listNotificationLog", async () => {

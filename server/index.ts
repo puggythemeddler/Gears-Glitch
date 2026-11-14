@@ -435,14 +435,14 @@ import { getFinancingConfig, saveFinancingConfig } from "./financing/config";
 import { getEffectiveFeatures, requireShopFeature, getBranchFeatureOverrides, saveBranchFeatureOverrides } from "./feature-access";
 import * as notifier from "./notify";
 import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
-import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, orderStatusEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail, logEmailTransportStatus } from "./email";
+import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail, logEmailTransportStatus } from "./email";
 import { getGmailConfig, getGmailStatus, buildGmailAuthUrl, signGmailState, verifyGmailState, getOAuthStateSecret, exchangeGmailCode, saveGmailConnection, testGmailConnection, recordGmailTestResult, disconnectGmail } from "./gmail";
 import { getIntegrationsHealth } from "./integrations-health";
 import { upsertOauthAccount, acquireWebhookEvent, markWebhookProcessed, markWebhookFailed } from "./integrations-store";
 import { handleWhatsAppWebhook, whatsAppWebhookHttpStatus, verifyWhatsAppChallenge, verifyWhatsAppSignature, sendWhatsAppMessage, getWhatsAppConfig, testWhatsAppConnection, downloadWhatsAppMedia, sendWhatsAppInteractiveButtons, sendWhatsAppListMessage, notifyAdminWhatsApp } from "./whatsapp";
 import { getWhatsAppConsentPreferences, saveWhatsAppConsentPreferences } from "./whatsapp-consent";
-import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, getCustomerCommPrefs, updateCustomerCommPrefs, enqueueOrderInvoiceDelivery, startNotificationQueueWorker } from "./notification-service";
-import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerRepairUpdate, notifyCustomerRepairMessage, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, runSoftwareLicenseReminderSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
+import { notify, getNotificationPreferences, updateNotificationPreferences, listNotificationLog, listOrderCommunicationLog, getCustomerCommPrefs, updateCustomerCommPrefs, enqueueOrderInvoiceDelivery, startNotificationQueueWorker } from "./notification-service";
+import { notifyCustomerWelcome, notifyCustomerWelcomeByEmail, notifyCustomerOrderProcessed, notifyCustomerOrderPlaced, notifyCustomerOrderStatusChanged, notifyCustomerOrderItemCancelled, notifyCustomerOrderDetailsChanged, notifyCustomerOrderRefunded, notifyCustomerRepairUpdate, notifyCustomerRepairMessage, notifyCustomerWarrantyUpdate, runWarrantyNotificationSweep, runSoftwareLicenseReminderSweep, getWarrantyReminderDays, setWarrantyReminderDays, listCustomerNotifications } from "./customer-notifications";
 import { getWhatsAppMediaById, createWhatsAppTemplate, listWhatsAppTemplates, deleteWhatsAppTemplate, setWhatsAppTemplateApproval, trackPageView, getVisitorStats } from "./db";
 import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, updatePage, deletePage, type PageRow } from "./db";
 import { publicBaseUrl } from "./public-url";
@@ -1213,7 +1213,9 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
   }
 
   // Update order in database — atomic amount verification + state transition.
+  let priorOrder: any;
   try {
+    priorOrder = await getOrderByCheckoutRequest(checkoutId);
     const applied = await updateOrderMpesaStatus(checkoutId, resultCode, mpesaReceipt, paidAmount);
     if (resultCode === 0 && mpesaReceipt && !applied.applied) {
       // A-1/D-4: amount mismatch or an unpayable state — acknowledge with
@@ -1227,6 +1229,10 @@ app.post("/api/mpesa/callback", async (req: Request, res: Response) => {
       } catch { /* non-fatal */ }
       try { await markWebhookProcessed("mpesa", okEventKey(), 0); } catch { /* ledger is best-effort */ }
       return res.json({ ResultCode: 0, ResultDesc: "Success" });
+    }
+    if (resultCode !== 0 && applied.applied && priorOrder && priorOrder.status !== "cancelled") {
+      try { await notifyCustomerOrderStatusChanged(priorOrder.id, priorOrder.status, "cancelled"); }
+      catch (err: any) { console.warn("[notify] M-Pesa cancellation notice failed:", err?.message || err); }
     }
   } catch (err: any) {
     // D-4: never lose a payment. If the DB transition did not happen, acknowledge
@@ -3118,6 +3124,7 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
   const row = await queryOne("SELECT status, checkout_request_id, mpesa_receipt FROM orders WHERE id = $1", [id]) as any;
   if (!row) { res.status(404).json({ error: "Order not found." }); return; }
   const checkoutRequestId = row.checkout_request_id || null;
+  const previousStatus = String(row.status || "pending");
   let paid = row.status === "paid" || row.status === "delivered";
   let mpesaReceipt = row.mpesa_receipt || null;
   let status = row.status;
@@ -3162,6 +3169,8 @@ app.get("/api/pos/orders/:id/payment-status", posAuthMiddleware, asyncHandler(as
         } else if (code > 0) {
           await releaseOrderHeldStock(id);
           await updateOrderStatus(id, "cancelled");
+          try { await notifyCustomerOrderStatusChanged(id, previousStatus, "cancelled"); }
+          catch (err: any) { console.warn("[notify] POS payment cancellation notice failed:", err?.message || err); }
           status = "cancelled";
         }
       } catch { /* query failed — keep pending so the till can retry */ }
@@ -3200,6 +3209,8 @@ app.post("/api/pos/orders/:id/cancel", posAuthMiddleware, asyncHandler(async (re
     res.status(status).json({ error: cancellation.error || "POS sale could not be cancelled." });
     return;
   }
+  try { await notifyCustomerOrderStatusChanged(id, order.status, "cancelled"); }
+  catch (err: any) { console.warn("[notify] POS order cancellation notice failed:", err?.message || err); }
   res.json({ order: { ...order, status: "cancelled" } });
 }));
 
@@ -3568,6 +3579,8 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
       // hold is released immediately to keep items on the shelf.
       if (!mpesaCheckoutId) {
         try { await releaseOrderHeldStock(order.id); } catch (err: any) { console.error("[order] Failed to release held stock:", err.message); }
+        try { await notifyCustomerOrderStatusChanged(order.id, order.status, "cancelled"); }
+        catch (err: any) { console.warn("[notify] Unstarted M-Pesa order cancellation notice failed:", err?.message || err); }
       }
     }
     try {
@@ -3700,6 +3713,8 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
           }
           if (!stkCheckoutId) {
             try { await releaseOrderHeldStock(orderId); } catch { /* non-fatal */ }
+            try { await notifyCustomerOrderStatusChanged(orderId, order.status, "cancelled"); }
+            catch (err: any) { console.warn("[notify] Unstarted M-Pesa order cancellation notice failed:", err?.message || err); }
           }
           mpesaRequested = true;
         }
@@ -3708,6 +3723,17 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
       }
     }
     const updated = await getOrder(orderId);
+    const changedFields = [
+      shippingName !== undefined && String(shippingName) !== String(order.shippingName || "") ? "delivery name" : "",
+      shippingAddress !== undefined && String(shippingAddress) !== String(order.shippingAddress || "") ? "delivery address" : "",
+      shippingCounty !== undefined && String(shippingCounty) !== String(order.shippingCounty || "") ? "delivery county" : "",
+      shippingPhone !== undefined && String(shippingPhone) !== String(order.shippingPhone || "") ? "contact phone" : "",
+      notes !== undefined && String(notes) !== String(order.notes || "") ? "order notes" : "",
+      paymentMethod !== undefined && String(paymentMethod) !== String(order.paymentMethod || "") ? "payment method" : "",
+      mpesaPhone !== undefined && paymentMethod === "mpesa" ? "M-Pesa contact number" : "",
+    ].filter(Boolean);
+    try { await notifyCustomerOrderDetailsChanged(orderId, changedFields); }
+    catch (err: any) { console.warn("[notify] Customer order edit confirmation failed:", err?.message || err); }
     res.json({ ...updated, mpesaRequested });
   } catch (err: any) {
     console.error("[order update]", err?.message || err);
@@ -3781,11 +3807,15 @@ app.patch("/api/provider/orders/:id/items/:itemId/cancel", providerAuthMiddlewar
       res.status(404).json({ error: "Order not found." }); return;
     }
     const itemId = Number(req.params.itemId);
-    if (!order.items.some((i: any) => i.id === itemId)) {
+    const item = order.items.find((i: any) => i.id === itemId);
+    if (!item) {
       res.status(404).json({ error: "Item not found in this order." }); return;
     }
+    if (item.cancelled) { res.status(409).json({ error: "This order item is already cancelled." }); return; }
     const ok = await cancelOrderItem(itemId);
     if (!ok) { res.status(404).json({ error: "Item not found." }); return; }
+    try { await notifyCustomerOrderItemCancelled(order.id, itemId, String(item.name || "Item")); }
+    catch (err: any) { console.warn("[notify] Order item cancellation notice failed:", err?.message || err); }
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to cancel item." });
@@ -3811,14 +3841,13 @@ app.patch("/api/provider/orders/:id/status", providerAuthMiddleware, asyncHandle
     }
     const ok = await updateOrderStatus(Number(req.params.id), status);
     if (!ok) { res.status(404).json({ error: "Order not found." }); return; }
-    const updatedOrder = await getOrder(Number(req.params.id));
-    if (updatedOrder && updatedOrder.customerEmail) {
+    if (order.status !== status) {
       if (status === "delivered") {
-        // Delivered orders also get their invoice PDF automatically.
-        try { enqueueOrderInvoiceDelivery(updatedOrder.id, "delivered").catch(() => {}); } catch {}
+        // The invoice delivery is the customer notice for delivery and includes the PDF.
+        try { enqueueOrderInvoiceDelivery(order.id, "delivered").catch(() => {}); } catch {}
       } else {
-        const { subject: emailSub, html } = orderStatusEmail(updatedOrder.customerName || "Customer", `#${updatedOrder.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${updatedOrder.id}`);
-        sendEmail(updatedOrder.customerEmail, emailSub, html, "order_status");
+        try { await notifyCustomerOrderStatusChanged(order.id, order.status, status); }
+        catch (err: any) { console.warn("[notify] Provider order status notice failed:", err?.message || err); }
       }
     }
     res.json({ ok: true });
@@ -3943,13 +3972,13 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, requirePermission
   const ok = await updateOrderStatus(Number(req.params.id), status);
   if (!ok) { res.status(404).json({ error: "Order not found." }); return; }
   res.json({ ok: true });
-  if (order && order.customerEmail) {
+  if (order.status !== status) {
     if (status === "delivered" && isOrderPaid({ ...order, status })) {
       // Delivered orders also get their invoice PDF automatically.
       try { enqueueOrderInvoiceDelivery(order.id, "delivered").catch(() => {}); } catch {}
     } else {
-      const { subject: emailSub, html } = orderStatusEmail(order.customerName || "Customer", `#${order.id}`, status, `${publicBaseUrl("http://localhost:3000")}/order?id=${order.id}`);
-      sendEmail(order.customerEmail, emailSub, html, "order_status");
+      try { await notifyCustomerOrderStatusChanged(order.id, order.status, status); }
+      catch (err: any) { console.warn("[notify] Admin order status notice failed:", err?.message || err); }
     }
   }
 }));
@@ -8706,7 +8735,19 @@ app.post("/api/admin/abandoned-carts/send-reminder", ownerAuthMiddleware, requir
 app.get("/api/admin/orders/:id/refunds", ownerAuthMiddleware, requirePermission("order:view"), asyncHandler(async (req: Request, res: Response) => {
   const order = await getOrder(Number(req.params.id));
   if (!order) { res.status(404).json({ error: "Order not found." }); return; }
-  res.json({ refunds: await listRefunds(Number(req.params.id)), amountRefunded: order.amountRefunded });
+  const [refunds, communicationLog] = await Promise.all([
+    listRefunds(Number(req.params.id)),
+    listOrderCommunicationLog(Number(req.params.id)),
+  ]);
+  const refundRows = refunds.map((refund: any) => {
+    const key = `order.refunded:refund:${refund.id}`;
+    const latestByChannel = new Map<string, any>();
+    for (const log of communicationLog) {
+      if (log.idempotency_key === key && !latestByChannel.has(log.channel)) latestByChannel.set(log.channel, log);
+    }
+    return { ...refund, communications: [...latestByChannel.values()] };
+  });
+  res.json({ refunds: refundRows, amountRefunded: order.amountRefunded });
 }));
 
 app.post("/api/admin/orders/:id/refunds", ownerAuthMiddleware, requirePermission("order:view"), asyncHandler(async (req: Request, res: Response) => {
@@ -8738,6 +8779,8 @@ app.post("/api/admin/orders/:id/refunds", ownerAuthMiddleware, requirePermission
       stockDisposition: body.orderItemId !== undefined ? body.stockDisposition : "not_returned",
       createdBy: (req as any).user.sub,
     });
+    try { await notifyCustomerOrderRefunded(orderId, refund); }
+    catch (err: any) { console.warn("[notify] Refund customer notice could not be queued:", err?.message || err); }
     res.status(201).json(refund);
   } catch (err: any) {
     console.error("[refund create]", err?.message || err);
@@ -9425,7 +9468,7 @@ app.get("/api/admin/notifications/log", adminAuthMiddleware, requirePermission("
 
 app.get("/api/admin/notifications/events", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
   res.json({ events: [
-    "order.created", "order.paid", "order.status_changed", "order.processed",
+    "order.created", "order.paid", "order.status_changed", "order.refunded", "order.processed",
     "payment.completed", "payment.failed",
     "customer.created", "customer.login",
     "repair.created", "repair.status_changed", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled", "repair.customer_update",
@@ -9714,7 +9757,12 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
             [cutoff]
           )) as any[];
           for (const o of drained) {
+            const previousOrder = await getOrder(Number(o.id));
             await releaseOrderHeldStock(Number(o.id));
+            if (previousOrder && previousOrder.status !== "cancelled") {
+              try { await notifyCustomerOrderStatusChanged(Number(o.id), previousOrder.status, "cancelled"); }
+              catch (err: any) { console.warn("[notify] Timed-out M-Pesa cancellation notice failed:", err?.message || err); }
+            }
             console.log(`[mpesa-timeout] Released held stock for timed-out order ${o.id}`);
           }
         } catch (err: any) { console.error("[mpesa-timeout] Error:", err.message); }

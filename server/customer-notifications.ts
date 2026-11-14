@@ -18,6 +18,7 @@ import {
   warrantyExpiredCustomerEmail,
   repairCustomerEmail,
   warrantyClaimCustomerEmail,
+  orderStatusEmail,
   type CustomerDeviceInfo,
 } from "./email";
 
@@ -151,6 +152,106 @@ async function customerContact(order: any): Promise<{ id?: number; name: string;
     email,
     phone,
   };
+}
+
+function escapeCustomerMessage(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]!));
+}
+
+/** Queue a customer-facing message after a committed order status transition. */
+export async function notifyCustomerOrderStatusChanged(orderId: number, previousStatus: string, status: string): Promise<void> {
+  if (!orderId || previousStatus === status) return;
+  const order = await getOrder(orderId);
+  if (!order || String(order.status) !== status) return;
+  const contact = await customerContact(order);
+  const settings = await getSettings();
+  const storeName = settings.storeName || "My Shop";
+  const orderUrl = `${baseUrl()}/order?id=${order.id}`;
+  const { subject, html } = orderStatusEmail(contact.name, `#${order.id}`, status, orderUrl);
+  const statusLabel = status.replace(/[_-]+/g, " ");
+  const bodyText = `Hi ${contact.name}, your order #${order.id} has been updated. Its current status is ${statusLabel}. If you need help, contact ${storeName}. View your order: ${orderUrl}`;
+  await notify({
+    event: "order.status_changed", entityType: "order", entityId: order.id,
+    subject, bodyText, bodyHtml: html, audience: "customer", customerId: contact.id,
+    recipientEmail: contact.email, recipientPhone: contact.phone, recipientName: contact.name,
+    idempotencyKey: `order.status_changed:order:${order.id}:${previousStatus}:${status}:${order.updatedAt || Date.now()}`,
+    metadata: { previousStatus, status, source: order.source || "storefront" },
+  });
+}
+
+export async function notifyCustomerOrderItemCancelled(orderId: number, itemId: number, itemName: string): Promise<void> {
+  const order = await getOrder(orderId);
+  if (!order) return;
+  const contact = await customerContact(order);
+  const storeName = (await getSettings()).storeName || "My Shop";
+  const safeName = escapeCustomerMessage(contact.name);
+  const safeItem = escapeCustomerMessage(itemName || "an item");
+  const orderUrl = `${baseUrl()}/order?id=${order.id}`;
+  const subject = `An item on order #${order.id} was cancelled — ${storeName}`;
+  const bodyText = `Hi ${contact.name}, ${itemName || "An item"} on order #${order.id} has been cancelled. Review your order or contact ${storeName} if you need help: ${orderUrl}`;
+  await notify({
+    event: "order.status_changed", entityType: "order", entityId: order.id,
+    subject, bodyText,
+    bodyHtml: `<p>Hi ${safeName},</p><p><strong>${safeItem}</strong> on order <strong>#${order.id}</strong> has been cancelled.</p><p><a href="${escapeCustomerMessage(orderUrl)}">Review your order</a> or contact ${escapeCustomerMessage(storeName)} if you need help.</p>`,
+    audience: "customer", customerId: contact.id, recipientEmail: contact.email,
+    recipientPhone: contact.phone, recipientName: contact.name,
+    idempotencyKey: `order.item_cancelled:order:${order.id}:item:${itemId}`,
+    metadata: { itemId, itemName },
+  });
+}
+
+export async function notifyCustomerOrderDetailsChanged(orderId: number, changedFields: string[]): Promise<void> {
+  const fields = [...new Set(changedFields.map((field) => String(field).trim()).filter(Boolean))];
+  if (!fields.length) return;
+  const order = await getOrder(orderId);
+  if (!order) return;
+  const contact = await customerContact(order);
+  const storeName = (await getSettings()).storeName || "My Shop";
+  const fieldText = fields.join(", ");
+  const safeName = escapeCustomerMessage(contact.name);
+  const safeFields = escapeCustomerMessage(fieldText);
+  const safeStore = escapeCustomerMessage(storeName);
+  const orderUrl = `${baseUrl()}/order?id=${order.id}`;
+  const subject = `Order #${order.id} details updated — ${storeName}`;
+  const bodyText = `Hi ${contact.name}, the ${fieldText} on your pending order #${order.id} were updated. View the latest details: ${orderUrl}`;
+  await notify({
+    event: "order.status_changed", entityType: "order", entityId: order.id,
+    subject, bodyText,
+    bodyHtml: `<p>Hi ${safeName},</p><p>The following details on your pending order <strong>#${order.id}</strong> were updated: ${safeFields}.</p><p><a href="${escapeCustomerMessage(orderUrl)}">View the latest order details</a> or contact ${safeStore} if anything looks incorrect.</p>`,
+    audience: "customer", customerId: contact.id, recipientEmail: contact.email,
+    recipientPhone: contact.phone, recipientName: contact.name,
+    idempotencyKey: `order.details_changed:order:${order.id}:${order.updatedAt || Date.now()}`,
+    metadata: { changedFields: fields },
+  });
+}
+
+/** Queue a receipt of the refund record (this does not transfer money). */
+export async function notifyCustomerOrderRefunded(orderId: number, refund: any): Promise<void> {
+  const order = await getOrder(orderId);
+  if (!order || !refund?.id) return;
+  const contact = await customerContact(order);
+  const settings = await getSettings();
+  const currency = settings.currency || "KES";
+  const storeName = settings.storeName || "My Shop";
+  const amount = Number(refund.amount);
+  const formattedAmount = Number.isFinite(amount) ? amount.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
+  const subject = `Refund update for order #${order.id} — ${storeName}`;
+  const reason = String(refund.reason || "Refund recorded").trim().slice(0, 1000);
+  const orderUrl = `${baseUrl()}/order?id=${order.id}`;
+  const bodyText = `Hi ${contact.name}, a refund of ${currency} ${formattedAmount} has been recorded for order #${order.id}. Reason: ${reason}. This is a record of the refund; your store will process the payment separately. View your order: ${orderUrl}`;
+  const safeName = escapeCustomerMessage(contact.name);
+  const safeAmount = escapeCustomerMessage(`${currency} ${formattedAmount}`);
+  const safeReason = escapeCustomerMessage(reason);
+  const safeUrl = escapeCustomerMessage(orderUrl);
+  const safeStore = escapeCustomerMessage(storeName);
+  const bodyHtml = `<p>Hi ${safeName},</p><p>A refund of <strong>${safeAmount}</strong> has been recorded for order <strong>#${order.id}</strong>.</p><p><strong>Reason:</strong> ${safeReason}</p><p>This message confirms the refund record. The store will process the payment separately.</p><p><a href="${safeUrl}">View your order</a></p><p>${safeStore}</p>`;
+  await notify({
+    event: "order.refunded", entityType: "order", entityId: order.id,
+    subject, bodyText, bodyHtml, audience: "customer", customerId: contact.id,
+    recipientEmail: contact.email, recipientPhone: contact.phone, recipientName: contact.name,
+    idempotencyKey: `order.refunded:refund:${refund.id}`,
+    metadata: { refundId: refund.id, amount, currency },
+  });
 }
 
 // ─── Welcome (fires on account creation) ──────────────────────────────────────

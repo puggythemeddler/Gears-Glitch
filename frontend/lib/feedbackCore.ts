@@ -23,6 +23,8 @@ export interface FeedbackAction {
 export interface FeedbackInput {
   title: string;
   message?: string;
+  /** Additional safe, user-facing context shown when a notification is expanded. */
+  details?: string;
   variant?: string;
   duration?: number;
   sticky?: boolean;
@@ -36,6 +38,7 @@ export interface FeedbackRecord {
   tone: FeedbackTone;
   title: string;
   message?: string;
+  details?: string;
   variant?: string;
   action?: FeedbackAction;
   dedupeKey: string;
@@ -99,6 +102,7 @@ export function toRecord(id: string, tone: FeedbackTone, input: FeedbackInput): 
     tone,
     title: input.title,
     message: input.message,
+    ...(input.details !== undefined ? { details: input.details } : {}),
     variant: input.variant,
     action: input.action,
     dedupeKey: input.dedupeKey ?? "",
@@ -141,6 +145,9 @@ export function pushRecord(
         tone,
         title: record.title,
         message: record.message,
+        ...(record.details !== undefined || match.details !== undefined
+          ? { details: record.details ?? match.details }
+          : {}),
         variant: record.variant ?? match.variant,
         action: record.action ?? match.action,
         sticky: record.sticky,
@@ -171,6 +178,7 @@ export function updateRecord(
       ...t,
       title: patch.title ?? t.title,
       message: patch.message ?? t.message,
+      ...(patch.details !== undefined ? { details: patch.details } : {}),
       variant: patch.variant ?? t.variant,
       action: patch.action ?? t.action,
       duration: patch.duration ?? t.duration,
