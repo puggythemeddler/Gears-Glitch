@@ -244,12 +244,12 @@ function FeedbackViewport({
   );
 }
 
-const TONE_GLYPH: Record<FeedbackTone, string> = {
-  success: "\u2713",
-  error: "\u2715",
-  warning: "\u26A0",
-  info: "\u2139",
-  progress: "",
+const TONE_LABEL: Record<FeedbackTone, string> = {
+  success: "DONE",
+  error: "FAILED",
+  warning: "CHECK",
+  info: "NOTE",
+  progress: "WORKING",
 };
 
 function FeedbackCard({ item, onDismiss }: { item: FeedbackRecord; onDismiss: (id: string) => void }) {
@@ -260,7 +260,8 @@ function FeedbackCard({ item, onDismiss }: { item: FeedbackRecord; onDismiss: (i
     >
       <span className="feedback-rail" aria-hidden="true" />
       <span className={`feedback-icon feedback-icon-${item.tone}`} aria-hidden="true">
-        {item.tone === "progress" ? <span className="feedback-spinner" /> : TONE_GLYPH[item.tone]}
+        {item.tone === "progress" && <span className="feedback-spinner" />}
+        {TONE_LABEL[item.tone]}
       </span>
       <div className="feedback-body">
         <p className="feedback-title">{item.title}</p>

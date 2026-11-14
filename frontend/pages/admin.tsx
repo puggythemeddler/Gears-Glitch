@@ -1392,6 +1392,8 @@ function AdminOrders() {
   const [creditedOrders, setCreditedOrders] = useState<Record<number, boolean>>({});
   const [refunds, setRefunds] = useState<any[]>([]);
   const [refundMsg, setRefundMsg] = useState("");
+  const [refundForm, setRefundForm] = useState<{ item?: any; amount: string; reason: string; disposition: "sellable" | "quarantine" | "disposed" } | null>(null);
+  const [refundSaving, setRefundSaving] = useState(false);
   const [serialInputs, setSerialInputs] = useState<Record<number, string>>({});
   const [linking, setLinking] = useState<number | null>(null);
   const [licenseSaving, setLicenseSaving] = useState<number | null>(null);
@@ -1449,22 +1451,50 @@ function AdminOrders() {
     } catch { feedback.error("Failed to load order"); }
   }
 
-  async function issueRefund(amount: number, reason: string, orderItemId?: number, productId?: string) {
+  async function issueRefund(amount: number, reason: string, orderItemId?: number, productId?: string, stockDisposition?: "sellable" | "quarantine" | "disposed") {
     setRefundMsg("");
     try {
       const body: any = { amount, reason };
       if (orderItemId !== undefined) body.orderItemId = orderItemId;
       if (productId !== undefined) body.productId = productId;
+      if (orderItemId !== undefined && stockDisposition) body.stockDisposition = stockDisposition;
       await api(`/api/admin/orders/${selected.id}/refunds`, { method: "POST", body: JSON.stringify(body) });
       const updated = await api<any>(`/api/admin/orders/${selected.id}`);
       setSelected(updated);
       api<any>(`/api/admin/orders/${selected.id}/refunds`).then((r) => setRefunds(r.refunds || [])).catch(() => setRefunds([]));
       refetch();
-      feedback.success("Refund issued.");
+      feedback.success("Refund recorded. No payment provider was contacted.");
     } catch (e: any) {
       setRefundMsg(e.message || "Failed to issue refund.");
       throw e;
     }
+  }
+
+  async function submitRefund() {
+    if (!refundForm || !selected) return;
+    const amount = Number(refundForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) { setRefundMsg("Enter a valid refund amount."); return; }
+    if (!refundForm.reason.trim()) { setRefundMsg("A reason is required for the refund audit record."); return; }
+    if (refundForm.item && Math.round(amount * 100) !== Math.round(Number(refundForm.item.lineTotal) * 100)) {
+      setRefundMsg("A line return must refund the full line total. Use the order refund for a partial amount without returning stock."); return;
+    }
+    const item = refundForm.item;
+    const dispositionLabel = refundForm.disposition === "sellable" ? "return the units to sellable stock" : refundForm.disposition === "quarantine" ? "keep the units quarantined and unavailable" : "record the units as disposed";
+    const confirmed = await confirmDialog({
+      title: "Confirm refund",
+      message: item
+        ? `Record ${formatPrice(amount)} for ${item.quantity} × ${item.name}, and ${dispositionLabel}? This is an internal record; no payment provider is contacted.`
+        : `Record an order-level refund of ${formatPrice(amount)}? No stock will change and no payment provider is contacted.`,
+      confirmLabel: "Record refund",
+      danger: true,
+    });
+    if (!confirmed) return;
+    setRefundSaving(true); setRefundMsg("");
+    try {
+      await issueRefund(amount, refundForm.reason.trim(), item?.id, item?.productId, item ? refundForm.disposition : undefined);
+      setRefundForm(null);
+    } catch { /* issueRefund shows the server error inline */ }
+    finally { setRefundSaving(false); }
   }
 
   useEffect(() => {
@@ -1490,6 +1520,8 @@ function AdminOrders() {
     const o = selected;
     const activeSubtotal = (o.items || []).filter((i: any) => !i.cancelled).reduce((s: number, i: any) => s + i.lineTotal, 0);
     const total = activeSubtotal + (o.shippingFee || 0);
+    const customerOrderCount = Number(customerDetail?.orderCount);
+    const customerTotalSpent = Number(customerDetail?.totalSpent);
     return (
       <>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
@@ -1511,7 +1543,7 @@ function AdminOrders() {
                   {customerDetail.last_login && <> &middot; Last login: {new Date(customerDetail.last_login).toLocaleDateString("en-GB")}</>}
                 </p>
                 <p style={{ margin: "0.2rem 0", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                  {customerDetail.orderCount} order{customerDetail.orderCount !== 1 ? "s" : ""} &middot; Total: {formatPrice(customerDetail.totalSpent)}
+                  {Number.isFinite(customerOrderCount) ? customerOrderCount : "—"} order{customerOrderCount !== 1 ? "s" : ""} &middot; Total: {Number.isFinite(customerTotalSpent) ? formatPrice(customerTotalSpent) : "—"}
                 </p>
               </>
             )}
@@ -1575,14 +1607,7 @@ function AdminOrders() {
               }} style={{ background: "var(--primary)", color: "var(--surface)" }}>Credit Note</RippleButton>
             )}
             <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>
-            <RippleButton variant="danger" onClick={async () => {
-              const input = await promptDialog({ title: "Issue refund", message: "Enter the amount to refund.", placeholder: "Amount" });
-              if (input === null) return;
-              const amount = Number(input);
-              if (!amount || amount <= 0) { setRefundMsg("Invalid amount."); return; }
-              const reason = (await promptDialog({ title: "Issue refund", message: "Reason (optional):", confirmLabel: "Refund" })) || "";
-              issueRefund(amount, reason).catch(() => {});
-            }} style={{ background: "var(--danger)", color: "var(--surface)" }}>Refund</RippleButton>
+            <RippleButton variant="danger" onClick={() => { setRefundMsg(""); setRefundForm({ amount: "", reason: "", disposition: "sellable" }); }} style={{ background: "var(--danger)", color: "var(--surface)" }}>Refund</RippleButton>
           </div>
         </div>
         <div className="table-wrap">
@@ -1647,12 +1672,7 @@ function AdminOrders() {
                   </td>
                   <td>
                     {!item.cancelled && (
-                      <RippleButton size="small" variant="ghost" onClick={async () => {
-                        const amount = Number(await promptDialog({ title: "Refund line", message: "Enter the amount to refund.", placeholder: "Amount", defaultValue: String(item.lineTotal) }));
-                        if (!amount || amount <= 0) return;
-                        const reason = (await promptDialog({ title: "Refund line", message: "Reason (optional):", confirmLabel: "Refund" })) || "";
-                        issueRefund(amount, reason, item.id, item.productId).catch(() => {});
-                      }}>Refund line</RippleButton>
+                      <RippleButton size="small" variant="ghost" onClick={() => { setRefundMsg(""); setRefundForm({ item, amount: String(item.lineTotal), reason: "", disposition: "sellable" }); }}>Return &amp; refund</RippleButton>
                     )}
                   </td>
                 </tr>
@@ -1668,18 +1688,51 @@ function AdminOrders() {
             <h2 style={{ margin: "0 0 0.75rem" }}>Refunds</h2>
             <div className="table-wrap">
               <table className="data-table">
-                <thead><tr><th>Amount</th><th>Reason</th><th>Date</th></tr></thead>
+                <thead><tr><th>Amount</th><th>Reason</th><th>Returned stock</th><th>Date</th></tr></thead>
                 <tbody>
                   {refunds.map((r: any) => (
                     <tr key={r.id}>
                       <td style={{ color: "var(--danger)" }}>-{formatPrice(r.amount)}</td>
                       <td>{r.reason || "—"}</td>
+                      <td>{Number(r.returned_quantity) > 0 ? `${r.returned_quantity} · ${r.stock_disposition === "sellable" ? "Sellable stock" : r.stock_disposition === "quarantine" ? "Quarantined" : r.stock_disposition === "disposed" ? "Disposed" : "Not restocked"}` : "Money only"}</td>
                       <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+        {refundForm && (
+          <div className="modal-overlay" onClick={() => !refundSaving && setRefundForm(null)}>
+            <section className="modal" role="dialog" aria-modal="true" aria-labelledby="refund-form-title" onClick={(e) => e.stopPropagation()}>
+              <header className="modal-header">
+                <h2 className="modal-title" id="refund-form-title">{refundForm.item ? "Return item & record refund" : "Record order refund"}</h2>
+                <button className="modal-close" aria-label="Close" disabled={refundSaving} onClick={() => setRefundForm(null)}>×</button>
+              </header>
+              <div className="modal-body" style={{ display: "grid", gap: "0.8rem" }}>
+                <p className="muted" style={{ margin: 0 }}>This records the refund in Gears&amp;Glitch. It does not send money through a payment provider.</p>
+                {refundForm.item && <p style={{ margin: 0 }}><strong>{refundForm.item.quantity} × {refundForm.item.name}</strong> · full line return</p>}
+                <label className="field-label">Refund amount (KES)
+                  <input className="input" type="number" min="0.01" step="0.01" max={refundForm.item?.lineTotal} readOnly={!!refundForm.item} value={refundForm.amount} onChange={(e) => setRefundForm({ ...refundForm, amount: e.target.value })} />
+                </label>
+                {refundForm.item && <label className="field-label">Returned item condition
+                  <select className="input" value={refundForm.disposition} onChange={(e) => setRefundForm({ ...refundForm, disposition: e.target.value as "sellable" | "quarantine" | "disposed" })}>
+                    <option value="sellable">Inspected and sellable — add back to stock</option>
+                    <option value="quarantine">Needs inspection — quarantine, keep out of available stock</option>
+                    <option value="disposed">Faulty or unsafe — mark disposed, keep out of stock</option>
+                  </select>
+                </label>}
+                <label className="field-label">Reason (required)
+                  <textarea className="input" rows={3} maxLength={1000} value={refundForm.reason} onChange={(e) => setRefundForm({ ...refundForm, reason: e.target.value })} placeholder="For example: faulty on arrival or customer changed their mind" />
+                </label>
+                {refundMsg && <p role="alert" style={{ color: "var(--danger)", margin: 0 }}>{refundMsg}</p>}
+              </div>
+              <footer className="modal-footer">
+                <button className="btn btn-ghost" disabled={refundSaving} onClick={() => setRefundForm(null)}>Cancel</button>
+                <button className="btn btn-danger" disabled={refundSaving} onClick={submitRefund}>{refundSaving ? "Recording…" : "Review & record refund"}</button>
+              </footer>
+            </section>
           </div>
         )}
       </>
