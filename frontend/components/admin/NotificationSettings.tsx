@@ -7,7 +7,8 @@ import { useFeedback } from "@/components/feedback/FeedbackProvider";
 const EVENT_LABELS: Record<string, string> = {
   "order.created": "New order",
   "order.paid": "Order paid",
-  "order.status_changed": "Order status changed",
+  "order.status_changed": "Order status or details changed",
+  "order.refunded": "Customer refund notice",
   "order.processed": "Order processed (customer)",
   "payment.completed": "Payment completed",
   "payment.failed": "Payment failed",
@@ -136,7 +137,7 @@ export default function NotificationSettings() {
   if (loading) return <Spinner />;
 
   const groups: { label: string; events: string[] }[] = [
-    { label: "Orders & Payments", events: ["order.created", "order.paid", "order.status_changed", "order.processed", "payment.completed", "payment.failed"] },
+    { label: "Orders & Payments", events: ["order.created", "order.paid", "order.status_changed", "order.refunded", "order.processed", "payment.completed", "payment.failed"] },
     { label: "Customers", events: ["customer.created", "customer.login"] },
     { label: "Repairs", events: ["repair.created", "repair.status_changed", "repair.customer_update", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled"] },
     { label: "Warranties", events: ["warranty.created", "warranty.status_changed", "warranty.customer_update", "warranty.expiry_reminder", "warranty.expired", "warranty.approved", "warranty.rejected", "warranty.resolved"] },
