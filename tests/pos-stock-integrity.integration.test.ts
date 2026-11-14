@@ -12,6 +12,7 @@ let branchId = 0;
 describe("POS and stock integrity (disposable DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   before(async () => {
     await initDb();
+    await query("TRUNCATE branches CASCADE");
     const branch = await queryOne(
       `INSERT INTO branches (name, address, phone, email, is_active)
        VALUES ($1, '', '', '', 1) RETURNING id`, [`QA stock integrity ${runId}`]
@@ -20,10 +21,6 @@ describe("POS and stock integrity (disposable DB)", { skip: !HAS_DB && "TEST_DAT
     await query(
       `INSERT INTO products (id, category, name, price, stock_on_hand, in_stock)
        VALUES ($1, 'qa', 'QA stock integrity fixture', 100, 10, 1)`, [productId]
-    );
-    await query(
-      `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-       VALUES ($1, 10, 0, 0, 2)`, [productId]
     );
     await query(
       `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
@@ -41,22 +38,22 @@ describe("POS and stock integrity (disposable DB)", { skip: !HAS_DB && "TEST_DAT
   });
 
   it("applies a stock take once in its completion transaction", async () => {
-    const session = await createStockTakeSession(`qa-stock-integrity-${runId}`);
+    const session = await createStockTakeSession(`qa-stock-integrity-${runId}`, undefined, branchId);
     await recordStockCount(session.id, productId, 4, "fixture count", "count_error");
     const completion = await completeStockTakeSession(session.id);
     assert.deepEqual(completion, { ok: true, adjusted: 1 });
 
     const afterCompletion = await queryOne(
-      "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [productId]
+      "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [productId, branchId]
     ) as any;
     assert.equal(Number(afterCompletion.quantity_in_stock), 4);
 
     // Simulate a later sale/receipt changing stock. The legacy recovery endpoint
     // must not replay the stale count over the newer value.
-    await query("UPDATE stock_levels SET quantity_in_stock = 7 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
+    await query("UPDATE stock_levels SET quantity_in_stock = 7 WHERE product_id = $1 AND branch_id = $2", [productId, branchId]);
     assert.equal(await applyStockTakeAdjustments(session.id), null);
     const afterReplay = await queryOne(
-      "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL", [productId]
+      "SELECT quantity_in_stock FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [productId, branchId]
     ) as any;
     assert.equal(Number(afterReplay.quantity_in_stock), 7);
   });

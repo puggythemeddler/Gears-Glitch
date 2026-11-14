@@ -42,7 +42,7 @@ describe("storefront order stock integrity (DB)", { skip: !HAS_DB && "TEST_DATAB
 
   const clear = async () => {
     await query(
-      `TRUNCATE customers, products, orders, order_items, stock_levels, stock_movements,
+      `TRUNCATE branches, customers, products, orders, order_items, stock_levels, stock_movements,
        stock_transfers, coupons, gift_cards, loyalty_transactions, campaigns CASCADE`
     );
   };
