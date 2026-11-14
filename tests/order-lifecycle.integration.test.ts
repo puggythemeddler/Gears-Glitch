@@ -17,8 +17,8 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 //     may, but a manager (who does not) gets 403;
 //   - a paid order CAN be advanced by a manager, so real money never
 //     bottlenecks fulfilment;
-//   - delivering an order emails the invoice PDF (order_status row) on top of
-//     the plain status email.
+//   - delivering an order emails the invoice PDF (order_status row) as well as
+//     recording the centralized order-status customer notification.
 describe("order lifecycle (confirmed -> paid guard, automatic invoices) over real HTTP (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
   let child: ChildProcess | null = null;
   let base = "";
@@ -142,6 +142,23 @@ describe("order lifecycle (confirmed -> paid guard, automatic invoices) over rea
         await sleep(150);
       }
       return false;
+    } finally {
+      await d.end();
+    }
+  }
+
+  async function waitForEmailTypes(e: string, expectedTypes: string[], seconds = 6): Promise<string[]> {
+    const d = await db();
+    try {
+      const deadline = Date.now() + seconds * 1000;
+      let types: string[] = [];
+      while (Date.now() < deadline) {
+        const rows = await d.q("SELECT type FROM email_logs WHERE to_email = $1 ORDER BY created_at DESC, id DESC", [e]);
+        types = rows.map((row: any) => String(row.type || ""));
+        if (expectedTypes.every((type) => types.includes(type))) return types;
+        await sleep(150);
+      }
+      return types;
     } finally {
       await d.end();
     }
@@ -405,16 +422,9 @@ describe("order lifecycle (confirmed -> paid guard, automatic invoices) over rea
     assert.equal(delivered.status, 200, `owner override must succeed: ${JSON.stringify(delivered.body)}`);
 
     const expectedEmail = `${runId}-pending@order-lifecycle.qa`;
-    assert.ok(await openOrder(expectedEmail), "the delivered invoice email must have been logged");
-    const ed2 = await db();
-    let dType = "";
-    try {
-      const row = await ed2.q1("SELECT type FROM email_logs WHERE to_email = $1 ORDER BY created_at DESC, id DESC LIMIT 1", [expectedEmail]);
-      dType = row?.type || "";
-    } finally {
-      await ed2.end();
-    }
-    assert.equal(dType, "order_status", "the delivered trigger reuses the status email type with the PDF attached");
+    const deliveredEmailTypes = await waitForEmailTypes(expectedEmail, ["order_status", "notification_order.status_changed"]);
+    assert.ok(deliveredEmailTypes.includes("order_status"), "the delivered trigger must still log the invoice-PDF email using the order_status template");
+    assert.ok(deliveredEmailTypes.includes("notification_order.status_changed"), "the delivered status change must also be logged through the centralized customer notification path");
   });
 
   it("lets a manager advance a PAID order to delivered", async () => {
