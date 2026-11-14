@@ -16,7 +16,6 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import { ownerAuthMiddleware } from "./auth";
 import { requirePermission, asyncHandler } from "./routes/shared";
-import { requireShopFeature } from "./feature-access";
 import { queryOne, queryAll } from "./db-helpers";
 import {
   parseDateRange,
@@ -587,7 +586,7 @@ router.get("/valuation/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(as
 
 // ─── Stock take summary ─────────────────────────────────────────────────────
 
-router.get("/stock-take-summary", ownerAuthMiddleware, VIEW, requireShopFeature("Stock take"), asyncHandler(async (_req: Request, res: Response) => {
+router.get("/stock-take-summary", ownerAuthMiddleware, VIEW, asyncHandler(async (_req: Request, res: Response) => {
   const rows = await queryAll(
     `SELECT s.id, s.status, s.created_at, s.completed_at, s.reversed_at,
        COUNT(sti.id)::int AS items,
