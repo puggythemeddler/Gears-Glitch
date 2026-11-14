@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, hasStaffSession } from "@/lib/api";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -24,6 +24,8 @@ export default function StockTakeSessionPage() {
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
+  const [stockItemSearch, setStockItemSearch] = useState("");
+  const countInputRefs = useRef(new Map<string, HTMLInputElement>());
   usePageTitle(session ? `Stock Take #${session.id}` : "Stock Take");
 
   useEffect(() => {
@@ -171,8 +173,24 @@ export default function StockTakeSessionPage() {
 
   const existingProductIds = new Set(items.map((i) => i.productId));
   const filteredProducts = productSearch ? allProducts.filter((p) =>
-    !existingProductIds.has(p.id) && (p.name || "").toLowerCase().includes(productSearch.toLowerCase())
+    !existingProductIds.has(p.id) && [p.name, p.barcode].some((value) => String(value || "").toLowerCase().includes(productSearch.trim().toLowerCase()))
   ) : [];
+  const normalizedStockItemSearch = stockItemSearch.trim().toLowerCase();
+  const visibleItems = normalizedStockItemSearch
+    ? items.filter((item: any) => [item.productName, item.barcode].some((value) => String(value || "").toLowerCase().includes(normalizedStockItemSearch)))
+    : items;
+
+  function focusExactStockItemMatch() {
+    if (!normalizedStockItemSearch) return;
+    const matches = items.filter((item: any) => [item.barcode, item.productName].some((value) => String(value || "").trim().toLowerCase() === normalizedStockItemSearch));
+    if (matches.length !== 1) return;
+    setStockItemSearch(matches[0].productName);
+    requestAnimationFrame(() => {
+      const input = countInputRefs.current.get(matches[0].productId);
+      input?.focus();
+      input?.select();
+    });
+  }
 
   if (!authed) {
     return (
@@ -223,6 +241,24 @@ export default function StockTakeSessionPage() {
           </div>
         </div>
 
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <div className="field" style={{ margin: 0 }}>
+            <label htmlFor="stock-take-item-search">Find an item in this stock take</label>
+            <input
+              id="stock-take-item-search"
+              type="search"
+              value={stockItemSearch}
+              onChange={(e) => setStockItemSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusExactStockItemMatch(); } }}
+              placeholder="Search by product name or scan/type barcode"
+              autoComplete="off"
+            />
+            <small className="muted" aria-live="polite">
+              {normalizedStockItemSearch ? `${visibleItems.length} matching ${visibleItems.length === 1 ? "item" : "items"} of ${items.length}` : "Search the items already in this count. You can also use the Add Product search above to add another item."}
+            </small>
+          </div>
+        </div>
+
         {session.status === "in_progress" && (
           <div className="panel" style={{ marginBottom: "1rem" }}>
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
@@ -268,6 +304,10 @@ export default function StockTakeSessionPage() {
                 value: (r) => (counts[r.productId] ?? (r.countedQuantity === null ? "0" : String(r.countedQuantity))),
                 render: (r) => (
                   <input
+                    ref={(element) => {
+                      if (element) countInputRefs.current.set(r.productId, element);
+                      else countInputRefs.current.delete(r.productId);
+                    }}
                     type="number"
                     min={0}
                     step={1}
@@ -334,9 +374,9 @@ export default function StockTakeSessionPage() {
                 },
               },
             ]}
-            rows={items}
+            rows={visibleItems}
             rowKey={(r) => r.productId}
-            empty={<span style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>No products added yet. Use the search above to add products to count.</span>}
+            empty={<span style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>{normalizedStockItemSearch ? "No stock-take items match that name or barcode." : "No products added yet. Use the Add Product search above to add products to count."}</span>}
           />
         </div>
 

@@ -570,6 +570,7 @@ interface StockTakeItem {
   sessionId: number;
   productId: string;
   productName: string;
+  barcode: string;
   systemQuantity: number;
   countedQuantity: number | null;
   variance: number;
@@ -4058,7 +4059,7 @@ async function listStockTakeSessions(): Promise<StockTakeSession[]> {
 async function getStockTakeItems(sessionId: number): Promise<StockTakeItem[]> {
   return await queryAll(
     `SELECT sti.id, sti.session_id AS "sessionId", sti.product_id AS "productId", 
-     COALESCE(p.name, sti.product_name) AS "productName", 
+     COALESCE(p.name, sti.product_name) AS "productName", COALESCE(p.barcode, '') AS barcode,
      sti.system_quantity AS "systemQuantity", sti.counted_quantity AS "countedQuantity", 
      sti.variance, sti.variance_reason AS "varianceReason", sti.notes, sti.created_at AS "createdAt"
      FROM stock_take_items sti LEFT JOIN products p ON p.id = sti.product_id WHERE sti.session_id = $1 ORDER BY p.name`, [sessionId]
