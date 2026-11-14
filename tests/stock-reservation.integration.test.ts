@@ -36,7 +36,7 @@ describe("stock reservation ON CONFLICT statements (DB)", { skip: !bootstrapTest
   });
 
   beforeEach(async () => {
-    await query(`TRUNCATE stock_levels, stock_movements CASCADE`);
+    await query(`TRUNCATE branches, stock_levels, stock_movements CASCADE`);
   });
 
   const seedProduct = async (id: string) => {

@@ -49,7 +49,7 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
 
   const clear = async () => {
     await query(
-      `TRUNCATE orders, order_items, serial_numbers, stock_movements, refunds, gift_cards, gift_card_redemptions, credit_notes CASCADE`
+      `TRUNCATE branches, orders, order_items, serial_numbers, stock_movements, refunds, gift_cards, gift_card_redemptions, credit_notes CASCADE`
     );
   };
 

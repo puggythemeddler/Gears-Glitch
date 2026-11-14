@@ -4,11 +4,12 @@ import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { DataTable } from "@/components/ui/DataTable";
+import { confirmDialog } from "@/components/ConfirmDialog";
 import { formatPrice, useFetch, Spinner, ErrorMsg } from "./shared";
 
 export default function StockOnHandPage({ showAutoReorder = false }: { showAutoReorder?: boolean }) {
   const feedback = useFeedback();
-  const { data: sData, loading, error } = useFetch(() => api<{ items: any[] }>("/api/reports/stock-summary"), []);
+  const { data: sData, loading, error, refetch } = useFetch(() => api<{ items: any[] }>("/api/reports/stock-summary"), []);
   const [snapshotDate, setSnapshotDate] = useState(new Date().toISOString().slice(0, 10));
   const [snapshot, setSnapshot] = useState<any>(null);
   const [dates, setDates] = useState<any[]>([]);
@@ -25,10 +26,43 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   const [savingThreshold, setSavingThreshold] = useState<string | null>(null);
   const [reorderSuggestions, setReorderSuggestions] = useState<any[] | null>(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [unlocatedItems, setUnlocatedItems] = useState<any[]>([]);
+  const [assigningStock, setAssigningStock] = useState(false);
+  const [assignmentBranchId, setAssignmentBranchId] = useState("");
 
   useEffect(() => {
     api<{ branches: any[] }>("/api/admin/branches").then(d => setBranches(d.branches || [])).catch(() => {});
+    api<{ items: any[] }>("/api/admin/stock/unlocated").then(d => setUnlocatedItems(d.items || [])).catch(() => {});
   }, []);
+
+  async function assignUnlocatedStock() {
+    const destination = branches.find((branch) => Number(branch.id) === Number(assignmentBranchId));
+    if (!destination) {
+      feedback.error({ title: "Choose a branch", message: "Select the branch where this unlocated stock is physically held." });
+      return;
+    }
+    const unitCount = unlocatedItems.reduce((sum, item) => sum + Number(item.quantityInStock || 0), 0);
+    const confirmed = await confirmDialog({
+      title: "Assign unlocated stock?",
+      message: `Move ${unitCount} on-hand unit(s) across ${unlocatedItems.length} product(s) to ${destination.name}? Account totals stay the same. Paired stock movements will be recorded. Reserved stock and serial mismatches stop the entire operation.`,
+      confirmLabel: "Assign stock",
+    });
+    if (!confirmed) return;
+    setAssigningStock(true);
+    try {
+      const result = await api<{ movedProducts: number; movedUnits: number }>("/api/admin/stock/unlocated/assign", {
+        method: "POST", body: JSON.stringify({ branchId: Number(assignmentBranchId) }),
+      });
+      feedback.success({ title: "Stock assigned", message: `${result.movedUnits} unit(s) across ${result.movedProducts} product(s) are now assigned to ${destination.name}.` });
+      setStockBranchFilter(Number(assignmentBranchId));
+      refetch();
+      const remaining = await api<{ items: any[] }>("/api/admin/stock/unlocated");
+      setUnlocatedItems(remaining.items || []);
+    } catch (err: any) {
+      feedback.error({ title: "Stock not assigned", message: err?.message || "Refresh and try again." });
+      api<{ items: any[] }>("/api/admin/stock/unlocated").then((data) => setUnlocatedItems(data.items || [])).catch(() => {});
+    } finally { setAssigningStock(false); }
+  }
 
   useEffect(() => {
     setThresholdDrafts({});
@@ -141,6 +175,32 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   return (
     <>
       <h1>Stock on Hand</h1>
+
+      {unlocatedItems.length > 0 && (
+        <section className="panel" aria-labelledby="unlocated-stock-title" style={{ marginBottom: "1rem", borderColor: "var(--warning, #d97706)" }}>
+          <h2 id="unlocated-stock-title" style={{ marginTop: 0 }}>Unlocated stock needs a branch</h2>
+          <p style={{ color: "var(--text-secondary)" }}>These quantities are included in All Branches but have no physical branch recorded. Assign them to where they are actually held. Reserved stock or mismatched serial records must be reconciled first.</p>
+          <div className="table-wrap" style={{ marginBottom: "0.75rem" }}>
+            <DataTable<any> ariaLabel="Unlocated stock awaiting branch assignment" columns={[
+              { key: "product", label: "Product", render: (item) => item.name },
+              { key: "quantity", label: "On hand", align: "right", render: (item) => item.quantityInStock },
+              { key: "reserved", label: "Reserved", align: "right", render: (item) => item.quantityReserved },
+              { key: "tracking", label: "Serial tracking", render: (item) => item.serialTracking ? "Required" : "Not used" },
+            ]} rows={unlocatedItems} rowKey={(item) => item.productId} />
+          </div>
+          {unlocatedItems.some((item) => Number(item.quantityReserved || 0) > 0) && <p role="status" style={{ color: "var(--danger)" }}>Assignment is paused because stock is reserved by an order without a branch. Reconcile those orders first.</p>}
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div className="field" style={{ margin: 0, minWidth: 220 }}>
+              <label htmlFor="unlocated-stock-branch">Physical destination branch</label>
+              <select id="unlocated-stock-branch" value={assignmentBranchId} onChange={(event) => setAssignmentBranchId(event.target.value)}>
+                <option value="">Select branch…</option>
+                {branches.filter((branch) => branch.isActive).map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            </div>
+            <RippleButton loading={assigningStock} disabled={unlocatedItems.some((item) => Number(item.quantityReserved || 0) > 0) || !assignmentBranchId} onClick={assignUnlocatedStock}>Assign unlocated stock</RippleButton>
+          </div>
+        </section>
+      )}
 
       <div className="panel" style={{ marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end", flexWrap: "wrap" }}>

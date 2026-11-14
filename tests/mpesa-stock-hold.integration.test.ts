@@ -32,7 +32,7 @@ describe("M-Pesa order hold lifecycle (DB)", { skip: !bootstrapTestDatabase() &&
 
   beforeEach(async () => {
     await query(
-      `TRUNCATE customers, products, orders, order_items, stock_levels, stock_movements,
+      `TRUNCATE branches, customers, products, orders, order_items, stock_levels, stock_movements,
        loyalty_transactions CASCADE`
     );
   });
