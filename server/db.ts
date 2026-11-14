@@ -2682,7 +2682,9 @@ async function refreshStockLevelSoldCount(client: { query(text: string, params?:
   );
 }
 
-async function createRefund(data: { orderId: number; orderItemId?: number; productId?: string; amount: number; reason: string; createdBy?: number }): Promise<any> {
+type RefundStockDisposition = "not_returned" | "sellable" | "quarantine" | "disposed";
+
+async function createRefund(data: { orderId: number; orderItemId?: number; productId?: string; amount: number; reason: string; stockDisposition?: RefundStockDisposition; createdBy?: number }): Promise<any> {
   return await transaction(async (client) => {
     // Lock the order row: concurrent refunds serialise and can never both use
     // the same remaining balance, and the refund+stock restore below are atomic.
@@ -2694,21 +2696,30 @@ async function createRefund(data: { orderId: number; orderItemId?: number; produ
     const paid = (Number(orderRow.subtotal) + Number(orderRow.shipping_fee) - (Number(orderRow.discount_amount) || 0) - (Number(orderRow.gift_card_amount) || 0)) || 0;
     const remaining = Math.max(0, paid - (Number(orderRow.amount_refunded) || 0));
     if (Number(data.amount) > remaining) throw new Error(`Refund exceeds remaining balance (${remaining}).`);
+    let returnedQuantity = 0;
+    let stockDisposition: RefundStockDisposition = "not_returned";
+    let refundProductId = data.productId || null;
     if (data.orderItemId != null) {
       const item = (await client.query(
-        "SELECT id, order_id, product_id, price, quantity, cancelled FROM order_items WHERE id = $1 FOR UPDATE",
+        "SELECT id, order_id, product_id, price, quantity, line_total, cancelled FROM order_items WHERE id = $1 FOR UPDATE",
         [data.orderItemId]
       )).rows?.[0] as any;
       if (!item) throw new Error("Order item not found.");
       if (Number(item.order_id) !== Number(data.orderId)) throw new Error("Order item belongs to a different order.");
-      if (Number(data.amount) > Number(item.price) * Number(item.quantity)) throw new Error("Line refund cannot exceed the line total.");
-      if (!item.cancelled) {
-        // Full-line refund: cancel the line and return stock + serials in the
-        // same transaction as the refund so we can never "cancel but lose the
-        // refund" or "refund but keep inventory deducted".
-        const qty = Number(item.quantity);
-        const branchRow = (await client.query("SELECT branch_id FROM orders WHERE id = $1", [data.orderId])).rows?.[0] as any;
-        await client.query("UPDATE order_items SET cancelled = 1 WHERE id = $1", [data.orderItemId]);
+      if (item.cancelled) throw new Error("This order line has already been returned or cancelled.");
+      const lineAmountCents = Math.round(Number(item.line_total) * 100);
+      if (Math.round(Number(data.amount) * 100) !== lineAmountCents) throw new Error("A line return must refund the full line total. Use an order-level refund for a partial amount without returning stock.");
+      stockDisposition = data.stockDisposition || "sellable";
+      if (!["sellable", "quarantine", "disposed"].includes(stockDisposition)) throw new Error("Choose whether returned stock is sellable, quarantined, or disposed.");
+      refundProductId = item.product_id;
+      returnedQuantity = Number(item.quantity);
+      // Return disposition and payment record are committed together. Only
+      // sellable goods are put back into available stock; serial identities
+      // retain a distinct quarantined/disposed state otherwise.
+      const qty = returnedQuantity;
+      const branchRow = (await client.query("SELECT branch_id FROM orders WHERE id = $1", [data.orderId])).rows?.[0] as any;
+      await client.query("UPDATE order_items SET cancelled = 1 WHERE id = $1", [data.orderItemId]);
+      if (stockDisposition === "sellable") {
         await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, item.product_id]);
         if (branchRow?.branch_id != null) {
           await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, branchRow.branch_id]);
@@ -2724,11 +2735,16 @@ async function createRefund(data: { orderId: number; orderItemId?: number; produ
           [item.product_id, qty, String(data.orderId), `Stock returned after refund #${data.orderId}`, branchRow?.branch_id ?? null]
         );
         await refreshStockLevelSoldCount(client, item.product_id, branchRow?.branch_id ?? null);
+      } else {
+        await client.query(
+          "UPDATE serial_numbers SET status = $1 WHERE order_item_id = $2 AND status = 'sold'",
+          [stockDisposition === "quarantine" ? "quarantined" : "disposed", data.orderItemId]
+        );
       }
     }
     const result = await client.query(
-      "INSERT INTO refunds (order_id, order_item_id, product_id, amount, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-      [data.orderId, data.orderItemId || null, data.productId || null, data.amount, data.reason, data.createdBy || null]
+      "INSERT INTO refunds (order_id, order_item_id, product_id, amount, reason, stock_disposition, returned_quantity, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+      [data.orderId, data.orderItemId || null, refundProductId, data.amount, data.reason, stockDisposition, returnedQuantity, data.createdBy || null]
     );
     await client.query("UPDATE orders SET amount_refunded = amount_refunded + $1 WHERE id = $2", [Number(data.amount), data.orderId]);
     return result.rows[0];
