@@ -1446,7 +1446,15 @@ async function updateProduct(id: string, updates: { category?: string; groupId?:
   fields.push(`updated_at = NOW()::text`);
   if (fields.length === 1) return existing;
   params.push(id);
-  await query(`UPDATE products SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+  await transaction(async (client) => {
+    const current = await client.query("SELECT price FROM products WHERE id = $1 FOR UPDATE", [id]);
+    if (!current.rows[0]) return;
+    const oldPrice = Number(current.rows[0].price);
+    if (updates.price !== undefined && oldPrice !== Number(updates.price)) {
+      await client.query("INSERT INTO price_history (product_id, old_price, new_price) VALUES ($1, $2, $3)", [id, oldPrice, Number(updates.price)]);
+    }
+    await client.query(`UPDATE products SET ${fields.join(", ")} WHERE id = $${idx}`, params);
+  });
   return await getProduct(id);
 }
 
@@ -1462,8 +1470,56 @@ async function deleteProduct(id: string): Promise<boolean> {
   }
 }
 
-async function getPriceHistory(_productId: string): Promise<any[]> {
-  return [];
+async function applyProductMarkup(
+  productIds: string[],
+  mode: "percentage" | "fixed",
+  value: number,
+  expected: Record<string, { price: number; costPrice: number; salePrice: number | null }>,
+): Promise<{ updated: Array<{ id: string; name: string; oldPrice: number; newPrice: number }>; skipped: Array<{ id: string; name?: string; reason: string }> }> {
+  return await transaction(async (client) => {
+    const result = await client.query(
+      "SELECT id, name, price, cost_price, sale_price FROM products WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE",
+      [productIds],
+    );
+    const found = new Set((result.rows as any[]).map((row) => String(row.id)));
+    const updated: Array<{ id: string; name: string; oldPrice: number; newPrice: number }> = [];
+    const skipped: Array<{ id: string; name?: string; reason: string }> = productIds
+      .filter((id) => !found.has(id))
+      .map((id) => ({ id, reason: "Product no longer exists" }));
+
+    for (const row of result.rows as any[]) {
+      const id = String(row.id);
+      const price = Number(row.price);
+      const costPrice = row.cost_price === null ? null : Number(row.cost_price);
+      const salePrice = row.sale_price === null ? null : Number(row.sale_price);
+      const snapshot = expected[id];
+      if (!snapshot || price !== Number(snapshot.price) || costPrice !== Number(snapshot.costPrice) || salePrice !== snapshot.salePrice) {
+        throw new Error(`Pricing changed for ${row.name}; refresh the price list and preview again.`);
+      }
+      if (costPrice === null) { skipped.push({ id, name: row.name, reason: "Cost price is not recorded" }); continue; }
+      if (salePrice !== null && salePrice > 0) { skipped.push({ id, name: row.name, reason: "Clear the current sale price before applying a markup" }); continue; }
+
+      const calculated = mode === "percentage" ? costPrice * (1 + value / 100) : costPrice + value;
+      const newPrice = Math.round((calculated + Number.EPSILON) * 100) / 100;
+      if (!Number.isFinite(newPrice) || newPrice > 9999999999.99) {
+        throw new Error(`The calculated price for ${row.name} is outside the supported range.`);
+      }
+      if (newPrice !== price) {
+        await client.query("UPDATE products SET price = $1, updated_at = NOW()::text WHERE id = $2", [newPrice, id]);
+        await client.query("INSERT INTO price_history (product_id, old_price, new_price) VALUES ($1, $2, $3)", [id, price, newPrice]);
+      }
+      updated.push({ id, name: row.name, oldPrice: price, newPrice });
+    }
+    return { updated, skipped };
+  });
+}
+
+async function getPriceHistory(productId: string): Promise<any[]> {
+  return await queryAll(
+    `SELECT id, old_price AS "oldPrice", new_price AS "newPrice", changed_at AS "changedAt"
+     FROM price_history WHERE product_id = $1 ORDER BY changed_at DESC, id DESC LIMIT 100`,
+    [productId],
+  );
 }
 
 async function createStaff(data: { username: string; email?: string; password: string; role?: string }): Promise<Staff> {
@@ -5036,7 +5092,7 @@ export {
   consumeAuthToken, getPasswordChangedAt,
   findCustomerByEmail, findCustomerById, updateCustomerLastLogin, updateCustomerStatus, updateCustomer, deleteCustomer, deactivateOldCustomers, createCustomer, changeCustomerPassword, listAllCustomers, listActiveCustomers, getCustomerDetails,
   getSettings, updateSettings, getStoreSetting, setStoreSetting, getPaymentMethods, setPaymentMethods,
-  listProducts, getProduct, setProductImageUrl, createProduct, updateProduct, deleteProduct, getPriceHistory,
+  listProducts, getProduct, setProductImageUrl, createProduct, updateProduct, deleteProduct, getPriceHistory, applyProductMarkup,
   getProductImages, addProductImage, deleteProductImage, setProductImageOrder, setPrimaryImage,
   getMessagesForCustomer, getMessagesForProvider, sendMessage, markMessageRead, getUnreadMessageCount, listAllMessages,
   getCartItems, getCartCount, addToCart, setCartQuantity, removeFromCart, clearCart, generateProductId,

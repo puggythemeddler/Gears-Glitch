@@ -17,6 +17,7 @@ import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 import { formatPrice, escapeHtml, useFetch, useInitialLoad, Spinner, ErrorMsg } from "@/components/admin/shared";
 import { useFeedback, type FeedbackInput } from "@/components/feedback/FeedbackProvider";
 import AdminProducts from "@/components/admin/AdminProducts";
+import ProductPriceList from "@/components/admin/ProductPriceList";
 import QuotesPage from "./quotes";
 import ProvidersPage from "@/components/admin/ProvidersPage";
 import CreditNotesPage from "@/components/admin/CreditNotesPage";
@@ -42,7 +43,7 @@ import { reportDateRange, reportToday, reportYearStart, type ReportRangePreset }
 import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
 import { isSoftwareLicenseProduct } from "@/lib/repairLicenseProducts";
 
-export type AdminView = "dashboard" | "products" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
+export type AdminView = "dashboard" | "products" | "price-list" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 
@@ -76,6 +77,7 @@ const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   dashboard: "",
   pos: "",
   products: "product:update",
+  "price-list": "product:update",
   orders: "order:view",
   customers: "customer:view",
   quotations: "quote:view",
@@ -126,6 +128,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     label: "Catalog",
     items: [
       { key: "products", label: "Products" },
+      { key: "price-list", label: "Price List" },
       { key: "groups", label: "Groups" },
       { key: "categories", label: "Categories" },
       { key: "category-positioning", label: "Category Order" },
@@ -215,6 +218,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
 // Icon per sidebar view. Falls back to "box" when unmapped.
 const NAV_ICONS: Partial<Record<AdminView, string>> = {
   products: "box",
+  "price-list": "tag",
   groups: "folder",
   categories: "layers",
   orders: "cart",
@@ -726,6 +730,7 @@ export default function AdminPage() {
           <div className="dash-section active" key={view}>
             {view === "dashboard" && <AdminDashboard staffRole={staffRole} staffPermissions={staffPermissions} onNavigate={setView} />}
             {view === "products" && <AdminProducts />}
+            {view === "price-list" && <ProductPriceList />}
             {view === "groups" && <AdminGroups />}
             {view === "categories" && <AdminCategories />}
             {view === "orders" && <AdminOrders />}
