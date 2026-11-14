@@ -248,6 +248,12 @@ export default function StockTakeSessionPage() {
           </div>
         )}
 
+        {session.status === "in_progress" && (
+          <p className="muted" style={{ margin: "0 0 0.5rem" }}>
+            Tip: Press Enter in a counted quantity field to save it and move to the next product.
+          </p>
+        )}
+
         <div className="table-wrap">
           <DataTable<any>
             ariaLabel="Stock take counting table"
@@ -270,6 +276,22 @@ export default function StockTakeSessionPage() {
                     value={counts[r.productId] ?? (r.countedQuantity === null ? "" : String(r.countedQuantity))}
                     onChange={(e) => setCounts({ ...counts, [r.productId]: e.target.value })}
                     onBlur={() => saveCount(r.productId)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      const table = e.currentTarget.closest("table");
+                      const inputs = Array.from(
+                        table?.querySelectorAll<HTMLInputElement>('input[aria-label^="Counted quantity for"]:not(:disabled)') ?? [],
+                      );
+                      const currentIndex = inputs.indexOf(e.currentTarget);
+                      const nextInput = currentIndex >= 0 ? inputs[currentIndex + 1] : undefined;
+                      if (nextInput) {
+                        nextInput.focus();
+                        nextInput.select();
+                      } else {
+                        e.currentTarget.blur();
+                      }
+                    }}
                     disabled={session.status === "completed"}
                     aria-label={`Counted quantity for ${r.productName}`}
                   />
