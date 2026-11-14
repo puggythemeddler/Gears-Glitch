@@ -225,6 +225,7 @@ import {
   listAllAuditLogs,
   listBranches,
   getBranch,
+  getBranchCount,
   createBranch,
   updateBranch,
   deleteBranch,
@@ -237,6 +238,8 @@ import {
   getStockTransfer,
   listStockTransfers,
   completeStockTransfer,
+  getUnlocatedStockSummary,
+  assignUnlocatedStockToBranch,
   dispatchStockTransfer,
   receiveStockTransfer,
   rejectStockTransfer,
@@ -1083,6 +1086,11 @@ async function loadDeliveryFeeOverrides(): Promise<Record<string, number> | null
 app.get("/api/shipping/counties", asyncHandler(async (_req: Request, res: Response) => {
   const overrides = await loadDeliveryFeeOverrides();
   res.json({ counties: getCountiesWithOverrides(overrides) });
+}));
+
+app.get("/api/store/branches", asyncHandler(async (_req: Request, res: Response) => {
+  const branches = (await listBranches()).filter((branch) => branch.isActive).map(({ id, name }) => ({ id, name }));
+  res.json({ branches, requiresBranch: await getBranchCount() > 0 });
 }));
 
 // Admin: get current fees (returns overlay + defaults)
@@ -2840,6 +2848,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
       }
       throw err;
     }
+    if (!branchId) { res.status(409).json({ error: "Choose an active branch before processing a POS sale." }); return; }
     if (!items || !Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "Items are required." }); return; }
     if (items.length > 100) { res.status(400).json({ error: "Too many items (max 100)." }); return; }
     if (idempotencyKey) {
@@ -2908,6 +2917,7 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
           if (!found) { res.status(400).json({ error: `Serial ${sn} not found.` }); return; }
           if (found.product_id !== product.id) { res.status(400).json({ error: `Serial ${sn} does not belong to ${product.name}.` }); return; }
           if (found.status !== "in_stock") { res.status(400).json({ error: `Serial ${sn} is not in stock or available to sell.` }); return; }
+          if (found.branch_id == null) { res.status(409).json({ error: `Serial ${sn} has no branch assignment. Assign its inventory location before selling it.` }); return; }
           if (found.branch_id != null && branchId != null && Number(found.branch_id) !== branchId) {
             res.status(400).json({ error: `Serial ${sn} is stocked at branch ${found.branch_id}, not the selected branch. Transfer it first.` }); return;
           }
@@ -2984,16 +2994,13 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
         for (const item of resolvedItems) {
           const bid = branchId ? Number(branchId) : null;
           if (holding) {
-            const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.id]);
-            if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
             if (bid) {
-              await client.query(
-                `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-                 VALUES ($1, $2, 0, $3, 0, 5)
-                 ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET quantity_reserved = stock_levels.quantity_reserved + $3, updated_at = NOW()::text`,
-                [item.id, bid, item.quantity]
-              );
+              const reserve = await client.query(`UPDATE stock_levels SET quantity_reserved = quantity_reserved + $1, updated_at = NOW()::text
+                WHERE product_id = $2 AND branch_id = $3 AND quantity_in_stock - quantity_reserved >= $1`, [item.quantity, item.id, bid]);
+              if ((reserve.rowCount ?? 0) !== 1) throw new Error(`Insufficient available stock for ${item.name} at this branch.`);
             } else {
+              const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.id]);
+              if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
               await client.query(
                 `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
                  VALUES ($1, 0, $2, 0, 5)
@@ -3009,17 +3016,17 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
             // Guarded atomic decrement (no read-then-write) so concurrent checkouts
             // can never lose an update / double-count stock; fails loudly if stock
             // is insufficient rather than silently overselling (I-1/I-4).
-            const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.id]);
-            if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
             if (bid) {
               const branchRes = await client.query(
                 `UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1,
                     quantity_sold = quantity_sold + $1, updated_at = NOW()::text
-                  WHERE product_id = $2 AND branch_id = $3 AND quantity_in_stock >= $1`,
+                  WHERE product_id = $2 AND branch_id = $3 AND quantity_in_stock - quantity_reserved >= $1`,
                 [item.quantity, item.id, bid]
               );
               if ((branchRes.rowCount ?? 0) !== 1) throw new Error(`Insufficient branch stock for ${item.name}; refresh the stock count and retry.`);
             } else {
+              const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.id]);
+              if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
               await client.query(
                 `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
                  VALUES ($1, 0, 0, 0, 5)
@@ -3456,7 +3463,7 @@ app.get("/api/pos/customers", posAuthMiddleware, asyncHandler(async (req: Reques
 
 app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, mpesaPhone, couponCode, giftCardCode, redeemPoints } = req.body || {};
+    const { shippingName, shippingAddress, shippingCounty, shippingPhone, notes, mpesaPhone, couponCode, giftCardCode, redeemPoints, branchId: requestedBranchId } = req.body || {};
     if (!shippingName || !shippingAddress || !shippingCounty) {
       res.status(400).json({ error: "Shipping name, address, and county are required." }); return;
     }
@@ -3471,6 +3478,16 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
     const customerDetails = await findCustomerById(customerId);
     const cartItems = await getCartItems(customerId);
     if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
+    const activeBranches = (await listBranches()).filter((branch) => branch.isActive);
+    const branchConfigured = await getBranchCount() > 0;
+    let fulfillmentBranchId: number | undefined;
+    if (branchConfigured) {
+      if (activeBranches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active fulfillment branch is configured." }); return; }
+      fulfillmentBranchId = Number(requestedBranchId);
+      if (!isPosInt(fulfillmentBranchId) || !activeBranches.some((branch) => branch.id === fulfillmentBranchId)) {
+        res.status(400).json({ error: "Choose an active fulfillment branch before placing this order." }); return;
+      }
+    }
     const hiddenInCart = await queryOne("SELECT id FROM products WHERE id = ANY($1) AND is_hidden = 1", [cartItems.map((ci: any) => ci.productId)]) as any;
     if (hiddenInCart) { res.status(400).json({ error: "One or more items in your cart are no longer available for purchase on the online store." }); return; }
     const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -3521,6 +3538,7 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
       source: "storefront",
       processedBy: `Customer #${customerId}`,
       campaignId,
+      branchId: fulfillmentBranchId,
       // Stock integrity: M-Pesa orders hold stock (released if the push cannot
       // start / the payment times out); non-M-Pesa orders deduct immediately.
       stock: mpesaPhone ? "hold" : "deduct",
@@ -3598,6 +3616,13 @@ app.post("/api/orders/create-pending", customerAuthMiddleware, asyncHandler(asyn
     if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
     const hiddenInCart = await queryOne("SELECT id FROM products WHERE id = ANY($1) AND is_hidden = 1", [cartItems.map((ci: any) => ci.productId)]) as any;
     if (hiddenInCart) { res.status(400).json({ error: "One or more items in your cart are no longer available for purchase on the online store." }); return; }
+    const branches = (await listBranches()).filter((branch) => branch.isActive);
+    const branchesConfigured = await getBranchCount() > 0;
+    const requestedBranchId = Number(req.body?.branchId);
+    if (branchesConfigured && branches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active fulfillment branch is configured." }); return; }
+    if (branchesConfigured && (!isPosInt(requestedBranchId) || !branches.some((branch) => branch.id === requestedBranchId))) {
+      res.status(400).json({ error: "Choose an active fulfillment branch before creating this order." }); return;
+    }
     const order = await createOrder({
       customerId,
       customerName: customerDetails?.name || "",
@@ -3612,6 +3637,7 @@ app.post("/api/orders/create-pending", customerAuthMiddleware, asyncHandler(asyn
       notes: "",
       items: cartItems.map((ci) => ({ productId: ci.productId, name: ci.name, price: ci.price, quantity: ci.quantity, hasWarranty: ci.hasWarranty, warrantyDuration: ci.warrantyDuration })),
       processedBy: `Customer #${customerId}`,
+      branchId: branchesConfigured ? requestedBranchId : undefined,
     });
     await clearCart(customerId);
     try { await notifyCustomerOrderPlaced(order.id).catch(() => {}); } catch { /* non-fatal */ }
@@ -3653,7 +3679,11 @@ app.patch("/api/orders/:id", customerAuthMiddleware, asyncHandler(async (req: Re
           // Hold stock for the pending M-Pesa payment (idempotent — an order that
           // already holds stock is left untouched). If no live checkout results
           // from this push, release the hold so a dropped push never strands items.
-          try { await holdStockForOrder(orderId); } catch (err: any) { console.warn("[M-Pesa] Could not hold stock:", err.message); }
+          try { await holdStockForOrder(orderId); } catch (err: any) {
+            console.warn("[M-Pesa] Could not hold stock:", err.message);
+            res.status(409).json({ error: err?.message || "Could not reserve stock for this payment. Choose an active fulfillment branch and try again." });
+            return;
+          }
           let stkCheckoutId: string | null = null;
           const total = order.subtotal + (order.shippingFee || 0);
           const callbackUrl = `${callbackBaseUrl(req)}/api/mpesa/callback`;
@@ -6876,6 +6906,9 @@ app.put("/api/stock/:productId", ownerAuthMiddleware, requirePermission("stock:u
   if (Object.keys(updates).length === 0) { res.status(400).json({ error: "Provide quantityInStock or lowStockThreshold to update." }); return; }
   const branchId = await authorizeStockBranch(req, res, req.body.branchId, true);
   if (branchId === undefined) return;
+  if (branchId === null && updates.quantityInStock !== undefined && updates.quantityInStock > 0 && await getBranchCount() > 0) {
+    res.status(409).json({ error: "Stock must be assigned to a branch. Select a branch before setting on-hand quantity." }); return;
+  }
   await updateStockLevel(String(req.params.productId), updates, branchId ?? undefined);
   const stock = await getStockLevel(String(req.params.productId), branchId ?? undefined);
   res.json(stock);
@@ -6887,6 +6920,26 @@ app.get("/api/stock/:productId/movements", adminAuthMiddleware, requirePermissio
 }));
 
 // ============ STOCK TRANSFERS ============
+
+app.get("/api/admin/stock/unlocated", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ items: await getUnlocatedStockSummary() });
+}));
+
+app.post("/api/admin/stock/unlocated/assign", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+  const branchId = Number(req.body?.branchId);
+  if (!isPosInt(branchId)) { res.status(400).json({ error: "Choose an active destination branch." }); return; }
+  if ((await authorizeStockBranch(req, res, branchId)) === undefined) return;
+  try {
+    const result = await assignUnlocatedStockToBranch(branchId, Number((req as any).user?.sub));
+    try {
+      await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "assigned", "stock_location", String(branchId), { movedProducts: result.movedProducts, movedUnits: result.movedUnits, referenceId: result.referenceId }, (req as any).user.role);
+    } catch (auditError: any) { console.warn("[stock assignment] supplemental audit log failed:", auditError?.message || auditError); }
+    res.json({ ok: true, ...result });
+  } catch (err: any) {
+    const message = String(err?.message || "Unlocated stock could not be assigned.");
+    res.status(/choose an active|cannot assign|serial records|changed during/i.test(message) ? 409 : 500).json({ error: message });
+  }
+}));
 
 app.get("/api/stock-transfers", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
   const user = (req as any).user || {};
@@ -8187,11 +8240,16 @@ app.delete("/api/admin/quotes/:id", staffAuthMiddleware, requirePermission("repo
   }
 }));
 
-app.post("/api/admin/quotes/:id/approve", staffAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/quotes/:id/approve", staffAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const existing = await getQuote(id);
   if (!existing) { res.status(404).json({ error: "Quote not found." }); return; }
-  const result = await convertQuoteToOrder(id, (req as any).user.username || "Staff");
+  const branchId = await authorizeStockBranch(req, res, req.body?.branchId);
+  if (branchId === undefined) return;
+  if (branchId === null && await getBranchCount() > 0) { res.status(409).json({ error: "Choose an active branch before converting this quote into a sale." }); return; }
+  let result: Awaited<ReturnType<typeof convertQuoteToOrder>>;
+  try { result = await convertQuoteToOrder(id, (req as any).user.username || "Staff", branchId ?? undefined); }
+  catch (err: any) { res.status(409).json({ error: err?.message || "Quote could not be converted." }); return; }
   if (!result) { res.status(500).json({ error: "Failed to convert quote." }); return; }
   await recordAuditLog((req as any).user.sub, (req as any).user.username || "", "quote_approved", "quote", String(id), JSON.stringify({ quoteNumber: existing.quoteNumber, orderInvoice: result.invoiceNumber, total: existing.total }), (req as any).user.role);
   res.json({ order: result.order, invoiceNumber: result.invoiceNumber });
@@ -8683,6 +8741,9 @@ app.post("/api/admin/orders/:id/refunds", ownerAuthMiddleware, requirePermission
     res.status(201).json(refund);
   } catch (err: any) {
     console.error("[refund create]", err?.message || err);
+    if (/Inventory must be assigned to a branch/i.test(String(err?.message || ""))) {
+      res.status(409).json({ error: "This older order has no branch recorded. The refund’s sellable return must be assigned to a physical branch before it can be processed." }); return;
+    }
     res.status(400).json({ error: "Failed to create refund." });
   }
 }));
@@ -9078,6 +9139,7 @@ app.post("/api/stock-take/start", ownerAuthMiddleware, requirePermission("stock:
     const { notes, branchId } = req.body || {};
     const resolvedBranchId = await authorizeStockBranch(req, res, branchId, true);
     if (resolvedBranchId === undefined) return;
+    if (resolvedBranchId === null && await getBranchCount() > 0) { res.status(409).json({ error: "Choose a branch before starting a stock take. Unlocated stock can’t be counted into a global balance." }); return; }
     const session = await createStockTakeSession(notes || "", (req as any).user.sub, resolvedBranchId ?? undefined);
     if (!session) { res.status(500).json({ error: "Failed to create stock take session." }); return; }
     const items = await getStockTakeItems(session.id);
@@ -9143,6 +9205,7 @@ app.post("/api/stock-take/:id/apply", ownerAuthMiddleware, requirePermission("st
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
     if (!session) return;
+    if (session.branchId == null && await getBranchCount() > 0) { res.status(409).json({ error: "This stock take has no branch. Create a new count for the physical branch before applying adjustments." }); return; }
     const adjusted = await applyStockTakeAdjustments(Number(req.params.id), Number((req as any).user?.sub));
     if (adjusted === null) { res.status(409).json({ error: "Stock take adjustments have already been applied." }); return; }
     res.json({ ok: true, adjusted });

@@ -12,6 +12,9 @@ export default function CartPage() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [counties, setCounties] = useState<County[]>([]);
   const [selectedCounty, setSelectedCounty] = useState("");
+  const [fulfillmentBranches, setFulfillmentBranches] = useState<{ id: number; name: string }[]>([]);
+  const [branchSelectionRequired, setBranchSelectionRequired] = useState(false);
+  const [selectedBranchId, setSelectedBranchId] = useState("");
   const [shippingFee, setShippingFee] = useState(0);
   const [mpesaPhone, setMpesaPhone] = useState("");
   const [tillNumber, setTillNumber] = useState("");
@@ -35,6 +38,10 @@ export default function CartPage() {
   const [pointsMsg, setPointsMsg] = useState("");
 
   useEffect(() => {
+    api<{ branches: { id: number; name: string }[]; requiresBranch?: boolean }>("/api/store/branches").then((data) => {
+      setFulfillmentBranches(data.branches || []);
+      setBranchSelectionRequired(Boolean(data.requiresBranch));
+    }).catch(() => {});
     const ok = isCustomerLoggedIn();
     setLoggedIn(ok);
     if (!ok) {
@@ -152,6 +159,10 @@ export default function CartPage() {
       setStatusMsg({ text: "Please fill in name, address, and county.", error: true });
       return;
     }
+    if (branchSelectionRequired && !fulfillmentBranches.some((branch) => String(branch.id) === selectedBranchId)) {
+      setStatusMsg({ text: fulfillmentBranches.length ? "Please choose a fulfillment branch." : "Online ordering is paused until the store has an active fulfillment branch.", error: true });
+      return;
+    }
     setStatusMsg(null);
     setReviewOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -168,6 +179,7 @@ export default function CartPage() {
         shippingPhone: shippingPhone.trim(),
         notes: "",
       };
+      if (selectedBranchId) body.branchId = Number(selectedBranchId);
       if (mpesaPhone.trim()) body.mpesaPhone = mpesaPhone.trim();
       if (couponCode.trim()) body.couponCode = couponCode.trim();
       if (giftCardCode.trim()) body.giftCardCode = giftCardCode.trim();
@@ -277,6 +289,16 @@ export default function CartPage() {
                 {pointsMsg && <span style={{ fontSize: "0.8rem", color: pointsDiscount > 0 ? "var(--success)" : "var(--danger)", width: "100%" }}>{pointsMsg}</span>}
               </div>
             )}
+            {branchSelectionRequired && (
+              <div className="field">
+                <label htmlFor="fulfillmentBranch" className="input-label">Fulfillment branch</label>
+                <select id="fulfillmentBranch" className="input" value={selectedBranchId} onChange={(event) => setSelectedBranchId(event.target.value)} required disabled={fulfillmentBranches.length === 0}>
+                  <option value="">{fulfillmentBranches.length ? "Choose a branch…" : "No active branches"}</option>
+                  {fulfillmentBranches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </select>
+                <small style={{ color: "var(--text-secondary)" }}>{fulfillmentBranches.length ? "Choose the branch that will prepare this order." : "Ask the store to activate a branch before ordering."}</small>
+              </div>
+            )}
             <div className="field">
               <label htmlFor="shippingName" className="input-label">Full name</label>
               <input id="shippingName" type="text" className="input" value={shippingName} onChange={(e) => setShippingName(e.target.value)} required />
@@ -328,6 +350,7 @@ export default function CartPage() {
               </div>
 
               <div className="cart-summary__row"><span>Shipping to</span><span style={{ textAlign: "right" }}>{shippingName}<br />{shippingAddress}, {shippingCountyLabel}</span></div>
+              {selectedBranchId && <div className="cart-summary__row"><span>Fulfillment branch</span><span>{fulfillmentBranches.find((branch) => String(branch.id) === selectedBranchId)?.name}</span></div>}
               {shippingPhone.trim() && <div className="cart-summary__row"><span>Phone</span><span>{shippingPhone}</span></div>}
               {mpesaPhone.trim() && <div className="cart-summary__row"><span>M-Pesa number</span><span>{mpesaPhone}</span></div>}
               {couponDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Coupon discount</span><span style={{ color: "var(--success)" }}>-{formatPrice(couponDiscount)}</span></div>}

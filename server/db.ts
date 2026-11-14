@@ -1831,6 +1831,56 @@ async function completeStockTransfer(id: number, actorId?: number | null): Promi
   return receiveStockTransfer(id, actorId);
 }
 
+async function getUnlocatedStockSummary(): Promise<{ productId: string; name: string; quantityInStock: number; quantityReserved: number; serialTracking: boolean }[]> {
+  return await queryAll(`SELECT sl.product_id AS "productId", p.name,
+      sl.quantity_in_stock AS "quantityInStock", sl.quantity_reserved AS "quantityReserved",
+      p.serial_tracking AS "serialTracking"
+    FROM stock_levels sl JOIN products p ON p.id = sl.product_id
+    WHERE sl.branch_id IS NULL AND (sl.quantity_in_stock > 0 OR sl.quantity_reserved > 0)
+    ORDER BY p.name`) as any[];
+}
+
+/** Atomically assigns unlocated on-hand quantities to a physical branch. */
+async function assignUnlocatedStockToBranch(branchId: number, actorId?: number | null): Promise<{ movedProducts: number; movedUnits: number; referenceId: string }> {
+  return await transaction(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('assign-unlocated-stock'))");
+    const branch = (await client.query("SELECT id, name FROM branches WHERE id = $1 AND is_active = 1 FOR SHARE", [branchId])).rows?.[0] as any;
+    if (!branch) throw new Error("Choose an active destination branch.");
+    const rows = (await client.query(`SELECT sl.product_id, sl.quantity_in_stock, sl.quantity_reserved,
+        sl.low_stock_threshold, p.name, p.serial_tracking
+      FROM stock_levels sl JOIN products p ON p.id = sl.product_id
+      WHERE sl.branch_id IS NULL AND (sl.quantity_in_stock > 0 OR sl.quantity_reserved > 0)
+      ORDER BY sl.product_id FOR UPDATE OF sl`)).rows as any[];
+    const reserved = rows.find((row) => Number(row.quantity_reserved || 0) > 0);
+    if (reserved) throw new Error(`Cannot assign ${reserved.name}: ${reserved.quantity_reserved} unit(s) are reserved by an order without a branch. Reconcile that order first.`);
+    const referenceId = `global-to-branch-${crypto.randomUUID()}`;
+    const actor = Number.isInteger(actorId) && Number(actorId) > 0 ? Number(actorId) : null;
+    let movedProducts = 0;
+    let movedUnits = 0;
+    for (const row of rows) {
+      const quantity = Number(row.quantity_in_stock || 0);
+      if (quantity <= 0) continue;
+      if (row.serial_tracking) {
+        const serials = (await client.query("SELECT id FROM serial_numbers WHERE product_id = $1 AND branch_id IS NULL AND status = 'in_stock' ORDER BY id FOR UPDATE", [row.product_id])).rows as any[];
+        if (serials.length !== quantity) throw new Error(`${row.name} has ${quantity} unlocated units but ${serials.length} matching unlocated serial records. Reconcile serials before assigning stock.`);
+        const updated = await client.query("UPDATE serial_numbers SET branch_id = $1 WHERE id = ANY($2::int[]) AND status = 'in_stock' AND branch_id IS NULL", [branchId, serials.map((serial) => serial.id)]);
+        if ((updated.rowCount ?? 0) !== quantity) throw new Error(`Serial records for ${row.name} changed during assignment. Nothing was saved; refresh and retry.`);
+      }
+      await client.query(`INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+        VALUES ($1, $2, $3, 0, 0, $4)
+        ON CONFLICT (product_id, branch_id) WHERE branch_id IS NOT NULL
+        DO UPDATE SET quantity_in_stock = stock_levels.quantity_in_stock + EXCLUDED.quantity_in_stock, updated_at = NOW()::text`,
+      [row.product_id, branchId, quantity, Number(row.low_stock_threshold || 5)]);
+      await client.query("UPDATE stock_levels SET quantity_in_stock = 0, updated_at = NOW()::text WHERE product_id = $1 AND branch_id IS NULL", [row.product_id]);
+      await client.query("INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'location_assignment_out', $2, 'stock_location_assignment', $3, $4, $5, NULL)", [row.product_id, -quantity, referenceId, `Assigned unlocated stock to ${branch.name}`, actor]);
+      await client.query("INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'location_assignment_in', $2, 'stock_location_assignment', $3, $4, $5, $6)", [row.product_id, quantity, referenceId, `Assigned unlocated stock from central to ${branch.name}`, actor, branchId]);
+      movedProducts++;
+      movedUnits += quantity;
+    }
+    return { movedProducts, movedUnits, referenceId };
+  });
+}
+
 async function rejectStockTransfer(id: number): Promise<boolean> {
   const result = await query("UPDATE stock_transfers SET status = 'rejected' WHERE id = $1 AND status = 'pending'", [id]);
   return (result.rowCount ?? 0) > 0;
@@ -2340,7 +2390,7 @@ async function listAllQuotes(): Promise<Quote[]> {
   return quotes;
 }
 
-async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<{ order: Order; invoiceNumber: string } | undefined> {
+async function convertQuoteToOrder(quoteId: number, staffName: string, branchId?: number): Promise<{ order: Order; invoiceNumber: string } | undefined> {
   const quote = await getQuote(quoteId);
   if (!quote) return undefined;
   const invoiceNumber = await generateInvoiceNumber();
@@ -2352,9 +2402,12 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
   // can never leave an order/items without a corresponding stock movement (or
   // deduct stock without an order). Mirrors createOrder/receivePurchaseOrderItem.
   const orderId = await transaction(async (client) => {
+    const branchCount = Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0);
+    if (branchCount > 0 && branchId == null) throw new Error("Choose a branch before converting this quote into a sale.");
+    if (branchId != null && !(await client.query("SELECT id FROM branches WHERE id = $1 AND is_active = 1", [branchId])).rows?.[0]) throw new Error("Choose an active branch before converting this quote.");
     const result = await client.query(
-      `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, invoice_number, source) VALUES ($1, $2, $3, 'delivered', $4, 'Quote Conversion', '0', 0, $5, $6, $7, $8, 'quote') RETURNING id`,
-      [quote.customerId, customerName, customerEmail, customerName, `Converted from quote ${quote.quoteNumber}`, subtotal, staffName, invoiceNumber]
+      `INSERT INTO orders (customer_id, customer_name, customer_email, status, shipping_name, shipping_address, shipping_county, shipping_fee, notes, subtotal, processed_by, invoice_number, source, branch_id) VALUES ($1, $2, $3, 'delivered', $4, 'Quote Conversion', '0', 0, $5, $6, $7, $8, 'quote', $9) RETURNING id`,
+      [quote.customerId, customerName, customerEmail, customerName, `Converted from quote ${quote.quoteNumber}`, subtotal, staffName, invoiceNumber, branchId ?? null]
     );
     const insertOrderId = result.rows[0].id;
     for (const item of quote.items) {
@@ -2376,28 +2429,17 @@ async function convertQuoteToOrder(quoteId: number, staffName: string): Promise<
       await client.query("INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, has_warranty, warranty_duration, warranty_expires, taxable, unit_cost) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10)", [insertOrderId, item.productId, item.productName, item.unitPrice, item.quantity, item.lineTotal, hasWarranty, warrantyDuration, wExp, unitCost]);
     }
     for (const item of quote.items) {
-      // I-1/I-4: guarded atomic decrement â€” if stock_on_hand is insufficient the
-      // UPDATE matches no row (rowCount 0) and we fail the whole conversion loudly
-      // instead of silently clamping/overselling. Throwing rolls back the order+items.
-      const productRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [item.quantity, item.productId]);
-      if ((productRes.rowCount ?? 0) === 0) {
-        throw new Error(`Insufficient stock to convert quote: ${item.productName || item.productId}`);
-      }
-      // Atomic decrement â€” no read-then-write race. Insert preserves an empty
-      // stock_levels row if absent; on conflict the current value is decremented
-      // only while it can cover the quantity (guarded, no oversell).
+      const stockResult = branchId != null
+        ? await client.query(`UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1,
+              quantity_sold = quantity_sold + $1, updated_at = NOW()::text
+            WHERE product_id = $2 AND branch_id = $3 AND quantity_in_stock - quantity_reserved >= $1`, [item.quantity, item.productId, branchId])
+        : await client.query(`UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1,
+              quantity_sold = quantity_sold + $1, updated_at = NOW()::text
+            WHERE product_id = $2 AND branch_id IS NULL AND quantity_in_stock - quantity_reserved >= $1`, [item.quantity, item.productId]);
+      if ((stockResult.rowCount ?? 0) === 0) throw new Error(`Insufficient stock at the selected branch to convert quote: ${item.productName || item.productId}`);
       await client.query(
-        `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-         VALUES ($1, 0, 0, 0, 5)
-         ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET
-           quantity_in_stock = GREATEST(stock_levels.quantity_in_stock - $2, 0),
-           quantity_sold = stock_levels.quantity_sold + $2, updated_at = NOW()::text
-         WHERE stock_levels.quantity_in_stock >= $2`,
-        [item.productId, item.quantity]
-      );
-      await client.query(
-        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'sale', $2, 'order', $3, $4)",
-        [item.productId, -item.quantity, String(insertOrderId), `Converted quote #${quote.quoteNumber}`]
+        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'sale', $2, 'order', $3, $4, $5)",
+        [item.productId, -item.quantity, String(insertOrderId), `Converted quote #${quote.quoteNumber}`, branchId ?? null]
       );
     }
     return insertOrderId;
@@ -2694,7 +2736,7 @@ async function createRefund(data: { orderId: number; orderItemId?: number; produ
     // Lock the order row: concurrent refunds serialise and can never both use
     // the same remaining balance, and the refund+stock restore below are atomic.
     const orderRow = (await client.query(
-      "SELECT id, subtotal, shipping_fee, discount_amount, gift_card_amount, amount_refunded FROM orders WHERE id = $1 FOR UPDATE",
+      "SELECT id, branch_id, subtotal, shipping_fee, discount_amount, gift_card_amount, amount_refunded FROM orders WHERE id = $1 FOR UPDATE",
       [data.orderId]
     )).rows?.[0] as any;
     if (!orderRow) throw new Error("Order not found.");
@@ -2722,13 +2764,16 @@ async function createRefund(data: { orderId: number; orderItemId?: number; produ
       // sellable goods are put back into available stock; serial identities
       // retain a distinct quarantined/disposed state otherwise.
       const qty = returnedQuantity;
-      const branchRow = (await client.query("SELECT branch_id FROM orders WHERE id = $1", [data.orderId])).rows?.[0] as any;
+      const branchId = orderRow.branch_id == null ? null : Number(orderRow.branch_id);
+      if (stockDisposition === "sellable" && branchId == null && Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0) > 0) {
+        throw new Error("This legacy order has no branch. Reconcile its stock location before returning items to sellable inventory.");
+      }
       await client.query("UPDATE order_items SET cancelled = 1 WHERE id = $1", [data.orderItemId]);
       if (stockDisposition === "sellable") {
-        await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, item.product_id]);
-        if (branchRow?.branch_id != null) {
-          await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, branchRow.branch_id]);
+        if (branchId != null) {
+          await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, branchId]);
         } else {
+          await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, item.product_id]);
           await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
         }
         await client.query(
@@ -2737,9 +2782,9 @@ async function createRefund(data: { orderId: number; orderItemId?: number; produ
         );
         await client.query(
           "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'restock', $2, 'refund', $3, $4, $5)",
-          [item.product_id, qty, String(data.orderId), `Stock returned after refund #${data.orderId}`, branchRow?.branch_id ?? null]
+          [item.product_id, qty, String(data.orderId), `Stock returned after refund #${data.orderId}`, branchId]
         );
-        await refreshStockLevelSoldCount(client, item.product_id, branchRow?.branch_id ?? null);
+        await refreshStockLevelSoldCount(client, item.product_id, branchId);
       } else {
         await client.query(
           "UPDATE serial_numbers SET status = $1 WHERE order_item_id = $2 AND status = 'sold'",
@@ -2782,10 +2827,13 @@ async function cancelOrderItemQuantity(orderItemId: number, quantity: number): P
     if (!fullLineCancel) return true; // partial cancel: no stock or serial restore
     const order = (await client.query("SELECT branch_id FROM orders WHERE id = $1", [row.order_id])).rows?.[0] as any;
     const qty = Number(row.quantity);
-    await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, row.product_id]);
+    if (order?.branch_id == null && Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0) > 0) {
+      throw new Error("This legacy order has no branch. Reconcile its stock location before cancelling or restocking its items.");
+    }
     if (order?.branch_id != null) {
       await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, row.product_id, order.branch_id]);
     } else {
+      await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, row.product_id]);
       await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, row.product_id]);
     }
     await client.query(
@@ -2856,11 +2904,26 @@ async function createOrder(data: { customerId: number; customerName: string; cus
     // payment machinery (confirmOrderPayment/deductReservedStockForOrder) and
     // the released/held sweep.
     if (data.stock === "hold" || data.stock === "deduct") {
+      if (data.branchId == null && Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0) > 0) {
+        throw new Error("Choose a fulfillment branch before reserving or deducting stock.");
+      }
       for (const item of data.items) {
         const qty = Number(item.quantity);
-        const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [qty, item.productId]);
-        if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
-        if (data.stock === "hold") {
+        if (data.branchId != null) {
+          const stockRes = data.stock === "hold"
+            ? await client.query(`UPDATE stock_levels SET quantity_reserved = quantity_reserved + $1, updated_at = NOW()::text
+                WHERE product_id = $2 AND branch_id = $3 AND quantity_in_stock - quantity_reserved >= $1`, [qty, item.productId, data.branchId])
+            : await client.query(`UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1, quantity_sold = quantity_sold + $1, updated_at = NOW()::text
+                WHERE product_id = $2 AND branch_id = $3 AND quantity_in_stock - quantity_reserved >= $1`, [qty, item.productId, data.branchId]);
+          if ((stockRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock at the selected branch for ${item.name}.`);
+        } else {
+          const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [qty, item.productId]);
+          if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${item.name}.`);
+        }
+        if (data.branchId != null) {
+          // Branch stock was changed above; the ledger trigger refreshes the
+          // aggregate product quantity. No global stock row is written.
+        } else if (data.stock === "hold") {
           await client.query(
             `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
              VALUES ($1, 0, $2, 0, 5)
@@ -2881,7 +2944,7 @@ async function createOrder(data: { customerId: number; customerName: string; cus
         await client.query(
           "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, $2, $3, 'order', $4, $5, $6, $7)",
           [item.productId, data.stock === "hold" ? "reserve" : "sale", -qty, String(oid),
-           data.stock === "hold" ? `Storefront order #${oid} (awaiting M-Pesa)` : `Storefront order #${oid}`, null, null]
+           data.stock === "hold" ? `Storefront order #${oid} (awaiting M-Pesa)` : `Storefront order #${oid}`, null, data.branchId ?? null]
         );
       }
     }
@@ -2977,9 +3040,15 @@ async function updateOrderStatus(id: number, status: string): Promise<boolean> {
         // POS cancel, provider route) restore held vs deducted stock correctly.
         const heldRes = (await client.query(HAS_OPEN_RESERVATION_SQL, [String(id)])) as any;
         const held = !!heldRes?.rows?.[0]?.held;
+        const branchesConfigured = Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0) > 0;
+        if (branchesConfigured && order.branch_id == null) {
+          throw new Error("This legacy order has no branch. Assign its stock through an audited inventory reconciliation before cancelling or restocking it.");
+        }
         for (const it of items) {
           const qty = Number(it.quantity);
-          await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, it.product_id]);
+          if (order.branch_id == null && !branchesConfigured) {
+            await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, it.product_id]);
+          }
           if (held) {
             const sl = order.branch_id != null
               ? "UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3"
@@ -3032,13 +3101,16 @@ async function deductReservedStockForOrder(client: { query(text: string, params?
 }
 
 async function releaseReservedStockForOrder(client: { query(text: string, params?: any[]): Promise<any> }, order: any): Promise<void> {
+  if (order.branch_id == null && Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0) > 0) {
+    throw new Error("This legacy order has no branch. Its stock hold must be reconciled before it can be released safely.");
+  }
   const items = (await client.query("SELECT product_id, quantity FROM order_items WHERE order_id = $1", [order.id])) as any;
   for (const item of items.rows || []) {
     const qty = Number(item.quantity);
-    await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, item.product_id]);
     if (order.branch_id != null) {
       await client.query("UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, item.product_id, order.branch_id]);
     } else {
+      await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, item.product_id]);
       await client.query("UPDATE stock_levels SET quantity_reserved = GREATEST(quantity_reserved - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, item.product_id]);
     }
     // Track the release so held-state detection (HAS_OPEN_RESERVATION_SQL) can
@@ -3144,19 +3216,27 @@ async function holdStockForOrder(orderId: number): Promise<void> {
     if (await isOrderStockHeld(client, orderId)) return;
     const items = (await client.query("SELECT id, name, product_id, quantity FROM order_items WHERE order_id = $1 AND cancelled = 0", [orderId])).rows as any[] || [];
     if (items.length === 0) throw new Error("Order has no active items to hold");
+    const branchesConfigured = Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0) > 0;
+    if (branchesConfigured && order.branch_id == null) throw new Error("Choose a fulfillment branch before holding stock for M-Pesa.");
     for (const it of items) {
       const qty = Number(it.quantity);
-      const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [qty, it.product_id]);
-      if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${it.name}.`);
-      await client.query(
-        `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
-         VALUES ($1, 0, $2, 0, 5)
-         ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_reserved = stock_levels.quantity_reserved + $2, updated_at = NOW()::text`,
-        [it.product_id, qty]
-      );
+      if (order.branch_id != null) {
+        const reserved = await client.query(`UPDATE stock_levels SET quantity_reserved = quantity_reserved + $1, updated_at = NOW()::text
+          WHERE product_id = $2 AND branch_id = $3 AND quantity_in_stock - quantity_reserved >= $1`, [qty, it.product_id, order.branch_id]);
+        if ((reserved.rowCount ?? 0) === 0) throw new Error(`Insufficient stock at the order's branch for ${it.name}.`);
+      } else {
+        const prodRes = await client.query(`UPDATE products SET stock_on_hand = stock_on_hand - $1 WHERE id = $2 AND stock_on_hand >= $1`, [qty, it.product_id]);
+        if ((prodRes.rowCount ?? 0) === 0) throw new Error(`Insufficient stock for ${it.name}.`);
+        await client.query(
+          `INSERT INTO stock_levels (product_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold)
+           VALUES ($1, 0, $2, 0, 5)
+           ON CONFLICT (product_id) WHERE branch_id IS NULL DO UPDATE SET quantity_reserved = stock_levels.quantity_reserved + $2, updated_at = NOW()::text`,
+          [it.product_id, qty]
+        );
+      }
       await client.query(
         "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'reserve', $2, 'order', $3, $4, $5, $6)",
-        [it.product_id, -qty, String(orderId), `Storefront order #${orderId} (awaiting M-Pesa)`, null, null]
+        [it.product_id, -qty, String(orderId), `Storefront order #${orderId} (awaiting M-Pesa)`, null, order.branch_id ?? null]
       );
     }
   });
@@ -3897,10 +3977,10 @@ async function getStockSummary(groupId?: string, branchId?: number): Promise<{ p
       FROM stock_levels WHERE branch_id IS NULL
     )
     SELECT p.id AS "productId", p.name, p.category,
-      CASE WHEN bs.product_id IS NOT NULL THEN bs.quantity_in_stock ELSE COALESCE(gs.quantity_in_stock, 0) END AS "quantityInStock",
-      CASE WHEN bs.product_id IS NOT NULL THEN bs.quantity_reserved ELSE COALESCE(gs.quantity_reserved, 0) END AS "quantityReserved",
-      CASE WHEN bs.product_id IS NOT NULL THEN bs.quantity_sold ELSE COALESCE(gs.quantity_sold, 0) END AS "quantitySold",
-      CASE WHEN bs.product_id IS NOT NULL THEN bs.low_stock_threshold ELSE COALESCE(gs.low_stock_threshold, 5) END AS "lowStockThreshold"
+      COALESCE(bs.quantity_in_stock, 0) + COALESCE(gs.quantity_in_stock, 0) AS "quantityInStock",
+      COALESCE(bs.quantity_reserved, 0) + COALESCE(gs.quantity_reserved, 0) AS "quantityReserved",
+      COALESCE(bs.quantity_sold, 0) + COALESCE(gs.quantity_sold, 0) AS "quantitySold",
+      GREATEST(COALESCE(bs.low_stock_threshold, 0), COALESCE(gs.low_stock_threshold, 0)) AS "lowStockThreshold"
     FROM products p
     LEFT JOIN branch_stock bs ON bs.product_id = p.id
     LEFT JOIN global_stock gs ON gs.product_id = p.id${where}
@@ -4902,6 +4982,7 @@ async function createSerial(data: { serialNumber: string; assetTag?: string; pro
   const product = await queryOne("SELECT serial_tracking FROM products WHERE id = $1", [data.productId]) as any;
   if (!product) return { ok: false, error: "Product not found." };
   if (!product.serial_tracking) return { ok: false, error: "This product is not configured for serial tracking." };
+  if (data.branchId == null && (data.status || "in_stock") === "in_stock" && Number((await queryOne("SELECT COUNT(*)::int AS count FROM branches") as any)?.count || 0) > 0) return { ok: false, error: "Choose a branch for an in-stock serial record when branches are configured." };
   if (data.branchId != null && !await queryOne("SELECT id FROM branches WHERE id = $1 AND is_active = 1", [data.branchId])) return { ok: false, error: "Select an active branch." };
   const result = await query(
     "INSERT INTO serial_numbers (serial_number, serial_kind, asset_tag, product_id, branch_id, status, warranty_expires, created_by, purchase_order_item_id) VALUES ($1, 'manufacturer', $2, $3, $4, $5, $6, $7, $8) RETURNING *",
@@ -4923,6 +5004,7 @@ async function reconcileLegacySerial(id: number, data: { serialNumber: string; a
     if (current.serial_kind !== "legacy") return { ok: false, error: "Only unverified legacy serial records can be reconciled." };
     if (!new Set(["in_stock", "sold"]).has(current.status)) return { ok: false, error: "Only in-stock or sold legacy records can be reconciled." };
     if (current.status === "in_stock" && data.branchId === undefined) return { ok: false, error: "Confirm the current branch or central stock location." };
+    if (current.status === "in_stock" && data.branchId == null && Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0) > 0) return { ok: false, error: "Choose a branch for this in-stock serial record when branches are configured." };
     const oldIdentifierConflict = await client.query(
       "SELECT id FROM serial_numbers WHERE id <> $1 AND (LOWER(BTRIM(serial_number)) = LOWER(BTRIM($2)) OR LOWER(BTRIM(asset_tag)) = LOWER(BTRIM($2)) OR LOWER(BTRIM(legacy_identifier)) = LOWER(BTRIM($2))) LIMIT 1",
       [id, current.serial_number]
@@ -5137,7 +5219,7 @@ export {
   getMessagesForCustomer, getMessagesForProvider, sendMessage, markMessageRead, getUnreadMessageCount, listAllMessages,
   getCartItems, getCartCount, addToCart, setCartQuantity, removeFromCart, clearCart, generateProductId,
   getStockLevel, updateStockLevel, recordStockMovement, getStockMovements, getLowStockItems, getReorderSuggestions,
-  createStockTransfer, getStockTransfer, listStockTransfers, completeStockTransfer, dispatchStockTransfer, receiveStockTransfer, rejectStockTransfer,
+  createStockTransfer, getStockTransfer, listStockTransfers, completeStockTransfer, getUnlocatedStockSummary, assignUnlocatedStockToBranch, dispatchStockTransfer, receiveStockTransfer, rejectStockTransfer,
   listAvailableStockSerials, listStockDisposals, createStockDisposal,
   listSubscriptionPlans, getSubscriptionPlan, createSubscriptionPlan, updateSubscriptionPlan, deleteSubscriptionPlan,
   listBranches, getBranch, createBranch, updateBranch, deleteBranch, getBranchCount, getMaxBranchesForShop, canCreateBranch,

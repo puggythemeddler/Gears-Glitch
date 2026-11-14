@@ -232,7 +232,7 @@ export default function AdminSerials() {
         </select>
         <select className="input" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} style={{ fontSize: "0.85rem", width: "auto" }} aria-label="Filter serials by branch">
           <option value="">All locations</option>
-          <option value="central">Central / no branch</option>
+          {branches.length === 0 && <option value="central">Central / no branch</option>}
           {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
         <span style={{ fontSize: "0.8rem", opacity: 0.6 }}>{serials.length} shown · {available} in stock · {sold} sold</span>
@@ -301,7 +301,7 @@ export default function AdminSerials() {
             <div className="field"><label>Stock location
               <select className="input" value={createBranch} onChange={(e) => setCreateBranch(e.target.value)} style={{ width: "100%" }}>
                 <option value="">-- Choose location --</option>
-                <option value="central">Central / no branch</option>
+                {branches.length === 0 && <option value="central">Central / no branch</option>}
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </label></div>
@@ -325,7 +325,7 @@ export default function AdminSerials() {
             {reconcileSerial.status === "in_stock" && <div className="field"><label>Current stock location
               <select className="input" value={reconcileBranch} onChange={(e) => setReconcileBranch(e.target.value)} style={{ width: "100%" }}>
                 <option value="">-- Confirm location --</option>
-                <option value="central">Central / no branch</option>
+                {branches.length === 0 && <option value="central">Central / no branch</option>}
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </label></div>}

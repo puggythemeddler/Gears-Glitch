@@ -1359,25 +1359,29 @@ async function addRepairPart(ticketId: string, data: any, staffId?: number): Pro
   let partId: number;
   try {
     partId = await transaction(async (client) => {
-      await client.query("SELECT id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId]);
+      const ticket = (await client.query("SELECT id, branch_id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId])).rows?.[0] as any;
+      if (!ticket) throw new Error("Repair ticket not found.");
+      const branchId = ticket.branch_id == null ? null : Number(ticket.branch_id);
+      const branchesConfigured = Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0) > 0;
+      if (productId && branchId == null && branchesConfigured) throw new Error("Assign this repair ticket to a branch before using store inventory.");
       const quoteInFlight = (await client.query("SELECT 1 FROM repair_quote_versions WHERE ticket_id = $1 AND delivery_status = 'sending' LIMIT 1", [ticketId])).rows?.[0];
       if (quoteInFlight) throw new Error("A quote email is being sent. Wait for it to finish before changing the estimate parts.");
       if (productId) {
-        const level = (await client.query("SELECT quantity_in_stock, quantity_reserved FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL FOR UPDATE", [productId])).rows?.[0] as any;
-        // Guarded atomic deduction — rowCount 0 means insufficient stock on hand.
-        const prodRes = await client.query(
-          "UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2 AND stock_on_hand >= $1",
-          [qty, productId]
-        );
-        if ((prodRes.rowCount ?? 0) === 0) {
-          throw new Error(`Insufficient stock for ${desc}.`);
-        }
-        if (level) {
+        const level = (await client.query(branchId == null
+          ? "SELECT quantity_in_stock, quantity_reserved FROM stock_levels WHERE product_id = $1 AND branch_id IS NULL FOR UPDATE"
+          : "SELECT quantity_in_stock, quantity_reserved FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE",
+        branchId == null ? [productId] : [productId, branchId])).rows?.[0] as any;
+        if (!level || Number(level.quantity_in_stock) - Number(level.quantity_reserved || 0) < qty) throw new Error(`Insufficient available stock for ${desc}${branchId == null ? "" : " at this branch"}.`);
+        if (branchId != null) {
+          await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1, quantity_sold = quantity_sold + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, productId, branchId]);
+        } else {
+          // Branchless tenants retain their existing global stock behavior.
+          await client.query("UPDATE products SET stock_on_hand = GREATEST(stock_on_hand - $1, 0) WHERE id = $2", [qty, productId]);
           await client.query("UPDATE stock_levels SET quantity_in_stock = GREATEST(quantity_in_stock - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, productId]);
         }
         await client.query(
-          "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'repair_part', $2, 'repair', $3, $4)",
-          [productId, -qty, ticketId, `Repair part used #${ticketId}`]
+          "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'repair_part', $2, 'repair', $3, $4, $5)",
+          [productId, -qty, ticketId, `Repair part used #${ticketId}`, branchId]
         );
       }
       const result = await client.query(
@@ -1401,7 +1405,10 @@ async function addRepairPart(ticketId: string, data: any, staffId?: number): Pro
 
 async function removeRepairPart(ticketId: string, partId: number, staffId?: number): Promise<boolean> {
   const part = await transaction(async (client) => {
-    await client.query("SELECT id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId]);
+    const ticket = (await client.query("SELECT id, branch_id FROM repair_tickets WHERE id = $1 FOR UPDATE", [ticketId])).rows?.[0] as any;
+    if (!ticket) throw new Error("Repair ticket not found.");
+    const branchId = ticket.branch_id == null ? null : Number(ticket.branch_id);
+    const branchesConfigured = Number((await client.query("SELECT COUNT(*)::int AS count FROM branches")).rows?.[0]?.count || 0) > 0;
     const quoteInFlight = (await client.query("SELECT 1 FROM repair_quote_versions WHERE ticket_id = $1 AND delivery_status = 'sending' LIMIT 1", [ticketId])).rows?.[0];
     if (quoteInFlight) throw new Error("A quote email is being sent. Wait for it to finish before changing the estimate parts.");
     const row = (await client.query("SELECT description, product_id, quantity FROM repair_parts_used WHERE id = $1 AND ticket_id = $2 FOR UPDATE", [partId, ticketId])).rows?.[0] as any;
@@ -1410,11 +1417,16 @@ async function removeRepairPart(ticketId: string, partId: number, staffId?: numb
     if ((deleted.rowCount ?? 0) === 0) return null;
     if (row.product_id) {
       const qty = Number(row.quantity) || 1;
-      await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, row.product_id]);
-      await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, row.product_id]);
+      if (branchId != null) {
+        await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, quantity_sold = GREATEST(quantity_sold - $1, 0), updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, row.product_id, branchId]);
+      } else {
+        if (branchesConfigured) throw new Error("Assign this repair ticket to a branch before returning store inventory.");
+        await client.query("UPDATE products SET stock_on_hand = stock_on_hand + $1 WHERE id = $2", [qty, row.product_id]);
+        await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id IS NULL", [qty, row.product_id]);
+      }
       await client.query(
-        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes) VALUES ($1, 'restock', $2, 'repair', $3, $4)",
-        [row.product_id, qty, ticketId, `Repair part removed #${ticketId}`]
+        "INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, branch_id) VALUES ($1, 'restock', $2, 'repair', $3, $4, $5)",
+        [row.product_id, qty, ticketId, `Repair part removed #${ticketId}`, branchId]
       );
     }
     return row;
