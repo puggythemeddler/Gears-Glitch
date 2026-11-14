@@ -227,6 +227,7 @@ export default function AdminSerials() {
           <option value="void">Void</option>
           <option value="in_transit">In transit</option>
           <option value="reserved">Reserved</option>
+          <option value="quarantined">Quarantined</option>
           <option value="disposed">Disposed</option>
         </select>
         <select className="input" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} style={{ fontSize: "0.85rem", width: "auto" }} aria-label="Filter serials by branch">

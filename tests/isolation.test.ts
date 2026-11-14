@@ -15,6 +15,7 @@ import {
   confirmOrderPayment,
   releaseOrderHeldStock,
   cancelOrderItemQuantity,
+  getCustomerDetails,
 } from "../server/db";
 
 import { bootstrapTestDatabase } from "../server/test-db";
@@ -216,6 +217,54 @@ describe("isolation & atomicity (P0)", { skip: !HAS_DB && "TEST_DATABASE_URL not
     assert.equal(line.cancelled, 1, "line cancelled");
     const st = await stockState(productId);
     assert.equal(st.stockOnHand, 10, "stock returned on refund");
+  });
+
+  it("records sellable, quarantine, and disposal returns with the correct serial and stock state", async () => {
+    const { customerId, productId } = await seed();
+    const cases = [
+      { disposition: "sellable" as const, serial: "SN-REFUND-SELLABLE", expectedStatus: "in_stock" },
+      { disposition: "quarantine" as const, serial: "SN-REFUND-QUARANTINE", expectedStatus: "quarantined" },
+      { disposition: "disposed" as const, serial: "SN-REFUND-DISPOSED", expectedStatus: "disposed" },
+    ];
+
+    for (const entry of cases) {
+      const order = await makeOrder(customerId, "paid");
+      const item = await makeItem(order, productId, 1, 100);
+      await makeSerial(productId, entry.serial);
+      assert.equal((await linkSerialsToOrderItem(item, [entry.serial])).ok, true);
+      await query("UPDATE products SET stock_on_hand = stock_on_hand - 1 WHERE id = $1", [productId]);
+      await query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - 1 WHERE product_id = $1 AND branch_id IS NULL", [productId]);
+
+      await createRefund({ orderId: order, orderItemId: item, amount: 100, reason: `test ${entry.disposition}`, stockDisposition: entry.disposition });
+
+      const serial = await serialStatus(entry.serial);
+      assert.equal(serial.status, entry.expectedStatus, `${entry.disposition} return has the matching serial status`);
+      const refund = await queryOne("SELECT stock_disposition, returned_quantity FROM refunds WHERE order_id = $1", [order]) as any;
+      assert.equal(refund.stock_disposition, entry.disposition);
+      assert.equal(Number(refund.returned_quantity), 1);
+      const line = await queryOne("SELECT cancelled FROM order_items WHERE id = $1", [item]) as any;
+      assert.equal(Number(line.cancelled), 1, "returned line cannot be refunded twice");
+    }
+
+    const stock = await stockState(productId);
+    assert.equal(stock.stockOnHand, 8, "only the sellable return is added back to on-hand stock");
+    assert.equal(stock.inStock, 8, "quarantined and disposed returns remain unavailable");
+  });
+
+  it("provides finite customer order totals for the admin order summary", async () => {
+    const { customerId, productId } = await seed();
+    const order = await makeOrder(customerId, "paid");
+    await makeItem(order, productId, 1, 100);
+    await query("UPDATE orders SET shipping_fee = 20, discount_amount = 10, gift_card_amount = 5 WHERE id = $1", [order]);
+    await createRefund({ orderId: order, amount: 25, reason: "customer summary test" });
+
+    const cancelledOrder = await makeOrder(customerId, "cancelled");
+    await makeItem(cancelledOrder, productId, 1, 100);
+
+    const details = await getCustomerDetails(customerId) as any;
+    assert.equal(details.orderCount, 1, "cancelled orders are excluded from the customer order count");
+    assert.equal(details.totalSpent, 80, "summary includes shipping, discounts, gift cards, and recorded refunds");
+    assert.ok(Number.isFinite(details.totalSpent), "customer total is always safe to format as currency");
   });
 
   it("M-Pesa duplicate success callback does not double-deduct stock", async () => {
