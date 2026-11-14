@@ -270,6 +270,16 @@
     .toast { display: flex; align-items: flex-start; gap: 0.75rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem; font-size: 0.85rem; line-height: 1.45; animation: statusNoticeIn 0.18s ease-out both; overflow-wrap: anywhere; pointer-events: auto; box-shadow: var(--shadow-menu); }
     .toast-stamp { flex: 0 0 auto; border: 1px solid currentColor; border-radius: 999px; padding: 0.2rem 0.45rem; font: 700 0.625rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: 0.06em; white-space: nowrap; }
     .toast-message { min-width: 0; }
+    .toast-content { min-width: 0; flex: 1; display: grid; gap: 0.35rem; }
+    .toast-details-toggle { justify-self: start; min-height: 32px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.2rem 0.55rem; color: var(--text); background: var(--surface-hover); cursor: pointer; font: inherit; font-size: 0.75rem; font-weight: 600; }
+    .toast-details-toggle:hover { border-color: var(--primary); }
+    .toast-details { display: grid; gap: 0.35rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-hover); padding: 0.6rem 0.7rem; color: var(--text-muted); font-size: 0.78rem; overflow-wrap: anywhere; }
+    .toast-details strong { color: var(--text); }
+    .toast-details p { margin: 0; }
+    .toast-details-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .toast-close { flex: 0 0 32px; width: 32px; height: 32px; border: 0; border-radius: var(--radius-sm); color: var(--text-muted); background: transparent; cursor: pointer; font-size: 1.1rem; }
+    .toast-close:hover { color: var(--text); background: var(--surface-hover); }
+    .toast-close:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     .toast.success .toast-stamp { color: var(--success-strong); background: var(--tint-success); }
     .toast.error .toast-stamp { color: var(--danger-strong); background: var(--tint-danger); }
     .toast.info .toast-stamp { color: var(--primary); background: var(--tint-primary); }
@@ -1069,11 +1079,11 @@
         method,
         headers: { "Content-Type": "application/json", "Authorization": token ? "Bearer " + token : "", ...(opts.headers || {}) },
       }).then(async r => {
-        if (r.status === 401) { clearAuth(); showLogin(); throw new Error("Session expired"); }
+        if (r.status === 401) { clearAuth(); showLogin(); throw new Error("Session expired (HTTP 401)"); }
         const text = await r.text();
         let data = null;
         if (text) { try { data = JSON.parse(text); } catch { data = { error: text.slice(0, 300) || "Unexpected server response" }; } }
-        if (!r.ok) { throw new Error((data && data.error) || "Request failed (HTTP " + r.status + ")"); }
+        if (!r.ok) { const serverMessage = data && typeof data.error === "string" ? data.error : "Request failed"; const hasStatus = /\(HTTP\s+\d{3}\)/i.test(serverMessage); throw new Error(serverMessage + (hasStatus ? "" : " (HTTP " + r.status + ")")); }
         return data || {};
       });
     }
@@ -1082,13 +1092,39 @@
     function jsStr(s) { return String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
     let toastContainer = null;
     function toast(msg, type = "success", timeout = 4000) {
-      if (!toastContainer) { toastContainer = document.createElement("div"); toastContainer.className = "toast-container"; toastContainer.setAttribute("role", "status"); toastContainer.setAttribute("aria-live", "polite"); document.body.appendChild(toastContainer); }
+      if (!toastContainer) { toastContainer = document.createElement("div"); toastContainer.className = "toast-container"; toastContainer.setAttribute("role", "region"); toastContainer.setAttribute("aria-label", "Notifications"); document.body.appendChild(toastContainer); }
       const tone = ["success", "error", "info"].includes(type) ? type : "success";
       const el = document.createElement("div"); el.className = `toast ${tone}`;
+      el.setAttribute("role", tone === "error" ? "alert" : "status");
+      el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
       const stamp = document.createElement("span"); stamp.className = "toast-stamp"; stamp.setAttribute("aria-hidden", "true"); stamp.textContent = tone === "success" ? "DONE" : tone === "error" ? "FAILED" : "NOTE";
       const message = document.createElement("span"); message.className = "toast-message"; message.textContent = msg;
-      el.append(stamp, message); toastContainer.appendChild(el);
-      setTimeout(() => el.remove(), timeout);
+      const content = document.createElement("div"); content.className = "toast-content"; content.appendChild(message);
+      let timer;
+      if (tone === "error") {
+        const toggle = document.createElement("button"); toggle.type = "button"; toggle.className = "toast-details-toggle"; toggle.textContent = "Show details"; toggle.setAttribute("aria-expanded", "false");
+        const detailsId = "toast-details-" + Math.random().toString(36).slice(2);
+        toggle.setAttribute("aria-controls", detailsId);
+        const details = document.createElement("div"); details.id = detailsId; details.className = "toast-details"; details.hidden = true;
+        const cause = document.createElement("p"); const causeLabel = document.createElement("strong"); causeLabel.textContent = "Error details: "; cause.append(causeLabel, document.createTextNode(msg));
+        const guidance = document.createElement("p"); const lower = String(msg).toLowerCase();
+        const statusMatch = String(msg).match(/\bHTTP\s*(\d{3})\b|\b(4\d\d|5\d\d)\b/i); const status = statusMatch ? Number(statusMatch[1] || statusMatch[2]) : 0;
+        let nextStep = "Review the information and try again. If the problem continues, contact support and include these details.";
+        if (status === 401 || /session expired|sign in again/.test(lower)) nextStep = "Your session may have expired. Sign in again, then retry the action.";
+        else if (status === 403 || /permission|not allowed|forbidden/.test(lower)) nextStep = "Your account may not have permission for this action. Ask an administrator to check your access.";
+        else if (status === 404 || /not found/.test(lower)) nextStep = "Refresh the page and check that the requested record or page still exists.";
+        else if (status === 409 || /conflict|already exists|duplicate/.test(lower)) nextStep = "Refresh the page and review the latest saved data before retrying.";
+        else if (status === 429 || /rate limit|too many requests/.test(lower)) nextStep = "Wait a moment before trying again.";
+        else if (status >= 500 || /failed to fetch|network|timed? ?out|unavailable/.test(lower)) nextStep = "Check your connection and retry in a moment. The service may be temporarily unavailable.";
+        const nextLabel = document.createElement("strong"); nextLabel.textContent = "What to do: "; guidance.append(nextLabel, document.createTextNode(nextStep));
+        details.append(cause, guidance);
+        toggle.addEventListener("click", () => { const open = toggle.getAttribute("aria-expanded") !== "true"; toggle.setAttribute("aria-expanded", String(open)); toggle.textContent = open ? "Hide details" : "Show details"; details.hidden = !open; if (timer) clearTimeout(timer); });
+        content.append(toggle, details);
+        const close = document.createElement("button"); close.type = "button"; close.className = "toast-close"; close.textContent = "×"; close.setAttribute("aria-label", "Dismiss error notification"); close.addEventListener("click", () => el.remove()); el.appendChild(close);
+        timeout = 0;
+      }
+      el.append(stamp, content); toastContainer.appendChild(el);
+      if (timeout > 0) timer = setTimeout(() => el.remove(), timeout);
     }
 
     // ─── MODAL SYSTEM ───────────────────────────────────────

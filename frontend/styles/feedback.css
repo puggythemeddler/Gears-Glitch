@@ -153,6 +153,41 @@
   color: var(--on-primary);
 }
 
+.feedback-details-toggle {
+  align-self: flex-start;
+  min-height: 32px;
+  margin-top: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold, 600);
+  cursor: pointer;
+}
+
+.feedback-details-toggle:hover { border-color: var(--primary); }
+
+.feedback-details {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  max-height: min(45vh, 18rem);
+  overflow: auto;
+}
+
+.feedback-details p { margin: 0; }
+.feedback-details strong { color: var(--text); }
+
 .feedback-close {
   flex-shrink: 0;
   display: grid;
@@ -178,6 +213,7 @@
 /* Visible focus on every interactive element in the stack. Keyboard users must
    be able to reach both the action and the dismiss control. */
 .feedback-action:focus-visible,
+.feedback-details-toggle:focus-visible,
 .feedback-close:focus-visible {
   outline: 2px solid var(--focus-ring, var(--primary));
   outline-offset: 2px;
