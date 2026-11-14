@@ -122,6 +122,15 @@ export function sanitizeSections(raw: unknown): any[] {
       const sz = (s as any).size;
       if (["sm", "md", "lg"].includes(sz)) sec.size = sz;
     }
+    if (["default", "surface", "accent"].includes((s as any).background)) {
+      sec.background = (s as any).background;
+    }
+    if (["default", "narrow", "standard", "wide", "full"].includes((s as any).contentWidth)) {
+      sec.contentWidth = (s as any).contentWidth;
+    }
+    if (["default", "compact", "standard", "spacious"].includes((s as any).spacing)) {
+      sec.spacing = (s as any).spacing;
+    }
     out.push(sec);
   }
   return out;
