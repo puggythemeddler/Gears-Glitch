@@ -19,6 +19,7 @@ export type NotificationEvent =
   | "order.created"
   | "order.paid"
   | "order.status_changed"
+  | "order.refunded"
   | "order.processed"
   | "payment.completed"
   | "payment.failed"
@@ -69,6 +70,7 @@ const DEFAULT_PREFERENCES: Record<NotificationEvent, { email: boolean; whatsapp:
   "order.created":          { email: true, whatsapp: true },
   "order.paid":             { email: true, whatsapp: true },
   "order.status_changed":   { email: true, whatsapp: false },
+  "order.refunded":         { email: true, whatsapp: false },
   "order.processed":        { email: true, whatsapp: true },
   "payment.completed":      { email: true, whatsapp: true },
   "payment.failed":         { email: true, whatsapp: true },
@@ -418,6 +420,7 @@ export async function enrollNotification(ctx: NotificationContext): Promise<Noti
   // ── Email channel ──
   if (!eventPrefs.email) {
     result.email = { status: "disabled" };
+    if (ctx.entityType === "order") await logNotification(ctx.event, "email", "", "disabled", ctx.entityType, entityId, "Email notifications are disabled for this event", undefined, logFields);
   } else if (alreadySent.has("email")) {
     result.email = { status: "sent", recipient: emailTargets[0] };
   } else if (audience === "customer" && optOut.email) {
@@ -425,9 +428,11 @@ export async function enrollNotification(ctx: NotificationContext): Promise<Noti
     await logNotification(ctx.event, "email", "", "skipped", ctx.entityType, entityId, "Customer opted out of email", undefined, logFields);
   } else if (emailTargets.length === 0) {
     result.email = { status: "skipped", error: audience === "customer" ? "No customer email on file" : "No admin email configured" };
+    if (ctx.entityType === "order") await logNotification(ctx.event, "email", "", "skipped", ctx.entityType, entityId, result.email.error, undefined, logFields);
   } else {
     for (const email of emailTargets) {
       await pushDelivery({ eventId: idempotencyKey, eventType: ctx.event, channel: "email", audience, entityType: ctx.entityType, entityId, recipient: email, subject: ctx.subject, payload: emailPayload, customerId: ctx.customerId });
+      if (ctx.entityType === "order") await logNotification(ctx.event, "email", email, "pending", ctx.entityType, entityId, undefined, undefined, logFields);
       result.email = { status: "pending", recipient: email };
     }
   }
@@ -435,6 +440,7 @@ export async function enrollNotification(ctx: NotificationContext): Promise<Noti
   // ── WhatsApp channel ──
   if (!eventPrefs.whatsapp) {
     result.whatsapp = { status: "disabled" };
+    if (ctx.entityType === "order") await logNotification(ctx.event, "whatsapp", "", "disabled", ctx.entityType, entityId, "WhatsApp notifications are disabled for this event", undefined, logFields);
   } else if (alreadySent.has("whatsapp")) {
     result.whatsapp = { status: "sent", recipient: phoneTargets[0] };
   } else if (audience === "customer" && optOut.whatsapp) {
@@ -442,9 +448,11 @@ export async function enrollNotification(ctx: NotificationContext): Promise<Noti
     await logNotification(ctx.event, "whatsapp", "", "skipped", ctx.entityType, entityId, "Customer opted out of WhatsApp", undefined, logFields);
   } else if (phoneTargets.length === 0) {
     result.whatsapp = { status: "skipped", error: audience === "customer" ? "No customer WhatsApp number on file" : "No admin WhatsApp phone configured" };
+    if (ctx.entityType === "order") await logNotification(ctx.event, "whatsapp", "", "skipped", ctx.entityType, entityId, result.whatsapp.error, undefined, logFields);
   } else {
     for (const phone of phoneTargets) {
       await pushDelivery({ eventId: idempotencyKey, eventType: ctx.event, channel: "whatsapp", audience, entityType: ctx.entityType, entityId, recipient: phone, subject: ctx.subject, payload: whatsappPayload, customerId: ctx.customerId });
+      if (ctx.entityType === "order") await logNotification(ctx.event, "whatsapp", phone, "pending", ctx.entityType, entityId, undefined, undefined, logFields);
       result.whatsapp = { status: "pending", recipient: phone };
     }
   }
@@ -614,7 +622,7 @@ async function renderSubscriptionInvoicePdf(invoiceId: number): Promise<{ filena
 
 // ─── Convenience: fire-and-forget wrapper ─────────────────────────────────────
 export async function notify(ctx: NotificationContext): Promise<void> {
-  dispatchNotification(ctx).catch((err: any) =>
+  await dispatchNotification(ctx).catch((err: any) =>
     console.warn(`[notification-service] Dispatch failed for ${ctx.event}:`, err?.message || err)
   );
 }
@@ -662,6 +670,17 @@ export async function listNotificationLog(
     [...params, limit, offset]
   );
   return { logs, total };
+}
+
+export async function listOrderCommunicationLog(orderId: number): Promise<any[]> {
+  const { queryAll } = await import("./db-helpers");
+  return await queryAll(
+    `SELECT id, event_type, channel, recipient, status, error_message, provider_message_id, subject, idempotency_key, sent_at, created_at
+     FROM notification_log WHERE entity_type = 'order' AND entity_id = $1
+       AND event_type IN ('order.status_changed', 'order.refunded')
+     ORDER BY created_at DESC, id DESC`,
+    [String(orderId)]
+  ) as any[];
 }
 
 export async function enqueueOrderInvoiceDelivery(orderId: number, kind: "paid" | "delivered"): Promise<void> {

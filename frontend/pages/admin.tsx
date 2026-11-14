@@ -1686,15 +1686,35 @@ function AdminOrders() {
         {refunds.length > 0 && (
           <div style={{ marginTop: "1rem" }}>
             <h2 style={{ margin: "0 0 0.75rem" }}>Refunds</h2>
+            <p className="muted" style={{ margin: "0 0 0.75rem" }}>Communication status is recorded per channel. “Sent” means the mail or messaging provider accepted it; it does not confirm the customer read it.</p>
             <div className="table-wrap">
               <table className="data-table">
-                <thead><tr><th>Amount</th><th>Reason</th><th>Returned stock</th><th>Date</th></tr></thead>
+                <thead><tr><th>Amount</th><th>Reason</th><th>Returned stock</th><th>Customer communication</th><th>Date</th></tr></thead>
                 <tbody>
                   {refunds.map((r: any) => (
                     <tr key={r.id}>
                       <td style={{ color: "var(--danger)" }}>-{formatPrice(r.amount)}</td>
                       <td>{r.reason || "—"}</td>
                       <td>{Number(r.returned_quantity) > 0 ? `${r.returned_quantity} · ${r.stock_disposition === "sellable" ? "Sellable stock" : r.stock_disposition === "quarantine" ? "Quarantined" : r.stock_disposition === "disposed" ? "Disposed" : "Not restocked"}` : "Money only"}</td>
+                      <td>
+                        {Array.isArray(r.communications) && r.communications.length > 0 ? (
+                          <div style={{ display: "grid", gap: "0.3rem", minWidth: 175 }}>
+                            {r.communications.map((notice: any) => (
+                              <details key={`${notice.channel}-${notice.id}`}>
+                                <summary style={{ cursor: "pointer", color: notice.status === "sent" ? "var(--success, #15803d)" : notice.status === "failed" ? "var(--danger)" : "var(--text-secondary)" }}>
+                                  {notice.channel === "whatsapp" ? "WhatsApp" : "Email"}: {notice.status === "pending" ? "Queued" : notice.status}
+                                </summary>
+                                <div style={{ padding: "0.35rem 0 0.2rem 0.6rem", fontSize: "0.82rem", overflowWrap: "anywhere" }}>
+                                  {notice.recipient && <div>Recipient: {notice.recipient}</div>}
+                                  {notice.created_at && <div>Updated: {new Date(notice.created_at).toLocaleString()}</div>}
+                                  {notice.provider_message_id && <div>Provider reference: {notice.provider_message_id}</div>}
+                                  {notice.error_message && <div style={{ color: notice.status === "failed" ? "var(--danger)" : "var(--text-secondary)" }}>{notice.error_message}</div>}
+                                </div>
+                              </details>
+                            ))}
+                          </div>
+                        ) : <span className="muted">No communication record</span>}
+                      </td>
                       <td style={{ whiteSpace: "nowrap" }}>{new Date(r.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                     </tr>
                   ))}
