@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { api, hasStaffSession } from "@/lib/api";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { confirmDialog } from "@/components/ConfirmDialog";
+import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import RippleButton from "@/components/RippleButton";
@@ -18,10 +18,12 @@ export default function StockTakeSessionPage() {
   const [session, setSession] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [counts, setCounts] = useState<Record<string, string>>({});
+  const [recovery, setRecovery] = useState<{ canReopen: boolean; canReverse: boolean }>({ canReopen: false, canReverse: false });
+  const [events, setEvents] = useState<any[]>([]);
   const [varianceReasons, setVarianceReasons] = useState<Record<string, string>>({});
   const [varianceNotes, setVarianceNotes] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [msg, setMsg] = useState("");
   const [report, setReport] = useState<any>(null);
   const [completionSummaryOpen, setCompletionSummaryOpen] = useState(false);
@@ -45,6 +47,8 @@ export default function StockTakeSessionPage() {
       const data = await api<any>(`/api/stock-take/${id}`);
       setSession(data.session);
       setItems(data.items || []);
+      setRecovery(data.recovery || { canReopen: false, canReverse: false });
+      setEvents(data.events || []);
       if (data.session?.status === "completed") {
         const savedReport = await api<any>(`/api/stock-take/${id}/report`);
         setReport({
@@ -168,14 +172,30 @@ export default function StockTakeSessionPage() {
     finally { setSaving(false); }
   }
 
-  async function deleteSession() {
-    if (!(await confirmDialog({ message: "Delete this session? Only possible if no items have been counted.", confirmLabel: "Delete", danger: true }))) return;
-    setDeleting(true);
+  async function recoverSession(action: "reopen" | "reverse") {
+    const reopening = action === "reopen";
+    const reason = await promptDialog({
+      title: reopening ? "Reopen stock take" : "Reverse stock adjustments",
+      message: reopening
+        ? "This clears the working count and captures the previous results in the permanent history. Enter why this count needs to be repeated."
+        : "This posts compensating stock movements. It will not erase the original count or its audit history. Enter the reason for reversal.",
+      label: "Reason (10–1000 characters)",
+      placeholder: reopening ? "e.g. Count was conducted at the wrong branch" : "e.g. Count was entered against the wrong stock take",
+      confirmLabel: reopening ? "Reopen" : "Reverse adjustments",
+      danger: true,
+    });
+    if (reason === null) return;
+    if (reason.trim().length < 10 || reason.trim().length > 1000) {
+      setMsg("Error: Enter a reason between 10 and 1000 characters.");
+      return;
+    }
+    setRecovering(true);
     try {
-      await api(`/api/stock-take/${id}`, { method: "DELETE" });
-      router.push("/admin?view=stock-take");
+      await api(`/api/stock-take/${id}/${action}`, { method: "POST", body: JSON.stringify({ reason: reason.trim() }) });
+      setMsg(reopening ? "Stock take reopened. Its previous results remain in history." : "Stock adjustments reversed. The original stock take remains in history.");
+      await fetchSession();
     } catch (err: any) { setMsg("Error: " + err.message); }
-    finally { setDeleting(false); }
+    finally { setRecovering(false); }
   }
 
   const existingProductIds = new Set(items.map((i) => i.productId));
@@ -250,18 +270,52 @@ export default function StockTakeSessionPage() {
       </nav>
       <div className="dash-content" style={{ maxWidth: 900 }}>
         {msg && <div className="panel" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)" }}>{msg}</div>}
+        {session.reversedAt && <div className="panel" role="status" style={{ marginBottom: "1rem" }}>Adjustments from this stock take were reversed on {new Date(session.reversedAt).toLocaleString("en-GB")}. The original count and reversal remain in the audit history.</div>}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h1 style={{ margin: 0 }}>Stock Take #{session.id}</h1>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             {session.status === "in_progress" && (
               <>
-                <RippleButton size="small" variant="primary" onClick={completeSession} loading={saving} disabled={deleting}>Complete &amp; Apply</RippleButton>
-                <RippleButton size="small" variant="danger" onClick={deleteSession} loading={deleting} disabled={saving}>Delete</RippleButton>
+                <RippleButton size="small" variant="primary" onClick={completeSession} loading={saving} disabled={recovering}>Complete &amp; Apply</RippleButton>
               </>
             )}
+            {session.status === "completed" && recovery.canReverse && <RippleButton size="small" variant="danger" onClick={() => void recoverSession("reverse")} loading={recovering}>Reverse adjustments</RippleButton>}
+            {session.status === "completed" && recovery.canReopen && <RippleButton size="small" variant="secondary" onClick={() => void recoverSession("reopen")} loading={recovering}>Reopen for recount</RippleButton>}
           </div>
         </div>
+
+        {events.length > 0 && (
+          <section className="panel" aria-labelledby="stock-take-history-title" style={{ marginBottom: "1rem" }}>
+            <h2 id="stock-take-history-title" style={{ fontSize: "1rem", marginTop: 0 }}>Recovery history</h2>
+            <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>
+              {events.map((event: any) => (
+                <li key={event.id} style={{ marginBottom: "0.75rem" }}>
+                  <strong>{event.action === "reopened" ? "Reopened for recount" : "Stock adjustments reversed"}</strong>
+                  <span className="muted"> — {event.actorName} · {new Date(event.createdAt).toLocaleString("en-GB")}</span>
+                  <div>{event.reason}</div>
+                  {event.action === "reopened" && Array.isArray(event.details?.items) && (
+                    <details style={{ marginTop: "0.35rem" }}>
+                      <summary>View preserved count snapshot ({event.details.items.length} items)</summary>
+                      <div className="table-wrap" style={{ marginTop: "0.5rem" }}>
+                        <table>
+                          <thead><tr><th>Product</th><th>System</th><th>Counted</th><th>Variance</th><th>Reason</th></tr></thead>
+                          <tbody>{event.details.items.map((item: any) => (
+                            <tr key={`${event.id}-${item.id}`}>
+                              <td>{item.productName}</td><td>{item.systemQuantity}</td><td>{item.countedQuantity ?? "—"}</td>
+                              <td>{item.variance > 0 ? `+${item.variance}` : item.variance}</td>
+                              <td>{String(item.varianceReason || "—").replaceAll("_", " ")}{item.notes ? ` — ${item.notes}` : ""}</td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                      </div>
+                    </details>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
 
         <div className="stat-grid" style={{ marginBottom: "1rem" }}>
           <div className="stat-card">

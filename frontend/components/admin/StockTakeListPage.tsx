@@ -3,12 +3,9 @@ import { api } from "@/lib/api";
 import RippleButton from "@/components/RippleButton";
 import EmptyState from "@/components/EmptyState";
 import { useFetch, Spinner, ErrorMsg } from "./shared";
-import { useFeedback } from "@/components/feedback/FeedbackProvider";
-import { confirmDialog } from "@/components/ConfirmDialog";
 
 export default function StockTakeListPage() {
-  const feedback = useFeedback();
-  const { data: sessions, loading, error, refetch } = useFetch(() => api<{ sessions: any[] }>("/api/stock-take"), []);
+  const { data: sessions, loading, error } = useFetch(() => api<{ sessions: any[] }>("/api/stock-take"), []);
   const [msg, setMsg] = useState("");
   const [branches, setBranches] = useState<any[]>([]);
   const [stockBranchFilter, setStockBranchFilter] = useState<number | null>(null);
@@ -47,16 +44,6 @@ export default function StockTakeListPage() {
         window.location.href = `/stock-take/${data.session.id}`;
       }
     } catch (err: any) { setMsg(err.message); }
-  }
-
-  async function handleDelete(session: any, e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!(await confirmDialog({ message: "Delete this session? Only possible if no items have been counted.", confirmLabel: "Delete", danger: true }))) return;
-    try {
-      await api(`/api/stock-take/${session.id}`, { method: "DELETE" });
-      refetch();
-      feedback.success({ title: "Stock take session deleted" });
-    } catch (err: any) { setMsg(err.message); feedback.error({ title: "Stock take session not deleted", message: err.message }); }
   }
 
   if (loading) return <Spinner />;
@@ -112,20 +99,16 @@ export default function StockTakeListPage() {
               <th>Status</th>
               <th>Created</th>
               <th>Completed</th>
-              <th></th>
             </tr>
           </thead>
           <tbody>
-            {sessionList.length === 0 && <tr><td colSpan={5}><EmptyState icon="stock" title="No stock take sessions" description="Start a new session to count inventory." /></td></tr>}
+            {sessionList.length === 0 && <tr><td colSpan={4}><EmptyState icon="stock" title="No stock take sessions" description="Start a new session to count inventory." /></td></tr>}
             {sessionList.map((s: any) => (
               <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => window.location.href = `/stock-take/${s.id}`}>
                 <td>{s.id}</td>
-                <td><span className="plan-status" style={{ background: s.status === "completed" ? "var(--success-light, #d1fae5)" : "var(--warning-light, #fef3c7)", color: s.status === "completed" ? "var(--success, #065f46)" : "var(--warning, #92400e)" }}>{s.status}</span></td>
+                <td><span className="plan-status" style={{ background: s.status === "completed" ? "var(--success-light, #d1fae5)" : "var(--warning-light, #fef3c7)", color: s.status === "completed" ? "var(--success, #065f46)" : "var(--warning, #92400e)" }}>{s.status}{s.reversedAt ? " · reversed" : ""}</span></td>
                 <td>{new Date(s.createdAt || s.created_at).toLocaleDateString("en-GB")}</td>
                 <td>{s.completedAt || s.completed_at ? new Date(s.completedAt || s.completed_at).toLocaleDateString("en-GB") : "—"}</td>
-                <td>
-                  <RippleButton size="small" variant="danger" onClick={(e) => handleDelete(s, e)}>Delete</RippleButton>
-                </td>
               </tr>
             ))}
           </tbody>

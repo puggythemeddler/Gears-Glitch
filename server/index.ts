@@ -187,9 +187,11 @@ import {
   getStockTakeItems,
   recordStockCount,
   completeStockTakeSession,
-  applyStockTakeAdjustments,
   getStockTakeVarianceReport,
-  deleteStockTakeSession,
+  getStockTakeRecoveryState,
+  listStockTakeEvents,
+  reopenStockTakeSession,
+  reverseStockTakeAdjustments,
   createStockSnapshot,
   getStockSnapshot,
   listStockSnapshotDates,
@@ -744,8 +746,8 @@ defineAudit("/api/serials/link", "serial", { action: "linked", method: "POST" })
 // Stock take
 defineAudit("/api/stock-take/start", "stock_take", { action: "started", method: "POST" });
 defineAudit("/api/stock-take/:id/complete", "stock_take", { action: "completed", method: "POST" });
-defineAudit("/api/stock-take/:id/apply", "stock_take", { action: "applied", method: "POST" });
-defineAudit("/api/stock-take/:id", "stock_take", { method: "DELETE" });
+defineAudit("/api/stock-take/:id/reopen", "stock_take", { action: "reopened", method: "POST" });
+defineAudit("/api/stock-take/:id/reverse", "stock_take", { action: "reversed", method: "POST" });
 // Spec templates / roles / staff
 defineAudit("/api/spec-templates", "spec_template");
 defineAudit("/api/spec-templates/:id", "spec_template");
@@ -5717,7 +5719,7 @@ app.delete("/api/products/:id", ownerAuthMiddleware, requirePermission("product:
   const removed = await deleteProduct(productId);
   if (!removed) {
     if (product) {
-      res.status(409).json({ error: "Cannot delete this product because it has sales, returns, serial, or stock history. Deactivate it instead (toggle active off) to hide it while preserving records." });
+      res.status(409).json({ error: "Cannot delete this product because it has sales, returns, serial, stock-take, or stock history. Deactivate it instead (toggle active off) to hide it while preserving records." });
       return;
     }
     res.status(404).json({ error: "Product not found." });
@@ -9165,7 +9167,7 @@ app.get("/api/reports/technician-repairs", ownerAuthMiddleware, requirePermissio
 
 // ============ STOCK TAKE ============
 
-app.get("/api/stock-take", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/stock-take", ownerAuthMiddleware, requirePermission("stock:list"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const sessions = await listStockTakeSessions();
     const user = (req as any).user || {};
@@ -9178,7 +9180,7 @@ app.get("/api/stock-take", ownerAuthMiddleware, requirePermission("stock:list"),
   }
 }));
 
-app.post("/api/stock-take/start", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/stock-take/start", ownerAuthMiddleware, requirePermission("stock:update"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { notes, branchId } = req.body || {};
     const resolvedBranchId = await authorizeStockBranch(req, res, branchId, true);
@@ -9194,19 +9196,30 @@ app.post("/api/stock-take/start", ownerAuthMiddleware, requirePermission("stock:
   }
 }));
 
-app.get("/api/stock-take/:id", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/stock-take/:id", ownerAuthMiddleware, requirePermission("stock:list"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
     if (!session) return;
     const items = await getStockTakeItems(Number(req.params.id));
-    res.json({ session, items });
+    const userId = Number((req as any).user?.sub);
+    const recoveryState = await getStockTakeRecoveryState(Number(req.params.id));
+    const events = await listStockTakeEvents(Number(req.params.id));
+    res.json({
+      session,
+      items,
+      events,
+      recovery: {
+        canReopen: session.status === "completed" && await hasPermission(userId, "stock_take:reopen"),
+        canReverse: recoveryState.canReverse && await hasPermission(userId, "stock_take:reverse"),
+      },
+    });
   } catch (err: any) {
     console.error("[stock-take get]", err?.message || err);
     res.status(500).json({ error: "Failed to load session." });
   }
 }));
 
-app.post("/api/stock-take/:id/count", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/stock-take/:id/count", ownerAuthMiddleware, requirePermission("stock:update"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
     if (!session) return;
@@ -9229,7 +9242,7 @@ app.post("/api/stock-take/:id/count", ownerAuthMiddleware, requirePermission("st
   }
 }));
 
-app.post("/api/stock-take/:id/complete", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/stock-take/:id/complete", ownerAuthMiddleware, requirePermission("stock:update"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const sessionBefore = await authorizeStockTake(req, res, Number(req.params.id));
     if (!sessionBefore) return;
@@ -9245,22 +9258,7 @@ app.post("/api/stock-take/:id/complete", ownerAuthMiddleware, requirePermission(
   }
 }));
 
-app.post("/api/stock-take/:id/apply", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const session = await authorizeStockTake(req, res, Number(req.params.id));
-    if (!session) return;
-    if (session.branchId == null && await getBranchCount() > 0) { res.status(409).json({ error: "This stock take has no branch. Create a new count for the physical branch before applying adjustments." }); return; }
-    const adjusted = await applyStockTakeAdjustments(Number(req.params.id), Number((req as any).user?.sub));
-    if (adjusted === null) { res.status(409).json({ error: "Stock take adjustments have already been applied." }); return; }
-    res.json({ ok: true, adjusted });
-  } catch (err: any) {
-    console.error("[stock-take apply]", err?.message || err);
-    const status = /not found/i.test(String(err?.message)) ? 404 : /complete|variance reason|note is required/i.test(String(err?.message)) ? 409 : 500;
-    res.status(status).json({ error: status === 500 ? "Failed to apply adjustments." : err.message });
-  }
-}));
-
-app.get("/api/stock-take/:id/report", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/stock-take/:id/report", ownerAuthMiddleware, requirePermission("stock:list"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
     if (!session) return;
@@ -9271,18 +9269,37 @@ app.get("/api/stock-take/:id/report", ownerAuthMiddleware, requirePermission("st
   }
 }));
 
-app.delete("/api/stock-take/:id", ownerAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/stock-take/:id/reopen", ownerAuthMiddleware, requirePermission("stock:update"), requirePermission("stock_take:reopen"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
     if (!session) return;
-    const result = await deleteStockTakeSession(Number(req.params.id));
-    if (!result.ok) { res.status(400).json({ error: result.error }); return; }
-    res.json({ ok: true });
+    const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
+    const result = await reopenStockTakeSession(Number(req.params.id), Number((req as any).user?.sub), reason);
+    if (!result.ok) { res.status(409).json({ error: result.error }); return; }
+    res.json({ ok: true, session: await getStockTakeSession(Number(req.params.id)) });
   } catch (err: any) {
-    console.error("[stock-take delete]", err?.message || err);
-    res.status(500).json({ error: "Failed to delete session." });
+    console.error("[stock-take reopen]", err?.message || err);
+    res.status(500).json({ error: "Failed to reopen stock take." });
   }
 }));
+
+app.post("/api/stock-take/:id/reverse", ownerAuthMiddleware, requirePermission("stock:update"), requirePermission("stock_take:reverse"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const session = await authorizeStockTake(req, res, Number(req.params.id));
+    if (!session) return;
+    const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
+    const result = await reverseStockTakeAdjustments(Number(req.params.id), Number((req as any).user?.sub), reason);
+    if (!result.ok) { res.status(409).json({ error: result.error }); return; }
+    res.json({ ok: true, reversedItems: result.reversedItems, session: await getStockTakeSession(Number(req.params.id)) });
+  } catch (err: any) {
+    console.error("[stock-take reverse]", err?.message || err);
+    res.status(500).json({ error: "Failed to reverse stock-take adjustments." });
+  }
+}));
+
+app.delete("/api/stock-take/:id", ownerAuthMiddleware, requirePermission("stock:update"), requireShopFeature("Stock take"), (_req: Request, res: Response) => {
+  res.status(409).json({ error: "Stock take records cannot be deleted. Use an authorized, reason-recorded reverse or reopen action for a completed session." });
+});
 
 // ============ STOCK ON HAND / SNAPSHOTS ============
 
