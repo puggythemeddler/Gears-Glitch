@@ -117,13 +117,17 @@ describe("migration 0013 + boot hardening (DB)", { skip: !HAS_DB && "TEST_DATABA
   it("order_items and stock_levels RESTRICT product deletes with history", async () => {
     const customerId = await seedCustomer("rc@example.com");
     await seedProduct("rc-prod");
+    const branch = await query(`INSERT INTO branches (name, address) VALUES ('Migration RESTRICT Branch', 'test') RETURNING id`);
+    const branchId = Number(branch.rows[0].id);
     const order = await query(
-      `INSERT INTO orders (customer_id, customer_name, customer_email, status)
-       VALUES ($1, 'C', 'rc@example.com', 'paid') RETURNING id`, [customerId]);
+      `INSERT INTO orders (customer_id, customer_name, customer_email, status, branch_id)
+       VALUES ($1, 'C', 'rc@example.com', 'paid', $2) RETURNING id`, [customerId, branchId]);
     await query(
       `INSERT INTO order_items (order_id, product_id, name, price, quantity, line_total, taxable)
        VALUES ($1, 'rc-prod', 'P', 100, 1, 100, 1)`, [Number(order.rows[0].id)]);
-    await query(`INSERT INTO stock_levels (product_id, quantity_in_stock) VALUES ('rc-prod', 5) ON CONFLICT (product_id) WHERE branch_id IS NULL DO NOTHING`);
+    await query(
+      `INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock)
+       VALUES ('rc-prod', $1, 5)`, [branchId]);
 
     await assert.rejects(
       () => query(`DELETE FROM products WHERE id = 'rc-prod'`),
