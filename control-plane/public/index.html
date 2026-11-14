@@ -265,14 +265,18 @@
     .detail-item .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
     .detail-item .value { font-size: 0.95rem; margin-top: 0.2rem; }
 
-    /* Toast */
-    .toast-container { position: fixed; bottom: 1.5rem; right: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 200; }
-    .toast { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1.25rem; font-size: 0.85rem; animation: slideIn 0.3s; max-width: 90vw; }
-    .toast.success { border-color: var(--success); }
-    .toast.error { border-color: var(--danger); }
-    .toast.info { border-color: var(--primary); }
+    /* Shared status-notice language: compact stamp, clear copy, no stock checkmark slide. */
+    .toast-container { position: fixed; top: calc(4.5rem + env(safe-area-inset-top, 0px)); right: 1.25rem; display: flex; flex-direction: column; gap: 0.625rem; z-index: 200; width: min(420px, calc(100vw - 2rem)); pointer-events: none; }
+    .toast { display: flex; align-items: flex-start; gap: 0.75rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem; font-size: 0.85rem; line-height: 1.45; animation: statusNoticeIn 0.18s ease-out both; overflow-wrap: anywhere; pointer-events: auto; box-shadow: var(--shadow-menu); }
+    .toast-stamp { flex: 0 0 auto; border: 1px solid currentColor; border-radius: 999px; padding: 0.2rem 0.45rem; font: 700 0.625rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: 0.06em; white-space: nowrap; }
+    .toast-message { min-width: 0; }
+    .toast.success .toast-stamp { color: var(--success-strong); background: var(--tint-success); }
+    .toast.error .toast-stamp { color: var(--danger-strong); background: var(--tint-danger); }
+    .toast.info .toast-stamp { color: var(--primary); background: var(--tint-primary); }
     .btn:focus-visible, .tab:focus-visible, a:focus-visible, .th-sort:focus-visible, .notif-row:focus-visible, .link-btn:focus-visible, .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible, .input:focus-visible, .select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-    @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes statusNoticeIn { from { transform: scale(0.97); opacity: 0; transform-origin: top right; } to { transform: none; opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+    @media (max-width: 768px) { .toast-container { top: calc(4.5rem + env(safe-area-inset-top, 0px)); left: 1rem; right: 1rem; width: auto; } }
 
     @media (max-width: 768px) {
       .app-top { position: static; }
@@ -1079,7 +1083,11 @@
     let toastContainer = null;
     function toast(msg, type = "success", timeout = 4000) {
       if (!toastContainer) { toastContainer = document.createElement("div"); toastContainer.className = "toast-container"; toastContainer.setAttribute("role", "status"); toastContainer.setAttribute("aria-live", "polite"); document.body.appendChild(toastContainer); }
-      const el = document.createElement("div"); el.className = `toast ${type}`; el.textContent = msg; toastContainer.appendChild(el);
+      const tone = ["success", "error", "info"].includes(type) ? type : "success";
+      const el = document.createElement("div"); el.className = `toast ${tone}`;
+      const stamp = document.createElement("span"); stamp.className = "toast-stamp"; stamp.setAttribute("aria-hidden", "true"); stamp.textContent = tone === "success" ? "DONE" : tone === "error" ? "FAILED" : "NOTE";
+      const message = document.createElement("span"); message.className = "toast-message"; message.textContent = msg;
+      el.append(stamp, message); toastContainer.appendChild(el);
       setTimeout(() => el.remove(), timeout);
     }
 
