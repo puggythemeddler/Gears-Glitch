@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, hasStaffSession } from "@/lib/api";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { DataTable } from "@/components/ui/DataTable";
+import { Modal } from "@/components/ui/Modal";
+import RippleButton from "@/components/RippleButton";
 import { usePageTitle } from "@/lib/use-page-title";
 import { formatPrice } from "@/components/admin/shared";
 
@@ -19,11 +21,15 @@ export default function StockTakeSessionPage() {
   const [varianceReasons, setVarianceReasons] = useState<Record<string, string>>({});
   const [varianceNotes, setVarianceNotes] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [msg, setMsg] = useState("");
   const [report, setReport] = useState<any>(null);
+  const [completionSummaryOpen, setCompletionSummaryOpen] = useState(false);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
+  const [stockItemSearch, setStockItemSearch] = useState("");
+  const countInputRefs = useRef(new Map<string, HTMLInputElement>());
   usePageTitle(session ? `Stock Take #${session.id}` : "Stock Take");
 
   useEffect(() => {
@@ -153,26 +159,75 @@ export default function StockTakeSessionPage() {
         }
       }
       const data = await api<any>(`/api/stock-take/${id}/complete`, { method: "POST" });
-      setMsg("Stock take completed and stock levels adjusted!");
       if (data.report) setReport(data.report);
       if (data.session) setSession(data.session);
       await fetchSession();
+      setMsg("");
+      setCompletionSummaryOpen(true);
     } catch (err: any) { setMsg("Error: " + err.message); }
     finally { setSaving(false); }
   }
 
   async function deleteSession() {
     if (!(await confirmDialog({ message: "Delete this session? Only possible if no items have been counted.", confirmLabel: "Delete", danger: true }))) return;
+    setDeleting(true);
     try {
       await api(`/api/stock-take/${id}`, { method: "DELETE" });
       router.push("/admin?view=stock-take");
     } catch (err: any) { setMsg("Error: " + err.message); }
+    finally { setDeleting(false); }
   }
 
   const existingProductIds = new Set(items.map((i) => i.productId));
   const filteredProducts = productSearch ? allProducts.filter((p) =>
-    !existingProductIds.has(p.id) && (p.name || "").toLowerCase().includes(productSearch.toLowerCase())
+    !existingProductIds.has(p.id) && [p.name, p.barcode].some((value) => String(value || "").toLowerCase().includes(productSearch.trim().toLowerCase()))
   ) : [];
+  const normalizedStockItemSearch = stockItemSearch.trim().toLowerCase();
+  const visibleItems = normalizedStockItemSearch
+    ? items.filter((item: any) => [item.productName, item.barcode].some((value) => String(value || "").toLowerCase().includes(normalizedStockItemSearch)))
+    : items;
+
+  function focusExactStockItemMatch() {
+    if (!normalizedStockItemSearch) return;
+    const matches = items.filter((item: any) => [item.barcode, item.productName].some((value) => String(value || "").trim().toLowerCase() === normalizedStockItemSearch));
+    if (matches.length !== 1) return;
+    setStockItemSearch(matches[0].productName);
+    requestAnimationFrame(() => {
+      const input = countInputRefs.current.get(matches[0].productId);
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  function generateVarianceReport() {
+    if (!report?.items) return;
+    const csvCell = (value: unknown, protectFormula = true) => {
+      let text = String(value ?? "");
+      if (protectFormula && /^[\t\r ]*[=+@-]/.test(text)) text = `'${text}`;
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+    const counted = report.items.filter((item: any) => item.countedQuantity !== null);
+    const rows = [
+      ["Product", "Barcode", "System quantity", "Counted quantity", "Variance", "Variance reason", "Notes", "Unit cost (KES)", "Estimated loss (KES)"].map((cell) => csvCell(cell)).join(","),
+      ...counted.map((item: any) => {
+        const unitCost = item.costPrice === null || item.costPrice === undefined ? null : Number(item.costPrice);
+        const estimatedLoss = unitCost === null ? "" : Math.max(0, -Number(item.variance)) * unitCost;
+        return [
+          csvCell(item.productName), csvCell(item.barcode), csvCell(Number(item.systemQuantity), false),
+          csvCell(Number(item.countedQuantity), false), csvCell(Number(item.variance), false),
+          csvCell(String(item.varianceReason || "").replaceAll("_", " ")), csvCell(item.notes),
+          unitCost === null ? "" : csvCell(unitCost, false), estimatedLoss === "" ? "" : csvCell(estimatedLoss, false),
+        ].join(",");
+      }),
+    ];
+    const blob = new Blob(["\uFEFF", rows.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `stock-take-${session.id}-variance-report.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   if (!authed) {
     return (
@@ -201,8 +256,8 @@ export default function StockTakeSessionPage() {
           <div style={{ display: "flex", gap: "0.5rem" }}>
             {session.status === "in_progress" && (
               <>
-                <button className="button button-small" onClick={completeSession} disabled={saving}>Complete & Apply</button>
-                <button className="button button-small button-ghost" style={{ color: "var(--danger)" }} onClick={deleteSession}>Delete</button>
+                <RippleButton size="small" variant="primary" onClick={completeSession} loading={saving} disabled={deleting}>Complete &amp; Apply</RippleButton>
+                <RippleButton size="small" variant="danger" onClick={deleteSession} loading={deleting} disabled={saving}>Delete</RippleButton>
               </>
             )}
           </div>
@@ -220,6 +275,24 @@ export default function StockTakeSessionPage() {
           <div className="stat-card">
             <div className="stat-card__value">{items.filter((i: any) => i.countedQuantity !== null && i.variance !== 0).length}</div>
             <div className="stat-card__label">With Variance</div>
+          </div>
+        </div>
+
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <div className="field" style={{ margin: 0 }}>
+            <label htmlFor="stock-take-item-search">Find an item in this stock take</label>
+            <input
+              id="stock-take-item-search"
+              type="search"
+              value={stockItemSearch}
+              onChange={(e) => setStockItemSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusExactStockItemMatch(); } }}
+              placeholder="Search by product name or scan/type barcode"
+              autoComplete="off"
+            />
+            <small className="muted" aria-live="polite">
+              {normalizedStockItemSearch ? `${visibleItems.length} matching ${visibleItems.length === 1 ? "item" : "items"} of ${items.length}` : "Search the items already in this count. You can also use the Add Product search above to add another item."}
+            </small>
           </div>
         </div>
 
@@ -268,6 +341,10 @@ export default function StockTakeSessionPage() {
                 value: (r) => (counts[r.productId] ?? (r.countedQuantity === null ? "0" : String(r.countedQuantity))),
                 render: (r) => (
                   <input
+                    ref={(element) => {
+                      if (element) countInputRefs.current.set(r.productId, element);
+                      else countInputRefs.current.delete(r.productId);
+                    }}
                     type="number"
                     min={0}
                     step={1}
@@ -334,9 +411,9 @@ export default function StockTakeSessionPage() {
                 },
               },
             ]}
-            rows={items}
+            rows={visibleItems}
             rowKey={(r) => r.productId}
-            empty={<span style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>No products added yet. Use the search above to add products to count.</span>}
+            empty={<span style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>{normalizedStockItemSearch ? "No stock-take items match that name or barcode." : "No products added yet. Use the Add Product search above to add products to count."}</span>}
           />
         </div>
 
@@ -393,6 +470,63 @@ export default function StockTakeSessionPage() {
           </div>
         )}
       </div>
+      <Modal
+        open={completionSummaryOpen}
+        onClose={() => setCompletionSummaryOpen(false)}
+        title="Stock take complete"
+        size="lg"
+        footer={(
+          <>
+            <RippleButton variant="secondary" onClick={generateVarianceReport}>Generate report</RippleButton>
+            <RippleButton variant="primary" onClick={() => void router.push("/admin?view=stock-take")}>Okay</RippleButton>
+          </>
+        )}
+      >
+        <p style={{ marginTop: 0 }}>Stock levels have been updated. Review the variance summary below or download the full report.</p>
+        <div className="stat-grid" style={{ marginBottom: "1rem" }}>
+          <div className="stat-card">
+            <div className="stat-card__value">{report?.withVariance ?? 0}</div>
+            <div className="stat-card__label">Items with variance</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card__value">{report?.totalVariance ?? 0}</div>
+            <div className="stat-card__label">Total units over and short</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card__value">{formatPrice(Number(report?.lossAmount || 0))}</div>
+            <div className="stat-card__label">Estimated stock loss at cost</div>
+          </div>
+        </div>
+        {!!report?.unpricedLossItems && (
+          <p className="muted" role="note">
+            {report.unpricedLossItems} shortage item{report.unpricedLossItems === 1 ? " has" : "s have"} no catalog cost price, so {report.unpricedLossItems === 1 ? "its value is" : "their values are"} excluded from the loss estimate.
+          </p>
+        )}
+        {report?.items?.some((item: any) => Number(item.variance) !== 0) ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Product</th><th>System</th><th>Counted</th><th>Variance</th><th>Est. loss</th></tr></thead>
+              <tbody>
+                {report.items.filter((item: any) => Number(item.variance) !== 0).map((item: any) => {
+                  const variance = Number(item.variance);
+                  const loss = item.costPrice === null || item.costPrice === undefined ? null : Math.max(0, -variance) * Number(item.costPrice);
+                  return (
+                    <tr key={item.productId}>
+                      <td>{item.productName}</td>
+                      <td>{item.systemQuantity}</td>
+                      <td>{item.countedQuantity}</td>
+                      <td style={{ color: variance < 0 ? "var(--danger)" : "var(--success)" }}>{variance > 0 ? "+" : ""}{variance}</td>
+                      <td>{loss === null ? "—" : formatPrice(loss)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="panel" style={{ marginBottom: 0 }}>No stock variances were found.</p>
+        )}
+      </Modal>
     </div>
   );
 }

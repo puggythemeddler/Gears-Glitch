@@ -570,6 +570,8 @@ interface StockTakeItem {
   sessionId: number;
   productId: string;
   productName: string;
+  barcode: string;
+  costPrice: number | null;
   systemQuantity: number;
   countedQuantity: number | null;
   variance: number;
@@ -4058,7 +4060,7 @@ async function listStockTakeSessions(): Promise<StockTakeSession[]> {
 async function getStockTakeItems(sessionId: number): Promise<StockTakeItem[]> {
   return await queryAll(
     `SELECT sti.id, sti.session_id AS "sessionId", sti.product_id AS "productId", 
-     COALESCE(p.name, sti.product_name) AS "productName", 
+     COALESCE(p.name, sti.product_name) AS "productName", COALESCE(p.barcode, '') AS barcode, p.cost_price AS "costPrice",
      sti.system_quantity AS "systemQuantity", sti.counted_quantity AS "countedQuantity", 
      sti.variance, sti.variance_reason AS "varianceReason", sti.notes, sti.created_at AS "createdAt"
      FROM stock_take_items sti LEFT JOIN products p ON p.id = sti.product_id WHERE sti.session_id = $1 ORDER BY p.name`, [sessionId]
@@ -4370,12 +4372,15 @@ async function applyStockTakeAdjustments(sessionId: number, actorId?: number): P
   });
 }
 
-async function getStockTakeVarianceReport(sessionId: number): Promise<{ totalItems: number; counted: number; withVariance: number; totalVariance: number; items: StockTakeItem[] }> {
+async function getStockTakeVarianceReport(sessionId: number): Promise<{ totalItems: number; counted: number; withVariance: number; totalVariance: number; lossAmount: number; unpricedLossItems: number; items: StockTakeItem[] }> {
   const items = await getStockTakeItems(sessionId);
   const counted = items.filter((i: any) => i.countedQuantity !== null);
   const withVariance = counted.filter((i: any) => i.variance !== 0);
   const totalVariance = counted.reduce((s: number, i: any) => s + Math.abs(i.variance), 0);
-  return { totalItems: items.length, counted: counted.length, withVariance: withVariance.length, totalVariance, items };
+  const shortages = withVariance.filter((item: any) => Number(item.variance) < 0);
+  const pricedShortages = shortages.filter((item: any) => item.costPrice !== null && item.costPrice !== undefined);
+  const lossAmount = pricedShortages.reduce((sum: number, item: any) => sum + Math.abs(Number(item.variance)) * Number(item.costPrice), 0);
+  return { totalItems: items.length, counted: counted.length, withVariance: withVariance.length, totalVariance, lossAmount, unpricedLossItems: shortages.length - pricedShortages.length, items };
 }
 
 async function deleteStockTakeSession(sessionId: number): Promise<{ ok: boolean; error?: string }> {
