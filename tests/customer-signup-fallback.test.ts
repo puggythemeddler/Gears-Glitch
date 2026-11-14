@@ -131,7 +131,7 @@ describe("customer sign-up fallback is restricted to credential rejections", () 
   it("ApiError carries the status that the decision depends on", () => {
     const err = new ApiError("boom", 503);
     assert.ok(err instanceof Error, "must stay catchable as a normal Error");
-    assert.equal(err.message, "boom");
+    assert.equal(err.message, "boom (HTTP 503)");
     assert.equal(err.status, 503);
     assert.equal(err.name, "ApiError");
   });
