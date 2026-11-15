@@ -16,7 +16,10 @@ const isProd = process.env.NODE_ENV === "production";
 const contentSecurityPolicy = [
   "default-src 'self'",
   // 'unsafe-inline' is required for Next's inline hydration payload - see note above.
-  isProd ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  // WebAssembly is used only by the locally bundled OCR worker; wasm-unsafe-eval
+  // permits WASM compilation without enabling JavaScript eval in production.
+  isProd ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
+  "worker-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   // Fonts are self-hosted by next/font, so no external font origins are needed.
   "font-src 'self' data:",

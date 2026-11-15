@@ -42,6 +42,7 @@ import { setBranchState, type BranchOption } from "@/lib/branches";
 import { reportDateRange, reportToday, reportYearStart, type ReportRangePreset } from "@/lib/reporting-date";
 import { PageHead, DataTable, Tabs, StatusBadge, Modal } from "@/components/ui";
 import { isSoftwareLicenseProduct } from "@/lib/repairLicenseProducts";
+import { extractSupplierInvoiceText, parseSupplierInvoiceLines, type SupplierInvoiceLine } from "@/lib/supplier-invoice-ocr";
 
 export type AdminView = "dashboard" | "products" | "price-list" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
 
@@ -6913,6 +6914,11 @@ function AdminPurchases() {
   const [uploadingDocuments, setUploadingDocuments] = useState(false);
   const [downloadingDocumentId, setDownloadingDocumentId] = useState<number | null>(null);
   const [removingDocumentId, setRemovingDocumentId] = useState<number | null>(null);
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [invoiceText, setInvoiceText] = useState("");
+  const [invoiceLines, setInvoiceLines] = useState<(SupplierInvoiceLine & { productId: string })[]>([]);
+  const [scanningInvoice, setScanningInvoice] = useState(false);
+  const [invoiceProgress, setInvoiceProgress] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -6974,6 +6980,45 @@ function AdminPurchases() {
     setFormItems(copy);
   }
 
+  function clearInvoiceScan() {
+    setInvoiceFile(null); setInvoiceText(""); setInvoiceLines([]); setInvoiceProgress(0);
+  }
+
+  async function scanSupplierInvoice() {
+    if (!invoiceFile || scanningInvoice) return;
+    setScanningInvoice(true); setInvoiceProgress(0); setInvoiceText(""); setInvoiceLines([]);
+    try {
+      const text = await extractSupplierInvoiceText(invoiceFile, setInvoiceProgress);
+      const parsed = parseSupplierInvoiceLines(text);
+      setInvoiceText(text);
+      setInvoiceLines(parsed.map((line) => {
+        const match = products.find((product: any) => String(product.barcode || "").trim().toLowerCase() === line.sku.trim().toLowerCase());
+        return { ...line, productId: match ? String(match.id) : "" };
+      }));
+      if (!parsed.length) feedback.error({ title: "No SKU rows found", message: "The document text is ready for review, but a SKU and quantity table could not be identified. Check the invoice has SKU and Qty columns." });
+      else feedback.success({ title: "Document scanned locally", message: `${parsed.length} line${parsed.length === 1 ? "" : "s"} found. Confirm each SKU, quantity, and unit cost before adding it to the draft.` });
+    } catch (err: any) {
+      feedback.error({ title: "Invoice scan stopped", message: err?.message || "This document could not be scanned safely." });
+    } finally { setScanningInvoice(false); }
+  }
+
+  function updateInvoiceLine(lineId: string, field: "productId" | "quantity" | "unitCost", value: string) {
+    setInvoiceLines((current) => current.map((line) => line.id === lineId ? { ...line, [field]: value } : line));
+  }
+
+  function addInvoiceLineToDraft(line: SupplierInvoiceLine & { productId: string }) {
+    const product = products.find((candidate: any) => String(candidate.id) === line.productId);
+    const quantity = Number(line.quantity);
+    const unitCost = Number(line.unitCost);
+    if (!product) { feedback.error("Select a catalog product for this supplier SKU first."); return; }
+    if (!Number.isSafeInteger(quantity) || quantity < 1) { feedback.error("Enter a whole quantity of at least 1 for this invoice line."); return; }
+    if (!Number.isFinite(unitCost) || unitCost < 0) { feedback.error("Enter and check the supplier unit cost for this invoice line."); return; }
+    if (formItems.some((item) => item.productId === product.id)) { feedback.error("That product is already in the PO draft. Update its existing line to avoid duplicate order rows."); return; }
+    setFormItems((current) => [...current, { productId: String(product.id), productName: product.name, quantity: String(quantity), unitCost }]);
+    setInvoiceLines((current) => current.filter((candidate) => candidate.id !== line.id));
+    feedback.success("Reviewed invoice line added to the PO draft.");
+  }
+
   async function createOrder() {
     if (!form.supplierName || !form.branchId || formItems.length === 0) return;
     if (formItems.some((item) => !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1)) {
@@ -6986,12 +7031,16 @@ function AdminPurchases() {
     }
     setSaving(true);
     try {
-      await api("/api/purchases", { method: "POST", body: JSON.stringify({
+      const createdOrder = await api<any>("/api/purchases", { method: "POST", body: JSON.stringify({
         supplierName: form.supplierName, branchId: Number(form.branchId), notes: form.notes,
         items: formItems.map((i) => ({ productId: i.productId, quantityOrdered: Number(i.quantity), unitCost: Number(i.unitCost) })),
       })});
-      setCreating(false); setForm({ supplierName: "", branchId: "", notes: "" }); setFormItems([]);
+      setCreating(false); setForm({ supplierName: "", branchId: "", notes: "" }); setFormItems([]); clearInvoiceScan();
       loadOrders();
+      if (createdOrder?.id) {
+        await loadOrder(Number(createdOrder.id));
+        if (invoiceFile) feedback.success({ title: "Purchase order created", message: "The selected invoice was scanned only in this browser and was not uploaded. Attach it from the PO details if you want to retain the source document." });
+      }
     } catch (err: any) { setMsg(err.message); }
     setSaving(false);
   }
@@ -7456,6 +7505,35 @@ function AdminPurchases() {
             <label>Notes</label>
             <textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
+          <section aria-labelledby="supplier-invoice-scan-title" style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "1rem", marginBottom: "1rem", background: "var(--surface)" }}>
+            <h2 id="supplier-invoice-scan-title" style={{ fontSize: "1rem", margin: "0 0 .35rem" }}>Prepare lines from an invoice</h2>
+            <p className="muted" style={{ margin: "0 0 .75rem", fontSize: ".84rem" }}>Choose a PDF, JPEG, or PNG with supplier SKU and Qty columns. Scanning runs locally in this browser; the file is not uploaded for OCR. Only exact matches to a catalog barcode/SKU are suggested. Review each line before adding it. This will not create or receive stock.</p>
+            <p role="note" style={{ margin: "0 0 .75rem", padding: ".65rem .75rem", borderRadius: 7, background: "var(--warning-light)", color: "var(--warning-text)", fontSize: ".82rem" }}>This feature extracts invoice text; it is not an antivirus scan. Until required malware scanning is configured, use only synthetic or otherwise trusted invoices for testing.</p>
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: ".5rem" }}>
+              <input type="file" accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" disabled={scanningInvoice} aria-label="Choose supplier invoice to scan" onChange={(event) => { const file = event.target.files?.[0] || null; event.target.value = ""; setInvoiceFile(file); setInvoiceText(""); setInvoiceLines([]); }} />
+              <RippleButton size="small" disabled={!invoiceFile || scanningInvoice} loading={scanningInvoice} onClick={scanSupplierInvoice}>{scanningInvoice ? "Scanning locally" : "Scan invoice"}</RippleButton>
+              {invoiceFile && <button type="button" className="btn btn-ghost" disabled={scanningInvoice} onClick={clearInvoiceScan}>Clear file</button>}
+            </div>
+            {invoiceFile && <p className="muted" style={{ fontSize: ".8rem", margin: ".45rem 0 0" }}>Selected: {invoiceFile.name} · {(invoiceFile.size / (1024 * 1024)).toFixed(2)} MB · stays in this browser unless separately attached later.</p>}
+            {scanningInvoice && <p role="status" aria-live="polite" className="muted" style={{ fontSize: ".84rem", margin: ".5rem 0 0" }}>Preparing local OCR… {Math.round(invoiceProgress * 100)}%</p>}
+            {invoiceLines.length > 0 && <div style={{ marginTop: ".85rem", display: "grid", gap: ".65rem" }}>
+              <h3 style={{ fontSize: ".92rem", margin: 0 }}>Review extracted lines</h3>
+              {invoiceLines.map((line) => <div key={line.id} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: ".75rem", display: "grid", gap: ".5rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: ".5rem", alignItems: "baseline", flexWrap: "wrap" }}><strong>Supplier SKU: <code>{line.sku}</code></strong><span className="muted" style={{ fontSize: ".8rem" }}>{line.description || "Description not confidently read"}</span></div>
+                <div className="field" style={{ margin: 0 }}><label>Catalog product<select value={line.productId} onChange={(event) => updateInvoiceLine(line.id, "productId", event.target.value)}><option value="">{products.some((product: any) => String(product.barcode || "").trim().toLowerCase() === line.sku.toLowerCase()) ? "Choose exact SKU match" : "SKU not found - choose manually"}</option>{products.map((product: any) => <option key={product.id} value={product.id}>{product.name}{product.barcode ? ` · SKU ${product.barcode}` : " · no SKU"}</option>)}</select></label></div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(135px, 1fr))", gap: ".55rem" }}>
+                  <label style={{ fontSize: ".8rem" }}>Quantity<input type="number" min="1" step="1" value={line.quantity} onChange={(event) => updateInvoiceLine(line.id, "quantity", event.target.value)} /></label>
+                  <label style={{ fontSize: ".8rem" }}>Supplier unit cost (KES)<input type="number" min="0" step="0.01" value={line.unitCost} onChange={(event) => updateInvoiceLine(line.id, "unitCost", event.target.value)} /></label>
+                  <div className="muted" style={{ fontSize: ".8rem", alignSelf: "end", paddingBottom: ".45rem" }}>
+                    Invoice line total read: {line.lineTotal ? formatPrice(Number(line.lineTotal)) : "not read; check invoice"}
+                    {line.lineTotal && Number(line.quantity) > 0 && Number(line.unitCost) >= 0 && Math.abs(Number(line.lineTotal) - Number(line.quantity) * Number(line.unitCost)) > 1 && <strong role="alert" style={{ display: "block", color: "var(--warning-text)", marginTop: ".25rem" }}>Check discrepancy: quantity × unit cost does not match the extracted line total.</strong>}
+                  </div>
+                </div>
+                <div><RippleButton size="small" disabled={!line.productId || !line.quantity || !line.unitCost} onClick={() => addInvoiceLineToDraft(line)}>Add reviewed line</RippleButton></div>
+              </div>)}
+            </div>}
+            {invoiceText && <details style={{ marginTop: ".75rem" }}><summary style={{ cursor: "pointer", fontSize: ".82rem" }}>Show extracted text for checking</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 220, overflow: "auto", borderRadius: 6, padding: ".65rem", background: "var(--bg)", color: "var(--text)", fontSize: ".75rem" }}>{invoiceText}</pre></details>}
+          </section>
           <h4 style={{ marginBottom: "0.5rem" }}>Items</h4>
           <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", position: "relative" }}>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..." style={{ flex: 1 }} />
