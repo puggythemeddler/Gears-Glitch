@@ -4069,7 +4069,7 @@ app.post("/api/admin/pos-receipt-token/:orderId", posAuthMiddleware, asyncHandle
   }
 }));
 
-app.post("/api/admin/purchase-pdf-token/:id", staffAuthMiddleware, requirePermission("reports:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/purchase-pdf-token/:id", staffAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const po = await getPurchaseOrder(Number(req.params.id));
     if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
