@@ -73,8 +73,10 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const featured = selectHeroFeatured(products, 6);
   const activeProductIndex = featured.length > 0 ? activeIdx % featured.length : 0;
 
-  const heroBgLight = typeof hero?.heroBgLight === "string" ? hero.heroBgLight.trim() : "";
-  const heroBgDark = typeof hero?.heroBgDark === "string" ? hero.heroBgDark.trim() : "";
+  const isSafeHeroColor = (value: unknown): value is string =>
+    typeof value === "string" && /^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(value.trim());
+  const heroBgLight = isSafeHeroColor(hero?.heroBgLight) ? hero.heroBgLight.trim() : "";
+  const heroBgDark = isSafeHeroColor(hero?.heroBgDark) ? hero.heroBgDark.trim() : "";
   const customBg = (isDark ? heroBgDark || heroBgLight : heroBgLight || heroBgDark) || "";
   const bgIsDark = customBg ? isDarkColor(customBg) : isDark;
   const heroText = bgIsDark ? "#f4f1ec" : "#1c1917";

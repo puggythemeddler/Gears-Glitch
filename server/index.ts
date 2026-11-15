@@ -459,7 +459,7 @@ import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, 
 import { publicBaseUrl } from "./public-url";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
 import { validateLayoutConfig } from "./template-validate";
-import { isSafeStudioLink } from "./studio-input-validation";
+import { isHexColor, isSafeStudioLink } from "./studio-input-validation";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, uploadProductImport, uploadPurchaseOrderDocument, scanPurchaseOrderDocument, scanProductImportBuffer, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes } from "./upload";
 import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
 import { MAX_PRODUCT_IMAGES, MAX_REPAIR_IMAGES, withinImageLimit, productImageLimitMessage, repairImageLimitMessage } from "./image-limits";
@@ -1595,9 +1595,22 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("
         res.status(400).json({ error: `hero.${key} must be a safe relative, HTTP/HTTPS, or contact link.` }); return;
       }
     }
+    for (const key of ["heroBgLight", "heroBgDark"]) {
+      const value = hero[key];
+      if (value !== undefined && value !== null && value !== "" && !isHexColor(value)) {
+        res.status(400).json({ error: `hero.${key} must be a 3- or 6-digit hex color.` }); return;
+      }
+    }
   }
   if (theme !== undefined && (typeof theme !== "string" || !STORE_THEMES.includes(theme))) { res.status(400).json({ error: "Invalid theme. Choose one of: " + STORE_THEMES.join(", ") + "." }); return; }
-  if (themeCustom !== undefined && (typeof themeCustom !== "object" || themeCustom === null)) { res.status(400).json({ error: "themeCustom must be an object." }); return; }
+  if (themeCustom !== undefined) {
+    if (typeof themeCustom !== "object" || themeCustom === null || Array.isArray(themeCustom)) { res.status(400).json({ error: "themeCustom must be an object." }); return; }
+    const allowedThemeColorKeys = ["primary", "primaryHover", "accent", "bgLight", "bgDark", "heroBgLight", "heroBgDark"];
+    for (const [key, value] of Object.entries(themeCustom)) {
+      if (!allowedThemeColorKeys.includes(key)) { res.status(400).json({ error: `themeCustom.${key} is not supported.` }); return; }
+      if (value !== "" && !isHexColor(value)) { res.status(400).json({ error: `themeCustom.${key} must be a 3- or 6-digit hex color.` }); return; }
+    }
+  }
   if (mascot !== undefined && (typeof mascot !== "string" || !STORE_MASCOTS.includes(mascot as typeof STORE_MASCOTS[number]))) { res.status(400).json({ error: "Invalid mascot. Choose one from the storefront mascot library." }); return; }
   if (layout) {
     const validLayout = await queryOne("SELECT id FROM storefront_layouts WHERE layout_key = $1", [layout]);
