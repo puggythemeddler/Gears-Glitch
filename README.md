@@ -234,7 +234,7 @@ A complete multi-branch sales & management system with product catalog, customer
 - **CSRF token protection** — Double-submit cookie pattern on all state-changing endpoints (POST/PUT/DELETE/PATCH). Frontend fetches a CSRF token on app mount via `GET /api/csrf-token` (and lazily on demand) and sends it as `X-CSRF-Token` header on every mutating request. Server **hard-fails** mutating requests with `403` when the token is missing or mismatched (external webhooks — M-Pesa callback, WhatsApp — and POS/control-plane requests are exempt).
 - **Control plane CSP** — The control plane serves with a Content Security Policy (scripts/styles inline only, images from `https:` for QR codes, `frame-ancestors 'none'` to block clickjacking, `object-src 'none'`). `scriptSrcAttr: ["'self'", "'unsafe-inline'"]` is set explicitly: Helmet 7 otherwise appends `script-src-attr 'none'`, which blocks the dashboard's inline `onclick` buttons.
 - **File upload magic bytes validation** — All file uploads (logo, favicon, product images, gallery images, repair images) are validated against magic byte signatures after multer saves the file. Supports JPEG, PNG, GIF, WebP, BMP, and ICO; SVG is rejected at the mimetype filter (scriptable, and previously inconsistently allowed only through Cloudinary storage). Invalid files are rejected and deleted immediately with a clear error message.
-- **Control plane per-user authentication** — Control plane now has proper user accounts with login screen. Default admin user auto-created on first boot (`admin` / `gearglitch2024` or `CP_ADMIN_PASSWORD` env var). JWT-based session auth (7-day expiry) plus per-user API keys for programmatic access. Users tab for admin to manage accounts (create/delete, assign roles, regenerate API keys). Roles: `admin` (full access) and `viewer` (read-only). The legacy `CONTROL_PLANE_API_KEY` env value is no longer accepted — programmatic calls must use a per-user API key (`x-api-key`, admin role needed for deploy routes).
+- **Control plane per-user authentication** — Per-user accounts use JWT sessions and per-user API keys. On a fresh database, set `CP_ADMIN_PASSWORD` before first boot or the service generates a random temporary password and prints it once to startup logs. This variable does not reset an existing account. Admins manage users and assign `admin` or `viewer` roles; the legacy `CONTROL_PLANE_API_KEY` is not accepted.
 - **Shared Cloudinary with per-client folders** — Provisioning now automatically configures Cloudinary on each new client's Render service using a shared Cloudinary account. Each client gets an isolated folder (`gear-glitch/{client-slug}`) for product images, logos, and uploads. Control plane auto-imports Cloudinary credentials from the first active client on startup. "Pull Cloudinary" dropdown lets you pull from any client. "Sync Cloudinary" button pushes credentials to all existing clients. `GET /api/cloudinary-config` endpoint on the main app exposes Cloudinary settings for control plane provisioning.
 - **Render deployment speed** — Moved `@sparticuz/chromium` and `puppeteer-core` to `optionalDependencies`. Build command changed from `rm -rf node_modules dist && npm install && npx tsc` to `npm ci --omit=optional && npx tsc`. Eliminates 300MB+ Chromium download on every deploy. PDF generation falls back to HTML gracefully when Chromium is unavailable.
 - **Two-step checkout with delivery details** — Clicking Checkout now immediately creates a pending order and redirects to the order detail page where customers fill in delivery details (name, address, county, phone), select a payment method, and add delivery instructions. Orders start as `pending` and progress through `confirmed` → `shipped` → `delivered`. Customers can only edit details while the order is still pending.
@@ -345,23 +345,9 @@ Opens **http://localhost:3000** in a browser.
 
 ---
 
-## Default Accounts (dev only — no accounts auto-seeded in production)
+## Initial Accounts
 
-| Role | URL | Credentials (dev) | Env vars to set in production |
-|------|-----|-------------------|-------------------------------|
-| **Admin** | `/admin` | `admin@gearandglitch.com` / `admin123` | `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
-| **Owner** | `/admin` | same admin credential (role-based access) | — |
-| **Technician** | `/admin` | `technician` or `tech@gearandglitch.com` / `tech123` | `TECH_USERNAME`, `TECH_EMAIL`, `TECH_PASSWORD` |
-| **Customer** | `/dashboard` | `customer@gearandglitch.com` / `customer123` | not seeded in production |
-| **Provider** | `/admin` | `provider@gearandglitch.com` / `provider123` | not seeded in production |
-
-- **Demo data is opt-in.** The default category taxonomy, the demo product catalog (`server/products.json`), and the demo accounts (`customer123`, `provider123`) are seeded **only when `SEED_DEMO_DATA` is enabled** (`1`/`true`/`yes`/`on`). New client stores boot **empty** and are populated through the admin. Set `SEED_DEMO_DATA=1` on a demo/dev instance to restore the samples.
-- **`ADMIN_PASSWORD` is an initial provisioning credential** — it is used to create the administrator account when it does not exist. On every later boot an existing administrator is left completely untouched (only the configured `ADMIN_EMAIL` is synchronized), so a password changed in the app is preserved across restarts; it is never re-applied from the env var.
-- **Admin/Technician** use a fallback dev password if the env var is unset, but **in production the server skips user creation** if the password env var is missing.
-- **Password minimum length** is 8 characters across all endpoints.
-- On first run the database table `actor_role` is auto-migrated for the audit log. All staff roles (admin, owner, manager, technician, staff, provider) sign into the same staff portal at `/admin`; the sidebar and API access are driven by the user's effective permissions.
-
----
+Production credentials are supplied during provisioning and must not be copied from documentation. A store admin is created only when `ADMIN_PASSWORD` is set on the first production boot; the value is hashed and later restarts do not reset it. A technician is created only when `TECH_PASSWORD` is set. Demo products and sample categories are opt-in through `SEED_DEMO_DATA=1` on non-production instances; production ignores this flag. Demo provider/customer accounts also require `DEMO_PROVIDER_PASSWORD` / `DEMO_CUSTOMER_PASSWORD`, respectively. Leave demo seeding unset for a real store.
 
 ## URLs & Who They're For
 
@@ -1117,10 +1103,10 @@ eTIMS is **disabled in this build**. The VSCU/OSCU integration described in `eTI
 | `JWT_SECRET` | — | **Required.** Server fails to start if unset or placeholder. Use a long random string. |
 | `ADMIN_USERNAME` | admin | Admin username |
 | `ADMIN_EMAIL` | admin@gearandglitch.com | Admin email |
-| `ADMIN_PASSWORD` | `admin123` (dev) | **Initial provisioning password.** **Required in production** — creates the admin only when it does not yet exist; never resets an existing admin's password on boot |
+| `ADMIN_PASSWORD` | unset | **Initial provisioning password.** Required to create the first production admin; never resets an existing admin's password on boot. |
 | `TECH_USERNAME` | technician | Technician username |
 | `TECH_EMAIL` | tech@gearandglitch.com | Technician email |
-| `TECH_PASSWORD` | `tech123` (dev) | **Required in production** — skips tech creation if unset |
+| `TECH_PASSWORD` | unset | Creates the initial technician when set; production skips technician creation when unset. |
 | `NODE_ENV` | — | Set to `production` to disable demo accounts and weak-password fallbacks |
 | `CORS_ORIGIN` | `true` (allow all) | Allowed origin(s) for CORS. Set to your frontend URL in production. |
 | `EMAIL_PROVIDER` | `auto` | Mail provider: `auto` (Gmail if connected, else SMTP), `gmail`, `smtp`, or `none` to send nothing |

@@ -23,10 +23,10 @@ Report format per spec: WHAT CHANGED / FILES / DATABASE / SECURITY IMPACT / TEST
 
 WHAT CHANGED
 
-- `provision.ts` now generates `randomPassword(20)` per client instead of the hardcoded `"Livid@50"`; stores a bcrypt hash in the `clients.admin_password_hash`-style column. No plaintext is kept.
+- `provision.ts` now generates `randomPassword(20)` per client instead of the hardcoded `"[redacted historical credential]"`; stores a bcrypt hash in the `clients.admin_password_hash`-style column. No plaintext is kept.
 - GET `/api/clients` and test-site/detail responses no longer select/send `admin_password`.
 - `public/index.html` copy-password chip removed; admin password no longer rendered in CP UI.
-- `seedDefaultAdmin` no longer falls back to `"gearglitch2024"`; it logs a one-time random base64url password only when `CP_ADMIN_PASSWORD` is unset.
+- `seedDefaultAdmin` no longer falls back to `"[redacted historical credential]"`; it logs a one-time random base64url password only when `CP_ADMIN_PASSWORD` is unset.
 
 FILES: `control-plane/server/provision.ts`, `control-plane/server/index.ts`, `control-plane/public/index.html`
 

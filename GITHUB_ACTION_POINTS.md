@@ -9,7 +9,7 @@ Use this document to create issues or project cards directly on GitHub. Mirrors 
 - [ ] Set `NEXT_PUBLIC_MARKETING_ENABLED=true` on the main Vercel project (client deployments don't get marketing).
 - [ ] Push control-plane secrets to existing clients via the control plane **Push Secret** button.
 - [ ] Set `CONTROL_PLANE_SECRET` on the store's Render service and register in the control plane.
-- [ ] Change the control-plane default password (`gearglitch2024`) → set `CP_ADMIN_PASSWORD`, then enable TOTP 2FA from the dashboard header.
+- [ ] Verify the control-plane admin uses an operator-set password and has TOTP enabled. `CP_ADMIN_PASSWORD` only applies when creating the initial admin on a fresh database; changing it does not reset an existing account.
 - [ ] Set store names on existing clients — clients provisioned before the `STORE_NAME` fix show "Gear&Glitch" in the tab title; set their name in Admin → Settings → Store Info (new clients are automatic).
 
 ## Medium
