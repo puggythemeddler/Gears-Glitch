@@ -1998,6 +1998,13 @@ textarea:not(.input)::placeholder {
   background: var(--surface-hover);
 }
 
+/* Keep large stock-take lists responsive without removing rows from the DOM.
+   This preserves search, screen-reader access, and keyboard count navigation. */
+.stock-take-counting-table tbody > tr {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 6rem;
+}
+
 /* ----- Payment methods table ----- */
 .payment-methods-panel {
   width: 100%;

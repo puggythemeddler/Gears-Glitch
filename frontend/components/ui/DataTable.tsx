@@ -18,6 +18,7 @@ export function DataTable<T>({
   defaultSort,
   onRowClick,
   ariaLabel,
+  tableClassName,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -26,6 +27,7 @@ export function DataTable<T>({
   defaultSort?: { key: string; dir?: "asc" | "desc" };
   onRowClick?: (row: T) => void;
   ariaLabel?: string;
+  tableClassName?: string;
 }) {
   const [sortKey, setSortKey] = useState<string | null>(defaultSort?.key ?? null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">(defaultSort?.dir ?? "asc");
@@ -58,7 +60,7 @@ export function DataTable<T>({
 
   return (
     <div className="table-wrap">
-      <table className="data-table" aria-label={ariaLabel}>
+      <table className={`data-table${tableClassName ? ` ${tableClassName}` : ""}`} aria-label={ariaLabel}>
         <thead>
           <tr>
             {columns.map((col) => {
