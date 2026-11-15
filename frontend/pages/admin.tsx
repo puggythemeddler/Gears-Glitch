@@ -6187,10 +6187,12 @@ function AdminStockTransfers() {
   const { data: accessibleBranches } = useFetch(() => api<{ branches: any[] }>("/api/stock-branches"), []);
   const { data: products } = useFetch(() => api<{ products: any[] }>("/api/products?includeHidden=1"), []);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ fromBranchId: "", toBranchId: "", productId: "", quantity: "", notes: "" });
+  const [sheetForm, setSheetForm] = useState({ fromBranchId: "", toBranchId: "", notes: "" });
+  const [lines, setLines] = useState<{ rowId: number; productId: string; quantity: string }[]>([{ rowId: 1, productId: "", quantity: "" }]);
+  const [nextLineId, setNextLineId] = useState(2);
   const [creating, setCreating] = useState(false);
-  const [sourceStock, setSourceStock] = useState<{ onHand: number; reserved: number; available: number } | null>(null);
-  const [destStock, setDestStock] = useState<number | null>(null);
+  const [sourceStock, setSourceStock] = useState<Record<string, { onHand: number; reserved: number; available: number }>>({});
+  const [destStock, setDestStock] = useState<Record<string, number>>({});
   const [loadingStockCheck, setLoadingStockCheck] = useState(false);
 
   const branchList = branches?.branches || [];
@@ -6198,58 +6200,92 @@ function AdminStockTransfers() {
   const productList = products?.products || [];
   const transfers = tData?.transfers || [];
 
-  useEffect(() => {
-    if (!form.fromBranchId || !form.productId) { setSourceStock(null); return; }
-    setLoadingStockCheck(true);
-    api<any>(`/api/admin/stock/by-branch/${form.fromBranchId}`).then((data: any) => {
-      const items = data.items || data || [];
-      const found = Array.isArray(items) ? items.find((i: any) => String(i.productId ?? i.id) === String(form.productId)) : null;
-      const onHand = found ? Number(found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0;
-      const reserved = found ? Number(found.quantityReserved ?? found.quantity_reserved ?? 0) : 0;
-      setSourceStock({ onHand, reserved, available: Math.max(0, onHand - reserved) });
-    }).catch(() => setSourceStock(null)).finally(() => setLoadingStockCheck(false));
-  }, [form.fromBranchId, form.productId]);
+  const selectedProductIds = [...new Set(lines.map((line) => line.productId).filter(Boolean))];
+  const selectedProductKey = selectedProductIds.join("|");
 
   useEffect(() => {
-    if (!form.toBranchId || !form.productId) { setDestStock(null); return; }
-    api<any>(`/api/admin/stock/by-branch/${form.toBranchId}`).then((data: any) => {
+    if (!sheetForm.fromBranchId || !selectedProductIds.length) { setSourceStock({}); setLoadingStockCheck(false); return; }
+    let active = true;
+    setLoadingStockCheck(true);
+    api<any>(`/api/admin/stock/by-branch/${sheetForm.fromBranchId}`).then((data: any) => {
+      if (!active) return;
       const items = data.items || data || [];
-      const found = Array.isArray(items) ? items.find((i: any) => String(i.productId ?? i.id) === String(form.productId)) : null;
-      setDestStock(found ? (found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0);
-    }).catch(() => setDestStock(null));
-  }, [form.toBranchId, form.productId]);
+      const next: Record<string, { onHand: number; reserved: number; available: number }> = {};
+      if (Array.isArray(items)) for (const productId of selectedProductIds) {
+        const found = items.find((item: any) => String(item.productId ?? item.id) === String(productId));
+        const onHand = found ? Number(found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0;
+        const reserved = found ? Number(found.quantityReserved ?? found.quantity_reserved ?? 0) : 0;
+        next[productId] = { onHand, reserved, available: Math.max(0, onHand - reserved) };
+      }
+      setSourceStock(next);
+    }).catch(() => { if (active) setSourceStock({}); }).finally(() => { if (active) setLoadingStockCheck(false); });
+    return () => { active = false; };
+  }, [sheetForm.fromBranchId, selectedProductKey]);
+
+  useEffect(() => {
+    if (!sheetForm.toBranchId || !selectedProductIds.length) { setDestStock({}); return; }
+    let active = true;
+    api<any>(`/api/admin/stock/by-branch/${sheetForm.toBranchId}`).then((data: any) => {
+      if (!active) return;
+      const items = data.items || data || [];
+      const next: Record<string, number> = {};
+      if (Array.isArray(items)) for (const productId of selectedProductIds) {
+        const found = items.find((item: any) => String(item.productId ?? item.id) === String(productId));
+        next[productId] = found ? Number(found.quantityInStock ?? found.quantity_in_stock ?? 0) : 0;
+      }
+      setDestStock(next);
+    }).catch(() => { if (active) setDestStock({}); });
+    return () => { active = false; };
+  }, [sheetForm.toBranchId, selectedProductKey]);
 
   async function createTransfer(e: React.FormEvent) {
     e.preventDefault();
-    if (sourceStock && Number(form.quantity) > sourceStock.available) {
-      feedback.error(`Only ${sourceStock.available} unreserved unit(s) are available at the source branch.`);
+    const overAvailable = lines.find((line) => line.productId && Number(line.quantity) > (sourceStock[line.productId]?.available ?? 0));
+    if (overAvailable) {
+      feedback.error(`Only ${sourceStock[overAvailable.productId]?.available ?? 0} unreserved unit(s) are available for this product at the source branch.`);
       return;
     }
     setCreating(true);
     try {
-      await api("/api/stock-transfers", {
+      await api("/api/stock-transfer-sheets", {
         method: "POST",
         body: JSON.stringify({
-          fromBranchId: Number(form.fromBranchId), toBranchId: Number(form.toBranchId),
-          productId: form.productId, quantity: Number(form.quantity), notes: form.notes || undefined,
+          fromBranchId: Number(sheetForm.fromBranchId), toBranchId: Number(sheetForm.toBranchId),
+          items: lines.map((line) => ({ productId: line.productId, quantity: Number(line.quantity) })), notes: sheetForm.notes || undefined,
         }),
       });
-      setShowForm(false); setForm({ fromBranchId: "", toBranchId: "", productId: "", quantity: "", notes: "" });
-      refetch(); feedback.success("Transfer created");
+      setShowForm(false); setSheetForm({ fromBranchId: "", toBranchId: "", notes: "" }); setLines([{ rowId: 1, productId: "", quantity: "" }]); setNextLineId(2);
+      refetch(); feedback.success("Transfer sheet created", `${lines.length} product line(s) are ready to dispatch together.`);
     } catch (err: any) { feedback.error(err.message); } finally { setCreating(false); }
   }
 
-  async function completeTransfer(id: number) {
-    try { await api(`/api/stock-transfers/${id}/dispatch`, { method: "POST" }); refetch(); feedback.success("Transfer dispatched", "Source stock was reduced. The destination branch must confirm receipt."); } catch (err: any) { feedback.error(err.message); }
+  async function dispatchSheet(sheet: any) {
+    try {
+      await api(sheet.batchId ? `/api/stock-transfer-sheets/${sheet.batchId}/dispatch` : `/api/stock-transfers/${sheet.lines[0].id}/dispatch`, { method: "POST" });
+      refetch(); feedback.success("Transfer sheet dispatched", "All products were dispatched together. The destination branch can confirm receipt.");
+    } catch (err: any) { feedback.error(err.message); }
   }
 
-  async function receiveTransfer(id: number) {
-    try { await api(`/api/stock-transfers/${id}/receive`, { method: "POST" }); refetch(); feedback.success("Transfer received", "Destination stock has been updated."); } catch (err: any) { feedback.error(err.message); }
+  async function receiveSheet(sheet: any) {
+    try {
+      await api(sheet.batchId ? `/api/stock-transfer-sheets/${sheet.batchId}/receive` : `/api/stock-transfers/${sheet.lines[0].id}/receive`, { method: "POST" });
+      refetch(); feedback.success("Transfer sheet received", "All products were added to destination stock.");
+    } catch (err: any) { feedback.error(err.message); }
   }
 
-  async function rejectTransfer(id: number) {
-    try { await api(`/api/stock-transfers/${id}/reject`, { method: "POST" }); refetch(); feedback.success("Transfer rejected"); } catch (err: any) { feedback.error(err.message); }
+  async function rejectSheet(sheet: any) {
+    try {
+      await api(sheet.batchId ? `/api/stock-transfer-sheets/${sheet.batchId}/reject` : `/api/stock-transfers/${sheet.lines[0].id}/reject`, { method: "POST" });
+      refetch(); feedback.success("Transfer sheet rejected");
+    } catch (err: any) { feedback.error(err.message); }
   }
+
+  const transferSheets = Object.values((transfers as any[]).reduce((groups: Record<string, any>, transfer: any) => {
+    const key = transfer.batchId || `legacy-${transfer.id}`;
+    if (!groups[key]) groups[key] = { key, batchId: transfer.batchId || null, lines: [] };
+    groups[key].lines.push(transfer);
+    return groups;
+  }, {})).map((sheet: any) => ({ ...sheet, first: sheet.lines[0], totalUnits: sheet.lines.reduce((sum: number, line: any) => sum + Number(line.quantity || 0), 0) }));
 
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
@@ -6262,35 +6298,38 @@ function AdminStockTransfers() {
       </div>
 
       {showForm && (
-        <div className="panel" style={{ marginBottom: "1rem", maxWidth: 500 }}>
-          <h3 style={{ marginTop: 0 }}>New Stock Transfer</h3>
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <h3 style={{ marginTop: 0 }}>New Transfer Sheet</h3>
+          <p style={{ color: "var(--text-secondary)", marginTop: "-0.25rem" }}>Move several products between the same branches. Stock is checked for every line, and the sheet dispatches and receives as one operation.</p>
           <form onSubmit={createTransfer}>
-            <div className="field"><label>From Branch<select value={form.fromBranchId} onChange={(e) => setForm({ ...form, fromBranchId: e.target.value })} required><option value="">Select source branch</option>{sourceBranchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
-            <div className="field"><label>To Branch<select value={form.toBranchId} onChange={(e) => setForm({ ...form, toBranchId: e.target.value })} required><option value="">Select destination branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
-            <div className="field"><label>Product<select value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })} required><option value="">Select product</option>{productList.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div>
-            <div className="field"><label>Quantity<input type="number" min="1" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} required /></label></div>
-            {form.fromBranchId && form.productId && (
-              <div style={{ display: "flex", gap: "1rem", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
-                <div style={{ padding: "0.4rem 0.75rem", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)" }}>
-                  <span style={{ color: "var(--text-secondary)" }}>Source on hand / reserved / transferable: </span>
-                  <strong>{loadingStockCheck ? "..." : sourceStock ? `${sourceStock.onHand} / ${sourceStock.reserved} / ${sourceStock.available}` : "—"}</strong>
-                </div>
-                {form.toBranchId && (
-                  <div style={{ padding: "0.4rem 0.75rem", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>Destination stock: </span>
-                    <strong>{destStock ?? "—"}</strong>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem" }}>
+              <div className="field"><label>From Branch<select value={sheetForm.fromBranchId} onChange={(e) => setSheetForm({ ...sheetForm, fromBranchId: e.target.value })} required><option value="">Select source branch</option>{sourceBranchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
+              <div className="field"><label>To Branch<select value={sheetForm.toBranchId} onChange={(e) => setSheetForm({ ...sheetForm, toBranchId: e.target.value })} required><option value="">Select destination branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", margin: "0.75rem 0" }}>
+              <strong>Products to transfer</strong>
+              <RippleButton type="button" variant="secondary" size="small" disabled={lines.length >= 100} onClick={() => { setLines([...lines, { rowId: nextLineId, productId: "", quantity: "" }]); setNextLineId(nextLineId + 1); }}>+ Add product</RippleButton>
+            </div>
+            <div style={{ display: "grid", gap: "0.65rem" }}>
+              {lines.map((line, index) => {
+                const stock = sourceStock[line.productId];
+                const qty = Number(line.quantity);
+                const tooMany = Boolean(line.productId && qty > 0 && stock && qty > stock.available);
+                return <div key={line.rowId} className="panel" style={{ display: "grid", gridTemplateColumns: "minmax(220px, 2fr) minmax(110px, 0.65fr) minmax(210px, 1.5fr) auto", gap: "0.65rem", alignItems: "end", padding: "0.75rem" }}>
+                  <div className="field" style={{ margin: 0 }}><label>Product {index + 1}<select value={line.productId} onChange={(e) => setLines(lines.map((item) => item.rowId === line.rowId ? { ...item, productId: e.target.value } : item))} required><option value="">Select product</option>{productList.map((product: any) => <option key={product.id} value={product.id} disabled={lines.some((item) => item.rowId !== line.rowId && item.productId === String(product.id))}>{product.name}</option>)}</select></label></div>
+                  <div className="field" style={{ margin: 0 }}><label>Quantity<input type="number" min="1" step="1" value={line.quantity} onChange={(e) => setLines(lines.map((item) => item.rowId === line.rowId ? { ...item, quantity: e.target.value } : item))} required /></label></div>
+                  <div style={{ fontSize: "0.82rem", color: tooMany ? "var(--warning-text)" : "var(--text-secondary)", paddingBottom: "0.65rem" }}>
+                    {line.productId ? loadingStockCheck ? "Checking source stock…" : stock ? `Source: ${stock.onHand} on hand · ${stock.reserved} reserved · ${stock.available} available${sheetForm.toBranchId ? ` · Destination: ${destStock[line.productId] ?? "…"}` : ""}` : "Source stock could not be checked" : "Choose a product to check branch stock"}
+                    {tooMany && <div>Only {stock?.available} unreserved unit(s) are available.</div>}
                   </div>
-                )}
-              </div>
-            )}
-            {sourceStock !== null && form.quantity && Number(form.quantity) > sourceStock.available && (
-              <div style={{ padding: "0.5rem 0.75rem", borderRadius: 6, background: "var(--warning-light)", color: "var(--warning-text)", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
-                Only {sourceStock.available} unreserved unit(s) can be transferred. {sourceStock.reserved} unit(s) are reserved, so this quantity cannot be created.
-              </div>
-            )}
-            <div className="field"><label>Notes<textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} /></label></div>
+                  <RippleButton type="button" variant="secondary" size="small" disabled={lines.length === 1} aria-label={`Remove product line ${index + 1}`} onClick={() => setLines(lines.filter((item) => item.rowId !== line.rowId))}>Remove</RippleButton>
+                </div>;
+              })}
+            </div>
+            <div className="field" style={{ marginTop: "0.75rem" }}><label>Notes for the transfer sheet<textarea value={sheetForm.notes} onChange={(e) => setSheetForm({ ...sheetForm, notes: e.target.value })} rows={2} /></label></div>
+            {lines.length >= 100 && <p style={{ color: "var(--text-secondary)" }}>A transfer sheet can contain up to 100 product lines.</p>}
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              <RippleButton type="submit" loading={creating} disabled={loadingStockCheck || Boolean(sourceStock && Number(form.quantity) > sourceStock.available)}>Create Transfer</RippleButton>
+              <RippleButton type="submit" loading={creating} disabled={loadingStockCheck || !sheetForm.fromBranchId || !sheetForm.toBranchId || sheetForm.fromBranchId === sheetForm.toBranchId || !lines.length || lines.some((line) => !line.productId || !Number.isInteger(Number(line.quantity)) || Number(line.quantity) <= 0 || !sourceStock[line.productId] || Number(line.quantity) > sourceStock[line.productId].available)}>Create Transfer Sheet</RippleButton>
               <RippleButton variant="secondary" onClick={() => setShowForm(false)}>Cancel</RippleButton>
             </div>
           </form>
@@ -6299,38 +6338,38 @@ function AdminStockTransfers() {
 
       <div className="table-wrap">
         <DataTable<any>
-          ariaLabel="Stock transfers"
+          ariaLabel="Stock transfer sheets"
           columns={[
-            { key: "id", label: "ID", value: (t) => `#${t.id}`, render: (t) => <span>#{t.id}</span> },
-            { key: "from", label: "From", sortable: true, value: (t) => t.fromBranchName || `#${t.fromBranchId}`, render: (t) => t.fromBranchName || `#${t.fromBranchId}` },
-            { key: "to", label: "To", sortable: true, value: (t) => t.toBranchName || `#${t.toBranchId}`, render: (t) => t.toBranchName || `#${t.toBranchId}` },
-            { key: "product", label: "Product", sortable: true, value: (t) => t.productName || t.productId, render: (t) => t.productName || t.productId },
-            { key: "qty", label: "Qty", sortable: true, align: "right", value: (t) => t.quantity, render: (t) => <span style={{ textAlign: "right" }}>{t.quantity}</span> },
+            { key: "id", label: "Transfer", value: (sheet) => sheet.batchId ? sheet.batchId : `#${sheet.first.id}`, render: (sheet) => <span>{sheet.batchId ? `Sheet · ${sheet.lines.length} lines` : `#${sheet.first.id}`}</span> },
+            { key: "from", label: "From", sortable: true, value: (sheet) => sheet.first.fromBranchName || `#${sheet.first.fromBranchId}`, render: (sheet) => sheet.first.fromBranchName || `#${sheet.first.fromBranchId}` },
+            { key: "to", label: "To", sortable: true, value: (sheet) => sheet.first.toBranchName || `#${sheet.first.toBranchId}`, render: (sheet) => sheet.first.toBranchName || `#${sheet.first.toBranchId}` },
+            { key: "products", label: "Products", sortable: true, value: (sheet) => sheet.lines.map((line: any) => line.productName || line.productId).join(", "), render: (sheet) => <div>{sheet.lines.map((line: any) => <div key={line.id}>{line.productName || line.productId} <strong>× {line.quantity}</strong></div>)}</div> },
+            { key: "qty", label: "Units", sortable: true, align: "right", value: (sheet) => sheet.totalUnits, render: (sheet) => <span>{sheet.totalUnits}</span> },
             {
               key: "status",
               label: "Status",
               sortable: true,
-              value: (t) => t.status,
-              render: (t) => (
-                <span className="plan-status" style={{ background: t.status === "completed" ? "var(--success-light)" : t.status === "rejected" ? "var(--danger-light)" : "var(--warning-light)", color: t.status === "completed" ? "var(--success-text)" : t.status === "rejected" ? "var(--danger-text)" : "var(--warning-text)" }}>{t.status === "in_transit" ? "In transit" : t.status}</span>
+              value: (sheet) => sheet.first.status,
+              render: (sheet) => (
+                <span className="plan-status" style={{ background: sheet.first.status === "completed" ? "var(--success-light)" : sheet.first.status === "rejected" ? "var(--danger-light)" : "var(--warning-light)", color: sheet.first.status === "completed" ? "var(--success-text)" : sheet.first.status === "rejected" ? "var(--danger-text)" : "var(--warning-text)" }}>{sheet.first.status === "in_transit" ? "In transit" : sheet.first.status}</span>
               ),
             },
-            { key: "created", label: "Created", value: (t) => new Date(t.createdAt).toISOString(), render: (t) => <span style={{ whiteSpace: "nowrap" }}>{new Date(t.createdAt).toLocaleDateString("en-GB")}</span> },
+            { key: "created", label: "Created", value: (sheet) => new Date(sheet.first.createdAt).toISOString(), render: (sheet) => <span style={{ whiteSpace: "nowrap" }}>{new Date(sheet.first.createdAt).toLocaleDateString("en-GB")}</span> },
             {
               key: "actions",
               label: "",
-              render: (t) => (
-                t.status === "pending" ? (
+              render: (sheet) => (
+                sheet.first.status === "pending" ? (
                   <div style={{ display: "flex", gap: "0.25rem" }}>
-                    <RippleButton size="small" onClick={() => completeTransfer(t.id)}>Dispatch</RippleButton>
-                    <RippleButton size="small" variant="danger" onClick={() => rejectTransfer(t.id)}>Reject</RippleButton>
+                    <RippleButton size="small" onClick={() => dispatchSheet(sheet)}>Dispatch sheet</RippleButton>
+                    <RippleButton size="small" variant="danger" onClick={() => rejectSheet(sheet)}>Reject</RippleButton>
                   </div>
-                ) : t.status === "in_transit" ? <RippleButton size="small" onClick={() => receiveTransfer(t.id)}>Confirm receipt</RippleButton> : null
+                ) : sheet.first.status === "in_transit" ? <RippleButton size="small" onClick={() => receiveSheet(sheet)}>Confirm all received</RippleButton> : null
               ),
             },
           ]}
-          rows={transfers}
-          rowKey={(t) => t.id}
+          rows={transferSheets}
+          rowKey={(sheet) => sheet.key}
           empty={<EmptyState icon="stock" title="No transfers" description="Create a stock transfer between branches." />}
         />
       </div>
