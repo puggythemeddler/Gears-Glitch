@@ -29,6 +29,7 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
   const [unlocatedItems, setUnlocatedItems] = useState<any[]>([]);
   const [assigningStock, setAssigningStock] = useState(false);
   const [assignmentBranchId, setAssignmentBranchId] = useState("");
+  const [locationBreakdowns, setLocationBreakdowns] = useState<Record<string, { loading?: boolean; error?: string; items?: any[] }>>({});
 
   useEffect(() => {
     api<{ branches: any[] }>("/api/admin/branches").then(d => setBranches(d.branches || [])).catch(() => {});
@@ -165,6 +166,18 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
     } finally { setLoadingSuggestions(false); }
   }
 
+  async function loadLocationBreakdown(productId: string) {
+    const current = locationBreakdowns[productId];
+    if (current?.loading || current?.items) return;
+    setLocationBreakdowns((previous) => ({ ...previous, [productId]: { loading: true } }));
+    try {
+      const items = await api<any[]>(`/api/admin/stock/product/${encodeURIComponent(productId)}/branches`);
+      setLocationBreakdowns((previous) => ({ ...previous, [productId]: { items } }));
+    } catch (err: any) {
+      setLocationBreakdowns((previous) => ({ ...previous, [productId]: { error: err?.message || "Branch quantities could not be loaded." } }));
+    }
+  }
+
   if (loading) return <Spinner />;
   if (error) return <ErrorMsg msg={error} />;
   const items = stockBranchFilter ? branchStockSummary : (sData?.items || []);
@@ -292,6 +305,22 @@ export default function StockOnHandPage({ showAutoReorder = false }: { showAutoR
           ariaLabel="Current stock levels"
           columns={[
             { key: "product", label: "Product", sortable: true, value: (i) => i.name, render: (i) => i.name },
+            ...(!stockBranchFilter ? [{ key: "locations", label: "Locations", render: (i: any) => {
+              const productId = String(i.productId ?? i.id);
+              const breakdown = locationBreakdowns[productId];
+              return <details onToggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open) void loadLocationBreakdown(productId); }}>
+                <summary style={{ cursor: "pointer", color: "var(--accent, #c45f35)", fontWeight: 600 }}>By branch</summary>
+                <div style={{ minWidth: 220, padding: "0.5rem 0" }}>
+                  {breakdown?.loading && <span role="status">Loading locations…</span>}
+                  {breakdown?.error && <div role="alert">{breakdown.error} <button type="button" onClick={() => { setLocationBreakdowns((previous) => { const next = { ...previous }; delete next[productId]; return next; }); void loadLocationBreakdown(productId); }}>Retry</button></div>}
+                  {breakdown?.items && (breakdown.items.length === 0
+                    ? <span>No branch locations are available to this account.</span>
+                    : <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>{breakdown.items.map((location: any) => <li key={location.branchId ?? "unassigned"}>
+                      <strong>{location.branchName}</strong>: {location.quantityInStock} on hand, {location.quantityReserved || 0} reserved
+                    </li>)}</ul>)}
+                </div>
+              </details>;
+            } }] : []),
             { key: "category", label: "Category", sortable: true, value: (i) => i.category || "", render: (i) => i.category || "—" },
             { key: "qty", label: "In Stock", sortable: true, align: "right", value: (i) => i.quantityInStock ?? i.quantity_in_stock ?? 0, render: (i) => <strong>{i.quantityInStock ?? i.quantity_in_stock ?? 0}</strong> },
             { key: "reserved", label: "Reserved", sortable: true, align: "right", value: (i) => i.quantityReserved ?? i.quantity_reserved ?? 0, render: (i) => i.quantityReserved ?? i.quantity_reserved ?? 0 },

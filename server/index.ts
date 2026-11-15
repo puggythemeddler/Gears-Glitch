@@ -2492,7 +2492,20 @@ app.get("/api/admin/stock/product/:productId/branches", ownerAuthMiddleware, req
       branchId: branch.id,
       branchName: branch.name,
       quantityInStock: level ? Number(level.quantityInStock) : 0,
+      quantityReserved: level ? Number(level.quantityReserved) : 0,
       lowStockThreshold: level ? Number(level.lowStockThreshold) : 5,
+    });
+  }
+  // Keep legacy/global quantities visible in the location breakdown so that
+  // All Branches totals can always be reconciled to their physical locations.
+  const unassigned = await getStockLevel(productId);
+  if (unassigned && (Number(unassigned.quantityInStock) > 0 || Number(unassigned.quantityReserved) > 0)) {
+    levels.push({
+      branchId: null,
+      branchName: "Unassigned stock — needs a branch",
+      quantityInStock: Number(unassigned.quantityInStock),
+      quantityReserved: Number(unassigned.quantityReserved),
+      lowStockThreshold: Number(unassigned.lowStockThreshold),
     });
   }
   res.json(levels);
