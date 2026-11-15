@@ -516,8 +516,22 @@ interface PurchaseOrder {
   createdBy: number | null;
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null;
   items: PurchaseOrderItem[];
+  documents: PurchaseOrderDocument[];
   totalCost: number;
+}
+
+interface PurchaseOrderDocument {
+  id: number;
+  purchaseOrderId: number;
+  documentType: "supplier_quote" | "supplier_purchase_order" | "invoice" | "delivery_note";
+  originalName: string;
+  contentType: "application/pdf" | "image/jpeg" | "image/png";
+  sizeBytes: number;
+  sha256: string;
+  uploadedBy: number | null;
+  uploadedAt: string;
 }
 
 interface PurchaseOrderItem {
@@ -3761,37 +3775,105 @@ async function createPurchaseOrder(data: { supplierName: string; supplierContact
   return (await getPurchaseOrder(poId))!;
 }
 
-async function getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> {
+async function getPurchaseOrder(id: number, includeDocuments = true): Promise<PurchaseOrder | undefined> {
   const row = await queryOne("SELECT po.*, b.name AS branch_name FROM purchase_orders po LEFT JOIN branches b ON b.id = po.branch_id WHERE po.id = $1", [id]) as any;
   if (!row) return undefined;
   const items = await queryAll(
     "SELECT poi.*, p.name AS product_name, p.serial_tracking AS serial_tracking FROM purchase_order_items poi LEFT JOIN products p ON p.id = poi.product_id WHERE poi.purchase_order_id = $1", [id]
   ) as any[];
   const totalCost = items.reduce((sum, i) => sum + i.quantity_ordered * i.unit_cost, 0);
+  const documents = includeDocuments ? await listPurchaseOrderDocuments(id) : [];
   return {
-    id: row.id, supplierName: row.supplier_name, supplierContact: row.supplier_contact, branchId: row.branch_id == null ? null : Number(row.branch_id), branchName: row.branch_name || "Central / no branch", orderDate: row.order_date, status: row.status, notes: row.notes, createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at, totalCost,
+    id: row.id, supplierName: row.supplier_name, supplierContact: row.supplier_contact, branchId: row.branch_id == null ? null : Number(row.branch_id), branchName: row.branch_name || "Central / no branch", orderDate: row.order_date, status: row.status, notes: row.notes, createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at || null, documents, totalCost,
     items: items.map((i) => ({ id: i.id, purchaseOrderId: i.purchase_order_id, productId: i.product_id, productName: i.product_name, quantityOrdered: i.quantity_ordered, quantityReceived: i.quantity_received, unitCost: i.unit_cost, serialTracking: Boolean(i.serial_tracking), serials: (() => { try { return JSON.parse(i.serial_numbers || "[]"); } catch { return []; } })() })),
   };
+}
+
+async function listPurchaseOrderDocuments(purchaseOrderId: number): Promise<PurchaseOrderDocument[]> {
+  const rows = await queryAll(
+    `SELECT id, purchase_order_id, document_type, original_name, content_type, size_bytes, sha256, uploaded_by, uploaded_at
+       FROM purchase_order_documents WHERE purchase_order_id = $1 AND removed_at IS NULL ORDER BY uploaded_at DESC, id DESC`,
+    [purchaseOrderId]
+  ) as any[];
+  return rows.map((row) => ({
+    id: Number(row.id), purchaseOrderId: Number(row.purchase_order_id), documentType: row.document_type,
+    originalName: row.original_name, contentType: row.content_type, sizeBytes: Number(row.size_bytes), sha256: row.sha256,
+    uploadedBy: row.uploaded_by == null ? null : Number(row.uploaded_by), uploadedAt: row.uploaded_at,
+  }));
+}
+
+async function createPurchaseOrderDocument(data: {
+  purchaseOrderId: number; documentType: PurchaseOrderDocument["documentType"]; originalName: string;
+  contentType: PurchaseOrderDocument["contentType"]; fileData: Buffer; sha256: string; uploadedBy?: number | null;
+}): Promise<{ ok: boolean; document?: PurchaseOrderDocument; error?: string }> {
+  return await transaction(async (client) => {
+    const order = (await client.query("SELECT id, deleted_at FROM purchase_orders WHERE id = $1 FOR UPDATE", [data.purchaseOrderId])).rows?.[0] as any;
+    if (!order) return { ok: false, error: "Purchase order not found." };
+    if (order.deleted_at) return { ok: false, error: "Restore this purchase order before adding documents." };
+    const usage = (await client.query(
+      `SELECT COUNT(*)::int AS files, COALESCE(SUM(size_bytes), 0)::bigint AS bytes
+         FROM purchase_order_documents WHERE purchase_order_id = $1 AND removed_at IS NULL`,
+      [data.purchaseOrderId]
+    )).rows?.[0] as any;
+    if (Number(usage.files) >= 10) return { ok: false, error: "A purchase order can have up to 10 active supplier documents." };
+    if (Number(usage.bytes) + data.fileData.byteLength > 100 * 1024 * 1024) return { ok: false, error: "Supplier documents for this order may use up to 100 MB. Remove an attachment before adding another." };
+    const inserted = (await client.query(
+      `INSERT INTO purchase_order_documents (purchase_order_id, document_type, original_name, content_type, size_bytes, sha256, file_data, uploaded_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, purchase_order_id, document_type, original_name, content_type, size_bytes, sha256, uploaded_by, uploaded_at`,
+      [data.purchaseOrderId, data.documentType, data.originalName, data.contentType, data.fileData.byteLength, data.sha256, data.fileData, data.uploadedBy ?? null]
+    )).rows?.[0] as any;
+    if (!inserted) throw new Error("Supplier document could not be saved.");
+    return { ok: true, document: {
+      id: Number(inserted.id), purchaseOrderId: Number(inserted.purchase_order_id), documentType: inserted.document_type,
+      originalName: inserted.original_name, contentType: inserted.content_type, sizeBytes: Number(inserted.size_bytes),
+      sha256: inserted.sha256, uploadedBy: inserted.uploaded_by == null ? null : Number(inserted.uploaded_by), uploadedAt: inserted.uploaded_at,
+    } };
+  });
+}
+
+async function getPurchaseOrderDocument(purchaseOrderId: number, documentId: number): Promise<(PurchaseOrderDocument & { fileData: Buffer }) | undefined> {
+  const row = await queryOne(
+    `SELECT id, purchase_order_id, document_type, original_name, content_type, size_bytes, sha256, uploaded_by, uploaded_at, file_data
+       FROM purchase_order_documents WHERE purchase_order_id = $1 AND id = $2 AND removed_at IS NULL`,
+    [purchaseOrderId, documentId]
+  ) as any;
+  if (!row?.file_data) return undefined;
+  return {
+    id: Number(row.id), purchaseOrderId: Number(row.purchase_order_id), documentType: row.document_type,
+    originalName: row.original_name, contentType: row.content_type, sizeBytes: Number(row.size_bytes), sha256: row.sha256,
+    uploadedBy: row.uploaded_by == null ? null : Number(row.uploaded_by), uploadedAt: row.uploaded_at, fileData: row.file_data,
+  };
+}
+
+async function softRemovePurchaseOrderDocument(purchaseOrderId: number, documentId: number, removedBy: number): Promise<boolean> {
+  const result = await query(
+    `UPDATE purchase_order_documents d SET removed_at = NOW()::text, removed_by = $3, file_data = NULL
+       FROM purchase_orders po WHERE d.purchase_order_id = po.id AND po.id = $1 AND po.deleted_at IS NULL
+         AND d.id = $2 AND d.removed_at IS NULL`,
+    [purchaseOrderId, documentId, removedBy]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 async function listPurchaseOrders(): Promise<PurchaseOrder[]> {
   const rows = await queryAll("SELECT id FROM purchase_orders WHERE deleted_at IS NULL ORDER BY created_at DESC") as { id: number }[];
   const orders: PurchaseOrder[] = [];
-  for (const row of rows) { const o = await getPurchaseOrder(row.id); if (o) orders.push(o); }
+  for (const row of rows) { const o = await getPurchaseOrder(row.id, false); if (o) orders.push(o); }
   return orders;
 }
 
 async function listDeletedPurchaseOrders(): Promise<PurchaseOrder[]> {
   const rows = await queryAll("SELECT id FROM purchase_orders WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC") as { id: number }[];
   const orders: PurchaseOrder[] = [];
-  for (const row of rows) { const o = await getPurchaseOrder(row.id); if (o) orders.push(o); }
+  for (const row of rows) { const o = await getPurchaseOrder(row.id, false); if (o) orders.push(o); }
   return orders;
 }
 
 async function listCompletedPurchaseOrders(): Promise<PurchaseOrder[]> {
   const rows = await queryAll("SELECT id FROM purchase_orders WHERE status = 'received' AND deleted_at IS NULL ORDER BY updated_at DESC") as { id: number }[];
   const orders: PurchaseOrder[] = [];
-  for (const row of rows) { const o = await getPurchaseOrder(row.id); if (o) orders.push(o); }
+  for (const row of rows) { const o = await getPurchaseOrder(row.id, false); if (o) orders.push(o); }
   return orders;
 }
 
@@ -5544,7 +5626,7 @@ export {
   createOrderInvoice, listOrderInvoices, markOrderInvoicePaid,
   createCreditNote, submitCreditNoteToEtims, getCreditNote, listCreditNotes,
   getRepairImages, addRepairImage, deleteRepairImage,
-  createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, updatePurchaseOrderBranch, receivePurchaseOrderItem, reversePurchaseOrderReceive, recallPurchaseOrder, markPurchaseOrderReceived,
+  createPurchaseOrder, getPurchaseOrder, listPurchaseOrderDocuments, createPurchaseOrderDocument, getPurchaseOrderDocument, softRemovePurchaseOrderDocument, listPurchaseOrders, listDeletedPurchaseOrders, listCompletedPurchaseOrders, softDeletePurchaseOrder, restorePurchaseOrder, addPurchaseOrderItem, updatePurchaseOrderStatus, updatePurchaseOrderBranch, receivePurchaseOrderItem, reversePurchaseOrderReceive, recallPurchaseOrder, markPurchaseOrderReceived,
   getTechPerformanceReport, getSalesReport, getPurchaseReport, getSalesReportWithRange,
   getStockSummary, getStockSummaryByBranch, getEmployeeSalesPerformance, getTechnicianRepairStats,
   getProductByBarcode, listSerials, listSerialInventoryDiscrepancies, getSerialByNumber, createSerial, reconcileLegacySerial, voidSerial, linkSerialToOrderItem, linkSerialsToOrderItem, computeWarrantyExpiry,

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/router";
-import { api, getStaffToken, getStaffRole, getStaffPermissions, hasStaffSession, downloadPdf, obtainStepUpToken } from "@/lib/api";
+import { api, getStaffToken, getStaffRole, getStaffPermissions, hasStaffSession, downloadPdf, downloadFile, obtainStepUpToken } from "@/lib/api";
 import type { Product, Order, SubscriptionPlan, Provider, Branch, Client } from "@/lib/types";
 import RippleButton from "@/components/RippleButton";
 import { Media } from "@/components/Media";
@@ -6859,6 +6859,7 @@ function AdminStockControl() {
 function AdminPurchases() {
   const [orders, setOrders] = useState<any[]>([]);
   const feedback = useFeedback();
+  const canManagePurchaseDocuments = getStaffPermissions().includes("stock:update");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [viewing, setViewing] = useState<any>(null);
@@ -6884,6 +6885,10 @@ function AdminPurchases() {
   const [serialMsg, setSerialMsg] = useState("");
   const [listSearch, setListSearch] = useState("");
   const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
+  const [documentType, setDocumentType] = useState("supplier_quote");
+  const [uploadingDocuments, setUploadingDocuments] = useState(false);
+  const [downloadingDocumentId, setDownloadingDocumentId] = useState<number | null>(null);
+  const [removingDocumentId, setRemovingDocumentId] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -7097,6 +7102,57 @@ function AdminPurchases() {
     }
   }
 
+  async function uploadSupplierDocuments(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!viewing || !files.length) return;
+    setUploadingDocuments(true);
+    let uploaded = 0;
+    try {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("documentType", documentType);
+        formData.append("file", file);
+        await api(`/api/purchases/${viewing.id}/documents`, { method: "POST", body: formData });
+        uploaded++;
+      }
+      await loadOrder(viewing.id);
+      feedback.success({ title: uploaded === 1 ? "Supplier document attached" : "Supplier documents attached", message: `${uploaded} file${uploaded === 1 ? "" : "s"} added to PO #${viewing.id}.` });
+    } catch (err: any) {
+      await loadOrder(viewing.id);
+      feedback.error({ title: uploaded ? "Some documents were attached" : "Document not attached", message: uploaded ? `${uploaded} file${uploaded === 1 ? " was" : "s were"} saved. ${err?.message || "The remaining upload failed."}` : err?.message || "The supplier document could not be attached." });
+    } finally {
+      setUploadingDocuments(false);
+    }
+  }
+
+  async function downloadSupplierDocument(doc: any) {
+    if (!viewing) return;
+    setDownloadingDocumentId(doc.id);
+    try {
+      await downloadFile(`/api/purchases/${viewing.id}/documents/${doc.id}/download`, doc.originalName, getStaffToken() || undefined);
+      feedback.success({ title: "Supplier document downloaded", message: doc.originalName });
+    } catch (err: any) {
+      feedback.error({ title: "Document not downloaded", message: err?.message || "The supplier document could not be downloaded." });
+    } finally {
+      setDownloadingDocumentId(null);
+    }
+  }
+
+  async function removeSupplierDocument(doc: any) {
+    if (!viewing || !(await confirmDialog({ title: "Remove supplier document?", message: `${doc.originalName} will be hidden from this purchase order. Its removal is recorded in the audit log.`, confirmLabel: "Remove document", danger: true }))) return;
+    setRemovingDocumentId(doc.id);
+    try {
+      await api(`/api/purchases/${viewing.id}/documents/${doc.id}`, { method: "DELETE" });
+      await loadOrder(viewing.id);
+      feedback.success("Supplier document removed from the purchase order.");
+    } catch (err: any) {
+      feedback.error({ title: "Document not removed", message: err?.message || "The supplier document could not be removed." });
+    } finally {
+      setRemovingDocumentId(null);
+    }
+  }
+
   useEffect(() => { loadOrders(); }, []);
 
   const filteredSearch = search ? products.filter((p) => (p.name || "").toLowerCase().includes(search.toLowerCase())).slice(0, 10) : [];
@@ -7167,6 +7223,52 @@ function AdminPurchases() {
             </div>
           </div>
         </div>
+        <section className="panel" aria-labelledby="purchase-order-documents-title" style={{ marginBottom: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+            <div>
+              <h2 id="purchase-order-documents-title" style={{ margin: 0, fontSize: "1.05rem" }}>Supplier documents</h2>
+              <p className="muted" style={{ margin: ".3rem 0 0" }}>Attach supplier quotes, purchase orders, invoices, or delivery notes. Files stay private to this store.</p>
+            </div>
+            {!viewing.deletedAt && canManagePurchaseDocuments && (
+              <div style={{ display: "flex", gap: ".5rem", alignItems: "end", flexWrap: "wrap" }}>
+                <label className="field" style={{ margin: 0, minWidth: 190 }}>
+                  <span>Document type</span>
+                  <select value={documentType} onChange={(e) => setDocumentType(e.target.value)} disabled={uploadingDocuments}>
+                    <option value="supplier_quote">Supplier quote</option>
+                    <option value="supplier_purchase_order">Supplier purchase order</option>
+                    <option value="invoice">Invoice / tax invoice</option>
+                    <option value="delivery_note">Delivery note</option>
+                  </select>
+                </label>
+                <label className="btn btn-secondary" style={{ cursor: uploadingDocuments ? "wait" : "pointer", opacity: uploadingDocuments ? .65 : 1, minHeight: 40, display: "inline-flex", alignItems: "center", position: "relative", overflow: "hidden" }}>
+                  {uploadingDocuments ? "Uploading…" : "Attach files"}
+                  <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" disabled={uploadingDocuments} onChange={uploadSupplierDocuments} style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }} aria-label="Choose supplier documents" />
+                </label>
+              </div>
+            )}
+          </div>
+          <p className="muted" style={{ fontSize: ".8rem", margin: ".5rem 0 0" }}>PDF, JPEG, or PNG · up to 15 MB per file · 10 active files per order. Documents are scanned when a scanner is configured and checked against their file signatures.</p>
+          {(viewing.documents || []).length > 0 ? (
+            <div className="table-wrap" style={{ marginTop: ".75rem" }}>
+              <table className="data-table">
+                <thead><tr><th>Document</th><th>Type</th><th>Added</th><th>Size</th><th aria-label="Actions"></th></tr></thead>
+                <tbody>{viewing.documents.map((doc: any) => (
+                  <tr key={doc.id}>
+                    <td>{doc.originalName}</td>
+                    <td>{({ supplier_quote: "Supplier quote", supplier_purchase_order: "Supplier purchase order", invoice: "Invoice / tax invoice", delivery_note: "Delivery note" } as Record<string, string>)[doc.documentType] || "Supplier document"}</td>
+                    <td>{new Date(doc.uploadedAt).toLocaleString("en-GB")}</td>
+                    <td>{(doc.sizeBytes / 1024 / 1024).toFixed(2)} MB</td>
+                    <td><div style={{ display: "flex", gap: ".35rem", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                      <RippleButton size="small" variant="ghost" loading={downloadingDocumentId === doc.id} disabled={downloadingDocumentId !== null} onClick={() => downloadSupplierDocument(doc)}>Download</RippleButton>
+                      {!viewing.deletedAt && canManagePurchaseDocuments && <RippleButton size="small" variant="danger" loading={removingDocumentId === doc.id} disabled={removingDocumentId !== null} onClick={() => removeSupplierDocument(doc)}>Remove</RippleButton>}
+                    </div></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <p className="muted" style={{ margin: ".75rem 0 0" }}>No supplier documents attached yet.</p>}
+          {viewing.deletedAt && <p className="muted" style={{ margin: ".75rem 0 0" }}>This order is in Deleted. Its documents remain available to download; restore the order to add or remove documents.</p>}
+        </section>
         <div className="table-wrap">
           <table className="data-table">
             <thead><tr><th>Product</th><th style={{ textAlign: "right" }}>Ordered</th><th style={{ textAlign: "right" }}>Received</th><th style={{ textAlign: "right" }}>Unit Cost</th><th style={{ textAlign: "right" }}>Line Total</th><th>Receive</th></tr></thead>

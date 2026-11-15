@@ -427,11 +427,15 @@ export function isCustomerLoggedIn(): boolean {
 }
 
 export async function downloadPdf(url: string, filename: string, authToken?: string): Promise<void> {
+  const separator = url.includes("?") ? "&" : "?";
+  await downloadFile(`${url}${separator}format=pdf`, filename, authToken);
+}
+
+export async function downloadFile(url: string, filename: string, authToken?: string): Promise<void> {
   const token = authToken || getTokenForRole();
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const separator = url.includes("?") ? "&" : "?";
-  const res = await fetch(`${url}${separator}format=pdf`, { headers, credentials: "include" });
+  const res = await fetch(url, { headers, credentials: "include" });
   if (!res.ok) {
     let errMsg = `Failed (${res.status})`;
     try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
@@ -445,7 +449,7 @@ export async function downloadPdf(url: string, filename: string, authToken?: str
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(blobUrl);
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
 export function requireCustomerLogin(redirect?: string): boolean {
