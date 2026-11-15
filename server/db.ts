@@ -623,7 +623,8 @@ interface AuditEntry {
   action: string;
   entityType: string;
   entityId: string | null;
-  details: string;
+  details: unknown;
+  actorRole: string;
   createdAt: string;
 }
 
@@ -4530,7 +4531,24 @@ async function getAuditLog(opts: {
   if (to) { where += ` AND created_at <= ${push(to)}`; }
   const totalRow = await queryOne(`SELECT COUNT(*)::int AS n FROM audit_log${where}`, params) as any;
   const rows = await queryAll(`SELECT * FROM audit_log${where} ORDER BY created_at DESC LIMIT ${push(limit)} OFFSET ${push(offset)}`, params) as any[];
-  return { entries: rows as AuditEntry[], total: totalRow?.n ?? 0 };
+  const entries: AuditEntry[] = rows.map((row) => {
+    let details: unknown = row.details ?? null;
+    if (typeof details === "string") {
+      try { details = JSON.parse(details); } catch { /* Keep legacy non-JSON details readable. */ }
+    }
+    return {
+      id: Number(row.id),
+      userId: row.user_id == null ? null : Number(row.user_id),
+      userName: String(row.user_name || ""),
+      action: String(row.action || ""),
+      entityType: String(row.entity_type || ""),
+      entityId: row.entity_id == null ? null : String(row.entity_id),
+      details,
+      actorRole: String(row.actor_role || ""),
+      createdAt: String(row.created_at || ""),
+    };
+  });
+  return { entries, total: totalRow?.n ?? 0 };
 }
 
 async function providerHasFeature(providerId: number, feature: string): Promise<boolean> {
