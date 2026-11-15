@@ -66,10 +66,24 @@ async function readPdf(bytes: Uint8Array, progress?: (value: number) => void) {
     data: bytes,
     enableXfa: false,
     useWorkerFetch: false,
+    useSystemFonts: false,
+    maxImageSize: MAX_PAGE_PIXELS,
     stopAtErrors: true,
   });
   const pdf = await task.promise;
   try {
+    // Invoice OCR needs page text and pixels only. Reject embedded files and
+    // document JavaScript rather than carrying those features into processing.
+    const [attachments, javaScriptActions] = await Promise.all([
+      pdf.getAttachments(),
+      pdf.getJSActions(),
+    ]);
+    if (attachments && attachments.size > 0) {
+      throw new Error("This PDF contains embedded files. Remove them and scan a clean invoice PDF.");
+    }
+    if (javaScriptActions && javaScriptActions.size > 0) {
+      throw new Error("This PDF contains JavaScript actions. It cannot be used for invoice scanning.");
+    }
     if (!pdf.numPages || pdf.numPages > MAX_PDF_PAGES) {
       throw new Error(`Use a PDF with 1 to ${MAX_PDF_PAGES} pages for this scan.`);
     }

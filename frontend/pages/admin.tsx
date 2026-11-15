@@ -7181,16 +7181,22 @@ function AdminPurchases() {
     if (!viewing || !files.length) return;
     setUploadingDocuments(true);
     let uploaded = 0;
+    let unscanned = 0;
     try {
       for (const file of files) {
         const formData = new FormData();
         formData.append("documentType", documentType);
         formData.append("file", file);
-        await api(`/api/purchases/${viewing.id}/documents`, { method: "POST", body: formData });
+        const response = await api<{ malwareScan?: "clean" | "unscanned" }>(`/api/purchases/${viewing.id}/documents`, { method: "POST", body: formData });
         uploaded++;
+        if (response.malwareScan === "unscanned") unscanned++;
       }
       await loadOrder(viewing.id);
-      feedback.success({ title: uploaded === 1 ? "Supplier document attached" : "Supplier documents attached", message: `${uploaded} file${uploaded === 1 ? "" : "s"} added to PO #${viewing.id}.` });
+      if (unscanned) {
+        feedback.warning({ title: "Document attached without malware scan", message: `${uploaded} file${uploaded === 1 ? " was" : "s were"} added to PO #${viewing.id}; ${unscanned} passed through because the scanner is offline or not configured. Keep them closed until scanned or otherwise verified.` });
+      } else {
+        feedback.success({ title: uploaded === 1 ? "Supplier document attached" : "Supplier documents attached", message: `${uploaded} file${uploaded === 1 ? "" : "s"} added to PO #${viewing.id} after a clean malware scan.` });
+      }
     } catch (err: any) {
       await loadOrder(viewing.id);
       feedback.error({ title: uploaded ? "Some documents were attached" : "Document not attached", message: uploaded ? `${uploaded} file${uploaded === 1 ? " was" : "s were"} saved. ${err?.message || "The remaining upload failed."}` : err?.message || "The supplier document could not be attached." });
@@ -7313,14 +7319,14 @@ function AdminPurchases() {
                     <option value="delivery_note">Delivery note</option>
                   </select>
                 </label>
-                <label className="btn btn-secondary" style={{ cursor: uploadingDocuments ? "wait" : "pointer", opacity: uploadingDocuments ? .65 : 1, minHeight: 40, display: "inline-flex", alignItems: "center", position: "relative", overflow: "hidden" }}>
-                  {uploadingDocuments ? "Uploading…" : "Attach files"}
-                  <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" disabled={uploadingDocuments} onChange={uploadSupplierDocuments} style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }} aria-label="Choose supplier documents" />
+                <label className="btn btn-secondary" aria-disabled="true" style={{ cursor: "not-allowed", opacity: .55, minHeight: 40, display: "inline-flex", alignItems: "center", position: "relative", overflow: "hidden" }}>
+                  Supplier uploads paused
+                  <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" disabled aria-label="Supplier document uploads paused" />
                 </label>
               </div>
             )}
           </div>
-          <p className="muted" style={{ fontSize: ".8rem", margin: ".5rem 0 0" }}>PDF, JPEG, or PNG · up to 15 MB per file · 10 active files per order. Documents are scanned when a scanner is configured and checked against their file signatures.</p>
+          <p role="note" style={{ fontSize: ".82rem", margin: ".5rem 0 0", color: "var(--warning-text)" }}>Supplier document uploads and downloads are paused until the NAS malware scanner is available. Existing attachments are retained and will be checked before downloads resume.</p>
           {(viewing.documents || []).length > 0 ? (
             <div className="table-wrap" style={{ marginTop: ".75rem" }}>
               <table className="data-table">
@@ -7507,11 +7513,11 @@ function AdminPurchases() {
           </div>
           <section aria-labelledby="supplier-invoice-scan-title" style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "1rem", marginBottom: "1rem", background: "var(--surface)" }}>
             <h2 id="supplier-invoice-scan-title" style={{ fontSize: "1rem", margin: "0 0 .35rem" }}>Prepare lines from an invoice</h2>
-            <p className="muted" style={{ margin: "0 0 .75rem", fontSize: ".84rem" }}>Choose a PDF, JPEG, or PNG with supplier SKU and Qty columns. Scanning runs locally in this browser; the file is not uploaded for OCR. Only exact matches to a catalog barcode/SKU are suggested. Review each line before adding it. This will not create or receive stock.</p>
-            <p role="note" style={{ margin: "0 0 .75rem", padding: ".65rem .75rem", borderRadius: 7, background: "var(--warning-light)", color: "var(--warning-text)", fontSize: ".82rem" }}>This feature extracts invoice text; it is not an antivirus scan. Until required malware scanning is configured, use only synthetic or otherwise trusted invoices for testing.</p>
+            <p className="muted" style={{ margin: "0 0 .75rem", fontSize: ".84rem" }}>Invoice scanning will return when the NAS malware-scanning service is ready. Until then, add purchase-order lines manually.</p>
+            <p role="note" style={{ margin: "0 0 .75rem", padding: ".65rem .75rem", borderRadius: 7, background: "var(--warning-light)", color: "var(--warning-text)", fontSize: ".82rem" }}>This feature is paused so invoice files are not parsed before they receive a malware scan.</p>
             <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: ".5rem" }}>
-              <input type="file" accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" disabled={scanningInvoice} aria-label="Choose supplier invoice to scan" onChange={(event) => { const file = event.target.files?.[0] || null; event.target.value = ""; setInvoiceFile(file); setInvoiceText(""); setInvoiceLines([]); }} />
-              <RippleButton size="small" disabled={!invoiceFile || scanningInvoice} loading={scanningInvoice} onClick={scanSupplierInvoice}>{scanningInvoice ? "Scanning locally" : "Scan invoice"}</RippleButton>
+              <input type="file" accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" disabled aria-label="Invoice scanning paused" />
+              <RippleButton size="small" disabled>{"Invoice scanning paused"}</RippleButton>
               {invoiceFile && <button type="button" className="btn btn-ghost" disabled={scanningInvoice} onClick={clearInvoiceScan}>Clear file</button>}
             </div>
             {invoiceFile && <p className="muted" style={{ fontSize: ".8rem", margin: ".45rem 0 0" }}>Selected: {invoiceFile.name} · {(invoiceFile.size / (1024 * 1024)).toFixed(2)} MB · stays in this browser unless separately attached later.</p>}
