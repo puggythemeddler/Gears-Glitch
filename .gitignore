@@ -57,3 +57,4 @@ control-plane/dist/
 # impeccable-ignore-end
 .vercel
 .env*
+/.playwright-cli/
