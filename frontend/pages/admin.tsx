@@ -6867,14 +6867,14 @@ function AdminPurchases() {
   const [products, setProducts] = useState<any[]>([]);
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [form, setForm] = useState({ supplierName: "", branchId: "", notes: "" });
-  const [formItems, setFormItems] = useState<{ productId: string; productName: string; quantity: number; unitCost: number | "" }[]>([]);
+  const [formItems, setFormItems] = useState<{ productId: string; productName: string; quantity: string; unitCost: number | "" }[]>([]);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [listMode, setListMode] = useState<"active" | "completed" | "deleted">("active");
   const [branchEditId, setBranchEditId] = useState("");
   const [savingBranch, setSavingBranch] = useState(false);
-  const [receiveInputs, setReceiveInputs] = useState<{ [itemId: number]: number }>({});
+  const [receiveInputs, setReceiveInputs] = useState<{ [itemId: number]: string }>({});
   const [receiveSerials, setReceiveSerials] = useState<{ [itemId: number]: string[] }>({});
   const [receiveAssetTags, setReceiveAssetTags] = useState<{ [itemId: number]: string[] }>({});
   const [receiving, setReceiving] = useState<number | "all" | null>(null);
@@ -6922,9 +6922,9 @@ function AdminPurchases() {
       const po = d.order || d;
       setViewing(po);
       setBranchEditId(po.branchId == null ? "" : String(po.branchId));
-      const defaults: { [itemId: number]: number } = {};
+      const defaults: { [itemId: number]: string } = {};
       (po.items || []).forEach((i: any) => {
-        defaults[i.id] = Math.max(0, (i.quantityOrdered || 0) - (i.quantityReceived || 0));
+        defaults[i.id] = String(Math.max(0, (i.quantityOrdered || 0) - (i.quantityReceived || 0)));
       });
       setReceiveInputs(defaults);
     } catch (err: any) { setMsg(err.message); }
@@ -6932,7 +6932,7 @@ function AdminPurchases() {
 
   function addFormItem(p: any) {
     if (formItems.find((i) => i.productId === p.id)) return;
-    setFormItems([...formItems, { productId: p.id, productName: p.name, quantity: 1, unitCost: p.costPrice == null ? "" : Number(p.costPrice) }]);
+    setFormItems([...formItems, { productId: p.id, productName: p.name, quantity: "1", unitCost: p.costPrice == null ? "" : Number(p.costPrice) }]);
     setSearch("");
   }
 
@@ -6940,12 +6940,16 @@ function AdminPurchases() {
 
   function updateFormItem(idx: number, field: string, value: any) {
     const copy = [...formItems];
-    (copy[idx] as any)[field] = field === "quantity" ? Math.max(1, Number(value)) : value === "" ? "" : Number(value);
+    (copy[idx] as any)[field] = field === "quantity" ? value : value === "" ? "" : Number(value);
     setFormItems(copy);
   }
 
   async function createOrder() {
     if (!form.supplierName || !form.branchId || formItems.length === 0) return;
+    if (formItems.some((item) => !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1)) {
+      setMsg("Enter a whole quantity of at least 1 for every purchase-order item.");
+      return;
+    }
     if (formItems.some((item) => item.unitCost === "" || !Number.isFinite(Number(item.unitCost)) || Number(item.unitCost) < 0)) {
       setMsg("Enter the supplier-quoted unit cost for every item before creating this purchase order.");
       return;
@@ -6954,7 +6958,7 @@ function AdminPurchases() {
     try {
       await api("/api/purchases", { method: "POST", body: JSON.stringify({
         supplierName: form.supplierName, branchId: Number(form.branchId), notes: form.notes,
-        items: formItems.map((i) => ({ productId: i.productId, quantityOrdered: i.quantity, unitCost: Number(i.unitCost) })),
+        items: formItems.map((i) => ({ productId: i.productId, quantityOrdered: Number(i.quantity), unitCost: Number(i.unitCost) })),
       })});
       setCreating(false); setForm({ supplierName: "", branchId: "", notes: "" }); setFormItems([]);
       loadOrders();
@@ -7017,8 +7021,11 @@ function AdminPurchases() {
   }
 
   async function receiveItem(itemId: number) {
-    const qty = receiveInputs[itemId];
-    if (qty === undefined || qty < 0) return;
+    const rawQty = receiveInputs[itemId];
+    const item = (viewing?.items || []).find((candidate: any) => candidate.id === itemId);
+    const maxReceive = item ? Math.max(0, item.quantityOrdered - item.quantityReceived) : 0;
+    const qty = rawQty === undefined ? maxReceive : Number(rawQty);
+    if (!Number.isSafeInteger(qty) || qty <= 0 || qty > maxReceive) return;
     setReceiving(itemId);
     try {
       const serials = receiveSerials[itemId] || [];
@@ -7159,7 +7166,9 @@ function AdminPurchases() {
             <tbody>
               {(viewing.items || []).map((i: any) => {
                 const maxReceive = i.quantityOrdered - i.quantityReceived;
-                const inputVal = receiveInputs[i.id] !== undefined ? receiveInputs[i.id] : maxReceive;
+                const inputVal = receiveInputs[i.id] !== undefined ? receiveInputs[i.id] : String(maxReceive);
+                const inputNumber = Number(inputVal);
+                const receiveInputInvalid = inputVal === "" || !Number.isSafeInteger(inputNumber) || inputNumber < 0 || inputNumber > maxReceive;
                 return (
                   <tr key={i.id}>
                     <td>{i.productName}</td>
@@ -7178,25 +7187,28 @@ function AdminPurchases() {
                           <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
                             <input
                               type="number"
+                              step={1}
                               min={0}
                               max={maxReceive}
                               value={inputVal}
-                              onChange={(e) => setReceiveInputs({ ...receiveInputs, [i.id]: Math.min(maxReceive, Math.max(0, Number(e.target.value))) })}
+                              onChange={(e) => setReceiveInputs((previous) => ({ ...previous, [i.id]: e.target.value }))}
+                              aria-label={`Quantity of ${i.productName} to receive (0 to ${maxReceive})`}
                               style={{ width: 60, fontSize: "0.85rem", padding: "0.2rem 0.4rem" }}
                             />
                             <RippleButton
                               size="small"
                               variant="ghost"
                               loading={receiving === i.id}
-                              disabled={receiving !== null || inputVal <= 0}
+                              disabled={receiving !== null || receiveInputInvalid || inputNumber === 0}
                               onClick={() => receiveItem(i.id)}
                             >Save</RippleButton>
                           </div>
+                          {receiveInputInvalid && <small role="status" style={{ color: "var(--warning-text)" }}>Enter a whole number from 0 to {maxReceive}.</small>}
                           {i.serialTracking && (
                             <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", alignItems: "flex-start" }}>
                               <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
                                 <RippleButton size="small" variant="ghost" onClick={() => { setSerialModalItem(i); setSerialInput(""); setAssetTagInput(""); setSerialMsg(""); }}>
-                                  Manufacturer serials ({(receiveSerials[i.id] || []).length}/{Math.max(0, inputVal - i.quantityReceived)})
+                                  Manufacturer serials ({(receiveSerials[i.id] || []).length}/{Math.max(0, inputNumber - i.quantityReceived)})
                                 </RippleButton>
                               </div>
                               {(receiveSerials[i.id] || []).length > 0 && (
@@ -7226,7 +7238,7 @@ function AdminPurchases() {
         </div>
         {serialModalItem && (() => {
           const targetQuantity = receiveInputs[serialModalItem.id] !== undefined ? receiveInputs[serialModalItem.id] : (serialModalItem.quantityOrdered - serialModalItem.quantityReceived);
-          const need = Math.max(0, targetQuantity - serialModalItem.quantityReceived);
+          const need = Math.max(0, Number(targetQuantity) - serialModalItem.quantityReceived);
           const cur = receiveSerials[serialModalItem.id] || [];
           const tags = receiveAssetTags[serialModalItem.id] || [];
           const closeModal = () => { setSerialModalItem(null); setSerialInput(""); setAssetTagInput(""); setSerialMsg(""); };
@@ -7332,7 +7344,10 @@ function AdminPurchases() {
                   {formItems.map((item, idx) => (
                     <tr key={idx}>
                       <td>{item.productName}</td>
-                      <td><input type="number" min="1" value={item.quantity} onChange={(e) => updateFormItem(idx, "quantity", e.target.value)} style={{ width: 60 }} /></td>
+                      <td>
+                        <input type="number" min="1" step="1" inputMode="numeric" aria-label={`Order quantity for ${item.productName}`} value={item.quantity} onChange={(e) => updateFormItem(idx, "quantity", e.target.value)} style={{ width: 76 }} />
+                        {(item.quantity === "" || !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1) && <small role="status" style={{ display: "block", color: "var(--warning-text)" }}>Enter 1 or more.</small>}
+                      </td>
                       <td>
                         <input type="number" min="0" step="0.01" required aria-label={`Supplier unit cost for ${item.productName}`} value={item.unitCost} onChange={(e) => updateFormItem(idx, "unitCost", e.target.value)} style={{ width: 100 }} />
                         {item.unitCost === "" && <small style={{ display: "block", color: "var(--warning-text)" }}>Enter the supplier quote; no catalog cost is saved.</small>}
@@ -7344,7 +7359,7 @@ function AdminPurchases() {
               </table>
             </div>
           )}
-          <RippleButton onClick={createOrder} loading={saving} disabled={!form.supplierName || !form.branchId || branches.length === 0 || formItems.length === 0 || formItems.some((item) => item.unitCost === "")}>Create Purchase Order</RippleButton>
+          <RippleButton onClick={createOrder} loading={saving} disabled={!form.supplierName || !form.branchId || branches.length === 0 || formItems.length === 0 || formItems.some((item) => !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1 || item.unitCost === "")}>Create Purchase Order</RippleButton>
         </div>
       </>
     );
