@@ -579,7 +579,7 @@ export default function AdminPage() {
         ) : (
         <form onSubmit={handleLogin} className="auth-form">
           <div className="field"><label>Username or email<input value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} required /></label></div>
-          <div className="field"><label>Password<input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required /></label></div>
+          <div className="field"><label>Password<input type="password" name="password" autoComplete="current-password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required /></label></div>
           {loginError && <p className="error">{loginError}</p>}
           <RippleButton type="submit" className="btn-block" loading={loginLoading}>Sign in</RippleButton>
           <p style={{ textAlign: "center", marginTop: "0.75rem" }}>
