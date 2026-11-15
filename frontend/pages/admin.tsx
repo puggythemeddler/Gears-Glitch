@@ -787,6 +787,27 @@ export default function AdminPage() {
   );
 }
 
+function formatAuditTimestamp(value: unknown): string {
+  if (!value) return "—";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-KE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Africa/Nairobi",
+  }).format(date);
+}
+
+function formatAuditDetails(value: unknown): string {
+  if (value == null || value === "") return "—";
+  let details = value;
+  if (typeof details === "string") {
+    try { details = JSON.parse(details); } catch { return details; }
+  }
+  if (typeof details === "string") return details;
+  try { return JSON.stringify(details); } catch { return String(details); }
+}
+
 function AdminAuditLog() {
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -817,7 +838,7 @@ function AdminAuditLog() {
 
   function applyFilters() { setPage(0); fetchLog(); }
 
-  const distinctUsers = Array.from(new Set(entries.map((e: any) => e.userName).filter(Boolean))).sort() as string[];
+  const distinctUsers = Array.from(new Set(entries.map((e: any) => e.userName || e.user_name).filter(Boolean))).sort() as string[];
   const distinctActions = Array.from(new Set(entries.map((e: any) => e.action).filter(Boolean))).sort() as string[];
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -845,12 +866,12 @@ function AdminAuditLog() {
             <tbody>
               {entries.map((e: any) => (
                 <tr key={e.id}>
-                  <td style={{ whiteSpace: "nowrap", fontSize: "0.8rem" }}>{new Date(e.createdAt).toLocaleString()}</td>
-                  <td>{e.userName || "?"}</td>
-                  <td style={{ fontSize: "0.85rem" }}>{e.actorRole || "-"}</td>
+                  <td style={{ whiteSpace: "nowrap", fontSize: "0.8rem" }}>{formatAuditTimestamp(e.createdAt ?? e.created_at)}</td>
+                  <td>{e.userName || e.user_name || "Unknown user"}</td>
+                  <td style={{ fontSize: "0.85rem" }}>{e.actorRole || e.actor_role || "—"}</td>
                   <td><span style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{e.action}</span></td>
-                  <td style={{ fontSize: "0.85rem" }}>{e.entityType}:{e.entityId}</td>
-                  <td style={{ fontSize: "0.8rem", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis" }}>{e.details ? JSON.stringify(e.details) : "-"}</td>
+                  <td style={{ fontSize: "0.85rem" }}>{[e.entityType || e.entity_type, e.entityId ?? e.entity_id].filter((part) => part != null && part !== "").join(" #") || "—"}</td>
+                  <td style={{ fontSize: "0.8rem", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis" }}>{formatAuditDetails(e.details)}</td>
                 </tr>
               ))}
               {entries.length === 0 && <tr><td colSpan={6}><EmptyState icon="audit" title="No log entries" description="No audit trail entries match the current filters." /></td></tr>}
