@@ -426,8 +426,8 @@ export function isCustomerLoggedIn(): boolean {
   return getRole() === "customer";
 }
 
-export async function downloadPdf(url: string, filename: string): Promise<void> {
-  const token = getTokenForRole();
+export async function downloadPdf(url: string, filename: string, authToken?: string): Promise<void> {
+  const token = authToken || getTokenForRole();
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const separator = url.includes("?") ? "&" : "?";

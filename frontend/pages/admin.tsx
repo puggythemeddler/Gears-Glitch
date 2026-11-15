@@ -7089,7 +7089,7 @@ function AdminPurchases() {
     try {
       const r = await api<{ token: string }>(`/api/admin/purchase-pdf-token/${id}`, { method: "POST" });
       const filename = `${viewing?.status === "received" ? "goods-received-voucher" : "purchase-order"}-${id}.pdf`;
-      await downloadPdf(`/api/purchases/${id}/pdf?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, filename);
+      await downloadPdf(`/api/purchases/${id}/pdf`, filename, r.token);
     } catch (err: any) {
       feedback.error({ title: "Purchase order not downloaded", message: err?.message || "The PDF could not be generated. Please try again." });
     } finally {
