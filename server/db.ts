@@ -963,11 +963,11 @@ async function ensureDefaultSettings(): Promise<void> {
   }
 }
 
-// Demo/sample data (the default category taxonomy, demo catalog, and demo
-// provider/customer logins) is opt-in via SEED_DEMO_DATA. New client stores
-// start empty; set SEED_DEMO_DATA=1 ("true"/"yes"/"on") on a demo/dev instance
-// to seed the samples.
+// Demo/sample data is available only on non-production instances and remains
+// opt-in via SEED_DEMO_DATA. New client stores start empty. Demo logins also
+// require explicit demo-only passwords; no reusable credentials ship in code.
 function demoSeedEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
   const v = String(process.env.SEED_DEMO_DATA || "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
@@ -1033,9 +1033,11 @@ async function grantAllActiveBranches(userId: number): Promise<void> {
 
 async function seedDemoProvider(): Promise<void> {
   if (!demoSeedEnabled()) return;
+  const password = process.env.DEMO_PROVIDER_PASSWORD || "";
+  if (!password) { console.warn("[seed] Demo provider account skipped: DEMO_PROVIDER_PASSWORD is not set."); return; }
   const demoEmail = "provider@gearandglitch.com";
   if (await findProviderByEmail(demoEmail)) return;
-  const pwdHash = await bcrypt.hash("provider123", 10);
+  const pwdHash = await bcrypt.hash(password, 10);
   const result = await query("INSERT INTO providers (company_name, contact_name, email, phone, password_hash, status) VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id", ["Demo Company", "Demo Provider", demoEmail, "0123456789", pwdHash]);
   const providerId = result.rows[0].id;
   const plan = await getSubscriptionPlan("starter");
@@ -1046,9 +1048,11 @@ async function seedDemoProvider(): Promise<void> {
 
 async function seedDemoCustomer(): Promise<void> {
   if (!demoSeedEnabled()) return;
+  const password = process.env.DEMO_CUSTOMER_PASSWORD || "";
+  if (!password) { console.warn("[seed] Demo customer account skipped: DEMO_CUSTOMER_PASSWORD is not set."); return; }
   const demoEmail = "customer@gearandglitch.com";
   if (await findCustomerByEmail(demoEmail)) return;
-  const pwdHash = await bcrypt.hash("customer123", 10);
+  const pwdHash = await bcrypt.hash(password, 10);
   await query("INSERT INTO customers (name, email, password_hash) VALUES ($1, $2, $3)", ["Demo Customer", demoEmail, pwdHash]);
 }
 

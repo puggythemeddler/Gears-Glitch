@@ -67,7 +67,7 @@
 - `server/db.ts` gates demo seeding behind `SEED_DEMO_DATA`; the README states provider/customer demo accounts and demo catalog are not seeded in production unless explicitly enabled.
 - `server/admin-provisioning.ts` refuses to create a production admin when `ADMIN_PASSWORD` is missing. `server/db.ts` similarly skips production technician creation if `TECH_PASSWORD` is missing.
 - Control-plane `seedDefaultAdmin()` uses `CP_ADMIN_PASSWORD` if configured; otherwise it generates a random 16-byte base64url password and logs it once during initial account creation (`control-plane/server/index.ts:688–703`). This does not reset an existing account.
-- `control-plane/README.md` previously claimed the password defaulted to the fixed value `gearglitch2024`. The implementation does not do that. The README now describes the random bootstrap password and the one-time behavior accurately.
+- `control-plane/README.md` previously claimed the password defaulted to the fixed value `[redacted historical credential]`. The implementation does not do that. The README now describes the random bootstrap password and the one-time behavior accurately.
 
 **Status:** The safe seeding controls are present in source. The running production environment, existing admin identities, whether any old tenant contains demo catalog rows, and whether bootstrap credentials were rotated cannot be verified from this workspace. Do not delete accounts or catalog records without an operator-reviewed inventory.
 

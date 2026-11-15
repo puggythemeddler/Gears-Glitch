@@ -126,17 +126,18 @@ npm run dev
 
 Open **http://localhost:3000** in your browser.
 
-> On first run the server creates all tables and seeds default admin/technician accounts automatically.
+> On first run the server creates tables. Set `ADMIN_PASSWORD` and `TECH_PASSWORD` to create the initial staff accounts. Sample catalog data requires `SEED_DEMO_DATA=1` outside production; sample provider/customer accounts additionally require `DEMO_PROVIDER_PASSWORD` and `DEMO_CUSTOMER_PASSWORD`.
 
 ---
 
-## 6. Default Login
+## 6. Initial Login
 
-| Role | URL | Email | Password |
-|------|-----|-------|----------|
-| Admin | `/admin` | `admin@gearandglitch.com` | (whatever you set in `.env`) |
-| Technician | `/admin` | `tech@gearandglitch.com` | (whatever you set in `.env`) |
-| Customer | `/dashboard` | `customer@gearandglitch.com` | `customer123` (dev only) |
+| Role | URL | Email | Credential setup |
+|------|-----|-------|------------------|
+| Admin | `/admin` | `admin@gearandglitch.com` | Set `ADMIN_PASSWORD` before first production boot. Existing passwords are not changed on restart. |
+| Technician | `/admin` | `tech@gearandglitch.com` | Set `TECH_PASSWORD` before first account creation. |
+| Demo customer | `/dashboard` | `customer@gearandglitch.com` | Available only when demo seeding is enabled outside production and `DEMO_CUSTOMER_PASSWORD` is set. |
+| Demo provider | `/provider/login` | `provider@gearandglitch.com` | Available only when demo seeding is enabled outside production and `DEMO_PROVIDER_PASSWORD` is set. |
 
 ---
 

@@ -7,9 +7,9 @@ promotion is a deliberate manual step. All three services have `autoDeploy: true
 
 ## 0. Before deploying
 
-- [ ] **Rotate `JWT_SECRET`** on the backend service. The old one was short (`Livid@50` — do not
-      reuse/echo it). Set a strong value (`openssl rand -hex 32`). The server throws at boot if
-      unset or default.
+- [ ] **Rotate `JWT_SECRET`** on the backend service if the historical short value is still active. Do not record the previous value in this checklist. Set a strong value (`openssl rand -hex 32`). The server throws at boot if unset or default.
+
+
 - [ ] Confirm you have **Render free-instance capacity** for the backend (each new reseller
       client = its own additional free Render service).
 
