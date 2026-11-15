@@ -459,6 +459,7 @@ import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, 
 import { publicBaseUrl } from "./public-url";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
 import { validateLayoutConfig } from "./template-validate";
+import { isSafeStudioLink } from "./studio-input-validation";
 import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, uploadProductImport, uploadPurchaseOrderDocument, scanPurchaseOrderDocument, scanProductImportBuffer, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes } from "./upload";
 import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
 import { MAX_PRODUCT_IMAGES, MAX_REPAIR_IMAGES, withinImageLimit, productImageLimitMessage, repairImageLimitMessage } from "./image-limits";
@@ -1586,7 +1587,15 @@ app.put("/api/admin/storefront-layout", adminAuthMiddleware, requirePermission("
   const { layout, banners, features, hero, theme, themeCustom, mascot } = req.body || {};
   if (banners !== undefined && !isArr(banners)) { res.status(400).json({ error: "banners must be an array." }); return; }
   if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "features must be an array." }); return; }
-  if (hero !== undefined && (typeof hero !== "object" || hero === null)) { res.status(400).json({ error: "hero must be an object." }); return; }
+  if (hero !== undefined && (typeof hero !== "object" || hero === null || Array.isArray(hero))) { res.status(400).json({ error: "hero must be an object." }); return; }
+  if (hero !== undefined) {
+    for (const key of ["badgeLink", "shopNowLink", "browseLink", "ctaLink"]) {
+      const value = hero[key];
+      if (value !== undefined && value !== null && value !== "" && !isSafeStudioLink(value)) {
+        res.status(400).json({ error: `hero.${key} must be a safe relative, HTTP/HTTPS, or contact link.` }); return;
+      }
+    }
+  }
   if (theme !== undefined && (typeof theme !== "string" || !STORE_THEMES.includes(theme))) { res.status(400).json({ error: "Invalid theme. Choose one of: " + STORE_THEMES.join(", ") + "." }); return; }
   if (themeCustom !== undefined && (typeof themeCustom !== "object" || themeCustom === null)) { res.status(400).json({ error: "themeCustom must be an object." }); return; }
   if (mascot !== undefined && (typeof mascot !== "string" || !STORE_MASCOTS.includes(mascot as typeof STORE_MASCOTS[number]))) { res.status(400).json({ error: "Invalid mascot. Choose one from the storefront mascot library." }); return; }
@@ -2095,6 +2104,23 @@ app.get("/api/settings/footer-config", asyncHandler(async (_req: Request, res: R
 
 app.put("/api/settings/footer-config", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
   const { footerConfig } = req.body || {};
+  if (footerConfig !== null && (typeof footerConfig !== "object" || Array.isArray(footerConfig))) { res.status(400).json({ error: "footerConfig must be an object or null." }); return; }
+  if (footerConfig && JSON.stringify(footerConfig).length > 24 * 1024) { res.status(400).json({ error: "footerConfig is too large." }); return; }
+  if (footerConfig?.columns !== undefined) {
+    if (!Array.isArray(footerConfig.columns) || footerConfig.columns.length > 12) { res.status(400).json({ error: "footerConfig.columns must contain at most 12 columns." }); return; }
+    for (let columnIndex = 0; columnIndex < footerConfig.columns.length; columnIndex++) {
+      const column = footerConfig.columns[columnIndex];
+      if (!column || typeof column !== "object" || Array.isArray(column)) { res.status(400).json({ error: `footerConfig.columns[${columnIndex}] must be an object.` }); return; }
+      if (column.title !== undefined && (typeof column.title !== "string" || column.title.length > 100)) { res.status(400).json({ error: `footerConfig.columns[${columnIndex}].title must be 100 characters or fewer.` }); return; }
+      if (column.links !== undefined && (!Array.isArray(column.links) || column.links.length > 30)) { res.status(400).json({ error: `footerConfig.columns[${columnIndex}].links must contain at most 30 links.` }); return; }
+      for (let linkIndex = 0; linkIndex < (column.links || []).length; linkIndex++) {
+        const link = column.links[linkIndex];
+        if (!link || typeof link !== "object" || Array.isArray(link)) { res.status(400).json({ error: `footerConfig.columns[${columnIndex}].links[${linkIndex}] must be an object.` }); return; }
+        if (link.label !== undefined && (typeof link.label !== "string" || link.label.length > 120)) { res.status(400).json({ error: `Footer link labels must be 120 characters or fewer.` }); return; }
+        if (typeof link.href !== "string" || !isSafeStudioLink(link.href)) { res.status(400).json({ error: `footerConfig.columns[${columnIndex}].links[${linkIndex}].href must be a safe relative, HTTP/HTTPS, or contact link.` }); return; }
+      }
+    }
+  }
   await setStoreSetting("footer_config", JSON.stringify(footerConfig));
   res.json({ ok: true });
 }));

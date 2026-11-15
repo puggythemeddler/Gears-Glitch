@@ -117,8 +117,10 @@ export function validateLayoutConfig(config: unknown): string | null {
       const error = validateOptionalImage(config.hero, key, "config.hero");
       if (error) return error;
     }
-    const heroLinkError = validateOptionalLink(config.hero, "ctaLink", "config.hero");
-    if (heroLinkError) return heroLinkError;
+    for (const key of ["ctaLink", "badgeLink", "shopNowLink", "browseLink"]) {
+      const heroLinkError = validateOptionalLink(config.hero, key, "config.hero");
+      if (heroLinkError) return heroLinkError;
+    }
     if (config.hero.buttons !== undefined) {
       if (!Array.isArray(config.hero.buttons)) return "config.hero.buttons must be an array.";
       for (let i = 0; i < config.hero.buttons.length; i++) {

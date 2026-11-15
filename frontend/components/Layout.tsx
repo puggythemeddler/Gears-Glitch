@@ -9,6 +9,7 @@ import CurrencySelector from "./CurrencySelector";
 import MarqueeBanner from "./MarqueeBanner";
 import Icon from "./icons";
 import { Media } from "./Media";
+import { normalizeHref } from "@/lib/links";
 import { useFeature } from "@/lib/features";
 import { getStorefrontCategories, getStorefrontGroups } from "@/lib/storefront-data";
 import type { ProductGroup } from "@/lib/types";
@@ -101,7 +102,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   }, []);
 
   const resolvedNavLinks = (() => {
-    const normalized = navLinks.map((l: any) => ({ id: l.id, label: l.label, href: l.href || "/" + l.id }));
+    const normalized = navLinks.map((l: any) => ({ id: l.id, label: l.label, href: normalizeHref(l.href || "/" + l.id, "/" + l.id) }));
     if (!categoriesLoaded) return normalized;
     const catHrefs = new Set(categories.map((c) => "/" + c.id));
     const kept = normalized.filter((l) => STATIC_NAV_IDS.has(l.id) || catHrefs.has(l.href) || categories.some((c) => c.id === l.id));
@@ -582,10 +583,10 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                   <div className="footer-col-title">{col.title}</div>
                   <div className="footer-col-links">
                     {(col.links || []).map((link: any, li: number) => {
-                      const href = typeof link?.href === "string" ? link.href.trim() : "";
+                      const href = normalizeHref(typeof link?.href === "string" ? link.href : "");
                       if (!href || href === "#") return null;
                       const label = link.label || href;
-                      const external = /^(https?:)?\/\//i.test(href);
+                      const external = /^[a-z][a-z0-9+.-]*:/i.test(href);
                       return external ? (
                         <a key={li} href={href} className="footer-link" target="_blank" rel="noopener noreferrer">{label}</a>
                       ) : (
