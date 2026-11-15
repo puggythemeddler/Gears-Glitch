@@ -238,6 +238,10 @@ import {
   getBranchFeatures,
   markExpiredSubscriptions,
   createStockTransfer,
+  createStockTransferSheet,
+  dispatchStockTransferSheet,
+  receiveStockTransferSheet,
+  rejectStockTransferSheet,
   getStockTransfer,
   listStockTransfers,
   completeStockTransfer,
@@ -739,6 +743,10 @@ defineAudit("/api/stock/:productId", "stock", { action: "level_updated", method:
 defineAudit("/api/stock-transfers", "stock_transfer", { method: "POST" });
 defineAudit("/api/stock-transfers/:id/complete", "stock_transfer", { action: "completed", method: "POST" });
 defineAudit("/api/stock-transfers/:id/reject", "stock_transfer", { action: "rejected", method: "POST" });
+defineAudit("/api/stock-transfer-sheets", "stock_transfer_sheet", { method: "POST" });
+defineAudit("/api/stock-transfer-sheets/:batchId/dispatch", "stock_transfer_sheet", { action: "dispatched", method: "POST" });
+defineAudit("/api/stock-transfer-sheets/:batchId/receive", "stock_transfer_sheet", { action: "received", method: "POST" });
+defineAudit("/api/stock-transfer-sheets/:batchId/reject", "stock_transfer_sheet", { action: "rejected", method: "POST" });
 // Serials
 defineAudit("/api/serials", "serial", { method: "POST" });
 defineAudit("/api/serials/generate", "serial", { action: "generated", method: "POST" });
@@ -2515,6 +2523,7 @@ app.put("/api/admin/stock/transfer/:id/complete", ownerAuthMiddleware, requirePe
   const id = parseInt(String(req.params.id), 10);
   const transfer = await getStockTransfer(id);
   if (!transfer) return res.status(404).json({ error: "Transfer not found." });
+  if (transfer.batchId) return res.status(409).json({ error: "This line belongs to a transfer sheet. Use the sheet controls so all products move together." });
   if ((await authorizeStockBranch(req, res, Number(transfer.fromBranchId))) === undefined) return;
   if ((await authorizeStockBranch(req, res, Number(transfer.toBranchId))) === undefined) return;
   const result = await completeStockTransfer(id, Number((req as any).user?.sub));
@@ -7015,10 +7024,67 @@ app.post("/api/stock-transfers", adminAuthMiddleware, requirePermission("stock:t
   } catch (err: any) { res.status(409).json({ error: err?.message || "Transfer could not be reserved." }); }
 }));
 
+app.post("/api/stock-transfer-sheets", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
+  const { fromBranchId, toBranchId, items, notes } = req.body || {};
+  if (!fromBranchId || !toBranchId || !Array.isArray(items) || !items.length || items.length > 100) {
+    res.status(400).json({ error: "Choose source and destination branches and add 1 to 100 product lines." }); return;
+  }
+  if (!isPosInt(Number(fromBranchId)) || !isPosInt(Number(toBranchId))) { res.status(400).json({ error: "Branch IDs must be positive integers." }); return; }
+  if (Number(fromBranchId) === Number(toBranchId)) { res.status(400).json({ error: "Source and destination branches must be different." }); return; }
+  if (notes !== undefined && !isStr(notes)) { res.status(400).json({ error: "Notes must be text." }); return; }
+  if (items.some((item: any) => !item || !isStr(item.productId) || !isPosInt(Number(item.quantity)))) {
+    res.status(400).json({ error: "Every line needs a valid product ID and a positive whole-number quantity." }); return;
+  }
+  if ((await authorizeStockBranch(req, res, Number(fromBranchId))) === undefined) return;
+  const destination = await getBranch(Number(toBranchId));
+  if (!destination || !destination.isActive) { res.status(400).json({ error: "Choose an active destination branch." }); return; }
+  try {
+    const normalizedItems = items.map((item: any) => ({ productId: String(item.productId), quantity: Number(item.quantity) }));
+    const sheet = await createStockTransferSheet({ fromBranchId: Number(fromBranchId), toBranchId: Number(toBranchId), items: normalizedItems, notes, createdBy: (req as any).user?.sub });
+    res.status(201).json(sheet);
+  } catch (err: any) { res.status(409).json({ error: err?.message || "Transfer sheet could not be reserved." }); }
+}));
+
+app.post("/api/stock-transfer-sheets/:batchId/dispatch", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
+  const batchId = String(req.params.batchId);
+  const lines = (await listStockTransfers()).filter((transfer: any) => transfer.batchId === batchId);
+  if (!lines.length) { res.status(404).json({ error: "Transfer sheet not found." }); return; }
+  const notes = String(req.body?.notes || "").trim();
+  if (notes.length > 1000) { res.status(400).json({ error: "Dispatch notes must be at most 1000 characters." }); return; }
+  if ((await authorizeStockBranch(req, res, Number(lines[0].fromBranchId))) === undefined) return;
+  const result = await dispatchStockTransferSheet(batchId, Number((req as any).user?.sub), notes);
+  if (!result.ok) { res.status(409).json({ error: result.error || "Transfer sheet could not be dispatched." }); return; }
+  res.json({ ok: true, status: "in_transit" });
+}));
+
+app.post("/api/stock-transfer-sheets/:batchId/receive", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
+  const batchId = String(req.params.batchId);
+  const lines = (await listStockTransfers()).filter((transfer: any) => transfer.batchId === batchId);
+  if (!lines.length) { res.status(404).json({ error: "Transfer sheet not found." }); return; }
+  const notes = String(req.body?.notes || "").trim();
+  if (notes.length > 1000) { res.status(400).json({ error: "Receipt notes must be at most 1000 characters." }); return; }
+  if ((await authorizeStockBranch(req, res, Number(lines[0].toBranchId))) === undefined) return;
+  const result = await receiveStockTransferSheet(batchId, Number((req as any).user?.sub), notes);
+  if (!result.ok) { res.status(409).json({ error: result.error || "Transfer sheet could not be received." }); return; }
+  res.json({ ok: true, status: "completed" });
+}));
+
+app.post("/api/stock-transfer-sheets/:batchId/reject", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
+  const batchId = String(req.params.batchId);
+  const lines = (await listStockTransfers()).filter((transfer: any) => transfer.batchId === batchId);
+  if (!lines.length) { res.status(404).json({ error: "Transfer sheet not found." }); return; }
+  const user = (req as any).user || {};
+  const allowed = new Set((await getUserBranches(Number(user.sub), String(user.role || ""))).map((branch) => branch.id));
+  if (!allowed.has(Number(lines[0].fromBranchId)) && !allowed.has(Number(lines[0].toBranchId))) { res.status(403).json({ error: "Your account is not assigned to either branch on this transfer sheet." }); return; }
+  if (!(await rejectStockTransferSheet(batchId))) { res.status(409).json({ error: "Transfer sheet is no longer pending." }); return; }
+  res.json({ ok: true });
+}));
+
 app.post("/api/stock-transfers/:id/dispatch", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const transfer = await getStockTransfer(id);
   if (!transfer) { res.status(404).json({ error: "Transfer not found." }); return; }
+  if (transfer.batchId) { res.status(409).json({ error: "This line belongs to a transfer sheet. Dispatch the whole sheet instead." }); return; }
   if ((await authorizeStockBranch(req, res, Number(transfer.fromBranchId))) === undefined) return;
   const notes = String(req.body?.notes || "").trim();
   if (notes.length > 1000) { res.status(400).json({ error: "Dispatch notes must be at most 1000 characters." }); return; }
@@ -7031,6 +7097,7 @@ app.post("/api/stock-transfers/:id/receive", adminAuthMiddleware, requirePermiss
   const id = Number(req.params.id);
   const transfer = await getStockTransfer(id);
   if (!transfer) { res.status(404).json({ error: "Transfer not found." }); return; }
+  if (transfer.batchId) { res.status(409).json({ error: "This line belongs to a transfer sheet. Receive the whole sheet instead." }); return; }
   if ((await authorizeStockBranch(req, res, Number(transfer.toBranchId))) === undefined) return;
   const notes = String(req.body?.notes || "").trim();
   if (notes.length > 1000) { res.status(400).json({ error: "Receipt notes must be at most 1000 characters." }); return; }
@@ -7042,6 +7109,7 @@ app.post("/api/stock-transfers/:id/receive", adminAuthMiddleware, requirePermiss
 app.post("/api/stock-transfers/:id/reject", adminAuthMiddleware, requirePermission("stock:transfer"), asyncHandler(async (req: Request, res: Response) => {
   const transfer = await getStockTransfer(Number(req.params.id));
   if (!transfer) { res.status(404).json({ error: "Transfer not found." }); return; }
+  if (transfer.batchId) { res.status(409).json({ error: "This line belongs to a transfer sheet. Reject the whole sheet instead." }); return; }
   const user = (req as any).user || {};
   const allowed = new Set((await getUserBranches(Number(user.sub), String(user.role || ""))).map((b) => b.id));
   if (!allowed.has(Number(transfer.fromBranchId)) && !allowed.has(Number(transfer.toBranchId))) { res.status(403).json({ error: "Your account is not assigned to either branch on this transfer." }); return; }
