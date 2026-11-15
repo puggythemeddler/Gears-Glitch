@@ -23,8 +23,9 @@ regime until a qualified professional has reviewed and approved the final text.
    non-essential loads before consent. **No trackers are currently wired.**
 4. Confirm the consent model meets the standard in the target jurisdiction
    (e.g. opt-in vs opt-out, withdrawal, records of consent).
-5. Add the two links to every active storefront layout template's footer, not
-   just the default. The banner links are already template-independent.
+5. Keep the two links in every active storefront layout footer. The default,
+   Amazon, and Jumia footers now link both pages; the banner links are also
+   template-independent. Verify any future layout/footer changes preserve them.
 6. Obtain a written sign-off from the reviewing lawyer and record the date.
 
 ## What this repository does and does not do

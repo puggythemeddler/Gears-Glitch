@@ -106,7 +106,13 @@ export function Footer({ settings }: { settings: any }) {
   return (
     <footer className="site-footer" style={{ marginTop: "3rem" }}>
       <div className="footer-inner">
-        <p>&copy; {new Date().getFullYear()} {settings?.storeName || "Store"}. All rights reserved.</p>
+        <div className="footer-bottom">
+          <span>&copy; {new Date().getFullYear()} {settings?.storeName || "Store"}. All rights reserved.</span>
+          <nav aria-label="Legal" style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+            <Link href="/privacy" className="footer-link">Privacy Policy</Link>
+            <Link href="/terms" className="footer-link">Terms of Service</Link>
+          </nav>
+        </div>
       </div>
     </footer>
   );
