@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type { Product } from "@/lib/types";
+import { normalizeHref } from "@/lib/links";
 import CurrencySelector from "@/components/CurrencySelector";
 import { formatPrice } from "./shared";
 import { Media } from "@/components/Media";
@@ -119,7 +120,7 @@ export function HomePage({ products, categories, banners, hero }: {
   const heroTitle = hero?.headline ? `${hero.headline} ${hero.headlineAccent || ""}` : "";
   const heroSub = hero?.subtitle || "";
   const heroCtaLabel = hero?.shopNowLabel || "Shop Now";
-  const heroCtaLink = hero?.shopNowLink || (categories[0] ? `/${categories[0].id}` : "/");
+  const heroCtaLink = normalizeHref(typeof hero?.shopNowLink === "string" ? hero.shopNowLink : "", categories[0] ? `/${categories[0].id}` : "/");
   const slides = banners.length > 0 ? banners : [
     { title: heroTitle || "Flash Sale Today", subtitle: heroSub || "Up to 50% off on select laptops" },
     { title: "New Arrivals", subtitle: "Latest tech just landed" },

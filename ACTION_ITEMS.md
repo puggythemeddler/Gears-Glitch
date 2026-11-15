@@ -113,7 +113,7 @@ This inventory is based on the updated recovery plan supplied on 2026-10-25. The
 - [ ] **S05 Backup and disaster recovery:** verify independent backup storage, retention, recovery objectives, restore evidence, and drill schedule. NAS requirement from operator (2026-11-08): run one backup per day only when the NAS is available while the operator is home, scheduling it any time from 21:00 through 06:00 Africa/Nairobi; define a next-window retry and success/failure alert when configuring it. NAS setup and access are pending.
 - [ ] **S06 Production data hygiene:** define a safe review for default credentials, test accounts, fixtures, and privileged accounts; do not auto-delete records.
 - [ ] **S07 Legal readiness:** review privacy, terms, cookies, retention, export, and deletion documents; identify placeholders and required legal decisions.
-- [ ] **S08 Content safety:** verify validation, escaping, and safe rendering for Website Studio, CMS, About Us, marketing, and dynamic-layout content.
+- [~] **S08 Content safety — link hardening added; broader verification pending:** Website Studio/CMS/About text is rendered as React text, and the dynamic layout already normalizes section links. This pass also validates saved hero/footer links server-side and normalizes persisted header/footer/legacy hero destinations at render time. Still verify existing saved configurations, marketing/theme paths, image sources, and deployed behavior before closing this item.
 
 ### P1 — WhatsApp and business operations
 

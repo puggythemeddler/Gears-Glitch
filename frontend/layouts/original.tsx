@@ -94,14 +94,14 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
   const badgeText = typeof hero?.badgeText === "string" ? hero.badgeText.trim() : "";
   const badgeActive = hero?.badgeActive !== false && badgeText.length > 0;
-  const badgeLink = hero?.badgeLink || "";
+  const badgeLink = normalizeHref(typeof hero?.badgeLink === "string" ? hero.badgeLink : "");
 
   const shopNowLabel = hero?.shopNowLabel || "Shop products";
-  const shopNowLink = hero?.shopNowLink || "/#catalogue";
+  const shopNowLink = normalizeHref(typeof hero?.shopNowLink === "string" ? hero.shopNowLink : "", "/#catalogue");
   const configuredBrowseLink = typeof hero?.browseLink === "string" ? hero.browseLink.trim() : "";
   const usesLegacyCategoryLink = configuredBrowseLink === "/#categories" || configuredBrowseLink === "/categories";
   const browseLabel = usesLegacyCategoryLink ? "Book a repair" : hero?.browseLabel || "Book a repair";
-  const browseLink = usesLegacyCategoryLink ? "/repairs" : configuredBrowseLink || "/repairs";
+  const browseLink = usesLegacyCategoryLink ? "/repairs" : normalizeHref(configuredBrowseLink, "/repairs");
 
   const showWhatsApp = hero?.showWhatsApp !== false;
   const waPhone = settings?.storePhone ? settings.storePhone.replace(/[^0-9]/g, "") : "";
@@ -131,7 +131,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
           </h1>
 
           {badgeActive && (
-            badgeLink ? (
+            badgeLink !== "#" ? (
               <a href={badgeLink} className="hero-promotion">
                 {badgeText}
               </a>
