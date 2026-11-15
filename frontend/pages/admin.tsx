@@ -40,7 +40,7 @@ import AdminFinancing from "@/components/admin/AdminFinancing";
 import BranchPicker from "@/components/BranchPicker";
 import { setBranchState, type BranchOption } from "@/lib/branches";
 import { reportDateRange, reportToday, reportYearStart, type ReportRangePreset } from "@/lib/reporting-date";
-import { PageHead, DataTable, Tabs, StatusBadge } from "@/components/ui";
+import { PageHead, DataTable, Tabs, StatusBadge, Modal } from "@/components/ui";
 import { isSoftwareLicenseProduct } from "@/lib/repairLicenseProducts";
 
 export type AdminView = "dashboard" | "products" | "price-list" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
@@ -6191,6 +6191,7 @@ function AdminStockTransfers() {
   const [lines, setLines] = useState<{ rowId: number; productId: string; quantity: string }[]>([{ rowId: 1, productId: "", quantity: "" }]);
   const [nextLineId, setNextLineId] = useState(2);
   const [creating, setCreating] = useState(false);
+  const [actingSheet, setActingSheet] = useState<string | null>(null);
   const [sourceStock, setSourceStock] = useState<Record<string, { onHand: number; reserved: number; available: number }>>({});
   const [destStock, setDestStock] = useState<Record<string, number>>({});
   const [loadingStockCheck, setLoadingStockCheck] = useState(false);
@@ -6202,6 +6203,11 @@ function AdminStockTransfers() {
 
   const selectedProductIds = [...new Set(lines.map((line) => line.productId).filter(Boolean))];
   const selectedProductKey = selectedProductIds.join("|");
+  const formIsValid = Boolean(
+    sheetForm.fromBranchId && sheetForm.toBranchId && sheetForm.fromBranchId !== sheetForm.toBranchId &&
+    lines.length > 0 && lines.every((line) => line.productId && Number.isInteger(Number(line.quantity)) && Number(line.quantity) > 0 &&
+      sourceStock[line.productId] && Number(line.quantity) <= sourceStock[line.productId].available)
+  );
 
   useEffect(() => {
     if (!sheetForm.fromBranchId || !selectedProductIds.length) { setSourceStock({}); setLoadingStockCheck(false); return; }
@@ -6260,24 +6266,27 @@ function AdminStockTransfers() {
   }
 
   async function dispatchSheet(sheet: any) {
+    setActingSheet(sheet.key);
     try {
       await api(sheet.batchId ? `/api/stock-transfer-sheets/${sheet.batchId}/dispatch` : `/api/stock-transfers/${sheet.lines[0].id}/dispatch`, { method: "POST" });
       refetch(); feedback.success("Transfer sheet dispatched", "All products were dispatched together. The destination branch can confirm receipt.");
-    } catch (err: any) { feedback.error(err.message); }
+    } catch (err: any) { feedback.error(err.message); } finally { setActingSheet(null); }
   }
 
   async function receiveSheet(sheet: any) {
+    setActingSheet(sheet.key);
     try {
       await api(sheet.batchId ? `/api/stock-transfer-sheets/${sheet.batchId}/receive` : `/api/stock-transfers/${sheet.lines[0].id}/receive`, { method: "POST" });
       refetch(); feedback.success("Transfer sheet received", "All products were added to destination stock.");
-    } catch (err: any) { feedback.error(err.message); }
+    } catch (err: any) { feedback.error(err.message); } finally { setActingSheet(null); }
   }
 
   async function rejectSheet(sheet: any) {
+    setActingSheet(sheet.key);
     try {
       await api(sheet.batchId ? `/api/stock-transfer-sheets/${sheet.batchId}/reject` : `/api/stock-transfers/${sheet.lines[0].id}/reject`, { method: "POST" });
       refetch(); feedback.success("Transfer sheet rejected");
-    } catch (err: any) { feedback.error(err.message); }
+    } catch (err: any) { feedback.error(err.message); } finally { setActingSheet(null); }
   }
 
   const transferSheets = Object.values((transfers as any[]).reduce((groups: Record<string, any>, transfer: any) => {
@@ -6294,84 +6303,99 @@ function AdminStockTransfers() {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Stock Transfers</h1>
-        <RippleButton size="small" onClick={() => setShowForm(!showForm)}>{showForm ? "Cancel" : "+ New Transfer"}</RippleButton>
+        <RippleButton size="small" onClick={() => setShowForm(true)}>+ New Transfer</RippleButton>
       </div>
 
-      {showForm && (
-        <div className="panel" style={{ marginBottom: "1rem" }}>
-          <h3 style={{ marginTop: 0 }}>New Transfer Sheet</h3>
-          <p style={{ color: "var(--text-secondary)", marginTop: "-0.25rem" }}>Move several products between the same branches. Stock is checked for every line, and the sheet dispatches and receives as one operation.</p>
-          <form onSubmit={createTransfer}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem" }}>
-              <div className="field"><label>From Branch<select value={sheetForm.fromBranchId} onChange={(e) => setSheetForm({ ...sheetForm, fromBranchId: e.target.value })} required><option value="">Select source branch</option>{sourceBranchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
-              <div className="field"><label>To Branch<select value={sheetForm.toBranchId} onChange={(e) => setSheetForm({ ...sheetForm, toBranchId: e.target.value })} required><option value="">Select destination branch</option>{branchList.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title="New transfer sheet"
+        size="xl"
+        className="stock-transfer-sheet-modal"
+        footer={<>
+          <RippleButton variant="secondary" onClick={() => setShowForm(false)}>Cancel</RippleButton>
+          <RippleButton type="submit" form="stock-transfer-sheet-form" loading={creating} disabled={!formIsValid || loadingStockCheck}>
+            Create transfer sheet · {lines.length}
+          </RippleButton>
+        </>}
+      >
+        <form id="stock-transfer-sheet-form" className="stock-transfer-sheet-form" onSubmit={createTransfer}>
+          <div>
+            <p style={{ color: "var(--text-secondary)", margin: "0 0 16px", maxWidth: "72ch" }}>Move several products between the same branches. Stock is checked for every line; dispatch and receipt apply to the whole sheet.</p>
+            <div className="stock-transfer-branch-fields">
+              <div className="field"><label htmlFor="transfer-source-branch">From branch<select id="transfer-source-branch" name="fromBranchId" autoComplete="off" value={sheetForm.fromBranchId} onChange={(e) => setSheetForm({ ...sheetForm, fromBranchId: e.target.value })} required><option value="">Select source branch</option>{sourceBranchList.map((branch: any) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label></div>
+              <div className="field"><label htmlFor="transfer-destination-branch">To branch<select id="transfer-destination-branch" name="toBranchId" autoComplete="off" value={sheetForm.toBranchId} onChange={(e) => setSheetForm({ ...sheetForm, toBranchId: e.target.value })} required><option value="">Select destination branch</option>{branchList.map((branch: any) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label></div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", margin: "0.75rem 0" }}>
-              <strong>Products to transfer</strong>
+            {sheetForm.fromBranchId && sheetForm.fromBranchId === sheetForm.toBranchId && <p role="status" style={{ color: "var(--danger-text)", margin: "8px 0 0" }}>Choose two different branches for this transfer.</p>}
+          </div>
+
+          <section aria-labelledby="transfer-products-title">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <div>
+                <h3 id="transfer-products-title" style={{ margin: 0 }}>Products</h3>
+                <p style={{ margin: "4px 0 0", color: "var(--text-secondary)", fontSize: "var(--text-sm)" }}>Add each product once and enter a whole-number quantity.</p>
+              </div>
               <RippleButton type="button" variant="secondary" size="small" disabled={lines.length >= 100} onClick={() => { setLines([...lines, { rowId: nextLineId, productId: "", quantity: "" }]); setNextLineId(nextLineId + 1); }}>+ Add product</RippleButton>
             </div>
-            <div style={{ display: "grid", gap: "0.65rem" }}>
+            <div className="stock-transfer-lines">
               {lines.map((line, index) => {
                 const stock = sourceStock[line.productId];
-                const qty = Number(line.quantity);
-                const tooMany = Boolean(line.productId && qty > 0 && stock && qty > stock.available);
-                return <div key={line.rowId} className="panel" style={{ display: "grid", gridTemplateColumns: "minmax(220px, 2fr) minmax(110px, 0.65fr) minmax(210px, 1.5fr) auto", gap: "0.65rem", alignItems: "end", padding: "0.75rem" }}>
-                  <div className="field" style={{ margin: 0 }}><label>Product {index + 1}<select value={line.productId} onChange={(e) => setLines(lines.map((item) => item.rowId === line.rowId ? { ...item, productId: e.target.value } : item))} required><option value="">Select product</option>{productList.map((product: any) => <option key={product.id} value={product.id} disabled={lines.some((item) => item.rowId !== line.rowId && item.productId === String(product.id))}>{product.name}</option>)}</select></label></div>
-                  <div className="field" style={{ margin: 0 }}><label>Quantity<input type="number" min="1" step="1" value={line.quantity} onChange={(e) => setLines(lines.map((item) => item.rowId === line.rowId ? { ...item, quantity: e.target.value } : item))} required /></label></div>
-                  <div style={{ fontSize: "0.82rem", color: tooMany ? "var(--warning-text)" : "var(--text-secondary)", paddingBottom: "0.65rem" }}>
-                    {line.productId ? loadingStockCheck ? "Checking source stock…" : stock ? `Source: ${stock.onHand} on hand · ${stock.reserved} reserved · ${stock.available} available${sheetForm.toBranchId ? ` · Destination: ${destStock[line.productId] ?? "…"}` : ""}` : "Source stock could not be checked" : "Choose a product to check branch stock"}
-                    {tooMany && <div>Only {stock?.available} unreserved unit(s) are available.</div>}
+                const quantity = Number(line.quantity);
+                const tooMany = Boolean(line.productId && quantity > 0 && stock && quantity > stock.available);
+                const stockMessage = !line.productId
+                  ? "Select a product to see its stock."
+                  : !sheetForm.fromBranchId
+                    ? "Choose a source branch to check availability."
+                    : loadingStockCheck
+                      ? "Checking source stock…"
+                      : !stock
+                        ? "Stock could not be loaded. Change the source branch to retry."
+                        : `Source: ${stock.onHand} on hand · ${stock.reserved} reserved · ${stock.available} available${sheetForm.toBranchId && destStock[line.productId] !== undefined ? ` · Destination: ${destStock[line.productId]}` : ""}`;
+                return <div key={line.rowId} className="stock-transfer-line">
+                  <div className="field"><label htmlFor={`transfer-product-${line.rowId}`}>Product {index + 1}<select id={`transfer-product-${line.rowId}`} name={`items.${index}.productId`} autoComplete="off" value={line.productId} onChange={(e) => setLines(lines.map((item) => item.rowId === line.rowId ? { ...item, productId: e.target.value } : item))} required><option value="">Select product</option>{productList.map((product: any) => <option key={product.id} value={product.id} disabled={lines.some((item) => item.rowId !== line.rowId && item.productId === String(product.id))}>{product.name}</option>)}</select></label></div>
+                  <div className="field"><label htmlFor={`transfer-quantity-${line.rowId}`}>Quantity<input id={`transfer-quantity-${line.rowId}`} name={`items.${index}.quantity`} type="number" inputMode="numeric" min="1" step="1" autoComplete="off" value={line.quantity} onChange={(e) => setLines(lines.map((item) => item.rowId === line.rowId ? { ...item, quantity: e.target.value } : item))} required /></label></div>
+                  <div className={`stock-transfer-line-status${tooMany ? " is-warning" : ""}`} aria-live="polite">
+                    {stockMessage}
+                    {tooMany && <div>Only {stock.available} unreserved unit(s) are available.</div>}
                   </div>
-                  <RippleButton type="button" variant="secondary" size="small" disabled={lines.length === 1} aria-label={`Remove product line ${index + 1}`} onClick={() => setLines(lines.filter((item) => item.rowId !== line.rowId))}>Remove</RippleButton>
+                  <RippleButton className="stock-transfer-line-remove" type="button" variant="secondary" size="small" disabled={lines.length === 1} aria-label={`Remove product line ${index + 1}`} onClick={() => setLines(lines.filter((item) => item.rowId !== line.rowId))}>Remove</RippleButton>
                 </div>;
               })}
             </div>
-            <div className="field" style={{ marginTop: "0.75rem" }}><label>Notes for the transfer sheet<textarea value={sheetForm.notes} onChange={(e) => setSheetForm({ ...sheetForm, notes: e.target.value })} rows={2} /></label></div>
-            {lines.length >= 100 && <p style={{ color: "var(--text-secondary)" }}>A transfer sheet can contain up to 100 product lines.</p>}
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <RippleButton type="submit" loading={creating} disabled={loadingStockCheck || !sheetForm.fromBranchId || !sheetForm.toBranchId || sheetForm.fromBranchId === sheetForm.toBranchId || !lines.length || lines.some((line) => !line.productId || !Number.isInteger(Number(line.quantity)) || Number(line.quantity) <= 0 || !sourceStock[line.productId] || Number(line.quantity) > sourceStock[line.productId].available)}>Create Transfer Sheet</RippleButton>
-              <RippleButton variant="secondary" onClick={() => setShowForm(false)}>Cancel</RippleButton>
-            </div>
-          </form>
-        </div>
-      )}
+            {lines.length >= 100 && <p style={{ color: "var(--text-secondary)", marginBottom: 0 }}>A transfer sheet can contain up to 100 product lines.</p>}
+          </section>
 
-      <div className="table-wrap">
-        <DataTable<any>
-          ariaLabel="Stock transfer sheets"
-          columns={[
-            { key: "id", label: "Transfer", value: (sheet) => sheet.batchId ? sheet.batchId : `#${sheet.first.id}`, render: (sheet) => <span>{sheet.batchId ? `Sheet · ${sheet.lines.length} lines` : `#${sheet.first.id}`}</span> },
-            { key: "from", label: "From", sortable: true, value: (sheet) => sheet.first.fromBranchName || `#${sheet.first.fromBranchId}`, render: (sheet) => sheet.first.fromBranchName || `#${sheet.first.fromBranchId}` },
-            { key: "to", label: "To", sortable: true, value: (sheet) => sheet.first.toBranchName || `#${sheet.first.toBranchId}`, render: (sheet) => sheet.first.toBranchName || `#${sheet.first.toBranchId}` },
-            { key: "products", label: "Products", sortable: true, value: (sheet) => sheet.lines.map((line: any) => line.productName || line.productId).join(", "), render: (sheet) => <div>{sheet.lines.map((line: any) => <div key={line.id}>{line.productName || line.productId} <strong>× {line.quantity}</strong></div>)}</div> },
-            { key: "qty", label: "Units", sortable: true, align: "right", value: (sheet) => sheet.totalUnits, render: (sheet) => <span>{sheet.totalUnits}</span> },
-            {
-              key: "status",
-              label: "Status",
-              sortable: true,
-              value: (sheet) => sheet.first.status,
-              render: (sheet) => (
-                <span className="plan-status" style={{ background: sheet.first.status === "completed" ? "var(--success-light)" : sheet.first.status === "rejected" ? "var(--danger-light)" : "var(--warning-light)", color: sheet.first.status === "completed" ? "var(--success-text)" : sheet.first.status === "rejected" ? "var(--danger-text)" : "var(--warning-text)" }}>{sheet.first.status === "in_transit" ? "In transit" : sheet.first.status}</span>
-              ),
-            },
-            { key: "created", label: "Created", value: (sheet) => new Date(sheet.first.createdAt).toISOString(), render: (sheet) => <span style={{ whiteSpace: "nowrap" }}>{new Date(sheet.first.createdAt).toLocaleDateString("en-GB")}</span> },
-            {
-              key: "actions",
-              label: "",
-              render: (sheet) => (
-                sheet.first.status === "pending" ? (
-                  <div style={{ display: "flex", gap: "0.25rem" }}>
-                    <RippleButton size="small" onClick={() => dispatchSheet(sheet)}>Dispatch sheet</RippleButton>
-                    <RippleButton size="small" variant="danger" onClick={() => rejectSheet(sheet)}>Reject</RippleButton>
-                  </div>
-                ) : sheet.first.status === "in_transit" ? <RippleButton size="small" onClick={() => receiveSheet(sheet)}>Confirm all received</RippleButton> : null
-              ),
-            },
-          ]}
-          rows={transferSheets}
-          rowKey={(sheet) => sheet.key}
-          empty={<EmptyState icon="stock" title="No transfers" description="Create a stock transfer between branches." />}
-        />
+          <div className="field" style={{ margin: 0 }}><label htmlFor="stock-transfer-notes">Notes <span style={{ color: "var(--text-secondary)", fontWeight: "normal" }}>Optional</span><textarea id="stock-transfer-notes" name="notes" autoComplete="off" value={sheetForm.notes} onChange={(e) => setSheetForm({ ...sheetForm, notes: e.target.value })} rows={3} maxLength={1000} placeholder="Add a reason or handling note…" /></label></div>
+        </form>
+      </Modal>
+
+      <div className="stock-transfer-card-list" aria-label="Transfer history">
+        {transferSheets.length === 0 ? <EmptyState icon="stock" title="No transfers yet" description="Create a transfer sheet when stock needs to move between branches." /> : transferSheets.map((sheet: any) => {
+          const status = sheet.first.status;
+          const statusStyle = status === "completed" ? ["var(--success-light)", "var(--success-text)"] : status === "rejected" ? ["var(--danger-light)", "var(--danger-text)"] : ["var(--warning-light)", "var(--warning-text)"];
+          return <article className="panel stock-transfer-card" key={sheet.key}>
+            <div className="stock-transfer-card-header">
+              <div>
+                <div className="stock-transfer-card-route">{sheet.first.fromBranchName || `Branch #${sheet.first.fromBranchId}`} <span aria-hidden="true" style={{ color: "var(--text-secondary)", padding: "0 6px" }}>→</span> {sheet.first.toBranchName || `Branch #${sheet.first.toBranchId}`}</div>
+                <div className="stock-transfer-card-meta">{sheet.batchId ? `Transfer sheet · ${sheet.lines.length} product line(s)` : `Transfer #${sheet.first.id}`} · {new Intl.DateTimeFormat("en-KE", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Nairobi" }).format(new Date(sheet.first.createdAt))}</div>
+              </div>
+              <span className="plan-status" style={{ background: statusStyle[0], color: statusStyle[1] }}>{status === "in_transit" ? "In transit" : status}</span>
+            </div>
+            <div className="stock-transfer-card-items">
+              {sheet.lines.map((line: any) => <div className="stock-transfer-card-item" key={line.id}>
+                <span className="stock-transfer-card-item-name">{line.productName || line.productId}</span>
+                <strong className="stock-transfer-card-item-qty">× {line.quantity}</strong>
+              </div>)}
+            </div>
+            <div className="stock-transfer-card-footer">
+              <span className="stock-transfer-card-meta" style={{ margin: 0 }}>{sheet.lines.length} product line(s) · {sheet.totalUnits} unit(s)</span>
+              {status === "pending" ? <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <RippleButton size="small" loading={actingSheet === sheet.key} disabled={actingSheet !== null} onClick={() => dispatchSheet(sheet)}>Dispatch all</RippleButton>
+                <RippleButton size="small" variant="danger" disabled={actingSheet !== null} onClick={() => rejectSheet(sheet)}>Reject sheet</RippleButton>
+              </div> : status === "in_transit" ? <RippleButton size="small" loading={actingSheet === sheet.key} disabled={actingSheet !== null} onClick={() => receiveSheet(sheet)}>Confirm all received</RippleButton> : null}
+            </div>
+          </article>;
+        })}
       </div>
     </>
   );
