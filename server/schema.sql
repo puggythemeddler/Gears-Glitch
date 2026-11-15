@@ -555,6 +555,25 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
 );
 CREATE INDEX IF NOT EXISTS idx_purchase_items_order ON purchase_order_items(purchase_order_id);
 
+-- Supplier source documents are private tenant data. Keep file bytes in the
+-- tenant database rather than public media storage; removals are soft so the
+-- PO's document history survives trash/restore and remains auditable.
+CREATE TABLE IF NOT EXISTS purchase_order_documents (
+  id SERIAL PRIMARY KEY,
+  purchase_order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  document_type TEXT NOT NULL CHECK (document_type IN ('supplier_quote', 'supplier_purchase_order', 'invoice', 'delivery_note')),
+  original_name TEXT NOT NULL,
+  content_type TEXT NOT NULL CHECK (content_type IN ('application/pdf', 'image/jpeg', 'image/png')),
+  size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+  sha256 TEXT NOT NULL,
+  file_data BYTEA,
+  uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  uploaded_at TEXT NOT NULL DEFAULT (NOW()::text),
+  removed_at TEXT,
+  removed_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_po_documents_order ON purchase_order_documents(purchase_order_id, uploaded_at DESC) WHERE removed_at IS NULL;
+
 -- Serial number tracking (warranty lookups, PO intake, sale linking)
 -- Ownership is intentionally INDIRECT: a sold serial links to order_item_id/order_id
 -- and the owner is resolved via orders.customer_id (SN-5). This keeps the source of

@@ -142,6 +142,9 @@ import {
   softDeletePurchaseOrder,
   restorePurchaseOrder,
   getPurchaseOrder,
+  createPurchaseOrderDocument,
+  getPurchaseOrderDocument,
+  softRemovePurchaseOrderDocument,
   updatePurchaseOrderStatus,
   updatePurchaseOrderBranch,
   addPurchaseOrderItem,
@@ -456,7 +459,7 @@ import { listPages, listPublishedPages, getPageBySlug, getPageById, createPage, 
 import { publicBaseUrl } from "./public-url";
 import { normalizeSlug, isReservedSlug, sanitizePageConfig, pagePublishError } from "./pages";
 import { validateLayoutConfig } from "./template-validate";
-import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, uploadProductImport, scanProductImportBuffer, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes } from "./upload";
+import { uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, uploadProductImport, uploadPurchaseOrderDocument, scanPurchaseOrderDocument, scanProductImportBuffer, runMulter, imageUrlForProduct, getUploadedUrl, isCloudinaryConfigured, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes } from "./upload";
 import { isAllowedRemoteImageUrl, assertPublicImageHost, MAX_BACKUP_IMAGE_BYTES } from "./media-policy";
 import { MAX_PRODUCT_IMAGES, MAX_REPAIR_IMAGES, withinImageLimit, productImageLimitMessage, repairImageLimitMessage } from "./image-limits";
 import { getCounties, getCountiesWithOverrides, getShippingFee } from "./shipping";
@@ -466,6 +469,7 @@ import { htmlToPdf, closeBrowser, warmPdf } from "./pdf";
 import { buildRepairQuotePdf } from "./repair-quote-pdf";
 import { isEmail, isStr, isNum, isInt, isPosInt, isNonNegNum, isArr, inSet, okLen, escapeHtml as escapeHtmlUtil, renderStoreLogo as renderStoreLogoUtil, requirePermission as requirePermissionShared, asyncHandler, INVOICE_CSS, THERMAL_CSS, CREDIT_NOTE_CSS, posReceiptButtons, generateSubscriptionInvoiceHtml, addCalendarMonthsClamped } from "./routes/shared";
 import { sendOrderInvoiceEmail } from "./order-invoice";
+import { purchaseOrderDocumentTypeLabel, sanitizePurchaseOrderFilename, validatePurchaseOrderDocument, type PurchaseOrderDocumentType } from "./purchase-order-documents";
 
 const configuredPort = process.env.PORT?.trim();
 const parsedPort = configuredPort ? Number(configuredPort) : 8020;
@@ -7825,6 +7829,93 @@ app.get("/api/purchases/:id", adminAuthMiddleware, asyncHandler(async (req: Requ
   const po = await getPurchaseOrder(Number(req.params.id));
   if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
   res.json(po);
+}));
+
+const PURCHASE_DOCUMENT_TYPES = new Set<PurchaseOrderDocumentType>(["supplier_quote", "supplier_purchase_order", "invoice", "delivery_note"]);
+
+app.get("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!isPosInt(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
+  const po = await getPurchaseOrder(id);
+  if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
+  res.json({ documents: po.documents || [] });
+}));
+
+app.post("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+  const purchaseOrderId = Number(req.params.id);
+  if (!isPosInt(purchaseOrderId)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
+  const order = await getPurchaseOrder(purchaseOrderId);
+  if (!order) { res.status(404).json({ error: "Purchase order not found." }); return; }
+  if (order.deletedAt) { res.status(409).json({ error: "Restore this purchase order before adding documents." }); return; }
+  try {
+    await runMulter(uploadPurchaseOrderDocument, req, res);
+  } catch (err: any) {
+    const tooLarge = err?.code === "LIMIT_FILE_SIZE";
+    res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? "Each supplier document must be 15 MB or smaller." : err?.message || "The supplier document could not be uploaded." });
+    return;
+  }
+  const file = (req as any).file as Express.Multer.File | undefined;
+  if (!file?.buffer?.length) { res.status(400).json({ error: "Choose a PDF, JPEG, or PNG file to upload." }); return; }
+  const documentType = String(req.body?.documentType || "");
+  if (!PURCHASE_DOCUMENT_TYPES.has(documentType as PurchaseOrderDocumentType)) { res.status(400).json({ error: "Choose a supplier quote, supplier purchase order, invoice, or delivery note." }); return; }
+  const validation = validatePurchaseOrderDocument(file.mimetype, file.originalname || "", file.buffer);
+  if (validation.ok === false) { res.status(400).json({ error: validation.error }); return; }
+  try {
+    await scanPurchaseOrderDocument(file.buffer);
+  } catch (err: any) {
+    const unavailable = /unavailable|timed out|not configured|could not verify/i.test(String(err?.message || ""));
+    res.status(unavailable ? 503 : 400).json({ error: err?.message || "The supplier document did not pass the security scan." });
+    return;
+  }
+  const originalName = sanitizePurchaseOrderFilename(String(file.originalname || "supplier-document"));
+  const actor = (req as any).user;
+  const result = await createPurchaseOrderDocument({
+    purchaseOrderId, documentType: documentType as PurchaseOrderDocumentType, originalName,
+    contentType: validation.mime, fileData: file.buffer,
+    sha256: crypto.createHash("sha256").update(file.buffer).digest("hex"), uploadedBy: Number(actor.sub),
+  });
+  if (!result.ok || !result.document) { res.status(/not found/i.test(result.error || "") ? 404 : 409).json({ error: result.error || "The document could not be attached." }); return; }
+  try { await logAudit(actor.sub, actor.username || "Admin", "uploaded", "purchase_order_document", String(result.document.id), { purchaseOrderId, documentType: purchaseOrderDocumentTypeLabel(documentType), sizeBytes: result.document.sizeBytes }, actor.role); }
+  catch { console.warn("[audit] Failed to record purchase-order document upload"); }
+  res.status(201).json({ document: result.document });
+}));
+
+app.get("/api/purchases/:id/documents/:documentId/download", adminAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+  const purchaseOrderId = Number(req.params.id);
+  const documentId = Number(req.params.documentId);
+  if (!isPosInt(purchaseOrderId) || !isPosInt(documentId)) { res.status(400).json({ error: "Invalid purchase order document." }); return; }
+  const document = await getPurchaseOrderDocument(purchaseOrderId, documentId);
+  if (!document) { res.status(404).json({ error: "Supplier document not found." }); return; }
+  const checksum = crypto.createHash("sha256").update(document.fileData).digest("hex");
+  if (checksum !== document.sha256) { res.status(500).json({ error: "The stored supplier document failed its integrity check." }); return; }
+  const actor = (req as any).user;
+  const fallbackName = document.originalName.replace(/[^A-Za-z0-9._ -]/g, "_").replace(/[\\"\r\n]/g, "_") || `supplier-document-${document.id}`;
+  const encodedName = encodeURIComponent(document.originalName).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  res.set({
+    "Content-Type": document.contentType,
+    "Content-Length": String(document.sizeBytes),
+    "Content-Disposition": `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodedName}`,
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "sandbox",
+  });
+  res.once("finish", () => {
+    void logAudit(actor.sub, actor.username || "Admin", "downloaded", "purchase_order_document", String(document.id), { purchaseOrderId, documentType: purchaseOrderDocumentTypeLabel(document.documentType) }, actor.role)
+      .catch(() => console.warn("[audit] Failed to record purchase-order document download"));
+  });
+  res.status(200).send(document.fileData);
+}));
+
+app.delete("/api/purchases/:id/documents/:documentId", adminAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+  const purchaseOrderId = Number(req.params.id);
+  const documentId = Number(req.params.documentId);
+  if (!isPosInt(purchaseOrderId) || !isPosInt(documentId)) { res.status(400).json({ error: "Invalid purchase order document." }); return; }
+  const actor = (req as any).user;
+  const ok = await softRemovePurchaseOrderDocument(purchaseOrderId, documentId, Number(actor.sub));
+  if (!ok) { res.status(404).json({ error: "Supplier document not found, or restore the purchase order before removing it." }); return; }
+  try { await logAudit(actor.sub, actor.username || "Admin", "removed", "purchase_order_document", String(documentId), { purchaseOrderId }, actor.role); }
+  catch { console.warn("[audit] Failed to record purchase-order document removal"); }
+  res.json({ ok: true });
 }));
 
 app.patch("/api/purchases/:id/status", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {

@@ -4,6 +4,7 @@ import { Readable, Transform } from "stream";
 import multer from "multer";
 import sharp from "sharp";
 import { scanUploadBuffer } from "./malware-scan";
+import { validatePurchaseOrderDocument } from "./purchase-order-documents";
 import { v2 as cloudinary } from "cloudinary";
 import type { UploadApiOptions, UploadApiResponse } from "cloudinary";
 
@@ -312,6 +313,26 @@ const uploadProductImport = multer({
   },
 }).single("file");
 
+const PO_DOCUMENT_MAX_BYTES = 15 * 1024 * 1024;
+const uploadPurchaseOrderDocument = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: PO_DOCUMENT_MAX_BYTES, files: 1, fields: 2, parts: 3 },
+  fileFilter: (_req, file, cb) => {
+    const acceptedType = ["application/pdf", "image/jpeg", "image/png"].includes(file.mimetype);
+    const extensionMatches = file.mimetype === "application/pdf" ? /\.pdf$/i.test(file.originalname || "")
+      : file.mimetype === "image/jpeg" ? /\.(jpe?g)$/i.test(file.originalname || "")
+      : file.mimetype === "image/png" ? /\.png$/i.test(file.originalname || "") : false;
+    if (!acceptedType || !extensionMatches) {
+      return cb(new Error("Attach a PDF, JPEG, or PNG supplier document. The filename and file type must match."));
+    }
+    cb(null, true);
+  },
+}).single("file");
+
+async function scanPurchaseOrderDocument(buffer: Buffer): Promise<void> {
+  await scanUploadBuffer(buffer);
+}
+
 export async function scanProductImportBuffer(buffer: Buffer): Promise<void> {
   if (!buffer.length || buffer.includes(0)) throw new Error("The import file is not valid CSV text.");
   await scanUploadBuffer(buffer);
@@ -481,4 +502,4 @@ async function removeUploadedAsset(file: Express.Multer.File | undefined, url?: 
   }
 }
 
-export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, uploadProductImport, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes, magicByteGuard, cloudinaryPublicIdForDeletion };
+export { UPLOAD_DIR, uploadProductImage, uploadGalleryImage, uploadRepairImage, uploadAboutImage, uploadLayoutHeroImage, uploadFavicon, uploadLogo, uploadProductImport, uploadPurchaseOrderDocument, scanPurchaseOrderDocument, runMulter, imageUrlForProduct, deleteProductImages, isCloudinaryConfigured, getUploadedUrl, reconfigureCloudinary, deleteCloudinaryImage, removeUploadedAsset, validateUploadedFile, validateImageMagicBytes, magicByteGuard, cloudinaryPublicIdForDeletion };
