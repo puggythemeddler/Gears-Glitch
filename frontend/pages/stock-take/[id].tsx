@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api, hasStaffSession } from "@/lib/api";
+import { api, getTokenForRole, hasStaffSession } from "@/lib/api";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
@@ -27,6 +27,8 @@ export default function StockTakeSessionPage() {
   const [msg, setMsg] = useState("");
   const [report, setReport] = useState<any>(null);
   const [completionSummaryOpen, setCompletionSummaryOpen] = useState(false);
+  const [reportFormatOpen, setReportFormatOpen] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
@@ -246,7 +248,44 @@ export default function StockTakeSessionPage() {
     link.href = url;
     link.download = `stock-take-${session.id}-variance-report.csv`;
     link.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function downloadVarianceReportPdf() {
+    setExportingPdf(true);
+    setMsg("");
+    try {
+      const token = getTokenForRole();
+      const response = await fetch(`/api/stock-take/${id}/report.pdf`, {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        let message = "Failed to generate the PDF report.";
+        try { message = (await response.json())?.error || message; } catch {}
+        throw new Error(message);
+      }
+      const pdf = await response.blob();
+      if (pdf.type !== "application/pdf") throw new Error("The server returned an invalid PDF report.");
+      const url = URL.createObjectURL(pdf);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `stock-take-${session.id}-variance-report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setReportFormatOpen(false);
+    } catch (err: any) {
+      setMsg(`Error: ${err.message || "Failed to download the PDF report."}`);
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
+  function downloadSpreadsheetReport() {
+    generateVarianceReport();
+    setReportFormatOpen(false);
   }
 
   if (!authed) {
@@ -269,7 +308,7 @@ export default function StockTakeSessionPage() {
         <p style={{ fontSize: "0.85rem", opacity: 0.6 }}>Created: {new Date(session.createdAt || session.created_at).toLocaleDateString("en-GB")}</p>
       </nav>
       <div className="dash-content" style={{ maxWidth: 900 }}>
-        {msg && <div className="panel" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)" }}>{msg}</div>}
+        {msg && <div className="panel" role={msg.startsWith("Error") ? "alert" : "status"} aria-live="polite" style={{ marginBottom: "1rem", background: msg.startsWith("Error") ? "var(--danger-light)" : "var(--success-light)", color: msg.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)" }}>{msg}</div>}
         {session.reversedAt && <div className="panel" role="status" style={{ marginBottom: "1rem" }}>Adjustments from this stock take were reversed on {new Date(session.reversedAt).toLocaleString("en-GB")}. The original count and reversal remain in the audit history.</div>}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -531,7 +570,7 @@ export default function StockTakeSessionPage() {
         size="lg"
         footer={(
           <>
-            <RippleButton variant="secondary" onClick={generateVarianceReport}>Generate report</RippleButton>
+            <RippleButton variant="secondary" onClick={() => { setCompletionSummaryOpen(false); setReportFormatOpen(true); }}>Generate report</RippleButton>
             <RippleButton variant="primary" onClick={() => void router.push("/admin?view=stock-take")}>Okay</RippleButton>
           </>
         )}
@@ -580,6 +619,25 @@ export default function StockTakeSessionPage() {
         ) : (
           <p className="panel" style={{ marginBottom: 0 }}>No stock variances were found.</p>
         )}
+      </Modal>
+      <Modal
+        open={reportFormatOpen}
+        onClose={() => { setReportFormatOpen(false); setCompletionSummaryOpen(true); }}
+        title="Choose report format"
+        size="sm"
+        footer={<RippleButton variant="secondary" onClick={() => { setReportFormatOpen(false); setCompletionSummaryOpen(true); }} disabled={exportingPdf}>Back to summary</RippleButton>}
+      >
+        <p style={{ marginTop: 0 }}>Choose how you want to save the completed stock-take report.</p>
+        <div style={{ display: "grid", gap: "0.75rem" }}>
+          <div className="panel" style={{ margin: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+            <div><strong>PDF report</strong><div className="muted" style={{ fontSize: "0.85rem" }}>Print-ready summary and counted items.</div></div>
+            <RippleButton variant="primary" onClick={() => void downloadVarianceReportPdf()} loading={exportingPdf}>Download PDF</RippleButton>
+          </div>
+          <div className="panel" style={{ margin: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+            <div><strong>Spreadsheet (CSV)</strong><div className="muted" style={{ fontSize: "0.85rem" }}>Open or import in Excel and similar apps.</div></div>
+            <RippleButton variant="secondary" onClick={downloadSpreadsheetReport} disabled={exportingPdf}>Download CSV</RippleButton>
+          </div>
+        </div>
       </Modal>
     </div>
   );

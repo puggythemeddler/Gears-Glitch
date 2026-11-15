@@ -9271,6 +9271,73 @@ app.get("/api/stock-take/:id/report", ownerAuthMiddleware, requirePermission("st
   }
 }));
 
+app.get("/api/stock-take/:id/report.pdf", ownerAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) { res.status(400).json({ error: "Invalid stock-take session." }); return; }
+  try {
+    const session = await authorizeStockTake(req, res, id);
+    if (!session) return;
+    if (session.status !== "completed") { res.status(409).json({ error: "Complete this stock take before downloading its PDF report." }); return; }
+    const [report, settings] = await Promise.all([getStockTakeVarianceReport(id), getSettings()]);
+    const currency = escapeHtml(settings.currency || "KES");
+    const storeName = escapeHtml(settings.storeName || "My Shop");
+    const money = (value: unknown) => {
+      const amount = Number(value);
+      return Number.isFinite(amount) ? `${currency} ${amount.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
+    };
+    const countedItems = report.items.filter((item: any) => item.countedQuantity !== null);
+    const tableRows = countedItems.map((item: any) => {
+      const variance = Number(item.variance || 0);
+      const cost = item.costPrice === null || item.costPrice === undefined ? null : Number(item.costPrice);
+      const estimatedLoss = cost === null ? null : Math.max(0, -variance) * cost;
+      const varianceLabel = variance > 0 ? `+${variance}` : String(variance);
+      const reason = String(item.varianceReason || "—").replaceAll("_", " ");
+      return `<tr class="${variance < 0 ? "shortage" : variance > 0 ? "surplus" : ""}">
+        <td><strong>${escapeHtml(String(item.productName || "Unknown product"))}</strong>${item.barcode ? `<small>Barcode: ${escapeHtml(String(item.barcode))}</small>` : ""}</td>
+        <td class="numeric">${Number(item.systemQuantity)}</td>
+        <td class="numeric">${item.countedQuantity === null ? "—" : Number(item.countedQuantity)}</td>
+        <td class="numeric">${varianceLabel}</td>
+        <td>${escapeHtml(reason)}${item.notes ? `<small>${escapeHtml(String(item.notes))}</small>` : ""}</td>
+        <td class="numeric">${cost === null || !Number.isFinite(cost) ? "—" : money(cost)}</td>
+        <td class="numeric">${estimatedLoss === null ? "—" : money(estimatedLoss)}</td>
+      </tr>`;
+    }).join("");
+    const generatedAt = new Date().toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" });
+    const createdAt = session.createdAt ? new Date(session.createdAt).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" }) : "—";
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Stock Take #${id} - Variance Report</title>
+      <style>
+        *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;font-size:10px;margin:0}
+        h1{font-size:23px;margin:0 0 5px;color:#172033}.muted{color:#64748b}.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #c84a12;padding-bottom:12px;margin-bottom:14px}
+        .brand{font-size:12px;font-weight:700;color:#c84a12}.meta{text-align:right;line-height:1.55}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0 18px}
+        .metric{border:1px solid #dbe1e8;border-radius:7px;padding:9px 11px;background:#f8fafc}.metric strong{display:block;font-size:16px;color:#c84a12;margin-bottom:3px}.metric span{color:#475569}
+        h2{font-size:13px;margin:18px 0 8px}table{width:100%;border-collapse:collapse;font-size:8.5px}thead{display:table-header-group}th{background:#20252b;color:white;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.04em}
+        th,td{padding:6px 5px;border-bottom:1px solid #dbe1e8;vertical-align:top}tbody tr:nth-child(even){background:#f8fafc}td small{display:block;color:#64748b;margin-top:2px;overflow-wrap:anywhere}.numeric{text-align:right;white-space:nowrap}.shortage .numeric:nth-child(4){color:#b42318;font-weight:700}.surplus .numeric:nth-child(4){color:#087443;font-weight:700}
+        .note{margin-top:10px;color:#64748b;font-size:9px}.footer{position:fixed;bottom:-8mm;left:0;right:0;border-top:1px solid #dbe1e8;padding-top:5px;color:#64748b;font-size:8px;display:flex;justify-content:space-between}
+        @page{size:A4 landscape;margin:13mm 11mm 16mm}@media print{tr{break-inside:avoid}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+      </style></head><body>
+      <header class="header"><div><div class="brand">${storeName}</div><h1>Stock Take Variance Report</h1><div class="muted">Session #${id} · Completed ${session.completedAt ? escapeHtml(new Date(session.completedAt).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" })) : "date unavailable"}</div></div>
+      <div class="meta"><strong>Created:</strong> ${escapeHtml(createdAt)}<br><strong>Status:</strong> Completed<br><strong>Generated:</strong> ${escapeHtml(generatedAt)}</div></header>
+      <section class="summary">
+        <div class="metric"><strong>${report.totalItems}</strong><span>Total items</span></div>
+        <div class="metric"><strong>${report.counted}</strong><span>Counted items</span></div>
+        <div class="metric"><strong>${report.withVariance}</strong><span>Items with variance · ${report.totalVariance} units</span></div>
+        <div class="metric"><strong>${money(report.lossAmount)}</strong><span>Estimated shortage loss at cost</span></div>
+      </section>
+      ${report.unpricedLossItems ? `<p class="note">${report.unpricedLossItems} shortage item${report.unpricedLossItems === 1 ? "" : "s"} had no catalog cost and are excluded from the estimated loss.</p>` : ""}
+      <h2>Count detail</h2><table><thead><tr><th style="width:23%">Product</th><th style="width:8%;text-align:right">System</th><th style="width:8%;text-align:right">Counted</th><th style="width:8%;text-align:right">Variance</th><th style="width:25%">Reason / notes</th><th style="width:14%;text-align:right">Unit cost</th><th style="width:14%;text-align:right">Estimated loss</th></tr></thead><tbody>${tableRows || `<tr><td colspan="7">No items were counted.</td></tr>`}</tbody></table>
+      <div class="footer"><span>${storeName} · Stock take #${id}</span><span>Internal inventory report</span></div>
+      </body></html>`;
+    const pdf = await htmlToPdf(html, { format: "A4", landscape: true });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="stock-take-${id}-variance-report.pdf"`);
+    res.setHeader("Content-Length", String(pdf.length));
+    res.send(pdf);
+  } catch (err: any) {
+    console.error("[stock-take PDF report]", err?.message || err);
+    res.status(500).json({ error: "Failed to generate the stock-take PDF report." });
+  }
+}));
+
 app.post("/api/stock-take/:id/reopen", ownerAuthMiddleware, requirePermission("stock:update"), requirePermission("stock_take:reopen"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
