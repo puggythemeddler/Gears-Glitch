@@ -6883,6 +6883,7 @@ function AdminPurchases() {
   const [assetTagInput, setAssetTagInput] = useState("");
   const [serialMsg, setSerialMsg] = useState("");
   const [listSearch, setListSearch] = useState("");
+  const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -7083,11 +7084,17 @@ function AdminPurchases() {
     } catch (err: any) { setMsg(err.message); }
   }
 
-  async function downloadPdf(id: number) {
+  async function downloadPurchaseOrderPdf(id: number) {
+    setDownloadingPdfId(id);
     try {
       const r = await api<{ token: string }>(`/api/admin/purchase-pdf-token/${id}`, { method: "POST" });
-      window.open(`/api/purchases/${id}/pdf?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, "_blank");
-    } catch (err: any) { feedback.error(err.message); }
+      const filename = `${viewing?.status === "received" ? "goods-received-voucher" : "purchase-order"}-${id}.pdf`;
+      await downloadPdf(`/api/purchases/${id}/pdf?allowQueryToken=1&token=${encodeURIComponent(r.token)}`, filename);
+    } catch (err: any) {
+      feedback.error({ title: "Purchase order not downloaded", message: err?.message || "The PDF could not be generated. Please try again." });
+    } finally {
+      setDownloadingPdfId(null);
+    }
   }
 
   useEffect(() => { loadOrders(); }, []);
@@ -7107,7 +7114,7 @@ function AdminPurchases() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h1 style={{ margin: 0 }}>PO #{viewing.id} — {viewing.supplierName}</h1>
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <RippleButton size="small" variant="ghost" onClick={() => downloadPdf(viewing.id)}>Download PDF</RippleButton>
+            <RippleButton size="small" variant="ghost" loading={downloadingPdfId === viewing.id} disabled={downloadingPdfId !== null} onClick={() => downloadPurchaseOrderPdf(viewing.id)}>{viewing.status === "received" ? "Download GRV PDF" : "Download PO PDF"}</RippleButton>
             <RippleButton size="small" variant="ghost" onClick={() => setViewing(null)}>&larr; Back</RippleButton>
           </div>
         </div>
