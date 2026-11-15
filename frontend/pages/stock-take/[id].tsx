@@ -423,6 +423,7 @@ export default function StockTakeSessionPage() {
         <div className="table-wrap">
           <DataTable<any>
             ariaLabel="Stock take counting table"
+            tableClassName="stock-take-counting-table"
             columns={[
               { key: "product", label: "Product", sortable: true, value: (r) => r.productName, render: (r) => r.productName },
               { key: "system", label: "System Qty", sortable: true, align: "right", value: (r) => r.systemQuantity, render: (r) => <span style={{ textAlign: "right" }}>{r.systemQuantity}</span> },
