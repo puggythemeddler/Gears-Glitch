@@ -7199,7 +7199,7 @@ function AdminPurchases() {
           </div>
         </div>
         {msg && <ErrorMsg msg={msg} />}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))", gap: "1rem", marginBottom: "1rem" }}>
           <div className="panel">
             <p><strong>Status:</strong> <span className="plan-status" style={{ background: viewing.status === "received" ? "var(--success-light)" : viewing.status === "cancelled" ? "var(--danger-light)" : viewing.status === "ordered" ? "var(--primary-light)" : "var(--warning-light)", color: viewing.status === "received" ? "var(--success-text)" : viewing.status === "cancelled" ? "var(--danger-text)" : viewing.status === "ordered" ? "var(--primary)" : "var(--warning-text)" }}>{viewing.status}</span></p>
             <p><strong>Date:</strong> {formatDate(viewing.orderDate || viewing.order_date)}</p>
@@ -7308,7 +7308,7 @@ function AdminPurchases() {
                     <td style={{ textAlign: "right" }}>{i.quantityOrdered}</td>
                     <td style={{ textAlign: "right", fontWeight: 600 }}>{i.quantityReceived}</td>
                     <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost)}</td>
-                    <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost * i.quantityReceived)}</td>
+                    <td style={{ textAlign: "right" }}>{formatPrice(i.unitCost * i.quantityOrdered)}</td>
                     <td>
                       {i.serialTracking && i.quantityReceived > 0 && i.serials && i.serials.length > 0 && (
                         <div style={{ marginBottom: "0.35rem", fontSize: "0.75rem", color: "var(--text-secondary)", fontFamily: "monospace" }}>
@@ -7478,7 +7478,7 @@ function AdminPurchases() {
                     <tr key={idx}>
                       <td>{item.productName}</td>
                       <td>
-                        <input type="number" min="1" step="1" inputMode="numeric" aria-label={`Order quantity for ${item.productName}`} value={item.quantity} onChange={(e) => updateFormItem(idx, "quantity", e.target.value)} style={{ width: 76 }} />
+                        <input type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off" aria-label={`Order quantity for ${item.productName}`} aria-invalid={item.quantity === "" || !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1} value={item.quantity} onChange={(e) => updateFormItem(idx, "quantity", e.target.value)} style={{ width: 76 }} />
                         {(item.quantity === "" || !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1) && <small role="status" style={{ display: "block", color: "var(--warning-text)" }}>Enter 1 or more.</small>}
                       </td>
                       <td>
@@ -7492,6 +7492,7 @@ function AdminPurchases() {
               </table>
             </div>
           )}
+          <p className="muted" style={{ fontSize: ".8rem", margin: "0 0 .75rem" }}>Supplier documents are optional. Create the order first, then attach a supplier quote, invoice, or delivery note to its record.</p>
           <RippleButton onClick={createOrder} loading={saving} disabled={!form.supplierName || !form.branchId || branches.length === 0 || formItems.length === 0 || formItems.some((item) => !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1 || item.unitCost === "")}>Create Purchase Order</RippleButton>
         </div>
       </>
