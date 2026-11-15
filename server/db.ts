@@ -389,6 +389,7 @@ interface Message {
 
 interface StockTransfer {
   id: number;
+  batchId?: string | null;
   fromBranchId: number;
   toBranchId: number;
   productId: string;
@@ -1759,20 +1760,125 @@ async function createStockTransfer(data: { fromBranchId: number; toBranchId: num
   });
 }
 
+async function createStockTransferSheet(data: { fromBranchId: number; toBranchId: number; items: { productId: string; quantity: number }[]; notes?: string; createdBy?: number }): Promise<{ batchId: string; transfers: StockTransfer[] }> {
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length) throw new Error("Add at least one product to the transfer.");
+  if (new Set(items.map((item) => String(item.productId))).size !== items.length) throw new Error("Each product can appear only once on a transfer sheet.");
+  for (const item of items) {
+    if (!item.productId || !Number.isInteger(item.quantity) || item.quantity <= 0) throw new Error("Every transfer line needs a product and a positive whole-number quantity.");
+  }
+  return await transaction(async (client) => {
+    const batchId = crypto.randomUUID();
+    const ordered = [...items].sort((a, b) => a.productId.localeCompare(b.productId));
+    for (const item of ordered) {
+      const source = (await client.query("SELECT quantity_in_stock, COALESCE(quantity_reserved, 0) AS reserved FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE", [item.productId, data.fromBranchId])).rows?.[0] as any;
+      if (!source) throw new Error(`No stock record exists for product ${item.productId} at the source branch.`);
+      const pending = (await client.query("SELECT COALESCE(SUM(quantity), 0)::int AS quantity FROM stock_transfers WHERE product_id = $1 AND from_branch_id = $2 AND status = 'pending'", [item.productId, data.fromBranchId])).rows?.[0] as any;
+      const available = Math.max(0, Number(source.quantity_in_stock || 0) - Number(source.reserved || 0) - Number(pending?.quantity || 0));
+      if (item.quantity > available) throw new Error(`Only ${available} unreserved unit(s) of ${item.productId} remain available; pending transfers are included.`);
+    }
+    const transfers: StockTransfer[] = [];
+    for (const item of items) {
+      const result = await client.query(
+        "INSERT INTO stock_transfers (from_branch_id, to_branch_id, product_id, quantity, status, notes, created_by, batch_id) VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7) RETURNING *",
+        [data.fromBranchId, data.toBranchId, item.productId, item.quantity, data.notes || null, data.createdBy || null, batchId]
+      );
+      transfers.push(result.rows[0] as StockTransfer);
+    }
+    return { batchId, transfers };
+  });
+}
+
 async function getStockTransfer(id: number): Promise<StockTransfer | undefined> {
   return await queryOne(
-    `SELECT *, from_branch_id AS "fromBranchId", to_branch_id AS "toBranchId", product_id AS "productId",
+    `SELECT *, batch_id AS "batchId", from_branch_id AS "fromBranchId", to_branch_id AS "toBranchId", product_id AS "productId",
             created_by AS "createdBy", completed_at AS "completedAt", created_at AS "createdAt"
        FROM stock_transfers WHERE id = $1`, [id]
   ) as StockTransfer | undefined;
 }
 
 async function listStockTransfers(): Promise<StockTransfer[]> {
-  return await queryAll(`SELECT st.id, st.from_branch_id AS "fromBranchId", st.to_branch_id AS "toBranchId", st.product_id AS "productId", st.quantity, st.status,
+  return await queryAll(`SELECT st.id, st.batch_id AS "batchId", st.from_branch_id AS "fromBranchId", st.to_branch_id AS "toBranchId", st.product_id AS "productId", st.quantity, st.status,
     st.notes, st.created_by AS "createdBy", st.dispatched_by AS "dispatchedBy", st.received_by AS "receivedBy", st.dispatched_at AS "dispatchedAt", st.received_at AS "receivedAt",
     st.dispatch_notes AS "dispatchNotes", st.receive_notes AS "receiveNotes", st.completed_at AS "completedAt", st.created_at AS "createdAt",
     fb.name AS "fromBranchName", tb.name AS "toBranchName", p.name AS "productName"
     FROM stock_transfers st JOIN branches fb ON fb.id = st.from_branch_id JOIN branches tb ON tb.id = st.to_branch_id JOIN products p ON p.id = st.product_id ORDER BY st.created_at DESC`) as StockTransfer[];
+}
+
+async function dispatchStockTransferSheet(batchId: string, actorId?: number | null, notes = ""): Promise<{ ok: boolean; error?: string }> {
+  return await transaction(async (client) => {
+    const rows = (await client.query("SELECT id, from_branch_id, to_branch_id, product_id, quantity, status FROM stock_transfers WHERE batch_id = $1 ORDER BY product_id, id FOR UPDATE", [batchId])).rows as any[];
+    if (!rows.length || rows.some((row) => row.status !== "pending")) return { ok: false, error: "Transfer sheet not found or is no longer pending." };
+    const serialsByTransfer = new Map<number, number[]>();
+    for (const row of rows) {
+      const source = (await client.query("SELECT quantity_in_stock, COALESCE(quantity_reserved, 0) AS reserved FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE", [row.product_id, row.from_branch_id])).rows?.[0] as any;
+      const pending = (await client.query("SELECT COALESCE(SUM(quantity), 0)::int AS quantity FROM stock_transfers WHERE product_id = $1 AND from_branch_id = $2 AND status = 'pending' AND batch_id <> $3", [row.product_id, row.from_branch_id, batchId])).rows?.[0] as any;
+      const available = Math.max(0, Number(source?.quantity_in_stock || 0) - Number(source?.reserved || 0) - Number(pending?.quantity || 0));
+      if (available < Number(row.quantity)) return { ok: false, error: `Only ${available} unreserved unit(s) of ${row.product_id} are available at the source branch; ${row.quantity} requested.` };
+      const product = (await client.query("SELECT serial_tracking FROM products WHERE id = $1", [row.product_id])).rows?.[0] as any;
+      if (product?.serial_tracking) {
+        const serials = (await client.query("SELECT id FROM serial_numbers WHERE product_id = $1 AND branch_id = $2 AND status = 'in_stock' ORDER BY id LIMIT $3 FOR UPDATE", [row.product_id, row.from_branch_id, row.quantity])).rows as any[];
+        if (serials.length !== Number(row.quantity)) return { ok: false, error: `The source has ${serials.length} available serial record(s) for ${row.product_id}, but ${row.quantity} are required. Reconcile serial records before dispatch.` };
+        serialsByTransfer.set(Number(row.id), serials.map((serial) => Number(serial.id)));
+      }
+    }
+    const actor = Number.isInteger(actorId) && Number(actorId) > 0 ? Number(actorId) : null;
+    for (const row of rows) {
+      const qty = Number(row.quantity);
+      const serialIds = serialsByTransfer.get(Number(row.id)) || [];
+      if (serialIds.length) {
+        for (const serialId of serialIds) await client.query("INSERT INTO stock_transfer_serials (transfer_id, serial_id) VALUES ($1, $2)", [row.id, serialId]);
+        const moved = await client.query("UPDATE serial_numbers SET status = 'in_transit', branch_id = NULL WHERE id = ANY($1::int[]) AND status = 'in_stock' AND branch_id = $2", [serialIds, row.from_branch_id]);
+        if ((moved.rowCount ?? 0) !== qty) throw new Error("A selected serial changed while dispatching. The transfer sheet was rolled back; refresh and reconcile.");
+      }
+      await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock - $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, row.product_id, row.from_branch_id]);
+      await client.query("INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'transfer_out', $2, 'stock_transfer', $3, $4, $5, $6)", [row.product_id, -qty, String(row.id), notes || `Transfer sheet ${batchId} dispatched`, actor, row.from_branch_id]);
+      await client.query("UPDATE stock_transfers SET status = 'in_transit', dispatched_by = $2, dispatched_at = NOW()::text, dispatch_notes = $3 WHERE id = $1 AND status = 'pending'", [row.id, actor, notes]);
+    }
+    return { ok: true };
+  });
+}
+
+async function receiveStockTransferSheet(batchId: string, actorId?: number | null, notes = ""): Promise<{ ok: boolean; error?: string }> {
+  return await transaction(async (client) => {
+    const rows = (await client.query("SELECT id, from_branch_id, to_branch_id, product_id, quantity, status FROM stock_transfers WHERE batch_id = $1 ORDER BY product_id, id FOR UPDATE", [batchId])).rows as any[];
+    if (!rows.length || rows.some((row) => row.status !== "in_transit")) return { ok: false, error: "Transfer sheet is not awaiting receipt." };
+    const serialsByTransfer = new Map<number, number[]>();
+    for (const row of rows) {
+      const product = (await client.query("SELECT serial_tracking FROM products WHERE id = $1", [row.product_id])).rows?.[0] as any;
+      if (product?.serial_tracking) {
+        const serials = (await client.query(`SELECT ts.serial_id FROM stock_transfer_serials ts JOIN serial_numbers sn ON sn.id = ts.serial_id
+          WHERE ts.transfer_id = $1 AND sn.product_id = $2 AND sn.status = 'in_transit' ORDER BY ts.serial_id FOR UPDATE OF sn`, [row.id, row.product_id])).rows as any[];
+        if (serials.length !== Number(row.quantity)) return { ok: false, error: `Serial records for ${row.product_id} are incomplete; contact an administrator before receiving.` };
+        serialsByTransfer.set(Number(row.id), serials.map((serial) => Number(serial.serial_id)));
+      }
+      await client.query("SELECT id FROM stock_levels WHERE product_id = $1 AND branch_id = $2 FOR UPDATE", [row.product_id, row.to_branch_id]);
+    }
+    const actor = Number.isInteger(actorId) && Number(actorId) > 0 ? Number(actorId) : null;
+    for (const row of rows) {
+      const qty = Number(row.quantity);
+      const serialIds = serialsByTransfer.get(Number(row.id)) || [];
+      if (serialIds.length) {
+        const restored = await client.query("UPDATE serial_numbers SET status = 'in_stock', branch_id = $1 WHERE id = ANY($2::int[]) AND status = 'in_transit'", [row.to_branch_id, serialIds]);
+        if ((restored.rowCount ?? 0) !== qty) throw new Error("Serial status changed while receiving. The entire transfer sheet was rolled back; refresh and reconcile.");
+      }
+      const dest = (await client.query("SELECT id FROM stock_levels WHERE product_id = $1 AND branch_id = $2", [row.product_id, row.to_branch_id])).rows?.[0];
+      if (dest) await client.query("UPDATE stock_levels SET quantity_in_stock = quantity_in_stock + $1, updated_at = NOW()::text WHERE product_id = $2 AND branch_id = $3", [qty, row.product_id, row.to_branch_id]);
+      else await client.query("INSERT INTO stock_levels (product_id, branch_id, quantity_in_stock, quantity_reserved, quantity_sold, low_stock_threshold) VALUES ($1, $2, $3, 0, 0, 5)", [row.product_id, row.to_branch_id, qty]);
+      await client.query("INSERT INTO stock_movements (product_id, movement_type, quantity, reference_type, reference_id, notes, created_by, branch_id) VALUES ($1, 'transfer_in', $2, 'stock_transfer', $3, $4, $5, $6)", [row.product_id, qty, String(row.id), notes || `Transfer sheet ${batchId} received`, actor, row.to_branch_id]);
+      await client.query("UPDATE stock_transfers SET status = 'completed', received_by = $2, received_at = NOW()::text, receive_notes = $3, completed_at = NOW()::text WHERE id = $1 AND status = 'in_transit'", [row.id, actor, notes]);
+    }
+    return { ok: true };
+  });
+}
+
+async function rejectStockTransferSheet(batchId: string): Promise<boolean> {
+  return await transaction(async (client) => {
+    const rows = (await client.query("SELECT status FROM stock_transfers WHERE batch_id = $1 FOR UPDATE", [batchId])).rows as any[];
+    if (!rows.length || rows.some((row) => row.status !== "pending")) return false;
+    const result = await client.query("UPDATE stock_transfers SET status = 'rejected' WHERE batch_id = $1 AND status = 'pending'", [batchId]);
+    return (result.rowCount ?? 0) > 0;
+  });
 }
 
 async function dispatchStockTransfer(id: number, actorId?: number | null, notes = ""): Promise<{ ok: boolean; error?: string }> {
@@ -5412,7 +5518,7 @@ export {
   getMessagesForCustomer, getMessagesForProvider, sendMessage, markMessageRead, getUnreadMessageCount, listAllMessages,
   getCartItems, getCartCount, addToCart, setCartQuantity, removeFromCart, clearCart, generateProductId,
   getStockLevel, updateStockLevel, recordStockMovement, getStockMovements, getLowStockItems, getReorderSuggestions,
-  createStockTransfer, getStockTransfer, listStockTransfers, completeStockTransfer, getUnlocatedStockSummary, assignUnlocatedStockToBranch, dispatchStockTransfer, receiveStockTransfer, rejectStockTransfer,
+  createStockTransfer, createStockTransferSheet, dispatchStockTransferSheet, receiveStockTransferSheet, rejectStockTransferSheet, getStockTransfer, listStockTransfers, completeStockTransfer, getUnlocatedStockSummary, assignUnlocatedStockToBranch, dispatchStockTransfer, receiveStockTransfer, rejectStockTransfer,
   listAvailableStockSerials, listStockDisposals, createStockDisposal,
   listSubscriptionPlans, getSubscriptionPlan, createSubscriptionPlan, updateSubscriptionPlan, deleteSubscriptionPlan,
   listBranches, getBranch, createBranch, updateBranch, deleteBranch, getBranchCount, getMaxBranchesForShop, canCreateBranch,
