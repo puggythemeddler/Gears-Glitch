@@ -800,12 +800,15 @@ function formatAuditTimestamp(value: unknown): string {
 
 function formatAuditDetails(value: unknown): string {
   if (value == null || value === "") return "—";
-  let details = value;
-  if (typeof details === "string") {
-    try { details = JSON.parse(details); } catch { return details; }
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return typeof parsed === "string" ? parsed : JSON.stringify(parsed) ?? value;
+    } catch {
+      return value;
+    }
   }
-  if (typeof details === "string") return details;
-  try { return JSON.stringify(details); } catch { return String(details); }
+  try { return JSON.stringify(value) ?? String(value); } catch { return String(value); }
 }
 
 function AdminAuditLog() {
