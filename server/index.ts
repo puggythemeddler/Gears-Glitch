@@ -7860,11 +7860,16 @@ app.post("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission(
   if (!PURCHASE_DOCUMENT_TYPES.has(documentType as PurchaseOrderDocumentType)) { res.status(400).json({ error: "Choose a supplier quote, supplier purchase order, invoice, or delivery note." }); return; }
   const validation = validatePurchaseOrderDocument(file.mimetype, file.originalname || "", file.buffer);
   if (validation.ok === false) { res.status(400).json({ error: validation.error }); return; }
+  let scanResult: Awaited<ReturnType<typeof scanPurchaseOrderDocument>>;
   try {
-    await scanPurchaseOrderDocument(file.buffer);
+    scanResult = await scanPurchaseOrderDocument(file.buffer);
   } catch (err: any) {
     const unavailable = /unavailable|timed out|not configured|could not verify/i.test(String(err?.message || ""));
     res.status(unavailable ? 503 : 400).json({ error: err?.message || "The supplier document did not pass the security scan." });
+    return;
+  }
+  if (scanResult.status !== "clean") {
+    res.status(503).json({ error: "Supplier document uploads are paused until the malware scanner is online and can confirm the file is clean." });
     return;
   }
   const originalName = sanitizePurchaseOrderFilename(String(file.originalname || "supplier-document"));
@@ -7875,9 +7880,9 @@ app.post("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission(
     sha256: crypto.createHash("sha256").update(file.buffer).digest("hex"), uploadedBy: Number(actor.sub),
   });
   if (!result.ok || !result.document) { res.status(/not found/i.test(result.error || "") ? 404 : 409).json({ error: result.error || "The document could not be attached." }); return; }
-  try { await logAudit(actor.sub, actor.username || "Admin", "uploaded", "purchase_order_document", String(result.document.id), { purchaseOrderId, documentType: purchaseOrderDocumentTypeLabel(documentType), sizeBytes: result.document.sizeBytes }, actor.role); }
+  try { await logAudit(actor.sub, actor.username || "Admin", "uploaded", "purchase_order_document", String(result.document.id), { purchaseOrderId, documentType: purchaseOrderDocumentTypeLabel(documentType), sizeBytes: result.document.sizeBytes, malwareScan: scanResult.status }, actor.role); }
   catch { console.warn("[audit] Failed to record purchase-order document upload"); }
-  res.status(201).json({ document: result.document });
+  res.status(201).json({ document: result.document, malwareScan: scanResult.status });
 }));
 
 app.get("/api/purchases/:id/documents/:documentId/download", adminAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
@@ -7888,6 +7893,17 @@ app.get("/api/purchases/:id/documents/:documentId/download", adminAuthMiddleware
   if (!document) { res.status(404).json({ error: "Supplier document not found." }); return; }
   const checksum = crypto.createHash("sha256").update(document.fileData).digest("hex");
   if (checksum !== document.sha256) { res.status(500).json({ error: "The stored supplier document failed its integrity check." }); return; }
+  try {
+    const scanResult = await scanPurchaseOrderDocument(document.fileData);
+    if (scanResult.status !== "clean") {
+      res.status(503).json({ error: "Supplier document downloads are paused until the malware scanner is online and can confirm the file is clean." });
+      return;
+    }
+  } catch (err: any) {
+    const unavailable = /unavailable|timed out|not configured|could not verify/i.test(String(err?.message || ""));
+    res.status(unavailable ? 503 : 400).json({ error: err?.message || "The supplier document did not pass the security scan." });
+    return;
+  }
   const actor = (req as any).user;
   const fallbackName = document.originalName.replace(/[^A-Za-z0-9._ -]/g, "_").replace(/[\\"\r\n]/g, "_") || `supplier-document-${document.id}`;
   const encodedName = encodeURIComponent(document.originalName).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);

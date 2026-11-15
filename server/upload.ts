@@ -3,7 +3,7 @@ import path from "path";
 import { Readable, Transform } from "stream";
 import multer from "multer";
 import sharp from "sharp";
-import { scanUploadBuffer } from "./malware-scan";
+import { scanUploadBuffer, type UploadScanResult } from "./malware-scan";
 import { validatePurchaseOrderDocument } from "./purchase-order-documents";
 import { v2 as cloudinary } from "cloudinary";
 import type { UploadApiOptions, UploadApiResponse } from "cloudinary";
@@ -329,8 +329,8 @@ const uploadPurchaseOrderDocument = multer({
   },
 }).single("file");
 
-async function scanPurchaseOrderDocument(buffer: Buffer): Promise<void> {
-  await scanUploadBuffer(buffer);
+async function scanPurchaseOrderDocument(buffer: Buffer): Promise<UploadScanResult> {
+  return scanUploadBuffer(buffer);
 }
 
 export async function scanProductImportBuffer(buffer: Buffer): Promise<void> {
