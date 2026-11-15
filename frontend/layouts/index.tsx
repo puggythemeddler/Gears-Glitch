@@ -29,6 +29,10 @@ export const DEFAULT_THEME_CUSTOM = {
   bgDark: "#0c0a09",
 };
 
+function safeThemeColor(value: unknown, fallback: string): string {
+  return typeof value === "string" && /^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(value) ? value : fallback;
+}
+
 export function getLayout(layoutKey: string): LayoutModule {
   return STATIC_LAYOUTS[layoutKey] || STATIC_LAYOUTS.original;
 }
@@ -93,13 +97,13 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
         el.setAttribute("data-brand-theme", active);
       }
       if (active === "custom" && themeCustom) {
-        el.style.setProperty("--brand-primary", themeCustom.primary || DEFAULT_THEME_CUSTOM.primary);
-        el.style.setProperty("--brand-primary-hover", themeCustom.primaryHover || DEFAULT_THEME_CUSTOM.primaryHover);
-        el.style.setProperty("--brand-accent", themeCustom.accent || DEFAULT_THEME_CUSTOM.accent);
-        el.style.setProperty("--brand-bg-light", themeCustom.bgLight || DEFAULT_THEME_CUSTOM.bgLight);
-        el.style.setProperty("--brand-bg-dark", themeCustom.bgDark || DEFAULT_THEME_CUSTOM.bgDark);
-        el.style.setProperty("--brand-hero-bg-light", themeCustom.heroBgLight || "");
-        el.style.setProperty("--brand-hero-bg-dark", themeCustom.heroBgDark || "");
+        el.style.setProperty("--brand-primary", safeThemeColor(themeCustom.primary, DEFAULT_THEME_CUSTOM.primary));
+        el.style.setProperty("--brand-primary-hover", safeThemeColor(themeCustom.primaryHover, DEFAULT_THEME_CUSTOM.primaryHover));
+        el.style.setProperty("--brand-accent", safeThemeColor(themeCustom.accent, DEFAULT_THEME_CUSTOM.accent));
+        el.style.setProperty("--brand-bg-light", safeThemeColor(themeCustom.bgLight, DEFAULT_THEME_CUSTOM.bgLight));
+        el.style.setProperty("--brand-bg-dark", safeThemeColor(themeCustom.bgDark, DEFAULT_THEME_CUSTOM.bgDark));
+        el.style.setProperty("--brand-hero-bg-light", safeThemeColor(themeCustom.heroBgLight, ""));
+        el.style.setProperty("--brand-hero-bg-dark", safeThemeColor(themeCustom.heroBgDark, ""));
       } else {
         el.style.removeProperty("--brand-primary");
         el.style.removeProperty("--brand-primary-hover");

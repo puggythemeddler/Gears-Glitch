@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { isCustomerLoggedIn, getCustomerToken, setCustomerSession, clearAllSessions, api, initCsrf, getGuestCartCount, bootstrapSession, logoutServer } from "./api";
 import type { Settings } from "./types";
 import { setFormatConfig } from "@/layouts/shared";
+import { isAllowedPersistentImageSrc } from "./image-allowlist";
 
 const DEFAULT_FAVICON = "/default-favicon.png";
 
@@ -159,7 +160,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   function applyFavicon(url: string) {
     if (typeof document === "undefined") return;
-    const href = url || DEFAULT_FAVICON;
+    // Older settings may predate upload validation. Only load same-origin or
+    // approved Cloudinary image URLs; otherwise keep the bundled favicon.
+    const href = isAllowedPersistentImageSrc(url) ? url : DEFAULT_FAVICON;
     const ext = (href.split(".").pop() || "").toLowerCase();
     const type = ext === "ico" ? "image/x-icon" : ext === "svg" ? "image/svg+xml" : "image/png";
     const updateLink = (rel: string, size?: string) => {
