@@ -8,9 +8,10 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
+  className?: string;
 }
 
-export function Modal({ open, onClose, title, children, footer, size = "md" }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, size = "md", className = "" }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, open);
@@ -33,8 +34,8 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
   const sizeClass = size === "sm" ? "modal-sm" : size === "lg" ? "modal-lg" : size === "xl" ? "modal-xl" : "";
 
   return (
-    <div className="modal-overlay" ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}>
-      <div className={`modal ${sizeClass}`} ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}>
+    <div className={`modal-overlay${className ? ` ${className}` : ""}`} ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}>
+      <div className={`modal ${sizeClass}${className ? ` ${className}` : ""}`} ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-header">
           {title && <h2 className="modal-title">{title}</h2>}
           <button className="modal-close" onClick={onClose} aria-label="Close">&times;</button>
