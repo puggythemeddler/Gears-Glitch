@@ -27,6 +27,7 @@ Thumbs.db
 dist/
 .next/
 frontend/tsconfig.tsbuildinfo
+frontend/public/ocr/
 
 # Python virtualenv (user manual generator)
 .venv/

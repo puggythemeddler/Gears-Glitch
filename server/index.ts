@@ -7789,7 +7789,7 @@ app.get("/api/purchases/branches", adminAuthMiddleware, asyncHandler(async (_req
 
 app.get("/api/admin/purchase-products", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
   const products = await listProducts(undefined, undefined, true);
-  res.json({ products: products.map((product: any) => ({ id: product.id, name: product.name, price: product.price, costPrice: product.costPrice ?? null })) });
+  res.json({ products: products.map((product: any) => ({ id: product.id, name: product.name, barcode: product.barcode || "", price: product.price, costPrice: product.costPrice ?? null })) });
 }));
 
 app.get("/api/purchases", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
