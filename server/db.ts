@@ -410,6 +410,7 @@ interface Branch {
   managerId: number | null;
   managerName: string;
   isActive: boolean;
+  onlineFulfillmentEnabled: boolean;
   planId: string | null;
   createdAt: string;
 }
@@ -696,6 +697,7 @@ function mapBranch(row: any): Branch {
     managerId: row.manager_id ?? null,
     managerName: row.manager_username ?? "",
     isActive: Boolean(row.is_active),
+    onlineFulfillmentEnabled: row.online_fulfillment_enabled === undefined ? true : Boolean(row.online_fulfillment_enabled),
     planId: row.plan_id ?? null,
     createdAt: row.created_at,
   };
@@ -2134,8 +2136,8 @@ async function getBranch(id: number): Promise<Branch | undefined> {
   return row ? mapBranch(row) : undefined;
 }
 
-async function createBranch(data: { name: string; address?: string; phone?: string; email?: string; managerId?: number; isActive?: boolean; planId?: string }): Promise<Branch> {
-  const result = await query("INSERT INTO branches (name, address, phone, email, manager_id, is_active, plan_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id", [data.name, data.address || "", data.phone || "", data.email || "", data.managerId || null, data.isActive !== false ? 1 : 0, data.planId || null]);
+async function createBranch(data: { name: string; address?: string; phone?: string; email?: string; managerId?: number; isActive?: boolean; onlineFulfillmentEnabled?: boolean; planId?: string }): Promise<Branch> {
+  const result = await query("INSERT INTO branches (name, address, phone, email, manager_id, is_active, online_fulfillment_enabled, plan_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id", [data.name, data.address || "", data.phone || "", data.email || "", data.managerId || null, data.isActive !== false ? 1 : 0, data.onlineFulfillmentEnabled !== false ? 1 : 0, data.planId || null]);
   const branchId = result.rows[0].id;
   if (data.planId) {
     try {
@@ -2146,7 +2148,7 @@ async function createBranch(data: { name: string; address?: string; phone?: stri
   return (await getBranch(branchId))!;
 }
 
-async function updateBranch(id: number, updates: Partial<{ name: string; address: string; phone: string; email: string; managerId: number; isActive: boolean; planId: string }>): Promise<Branch | null> {
+async function updateBranch(id: number, updates: Partial<{ name: string; address: string; phone: string; email: string; managerId: number; isActive: boolean; onlineFulfillmentEnabled: boolean; planId: string }>): Promise<Branch | null> {
   const existing = await getBranch(id);
   if (!existing) return null;
   const fields: string[] = []; const params: any[] = []; let idx = 1;
@@ -2156,6 +2158,7 @@ async function updateBranch(id: number, updates: Partial<{ name: string; address
   if (updates.email !== undefined) { fields.push(`email = $${idx}`); params.push(updates.email); idx++; }
   if (updates.managerId !== undefined) { fields.push(`manager_id = $${idx}`); params.push(updates.managerId); idx++; }
   if (updates.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.isActive ? 1 : 0); idx++; }
+  if (updates.onlineFulfillmentEnabled !== undefined) { fields.push(`online_fulfillment_enabled = $${idx}`); params.push(updates.onlineFulfillmentEnabled ? 1 : 0); idx++; }
   if (updates.planId !== undefined) {
     fields.push(`plan_id = $${idx}`); params.push(updates.planId); idx++;
     try {
