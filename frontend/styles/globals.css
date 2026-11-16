@@ -1850,6 +1850,61 @@ textarea:not(.input)::placeholder {
   color: var(--text-tertiary);
 }
 
+/* Keep the OS-native file chooser while bringing its visible trigger into the
+   same warm, bordered control language as the rest of the app. */
+input[type="file"] {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: var(--control-min-height);
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+input[type="file"]::file-selector-button,
+input[type="file"]::-webkit-file-upload-button {
+  min-height: 34px;
+  margin-inline-end: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-md);
+  background: var(--surface-hover);
+  color: var(--text);
+  font: inherit;
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+input[type="file"]:hover:not(:disabled)::file-selector-button,
+input[type="file"]:hover:not(:disabled)::-webkit-file-upload-button {
+  border-color: var(--primary);
+  background: var(--primary-subtle);
+  color: var(--primary);
+}
+
+input[type="file"]:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+
+input[type="file"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+input[type="file"]:disabled::file-selector-button,
+input[type="file"]:disabled::-webkit-file-upload-button {
+  cursor: not-allowed;
+}
+
 /* ----- Catch-all for unstyled labels inside fields ----- */
 .field > label:not(.input-label) {
   display: block;

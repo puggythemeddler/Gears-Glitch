@@ -1016,9 +1016,9 @@ export default function StorefrontBuilder() {
 
   const renderLayoutSettings = () => (
     <>
-      <div style={{ display: "flex", gap: "0.35rem", borderBottom: "1px solid var(--border)", marginBottom: "1rem" }}>
+      <div className="sb-tabs" role="group" aria-label="Website Studio settings">
         {(["content", "design", "mascot", "templates"] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setTab(t)} style={{ ...tabChip, ...(tab === t ? tabChipActive : {}) }}>{t === "content" ? "Hero" : t === "mascot" ? "Mascot" : t === "design" ? "Design" : "Templates"}</button>
+          <button key={t} className="sb-tab" type="button" aria-pressed={tab === t} onClick={() => setTab(t)}>{t === "content" ? "Hero" : t === "mascot" ? "Mascot" : t === "design" ? "Design" : "Templates"}</button>
         ))}
       </div>
 
@@ -1167,19 +1167,10 @@ export default function StorefrontBuilder() {
     </>
   );
 
-  const tabChip: React.CSSProperties = {
-    padding: "0.4rem 0.9rem", fontSize: "0.8rem", fontWeight: 600, borderRadius: "8px 8px 0 0",
-    border: "none", borderBottom: "2px solid transparent", cursor: "pointer",
-    background: "transparent", color: "var(--text-secondary)",
-  };
-  const tabChipActive: React.CSSProperties = {
-    background: "var(--surface-hover)", color: "var(--text)", borderBottomColor: "var(--primary)",
-  };
-
   const renderTabs = () => (
-    <div style={{ display: "flex", gap: "0.35rem", borderBottom: "1px solid var(--border)", marginBottom: "1rem" }}>
+    <div className="sb-tabs" role="group" aria-label="Section editor tabs">
       {(["content", "design", "layout"] as const).map((t) => (
-        <button key={t} type="button" onClick={() => setTab(t)} style={{ ...tabChip, ...(tab === t ? tabChipActive : {}) }}>
+        <button key={t} className="sb-tab" type="button" aria-pressed={tab === t} onClick={() => setTab(t)}>
           {t === "content" ? "Content" : t === "design" ? "Design" : "Layout"}
         </button>
       ))}
@@ -1208,6 +1199,17 @@ export default function StorefrontBuilder() {
           .sb-studio:fullscreen .sb-canvas { height: 58vh; }
         }
         .sb-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; }
+        .sb-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); border-bottom: 1px solid var(--border); margin-bottom: var(--space-4); }
+        .sb-tab { display: inline-flex; align-items: center; justify-content: center; min-height: var(--control-min-height); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-bottom: 2px solid transparent; border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--text-sm); font-weight: var(--font-medium); line-height: 1.4; cursor: pointer; transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease, color var(--duration-fast) ease; }
+        .sb-tab:hover { background: var(--surface-hover); color: var(--text); }
+        .sb-tab[aria-pressed="true"] { background: var(--primary-subtle); color: var(--primary); border-bottom-color: var(--primary); font-weight: var(--font-semibold); }
+        .sb-tab:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .sb-device-switcher { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+        .sb-device-button { min-height: var(--control-min-height); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--text-sm); font-weight: var(--font-medium); cursor: pointer; transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease, color var(--duration-fast) ease; }
+        .sb-device-button:hover:not([aria-pressed="true"]) { background: var(--surface-hover); color: var(--text); }
+        .sb-device-button[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: var(--font-semibold); }
+        .sb-device-button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .sb-device-button:disabled { opacity: 0.5; cursor: not-allowed; }
         .sb-palette-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: grab; margin-bottom: 0.5rem; font-size: 0.85rem; background: var(--bg); transition: border-color var(--duration-fast) ease; }
         .sb-palette-item:hover { border-color: var(--primary); }
         .sb-palette-item:active { cursor: grabbing; }
@@ -1324,9 +1326,9 @@ export default function StorefrontBuilder() {
             <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
               <RippleButton size="small" variant={!showPreview && !previewTemplate ? "primary" : "secondary"} onClick={() => { setShowPreview(false); setPreviewTemplate(null); setEditField(null); setEditRect(null); }}>Edit</RippleButton>
               <RippleButton size="small" variant={showPreview || !!previewTemplate ? "primary" : "secondary"} onClick={() => { setShowPreview(true); setPreviewTemplate(null); setSelectedSection(null); setEditField(null); setEditRect(null); }}>Preview</RippleButton>
-              <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+              <div className="sb-device-switcher" role="group" aria-label="Preview device size">
                 {DEVICES.map((d) => (
-                  <button key={d.id} type="button" onClick={() => { setDevice(d.id); setEditField(null); setEditRect(null); }} aria-pressed={device === d.id} style={{ padding: "0.4rem 0.8rem", fontSize: "0.78rem", fontWeight: 600, border: "none", cursor: "pointer", background: device === d.id ? "var(--primary)" : "transparent", color: device === d.id ? "var(--on-primary)" : "var(--text-secondary)" }}>{d.label}</button>
+                  <button key={d.id} className="sb-device-button" type="button" onClick={() => { setDevice(d.id); setEditField(null); setEditRect(null); }} aria-pressed={device === d.id}>{d.label}</button>
                 ))}
               </div>
               <span style={{ fontSize: "0.78rem", color: "var(--text-tertiary)" }}>Ctrl/Cmd+Z undo · Ctrl/Cmd+Shift+Z redo</span>
