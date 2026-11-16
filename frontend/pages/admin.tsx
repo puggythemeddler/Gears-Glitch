@@ -2648,7 +2648,7 @@ function AdminBranches() {
   const { data: sData } = useFetch(() => api<{ staff: { id: number; username: string; role: string }[] }>("/api/staff"), []);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Branch | null>(null);
-  const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", managerId: "" });
+  const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", managerId: "", onlineFulfillmentEnabled: true });
   const [saving, setSaving] = useState(false);
   const [branchPlanEditId, setBranchPlanEditId] = useState<number | null>(null);
   const [allPlans, setAllPlans] = useState<any[]>([]);
@@ -2667,13 +2667,13 @@ function AdminBranches() {
 
   function openNew() {
     setEditing(null);
-    setForm({ name: "", address: "", phone: "", email: "", managerId: "" });
+    setForm({ name: "", address: "", phone: "", email: "", managerId: "", onlineFulfillmentEnabled: true });
     setShowForm(true);
   }
 
   function openEdit(b: Branch) {
     setEditing(b);
-    setForm({ name: b.name, address: b.address, phone: b.phone, email: b.email, managerId: b.managerId ? String(b.managerId) : "" });
+    setForm({ name: b.name, address: b.address, phone: b.phone, email: b.email, managerId: b.managerId ? String(b.managerId) : "", onlineFulfillmentEnabled: b.onlineFulfillmentEnabled !== false });
     setShowForm(true);
   }
 
@@ -2687,6 +2687,7 @@ function AdminBranches() {
         phone: form.phone.trim(),
         email: form.email.trim(),
         managerId: form.managerId ? Number(form.managerId) : null,
+        onlineFulfillmentEnabled: form.onlineFulfillmentEnabled,
       };
       if (editing) {
         await api(`/api/admin/branches/${editing.id}`, { method: "PUT", body: JSON.stringify(body) });
@@ -2705,6 +2706,14 @@ function AdminBranches() {
     try {
       await api(`/api/admin/branches/${b.id}`, { method: "PUT", body: JSON.stringify({ isActive: !b.isActive }) });
       refetch();
+    } catch (err: any) { feedback.error(err.message); }
+  }
+
+  async function toggleOnlineFulfillment(b: Branch) {
+    try {
+      await api(`/api/admin/branches/${b.id}`, { method: "PUT", body: JSON.stringify({ onlineFulfillmentEnabled: !b.onlineFulfillmentEnabled }) });
+      refetch();
+      feedback.success(!b.onlineFulfillmentEnabled ? "Branch enabled for online checkout." : "Branch hidden from online checkout; internal operations remain active.");
     } catch (err: any) { feedback.error(err.message); }
   }
 
@@ -2751,6 +2760,13 @@ function AdminBranches() {
               </label>
               {owners.length === 0 && <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>No owner users found. Create an owner user in Users first.</p>}
             </div>
+            <div className="field">
+              <label style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
+                <input type="checkbox" checked={form.onlineFulfillmentEnabled} onChange={(e) => setForm({ ...form, onlineFulfillmentEnabled: e.target.checked })} />
+                Available for online orders
+              </label>
+              <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>Turn this off to keep a branch for internal stock and testing without showing it to customers at checkout.</p>
+            </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <RippleButton type="submit" loading={saving}>{editing ? "Update" : "Create"}</RippleButton>
               <RippleButton variant="secondary" onClick={() => { setShowForm(false); setEditing(null); }}>Cancel</RippleButton>
@@ -2769,7 +2785,7 @@ function AdminBranches() {
       </div>
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Owner</th><th>Plan</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Owner</th><th>Plan</th><th>Status</th><th>Online checkout</th><th>Actions</th></tr></thead>
           <tbody>
             {branches.map((b) => {
               const currentPlan = allPlans.find((p: any) => p.id === b.planId);
@@ -2803,6 +2819,11 @@ function AdminBranches() {
                   </td>
                   <td><span className={`plan-status ${b.isActive ? "active" : ""}`} style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "var(--surface)", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>{b.isActive ? "Active" : "Inactive"}</span></td>
                   <td>
+                    <RippleButton size="small" variant={b.onlineFulfillmentEnabled ? "secondary" : "ghost"} disabled={!b.isActive} onClick={() => toggleOnlineFulfillment(b)}>
+                      {b.onlineFulfillmentEnabled ? "Shown to customers" : "Internal only"}
+                    </RippleButton>
+                  </td>
+                  <td>
                     <div style={{ display: "flex", gap: "0.25rem" }}>
                       <RippleButton size="small" onClick={() => openEdit(b)}>Edit</RippleButton>
                       <RippleButton size="small" variant="ghost" onClick={() => toggleBranch(b)}>{b.isActive ? "Deactivate" : "Activate"}</RippleButton>
@@ -2812,7 +2833,7 @@ function AdminBranches() {
                 </tr>
               );
             })}
-            {branches.length === 0 && <tr><td colSpan={8}><EmptyState icon="default" title="No branches yet" description="Create your first branch to start managing multi-location operations." actionLabel="+ Add Branch" onAction={openNew} /></td></tr>}
+            {branches.length === 0 && <tr><td colSpan={9}><EmptyState icon="default" title="No branches yet" description="Create your first branch to start managing multi-location operations." actionLabel="+ Add Branch" onAction={openNew} /></td></tr>}
           </tbody>
         </table>
       </div>

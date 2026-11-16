@@ -17,6 +17,7 @@ import crypto from "crypto";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import { shouldRejectUnlocatedStockWrite } from "./stock-location-guard";
+import { filterOnlineFulfillmentBranches } from "./online-fulfillment";
 import {
   initDb,
   getSettings,
@@ -1106,7 +1107,7 @@ app.get("/api/shipping/counties", asyncHandler(async (_req: Request, res: Respon
 }));
 
 app.get("/api/store/branches", asyncHandler(async (_req: Request, res: Response) => {
-  const branches = (await listBranches()).filter((branch) => branch.isActive).map(({ id, name }) => ({ id, name }));
+  const branches = filterOnlineFulfillmentBranches(await listBranches()).map(({ id, name }) => ({ id, name }));
   res.json({ branches, requiresBranch: await getBranchCount() > 0 });
 }));
 
@@ -2370,15 +2371,16 @@ app.get("/api/admin/branches", allowControlPlane(ownerAuthMiddleware), requirePe
 }));
 
 app.post("/api/admin/branches", ownerAuthMiddleware, requirePermission("branch:view"), asyncHandler(async (req: Request, res: Response) => {
-  const { name, address, phone, email, managerId, planId } = req.body || {};
+  const { name, address, phone, email, managerId, planId, onlineFulfillmentEnabled } = req.body || {};
   if (!name || !name.trim()) { res.status(400).json({ error: "Branch name is required." }); return; }
+  if (onlineFulfillmentEnabled !== undefined && typeof onlineFulfillmentEnabled !== "boolean") { res.status(400).json({ error: "Online fulfillment setting must be true or false." }); return; }
 
   const allowed = await canCreateBranch();
   if (!allowed) {
     res.status(403).json({ error: "Branch limit reached. Upgrade your plan to add more branches." }); return;
   }
 
-  const branch = await createBranch({ name: name.trim(), address, phone, email, managerId: managerId || null, planId: planId || undefined });
+  const branch = await createBranch({ name: name.trim(), address, phone, email, managerId: managerId || null, planId: planId || undefined, onlineFulfillmentEnabled: onlineFulfillmentEnabled !== false });
   if (!branch) { res.status(500).json({ error: "Failed to create branch." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "branch", String(branch.id), { name }, (req as any).user.role);
   res.status(201).json({ branch });
@@ -2387,14 +2389,15 @@ app.post("/api/admin/branches", ownerAuthMiddleware, requirePermission("branch:v
 app.put("/api/admin/branches/:id", ownerAuthMiddleware, requirePermission("branch:view"), asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid branch ID." }); return; }
-  const { name, address, phone, email, managerId, isActive, planId } = req.body || {};
+  const { name, address, phone, email, managerId, isActive, planId, onlineFulfillmentEnabled } = req.body || {};
   if (name !== undefined && !isStr(name)) { res.status(400).json({ error: "Branch name must be a non-empty string." }); return; }
   if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
   if (address !== undefined && !isStr(address, 500)) { res.status(400).json({ error: "Address must be a valid string." }); return; }
   if (phone !== undefined && !isStr(phone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
-  const branch = await updateBranch(id, { name, address, phone, email, managerId, isActive, planId });
+  if (onlineFulfillmentEnabled !== undefined && typeof onlineFulfillmentEnabled !== "boolean") { res.status(400).json({ error: "Online fulfillment setting must be true or false." }); return; }
+  const branch = await updateBranch(id, { name, address, phone, email, managerId, isActive, onlineFulfillmentEnabled, planId });
   if (!branch) { res.status(404).json({ error: "Branch not found." }); return; }
-  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "branch", String(id), { name }, (req as any).user.role);
+  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "branch", String(id), { name, isActive, onlineFulfillmentEnabled }, (req as any).user.role);
   res.json({ branch });
 }));
 
@@ -3558,11 +3561,11 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
     const customerDetails = await findCustomerById(customerId);
     const cartItems = await getCartItems(customerId);
     if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
-    const activeBranches = (await listBranches()).filter((branch) => branch.isActive);
+    const activeBranches = filterOnlineFulfillmentBranches(await listBranches());
     const branchConfigured = await getBranchCount() > 0;
     let fulfillmentBranchId: number | undefined;
     if (branchConfigured) {
-      if (activeBranches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active fulfillment branch is configured." }); return; }
+      if (activeBranches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active branch is enabled for online fulfillment." }); return; }
       fulfillmentBranchId = Number(requestedBranchId);
       if (!isPosInt(fulfillmentBranchId) || !activeBranches.some((branch) => branch.id === fulfillmentBranchId)) {
         res.status(400).json({ error: "Choose an active fulfillment branch before placing this order." }); return;
@@ -3698,12 +3701,12 @@ app.post("/api/orders/create-pending", customerAuthMiddleware, asyncHandler(asyn
     if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
     const hiddenInCart = await queryOne("SELECT id FROM products WHERE id = ANY($1) AND is_hidden = 1", [cartItems.map((ci: any) => ci.productId)]) as any;
     if (hiddenInCart) { res.status(400).json({ error: "One or more items in your cart are no longer available for purchase on the online store." }); return; }
-    const branches = (await listBranches()).filter((branch) => branch.isActive);
+    const branches = filterOnlineFulfillmentBranches(await listBranches());
     const branchesConfigured = await getBranchCount() > 0;
     const requestedBranchId = Number(req.body?.branchId);
-    if (branchesConfigured && branches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active fulfillment branch is configured." }); return; }
+    if (branchesConfigured && branches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active branch is enabled for online fulfillment." }); return; }
     if (branchesConfigured && (!isPosInt(requestedBranchId) || !branches.some((branch) => branch.id === requestedBranchId))) {
-      res.status(400).json({ error: "Choose an active fulfillment branch before creating this order." }); return;
+      res.status(400).json({ error: "Choose a branch enabled for online fulfillment before creating this order." }); return;
     }
     const order = await createOrder({
       customerId,
