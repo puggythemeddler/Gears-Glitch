@@ -6,6 +6,14 @@ const SYMPTOMS = ["Won't turn on", "Slow performance", "Overheating", "Screen cr
 
 const DEVICE_TYPES = ["Laptop", "Desktop PC", "MacBook", "Tablet", "Printer", "Other"];
 
+type CatalogService = {
+  id: string;
+  name: string;
+  description: string;
+  mode: string;
+  feePolicies: Record<string, string>;
+};
+
 function purchasedDeviceType(category: string): string | null {
   const value = category.trim().toLowerCase();
   if (value.includes("mac")) return "MacBook";
@@ -28,6 +36,9 @@ export default function RepairBookPage() {
   const [mounted, setMounted] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [serviceName, setServiceName] = useState("");
+  const [catalogServiceId, setCatalogServiceId] = useState("");
+  const [catalogService, setCatalogService] = useState<CatalogService | null>(null);
+  const [catalogLoadError, setCatalogLoadError] = useState("");
   const [serviceKind, setServiceKind] = useState<"diagnosis_repair" | "planned_service">("diagnosis_repair");
   const [devices, setDevices] = useState<Array<{ orderItemId: number; name: string; productId: string; quantity: number; category: string; serialNumbers: string[]; serials?: Array<{ id: number; serialNumber: string; assetTag?: string | null }> }>>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
@@ -56,6 +67,29 @@ export default function RepairBookPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const catalogId = params.get("catalogService");
+    if (catalogId) {
+      setCatalogServiceId(catalogId);
+      setServiceKind("planned_service");
+      let cancelled = false;
+      api<{ enabled: boolean; services: CatalogService[] }>("/api/service-catalog").then((data) => {
+        if (cancelled) return;
+        const service = data.enabled ? data.services?.find((item) => item.id === catalogId) : null;
+        if (!service) {
+          setCatalogLoadError("This service is no longer available for new requests. Please return to the repairs page to choose an active service.");
+          return;
+        }
+        setCatalogService(service);
+        setServiceName(service.name);
+        const summary = document.querySelector<HTMLInputElement>("input[name='issueSummary']");
+        if (summary && !summary.value) summary.value = service.name;
+        const desc = document.querySelector<HTMLTextAreaElement>("textarea[name='issueDescription']");
+        if (desc && !desc.value) desc.value = service.description;
+      }).catch(() => {
+        if (!cancelled) setCatalogLoadError("We could not load this service. Please return to the repairs page and try again.");
+      });
+      return () => { cancelled = true; };
+    }
     const serviceId = params.get("service");
     if (!serviceId) return;
     let cancelled = false;
@@ -88,6 +122,11 @@ export default function RepairBookPage() {
     if (!requireCustomerLogin()) return;
     setSubmitting(true);
     setStatusMsg(null);
+    if (catalogServiceId && !catalogService) {
+      setSubmitting(false);
+      setStatusMsg({ text: catalogLoadError || "This service is not available. Please return to the repairs page and choose an active service.", error: true });
+      return;
+    }
     const fd = new FormData(e.currentTarget);
     const symptoms = serviceKind === "diagnosis_repair" ? getCheckedSymptoms(e.currentTarget.querySelectorAll("input[name='symptoms']")) : [];
 
@@ -106,7 +145,8 @@ export default function RepairBookPage() {
           requestedVisitTime: fd.get("requestedVisitTime"),
           notes: fd.get("notes"),
           repairType: repairTypeRef.current,
-          serviceKind: fd.get("serviceKind"),
+          serviceKind: catalogService ? "planned_service" : fd.get("serviceKind"),
+          ...(catalogService ? { catalogServiceId: catalogService.id } : {}),
           orderItemId: fd.get("orderItemId") || null,
         }),
       });
@@ -118,7 +158,8 @@ export default function RepairBookPage() {
   }
 
   if (mounted && !loggedIn) {
-    return <><h1>Book a repair</h1><p className="product-error">Please <a href="/login?redirect=/repair-book">sign in</a> to book a repair.</p></>;
+    const returnPath = typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/repair-book";
+    return <><h1>Book a repair</h1><p className="product-error">Please <a href={`/login?redirect=${encodeURIComponent(returnPath)}`}>sign in</a> to book a repair.</p></>;
   }
 
   return (
@@ -137,12 +178,20 @@ export default function RepairBookPage() {
       <form onSubmit={handleSubmit} className="auth-form" style={{ maxWidth: 600 }}>
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
           <legend style={{ fontWeight: 600, color: "var(--primary)" }}>What do you need?</legend>
-          <div className="field"><label>Request type<select name="serviceKind" value={serviceKind} onChange={(e) => setServiceKind(e.target.value as typeof serviceKind)} style={{ width: "100%" }}><option value="diagnosis_repair">Diagnose or repair a problem</option><option value="planned_service">Software, installation, or upgrade</option></select></label></div>
-          <p className="muted" style={{ marginBottom: 0 }}>{serviceKind === "diagnosis_repair" ? "We’ll assess the fault and keep you updated on the diagnosis." : "Tell us what you want installed or upgraded. This is handled as a planned service, without a hardware diagnosis deadline."}</p>
+          {catalogService ? <>
+            <input type="hidden" name="serviceKind" value="planned_service" />
+            <h2 style={{ marginTop: 0 }}>{catalogService.name}</h2>
+            <p>{catalogService.description}</p>
+            <p className="muted" style={{ marginBottom: 0 }}>This is a quote request, not a confirmed booking or charge. The store will confirm scope, fees and appointment details before work starts.</p>
+          </> : <>
+            <div className="field"><label>Request type<select name="serviceKind" value={serviceKind} onChange={(e) => setServiceKind(e.target.value as typeof serviceKind)} style={{ width: "100%" }}><option value="diagnosis_repair">Diagnose or repair a problem</option><option value="planned_service">Software, installation, or upgrade</option></select></label></div>
+            <p className="muted" style={{ marginBottom: 0 }}>{serviceKind === "diagnosis_repair" ? "We’ll assess the fault and keep you updated on the diagnosis." : "Tell us what you want installed or upgraded. This is handled as a planned service, without a hardware diagnosis deadline."}</p>
+          </>}
+          {catalogLoadError && <p className="product-error" role="alert">{catalogLoadError} <a href="/repairs">Browse available services</a>.</p>}
         </fieldset>
 
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
-          <legend style={{ fontWeight: 600, color: "var(--primary)" }}>Device information</legend>
+          <legend style={{ fontWeight: 600, color: "var(--primary)" }}>{catalogService ? "Device or service details" : "Device information"}</legend>
           <div className="field"><label>Which device did you buy from this store?<select name="orderItemId" value={selectedOrderItemId} onChange={(e) => {
             const itemId = e.target.value;
             setSelectedOrderItemId(itemId);
@@ -179,14 +228,14 @@ export default function RepairBookPage() {
 
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
           <legend style={{ fontWeight: 600, color: "var(--primary)" }}>Scheduling</legend>
-          <p className="muted" style={{ marginTop: 0 }}>Your preferred drop-off time is a request. The shop will confirm the appointment.</p>
+          <p className="muted" style={{ marginTop: 0 }}>{catalogService?.mode === "on_site" ? "Your preferred visit time is a request. The shop will confirm availability and any travel fees." : catalogService ? "Your preferred appointment time is a request. The shop will confirm the appointment and any applicable fees." : "Your preferred drop-off time is a request. The shop will confirm the appointment."}</p>
           <div className="field"><label>Preferred date<input type="date" name="requestedVisitDate" style={{ width: "100%" }} /></label></div>
           <div className="field"><label>Preferred time<input type="time" name="requestedVisitTime" style={{ width: "100%" }} /></label></div>
           <div className="field"><label>Additional notes<textarea name="notes" rows={2} style={{ width: "100%" }} /></label></div>
         </fieldset>
 
         {statusMsg && <p className={`form-status${statusMsg.error ? " error" : ""}`}>{statusMsg.text}</p>}
-        <button type="submit" className="btn" disabled={submitting}>{submitting ? "Submitting..." : "Submit repair request"}</button>
+        <button type="submit" className="btn" disabled={submitting || Boolean(catalogServiceId && (!catalogService || catalogLoadError))}>{submitting ? "Submitting..." : catalogService ? "Request a quote" : "Submit repair request"}</button>
       </form>
     </>
   );

@@ -121,6 +121,7 @@ Use the **Feature Overrides** picker in the Edit Client modal to fine-tune what 
 - Group-level **Select all** and **Block** buttons, plus a **Clear overrides** button to reset everything to plan defaults
 - Saving always pushes the overrides to the client's backend (`POST /api/admin/features/overrides`) — even when empty, which clears stale overrides — and they're merged with the plan's features on the client's `/api/shop/features`
 - The **Financing** group gates **Lipa Mdogo Mdogo**. Entitlement (enable/block/inherit) is deliberately separate from **activation**: a per-client financing activation toggle plus per-branch activation let an operator switch the module on/off without touching the plan. Deactivating financing blocks **new** hire-purchase plans only — existing agreements, payments, receipts and history keep working.
+- The **Repairs & Service** group includes the optional **Service catalogue** entitlement. Control Plane plan features and per-client overrides decide whether a tenant can use it; the tenant admin separately activates or deactivates public service requests. Deactivation hides catalogue offers and blocks new catalogue bookings while preserving saved offers and existing repair tickets.
 
 ### Plans
 - Create, edit, activate/deactivate, delete custom subscription plans

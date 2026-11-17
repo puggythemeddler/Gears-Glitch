@@ -8,8 +8,41 @@ import { formatPrice, Spinner } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import type { Product } from "@/lib/types";
 import { isSoftwareLicenseProduct, softwareLicenseProductPrice } from "@/lib/repairLicenseProducts";
+import { useFeature } from "@/lib/features";
 
-type AdminRepairsTab = "tickets" | "calendar" | "workflow" | "content";
+type AdminRepairsTab = "tickets" | "calendar" | "workflow" | "content" | "service-catalogue";
+
+type ServiceFeeKey = "diagnosis" | "labour" | "parts" | "materials" | "travel" | "delivery";
+type ServiceFeePolicy = "included" | "itemised_quote" | "not_applicable" | "confirm_in_quote";
+type CatalogService = {
+  id: string;
+  name: string;
+  description: string;
+  mode: "workshop_appointment" | "on_site" | "installation" | "custom_build";
+  feePolicies: Partial<Record<ServiceFeeKey, ServiceFeePolicy>>;
+  active: boolean;
+};
+
+const SERVICE_MODES: Record<CatalogService["mode"], string> = {
+  workshop_appointment: "Home workshop by appointment",
+  on_site: "On-site service",
+  installation: "Installation",
+  custom_build: "Custom build",
+};
+const SERVICE_FEE_LABELS: Record<ServiceFeeKey, string> = {
+  diagnosis: "Diagnosis / assessment",
+  labour: "Labour",
+  parts: "Parts",
+  materials: "Materials",
+  travel: "Travel / call-out",
+  delivery: "Delivery",
+};
+const SERVICE_FEE_OPTIONS: Array<{ value: "" | ServiceFeePolicy; label: string }> = [
+  { value: "", label: "Confirm in the quote" },
+  { value: "included", label: "Included in the quote" },
+  { value: "itemised_quote", label: "Quoted as a separate line" },
+  { value: "not_applicable", label: "Not applicable" },
+];
 
 const STATUS_LABELS: Record<string, string> = {
   received: "Received",
@@ -68,6 +101,7 @@ function fmtDate(s: string) {
 
 export default function AdminRepairs({ adminOnly = true, canManagePayments = false, canVoidPayments = false }: { adminOnly?: boolean; canManagePayments?: boolean; canVoidPayments?: boolean }) {
   const [tab, setTab] = useState<AdminRepairsTab>("tickets");
+  const canUseServiceCatalogue = useFeature("Service catalogue");
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
 
   return (
@@ -79,6 +113,7 @@ export default function AdminRepairs({ adminOnly = true, canManagePayments = fal
           <RippleButton variant={tab === "calendar" ? "primary" : "ghost"} onClick={() => setTab("calendar")}>Calendar</RippleButton>
           {adminOnly && <RippleButton variant={tab === "workflow" ? "primary" : "ghost"} onClick={() => setTab("workflow")}>Workflow</RippleButton>}
           {adminOnly && <RippleButton variant={tab === "content" ? "primary" : "ghost"} onClick={() => setTab("content")}>Page Content</RippleButton>}
+          {adminOnly && canUseServiceCatalogue && <RippleButton variant={tab === "service-catalogue" ? "primary" : "ghost"} onClick={() => setTab("service-catalogue")}>Service Catalogue</RippleButton>}
         </div>
       </div>
 
@@ -97,7 +132,190 @@ export default function AdminRepairs({ adminOnly = true, canManagePayments = fal
       )}
       {tab === "workflow" && adminOnly && <RepairWorkflowSettings />}
       {tab === "content" && <ContentTab />}
+      {tab === "service-catalogue" && adminOnly && canUseServiceCatalogue && <ServiceCatalogueTab />}
     </>
+  );
+}
+
+function ServiceCatalogueTab() {
+  const [config, setConfig] = useState<{ enabled: boolean; services: CatalogService[] }>({ enabled: false, services: [] });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ text: string; error?: boolean } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<Partial<CatalogService>>({ mode: "workshop_appointment", feePolicies: {}, active: false });
+
+  async function load() {
+    setLoading(true);
+    setStatus(null);
+    try {
+      const data = await api<{ enabled: boolean; services: CatalogService[] }>("/api/admin/service-catalog");
+      setConfig({ enabled: data.enabled === true, services: Array.isArray(data.services) ? data.services : [] });
+    } catch (error: any) {
+      setStatus({ text: error?.message || "Service catalogue settings could not be loaded.", error: true });
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function toggleCatalogue() {
+    const next = !config.enabled;
+    setSaving(true);
+    setStatus(null);
+    try {
+      await api("/api/admin/service-catalog/activation", { method: "PUT", body: JSON.stringify({ enabled: next }) });
+      setConfig((current) => ({ ...current, enabled: next }));
+      setStatus({ text: next ? "Service catalogue activated. Published services can now accept new requests." : "Service catalogue deactivated. Saved services and existing tickets were kept." });
+    } catch (error: any) { setStatus({ text: error?.message || "Could not change service catalogue activation.", error: true }); }
+    finally { setSaving(false); }
+  }
+
+  function startNew() {
+    setEditingId(null);
+    setForm({ mode: "workshop_appointment", feePolicies: {}, active: false });
+    setShowForm(true);
+    setStatus(null);
+  }
+
+  function startEdit(service: CatalogService) {
+    setEditingId(service.id);
+    setForm({ ...service, feePolicies: { ...service.feePolicies } });
+    setShowForm(true);
+    setStatus(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setShowForm(false);
+    setForm({ mode: "workshop_appointment", feePolicies: {}, active: false });
+  }
+
+  async function saveService(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = String(form.name || "").trim();
+    const description = String(form.description || "").trim();
+    if (!name || !description) {
+      setStatus({ text: "Add a service name and description before saving.", error: true });
+      return;
+    }
+    const serviceId = editingId || `${slugify(name) || "service"}-${Date.now().toString(36)}`;
+    const nextService: CatalogService = {
+      id: serviceId,
+      name,
+      description,
+      mode: (form.mode || "workshop_appointment") as CatalogService["mode"],
+      feePolicies: form.feePolicies || {},
+      active: form.active === true,
+    };
+    const services = editingId
+      ? config.services.map((service) => service.id === editingId ? nextService : service)
+      : [nextService, ...config.services];
+    setSaving(true);
+    setStatus(null);
+    try {
+      const data = await api<{ enabled: boolean; services: CatalogService[] }>("/api/admin/service-catalog", {
+        method: "PUT",
+        body: JSON.stringify({ ...config, services }),
+      });
+      setConfig({ enabled: data.enabled === true, services: data.services || [] });
+      cancelEdit();
+      setStatus({ text: nextService.active ? "Service saved and published." : "Service saved as hidden. Publish it when the details are approved." });
+    } catch (error: any) { setStatus({ text: error?.message || "Service could not be saved.", error: true }); }
+    finally { setSaving(false); }
+  }
+
+  async function toggleService(service: CatalogService) {
+    const services = config.services.map((item) => item.id === service.id ? { ...item, active: !item.active } : item);
+    setSaving(true);
+    setStatus(null);
+    try {
+      const data = await api<{ enabled: boolean; services: CatalogService[] }>("/api/admin/service-catalog", {
+        method: "PUT",
+        body: JSON.stringify({ ...config, services }),
+      });
+      setConfig({ enabled: data.enabled === true, services: data.services || [] });
+      setStatus({ text: `${service.name} ${!service.active ? "published" : "hidden"}.` });
+    } catch (error: any) { setStatus({ text: error?.message || "Service visibility could not be changed.", error: true }); }
+    finally { setSaving(false); }
+  }
+
+  if (loading) return <Spinner />;
+
+  return (
+    <div style={{ maxWidth: 980 }}>
+      <h2 style={{ margin: "0.25rem 0 0.5rem" }}>Service Catalogue</h2>
+      <p className="muted" style={{ maxWidth: 760, marginTop: 0 }}>
+        Offer appointment-based work, on-site jobs, installations, and custom builds as quote-based services. Service requests use the existing repair queue and appointment workflow.
+      </p>
+
+      <section className="panel" aria-labelledby="service-catalogue-activation-title" style={{ marginBottom: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+          <div>
+            <h3 id="service-catalogue-activation-title" style={{ margin: "0 0 0.3rem" }}>Public service requests</h3>
+            <p className="muted" style={{ margin: 0, maxWidth: 680 }}>
+              {config.enabled
+                ? "The catalogue is active. Only services marked Published are shown to customers."
+                : "The catalogue is off. Saved service definitions and existing repair tickets stay in place; customers cannot start new catalogue requests."}
+            </p>
+          </div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "0.55rem", minHeight: 44, fontWeight: 600, cursor: saving ? "wait" : "pointer" }}>
+            <input type="checkbox" checked={config.enabled} disabled={saving} onChange={() => void toggleCatalogue()} aria-label="Activate public service catalogue" />
+            {config.enabled ? "Activated" : "Deactivated"}
+          </label>
+        </div>
+      </section>
+
+      {status && <p role={status.error ? "alert" : "status"} className={status.error ? "form-status error" : "form-status"}>{status.text}</p>}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", margin: "1rem 0 0.5rem" }}>
+        <h3 style={{ margin: 0 }}>Service offers <span className="muted" style={{ fontWeight: 400 }}>({config.services.length})</span></h3>
+        {!showForm && <RippleButton size="small" onClick={startNew}>Add service</RippleButton>}
+      </div>
+
+      {showForm && (
+        <form className="panel" onSubmit={saveService} style={{ margin: "0.75rem 0 1rem", maxWidth: 760 }}>
+          <h3 style={{ marginTop: 0 }}>{editingId ? "Edit service" : "New service"}</h3>
+          <p className="muted" style={{ marginTop: 0 }}>Price mode is quote after assessment. Leave each fee on “Confirm in the quote” until the shop approves its policy.</p>
+          <div className="field"><label>Service name<input value={form.name || ""} maxLength={120} required onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></label></div>
+          <div className="field"><label>Description<textarea value={form.description || ""} rows={3} maxLength={3000} required onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></label></div>
+          <div className="field"><label>How the service is delivered<select value={form.mode || "workshop_appointment"} onChange={(event) => setForm((current) => ({ ...current, mode: event.target.value as CatalogService["mode"] }))}>{Object.entries(SERVICE_MODES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+          <fieldset style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.85rem 1rem", margin: "0.5rem 0 1rem" }}>
+            <legend style={{ fontWeight: 600 }}>Fee treatment</legend>
+            <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>These fee notes appear on the public offer and travel with its request to guide the technician. They do not set amounts or automatically add quote lines; the actual quote is still prepared in the repair ticket.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(270px, 100%), 1fr))", gap: "0.75rem" }}>
+              {(Object.keys(SERVICE_FEE_LABELS) as ServiceFeeKey[]).map((key) => (
+                <div className="field" key={key} style={{ margin: 0 }}>
+                  <label>{SERVICE_FEE_LABELS[key]}<select value={form.feePolicies?.[key] || ""} onChange={(event) => setForm((current) => ({ ...current, feePolicies: { ...(current.feePolicies || {}), [key]: event.target.value as ServiceFeePolicy } }))}>{SERVICE_FEE_OPTIONS.map((option) => <option key={option.value || "confirm"} value={option.value}>{option.label}</option>)}</select></label>
+                </div>
+              ))}
+            </div>
+          </fieldset>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "0.55rem", minHeight: 40, cursor: "pointer" }}><input type="checkbox" checked={form.active === true} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> Publish this service on the customer page</label>
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+            <RippleButton type="submit" loading={saving}>Save service</RippleButton>
+            <RippleButton type="button" variant="secondary" onClick={cancelEdit}>Cancel</RippleButton>
+          </div>
+        </form>
+      )}
+
+      {config.services.length === 0 ? (
+        <p className="muted panel">No services yet. Add a draft service; it stays hidden until you publish it and activate the catalogue.</p>
+      ) : (
+        <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
+          {config.services.map((service, index) => (
+            <div key={service.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "0.8rem", padding: "0.85rem 1rem", borderTop: index ? "1px solid var(--border)" : undefined }}>
+              <div style={{ flex: "1 1 260px", minWidth: 0 }}><strong>{service.name}</strong><div className="muted" style={{ fontSize: "0.82rem", marginTop: "0.2rem", overflowWrap: "anywhere" }}>{service.description}</div><div className="muted" style={{ fontSize: "0.85rem", marginTop: "0.35rem" }}>{SERVICE_MODES[service.mode]} · Quote-based</div></div>
+              <span className={`plan-status ${service.active ? "active" : ""}`}>{service.active ? "Published" : "Hidden"}</span>
+              <div style={{ display: "flex", gap: "0.35rem", justifyContent: "flex-end" }}>
+                <RippleButton type="button" size="small" variant="ghost" onClick={() => startEdit(service)}>Edit</RippleButton>
+                <RippleButton type="button" size="small" variant="secondary" disabled={saving} onClick={() => void toggleService(service)}>{service.active ? "Hide" : "Publish"}</RippleButton>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

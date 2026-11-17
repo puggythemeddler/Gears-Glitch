@@ -444,6 +444,12 @@ import { applyMpesaCallback } from "./financing/service";
 import { getFinancingConfig, saveFinancingConfig } from "./financing/config";
 import { getEffectiveFeatures, requireShopFeature, getBranchFeatureOverrides, saveBranchFeatureOverrides } from "./feature-access";
 import { featureListIncludes } from "./feature-rules";
+import {
+  SERVICE_CATALOGUE_FEATURE,
+  getServiceCatalogConfig,
+  saveServiceCatalogConfig,
+  setServiceCatalogActivation,
+} from "./service-catalog";
 import * as notifier from "./notify";
 import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
 import { sendEmail, resetTransporter, messageNotificationEmail, quoteEmail, creditNoteEmail, subscriptionInvoiceEmail, newOrderAdminEmail, orderPaidAdminEmail, customerActivityAdminEmail, repairCreatedAdminEmail, repairStatusAdminEmail, repairQuoteAdminEmail, warrantyClaimAdminEmail, warrantyStatusAdminEmail, welcomeCustomerEmail, logEmailTransportStatus } from "./email";
@@ -733,6 +739,8 @@ defineAudit("/api/repairs/:id/send-quote", "repair", { action: "quote_sent", met
 defineAudit("/api/repairs/:id/payments", "repair_payment", { action: "recorded", method: "POST" });
 defineAudit("/api/repairs/:id/payments/:paymentId/void", "repair_payment", { action: "voided", method: "POST" });
 defineAudit("/api/admin/repair-workflow", "settings", { action: "repair_workflow_updated", method: "PUT" });
+defineAudit("/api/admin/service-catalog", "settings", { action: "service_catalog_updated", method: "PUT" });
+defineAudit("/api/admin/service-catalog/activation", "settings", { action: "service_catalog_activation_changed", method: "PUT" });
 // Purchases
 defineAudit("/api/purchases", "purchase");
 defineAudit("/api/purchases/:id", "purchase");
@@ -7355,12 +7363,75 @@ app.put("/api/admin/repairs-page", adminAuthMiddleware, requirePermission("setti
   res.json(cleaned);
 }));
 
+// Service catalogue access has two separate switches: plan/Control Plane
+// entitlement and this tenant activation setting. Deactivation hides public
+// service cards and blocks new catalogue bookings without deleting definitions
+// or changing existing repair tickets.
+app.get("/api/service-catalog", asyncHandler(async (req: Request, res: Response) => {
+  const [features, config] = await Promise.all([getEffectiveFeatures(req), getServiceCatalogConfig()]);
+  const available = featureListIncludes(features, SERVICE_CATALOGUE_FEATURE) && config.enabled;
+  res.json({ enabled: available, services: available ? config.services.filter((service) => service.active) : [] });
+}));
+
+app.get("/api/admin/service-catalog", adminAuthMiddleware, requirePermission("settings:view"), requireShopFeature(SERVICE_CATALOGUE_FEATURE), asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await getServiceCatalogConfig());
+}));
+
+app.put("/api/admin/service-catalog", adminAuthMiddleware, requirePermission("settings:update"), requireShopFeature(SERVICE_CATALOGUE_FEATURE), asyncHandler(async (req: Request, res: Response) => {
+  const result = await saveServiceCatalogConfig(req.body);
+  if (!result.config) { res.status(400).json({ error: result.error || "Service catalogue settings are invalid." }); return; }
+  res.json(result.config);
+}));
+
+app.put("/api/admin/service-catalog/activation", adminAuthMiddleware, requirePermission("settings:update"), requireShopFeature(SERVICE_CATALOGUE_FEATURE), asyncHandler(async (req: Request, res: Response) => {
+  if (typeof req.body?.enabled !== "boolean") { res.status(400).json({ error: "enabled must be a boolean." }); return; }
+  const config = await setServiceCatalogActivation(req.body.enabled);
+  res.json({ enabled: config.enabled });
+}));
+
 app.get("/api/repairs/statuses", requireShopFeature("Repair ticketing"), (_req: Request, res: Response) => {
   res.json({ statuses: STATUS_LABELS });
 });
 
 app.post("/api/repairs", customerAuthMiddleware, requireShopFeature("Repair ticketing"), asyncHandler(async (req: Request, res: Response) => {
-  const result = await createRepairTicket((req as any).customer.sub, req.body || {});
+  const requestBody = { ...(req.body || {}) };
+  const catalogServiceId = String(requestBody.catalogServiceId || "").trim();
+  if (catalogServiceId) {
+    const [features, config] = await Promise.all([getEffectiveFeatures(req), getServiceCatalogConfig()]);
+    if (!featureListIncludes(features, SERVICE_CATALOGUE_FEATURE)) { res.status(403).json({ error: "This service is not available on this account." }); return; }
+    if (!config.enabled) { res.status(409).json({ error: "The service catalogue is currently unavailable. Please contact the store." }); return; }
+    const service = config.services.find((entry) => entry.id === catalogServiceId && entry.active);
+    if (!service) { res.status(404).json({ error: "This service is no longer available. Please return to the services page." }); return; }
+    const customerSummary = String(requestBody.issueSummary || "").trim();
+    const customerDescription = String(requestBody.issueDescription || "").trim();
+    const feeNames: Record<string, string> = {
+      diagnosis: "Diagnosis / assessment",
+      labour: "Labour",
+      parts: "Parts",
+      materials: "Materials",
+      travel: "Travel / call-out",
+      delivery: "Delivery",
+    };
+    const feePolicyNames: Record<string, string> = {
+      included: "included in quote",
+      itemised_quote: "quoted as a separate line",
+      not_applicable: "not applicable",
+      confirm_in_quote: "confirm in quote",
+    };
+    const quoteGuidance = Object.entries(service.feePolicies)
+      .map(([key, policy]) => `${feeNames[key] || key}: ${feePolicyNames[policy] || "confirm in quote"}`)
+      .join("; ");
+    requestBody.serviceKind = "planned_service";
+    requestBody.issueSummary = `Service: ${service.name}${customerSummary ? ` — ${customerSummary}` : ""}`.slice(0, 200);
+    requestBody.issueDescription = [
+      `Selected service: ${service.name}`,
+      service.description,
+      customerDescription ? `Customer notes: ${customerDescription}` : "",
+      quoteGuidance ? `Quote guidance (confirm actual amounts in the quote): ${quoteGuidance}` : "",
+    ].filter(Boolean).join("\n\n").slice(0, 5000);
+  }
+  delete requestBody.catalogServiceId;
+  const result = await createRepairTicket((req as any).customer.sub, requestBody);
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   try {
     const t = result.ticket as any;
