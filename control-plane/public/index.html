@@ -430,7 +430,7 @@
           <select id="pull-plans-client" class="select" data-admin><option value="">Pull from client...</option></select>
           <button class="btn btn-ghost btn-sm" data-admin onclick="pullPlansFromClient()">Pull Plans</button>
           <button class="btn btn-ghost btn-sm" data-admin onclick="importFromGearGlitch()">Import from Gear&Glitch Store</button>
-          <button class="btn btn-ghost btn-sm" data-admin onclick="syncAllPlans()">Sync All to Clients</button>
+          <button class="btn btn-ghost btn-sm" id="btn-sync-all-plans" data-admin onclick="syncAllPlans()">Sync All to Clients</button>
           <button class="btn btn-primary btn-sm" data-admin onclick="showPlanModal()">+ Create Plan</button>
         </div>
       </div>
@@ -1138,6 +1138,7 @@
       }
       el.append(stamp, content); toastContainer.appendChild(el);
       if (timeout > 0) timer = setTimeout(() => el.remove(), timeout);
+      return el;
     }
 
     // ─── MODAL SYSTEM ───────────────────────────────────────
@@ -2195,12 +2196,16 @@
         message: "Push all custom plans to every active client?",
         confirmLabel: "Sync All",
         onConfirm: async () => {
-          toast("Syncing plans...");
+          const button = document.getElementById("btn-sync-all-plans");
+          const originalLabel = button ? button.textContent : "Sync All to Clients";
+          if (button) { button.disabled = true; button.textContent = "Syncing…"; button.setAttribute("aria-busy", "true"); }
+          const progress = toast("Syncing plans to active client backends. This can take up to 45 seconds.", "info", 0);
           try {
             const data = await api("/api/plans/sync-all", { method: "POST" });
             const r = data.results || [];
             const succeeded = r.filter(x => x.success);
             const failed = r.filter(x => !x.success);
+            progress.remove();
             if (!r.length) {
               toast("No active clients with backend URLs were found.", "info");
             } else if (!failed.length) {
@@ -2212,7 +2217,12 @@
               }).join("; ");
               toast(`Plans synced to ${succeeded.length}/${r.length} clients. Failed: ${failureSummary}`, "error");
             }
-          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
+          } catch (e) {
+            progress.remove();
+            toast("Plan sync could not finish: " + (e && e.message ? e.message : "request failed"), "error");
+          } finally {
+            if (button) { button.disabled = false; button.textContent = originalLabel; button.removeAttribute("aria-busy"); }
+          }
         }
       });
     }
