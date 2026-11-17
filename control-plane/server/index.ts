@@ -1940,21 +1940,39 @@ app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, a
       syncToOthers: p.sync_to_others !== 0,
     }));
 
-    const results: { name: string; success: boolean; error?: string }[] = [];
-    for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
+    const results = await Promise.all((clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]).map(async (c) => {
       try {
-        const r = await fetch(`${c.render_service_url}/api/plans/sync`, {
+        const baseUrl = String(c.render_service_url || "").replace(/\/+$/, "");
+        const r = await fetch(`${baseUrl}/api/plans/sync`, {
           method: "PUT",
           headers: cpHeaders(c.cp_secret, { "Content-Type": "application/json" }),
           body: JSON.stringify({ plans: payload }),
+          // Render may need time to wake a sleeping service. Bound each client
+          // request so one unavailable tenant cannot leave Sync All hanging.
+          signal: AbortSignal.timeout(45000),
         });
-        results.push({ name: c.name, success: r.ok });
+        if (!r.ok) {
+          let detail = "";
+          try {
+            const body = await r.text();
+            if (body) {
+              try {
+                const parsed = JSON.parse(body);
+                if (typeof parsed?.error === "string") detail = parsed.error;
+              } catch { /* Keep the status if the client returned non-JSON text. */ }
+            }
+          } catch { /* The HTTP status remains useful if the response body is unavailable. */ }
+          const safeDetail = detail.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 180).trim();
+          return { name: c.name, success: false, error: `HTTP ${r.status}${safeDetail ? `: ${safeDetail}` : ""}` };
+        }
+        return { name: c.name, success: true };
       } catch (e: any) {
-        console.error(`[api] Plan sync failed for "${c.name}":`, e.message);
-        results.push({ name: c.name, success: false, error: "Plan sync failed" });
+        const timedOut = e?.name === "TimeoutError" || e?.name === "AbortError";
+        console.error(`[api] Plan sync failed for client ${c.id}:`, timedOut ? "request timed out" : e?.message || "request failed");
+        return { name: c.name, success: false, error: timedOut ? "Timed out after 45 seconds; the client backend may be asleep or unavailable." : "Could not reach the client backend. Check its deployment and Control Plane connection." };
       }
-    }
-    res.json({ results });
+    }));
+    res.json({ results, eligibleCount: clients.length });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to sync all" });
   }
