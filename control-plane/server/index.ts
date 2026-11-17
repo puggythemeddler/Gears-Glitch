@@ -1952,24 +1952,14 @@ app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, a
           signal: AbortSignal.timeout(45000),
         });
         if (!r.ok) {
-          let detail = "";
-          try {
-            const body = await r.text();
-            if (body) {
-              try {
-                const parsed = JSON.parse(body);
-                if (typeof parsed?.error === "string") detail = parsed.error;
-              } catch { /* Keep the status if the client returned non-JSON text. */ }
-            }
-          } catch { /* The HTTP status remains useful if the response body is unavailable. */ }
-          const safeDetail = detail.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 180).trim();
-          return { name: c.name, success: false, error: `HTTP ${r.status}${safeDetail ? `: ${safeDetail}` : ""}` };
+          console.error(`[api] Plan sync failed for client ${c.id}: HTTP ${r.status}`);
+          return { name: c.name, success: false, error: "Plan sync failed", status: r.status, reason: "http" };
         }
         return { name: c.name, success: true };
       } catch (e: any) {
         const timedOut = e?.name === "TimeoutError" || e?.name === "AbortError";
         console.error(`[api] Plan sync failed for client ${c.id}:`, timedOut ? "request timed out" : e?.message || "request failed");
-        return { name: c.name, success: false, error: timedOut ? "Timed out after 45 seconds; the client backend may be asleep or unavailable." : "Could not reach the client backend. Check its deployment and Control Plane connection." };
+        return { name: c.name, success: false, error: "Plan sync failed", reason: timedOut ? "timeout" : "unreachable" };
       }
     }));
     res.json({ results, eligibleCount: clients.length });
