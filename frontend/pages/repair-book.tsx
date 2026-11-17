@@ -83,8 +83,6 @@ export default function RepairBookPage() {
         setServiceName(service.name);
         const summary = document.querySelector<HTMLInputElement>("input[name='issueSummary']");
         if (summary && !summary.value) summary.value = service.name;
-        const desc = document.querySelector<HTMLTextAreaElement>("textarea[name='issueDescription']");
-        if (desc && !desc.value) desc.value = service.description;
       }).catch(() => {
         if (!cancelled) setCatalogLoadError("We could not load this service. Please return to the repairs page and try again.");
       });
@@ -212,7 +210,7 @@ export default function RepairBookPage() {
         <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
           <legend style={{ fontWeight: 600, color: "var(--primary)" }}>{serviceKind === "diagnosis_repair" ? "Problem details" : "Service details"}</legend>
           <div className="field"><label>{serviceKind === "diagnosis_repair" ? "Problem summary *" : "Service requested *"}<input name="issueSummary" style={{ width: "100%" }} required placeholder={serviceKind === "planned_service" ? "For example, install Windows or upgrade RAM" : "Briefly describe the fault"} /></label></div>
-          <div className="field"><label>{serviceKind === "diagnosis_repair" ? "Describe the problem *" : "Installation or upgrade details *"}<textarea name="issueDescription" rows={4} style={{ width: "100%" }} required placeholder={serviceKind === "planned_service" ? "Tell us what software or upgrade you need, including preferences or compatibility details." : "Describe what happened and when it started..."} /></label></div>
+          <div className="field"><label>{catalogService ? "Additional details (optional)" : serviceKind === "diagnosis_repair" ? "Describe the problem *" : "Installation or upgrade details *"}<textarea name="issueDescription" rows={4} style={{ width: "100%" }} required={!catalogService} placeholder={catalogService ? "Add any preferences, constraints, or context that may help us prepare your quote." : serviceKind === "planned_service" ? "Tell us what software or upgrade you need, including preferences or compatibility details." : "Describe what happened and when it started..."} /></label></div>
         </fieldset>
 
         {serviceKind === "diagnosis_repair" && <fieldset style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "1.25rem", marginBottom: "1rem" }}>
