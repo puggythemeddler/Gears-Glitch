@@ -333,6 +333,7 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
        VALUES ('starter', 'Starter', 100, 1200, '[]')
        ON CONFLICT (id) DO UPDATE SET price = 100, price_annual = 1200`
     );
+    await db!.query("UPDATE clients SET plan = 'starter' WHERE id = $1", [clientId]);
     const shortPayment = await fetch(`${baseUrl}/api/clients/${clientId}/invoices/record-payment`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
