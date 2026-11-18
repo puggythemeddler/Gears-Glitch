@@ -12,6 +12,7 @@ import {
   buildWhatsAppWebhookUrl,
   signaturesMatch,
   verifyWhatsAppSignature,
+  testWhatsAppConnection,
   handleWhatsAppWebhook,
   isCustomWhatsAppVerifyTokenConfigured,
   whatsAppWebhookHttpStatus,
@@ -147,6 +148,118 @@ describe("whatsapp webhook acknowledgement mapping", () => {
     assert.equal(whatsAppWebhookHttpStatus({ ...base, ok: false, failed: 1 }), 500);
     assert.equal(whatsAppWebhookHttpStatus({ ...base, ok: false, deferred: 1 }), 503);
     assert.equal(whatsAppWebhookHttpStatus({ ...base, ok: false, failed: 1, deferred: 2 }), 500);
+  });
+});
+
+describe("WhatsApp connection lifecycle probe (mocked Meta API)", () => {
+  const configuredSettings = (overrides: Record<string, unknown> = {}) => ({
+    whatsappPhoneNumberId: "1234567890",
+    whatsappAccessToken: "test-token",
+    whatsappApiVersion: "v21.0",
+    ...overrides,
+  }) as any;
+
+  test("does not make a network request when credentials are missing", async () => {
+    let calls = 0;
+    const result = await testWhatsAppConnection({
+      getSettings: async () => configuredSettings({ whatsappAccessToken: "" }),
+      fetch: async () => { calls++; throw new Error("must not fetch"); },
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.error || "", /Phone Number ID and Access Token are required/);
+    assert.equal(calls, 0);
+  });
+
+  test("connects and reconnects using the current credentials without sending a message", async () => {
+    const tokens: string[] = [];
+    let activeToken = "expired-token";
+    const fetchMock: typeof fetch = async (_input, init) => {
+      const auth = new Headers(init?.headers).get("authorization") || "";
+      tokens.push(auth);
+      if (auth.includes("expired-token")) {
+        return new Response(JSON.stringify({ error: { code: 190, message: "Access token has expired" } }), { status: 400 });
+      }
+      return new Response(JSON.stringify({ id: "1234567890", display_phone_number: "+254 799 391 257" }), { status: 200 });
+    };
+    const getSettings = async () => configuredSettings({ whatsappAccessToken: activeToken });
+    const first = await testWhatsAppConnection({ getSettings, fetch: fetchMock });
+    assert.equal(first.ok, false);
+    assert.match(first.error || "", /invalid, expired, or revoked/i);
+
+    activeToken = "replacement-token";
+    const second = await testWhatsAppConnection({ getSettings, fetch: fetchMock });
+    assert.deepEqual(second, { ok: true, phoneNumber: "+254 799 391 257" });
+    assert.deepEqual(tokens, ["Bearer expired-token", "Bearer replacement-token"]);
+  });
+
+  test("explains a revoked permission and avoids exposing credentials in the result", async () => {
+    const result = await testWhatsAppConnection({
+      getSettings: async () => configuredSettings(),
+      fetch: async () => new Response(JSON.stringify({ error: { code: 10, message: "Permission denied" } }), { status: 403 }),
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.error || "", /lacks permission/i);
+    assert.doesNotMatch(result.error || "", /test-token/);
+  });
+
+  test("rejects a malformed API version before contacting Meta", async () => {
+    let calls = 0;
+    const result = await testWhatsAppConnection({
+      getSettings: async () => configuredSettings({ whatsappApiVersion: "https://attacker.example" }),
+      fetch: async () => { calls++; throw new Error("must not fetch"); },
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.error || "", /API version is invalid/);
+    assert.equal(calls, 0);
+  });
+
+  test("turns network and timeout failures into a failed probe result", async () => {
+    const network = await testWhatsAppConnection({
+      getSettings: async () => configuredSettings(),
+      fetch: async () => { throw new Error("network unavailable"); },
+    });
+    assert.deepEqual(network, { ok: false, error: "network unavailable" });
+
+    const timeout = await testWhatsAppConnection({
+      getSettings: async () => configuredSettings(),
+      fetch: async () => { const error = new Error("aborted"); error.name = "TimeoutError"; throw error; },
+    });
+    assert.match(timeout.error || "", /timed out/i);
+  });
+});
+
+describe("WhatsApp webhook retry lifecycle (mock ledger)", () => {
+  test("retries a failed event, completes it once, then skips the duplicate", async () => {
+    const states = new Map<string, "failed" | "processed" | "processing">();
+    let processAttempts = 0;
+    const deps = {
+      claim: async (_provider: string, key: string) => {
+        if (states.get(key) === "processed") return { event: null, decision: "duplicate" as const, token: null, leaseExpiresAt: null };
+        if (states.get(key) === "processing") return { event: null, decision: "in_progress" as const, token: null, leaseExpiresAt: null };
+        states.set(key, "processing");
+        return { event: null, decision: "process" as const, token: `lease-${processAttempts + 1}`, leaseExpiresAt: null };
+      },
+      complete: async (_provider: string, key: string) => { states.set(key, "processed"); return true; },
+      fail: async (_provider: string, key: string) => { states.set(key, "failed"); return true; },
+      processInbound: async () => {
+        processAttempts++;
+        if (processAttempts === 1) throw new Error("temporary processing failure");
+      },
+    };
+    const body = { object: "whatsapp_business_account", entry: [{ changes: [{ field: "messages", value: { messages: [{ id: "wamid.TEST-1", from: "254712345678", type: "text", text: { body: "hello" } }] } }] }] };
+
+    const failed = await handleWhatsAppWebhook(body, deps);
+    assert.equal(failed.failed, 1);
+    assert.equal(whatsAppWebhookHttpStatus(failed), 500);
+
+    const recovered = await handleWhatsAppWebhook(body, deps);
+    assert.equal(recovered.processed, 1);
+    assert.equal(recovered.ok, true);
+
+    const duplicate = await handleWhatsAppWebhook(body, deps);
+    assert.equal(duplicate.skipped, 1);
+    assert.equal(duplicate.processed, 0);
+    assert.equal(processAttempts, 2);
   });
 });
 
