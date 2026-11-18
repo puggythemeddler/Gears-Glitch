@@ -33,6 +33,19 @@ export async function withTransaction<T>(run: (client: PoolClient) => Promise<T>
   }
 }
 
+export async function withAdvisoryLock<T>(namespace: string, id: number, run: () => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  let locked = false;
+  try {
+    await client.query("SELECT pg_advisory_lock(hashtext($1), $2)", [namespace, id]);
+    locked = true;
+    return await run();
+  } finally {
+    if (locked) await client.query("SELECT pg_advisory_unlock(hashtext($1), $2)", [namespace, id]).catch(() => undefined);
+    client.release();
+  }
+}
+
 export async function queryAll(text: string, params?: any[]) {
   const result = await query(text, params);
   return result.rows;

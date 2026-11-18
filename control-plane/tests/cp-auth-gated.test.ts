@@ -63,7 +63,7 @@ function fakeClientBackend(): Promise<{ server: Server; url: string }> {
         },
       });
       if (url === "/api/admin/invoices") {
-        return json(200, { invoices: [{ id: 55, invoiceNumber: "INV-99", amount: 100, dueDate: null, planName: "growth", currency: "KES" }], stats: null });
+        return json(200, { invoices: [{ id: 55, invoiceNumber: "INV-99", amount: 100, dueDate: null, planName: "growth", currency: "KES", status: "paid" }], stats: null });
       }
       return json(404, { error: "fake backend: not found" });
     });
@@ -328,6 +328,8 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
   });
 
   it("record-payment persists its audits (awaited) before responding", async () => {
+    await db!.query("UPDATE clients SET subscription_expires = NULL, next_payment_date = NULL WHERE id = $1", [clientId]);
+    await db!.query("DELETE FROM client_payments WHERE client_id = $1", [clientId]);
     await db!.query(
       `INSERT INTO custom_plans (id, name, price, price_annual, features)
        VALUES ('starter', 'Starter', 100, 1200, '[]')
@@ -337,7 +339,7 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
     const shortPayment = await fetch(`${baseUrl}/api/clients/${clientId}/invoices/record-payment`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: 99 }),
+      body: JSON.stringify({ amount: 99, periodType: "monthly", paymentPurpose: "current_due", historyReviewed: true, confirmedSubscriptionExpires: "", confirmedPaymentId: "" }),
     });
     assert.equal(shortPayment.status, 400, "a payment below the plan total must be rejected before generating an invoice");
     assert.match((await shortPayment.json() as any).error, /full monthly plan amount/i);
@@ -345,7 +347,7 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
     const rec = await fetch(`${baseUrl}/api/clients/${clientId}/invoices/record-payment`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: 100 }),
+      body: JSON.stringify({ amount: 100, periodType: "monthly", paymentPurpose: "current_due", historyReviewed: true, confirmedSubscriptionExpires: "", confirmedPaymentId: "" }),
     });
     assert.equal(rec.status, 200);
 

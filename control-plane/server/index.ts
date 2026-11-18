@@ -10,7 +10,7 @@ import jwt from "jsonwebtoken";
 import { generateSecret, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
 import rateLimit from "express-rate-limit";
-import { initControlPlaneDb, queryAll, queryOne, query, withTransaction, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
+import { initControlPlaneDb, queryAll, queryOne, query, withTransaction, withAdvisoryLock, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
 import { encryptSecret, decryptSecret, lookupVariant, encryptionKeyConfigured, describeEncryptionSource } from "./cp-secrets";
 import { corsPolicyMiddleware, parseAllowedOrigins } from "./cors-policy";
 import { initOpsCenterDb, aggregateUsageForClients } from "./ops-db";
@@ -2452,16 +2452,59 @@ app.post("/api/clients/:id/invoices/generate", destructiveLimiter, requireAuth, 
   }
 });
 
-// Record payment — only a full subscription payment may close its invoice.
+app.get("/api/clients/:id/payments", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const clientId = Number(req.params.id);
+    const client = await queryOne("SELECT id FROM clients WHERE id = $1", [clientId]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    const payments = await queryAll(
+      "SELECT id, invoice_id, amount, period_type, due_date, notes, payment_method, created_at FROM client_payments WHERE client_id = $1 ORDER BY created_at DESC, id DESC LIMIT 10",
+      [clientId]
+    ) as any[];
+    res.json({ payments, latestPaymentId: payments[0]?.id ?? null });
+  } catch (err: any) {
+    console.error("[api] Get client payment history error:", err.message);
+    res.status(500).json({ error: "Failed to get payment history" });
+  }
+});
+
+// Record payment — only after the operator confirms the billing period and reviews history.
 app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, res) => {
+  const paymentClientId = Number(req.params.id);
+  if (!Number.isSafeInteger(paymentClientId) || paymentClientId <= 0) { res.status(400).json({ error: "Invalid client ID." }); return; }
+  await withAdvisoryLock("record-subscription-payment", paymentClientId, async () => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+    if (req.body.historyReviewed !== true || !["current_due", "advance"].includes(req.body.paymentPurpose)) {
+      res.status(400).json({ error: "Review payment history and select whether this is the renewal currently due or an advance payment." }); return;
+    }
+    const expirySnapshot = client.subscription_expires ? new Date(client.subscription_expires).toISOString().slice(0, 10) : "";
+    if (req.body.confirmedSubscriptionExpires !== expirySnapshot) {
+      res.status(409).json({ error: "The paid-through date changed since you reviewed it. Refresh the client and payment history, then try again." }); return;
+    }
+    const latestPayment = await queryOne("SELECT id FROM client_payments WHERE client_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1", [client.id]) as any;
+    const latestPaymentId = latestPayment?.id == null ? "" : String(latestPayment.id);
+    if (String(req.body.confirmedPaymentId ?? "") !== latestPaymentId) {
+      res.status(409).json({ error: "A payment was recorded after you reviewed the history. Refresh and confirm the billing period before continuing." }); return;
+    }
 
-    const periodType = req.body.periodType === "annual" ? "annual" : "monthly";
+    const today = new Date().toISOString().slice(0, 10);
+    const renewalDueDate = String(client.next_payment_date || expirySnapshot || "").slice(0, 10);
+    const renewalIsDue = !renewalDueDate || renewalDueDate <= today;
+    if ((req.body.paymentPurpose === "current_due") !== renewalIsDue) {
+      res.status(409).json({ error: renewalIsDue
+        ? "This subscription is currently due. Select ‘The renewal currently due’ and review the history again."
+        : "This subscription is still paid through a future date. Select an advance payment for the next renewal period." }); return;
+    }
+
+    const periodType = req.body.periodType === "annual" ? "annual" : req.body.periodType === "monthly" ? "monthly" : "";
+    if (!periodType) { res.status(400).json({ error: "Choose a monthly or annual renewal period." }); return; }
     const daysToAdd = periodType === "annual" ? 365 : 30;
-    const notes = typeof req.body.notes === "string" ? req.body.notes.slice(0, 500) : "";
+    const notes = typeof req.body.notes === "string" ? req.body.notes.slice(0, 450) : "";
+    const purposeNote = req.body.paymentPurpose === "advance" ? "Advance renewal" : "Renewal currently due";
+    const paymentNotes = [purposeNote, notes].filter(Boolean).join(" · ").slice(0, 500);
     const amountPaid = Number(req.body.amount);
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) { res.status(400).json({ error: "Amount paid must be a positive number." }); return; }
 
@@ -2481,6 +2524,20 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
     if (expected > 0 && amountPaid !== expected) {
       res.status(400).json({ error: `Record the full ${periodType} plan amount of KES ${expected.toLocaleString("en-KE")}. Partial subscription payments are not supported by this workflow.` });
       return;
+    }
+
+    // Fail closed if invoice history cannot be checked; reconcile an existing
+    // proforma directly rather than generating another invoice for the same cycle.
+    const invoicesResponse = await fetch(`${client.render_service_url}/api/admin/invoices`, {
+      headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(30000),
+    });
+    if (!invoicesResponse.ok) { res.status(502).json({ error: "Could not confirm invoice history. No payment was recorded." }); return; }
+    const invoicesData: any = await invoicesResponse.json().catch(() => null);
+    if (!invoicesData || !Array.isArray(invoicesData.invoices)) { res.status(502).json({ error: "Invoice history was unavailable or invalid. No payment was recorded." }); return; }
+    const openInvoices = invoicesData.invoices.filter((invoice: any) => ["pending", "overdue"].includes(String(invoice.status || "").toLowerCase()));
+    if (openInvoices.length) {
+      const labels = openInvoices.slice(0, 3).map((invoice: any) => invoice.invoiceNumber || `#${invoice.id}`).join(", ");
+      res.status(409).json({ error: `Unpaid invoice${openInvoices.length === 1 ? " " : "s "}${labels} already exist. Mark the matching invoice as paid instead of generating a second one.` }); return;
     }
 
     const now = new Date();
@@ -2534,11 +2591,11 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
     await query("UPDATE clients SET subscription_expires = $1, next_payment_date = $2 WHERE id = $3", [newExpiry, nextPaymentDate, client.id]);
     await query(
       "INSERT INTO client_payments (client_id, invoice_id, amount, period_type, due_date, notes) VALUES ($1, $2, $3, $4, $5, $6)",
-      [client.id, invoice.id, amountPaid, periodType, nextPaymentDate, notes]
+      [client.id, invoice.id, amountPaid, periodType, nextPaymentDate, paymentNotes]
     );
 
     const balance = Math.max(0, expected - amountPaid);
-    await auditLog(req, "record_payment", "client", client.id, client.name, `${periodType} KES ${amountPaid} — extended to ${newExpiry.toISOString().slice(0, 10)}, next due ${nextPaymentDate}`);
+    await auditLog(req, "record_payment", "client", client.id, client.name, `${purposeNote} · ${periodType} KES ${amountPaid} — extended to ${newExpiry.toISOString().slice(0, 10)}, next due ${nextPaymentDate}`);
 
     // If the client was auto/manually deactivated, reactivate now that payment is recorded
     if (client.status === "suspended") {
@@ -2558,6 +2615,7 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
     console.error("[api] Record payment error:", err.message);
     res.status(500).json({ error: "Failed to record payment" });
   }
+  });
 });
 
 // Payment reminders — 1 week, 2 days, due day, and overdue windows per client

@@ -751,12 +751,25 @@
         <div class="field"><label for="pay-period">Period</label><select id="pay-period" onchange="updatePaymentDate()"><option value="monthly">Monthly (30 days)</option><option value="annual">Annual (365 days)</option></select></div>
         <div class="field"><label for="pay-next-date">Next Payment Date</label><input type="date" id="pay-next-date"></div>
       </div>
+      <div class="field">
+        <label for="pay-purpose">What renewal does this payment cover?</label>
+        <select id="pay-purpose" onchange="updatePaymentPurposeHint()">
+          <option value="current_due">The renewal currently due</option>
+          <option value="advance">An advance payment for the next renewal period</option>
+        </select>
+        <p id="pay-purpose-hint" style="font-size:0.78rem;color:var(--text-muted);margin:0.25rem 0 0"></p>
+      </div>
+      <div id="payment-history-summary" role="status" aria-live="polite" style="padding:0.75rem;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:0.75rem;font-size:0.82rem"></div>
+      <label style="display:flex;gap:0.55rem;align-items:flex-start;margin:0.5rem 0 0.9rem;font-size:0.82rem">
+        <input type="checkbox" id="pay-history-reviewed" style="margin-top:0.2rem">
+        <span>I checked the invoice and payment history above. This payment has not already been recorded.</span>
+      </label>
       <div id="pay-note" style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem"></div>
       <div class="field"><label for="pay-notes">Notes</label><textarea id="pay-notes" rows="2" placeholder="Optional note for this payment"></textarea></div>
       <div id="pay-balance" style="padding:0.6rem 0.75rem;border-radius:var(--radius);background:var(--bg);font-size:0.9rem;margin-bottom:1rem"></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hidePaymentModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="submitClientPayment()">Record Payment</button>
+        <button class="btn btn-primary" id="pay-submit" onclick="submitClientPayment()">Record Payment</button>
       </div>
     </div>
   </div>
@@ -3488,12 +3501,16 @@
         if (stats) {
           html += `<div style="display:flex;gap:1rem;margin-bottom:1rem;font-size:0.85rem;flex-wrap:wrap"><span>Total: <strong>${stats.total}</strong></span><span style="color:var(--success-strong)">Paid: <strong>${stats.paid}</strong></span><span style="color:var(--warning-strong)">Pending: <strong>${stats.pending}</strong></span><span style="color:var(--danger-strong)">Overdue: <strong>${stats.overdue}</strong></span></div>`;
         }
-        html += '<table><thead><tr><th>Invoice #</th><th>Plan</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th>Invoice #</th><th>Plan</th><th>Coverage period</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
         for (const inv of invoices) {
           const statusClass = inv.status === 'paid' ? 'badge-active' : inv.status === 'overdue' ? 'badge-overdue' : inv.status === 'pending' ? 'badge-warning' : 'badge-unknown';
+          const coverage = inv.periodStart && inv.periodEnd
+            ? new Date(inv.periodStart + "T00:00:00").toLocaleDateString() + " – " + new Date(inv.periodEnd + "T00:00:00").toLocaleDateString()
+            : "—";
           html += `<tr>
             <td style="font-family:monospace;font-size:0.82rem">${esc(inv.invoiceNumber || 'INV-' + inv.id)}</td>
             <td>${esc(inv.planName || inv.planId)}</td>
+            <td>${esc(coverage)}</td>
             <td>${inv.currency} ${Number(inv.amount).toLocaleString()}</td>
             <td>${inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}</td>
             <td><span class="badge ${statusClass}">${inv.status}</span></td>
@@ -3570,28 +3587,71 @@
     let paymentPlans = [];
     let pendingInvoiceAmount = 0;
     let pendingInvoiceDue = "";
+    let paymentHistoryInvoices = [];
+    let paymentHistoryRows = [];
+    let paymentHistoryLatestId = "";
+    let paymentHistoryHasOpenInvoice = false;
+    let paymentSubmissionInProgress = false;
+
+    function paymentIsoDate(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : "";
+    }
+
+    function renderPaymentHistory(c) {
+      const latestInvoices = paymentHistoryInvoices.slice(0, 5);
+      const latestPayments = paymentHistoryRows.slice(0, 5);
+      const openInvoices = paymentHistoryInvoices.filter(i => ["pending", "overdue"].includes(String(i.status || "").toLowerCase()));
+      paymentHistoryHasOpenInvoice = openInvoices.length > 0;
+      const expiry = paymentIsoDate(c.subscription_expires);
+      const nextDue = paymentIsoDate(c.next_payment_date) || expiry;
+      let html = '<div style="font-weight:600;margin-bottom:0.4rem">Review before recording</div>';
+      html += '<div>Paid through: <strong>' + esc(expiry ? new Date(expiry + "T00:00:00").toLocaleDateString() : "Not set") + '</strong> · Next renewal due: <strong>' + esc(nextDue ? new Date(nextDue + "T00:00:00").toLocaleDateString() : "Not set") + '</strong></div>';
+      if (openInvoices.length) {
+        html += '<div style="margin-top:0.5rem;color:var(--danger-strong);font-weight:600">' + openInvoices.length + ' unpaid invoice' + (openInvoices.length === 1 ? "" : "s") + ' found. Use “Mark paid” on the matching invoice below; a second invoice will not be generated.</div>';
+      }
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.6rem;margin-top:0.6rem">';
+      html += '<div><div style="font-weight:600;margin-bottom:0.2rem">Recent invoices</div>';
+      html += latestInvoices.length ? latestInvoices.map(i => '<div>' + esc(i.invoiceNumber || ('INV-' + i.id)) + ' · ' + esc(i.status || "unknown") + ' · ' + esc(i.periodStart && i.periodEnd ? new Date(i.periodStart + "T00:00:00").toLocaleDateString() + "–" + new Date(i.periodEnd + "T00:00:00").toLocaleDateString() : "period not specified") + ' · KES ' + (Number(i.amount) || 0).toLocaleString() + ' · due ' + esc(i.dueDate ? new Date(i.dueDate).toLocaleDateString() : "—") + '</div>').join("") : '<div style="color:var(--text-muted)">No invoices found.</div>';
+      html += '</div><div><div style="font-weight:600;margin-bottom:0.2rem">Recent recorded payments</div>';
+      html += latestPayments.length ? latestPayments.map(p => '<div>KES ' + (Number(p.amount) || 0).toLocaleString() + ' · ' + esc(p.period_type || "monthly") + ' · ' + esc(p.payment_method || "manual") + ' · ' + esc(p.created_at ? new Date(p.created_at).toLocaleDateString() : "—") + (p.invoice_id ? ' · invoice ' + esc(p.invoice_id) : "") + '</div>').join("") : '<div style="color:var(--text-muted)">No payment records found.</div>';
+      html += '</div></div>';
+      document.getElementById("payment-history-summary").innerHTML = html;
+      document.getElementById("pay-history-reviewed").checked = false;
+      document.getElementById("pay-purpose").value = nextDue && nextDue > new Date().toISOString().slice(0, 10) ? "advance" : "current_due";
+      updatePaymentPurposeHint();
+    }
 
     async function recordClientPayment() {
       if (!currentDetailClientId) return;
       const c = allClients.find(x => x.id === currentDetailClientId);
       if (!c) return;
-      try {
-        const data = await api("/api/plans");
-        paymentPlans = data.plans || [];
-      } catch (e) { paymentPlans = []; }
+      const [planResult, invoiceResult, paymentResult] = await Promise.allSettled([
+        api("/api/plans"),
+        api("/api/clients/" + currentDetailClientId + "/invoices"),
+        api("/api/clients/" + currentDetailClientId + "/payments"),
+      ]);
+      if (planResult.status !== "fulfilled" || invoiceResult.status !== "fulfilled" || paymentResult.status !== "fulfilled") {
+        toast("Could not load the full payment history. No payment can be recorded until it is available.", "error");
+        return;
+      }
+      paymentPlans = planResult.value.plans || [];
+      paymentHistoryInvoices = invoiceResult.value.invoices || [];
+      paymentHistoryRows = paymentResult.value.payments || [];
+      paymentHistoryLatestId = paymentResult.value.latestPaymentId == null ? "" : String(paymentResult.value.latestPaymentId);
       pendingInvoiceAmount = 0;
       pendingInvoiceDue = "";
-      try {
-        const invData = await api("/api/clients/" + currentDetailClientId + "/invoices");
-        const pending = (invData.invoices || []).find(i => i.status === "pending" || i.status === "overdue");
-        if (pending) { pendingInvoiceAmount = Number(pending.amount) || 0; pendingInvoiceDue = pending.dueDate || ""; }
-      } catch {}
+      const pending = paymentHistoryInvoices.find(i => ["pending", "overdue"].includes(String(i.status || "").toLowerCase()));
+      if (pending) { pendingInvoiceAmount = Number(pending.amount) || 0; pendingInvoiceDue = pending.dueDate || ""; }
       const plan = paymentPlans.find(p => p.id === c.plan) || null;
 
       document.getElementById("payment-client-name").textContent = c.name + " · " + (plan ? plan.name : c.plan) + " plan";
       document.getElementById("pay-period").value = "monthly";
       document.getElementById("pay-notes").value = "";
+      renderPaymentHistory(c);
       document.getElementById("pay-amount").value = (plan && Number(plan.price)) ? Number(plan.price) : (pendingInvoiceAmount || "");
+      document.getElementById("pay-submit").disabled = paymentHistoryHasOpenInvoice;
       updatePaymentDate();
       openModal(document.getElementById("payment-modal-overlay"));
     }
@@ -3625,6 +3685,17 @@
       }
       document.getElementById("pay-expected").value = expected;
       updatePaymentBalance();
+      updatePaymentPurposeHint();
+    }
+
+    function updatePaymentPurposeHint() {
+      const purpose = document.getElementById("pay-purpose").value;
+      const c = allClients.find(x => x.id === currentDetailClientId) || null;
+      const nextDue = c ? (paymentIsoDate(c.next_payment_date) || paymentIsoDate(c.subscription_expires)) : "";
+      const dueText = nextDue ? new Date(nextDue + "T00:00:00").toLocaleDateString() : "no due date on file";
+      document.getElementById("pay-purpose-hint").textContent = purpose === "advance"
+        ? "This prepays the next " + document.getElementById("pay-period").value + " renewal after the current paid-through date (" + dueText + ")."
+        : "This settles the renewal currently due or overdue (due " + dueText + "). Check the invoice history first.";
     }
 
     function updatePaymentBalance() {
@@ -3642,29 +3713,40 @@
     }
 
     async function submitClientPayment() {
-      if (!currentDetailClientId) return;
+      if (!currentDetailClientId || paymentSubmissionInProgress) return;
+      if (paymentHistoryHasOpenInvoice) { toast("An unpaid invoice already exists. Mark that specific invoice as paid from the invoice list to avoid creating a duplicate.", "error"); return; }
+      if (!document.getElementById("pay-history-reviewed").checked) { toast("Review the invoice and payment history, then confirm it has not already been recorded.", "error"); return; }
       const amount = Number(document.getElementById("pay-amount").value);
       if (!amount || amount <= 0) { toast("Enter the amount paid.", "error"); return; }
       const expected = Number(document.getElementById("pay-expected").value) || 0;
       if (expected > 0 && amount !== expected) { toast("Enter the full subscription amount. Partial payments are not supported here.", "error"); return; }
+      const c = allClients.find(x => x.id === currentDetailClientId);
       const payload = {
         amount,
         periodType: document.getElementById("pay-period").value,
+        paymentPurpose: document.getElementById("pay-purpose").value,
+        historyReviewed: true,
+        confirmedSubscriptionExpires: paymentIsoDate(c && c.subscription_expires),
+        confirmedPaymentId: paymentHistoryLatestId,
         nextPaymentDate: document.getElementById("pay-next-date").value,
         notes: document.getElementById("pay-notes").value.trim(),
       };
-      const c = allClients.find(x => x.id === currentDetailClientId);
       const expiryLabel = payload.nextPaymentDate ? new Date(payload.nextPaymentDate + "T00:00:00").toLocaleDateString() : "—";
+      const purposeLabel = payload.paymentPurpose === "advance" ? "advance payment for the next renewal period" : "renewal currently due";
       confirmDialog({
         title: "Record payment?",
-        message: "Record a payment of KES " + amount.toLocaleString() + " for " + (c ? c.name : "this client") + "?",
-        detail: "Subscription extends to " + expiryLabel + ". " + (expected > 0 ? "The full amount is recorded and the invoice will be marked paid." : "The server will verify the amount against the generated invoice before recording it."),
+        message: "Record KES " + amount.toLocaleString() + " for " + (c ? c.name : "this client") + " as the " + purposeLabel + "?",
+        detail: "You confirmed the invoice/payment history was reviewed. The paid-through date is " + (paymentIsoDate(c && c.subscription_expires) || "not set") + "; after this payment it is scheduled to extend through " + expiryLabel + ". The server will stop if the subscription or payment history changed, or if an unpaid invoice already exists.",
         confirmLabel: "Record payment",
         onConfirm: () => doSubmitClientPayment(payload)
       });
     }
 
     async function doSubmitClientPayment(payload) {
+      paymentSubmissionInProgress = true;
+      const submitButton = document.getElementById("pay-submit");
+      submitButton.disabled = true;
+      submitButton.textContent = "Recording…";
       toast("Recording payment...");
       try {
         const data = await api("/api/clients/" + currentDetailClientId + "/invoices/record-payment", { method: "POST", body: JSON.stringify(payload) });
@@ -3676,6 +3758,11 @@
         loadClients();
         loadPaymentReminders();
       } catch (e) { toast("Failed: " + e.message, "error"); }
+      finally {
+        paymentSubmissionInProgress = false;
+        submitButton.disabled = paymentHistoryHasOpenInvoice;
+        submitButton.textContent = "Record Payment";
+      }
     }
 
     function payClientInvoice(clientId, invId) {
