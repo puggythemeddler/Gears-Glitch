@@ -6,6 +6,7 @@ import { execSync } from "child_process";
 import { getCloudinaryConfig, getSmtpConfig } from "./db";
 import { decryptSecret } from "./cp-secrets";
 import { suspendClientWithConfirmation } from "./client-suspension";
+import { resumeClientWithConfirmation } from "./client-resumption";
 
 const NEON_API_KEY = process.env.NEON_API_KEY || "";
 const NEON_ORG_ID = process.env.NEON_ORG_ID || "";
@@ -783,34 +784,44 @@ export async function suspendClientRecord(client: any, reason: string): Promise<
 }
 
 // Resume routine: clears the app-level suspend flag and unpauses the Render service.
-export async function resumeClientRecord(client: any): Promise<{ appResumed: boolean }> {
+export async function resumeClientRecord(client: any): Promise<{ appResumed: boolean; renderResumed: boolean; resumed: boolean }> {
   const { query } = await import("./db");
-  await query("UPDATE clients SET status = 'active' WHERE id = $1", [client.id]);
-
-  let appResumed = false;
-  if (client.render_service_id) {
-    try {
-      await fetch(`https://api.render.com/v1/services/${client.render_service_id}/resume`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${process.env.RENDER_API_KEY}`, "Content-Type": "application/json" },
-      });
-    } catch (e: any) { console.warn("[render] API call failed:", e?.message); }
-  }
-
-  if (client.render_service_url && client.cp_secret) {
-    for (let attempt = 0; attempt < 3 && !appResumed; attempt++) {
+  const result = await resumeClientWithConfirmation({
+    ...(client.render_service_id && RENDER_API_KEY ? { resumeRender: async () => {
       try {
-        const r = await fetch(`${client.render_service_url}/api/control-plane/resume`, {
+        const response = await fetch(`https://api.render.com/v1/services/${client.render_service_id}/resume`, {
           method: "POST",
-          headers: cpHeaders(client.cp_secret),
-          signal: AbortSignal.timeout(30000),
+          headers: { Authorization: `Bearer ${RENDER_API_KEY}`, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(20000),
         });
-        appResumed = r.ok;
-      } catch (e: any) { console.warn("[resume] App-level resume attempt failed:", e?.message); }
-      if (!appResumed) await new Promise(r => setTimeout(r, 10000));
-    }
-  }
-  return { appResumed };
+        if (!response.ok) console.warn(`[resume] Render API returned HTTP ${response.status}.`);
+        return response.ok;
+      } catch (error: any) {
+        console.warn("[resume] Render resume request failed:", error?.name || "request error");
+        return false;
+      }
+    } } : {}),
+    ...(client.render_service_url && client.cp_secret ? { resumeApp: async () => {
+      let appResumed = false;
+      for (let attempt = 0; attempt < 3 && !appResumed; attempt++) {
+        try {
+          const response = await fetch(`${client.render_service_url}/api/control-plane/resume`, {
+            method: "POST",
+            headers: cpHeaders(client.cp_secret),
+            signal: AbortSignal.timeout(30000),
+          });
+          appResumed = response.ok;
+          if (!response.ok) console.warn(`[resume] Tenant app returned HTTP ${response.status}.`);
+        } catch (error: any) {
+          console.warn("[resume] App-level resume attempt failed:", error?.name || "request error");
+        }
+        if (!appResumed && attempt < 2) await new Promise(resolve => setTimeout(resolve, 10000));
+      }
+      return appResumed;
+    } } : {}),
+    markActive: async () => { await query("UPDATE clients SET status = 'active' WHERE id = $1", [client.id]); },
+  });
+  return result;
 }
 
 // Auto-deactivate clients whose subscription lapsed without a recorded payment.

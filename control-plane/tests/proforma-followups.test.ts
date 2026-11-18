@@ -50,6 +50,18 @@ test("paid proforma reconciliation uses the invoice period when it extends acces
   assert.equal(renewal.nextPaymentDate, "2026-10-31");
 });
 
+test("paid annual proformas preserve their full invoice period", () => {
+  const renewal = paidProformaRenewal(
+    "2026-01-01",
+    "2027-01-01",
+    "2026-12-15T00:00:00.000Z",
+    new Date("2026-12-20T00:00:00.000Z"),
+  );
+  assert.equal(renewal.periodDays, 365);
+  assert.equal(renewal.periodType, "annual");
+  assert.equal(renewal.nextPaymentDate, "2027-01-01");
+});
+
 test("paid proforma reconciliation never shortens a future expiry", () => {
   const renewal = paidProformaRenewal(
     "2026-10-01",

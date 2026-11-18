@@ -328,6 +328,20 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
   });
 
   it("record-payment persists its audits (awaited) before responding", async () => {
+    await db!.query(
+      `INSERT INTO custom_plans (id, name, price, price_annual, features)
+       VALUES ('starter', 'Starter', 100, 1200, '[]')
+       ON CONFLICT (id) DO UPDATE SET price = 100, price_annual = 1200`
+    );
+    await db!.query("UPDATE clients SET plan = 'starter' WHERE id = $1", [clientId]);
+    const shortPayment = await fetch(`${baseUrl}/api/clients/${clientId}/invoices/record-payment`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: 99 }),
+    });
+    assert.equal(shortPayment.status, 400, "a payment below the plan total must be rejected before generating an invoice");
+    assert.match((await shortPayment.json() as any).error, /full monthly plan amount/i);
+
     const rec = await fetch(`${baseUrl}/api/clients/${clientId}/invoices/record-payment`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },

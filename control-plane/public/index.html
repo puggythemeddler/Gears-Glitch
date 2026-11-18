@@ -741,6 +741,7 @@
     <div class="modal" style="width:540px">
       <h2>Record Payment</h2>
       <p class="subtitle" id="payment-client-name"></p>
+      <p class="subtitle">Record the full monthly or annual amount here. Partial subscription payments are not supported in this workflow.</p>
       <div class="form-grid">
         <div class="field"><label for="pay-expected">Expected Amount (KES)</label><input type="number" id="pay-expected" readonly></div>
         <div class="field"><label for="pay-amount">Amount Paid (KES)</label><input type="number" id="pay-amount" min="0" oninput="updatePaymentBalance()"></div>
@@ -3605,11 +3606,17 @@
       document.getElementById("pay-next-date").value = next.toISOString().slice(0, 10);
 
       const plan = c ? (paymentPlans.find(p => p.id === c.plan) || null) : null;
-      let expected = period === "annual" && plan && plan.price_annual != null ? Number(plan.price_annual) : (plan ? Number(plan.price) || 0 : 0);
+      let expected = period === "annual"
+        ? (plan && plan.price_annual != null ? Number(plan.price_annual) || 0 : 0)
+        : (plan ? Number(plan.price) || 0 : 0);
       const note = document.getElementById("pay-note");
-      if (expected <= 0 && pendingInvoiceAmount > 0) {
-        expected = period === "annual" ? pendingInvoiceAmount * 12 : pendingInvoiceAmount;
-        note.textContent = "Plan price unknown, so expected amount comes from the pending invoice" + (pendingInvoiceDue ? " (due " + new Date(pendingInvoiceDue).toLocaleDateString() + ")" : "") + ". Adjust before recording.";
+      if (period === "annual" && plan && plan.price_annual == null) {
+        note.textContent = "An annual price is not configured for this plan.";
+      } else if (expected <= 0 && pendingInvoiceAmount > 0) {
+        expected = pendingInvoiceAmount;
+        note.textContent = "Plan price is not configured, so the pending invoice is the amount reference" + (pendingInvoiceDue ? " (due " + new Date(pendingInvoiceDue).toLocaleDateString() + ")" : "") + ". The server will verify the generated invoice before recording payment.";
+      } else if (expected <= 0 && period === "annual") {
+        note.textContent = "An annual price is not configured for this plan. The server will verify the generated invoice before recording payment.";
       } else {
         note.textContent = plan ? "Amount from the " + plan.name + " plan." : "";
       }
@@ -3622,9 +3629,10 @@
       const paid = Number(document.getElementById("pay-amount").value) || 0;
       const balance = Math.max(0, expected - paid);
       const el = document.getElementById("pay-balance");
-      if (balance > 0) {
-        const pct = expected > 0 ? Math.round((paid / expected) * 100) : 0;
-        el.innerHTML = '<span style="color:var(--warning-strong);font-weight:600">Balance remaining: KES ' + balance.toLocaleString() + '</span> <span style="color:var(--text-muted);font-size:0.82rem">(' + pct + '% paid)</span>';
+      if (expected <= 0) {
+        el.innerHTML = '<span style="color:var(--text-muted)">The server will verify the invoice amount before recording payment.</span>';
+      } else if (balance > 0) {
+        el.innerHTML = '<span style="color:var(--warning-strong);font-weight:600">Amount still required: KES ' + balance.toLocaleString() + '</span>';
       } else {
         el.innerHTML = '<span style="color:var(--success-strong);font-weight:600">Paid in full — no balance.</span>';
       }
@@ -3635,21 +3643,20 @@
       const amount = Number(document.getElementById("pay-amount").value);
       if (!amount || amount <= 0) { toast("Enter the amount paid.", "error"); return; }
       const expected = Number(document.getElementById("pay-expected").value) || 0;
+      if (expected > 0 && amount !== expected) { toast("Enter the full subscription amount. Partial payments are not supported here.", "error"); return; }
       const payload = {
         amount,
         periodType: document.getElementById("pay-period").value,
         nextPaymentDate: document.getElementById("pay-next-date").value,
         notes: document.getElementById("pay-notes").value.trim(),
       };
-      const shortfall = expected > 0 ? Math.max(0, expected - amount) : 0;
       const c = allClients.find(x => x.id === currentDetailClientId);
       const expiryLabel = payload.nextPaymentDate ? new Date(payload.nextPaymentDate + "T00:00:00").toLocaleDateString() : "—";
       confirmDialog({
         title: "Record payment?",
         message: "Record a payment of KES " + amount.toLocaleString() + " for " + (c ? c.name : "this client") + "?",
-        detail: "Subscription extends to " + expiryLabel + ". " + (shortfall > 0 ? "This is KES " + shortfall.toLocaleString() + " short of the expected KES " + expected.toLocaleString() + " — a balance stays outstanding." : "Matches the expected amount — no balance outstanding."),
-        confirmLabel: shortfall > 0 ? "Record & leave balance" : "Record payment",
-        danger: shortfall > 0,
+        detail: "Subscription extends to " + expiryLabel + ". " + (expected > 0 ? "The full amount is recorded and the invoice will be marked paid." : "The server will verify the amount against the generated invoice before recording it."),
+        confirmLabel: "Record payment",
         onConfirm: () => doSubmitClientPayment(payload)
       });
     }
