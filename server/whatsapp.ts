@@ -614,23 +614,44 @@ export async function getWhatsAppConfig(): Promise<{
   };
 }
 
-export async function testWhatsAppConnection(): Promise<{ ok: boolean; error?: string; phoneNumber?: string }> {
-  const s = await getSettings();
+export interface WhatsAppConnectionProbeDeps {
+  getSettings?: typeof getSettings;
+  fetch?: typeof fetch;
+}
+
+// Optional dependencies keep the connection lifecycle testable without real
+// Meta credentials or network requests. Production callers use the defaults.
+export async function testWhatsAppConnection(deps: WhatsAppConnectionProbeDeps = {}): Promise<{ ok: boolean; error?: string; phoneNumber?: string }> {
+  const s = await (deps.getSettings || getSettings)();
   if (!s.whatsappPhoneNumberId || !s.whatsappAccessToken) {
     return { ok: false, error: "Phone Number ID and Access Token are required." };
   }
+  const version = s.whatsappApiVersion || "v21.0";
+  if (!/^v\d+\.\d+$/.test(version)) {
+    return { ok: false, error: "WhatsApp Graph API version is invalid." };
+  }
   try {
-    const url = `https://graph.facebook.com/${s.whatsappApiVersion || "v21.0"}/${s.whatsappPhoneNumberId}`;
-    const res = await fetch(url, {
+    const url = `https://graph.facebook.com/${version}/${encodeURIComponent(s.whatsappPhoneNumberId)}`;
+    const res = await (deps.fetch || fetch)(url, {
       headers: { "Authorization": `Bearer ${s.whatsappAccessToken}` },
+      signal: AbortSignal.timeout(15_000),
     });
-    const data = await res.json() as any;
+    let data: any = {};
+    try { data = await res.json() as any; } catch { /* retain status-based diagnosis below */ }
     if (!res.ok) {
-      return { ok: false, error: data?.error?.message || `HTTP ${res.status}` };
+      const message = typeof data?.error?.message === "string" ? data.error.message : `HTTP ${res.status}`;
+      const code = Number(data?.error?.code);
+      if (code === 190) return { ok: false, error: `WhatsApp access token is invalid, expired, or revoked: ${message}` };
+      if (res.status === 403 || code === 10 || code === 200) return { ok: false, error: `WhatsApp token lacks permission for this phone number: ${message}` };
+      return { ok: false, error: `WhatsApp connection failed (HTTP ${res.status}): ${message}` };
+    }
+    if (typeof data?.display_phone_number !== "string" && typeof data?.id !== "string") {
+      return { ok: false, error: "Meta returned an unexpected phone-number response." };
     }
     return { ok: true, phoneNumber: data.display_phone_number || s.whatsappPhoneNumberId };
   } catch (err: any) {
-    return { ok: false, error: err?.message || "Connection failed" };
+    const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
+    return { ok: false, error: timedOut ? "WhatsApp connection timed out. Check the service and try again." : (err?.message || "Connection failed") };
   }
 }
 
