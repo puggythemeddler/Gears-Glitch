@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs/promises";
 import os from "os";
 import { execSync } from "child_process";
-import { getCloudinaryConfig, getSmtpConfig } from "./db";
+import { getCloudinaryConfig, getSmtpConfig, getControlPlaneSetting } from "./db";
 import { decryptSecret } from "./cp-secrets";
 import { suspendClientWithConfirmation } from "./client-suspension";
 import { resumeClientWithConfirmation } from "./client-resumption";
@@ -825,11 +825,13 @@ export async function resumeClientRecord(client: any): Promise<{ appResumed: boo
 }
 
 // Auto-deactivate clients whose subscription lapsed without a recorded payment.
-// Grace period (days after expiry) is configurable via SUSPEND_GRACE_DAYS (default 3).
+// The operator can select 3 or 7 days in Control Plane Settings; env remains the initial fallback.
 export async function enforceSubscriptionPayments() {
   try {
     const { queryAll } = await import("./db");
-    const graceDays = Number(process.env.SUSPEND_GRACE_DAYS || 3);
+    const savedGrace = await getControlPlaneSetting("suspend_grace_days");
+    const envGrace = Number(process.env.SUSPEND_GRACE_DAYS || 3);
+    const graceDays = savedGrace === "3" || savedGrace === "7" ? Number(savedGrace) : envGrace === 7 ? 7 : 3;
     const cutoff = new Date(Date.now() - graceDays * 86400000);
     const clients: any[] = await queryAll(
       `SELECT id, name, render_service_url, render_service_id, cp_secret, subscription_expires, next_payment_date

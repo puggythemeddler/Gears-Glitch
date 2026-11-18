@@ -56,6 +56,7 @@ export default function NotificationSettings() {
   const [customerTestResult, setCustomerTestResult] = useState("");
   const [reminderDays, setReminderDays] = useState<number>(30);
   const [reminderSaving, setReminderSaving] = useState(false);
+  const [subscriptionExpiryAlert, setSubscriptionExpiryAlert] = useState<{ dueDate: string; daysLeft: number; suspendGraceDays: number } | null>(null);
 
   function loadPrefs() {
     api<any>("/api/admin/notifications/preferences").then((p) => { setPrefs(p); setLoading(false); }).catch(() => setLoading(false));
@@ -71,6 +72,7 @@ export default function NotificationSettings() {
     loadPrefs();
     loadLogs();
     loadReminderDays();
+    api<{ alert: typeof subscriptionExpiryAlert }>("/api/admin/subscription-alert").then((d) => setSubscriptionExpiryAlert(d.alert || null)).catch(() => {});
   }, []);
 
   function toggle(event: string, channel: "email" | "whatsapp") {
@@ -148,6 +150,10 @@ export default function NotificationSettings() {
   return (
     <>
       <h1 style={{ marginTop: 0 }}>Notification Settings</h1>
+      {subscriptionExpiryAlert && <div role="alert" aria-live="assertive" style={{ margin: "0 0 1rem", padding: "0.85rem 1rem", border: "1px solid var(--warning)", borderRadius: "var(--radius)", background: "var(--tint-warning)", color: "var(--warning-strong)" }}>
+        <strong>Subscription renewal notice</strong>
+        <p style={{ margin: "0.3rem 0 0" }}>Renewal is {subscriptionExpiryAlert.daysLeft < 0 ? "overdue" : subscriptionExpiryAlert.daysLeft === 0 ? "due today" : "due in " + subscriptionExpiryAlert.daysLeft + " day(s)"}; due {new Date(subscriptionExpiryAlert.dueDate + "T00:00:00").toLocaleDateString("en-KE", { dateStyle: "medium" })}. Automatic suspension begins after {subscriptionExpiryAlert.suspendGraceDays} days past expiry if payment is not recorded.</p>
+      </div>}
 
       <div style={{ marginBottom: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
         <RippleButton variant={activeTab === "prefs" ? "primary" : "ghost"} onClick={() => setActiveTab("prefs")}>Preferences</RippleButton>

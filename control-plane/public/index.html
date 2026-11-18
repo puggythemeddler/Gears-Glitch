@@ -509,6 +509,17 @@
       <h2>Settings</h2>
 
       <div class="detail-panel">
+        <h3>Subscription expiry policy</h3>
+        <p class="tab-intro">Clients receive renewal notices 7 days and 2 days before their due date, again on the due date, and once when overdue. Unpaid service is suspended after the grace period selected here. A Control Plane admin can extend access from the client details page.</p>
+        <div class="actions-row">
+          <label for="suspend-grace-days">Suspend after expiry</label>
+          <select id="suspend-grace-days" class="select"><option value="3">3 days</option><option value="7">7 days</option></select>
+          <button class="btn btn-primary" data-admin onclick="saveSubscriptionPolicy()">Save expiry policy</button>
+          <span id="subscription-policy-status" style="font-size:0.82rem;color:var(--text-muted)"></span>
+        </div>
+      </div>
+
+      <div class="detail-panel">
         <h3>SMTP / Email Configuration</h3>
         <p class="tab-intro">
           Used to send welcome emails to new clients and changelog notifications.
@@ -747,7 +758,7 @@
       <p class="subtitle">Record the full monthly or annual amount here. Partial subscription payments are not supported in this workflow.</p>
       <div class="form-grid">
         <div class="field"><label for="pay-expected">Expected Amount (KES)</label><input type="number" id="pay-expected" readonly></div>
-        <div class="field"><label for="pay-amount">Amount Paid (KES)</label><input type="number" id="pay-amount" min="0" oninput="updatePaymentBalance()"></div>
+        <div class="field"><label for="pay-amount">Amount Paid (KES)</label><input type="number" id="pay-amount" readonly aria-describedby="pay-note"></div>
         <div class="field"><label for="pay-period">Period</label><select id="pay-period" onchange="updatePaymentDate()"><option value="monthly">Monthly (30 days)</option><option value="annual">Annual (365 days)</option></select></div>
         <div class="field"><label for="pay-next-date">Next Payment Date</label><input type="date" id="pay-next-date"></div>
       </div>
@@ -771,6 +782,34 @@
         <button class="btn btn-ghost" onclick="hidePaymentModal()">Cancel</button>
         <button class="btn btn-primary" id="pay-submit" onclick="submitClientPayment()">Record Payment</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="invoice-create-overlay">
+    <div class="modal" style="width:560px">
+      <h2>Create subscription proforma</h2>
+      <p class="subtitle" id="invoice-create-client"></p>
+      <div class="form-grid">
+        <div class="field"><label for="invoice-period">Billing period</label><select id="invoice-period" onchange="updateProformaPreview()"><option value="monthly">Monthly (30 days)</option><option value="annual">Annual (365 days)</option></select></div>
+        <div class="field"><label for="invoice-base">Predefined plan fee (KES)</label><input type="number" id="invoice-base" readonly></div>
+        <div class="field"><label for="invoice-discount-type">Discount</label><select id="invoice-discount-type" onchange="updateProformaPreview()"><option value="none">No discount</option><option value="percentage">Percentage</option><option value="amount">Fixed amount (KES)</option></select></div>
+        <div class="field"><label for="invoice-discount-value">Discount value</label><input type="number" id="invoice-discount-value" min="0" step="0.01" value="0" oninput="updateProformaPreview()" disabled></div>
+        <div class="field"><label for="invoice-discount-amount">Discount amount (KES)</label><input type="number" id="invoice-discount-amount" readonly></div>
+        <div class="field"><label for="invoice-final-amount">Amount due (KES)</label><input type="number" id="invoice-final-amount" readonly></div>
+        <div class="field"><label for="invoice-due-date">Payment due date</label><input type="date" id="invoice-due-date"></div>
+      </div>
+      <p id="invoice-discount-help" class="subtitle" role="status" aria-live="polite">The plan rate is fixed. Any discount is recorded on the proforma and shown in its PDF.</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeInvoiceCreateModal()">Cancel</button>
+        <button class="btn btn-primary" id="invoice-create-submit" onclick="submitClientInvoice()">Generate proforma</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="invoice-result-overlay">
+    <div class="modal" style="width:560px">
+      <h2>Proforma details</h2>
+      <div id="invoice-result-details"></div>
+      <div class="modal-actions" id="invoice-result-actions"></div>
     </div>
   </div>
 
@@ -1816,6 +1855,11 @@
 
     // ─── SETTINGS ──────────────────────────────────────────
     async function loadSettings() {
+      try {
+        const policy = await api("/api/subscription-policy");
+        document.getElementById("suspend-grace-days").value = String(policy.suspendGraceDays || 3);
+        document.getElementById("subscription-policy-status").textContent = "Current policy: suspend after " + (policy.suspendGraceDays || 3) + " days.";
+      } catch { document.getElementById("subscription-policy-status").textContent = "Could not load expiry policy."; }
       // Load SMTP config
       try {
         const smtp = await api("/api/smtp");
@@ -1852,6 +1896,16 @@
           document.getElementById("cld-status").style.color = "var(--text-muted)";
         }
       } catch { document.getElementById("cld-status").textContent = "Error loading"; }
+    }
+    async function saveSubscriptionPolicy() {
+      const days = Number(document.getElementById("suspend-grace-days").value);
+      const status = document.getElementById("subscription-policy-status");
+      try {
+        const data = await api("/api/subscription-policy", { method: "PUT", body: JSON.stringify({ suspendGraceDays: days }) });
+        status.textContent = "Saved. New expiries will suspend after " + data.suspendGraceDays + " days.";
+        status.style.color = "var(--success)";
+        toast("Subscription expiry policy saved.");
+      } catch (e) { status.textContent = "Save failed: " + e.message; status.style.color = "var(--danger-strong)"; }
     }
     async function saveSmtpConfig() {
       const host = document.getElementById("smtp-host").value.trim();
@@ -3511,11 +3565,11 @@
             <td style="font-family:monospace;font-size:0.82rem">${esc(inv.invoiceNumber || 'INV-' + inv.id)}</td>
             <td>${esc(inv.planName || inv.planId)}</td>
             <td>${esc(coverage)}</td>
-            <td>${inv.currency} ${Number(inv.amount).toLocaleString()}</td>
+            <td>${Number(inv.discountAmount) > 0 ? '<span style="text-decoration:line-through;color:var(--text-muted)">' + esc(inv.currency) + ' ' + Number(inv.baseAmount || inv.amount).toLocaleString() + '</span><br>' : ''}<strong>${esc(inv.currency)} ${Number(inv.amount).toLocaleString()}</strong>${Number(inv.discountAmount) > 0 ? '<br><small style="color:var(--success-strong)">Discount −' + esc(inv.currency) + ' ' + Number(inv.discountAmount).toLocaleString() + '</small>' : ''}</td>
             <td>${inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}</td>
             <td><span class="badge ${statusClass}">${inv.status}</span></td>
             <td><div class="actions-cell">
-              ${inv.status !== 'paid' ? '<button class="btn btn-success btn-sm" onclick="payClientInvoice(' + clientId + ',' + inv.id + ')">Mark paid</button>' : ''}
+              ${inv.status !== 'paid' ? '<button class="btn btn-success btn-sm" onclick="payClientInvoice(' + clientId + ',' + inv.id + ')">Record payment</button>' : ''}
               ${mpesaConfigured && ['pending','overdue'].includes(String(inv.status).toLowerCase()) ? '<button class="btn btn-primary btn-sm" onclick="requestMpesaPayment(' + Number(clientId) + ',' + Number(inv.id) + ',' + Number(inv.amount || 0) + ')">M-Pesa</button>' : ''}
               <button class="btn btn-ghost btn-sm" onclick="viewClientInvoice(${Number(clientId)},${Number(inv.id)})">View</button>
               <button class="btn btn-ghost btn-sm" onclick="downloadClientInvoicePdf(${Number(clientId)},${Number(inv.id)})">PDF</button>
@@ -3574,14 +3628,92 @@
       });
     }
 
+    let invoiceCreationPlans = [];
+    let invoiceCreationBusy = false;
     async function generateClientInvoice() {
       if (!currentDetailClientId) return;
-      toast("Generating invoice...");
       try {
-        const data = await api("/api/clients/" + currentDetailClientId + "/invoices/generate", { method: "POST" });
-        if (data.error) { toast(data.error, "error"); return; }
-        toast("Invoice generated!"); loadClientInvoices(currentDetailClientId);
-      } catch (e) { toast("Failed: " + e.message, "error"); }
+        const [planData, invoiceData] = await Promise.all([
+          api("/api/plans"), api("/api/clients/" + currentDetailClientId + "/invoices"),
+        ]);
+        if ((invoiceData.invoices || []).some(i => ["pending", "overdue"].includes(String(i.status || "").toLowerCase()))) {
+          toast("An unpaid proforma already exists. Open it below to view its details or record payment.", "error");
+          return;
+        }
+        invoiceCreationPlans = planData.plans || [];
+        const client = allClients.find(x => x.id === currentDetailClientId);
+        const plan = invoiceCreationPlans.find(p => p.id === (client && client.plan));
+        if (!client || !plan) { toast("Could not find the client's current predefined plan rate.", "error"); return; }
+        document.getElementById("invoice-create-client").textContent = client.name + " · " + plan.name + " plan";
+        document.getElementById("invoice-period").value = "monthly";
+        document.getElementById("invoice-discount-type").value = "none";
+        document.getElementById("invoice-discount-value").value = "0";
+        const due = new Date(Date.now() + 7 * 86400000);
+        document.getElementById("invoice-due-date").value = due.toISOString().slice(0, 10);
+        document.getElementById("invoice-create-submit").disabled = false;
+        updateProformaPreview();
+        openModal(document.getElementById("invoice-create-overlay"));
+      } catch (e) { toast("Could not prepare proforma: " + e.message, "error"); }
+    }
+
+    function closeInvoiceCreateModal() { closeModal(document.getElementById("invoice-create-overlay")); }
+
+    function updateProformaPreview() {
+      const client = allClients.find(x => x.id === currentDetailClientId);
+      const plan = invoiceCreationPlans.find(p => p.id === (client && client.plan));
+      const period = document.getElementById("invoice-period").value;
+      const annualRateMissing = period === "annual" && (!plan || plan.price_annual == null);
+      const base = annualRateMissing ? NaN : period === "annual" ? Number(plan && plan.price_annual) : Number(plan && plan.price);
+      const type = document.getElementById("invoice-discount-type").value;
+      const valueInput = document.getElementById("invoice-discount-value");
+      valueInput.disabled = type === "none";
+      const value = type === "none" ? 0 : Math.max(0, Number(valueInput.value) || 0);
+      const discount = type === "percentage" ? Math.round(base * value) / 100 : type === "amount" ? value : 0;
+      document.getElementById("invoice-base").value = Number.isFinite(base) ? base : "";
+      document.getElementById("invoice-discount-amount").value = Number.isFinite(discount) ? Math.round(discount * 100) / 100 : "";
+      document.getElementById("invoice-final-amount").value = Number.isFinite(base) ? Math.max(0, Math.round((base - discount) * 100) / 100) : "";
+      const help = document.getElementById("invoice-discount-help");
+      const invalid = !Number.isFinite(base) || base <= 0 || value < 0 || (type === "percentage" && value >= 100) || (type === "amount" && value >= base);
+      help.textContent = annualRateMissing ? "No annual rate is configured for this plan. Choose monthly billing or update the plan's annual price first." : invalid ? "Enter a discount below the plan fee. The proforma must have a positive balance." : "The plan rate is fixed. Any discount is recorded on the proforma and shown in its PDF.";
+      help.style.color = invalid ? "var(--danger-strong)" : "var(--text-muted)";
+      document.getElementById("invoice-create-submit").disabled = invalid || invoiceCreationBusy;
+    }
+
+    async function submitClientInvoice() {
+      if (!currentDetailClientId || invoiceCreationBusy) return;
+      invoiceCreationBusy = true;
+      const submit = document.getElementById("invoice-create-submit");
+      submit.disabled = true; submit.textContent = "Generating…";
+      try {
+        const discountType = document.getElementById("invoice-discount-type").value;
+        const data = await api("/api/clients/" + currentDetailClientId + "/invoices/generate", {
+          method: "POST",
+          body: JSON.stringify({
+            periodType: document.getElementById("invoice-period").value,
+            discountType,
+            discountValue: discountType === "none" ? 0 : Number(document.getElementById("invoice-discount-value").value) || 0,
+            dueDate: document.getElementById("invoice-due-date").value,
+          }),
+        });
+        closeInvoiceCreateModal();
+        await loadClientInvoices(currentDetailClientId);
+        showProformaDetails(data);
+      } catch (e) { toast("Failed to generate proforma: " + e.message, "error"); }
+      finally { invoiceCreationBusy = false; submit.disabled = false; submit.textContent = "Generate proforma"; }
+    }
+
+    function showProformaDetails(invoice) {
+      const details = document.getElementById("invoice-result-details");
+      const actions = document.getElementById("invoice-result-actions");
+      details.innerHTML = '<div class="detail-panel"><strong>' + esc(invoice.invoiceNumber || ("PR-Inv" + invoice.id)) + '</strong><p>' + esc(invoice.planName || invoice.planId) + ' · ' + esc(invoice.periodStart || "") + ' to ' + esc(invoice.periodEnd || "") + '</p><p>Plan fee: KES ' + Number(invoice.baseAmount ?? invoice.amount).toLocaleString() + (Number(invoice.discountAmount) > 0 ? '<br>Discount: −KES ' + Number(invoice.discountAmount).toLocaleString() : '') + '<br><strong>Amount due: KES ' + Number(invoice.amount).toLocaleString() + '</strong></p><p>Due date: ' + esc(invoice.dueDate || "—") + '</p></div>';
+      actions.replaceChildren();
+      const addAction = (label, className, action) => { const button = document.createElement("button"); button.type = "button"; button.className = className; button.textContent = label; button.addEventListener("click", action); actions.appendChild(button); };
+      addAction("Close", "btn btn-ghost", () => closeModal(document.getElementById("invoice-result-overlay")));
+      addAction("View proforma", "btn btn-ghost", () => viewClientInvoice(currentDetailClientId, Number(invoice.id)));
+      addAction("PDF", "btn btn-ghost", () => downloadClientInvoicePdf(currentDetailClientId, Number(invoice.id)));
+      addAction("Email PDF", "btn btn-ghost", () => emailClientInvoice(currentDetailClientId, Number(invoice.id)));
+      addAction("Record payment", "btn btn-success", () => { closeModal(document.getElementById("invoice-result-overlay")); payClientInvoice(currentDetailClientId, Number(invoice.id)); });
+      openModal(document.getElementById("invoice-result-overlay"));
     }
 
     let paymentPlans = [];
@@ -3684,6 +3816,7 @@
         note.textContent = plan ? "Amount from the " + plan.name + " plan." : "";
       }
       document.getElementById("pay-expected").value = expected;
+      document.getElementById("pay-amount").value = expected > 0 ? expected : "";
       updatePaymentBalance();
       updatePaymentPurposeHint();
     }

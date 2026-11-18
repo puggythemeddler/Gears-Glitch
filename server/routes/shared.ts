@@ -332,6 +332,10 @@ export interface SubscriptionInvoiceData {
     providerEmail: string;
     planName: string;
     amount: number;
+    baseAmount?: number;
+    discountAmount?: number;
+    discountType?: string;
+    discountValue?: number;
     currency: string;
     status: string;
     periodStart: string;
@@ -355,7 +359,9 @@ export function generateSubscriptionInvoiceHtml(data: SubscriptionInvoiceData): 
   const isProforma = normalizedStatus === "pending" || normalizedStatus === "overdue";
   const documentTitle = isProforma ? "PROFORMA INVOICE" : "SUBSCRIPTION INVOICE";
   const statusClass = normalizedStatus === "paid" ? "badge-paid" : normalizedStatus === "overdue" ? "badge-overdue" : "badge-pending";
-  const itemsHtml = `<tr><td>${escapeHtml(invoice.planName)} Subscription</td><td style="text-align:center">1</td><td style="text-align:right;white-space:nowrap">${invoice.currency} ${invoice.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${invoice.currency} ${invoice.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`;
+  const baseAmount = Number(invoice.baseAmount ?? invoice.amount);
+  const discountAmount = Number(invoice.discountAmount || 0);
+  const itemsHtml = `<tr><td>${escapeHtml(invoice.planName)} Subscription</td><td style="text-align:center">1</td><td style="text-align:right;white-space:nowrap">${invoice.currency} ${baseAmount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td style="text-align:right;white-space:nowrap">${invoice.currency} ${baseAmount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>`;
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${documentTitle} ${escapeHtml(invoice.invoiceNumber)} — ${escapeHtml(store.name)}</title>
 <style>${SUBSCRIPTION_INVOICE_CSS}</style></head><body>
@@ -382,6 +388,7 @@ export function generateSubscriptionInvoiceHtml(data: SubscriptionInvoiceData): 
     ${itemsHtml}
   </tbody></table>
   <div class="totals">
+    ${discountAmount > 0 ? `<div class="total-row">Discount${invoice.discountType === "percentage" ? ` (${Number(invoice.discountValue || 0)}%)` : ""}: −${invoice.currency} ${discountAmount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>` : ""}
     <div class="total-row">Total: ${invoice.currency} ${invoice.amount.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
   </div>
   ${invoice.notes ? `<p style="margin-top:1rem;font-size:0.9rem;"><strong>Notes:</strong> ${escapeHtml(invoice.notes)}</p>` : ""}

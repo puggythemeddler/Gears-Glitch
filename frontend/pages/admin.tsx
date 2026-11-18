@@ -303,6 +303,7 @@ export default function AdminPage() {
   const [faviconMsg, setFaviconMsg] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [expiryAlert, setExpiryAlert] = useState<{ dueDate: string; daysLeft: number; suspendGraceDays: number } | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Inventory", "Customers", "Services", "Team"]);
   const [navQuery, setNavQuery] = useState("");
   const router = useRouter();
@@ -499,6 +500,20 @@ export default function AdminPage() {
       }).catch((e) => console.warn("[admin] Failed to load subscription requests:", e?.message));
     }
   }, [authed, view]);
+
+  useEffect(() => {
+    if (!authed || staffRole !== "admin") { setExpiryAlert(null); return; }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const data = await api<{ alert: typeof expiryAlert }>("/api/admin/subscription-alert");
+        if (active) setExpiryAlert(data.alert || null);
+      } catch { /* Keep the last known warning during a temporary connection failure. */ }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 120000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [authed, staffRole]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -728,6 +743,10 @@ export default function AdminPage() {
               </button>
             </div>
           </div>
+          {expiryAlert && <div role="alert" aria-live="assertive" style={{ position: "sticky", top: 0, zIndex: 20, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", margin: "0.75rem 0 1rem", padding: "0.8rem 1rem", border: "1px solid var(--warning)", borderRadius: "var(--radius)", background: "var(--tint-warning)", color: "var(--warning-strong)" }}>
+            <div><strong>Subscription renewal {expiryAlert.daysLeft < 0 ? "overdue" : expiryAlert.daysLeft === 0 ? "due today" : "due in " + expiryAlert.daysLeft + " day" + (expiryAlert.daysLeft === 1 ? "" : "s")}.</strong> Due {new Date(expiryAlert.dueDate + "T00:00:00").toLocaleDateString("en-KE", { dateStyle: "medium" })}. Service will be suspended {expiryAlert.suspendGraceDays} days after expiry if unpaid.</div>
+            <RippleButton size="small" variant="secondary" onClick={() => setView("shop-subscription")}>Review subscription</RippleButton>
+          </div>}
           <div className="dash-section active" key={view}>
             {view === "dashboard" && <AdminDashboard staffRole={staffRole} staffPermissions={staffPermissions} onNavigate={setView} />}
             {view === "products" && <AdminProducts />}

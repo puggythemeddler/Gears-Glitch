@@ -10,7 +10,7 @@ import jwt from "jsonwebtoken";
 import { generateSecret, verifySync } from "otplib";
 import { generateTOTP } from "@otplib/uri";
 import rateLimit from "express-rate-limit";
-import { initControlPlaneDb, queryAll, queryOne, query, withTransaction, withAdvisoryLock, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit } from "./db";
+import { initControlPlaneDb, queryAll, queryOne, query, withTransaction, withAdvisoryLock, getCloudinaryConfig, setCloudinaryConfig, getSmtpConfig, setSmtpConfig, logAudit, getControlPlaneSetting, setControlPlaneSetting } from "./db";
 import { encryptSecret, decryptSecret, lookupVariant, encryptionKeyConfigured, describeEncryptionSource } from "./cp-secrets";
 import { corsPolicyMiddleware, parseAllowedOrigins } from "./cors-policy";
 import { initOpsCenterDb, aggregateUsageForClients } from "./ops-db";
@@ -270,6 +270,17 @@ async function getTrackedInvoice(client: any, invoiceId: number): Promise<any | 
   return payload.invoices.find((invoice: any) => Number(invoice.id) === invoiceId) || null;
 }
 
+async function syncTenantSubscriptionAlert(client: any, alert: { dueDate: string; daysLeft: number; suspendGraceDays: number } | null): Promise<void> {
+  if (!client?.render_service_url || !client?.cp_secret) return;
+  const response = await fetch(`${client.render_service_url}/api/control-plane/subscription-alert`, {
+    method: "PUT",
+    headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ alert }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error(`Tenant alert update returned HTTP ${response.status}.`);
+}
+
 let proformaFollowupRunActive = false;
 async function reconcilePaidProforma(row: any, invoice: any): Promise<void> {
   const clientId = Number(row.client_id);
@@ -401,24 +412,27 @@ async function processProformaFollowups(now = new Date()): Promise<void> {
           const amount = `${esc(invoice.currency || "KES")} ${Number(invoice.amount || 0).toLocaleString("en-KE")}`;
           const planName = esc(invoice.planName || invoice.planId || "subscription");
           const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("en-KE", { dateStyle: "long" }) : "";
+          const savedGrace = await getControlPlaneSetting("suspend_grace_days");
+          const envGrace = Number(process.env.SUSPEND_GRACE_DAYS || 3);
+          const suspensionGraceDays = savedGrace === "3" || savedGrace === "7" ? Number(savedGrace) : envGrace === 7 ? 7 : 3;
           const subject = `Payment reminder: proforma ${number}`;
           const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#1f2937">
             <h2>Payment reminder</h2><p>Hello ${esc(row.client_name)},</p>
             <p>Our records show that proforma <strong>${esc(number)}</strong> for your ${planName} subscription is still unpaid.</p>
             <p><strong>Amount:</strong> ${amount}${dueDate ? `<br><strong>Due date:</strong> ${esc(dueDate)}` : ""}</p>
-            <p>Please arrange payment within three days of this notice. If payment is not recorded by then, your service will be deactivated automatically. If you have already paid, please contact us so we can reconcile it.</p>
+            <p>Please arrange payment within ${suspensionGraceDays} days of this notice. If payment is not recorded by then, your service will be deactivated automatically. If you have already paid, please contact us so we can reconcile it.</p>
             <p>Regards,<br>Gear&amp;Glitch</p></div>`;
           await smtp.transporter.sendMail({
             from: `"${smtp.fromName}" <${smtp.fromEmail}>`, to: row.admin_email, subject, html,
           });
           await query(
             `UPDATE proforma_followups SET status = 'warned', warning_sent_at = NOW(),
-               suspend_due_at = NOW() + INTERVAL '3 days' + (extension_days * INTERVAL '1 day'),
+               suspend_due_at = NOW() + ($3 * INTERVAL '1 day') + (extension_days * INTERVAL '1 day'),
                last_error = '', updated_at = NOW()
              WHERE client_id = $1 AND invoice_id = $2 AND status = 'warning_sending'`,
-            [row.client_id, row.invoice_id]
+            [row.client_id, row.invoice_id, suspensionGraceDays]
           );
-          await logAudit(0, "system", "proforma_payment_warning_sent", "client", Number(row.client_id), row.client_name, `Reminder sent for ${number}; service deactivation is scheduled after the three-day grace period.`);
+          await logAudit(0, "system", "proforma_payment_warning_sent", "client", Number(row.client_id), row.client_name, `Reminder sent for ${number}; service deactivation is scheduled after the ${suspensionGraceDays}-day grace period.`);
           continue;
         }
 
@@ -1785,6 +1799,29 @@ app.get("/api/plans", requireAuth, requireAdmin, async (_req, res) => {
   }
 });
 
+app.get("/api/subscription-policy", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const saved = await getControlPlaneSetting("suspend_grace_days");
+    const envValue = Number(process.env.SUSPEND_GRACE_DAYS || 3);
+    const suspendGraceDays = saved === "3" || saved === "7" ? Number(saved) : envValue === 7 ? 7 : 3;
+    res.json({ suspendGraceDays, reminderDays: [7, 2, 0], overdueEmail: true });
+  } catch (err: any) { res.status(500).json({ error: "Failed to load subscription expiry policy." }); }
+});
+
+app.put("/api/subscription-policy", destructiveLimiter, requireAuth, requireAdmin, async (req, res) => {
+  const days = Number(req.body?.suspendGraceDays);
+  if (days !== 3 && days !== 7) { res.status(400).json({ error: "Suspension grace must be 3 or 7 days." }); return; }
+  try {
+    await setControlPlaneSetting("suspend_grace_days", String(days));
+    const adjusted = await query(`UPDATE proforma_followups SET
+      suspend_due_at = warning_sent_at + ($1 * INTERVAL '1 day') + (extension_days * INTERVAL '1 day'), updated_at = NOW()
+      WHERE status = 'warned' AND warning_sent_at IS NOT NULL` , [days]);
+    void refreshTenantExpiryAlerts().catch((error: any) => console.warn(`[subscription-alert] Refresh after policy change failed: ${error?.message || "unknown error"}`));
+    await auditLog(req, "update_subscription_expiry_policy", "settings", null, "Subscription expiry", `Automatic suspension after ${days} days; reminders at 7 days, 2 days, due date, and overdue; adjusted ${adjusted.rowCount || 0} open proforma timer(s).`);
+    res.json({ ok: true, suspendGraceDays: days, adjustedFollowups: adjusted.rowCount || 0 });
+  } catch (err: any) { res.status(500).json({ error: "Failed to save subscription expiry policy." }); }
+});
+
 // Pull plans from a live client backend
 app.post("/api/clients/:id/pull-plans", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -2411,11 +2448,19 @@ app.post("/api/clients/:id/invoices/generate", destructiveLimiter, requireAuth, 
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
     if (!client.render_service_url) { res.status(400).json({ error: "Client has no backend URL" }); return; }
+    if (req.body?.periodType !== undefined && !["monthly", "annual"].includes(req.body.periodType)) { res.status(400).json({ error: "Period type must be monthly or annual." }); return; }
+    const periodType = req.body?.periodType === "annual" ? "annual" : "monthly";
+    const plan = await queryOne("SELECT id, price, price_annual FROM custom_plans WHERE id = $1", [client.plan]) as any;
+    const baseAmount = periodType === "annual" ? (plan?.price_annual == null ? null : Number(plan.price_annual)) : Number(plan?.price);
+    if (!plan || baseAmount == null || !Number.isFinite(baseAmount) || baseAmount <= 0) {
+      res.status(400).json({ error: periodType === "annual" ? "The Control Plane has no annual price configured for this plan." : "The Control Plane has no positive monthly price configured for this plan." });
+      return;
+    }
 
     const r = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
       method: "POST",
       headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json", "X-Request-ID": requestId }),
-      body: JSON.stringify({ providerId: 1, planId: client.plan, ...req.body }),
+      body: JSON.stringify({ ...req.body, providerId: 1, planId: client.plan, periodType, baseAmount }),
       signal: AbortSignal.timeout(30000),
     });
     const responseText = await r.text();
@@ -2557,7 +2602,7 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
     const gen = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
       method: "POST",
       headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ providerId: 1, planId: client.plan, periodType, periodStart, dueDate }),
+      body: JSON.stringify({ providerId: 1, planId: client.plan, periodType, periodStart, dueDate, ...(expected > 0 ? { baseAmount: expected } : {}) }),
     });
     const invoice: any = await gen.json();
     if (!gen.ok) { res.status(gen.status).json({ error: invoice?.error || "Failed to generate invoice" }); return; }
@@ -2628,7 +2673,7 @@ async function computePaymentReminders() {
   const newReminders: any[] = [];
 
   for (const c of clients) {
-    const due = c.next_payment_date || "";
+    const due = String(c.next_payment_date || c.subscription_expires || "").slice(0, 10);
     const dueDate = due ? new Date(due + "T00:00:00") : null;
     if (!dueDate || isNaN(dueDate.getTime())) continue;
     const daysLeft = Math.ceil((dueDate.getTime() - today.getTime()) / dayMs);
@@ -2664,6 +2709,67 @@ async function computePaymentReminders() {
 
   reminders.sort((a, b) => a.daysLeft - b.daysLeft);
   return { reminders, newReminders };
+}
+
+async function deliverSubscriptionReminderEmails(reminders: any[]): Promise<void> {
+  for (const reminder of reminders.filter(r => ["7d", "2d", "due", "overdue"].includes(r.window))) {
+    await query(`INSERT INTO subscription_notice_deliveries (client_id, due_date, window)
+      VALUES ($1, $2, $3) ON CONFLICT (client_id, due_date, window) DO NOTHING`,
+      [reminder.clientId, reminder.dueDate, reminder.window]);
+  }
+  await query(`UPDATE subscription_notice_deliveries SET status='pending', updated_at=NOW()
+    WHERE status='sending' AND updated_at < NOW() - INTERVAL '15 minutes'`);
+  await query(`UPDATE subscription_notice_deliveries n SET status='cancelled', updated_at=NOW()
+    WHERE n.status='pending' AND NOT EXISTS (
+      SELECT 1 FROM clients c WHERE c.id=n.client_id AND c.status='active'
+        AND COALESCE(NULLIF(c.next_payment_date,''), c.subscription_expires::date::text)=n.due_date
+    )`);
+  const pending = await queryAll(`SELECT n.*, c.name AS client_name, c.admin_email
+    FROM subscription_notice_deliveries n JOIN clients c ON c.id=n.client_id
+    WHERE n.status='pending' AND n.next_attempt_at <= NOW() ORDER BY n.due_date ASC LIMIT 50`) as any[];
+  for (const row of pending) {
+    const claimed = await query(`UPDATE subscription_notice_deliveries SET status='sending', attempts=attempts+1, updated_at=NOW()
+      WHERE client_id=$1 AND due_date=$2 AND window=$3 AND status='pending'`, [row.client_id, row.due_date, row.window]);
+    if (!claimed.rowCount) continue;
+    try {
+      if (!row.admin_email) throw new Error("Billing email is not configured.");
+      const smtp = await getSmtpTransport();
+      if (!smtp) throw new Error("Control Plane email is not configured.");
+      const days = Math.ceil((new Date(`${row.due_date}T00:00:00Z`).getTime() - Date.now()) / 86400000);
+      const graceValue = await getControlPlaneSetting("suspend_grace_days");
+      const envGrace = Number(process.env.SUSPEND_GRACE_DAYS || 3);
+      const graceDays = graceValue === "3" || graceValue === "7" ? Number(graceValue) : envGrace === 7 ? 7 : 3;
+      const phrase = row.window === "overdue" ? `The renewal is overdue by ${Math.max(1, Math.abs(days))} day(s).` : days === 0 ? "The renewal is due today." : `The renewal is due in ${days} day(s).`;
+      const subject = row.window === "overdue" ? "Subscription renewal overdue" : row.window === "due" ? "Subscription renewal due today" : `Subscription renewal due in ${days} days`;
+      const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#292524"><h2>Subscription renewal reminder</h2><p>Hello ${esc(row.client_name)},</p><p>${phrase}</p><p><strong>Due date:</strong> ${esc(row.due_date)}</p><p>To avoid interruption, arrange renewal before the service is suspended ${graceDays} days after expiry. If you have already paid, contact Gear&amp;Glitch support so the payment can be reconciled.</p><p>Regards,<br>Gear&amp;Glitch</p></div>`;
+      await smtp.transporter.sendMail({ from: `"${smtp.fromName}" <${smtp.fromEmail}>`, to: row.admin_email, subject, html });
+      await query(`UPDATE subscription_notice_deliveries SET status='sent', sent_at=NOW(), last_error='', updated_at=NOW()
+        WHERE client_id=$1 AND due_date=$2 AND window=$3`, [row.client_id, row.due_date, row.window]);
+      await logAudit(0, "system", "subscription_renewal_notice_sent", "client", Number(row.client_id), row.client_name,
+        `Sent renewal reminder (${row.window}) for due date ${row.due_date}.`).catch((error: any) => console.warn(`[subscription-email] Reminder sent but audit logging failed for client ${row.client_id}: ${error?.message || "unknown error"}`));
+    } catch (error: any) {
+      await query(`UPDATE subscription_notice_deliveries SET status='pending', last_error=$4, next_attempt_at=NOW() + INTERVAL '15 minutes', updated_at=NOW()
+        WHERE client_id=$1 AND due_date=$2 AND window=$3`, [row.client_id, row.due_date, row.window, String(error?.message || "Email delivery failed").slice(0, 500)]);
+      console.warn(`[subscription-email] Client ${row.client_id} reminder delivery failed: ${error?.message || "unknown error"}`);
+    }
+  }
+}
+
+async function refreshTenantExpiryAlerts(): Promise<void> {
+  const clients = await queryAll(`SELECT id, name, render_service_url, cp_secret, next_payment_date, subscription_expires
+    FROM clients WHERE status IN ('active','suspended') AND render_service_url <> ''`) as any[];
+  const graceValue = await getControlPlaneSetting("suspend_grace_days");
+  const envGrace = Number(process.env.SUSPEND_GRACE_DAYS || 3);
+  const suspendGraceDays = graceValue === "3" || graceValue === "7" ? Number(graceValue) : envGrace === 7 ? 7 : 3;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  for (const client of clients) {
+    const dueDate = String(client.next_payment_date || client.subscription_expires || "").slice(0, 10);
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? new Date(`${dueDate}T00:00:00`) : null;
+    const daysLeft = parsed && Number.isFinite(parsed.getTime()) ? Math.ceil((parsed.getTime() - today.getTime()) / 86400000) : Infinity;
+    const alert = daysLeft <= 7 && dueDate ? { dueDate, daysLeft, suspendGraceDays } : null;
+    try { await syncTenantSubscriptionAlert(client, alert); }
+    catch (error: any) { console.warn(`[subscription-alert] Client ${client.id} sync failed: ${error?.message || "request failed"}`); }
+  }
 }
 
 // Renewal invoices are opt-in until the deployment owner enables the feature.
@@ -2758,7 +2864,11 @@ function scheduleRecurringClientInvoices() {
 // Runs on every health cycle. Uses dedupe keys so nothing is re-created each run.
 async function refreshNotifications() {
   try {
-    const { newReminders } = await computePaymentReminders();
+    const { reminders, newReminders } = await computePaymentReminders();
+    try { await deliverSubscriptionReminderEmails(reminders); }
+    catch (error: any) { console.warn(`[subscription-email] Reminder sweep failed: ${error?.message || "unknown error"}`); }
+    try { await refreshTenantExpiryAlerts(); }
+    catch (error: any) { console.warn(`[subscription-alert] Tenant alert sweep failed: ${error?.message || "unknown error"}`); }
     for (const r of newReminders) {
       let title = "Payment due in 1 week";
       let severity = "info";

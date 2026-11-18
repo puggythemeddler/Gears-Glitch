@@ -410,6 +410,24 @@ export async function initControlPlaneDb() {
     )
   `);
 
+  await query(`CREATE TABLE IF NOT EXISTS cp_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS subscription_notice_deliveries (
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    due_date TEXT NOT NULL,
+    window TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sending','sent','cancelled')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    sent_at TIMESTAMPTZ,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY(client_id, due_date, window)
+  )`);
+
   // Follow-up timers are created only for proformas issued through the
   // Control Plane after this feature is deployed. Existing invoices are not
   // backfilled, so rollout cannot immediately suspend a client for old debt.
@@ -448,4 +466,14 @@ export async function initControlPlaneDb() {
   `);
 
   console.log("[control-plane] Database initialized.");
+}
+
+export async function getControlPlaneSetting(key: string): Promise<string | null> {
+  const row = await queryOne("SELECT value FROM cp_settings WHERE key = $1", [key]);
+  return row ? String(row.value ?? "") : null;
+}
+
+export async function setControlPlaneSetting(key: string, value: string): Promise<void> {
+  await query(`INSERT INTO cp_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, [key, value]);
 }

@@ -14,6 +14,7 @@ export interface RenewalInvoicePayload {
   periodStart: string;
   dueDate: string;
   generationKey: string;
+  baseAmount: number;
 }
 
 export interface ExistingInvoice {
@@ -71,6 +72,7 @@ export async function processRenewalInvoiceCandidate(
     periodStart: dueDate,
     dueDate,
     generationKey: renewalGenerationKey(candidate.id, dueDate),
+    baseAmount: Number(amount),
   });
   return { status: invoice.created ? "generated" : "existing", invoice };
 }

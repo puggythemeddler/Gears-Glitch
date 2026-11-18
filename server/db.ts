@@ -284,6 +284,10 @@ interface Invoice {
   planId: string;
   planName: string;
   amount: number;
+  baseAmount?: number;
+  discountType?: "none" | "percentage" | "amount";
+  discountValue?: number;
+  discountAmount?: number;
   currency: string;
   status: string;
   periodStart: string;
@@ -3509,11 +3513,11 @@ async function getTotalViews(): Promise<number> {
 
 async function createInvoice(data: { providerId: number; planId: string; amount: number; currency: string; periodStart: string; periodEnd: string; dueDate?: string; invoiceNumber?: string }): Promise<Invoice> {
   const result = await query(
-    "INSERT INTO invoices (provider_id, plan_id, amount, currency, period_start, period_end, due_date, invoice_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+    "INSERT INTO invoices (provider_id, plan_id, amount, base_amount, currency, period_start, period_end, due_date, invoice_number) VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8) RETURNING *",
     [data.providerId, data.planId, data.amount, data.currency, data.periodStart, data.periodEnd, data.dueDate || "", data.invoiceNumber || ""]
   );
   const row = result.rows[0];
-  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: "", amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
+  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: "", amount: row.amount, baseAmount: row.base_amount, discountType: row.discount_type, discountValue: row.discount_value, discountAmount: row.discount_amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
 }
 
 async function getInvoice(id: number): Promise<Invoice | undefined> {
@@ -3521,7 +3525,7 @@ async function getInvoice(id: number): Promise<Invoice | undefined> {
     `SELECT i.*, sp.name AS plan_name, pr.company_name AS provider_name FROM invoices i LEFT JOIN subscription_plans sp ON sp.id = i.plan_id LEFT JOIN providers pr ON pr.id = i.provider_id WHERE i.id = $1`, [id]
   ) as any;
   if (!row) return undefined;
-  return { id: row.id, providerId: row.provider_id, providerName: row.provider_name || "", planId: row.plan_id, planName: row.plan_name || "", amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
+  return { id: row.id, providerId: row.provider_id, providerName: row.provider_name || "", planId: row.plan_id, planName: row.plan_name || "", amount: row.amount, baseAmount: row.base_amount, discountType: row.discount_type, discountValue: row.discount_value, discountAmount: row.discount_amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes };
 }
 
 async function listInvoices(providerId?: number): Promise<Invoice[]> {
@@ -3558,22 +3562,36 @@ async function deleteUnpaidInvoice(id: number): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
-async function generateProviderInvoice(providerId: number | null | undefined, planId: string, options: { periodType?: "monthly" | "annual"; periodStart?: string; dueDate?: string; generationKey?: string } = {}): Promise<(Invoice & { created: boolean }) | null> {
+async function generateProviderInvoice(providerId: number | null | undefined, planId: string, options: { periodType?: "monthly" | "annual"; periodStart?: string; dueDate?: string; generationKey?: string; baseAmount?: number; discountType?: "none" | "percentage" | "amount"; discountValue?: number } = {}): Promise<(Invoice & { created: boolean }) | null> {
   const plan = await getSubscriptionPlan(planId);
   if (!plan) return null;
   const periodType = options.periodType || "monthly";
-  if (periodType === "annual" && plan.priceAnnual == null) return null;
+  if (periodType === "annual" && plan.priceAnnual == null && options.baseAmount == null) return null;
+  const baseAmount = Number(options.baseAmount ?? (periodType === "annual" ? plan.priceAnnual : plan.price));
+  const discountType = options.discountType || "none";
+  const discountValue = Number(options.discountValue || 0);
+  if (!Number.isFinite(baseAmount) || baseAmount < 0 || !["none", "percentage", "amount"].includes(discountType) || !Number.isFinite(discountValue) || discountValue < 0) {
+    throw new Error("Invalid subscription price or discount.");
+  }
+  if (Math.round(baseAmount * 100) !== baseAmount * 100 || Math.round(discountValue * 100) !== discountValue * 100) {
+    throw new Error("Subscription prices and discounts must use no more than two decimal places.");
+  }
+  if ((discountType === "percentage" && discountValue >= 100) || (discountType === "amount" && discountValue >= baseAmount) || (discountType === "none" && discountValue !== 0)) {
+    throw new Error("Discount must leave a positive balance and match its selected type.");
+  }
+  const discountAmount = discountType === "percentage" ? Math.round(baseAmount * discountValue) / 100 : discountType === "amount" ? discountValue : 0;
+  const finalAmount = Math.max(0, Math.round((baseAmount - discountAmount) * 100) / 100);
   let targetProvider = providerId ? await findProviderById(providerId) : undefined;
   if (!targetProvider) targetProvider = await getOrCreatePlatformProvider();
   const now = new Date();
   const { periodStart, periodEnd } = calculateInvoicePeriod(options.periodStart || now.toISOString().slice(0, 10), periodType);
   const dueDate = options.dueDate || new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
   const result = await query(
-    `INSERT INTO invoices (provider_id, plan_id, amount, currency, period_start, period_end, due_date, invoice_number, generation_key)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO invoices (provider_id, plan_id, amount, base_amount, discount_type, discount_value, discount_amount, currency, period_start, period_end, due_date, invoice_number, generation_key)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (generation_key) WHERE generation_key IS NOT NULL DO NOTHING
      RETURNING *`,
-    [targetProvider.id, plan.id, periodType === "annual" ? plan.priceAnnual : plan.price, "KES", periodStart, periodEnd, dueDate, "", options.generationKey || null]
+    [targetProvider.id, plan.id, finalAmount, baseAmount, discountType, discountValue, discountAmount, "KES", periodStart, periodEnd, dueDate, "", options.generationKey || null]
   );
   const created = result.rows.length > 0;
   let row = created
@@ -3586,7 +3604,7 @@ async function generateProviderInvoice(providerId: number | null | undefined, pl
     if (!updated.rows[0]) throw new Error("Could not assign a proforma reference to the new invoice.");
     row = updated.rows[0];
   }
-  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: plan.name, providerName: targetProvider.companyName, amount: row.amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes, created };
+  return { id: row.id, providerId: row.provider_id, planId: row.plan_id, planName: plan.name, providerName: targetProvider.companyName, amount: row.amount, baseAmount: row.base_amount, discountType: row.discount_type, discountValue: row.discount_value, discountAmount: row.discount_amount, currency: row.currency, status: row.status, periodStart: row.period_start, periodEnd: row.period_end, paidAt: row.paid_at, createdAt: row.created_at, invoiceNumber: row.invoice_number, dueDate: row.due_date, notes: row.notes, created };
 }
 
 async function getInvoiceRevenue(): Promise<{ total: number; paid: number; pending: number }> {
