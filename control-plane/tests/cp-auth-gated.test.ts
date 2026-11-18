@@ -306,15 +306,6 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
   it("proxy routes write awaited audit rows (upgrade-request, invoice pay, invoice generate)", async () => {
     const clients: any[] = await db!.queryAll("SELECT id, admin_email FROM clients WHERE domain = 'fake.example.com'");
     clientId = clients[0].id;
-    // The preceding authenticated plan-sync test changes this client's plan to
-    // `ok-plan`; restore the billable fixture before exercising invoice proxy.
-    await db!.query("UPDATE clients SET plan = 'starter' WHERE id = $1", [clientId]);
-    await db!.query(
-      `INSERT INTO custom_plans (id, name, price, price_annual, features)
-       VALUES ('starter', 'Starter', 100, 1200, '[]')
-       ON CONFLICT (id) DO UPDATE SET price = 100, price_annual = 1200`
-    );
-
     const approve = await fetch(`${baseUrl}/api/clients/${clientId}/upgrade-requests/7`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -327,6 +318,15 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(pay.status, 200);
+
+    // Restore a billable tenant/catalog fixture immediately before generation;
+    // preceding proxy calls may update the client's plan through the fake backend.
+    await db!.query("UPDATE clients SET plan = 'starter' WHERE id = $1", [clientId]);
+    await db!.query(
+      `INSERT INTO custom_plans (id, name, price, price_annual, features)
+       VALUES ('starter', 'Starter', 100, 1200, '[]')
+       ON CONFLICT (id) DO UPDATE SET price = 100, price_annual = 1200`
+    );
 
     const gen = await fetch(`${baseUrl}/api/clients/${clientId}/invoices/generate`, {
       method: "POST",
