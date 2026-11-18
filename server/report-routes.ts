@@ -17,6 +17,7 @@ import type { Request, Response } from "express";
 import { ownerAuthMiddleware } from "./auth";
 import { requirePermission, asyncHandler } from "./routes/shared";
 import { queryOne, queryAll } from "./db-helpers";
+import { requireShopFeature } from "./feature-access";
 import {
   parseDateRange,
   allTimeRange,
@@ -404,7 +405,7 @@ router.get("/repairs/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(asyn
 
 // ─── Warranty ───────────────────────────────────────────────────────────────
 
-router.get("/warranty", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Request, res: Response) => {
+router.get("/warranty", ownerAuthMiddleware, VIEW, requireShopFeature("Warranty management"), asyncHandler(async (req: Request, res: Response) => {
   const from = String(req.query.from || allTimeRange().from);
   const to = String(req.query.to || allTimeRange().to);
   const range = parseDateRange(from, to) ?? allTimeRange();
@@ -455,7 +456,7 @@ router.get("/warranty", ownerAuthMiddleware, VIEW, asyncHandler(async (req: Requ
   });
 }));
 
-router.get("/warranty/export.csv", ownerAuthMiddleware, EXPORT, asyncHandler(async (req: Request, res: Response) => {
+router.get("/warranty/export.csv", ownerAuthMiddleware, EXPORT, requireShopFeature("Warranty management"), asyncHandler(async (req: Request, res: Response) => {
   const from = String(req.query.from || allTimeRange().from);
   const to = String(req.query.to || allTimeRange().to);
   const range = parseDateRange(from, to) ?? allTimeRange();

@@ -108,6 +108,14 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
       "INSERT INTO clients (name, domain, admin_email, render_service_url, cp_secret, status, plan) VALUES ('Fake Co', 'fake.example.com', 'owner@fake.example.com', $1, $2, 'active', 'starter') ON CONFLICT (domain) DO UPDATE SET render_service_url = $1, cp_secret = $2",
       [fakeBackendUrl, CLIENT_SECRET]
     );
+    // Invoice proxy routes now require an authoritative Control Plane catalog
+    // rate; seed the fake client's plan rather than relying on an implicit default.
+    await dbMod.query(
+      `INSERT INTO custom_plans (id, name, price, price_annual, features)
+       VALUES ('starter', 'Starter', 100, 1200, '[]')
+       ON CONFLICT (id) DO UPDATE SET price = 100, price_annual = 1200`
+    );
+    await dbMod.query("UPDATE clients SET plan = 'starter' WHERE domain = 'fake.example.com'");
     // Clear this client's audit rows so the proxy-audit assertions below measure only
     // the writes made by this run. The client is keyed on a fixed domain and two tests
     // in this file write the same audited actions for it, so without this a second run
@@ -298,7 +306,6 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
   it("proxy routes write awaited audit rows (upgrade-request, invoice pay, invoice generate)", async () => {
     const clients: any[] = await db!.queryAll("SELECT id, admin_email FROM clients WHERE domain = 'fake.example.com'");
     clientId = clients[0].id;
-
     const approve = await fetch(`${baseUrl}/api/clients/${clientId}/upgrade-requests/7`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -312,12 +319,22 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
     });
     assert.equal(pay.status, 200);
 
+    // Restore a billable tenant/catalog fixture immediately before generation;
+    // preceding proxy calls may update the client's plan through the fake backend.
+    await db!.query("UPDATE clients SET plan = 'starter' WHERE id = $1", [clientId]);
+    await db!.query(
+      `INSERT INTO custom_plans (id, name, price, price_annual, features)
+       VALUES ('starter', 'Starter', 100, 1200, '[]')
+       ON CONFLICT (id) DO UPDATE SET price = 100, price_annual = 1200`
+    );
+
     const gen = await fetch(`${baseUrl}/api/clients/${clientId}/invoices/generate`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
-    assert.equal(gen.status, 200);
+    const generated: any = await gen.json();
+    assert.equal(gen.status, 200, JSON.stringify(generated));
 
     const audits: any[] = await db!.queryAll(
       "SELECT action FROM audit_log WHERE target_type = 'client' AND target_id = $1 AND action IN ('approve_upgrade_request','reject_upgrade_request','mark_invoice_paid','generate_invoice')",

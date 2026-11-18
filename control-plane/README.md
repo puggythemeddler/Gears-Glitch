@@ -42,7 +42,7 @@ npm run dev             # http://localhost:4000
 | `SMTP_PASS` | No | SMTP password |
 | `FROM_EMAIL` | No | Sender email address |
 | `SLACK_WEBHOOK_URL` | No | Slack webhook URL for down-client, over-usage, and stale-heartbeat alerts |
-| `SUSPEND_GRACE_DAYS` | No | Grace period (days) before an active client is auto-suspended for a missed payment (defaults to `3`) |
+| `SUSPEND_GRACE_DAYS` | No | Initial/default suspension grace in days (`3` or `7`; defaults to `3`). An admin can change the live policy in **Settings → Subscription expiry policy**; that database setting takes precedence over this env fallback. |
 
 ## Deploy to Render
 
@@ -91,9 +91,9 @@ Click **Details** on any client to see:
 - Stats: plan, uptime, orders, revenue
 - Subscription status with days remaining
 - **Invoice table** with all subscription invoices:
-  - **Generate** — create a new invoice for this client
-  - **Record Payment** — requires the operator to review recent invoice and payment history and choose whether the payment is for the renewal currently due or an advance renewal. The action stops if invoice history is unavailable, an unpaid invoice already exists, or the subscription/payment history changed after review. Concurrent submissions for a client are serialized. A successful full payment generates and pays one invoice, extends `subscription_expires` (+30/365 days), sets the next `next_payment_date`, records the purpose in `client_payments` and the audit log, auto-resumes a suspended client, and clears outstanding payment notifications.
-  - **Mark paid** — use this for a specific existing proforma; the invoice list shows its covered billing dates so the operator can match it to the payment history.
+  - **Generate Proforma** — monthly/annual rates come from the Control Plane plan catalog and are read-only. Optional percentage or fixed-amount discounts are validated server-side, stored with the proforma, and shown on the invoice/PDF. The created proforma opens a details panel with view, PDF, email, M-Pesa (when configured), and record-payment actions.
+  - **Record Payment** — amount fields are read-only and update from the selected monthly/annual plan rate. The operator reviews recent invoice/payment history and chooses whether payment covers the renewal currently due or an advance renewal. The action stops if history is unavailable, an unpaid invoice already exists, or subscription/payment history changed after review. Concurrent submissions are serialized. A successful full payment extends `subscription_expires` (+30/365 days), sets the next `next_payment_date`, logs the purpose, auto-resumes a suspended client, and clears outstanding payment notifications. Partial payments are not supported in this flow.
+  - **Record payment on an invoice** — use this for a specific existing proforma; the invoice list shows coverage dates, base price, discount, and final amount. This is a manual record; confirm only after payment is verified. M-Pesa is a separate provider-backed action when configured.
   - **View** — open branded HTML invoice in new tab
   - **PDF** — download invoice as PDF
   - **Email** — send invoice to client's email (sent via the control plane's own SMTP)
@@ -164,6 +164,7 @@ The **Operations** tab (admin only) is the single pane for tenant health and inc
 - **Download** — download any `.sql.gz` backup file directly from the UI
 
 ### Settings
+- **Subscription expiry policy** — choose automatic suspension 3 or 7 days after expiry. Renewal emails are sent at 7 days, 2 days, on the due date, and once when overdue; delivery is retried if SMTP is unavailable. The tenant admin gets a persistent banner in the top admin bar and the Notifications page. Changing the policy recalculates open post-warning proforma suspension timers. The existing per-client **Extend Usage** action adds 1–365 days and is audited.
 - **SMTP Configuration** — configure SMTP host, port, user, password, and sender email via the UI. Settings stored in the database with env var fallback. Test the configuration by sending a test email.
 - **Cloudinary** — view stored Cloudinary credentials, update cloud name, API key, and API secret directly from the UI without needing a live client.
 

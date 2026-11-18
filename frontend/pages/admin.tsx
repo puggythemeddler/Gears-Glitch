@@ -158,7 +158,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     label: "Services",
     items: [
       { key: "repairs", label: "Repairs", feature: "Repair ticketing" },
-      { key: "warranties", label: "Warranty", feature: "Invoice/quote PDF downloads" },
+      { key: "warranties", label: "Warranty", feature: "Warranty management" },
     ],
   },
   {
@@ -303,6 +303,7 @@ export default function AdminPage() {
   const [faviconMsg, setFaviconMsg] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [expiryAlert, setExpiryAlert] = useState<{ dueDate: string; daysLeft: number; suspendGraceDays: number } | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Inventory", "Customers", "Services", "Team"]);
   const [navQuery, setNavQuery] = useState("");
   const router = useRouter();
@@ -311,6 +312,7 @@ export default function AdminPage() {
     "Credit notes": useFeature("Credit notes"),
     "Quotations": useFeature("Quotations"),
     "Repair ticketing": useFeature("Repair ticketing"),
+    "Warranty management": useFeature("Warranty management"),
     "Product positioning": useFeature("Product positioning"),
     "Email notifications": useFeature("Email notifications"),
     "Stock transfers": useFeature("Stock transfers"),
@@ -499,6 +501,20 @@ export default function AdminPage() {
       }).catch((e) => console.warn("[admin] Failed to load subscription requests:", e?.message));
     }
   }, [authed, view]);
+
+  useEffect(() => {
+    if (!authed || staffRole !== "admin") { setExpiryAlert(null); return; }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const data = await api<{ alert: typeof expiryAlert }>("/api/admin/subscription-alert");
+        if (active) setExpiryAlert(data.alert || null);
+      } catch { /* Keep the last known warning during a temporary connection failure. */ }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 120000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [authed, staffRole]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -728,6 +744,10 @@ export default function AdminPage() {
               </button>
             </div>
           </div>
+          {expiryAlert && <div role="alert" aria-live="assertive" style={{ position: "sticky", top: 0, zIndex: 20, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", margin: "0.75rem 0 1rem", padding: "0.8rem 1rem", border: "1px solid var(--warning)", borderRadius: "var(--radius)", background: "var(--tint-warning)", color: "var(--warning-strong)" }}>
+            <div><strong>Subscription renewal {expiryAlert.daysLeft < 0 ? "overdue" : expiryAlert.daysLeft === 0 ? "due today" : "due in " + expiryAlert.daysLeft + " day" + (expiryAlert.daysLeft === 1 ? "" : "s")}.</strong> Due {new Date(expiryAlert.dueDate + "T00:00:00").toLocaleDateString("en-KE", { dateStyle: "medium" })}. Service will be suspended {expiryAlert.suspendGraceDays} days after expiry if unpaid.</div>
+            <RippleButton size="small" variant="secondary" onClick={() => setView("shop-subscription")}>Review subscription</RippleButton>
+          </div>}
           <div className="dash-section active" key={view}>
             {view === "dashboard" && <AdminDashboard staffRole={staffRole} staffPermissions={staffPermissions} onNavigate={setView} />}
             {view === "products" && <AdminProducts />}
@@ -1411,6 +1431,7 @@ function AdminGroups() {
 function AdminOrders() {
   const { data: oData, loading, error, refetch } = useFetch(() => api<{ orders: Order[] }>("/api/admin/orders"), []);
   const feedback = useFeedback();
+  const warrantyEnabled = useFeature("Warranty management");
   const [selected, setSelected] = useState<any | null>(null);
   const [customerDetail, setCustomerDetail] = useState<any | null>(null);
   const [statusMsg, setStatusMsg] = useState("");
@@ -1637,7 +1658,7 @@ function AdminOrders() {
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Warranty</th><th>License renewal</th><th>Serial</th><th></th></tr></thead>
+            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th>{warrantyEnabled && <th>Warranty</th>}<th>License renewal</th><th>Serial</th><th></th></tr></thead>
             <tbody>
               {(o.items || []).map((item: any, i: number) => (
                 <tr key={item.id || i}>
@@ -1645,7 +1666,7 @@ function AdminOrders() {
                   <td>{formatPrice(item.price)}</td>
                   <td>{item.quantity}</td>
                   <td>{formatPrice(item.lineTotal)}</td>
-                  <td>
+                  {warrantyEnabled && <td>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem" }}>
                       <input type="checkbox" checked={!!item.hasWarranty} onChange={async () => {
                         try {
@@ -1664,7 +1685,7 @@ function AdminOrders() {
                       ) : null}
                       <span>{item.hasWarranty ? "mo" : ""}</span>
                     </div>
-                  </td>
+                  </td>}
                   <td>
                     {isSoftwareLicenseProduct({ name: item.name, category: item.category, subcategory: item.subcategory }) ? (
                       <div style={{ minWidth: 190, display: "grid", gap: "0.35rem" }}>
@@ -4955,16 +4976,26 @@ const REPORT_CATEGORIES: { key: string; label: string; tabs: { id: ReportTabId; 
 
 function AdminReports() {
   const hasVisitorAnalytics = useFeature("Visitor analytics");
+  const hasRepairTicketing = useFeature("Repair ticketing");
+  const hasWarrantyManagement = useFeature("Warranty management");
   const [category, setCategory] = useState("sales");
   const cat = REPORT_CATEGORIES.find((c) => c.key === category) ?? REPORT_CATEGORIES[0];
   const [tab, setTab] = useState<ReportTabId>("sales");
-  const visibleTabs = (cat?.tabs || []).filter((t) => t.id !== "visitors" || hasVisitorAnalytics);
+  const visibleTabs = (cat?.tabs || []).filter((t) =>
+    (t.id !== "visitors" || hasVisitorAnalytics) &&
+    (!(["repairs", "tech-performance"].includes(t.id)) || hasRepairTicketing) &&
+    (t.id !== "warranty" || hasWarrantyManagement)
+  );
   const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0].id;
 
   return (
     <>
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
-        {REPORT_CATEGORIES.map((c) => (
+        {REPORT_CATEGORIES.filter((c) => c.tabs.some((t) =>
+          (t.id !== "visitors" || hasVisitorAnalytics) &&
+          (!(["repairs", "tech-performance"].includes(t.id)) || hasRepairTicketing) &&
+          (t.id !== "warranty" || hasWarrantyManagement)
+        )).map((c) => (
           <RippleButton key={c.key} size="small" variant={cat.key === c.key ? "primary" : "ghost"}
             onClick={() => { setCategory(c.key); setTab(c.tabs[0].id); }}>
             {c.label}

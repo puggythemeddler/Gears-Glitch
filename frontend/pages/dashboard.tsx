@@ -168,10 +168,10 @@ export default function DashboardPage() {
         {activeSection === "overview" && (
           <div className="dash-section active">
             <h1>Welcome, {userName}</h1>
-            <p className="page-intro">Manage your orders, repairs, and messages.</p>
+            <p className="page-intro">Manage your orders, {featureFlags["Repair ticketing"] ? "repairs, and " : ""}messages.</p>
             <div className="stat-grid">
               <div className="stat-card"><div className="stat-card__value">{orders.length}</div><div className="stat-card__label">Orders</div></div>
-              <div className="stat-card"><div className="stat-card__value">{repairs.length}</div><div className="stat-card__label">Repairs</div></div>
+              {featureFlags["Repair ticketing"] && <div className="stat-card"><div className="stat-card__value">{repairs.length}</div><div className="stat-card__label">Repairs</div></div>}
               <div className="stat-card"><div className="stat-card__value">{wishlist.length}</div><div className="stat-card__label">Wishlist</div></div>
             </div>
           </div>

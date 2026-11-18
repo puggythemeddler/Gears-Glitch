@@ -904,11 +904,11 @@ setInterval(refreshSuspendedFlag, 60 * 1000).unref();
 app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   if (!storeSuspended) { next(); return; }
   // The control plane (and health checks) must still reach a suspended store.
-  if (req.path === "/health" || req.path.startsWith("/control-plane") || isControlPlaneRequest(req)) { next(); return; }
+  if (req.path === "/health" || req.path === "/admin/subscription-alert" || req.path.startsWith("/control-plane") || isControlPlaneRequest(req)) { next(); return; }
   res.status(403).json({ error: "This store is currently suspended. Please contact support." });
 });
 
-app.use("/api/warranty", warrantyRouter);
+app.use("/api/warranty", requireShopFeature("Warranty management"), warrantyRouter);
 app.use("/api/reports", reportRouter);
 app.use("/api/financing", financingRouter);
 
@@ -924,6 +924,25 @@ app.post("/api/control-plane/resume", controlPlaneAuthMiddleware, asyncHandler(a
   storeSuspended = false;
   console.log("[control-plane] Store resumed by control plane.");
   res.json({ ok: true, suspended: false });
+}));
+
+app.put("/api/control-plane/subscription-alert", controlPlaneAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const alert = req.body?.alert;
+  if (alert === null) {
+    await setStoreSetting("subscription_expiry_alert", "");
+    res.json({ ok: true, cleared: true });
+    return;
+  }
+  if (!alert || typeof alert !== "object" || !/^\d{4}-\d{2}-\d{2}$/.test(String(alert.dueDate || "")) ||
+      !Number.isSafeInteger(alert.daysLeft) || alert.daysLeft > 7 || ![3, 7].includes(alert.suspendGraceDays)) {
+    res.status(400).json({ error: "Subscription alert is invalid." });
+    return;
+  }
+  await setStoreSetting("subscription_expiry_alert", JSON.stringify({
+    dueDate: String(alert.dueDate), daysLeft: Math.max(-365, Number(alert.daysLeft)),
+    suspendGraceDays: Number(alert.suspendGraceDays), updatedAt: new Date().toISOString(),
+  }));
+  res.json({ ok: true });
 }));
 
 app.get("/api/control-plane/status", controlPlaneAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
@@ -1061,6 +1080,12 @@ app.get("/api/images/:refId", staffAuthMiddleware, requirePermissionShared("sett
 
 // Permission guard helper
 const requirePermission = requirePermissionShared;
+
+app.get("/api/admin/subscription-alert", staffAuthMiddleware, requirePermission("subscription:view"), asyncHandler(async (_req: Request, res: Response) => {
+  const raw = await getStoreSetting("subscription_expiry_alert");
+  try { res.json({ alert: raw ? JSON.parse(raw) : null }); }
+  catch { res.json({ alert: null }); }
+}));
 
 // A-4: Step-up re-auth middleware. Requires a short-lived step-up JWT (purpose:"step-up")
 // issued by POST /api/auth/staff/step-up after password verification. The client sends
@@ -3954,7 +3979,7 @@ app.get("/api/admin/orders", ownerAuthMiddleware, requirePermission("order:view"
 // Warranty register: order items sold with warranty coverage, joined with the
 // customer and (when available) the serialized unit. Status is computed from
 // sale date + duration, or the serial's explicit warranty_expires.
-app.get("/api/admin/warranties", ownerAuthMiddleware, requirePermission("order:view"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/warranties", ownerAuthMiddleware, requirePermission("order:view"), requireShopFeature("Warranty management"), asyncHandler(async (req: Request, res: Response) => {
   // Pagination (R-8): keep the register query bounded/configurable instead of a
   // hard-capped LIMIT 2000. Defaults stay generous (1000) so the existing
   // client-side register/filter view keeps working; callers may pass ?limit= & ?offset=.
@@ -4073,7 +4098,7 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, requirePermission
   }
 }));
 
-app.patch("/api/admin/order-items/:id/warranty", ownerAuthMiddleware, requirePermission("order:view"), asyncHandler(async (req: Request, res: Response) => {
+app.patch("/api/admin/order-items/:id/warranty", ownerAuthMiddleware, requirePermission("order:view"), requireShopFeature("Warranty management"), asyncHandler(async (req: Request, res: Response) => {
   const { hasWarranty, warrantyDuration } = req.body || {};
   const itemId = Number(req.params.id);
   const row = await queryOne("SELECT order_id FROM order_items WHERE id = $1", [itemId]) as any;
@@ -4494,6 +4519,10 @@ app.get("/api/admin/invoices/:id/view", allowControlPlane(ownerAuthMiddleware), 
       providerEmail: provider?.email || "",
       planName: invoice.planName,
       amount: invoice.amount,
+      baseAmount: invoice.baseAmount,
+      discountType: invoice.discountType,
+      discountValue: invoice.discountValue,
+      discountAmount: invoice.discountAmount,
       currency: invoice.currency,
       status: invoice.status,
       periodStart: invoice.periodStart,
@@ -4585,8 +4614,12 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
     pid = Number(providerId);
   }
   if (planId !== undefined && !isStr(planId)) { res.status(400).json({ error: "Plan ID must be a valid string." }); return; }
-  const { periodType, periodStart, dueDate, generationKey } = req.body || {};
+  const { periodType, periodStart, dueDate, generationKey, baseAmount, discountType, discountValue } = req.body || {};
   if (periodType !== undefined && periodType !== "monthly" && periodType !== "annual") { res.status(400).json({ error: "Period type must be monthly or annual." }); return; }
+  if (baseAmount !== undefined && (!isControlPlaneRequest(req) || typeof baseAmount !== "number" || !Number.isFinite(baseAmount) || baseAmount < 0 || baseAmount > 1000000000)) { res.status(400).json({ error: "Base price override is only accepted from the Control Plane and must be a valid amount." }); return; }
+  if ((discountType !== undefined || discountValue !== undefined) && !isControlPlaneRequest(req)) { res.status(403).json({ error: "Subscription discounts can only be set by the Control Plane." }); return; }
+  if (discountType !== undefined && !["none", "percentage", "amount"].includes(discountType)) { res.status(400).json({ error: "Discount type must be none, percentage, or amount." }); return; }
+  if (discountValue !== undefined && (typeof discountValue !== "number" || !Number.isFinite(discountValue) || discountValue < 0 || Math.round(discountValue * 100) !== discountValue * 100)) { res.status(400).json({ error: "Discount must be a non-negative amount with no more than two decimal places." }); return; }
   const validDate = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !isNaN(new Date(`${value}T00:00:00.000Z`).getTime()) && new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
   if (periodStart !== undefined && !validDate(periodStart)) { res.status(400).json({ error: "Period start must be a valid ISO date." }); return; }
   if (dueDate !== undefined && !validDate(dueDate)) { res.status(400).json({ error: "Due date must be a valid ISO date." }); return; }
@@ -4595,7 +4628,7 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
   }
   let invoice;
   try {
-    invoice = await generateProviderInvoice(pid, planId || "starter", { periodType, periodStart, dueDate, generationKey });
+    invoice = await generateProviderInvoice(pid, planId || "starter", { periodType, periodStart, dueDate, generationKey, baseAmount, discountType, discountValue });
   } catch (err: any) {
     const suppliedRequestId = req.get("X-Request-ID") || "";
     const requestId = /^[a-f\d-]{36}$/i.test(suppliedRequestId) ? suppliedRequestId : crypto.randomUUID();
@@ -5252,6 +5285,10 @@ app.get("/api/products/:id", asyncHandler(async (req: Request, res: Response) =>
 
 app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create"), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body || {};
+  const warrantyEnabled = featureListIncludes(await getEffectiveFeatures(req), "Warranty management");
+  if (!warrantyEnabled && (Boolean(body.hasWarranty) || Number(body.warrantyDuration) > 0)) {
+    res.status(403).json({ error: "Warranty management is not included in this plan." }); return;
+  }
   const category = body.category;
   if (category && !(await getCategory(category))) {
     res.status(400).json({ error: "Choose a valid category." });
@@ -5310,11 +5347,15 @@ app.post("/api/products/import", ownerAuthMiddleware, requirePermission("product
     res.status(400).json({ error: "Request body must contain a non-empty products array." });
     return;
   }
+  const warrantyEnabled = featureListIncludes(await getEffectiveFeatures(req), "Warranty management");
   const required = ["name", "price", "category"];
   let imported = 0;
   const errors: string[] = [];
   for (let i = 0; i < products.length; i++) {
     const row = products[i];
+    if (!warrantyEnabled && (String(row.hasWarranty).toUpperCase() === "TRUE" || Number(row.warrantyDuration) > 0)) {
+      errors.push(`Row ${i + 1}: warranty fields require the Warranty management feature.`); continue;
+    }
     const missing = required.filter(r => !row[r]);
     if (missing.length > 0) { errors.push(`Row ${i + 1}: missing ${missing.join(", ")}`); continue; }
     const price = Number(row.price);
@@ -5443,6 +5484,10 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
   if (!existing) { res.status(404).json({ error: "Product not found." }); return; }
 
   const body = req.body || {};
+  const warrantyEnabled = featureListIncludes(await getEffectiveFeatures(req), "Warranty management");
+  if (!warrantyEnabled && (body.hasWarranty === true || Number(body.warrantyDuration) > 0)) {
+    res.status(403).json({ error: "Warranty management is not included in this plan." }); return;
+  }
   if (body.category !== undefined && body.category && !(await getCategory(body.category))) {
     res.status(400).json({ error: "Choose a valid category." });
     return;
@@ -9877,11 +9922,11 @@ app.get("/api/admin/notifications/events", adminAuthMiddleware, requirePermissio
 }));
 
 // Warranty reminder lead time (days before expiry), admin configurable.
-app.get("/api/admin/notifications/warranty-reminder", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/admin/notifications/warranty-reminder", adminAuthMiddleware, requirePermission("settings:view"), requireShopFeature("Warranty management"), asyncHandler(async (_req: Request, res: Response) => {
   res.json({ days: await getWarrantyReminderDays() });
 }));
 
-app.put("/api/admin/notifications/warranty-reminder", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+app.put("/api/admin/notifications/warranty-reminder", adminAuthMiddleware, requirePermission("settings:update"), requireShopFeature("Warranty management"), asyncHandler(async (req: Request, res: Response) => {
   const days = Number(req.body?.days);
   if (!Number.isFinite(days) || days < 1 || days > 365) { res.status(400).json({ error: "days must be between 1 and 365." }); return; }
   res.json({ days: await setWarrantyReminderDays(days) });
