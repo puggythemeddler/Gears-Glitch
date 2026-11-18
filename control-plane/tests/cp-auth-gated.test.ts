@@ -309,6 +309,11 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
     // The preceding authenticated plan-sync test changes this client's plan to
     // `ok-plan`; restore the billable fixture before exercising invoice proxy.
     await db!.query("UPDATE clients SET plan = 'starter' WHERE id = $1", [clientId]);
+    await db!.query(
+      `INSERT INTO custom_plans (id, name, price, price_annual, features)
+       VALUES ('starter', 'Starter', 100, 1200, '[]')
+       ON CONFLICT (id) DO UPDATE SET price = 100, price_annual = 1200`
+    );
 
     const approve = await fetch(`${baseUrl}/api/clients/${clientId}/upgrade-requests/7`, {
       method: "PUT",
