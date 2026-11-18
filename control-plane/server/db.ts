@@ -418,14 +418,14 @@ export async function initControlPlaneDb() {
   await query(`CREATE TABLE IF NOT EXISTS subscription_notice_deliveries (
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     due_date TEXT NOT NULL,
-    window TEXT NOT NULL,
+    notice_window TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sending','sent','cancelled')),
     attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT NOT NULL DEFAULT '',
     sent_at TIMESTAMPTZ,
     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY(client_id, due_date, window)
+    PRIMARY KEY(client_id, due_date, notice_window)
   )`);
 
   // Follow-up timers are created only for proformas issued through the

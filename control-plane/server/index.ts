@@ -2713,7 +2713,7 @@ async function computePaymentReminders() {
 
 async function deliverSubscriptionReminderEmails(reminders: any[]): Promise<void> {
   for (const reminder of reminders.filter(r => ["7d", "2d", "due", "overdue"].includes(r.window))) {
-    await query(`INSERT INTO subscription_notice_deliveries (client_id, due_date, window)
+    await query(`INSERT INTO subscription_notice_deliveries (client_id, due_date, notice_window)
       VALUES ($1, $2, $3) ON CONFLICT (client_id, due_date, window) DO NOTHING`,
       [reminder.clientId, reminder.dueDate, reminder.window]);
   }
@@ -2724,12 +2724,12 @@ async function deliverSubscriptionReminderEmails(reminders: any[]): Promise<void
       SELECT 1 FROM clients c WHERE c.id=n.client_id AND c.status='active'
         AND COALESCE(NULLIF(c.next_payment_date,''), c.subscription_expires::date::text)=n.due_date
     )`);
-  const pending = await queryAll(`SELECT n.*, c.name AS client_name, c.admin_email
+  const pending = await queryAll(`SELECT n.*, n.notice_window AS window, c.name AS client_name, c.admin_email
     FROM subscription_notice_deliveries n JOIN clients c ON c.id=n.client_id
     WHERE n.status='pending' AND n.next_attempt_at <= NOW() ORDER BY n.due_date ASC LIMIT 50`) as any[];
   for (const row of pending) {
     const claimed = await query(`UPDATE subscription_notice_deliveries SET status='sending', attempts=attempts+1, updated_at=NOW()
-      WHERE client_id=$1 AND due_date=$2 AND window=$3 AND status='pending'`, [row.client_id, row.due_date, row.window]);
+      WHERE client_id=$1 AND due_date=$2 AND notice_window=$3 AND status='pending'`, [row.client_id, row.due_date, row.window]);
     if (!claimed.rowCount) continue;
     try {
       if (!row.admin_email) throw new Error("Billing email is not configured.");
@@ -2744,12 +2744,12 @@ async function deliverSubscriptionReminderEmails(reminders: any[]): Promise<void
       const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#292524"><h2>Subscription renewal reminder</h2><p>Hello ${esc(row.client_name)},</p><p>${phrase}</p><p><strong>Due date:</strong> ${esc(row.due_date)}</p><p>To avoid interruption, arrange renewal before the service is suspended ${graceDays} days after expiry. If you have already paid, contact Gear&amp;Glitch support so the payment can be reconciled.</p><p>Regards,<br>Gear&amp;Glitch</p></div>`;
       await smtp.transporter.sendMail({ from: `"${smtp.fromName}" <${smtp.fromEmail}>`, to: row.admin_email, subject, html });
       await query(`UPDATE subscription_notice_deliveries SET status='sent', sent_at=NOW(), last_error='', updated_at=NOW()
-        WHERE client_id=$1 AND due_date=$2 AND window=$3`, [row.client_id, row.due_date, row.window]);
+        WHERE client_id=$1 AND due_date=$2 AND notice_window=$3`, [row.client_id, row.due_date, row.window]);
       await logAudit(0, "system", "subscription_renewal_notice_sent", "client", Number(row.client_id), row.client_name,
         `Sent renewal reminder (${row.window}) for due date ${row.due_date}.`).catch((error: any) => console.warn(`[subscription-email] Reminder sent but audit logging failed for client ${row.client_id}: ${error?.message || "unknown error"}`));
     } catch (error: any) {
       await query(`UPDATE subscription_notice_deliveries SET status='pending', last_error=$4, next_attempt_at=NOW() + INTERVAL '15 minutes', updated_at=NOW()
-        WHERE client_id=$1 AND due_date=$2 AND window=$3`, [row.client_id, row.due_date, row.window, String(error?.message || "Email delivery failed").slice(0, 500)]);
+        WHERE client_id=$1 AND due_date=$2 AND notice_window=$3`, [row.client_id, row.due_date, row.window, String(error?.message || "Email delivery failed").slice(0, 500)]);
       console.warn(`[subscription-email] Client ${row.client_id} reminder delivery failed: ${error?.message || "unknown error"}`);
     }
   }
