@@ -306,6 +306,9 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
   it("proxy routes write awaited audit rows (upgrade-request, invoice pay, invoice generate)", async () => {
     const clients: any[] = await db!.queryAll("SELECT id, admin_email FROM clients WHERE domain = 'fake.example.com'");
     clientId = clients[0].id;
+    // The preceding authenticated plan-sync test changes this client's plan to
+    // `ok-plan`; restore the billable fixture before exercising invoice proxy.
+    await db!.query("UPDATE clients SET plan = 'starter' WHERE id = $1", [clientId]);
 
     const approve = await fetch(`${baseUrl}/api/clients/${clientId}/upgrade-requests/7`, {
       method: "PUT",
