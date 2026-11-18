@@ -2212,7 +2212,13 @@
               toast(`Plans synced to all ${succeeded.length} active client${succeeded.length === 1 ? "" : "s"}.`);
             } else {
               const failureSummary = failed.map(x => {
-                const cause = x.status ? `HTTP ${x.status}` : x.reason === "timeout" ? "timed out after 45 seconds" : "backend unreachable";
+                const cause = x.reason === "secret_missing" || x.reason === "secret_mismatch"
+                  ? "Control Plane key needs repair: use Push Secret and wait for redeploy"
+                  : x.reason === "client_write_failed"
+                    ? `client plan update failed (HTTP ${x.status || "5xx"}); check backend logs`
+                    : x.reason === "rate_limited"
+                      ? "client rate-limited the sync; wait a few minutes and retry"
+                      : x.status ? `HTTP ${x.status}` : x.reason === "timeout" ? "timed out after 45 seconds" : "backend unreachable";
                 return `${x.name}: plan sync failed (${cause})`;
               }).join("; ");
               toast(`Plans synced to ${succeeded.length}/${r.length} clients. Failed: ${failureSummary}`, "error");

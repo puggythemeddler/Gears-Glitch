@@ -222,4 +222,28 @@ describe("legacy schema reconciliation (schema.sql + 0020)", { skip: !HAS_DB && 
     const summaryExists = await queryOne(`SELECT to_regclass('reconciler_issues') AS name`) as any;
     assert.ok(summaryExists?.name, "ledger survives a second pass without schema errors");
   });
+
+  it("0058 repairs legacy plan flags to the integer representation used by sync", async () => {
+    await query(`
+      INSERT INTO subscription_plans (id, name, price, tier_level, max_branches, features, is_active)
+      VALUES ('plan-sync-flag-migration-test', 'Plan sync flag migration test', 0, 1, 1, '[]', 1)
+      ON CONFLICT (id) DO UPDATE SET is_active = 1`);
+    await query(`ALTER TABLE subscription_plans ALTER COLUMN is_active DROP DEFAULT`);
+    await query(`ALTER TABLE subscription_plans ALTER COLUMN is_active TYPE BOOLEAN USING is_active <> 0`);
+    await query(`ALTER TABLE subscription_plans DROP COLUMN sync_to_others`);
+
+    await transaction(async (client) => {
+      await client.query(load("0058_subscription_plan_sync_flags.sql"));
+    });
+
+    const activeColumn = await col("subscription_plans", "is_active");
+    const sharingColumn = await col("subscription_plans", "sync_to_others");
+    assert.equal(activeColumn?.data_type, "integer");
+    assert.equal(sharingColumn?.data_type, "integer");
+    const repaired = await queryOne(
+      `SELECT is_active, sync_to_others FROM subscription_plans WHERE id = 'plan-sync-flag-migration-test'`
+    ) as any;
+    assert.equal(Number(repaired?.is_active), 1);
+    assert.equal(Number(repaired?.sync_to_others), 1);
+  });
 });

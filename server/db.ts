@@ -2097,7 +2097,11 @@ async function getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undef
 
 async function createSubscriptionPlan(plan: Omit<SubscriptionPlan, "id"> & { id?: string }): Promise<SubscriptionPlan> {
   const id = plan.id || slugify(plan.name);
-  await query("INSERT INTO subscription_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)", [id, plan.name, plan.description, plan.price, plan.priceAnnual ?? null, plan.tierLevel, plan.maxProducts, plan.maxBranches, JSON.stringify(plan.features), plan.isActive !== undefined ? plan.isActive : true, plan.syncToOthers !== undefined ? plan.syncToOthers : true]);
+  // These flags are stored as INTEGER (0/1) in subscription_plans. Sending
+  // JavaScript booleans through node-postgres serializes them as "true"/"false",
+  // which PostgreSQL cannot insert into an INTEGER column during Control Plane
+  // plan synchronization.
+  await query("INSERT INTO subscription_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)", [id, plan.name, plan.description, plan.price, plan.priceAnnual ?? null, plan.tierLevel, plan.maxProducts, plan.maxBranches, JSON.stringify(plan.features), plan.isActive !== undefined ? (plan.isActive ? 1 : 0) : 1, plan.syncToOthers !== undefined ? (plan.syncToOthers ? 1 : 0) : 1]);
   return (await getSubscriptionPlan(id))!;
 }
 
@@ -2113,8 +2117,8 @@ async function updateSubscriptionPlan(id: string, updates: Partial<SubscriptionP
   if (updates.maxProducts !== undefined) { fields.push(`max_products = $${idx}`); params.push(updates.maxProducts); idx++; }
   if (updates.maxBranches !== undefined) { fields.push(`max_branches = $${idx}`); params.push(updates.maxBranches); idx++; }
   if (updates.features !== undefined) { fields.push(`features = $${idx}`); params.push(JSON.stringify(updates.features)); idx++; }
-  if (updates.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.isActive); idx++; }
-  if (updates.syncToOthers !== undefined) { fields.push(`sync_to_others = $${idx}`); params.push(updates.syncToOthers); idx++; }
+  if (updates.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.isActive ? 1 : 0); idx++; }
+  if (updates.syncToOthers !== undefined) { fields.push(`sync_to_others = $${idx}`); params.push(updates.syncToOthers ? 1 : 0); idx++; }
   if (fields.length === 0) return existing;
   params.push(id);
   await query(`UPDATE subscription_plans SET ${fields.join(", ")} WHERE id = $${idx}`, params);

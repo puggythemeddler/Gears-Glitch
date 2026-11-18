@@ -1891,6 +1891,14 @@ app.delete("/api/plans/:id", requireAdmin, async (req, res) => {
   }
 });
 
+function planSyncFailure(status: number): { reason: string; error: string } {
+  if (status === 401) return { reason: "secret_mismatch", error: "The client's Control Plane key does not match. Use Push Secret on that client, wait for its redeploy, then retry." };
+  if (status === 403) return { reason: "secret_missing", error: "The client's backend has no Control Plane key configured. Use Push Secret on that client, wait for its redeploy, then retry." };
+  if (status === 429) return { reason: "rate_limited", error: "The client is temporarily rate-limiting plan sync. Wait a few minutes, then retry." };
+  if (status >= 500) return { reason: "client_write_failed", error: `The client backend failed while applying plans (HTTP ${status}). Check that client's backend logs.` };
+  return { reason: "http", error: `The client rejected plan sync (HTTP ${status}).` };
+}
+
 // Push plans to a specific client (sync control plane plans → client's DB)
 app.post("/api/clients/:id/sync-plans", requireAdmin, async (req, res) => {
   try {
@@ -1912,11 +1920,12 @@ app.post("/api/clients/:id/sync-plans", requireAdmin, async (req, res) => {
       method: "PUT",
       headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
       body: JSON.stringify({ plans: payload }),
+      signal: AbortSignal.timeout(45000),
     });
 
     if (!result.ok) {
-      const text = await result.text();
-      res.status(502).json({ error: `Client returned ${result.status}: ${text}` });
+      const failure = planSyncFailure(result.status);
+      res.status(502).json({ ...failure, status: result.status });
       return;
     }
     res.json({ message: `Synced ${plans.length} plans to "${client.name}".` });
@@ -1953,7 +1962,7 @@ app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, a
         });
         if (!r.ok) {
           console.error(`[api] Plan sync failed for client ${c.id}: HTTP ${r.status}`);
-          return { name: c.name, success: false, error: "Plan sync failed", status: r.status, reason: "http" };
+          return { name: c.name, success: false, ...planSyncFailure(r.status), status: r.status };
         }
         return { name: c.name, success: true };
       } catch (e: any) {
