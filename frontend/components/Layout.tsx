@@ -54,6 +54,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { configLoading, layout } = useLayout();
   const multiCurrencyEnabled = useFeature("Multi-currency support");
+  const repairsEnabled = useFeature("Repair ticketing");
+  const financingEnabled = useFeature("Lipa Mdogo Mdogo");
   const [navLinks, setNavLinks] = useState(NAV_LINKS);
   const [footerConfig, setFooterConfig] = useState<any>(null);
   const router = useRouter();
@@ -103,9 +105,10 @@ export default function Layout({ children, activeNav }: LayoutProps) {
 
   const resolvedNavLinks = (() => {
     const normalized = navLinks.map((l: any) => ({ id: l.id, label: l.label, href: normalizeHref(l.href || "/" + l.id, "/" + l.id) }));
-    if (!categoriesLoaded) return normalized;
+    const featureFiltered = normalized.filter((l) => repairsEnabled || (l.id !== "repairs" && !["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"].some((path) => l.href === path || l.href.startsWith(path + "/"))));
+    if (!categoriesLoaded) return featureFiltered;
     const catHrefs = new Set(categories.map((c) => "/" + c.id));
-    const kept = normalized.filter((l) => STATIC_NAV_IDS.has(l.id) || catHrefs.has(l.href) || categories.some((c) => c.id === l.id));
+    const kept = featureFiltered.filter((l) => (STATIC_NAV_IDS.has(l.id) && (l.id !== "repairs" || repairsEnabled)) || catHrefs.has(l.href) || categories.some((c) => c.id === l.id));
     const keptHrefs = new Set(kept.map((l) => l.href));
     const added = categories
       .filter((c) => !keptHrefs.has("/" + c.id))
@@ -117,6 +120,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     const byId = new Set(resolvedNavLinks.map((l: any) => l.id));
     const merged = [...resolvedNavLinks];
     for (const s of STATIC_NAV_LINKS) {
+      if (s.id === "repairs" && !repairsEnabled) continue;
       if (!byId.has(s.id)) merged.push(s);
     }
     return merged;
@@ -131,16 +135,21 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   // defaults below are the real storefront destinations (all routes that exist),
   // so the footer is never an empty shell before one is saved.
   const footerColumns: any[] = (() => {
-    if (footerConfig?.columns?.length) return footerConfig.columns;
+    if (footerConfig?.columns?.length) return footerConfig.columns.map((column: any) => ({
+      ...column,
+      links: (column.links || []).filter((link: any) => (repairsEnabled || !["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"].some((path) => link.href === path || String(link.href || "").startsWith(path + "/"))) && (financingEnabled || !["/financing"].some((path) => link.href === path || String(link.href || "").startsWith(path + "/")))),
+    }));
     const catLinks = categories.slice(0, 6).map((c) => ({ label: c.label, href: "/" + c.id }));
     return [
       { title: "Shop", links: [...catLinks, { label: "All products", href: "/" }] },
       {
         title: "Support",
         links: [
-          { label: "Repairs", href: "/repairs" },
-          { label: "Book a repair", href: "/repair-book" },
-          { label: "Track a repair", href: "/my-repairs" },
+          ...(repairsEnabled ? [
+            { label: "Repairs", href: "/repairs" },
+            { label: "Book a repair", href: "/repair-book" },
+            { label: "Track a repair", href: "/my-repairs" },
+          ] : []),
           { label: "Contact us", href: "/contact" },
         ],
       },
@@ -159,7 +168,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
         links: [
           { label: "About us", href: "/about" },
           { label: "Contact", href: "/contact" },
-          { label: "Financing", href: "/financing" },
+          ...(financingEnabled ? [{ label: "Financing", href: "/financing" }] : []),
           { label: "Product groups", href: "/groups" },
           { label: "Privacy Policy", href: "/privacy" },
           { label: "Terms of Service", href: "/terms" },
@@ -570,7 +579,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                 ) : (
                   storeName ? <span className="footer-brand-name">{storeName}</span> : <span className="footer-brand-name footer-brand-placeholder" aria-hidden="true" />
                 )}
-                <p className="footer-tagline">Kenya&apos;s trusted tech platform for gaming PCs, laptops, graphics cards, servers and accessories &mdash; plus real repairs with live tracking.</p>
+                <p className="footer-tagline">Kenya&apos;s trusted tech platform for gaming PCs, laptops, graphics cards, servers and accessories{repairsEnabled ? <> &mdash; plus real repairs with live tracking</> : null}.</p>
                 {(settings?.storePhone || settings?.storeEmail) && (
                   <div className="footer-contact">
                     {settings.storePhone && <span>{settings.storePhone}</span>}

@@ -845,7 +845,14 @@
       <h2 id="plan-modal-title">Create Plan</h2>
       <div class="plan-modal-body">
         <div class="field plan-feature-field">
-          <label id="plan-features-label" for="feature-groups-container">Features <span class="feature-hint">(scroll the form to see all groups)</span></label>
+          <label id="plan-features-label" for="plan-feature-search">Plan features</label>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+            <input type="search" id="plan-feature-search" aria-label="Search plan features" placeholder="Search features…" oninput="renderFeatureGroups(editingPlanFeatures)" style="flex:1;min-width:220px">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="applyRetailPlanTemplate()">Apply Retail template</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="clearPlanFeatures()">Clear selection</button>
+            <span id="plan-feature-count" class="muted" aria-live="polite"></span>
+          </div>
+          <p class="feature-hint" style="margin:0 0 0.5rem">Feature groups start collapsed. Search by feature name or expand a group. The Retail template stays inactive until you set its price and limits.</p>
           <div id="feature-groups-container" role="group" aria-labelledby="plan-features-label" tabindex="0" style="border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
         </div>
         <div class="form-grid">
@@ -1019,7 +1026,7 @@
       { group: "Inventory & Stock", icon: "📦", features: ["Low stock alerts","Stock take","Stock control","Stock transfers","Supplier management","Purchase order management","Barcode scanning","Bulk import/export","Bulk product edit","Inventory forecasting"] },
       { group: "Invoicing & Finance", icon: "🧾", features: ["Tax invoices with VAT breakdown","Invoice/quote PDF downloads","Credit notes","Quotations","Price history tracking"] },
       { group: "Financing", icon: "🤝", features: ["Lipa Mdogo Mdogo"] },
-      { group: "Repairs & Service", icon: "🔧", features: ["Repair ticketing","Technician accounts","Service catalogue"] },
+      { group: "Repairs & Service", icon: "🔧", features: ["Repair ticketing","Warranty management","Technician accounts","Service catalogue"] },
       { group: "Customer Engagement", icon: "💬", features: ["Messaging","Admin messaging","Email notifications","SMS notifications","Product reviews & ratings","Customer reviews","Loyalty program"] },
       { group: "WhatsApp & Communication", icon: "📱", features: ["WhatsApp integration"] },
       { group: "Multi-Location", icon: "🏢", features: ["Branch management","Multi-branch support","Client/tenant management"] },
@@ -1031,11 +1038,18 @@
 
     function renderFeatureGroups(selectedFeatures) {
       const container = document.getElementById("feature-groups-container");
+      if (!container) return;
+      const query = (document.getElementById("plan-feature-search")?.value || "").trim().toLowerCase();
+      const openGroups = new Set([...container.querySelectorAll("details[open]")].map((node) => node.dataset.featureGroup));
+      const count = document.getElementById("plan-feature-count");
+      if (count) count.textContent = `${selectedFeatures.length} selected · ${FEATURE_GROUPS.reduce((total, group) => total + group.features.length, 0)} available`;
       let html = "";
       for (const grp of FEATURE_GROUPS) {
+        const visibleFeatures = grp.features.filter((feature) => !query || feature.toLowerCase().includes(query));
+        if (!visibleFeatures.length) continue;
         const allOn = grp.features.every(f => selectedFeatures.includes(f));
         const count = grp.features.filter(f => selectedFeatures.includes(f)).length;
-        html += `<details open style="margin-bottom:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
+        html += `<details data-feature-group="${esc(grp.group)}" ${query || openGroups.has(grp.group) ? 'open' : ''} style="margin-bottom:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
           <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'var(--tint-primary)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="if(event.target.closest('button'))return;event.preventDefault();this.parentElement.open=!this.parentElement.open">
             <span style="font-size:0.65rem;opacity:0.5;transition:transform 0.2s;transform:${allOn ? 'rotate(90deg)' : 'none'}">&#9654;</span>
             <span>${grp.icon}</span>
@@ -1044,11 +1058,40 @@
             <button type="button" class="chip-btn" data-plan-group="${esc(grp.group)}" data-action="${allOn ? 'none' : 'all'}">${allOn ? 'All' : 'Select all'}</button>
           </summary>
           <div style="display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.5rem 0.75rem 0.75rem">
-            ${grp.features.map(f => `<button type="button" class="feature-chip" aria-pressed="${selectedFeatures.includes(f) ? 'true' : 'false'}" data-plan-feature="${esc(f)}">${esc(f)}</button>`).join('')}
+            ${visibleFeatures.map(f => `<button type="button" class="feature-chip" aria-pressed="${selectedFeatures.includes(f) ? 'true' : 'false'}" data-plan-feature="${esc(f)}">${esc(f)}</button>`).join('')}
           </div>
         </details>`;
       }
       container.innerHTML = html;
+    }
+
+    const RETAIL_PLAN_FEATURES = [
+      "Product listing", "Order management", "POS integration", "Payment method configuration",
+      "M-Pesa integration", "Discount/coupon management", "Returns management", "Customer management",
+      "Low stock alerts", "Stock take", "Stock control", "Supplier management",
+      "Purchase order management", "Barcode scanning", "Bulk import/export", "Bulk product edit",
+      "Invoice/quote PDF downloads", "Email notifications", "Analytics dashboard",
+    ];
+
+    function applyRetailPlanTemplate() {
+      if (editingPlanId) { toast("Apply the Retail template only when creating a new plan.", "error"); return; }
+      editingPlanFeatures = [...RETAIL_PLAN_FEATURES];
+      document.getElementById("plan-id").value = "retail";
+      document.getElementById("plan-name").value = "Retail";
+      document.getElementById("plan-desc").value = "Retail sales, inventory, POS and online orders; no repair or warranty tools.";
+      document.getElementById("plan-price").value = "";
+      document.getElementById("plan-price-annual").value = "";
+      document.getElementById("plan-max-products").value = "";
+      document.getElementById("plan-max-branches").value = "";
+      document.getElementById("plan-active").checked = false;
+      document.getElementById("plan-sync-others").checked = false;
+      renderFeatureGroups(editingPlanFeatures);
+      toast("Retail template applied. Set fees and limits before activating it.");
+    }
+
+    function clearPlanFeatures() {
+      editingPlanFeatures = [];
+      renderFeatureGroups(editingPlanFeatures);
     }
 
     function toggleFeature(feature, on) {
@@ -2197,6 +2240,7 @@
       document.getElementById("plan-max-branches").value = plan ? (plan.max_branches || 1) : 1;
       document.getElementById("plan-active").checked = plan ? plan.is_active : true;
       document.getElementById("plan-sync-others").checked = plan ? plan.sync_to_others !== 0 : true;
+      document.getElementById("plan-feature-search").value = "";
       renderFeatureGroups(editingPlanFeatures);
       openModal(document.getElementById("plan-modal-overlay"));
     }

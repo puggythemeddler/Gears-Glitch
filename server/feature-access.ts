@@ -56,6 +56,13 @@ export async function getEffectiveFeatures(req: Request): Promise<string[]> {
   const baseFeatures: string[] = plan?.features || [];
   const overrides = await getShopFeatureOverrides();
   let effective = applyFeatureOverrides(baseFeatures, overrides);
+  // Older plans bundled warranty tooling with repair ticketing. Preserve that
+  // behavior unless an operator explicitly disables Warranty management.
+  const warrantyOverride = Object.entries(overrides).find(([name]) => name.toLowerCase().trim() === "warranty management");
+  const warrantyExplicitlyDisabled = warrantyOverride?.[1] === false;
+  if (!warrantyExplicitlyDisabled && featureListIncludes(effective, "Repair ticketing") && !featureListIncludes(effective, "Warranty management")) {
+    effective = [...effective, "Warranty management"];
+  }
   const token = getBearerToken(req);
   if (token) {
     try {

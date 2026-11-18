@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { Spinner } from "@/components/admin/shared";
 import RippleButton from "@/components/RippleButton";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
+import { useFeature } from "@/lib/features";
 
 const EVENT_LABELS: Record<string, string> = {
   "order.created": "New order",
@@ -43,6 +44,8 @@ const EVENT_LABELS: Record<string, string> = {
 
 export default function NotificationSettings() {
   const feedback = useFeedback();
+  const repairsEnabled = useFeature("Repair ticketing");
+  const warrantyEnabled = useFeature("Warranty management");
   const [prefs, setPrefs] = useState<Record<string, { email: boolean; whatsapp: boolean }> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -141,8 +144,8 @@ export default function NotificationSettings() {
   const groups: { label: string; events: string[] }[] = [
     { label: "Orders & Payments", events: ["order.created", "order.paid", "order.status_changed", "order.refunded", "order.processed", "payment.completed", "payment.failed"] },
     { label: "Customers", events: ["customer.created", "customer.login"] },
-    { label: "Repairs", events: ["repair.created", "repair.status_changed", "repair.customer_update", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled"] },
-    { label: "Warranties", events: ["warranty.created", "warranty.status_changed", "warranty.customer_update", "warranty.expiry_reminder", "warranty.expired", "warranty.approved", "warranty.rejected", "warranty.resolved"] },
+    ...(repairsEnabled ? [{ label: "Repairs", events: ["repair.created", "repair.status_changed", "repair.customer_update", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled"] }] : []),
+    ...(warrantyEnabled ? [{ label: "Warranties", events: ["warranty.created", "warranty.status_changed", "warranty.customer_update", "warranty.expiry_reminder", "warranty.expired", "warranty.approved", "warranty.rejected", "warranty.resolved"] }] : []),
     { label: "Software licenses", events: ["software_license.expiry_reminder", "software_license.expired"] },
     { label: "Invoices & Subscriptions", events: ["invoice.created", "invoice.paid", "invoice.overdue", "subscription.changed", "subscription.expiring", "subscription.expired"] },
   ];
@@ -203,7 +206,7 @@ export default function NotificationSettings() {
               </div>
             </div>
           ))}
-          <div style={{ marginBottom: "1.5rem" }}>
+          {warrantyEnabled && <div style={{ marginBottom: "1.5rem" }}>
             <h3 style={{ marginTop: 0, marginBottom: "0.5rem", fontSize: "0.95rem", textTransform: "uppercase", letterSpacing: "0.03em", color: "var(--text-secondary)" }}>Warranty reminders</h3>
             <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: "0 0 0.5rem" }}>
               Send customers a reminder this many days before their warranty expires. Already-sent reminders are never repeated.
@@ -219,7 +222,7 @@ export default function NotificationSettings() {
               <input type="number" min={1} max={365} value={reminderDays} onChange={(e) => setReminderDays(Number(e.target.value) || 1)} style={{ width: 90 }} aria-label="Warranty reminder days" />
               <RippleButton variant="ghost" onClick={saveReminderDays} loading={reminderSaving}>Save Window</RippleButton>
             </div>
-          </div>
+          </div>}
           <RippleButton onClick={savePrefs} loading={saving}>Save Preferences</RippleButton>
         </div>
       )}

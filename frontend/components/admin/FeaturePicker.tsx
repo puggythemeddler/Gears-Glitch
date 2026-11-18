@@ -42,7 +42,7 @@ export const FEATURE_GROUPS = [
     group: "Repairs & Service",
     icon: "wrench",
     features: [
-      "Repair ticketing", "Technician accounts",
+      "Repair ticketing", "Warranty management", "Technician accounts",
     ],
   },
   {
@@ -110,6 +110,9 @@ interface FeaturePickerProps {
 }
 
 export default function FeaturePicker({ selected, onChange }: FeaturePickerProps) {
+  const [search, setSearch] = React.useState("");
+  const [openGroups, setOpenGroups] = React.useState<Set<string>>(() => new Set());
+  const query = search.trim().toLowerCase();
   const toggle = (f: string) =>
     onChange(selected.includes(f) ? selected.filter((x) => x !== f) : [...selected, f]);
 
@@ -120,11 +123,22 @@ export default function FeaturePicker({ selected, onChange }: FeaturePickerProps
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: "60vh", overflowY: "auto", paddingRight: "0.25rem" }}>
+      <label style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--surface)", padding: "0.25rem 0" }}>
+        <span className="sr-only">Search plan features</span>
+        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search features…" aria-label="Search plan features" style={{ width: "100%" }} />
+        <span style={{ display: "block", marginTop: "0.25rem", fontSize: "0.75rem", opacity: 0.7 }} aria-live="polite">{selected.length} selected · {allFeatureNames().length} available</span>
+      </label>
       {FEATURE_GROUPS.map((grp) => {
+        const visibleFeatures = grp.features.filter((feature) => !query || feature.toLowerCase().includes(query));
+        if (visibleFeatures.length === 0) return null;
         const allOn = grp.features.every((f) => selected.includes(f));
         const someOn = grp.features.some((f) => selected.includes(f)) && !allOn;
         return (
-          <details key={grp.group} open style={{ border: "1px solid var(--border)", borderRadius: 8 }}>
+          <details key={grp.group} open={Boolean(query) || openGroups.has(grp.group)} onToggle={(event) => setOpenGroups((current) => {
+            const next = new Set(current);
+            if (event.currentTarget.open) next.add(grp.group); else next.delete(grp.group);
+            return next;
+          })} style={{ border: "1px solid var(--border)", borderRadius: 8 }}>
             <summary style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", cursor: "pointer", background: someOn || allOn ? "var(--primary-subtle)" : "var(--bg)", fontWeight: 600, fontSize: "0.9rem", listStyle: "none", userSelect: "none" }}>
               <span style={{ fontSize: "0.7rem", opacity: 0.5, transition: "transform 0.2s", transform: someOn || allOn ? "rotate(90deg)" : "none" }}>&#9654;</span>
               <span style={{ display: "inline-flex", color: "var(--primary)" }}><Icon name={grp.icon} size={16} /></span>
@@ -136,7 +150,7 @@ export default function FeaturePicker({ selected, onChange }: FeaturePickerProps
               </label>
             </summary>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", padding: "0.5rem 0.75rem 0.75rem" }}>
-              {grp.features.map((f) => (
+              {visibleFeatures.map((f) => (
                 <label key={f} className="feature-chip" style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.82rem", cursor: "pointer", padding: "0.2rem 0.5rem", borderRadius: "var(--radius-sm)", background: selected.includes(f) ? "var(--primary)" : "var(--bg)", color: selected.includes(f) ? "var(--on-primary)" : "var(--text)", border: "1px solid " + (selected.includes(f) ? "var(--primary)" : "var(--border)") }}>
                   <input type="checkbox" className="sr-only" checked={selected.includes(f)} onChange={() => toggle(f)} />
                   {f}

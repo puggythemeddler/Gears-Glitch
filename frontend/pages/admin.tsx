@@ -158,7 +158,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     label: "Services",
     items: [
       { key: "repairs", label: "Repairs", feature: "Repair ticketing" },
-      { key: "warranties", label: "Warranty", feature: "Invoice/quote PDF downloads" },
+      { key: "warranties", label: "Warranty", feature: "Warranty management" },
     ],
   },
   {
@@ -312,6 +312,7 @@ export default function AdminPage() {
     "Credit notes": useFeature("Credit notes"),
     "Quotations": useFeature("Quotations"),
     "Repair ticketing": useFeature("Repair ticketing"),
+    "Warranty management": useFeature("Warranty management"),
     "Product positioning": useFeature("Product positioning"),
     "Email notifications": useFeature("Email notifications"),
     "Stock transfers": useFeature("Stock transfers"),
@@ -1656,7 +1657,7 @@ function AdminOrders() {
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Warranty</th><th>License renewal</th><th>Serial</th><th></th></tr></thead>
+            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th>{featureFlags["Warranty management"] && <th>Warranty</th>}<th>License renewal</th><th>Serial</th><th></th></tr></thead>
             <tbody>
               {(o.items || []).map((item: any, i: number) => (
                 <tr key={item.id || i}>
@@ -1664,7 +1665,7 @@ function AdminOrders() {
                   <td>{formatPrice(item.price)}</td>
                   <td>{item.quantity}</td>
                   <td>{formatPrice(item.lineTotal)}</td>
-                  <td>
+                  {featureFlags["Warranty management"] && <td>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem" }}>
                       <input type="checkbox" checked={!!item.hasWarranty} onChange={async () => {
                         try {
@@ -1683,7 +1684,7 @@ function AdminOrders() {
                       ) : null}
                       <span>{item.hasWarranty ? "mo" : ""}</span>
                     </div>
-                  </td>
+                  </td>}
                   <td>
                     {isSoftwareLicenseProduct({ name: item.name, category: item.category, subcategory: item.subcategory }) ? (
                       <div style={{ minWidth: 190, display: "grid", gap: "0.35rem" }}>
@@ -4974,16 +4975,26 @@ const REPORT_CATEGORIES: { key: string; label: string; tabs: { id: ReportTabId; 
 
 function AdminReports() {
   const hasVisitorAnalytics = useFeature("Visitor analytics");
+  const hasRepairTicketing = useFeature("Repair ticketing");
+  const hasWarrantyManagement = useFeature("Warranty management");
   const [category, setCategory] = useState("sales");
   const cat = REPORT_CATEGORIES.find((c) => c.key === category) ?? REPORT_CATEGORIES[0];
   const [tab, setTab] = useState<ReportTabId>("sales");
-  const visibleTabs = (cat?.tabs || []).filter((t) => t.id !== "visitors" || hasVisitorAnalytics);
+  const visibleTabs = (cat?.tabs || []).filter((t) =>
+    (t.id !== "visitors" || hasVisitorAnalytics) &&
+    (!(["repairs", "tech-performance"].includes(t.id)) || hasRepairTicketing) &&
+    (t.id !== "warranty" || hasWarrantyManagement)
+  );
   const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0].id;
 
   return (
     <>
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
-        {REPORT_CATEGORIES.map((c) => (
+        {REPORT_CATEGORIES.filter((c) => c.tabs.some((t) =>
+          (t.id !== "visitors" || hasVisitorAnalytics) &&
+          (!(["repairs", "tech-performance"].includes(t.id)) || hasRepairTicketing) &&
+          (t.id !== "warranty" || hasWarrantyManagement)
+        )).map((c) => (
           <RippleButton key={c.key} size="small" variant={cat.key === c.key ? "primary" : "ghost"}
             onClick={() => { setCategory(c.key); setTab(c.tabs[0].id); }}>
             {c.label}

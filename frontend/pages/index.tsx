@@ -7,6 +7,7 @@ import { useLayout, LayoutEngine } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import { useRouter } from "next/router";
 import { getStorefrontCategories } from "@/lib/storefront-data";
+import { useFeature } from "@/lib/features";
 
 const SITE = "Gears&Glitch";
 const BASE = process.env.NEXT_PUBLIC_SITE_URL || "https://gearsandglitch.co.ke";
@@ -20,6 +21,7 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const { banners } = useLayout();
   const { settings } = useApp();
+  const repairsEnabled = useFeature("Repair ticketing");
   const siteName = settings?.storeName || SITE;
 
   useEffect(() => {
@@ -70,10 +72,10 @@ export default function HomePage() {
         </span>
         <p className="catalogue-error__eyebrow">Shop catalogue</p>
         <h1 id="catalogue-error-title">We couldn’t load the products.</h1>
-        <p className="catalogue-error__copy" role="alert">The shop is having trouble reaching its catalogue. Give it another try, or browse a service while we reconnect.</p>
+        <p className="catalogue-error__copy" role="alert">The shop is having trouble reaching its catalogue. Give it another try{repairsEnabled ? ", or browse a service while we reconnect." : " while we reconnect."}</p>
         <div className="catalogue-error__actions">
           <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>Try again</button>
-          <Link className="btn btn-secondary" href="/repairs">Explore repairs</Link>
+          {repairsEnabled && <Link className="btn btn-secondary" href="/repairs">Explore repairs</Link>}
         </div>
         <p className="catalogue-error__footnote">If the issue continues, <Link href="/contact">contact the shop</Link>.</p>
       </section>
@@ -83,12 +85,12 @@ export default function HomePage() {
   return (
     <>
       <Head>
-        <title>{siteName} — PCs, Laptops, Components & Repairs</title>
-        <meta name="description" content="Shop PCs, laptops, graphics cards, servers and printers, or book a device repair." />
+        <title>{siteName} — PCs, Laptops & Components{repairsEnabled ? " & Repairs" : ""}</title>
+        <meta name="description" content={repairsEnabled ? "Shop PCs, laptops, graphics cards, servers and printers, or book a device repair." : "Shop PCs, laptops, graphics cards, servers and printers."} />
         <link rel="canonical" href={BASE} />
         <meta property="og:site_name" content={siteName} />
-        <meta property="og:title" content={`${siteName} — PCs, Laptops, Components & Repairs`} />
-        <meta property="og:description" content="Shop PCs, laptops, graphics cards, servers and printers, or book a device repair." />
+        <meta property="og:title" content={`${siteName} — PCs, Laptops & Components${repairsEnabled ? " & Repairs" : ""}`} />
+        <meta property="og:description" content={repairsEnabled ? "Shop PCs, laptops, graphics cards, servers and printers, or book a device repair." : "Shop PCs, laptops, graphics cards, servers and printers."} />
         <meta property="og:url" content={BASE} />
         <meta property="og:type" content="website" />
       </Head>

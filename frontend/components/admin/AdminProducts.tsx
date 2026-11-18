@@ -7,8 +7,10 @@ import { useFetch, Spinner, ErrorMsg, formatPrice } from "./shared";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { Media } from "@/components/Media";
+import { useFeature } from "@/lib/features";
 
 export default function AdminProducts() {
+  const warrantyEnabled = useFeature("Warranty management");
   const feedback = useFeedback();
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/admin/products"), []);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -42,8 +44,12 @@ export default function AdminProducts() {
   }, []);
 
   function downloadTemplate() {
-    const headers = "name,price,category,inStock,isNonStock,hasWarranty,warrantyDuration,taxable,subcategory";
-    const row = "Example Laptop,999.99,Electronics,TRUE,FALSE,FALSE,0,TRUE,gaming";
+    const headers = warrantyEnabled
+      ? "name,price,category,inStock,isNonStock,hasWarranty,warrantyDuration,taxable,subcategory"
+      : "name,price,category,inStock,isNonStock,taxable,subcategory";
+    const row = warrantyEnabled
+      ? "Example Laptop,999.99,Electronics,TRUE,FALSE,FALSE,0,TRUE,gaming"
+      : "Example Laptop,999.99,Electronics,TRUE,FALSE,TRUE,gaming";
     const csv = headers + "\r\n" + row;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -223,8 +229,7 @@ export default function AdminProducts() {
       groupId: fd.get("groupId") || "",
       inStock: fd.get("inStock") === "true", isNonStock: fd.get("isNonStock") === "on",
       isHidden: fd.get("isHidden") === "on",
-      hasWarranty: fd.get("hasWarranty") === "on",
-      warrantyDuration: Number(fd.get("warrantyDuration") || 0),
+      ...(warrantyEnabled ? { hasWarranty: fd.get("hasWarranty") === "on", warrantyDuration: Number(fd.get("warrantyDuration") || 0) } : {}),
       serialTracking: fd.get("serialTracking") === "on",
       barcode: fd.get("barcode") || "",
       taxable: fd.get("taxable") === "on",
@@ -323,10 +328,10 @@ export default function AdminProducts() {
             <div className="field"><label>In stock<select name="inStock" defaultValue={String(editing?.inStock ?? true)}><option value="true">Yes</option><option value="false">No</option></select></label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="isNonStock" defaultChecked={editing?.isNonStock ?? false} /> Non-stock item</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="isHidden" defaultChecked={editing?.isHidden ?? false} /> Hidden from online store (e.g. services — not shown to customers, not sold on the site)</label></div>
-            <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="hasWarranty" defaultChecked={editing?.hasWarranty ?? false} /> Has warranty</label></div>
+            {warrantyEnabled && <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="hasWarranty" defaultChecked={editing?.hasWarranty ?? false} /> Has warranty</label></div>}
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="serialTracking" defaultChecked={editing?.serialTracking ?? false} /> Track individual devices (manufacturer serial required at receipt)</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="taxable" defaultChecked={editing?.taxable !== false} /> Taxable (eTims-compatible)</label></div>
-            <div className="field"><label>Warranty duration (months)<input name="warrantyDuration" type="number" min="0" defaultValue={editing?.warrantyDuration || 0} /></label></div>
+            {warrantyEnabled && <div className="field"><label>Warranty duration (months)<input name="warrantyDuration" type="number" min="0" defaultValue={editing?.warrantyDuration || 0} /></label></div>}
             <div className="field"><label>Add images (multiple)<input type="file" ref={galleryRef} accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={gallery.length >= maxImages} /></label><p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>{gallery.length} of {maxImages} images used{gallery.length >= maxImages ? " — limit reached" : ""}.</p></div>
             {specFields.length > 0 ? (
               <div>
@@ -461,7 +466,7 @@ export default function AdminProducts() {
         <div className="panel" style={{ maxWidth: 500, marginTop: "1rem" }}>
           <h3 style={{ marginTop: 0 }}>Import Products from CSV</h3>
           <p className="muted" style={{ fontSize: "0.85rem" }}>
-            Upload a CSV file with the following columns: <code>name, price, category, inStock, isNonStock, hasWarranty, warrantyDuration, taxable, subcategory</code>.
+            Upload a CSV file with the following columns: <code>{warrantyEnabled ? "name, price, category, inStock, isNonStock, hasWarranty, warrantyDuration, taxable, subcategory" : "name, price, category, inStock, isNonStock, taxable, subcategory"}</code>.
             Name, price, and category are required.
           </p>
           <div className="field">
