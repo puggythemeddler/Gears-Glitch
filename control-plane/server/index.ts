@@ -309,8 +309,12 @@ async function reconcilePaidProforma(row: any, invoice: any): Promise<void> {
 
   await query("UPDATE cp_notifications SET read = true WHERE read = false AND client_id = $1 AND type IN ('payment_due', 'payment_overdue')", [clientId]);
   if (row.client_status === "suspended") {
-    await resumeClientRecord(row);
-    await logAudit(0, "system", "auto_resume_client", "client", clientId, row.client_name, `Resumed after payment was detected for ${invoiceNumber}`);
+    const resume = await resumeClientRecord(row);
+    if (resume.resumed) {
+      await logAudit(0, "system", "auto_resume_client", "client", clientId, row.client_name, `Resumed after payment was detected for ${invoiceNumber}`);
+    } else {
+      console.warn(`[subscription] Payment reconciled for client ${clientId}, but service resume was not confirmed.`);
+    }
   }
   await logAudit(0, "system", "paid_proforma_reconciled", "client", clientId, row.client_name, `${invoiceNumber} was marked paid on the client service; subscription reconciled through ${nextPaymentDate}`);
 }
@@ -1453,10 +1457,13 @@ app.put("/api/clients/:id/resume", destructiveLimiter, requireAdmin, async (req,
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
 
-    const { appResumed } = await resumeClientRecord(client);
-
+    const result = await resumeClientRecord(client);
+    if (!result.resumed) {
+      res.status(502).json({ error: "Resume was not confirmed by every configured service. The client remains suspended; retry after the service is reachable.", ...result });
+      return;
+    }
     await auditLog(req, "resume_client", "client", client.id, client.name);
-    res.json({ message: `Client "${client.name}" resumed.`, appResumed, note: appResumed ? undefined : "App-level resume not confirmed; the flag will clear when the service is reachable — retry via PUT /api/clients/:id/resume." });
+    res.json({ message: `Client "${client.name}" resumed.`, ...result });
   } catch (err: any) {
     console.error("[api] Resume error:", err.message);
     res.status(500).json({ error: "Failed to resume client" });
@@ -2320,28 +2327,23 @@ app.post("/api/mpesa/stk-callback/:token", async (req, res) => {
     if (!invoiceResponse.ok) throw new Error("Could not verify invoice against client backend.");
     const invoices: any = await invoiceResponse.json();
     const invoice = (invoices.invoices || []).find((item: any) => Number(item.id) === Number(attempt.invoice_id));
-    if (!invoice || !["pending", "overdue"].includes(String(invoice.status).toLowerCase()) || Number(invoice.amount) !== Number(attempt.amount) || invoice.currency !== "KES") {
+    if (!invoice || !["pending", "overdue"].includes(String(invoice.status).toLowerCase()) || Number(invoice.amount) !== Number(attempt.amount) || invoice.currency !== "KES" || String(invoice.periodEnd || "").slice(0, 10) !== String(attempt.period_end || "").slice(0, 10)) {
       await query("UPDATE mpesa_payment_attempts SET status = 'needs_review', updated_at = NOW() WHERE id = $1", [attempt.id]);
       res.status(200).json({ ResultCode: 0, ResultDesc: "Payment received; invoice needs review." }); return;
     }
+    const renewal = paidProformaRenewal(invoice.periodStart, invoice.periodEnd, client.subscription_expires);
     const paid = await fetch(`${client.render_service_url}/api/admin/invoices/${attempt.invoice_id}/pay`, {
       method: "POST", headers: cpHeaders(client.cp_secret), signal: AbortSignal.timeout(15000),
     });
     if (!paid.ok) throw new Error("Client backend did not confirm invoice payment.");
 
-    const now = new Date();
-    const currentExpiry = client.subscription_expires ? new Date(client.subscription_expires) : null;
-    const expiryBase = currentExpiry && currentExpiry > now ? currentExpiry : now;
-    // Client subscription invoices are currently generated for a 30-day
-    // period by the tenant backend. Extend from the later of today or expiry,
-    // so paying an overdue invoice never writes an already-expired date.
-    const newExpiry = new Date(expiryBase.getTime() + 30 * 86400000);
-    const nextPaymentDate = newExpiry.toISOString().slice(0, 10);
+    const newExpiry = renewal.expiresAt;
+    const nextPaymentDate = renewal.nextPaymentDate;
     await query(
       `INSERT INTO client_payments (client_id, invoice_id, amount, period_type, due_date, notes, payment_method, payment_reference)
-       VALUES ($1, $2, $3, 'monthly', $4, $5, 'mpesa', $6)
+       VALUES ($1, $2, $3, $4, $5, $6, 'mpesa', $7)
        ON CONFLICT (payment_reference) WHERE payment_reference <> '' DO NOTHING`,
-      [client.id, attempt.invoice_id, attempt.amount, nextPaymentDate, `M-Pesa receipt ${receipt}`, receipt]
+      [client.id, attempt.invoice_id, attempt.amount, renewal.periodType, nextPaymentDate, `M-Pesa receipt ${receipt}`, receipt]
     );
     await query(
       `UPDATE clients SET
@@ -2355,8 +2357,12 @@ app.post("/api/mpesa/stk-callback/:token", async (req, res) => {
     await logAudit(0, "daraja-callback", "mpesa_payment_complete", "client", client.id, client.name, `Invoice ${attempt.invoice_number}; receipt ${receipt}`);
     if (client.status === "suspended") {
       try {
-        await resumeClientRecord(client);
-        await logAudit(0, "daraja-callback", "auto_resume_client", "client", client.id, client.name, "Resumed after M-Pesa invoice payment");
+        const resume = await resumeClientRecord(client);
+        if (resume.resumed) {
+          await logAudit(0, "daraja-callback", "auto_resume_client", "client", client.id, client.name, "Resumed after M-Pesa invoice payment");
+        } else {
+          console.warn(`[daraja] Payment complete for client ${client.id}; service resume was not confirmed and the client remains suspended.`);
+        }
       } catch (resumeError: any) {
         console.warn("[daraja] Invoice paid but suspended client could not be resumed; operator review is required.");
       }
@@ -2446,7 +2452,7 @@ app.post("/api/clients/:id/invoices/generate", destructiveLimiter, requireAuth, 
   }
 });
 
-// Record payment — one step: generate invoice, mark paid, record payment, extend subscription
+// Record payment — only a full subscription payment may close its invoice.
 app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, res) => {
   try {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]);
@@ -2463,20 +2469,50 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
     const plan = await queryOne("SELECT * FROM custom_plans WHERE id = $1", [client.plan]).catch(() => null) as any;
     let expected = 0;
     if (plan) {
-      if (periodType === "annual" && plan.price_annual != null) expected = Number(plan.price_annual);
+      if (periodType === "annual") expected = plan.price_annual == null ? 0 : Number(plan.price_annual) || 0;
       else expected = Number(plan.price) || 0;
+    }
+    if (plan && periodType === "annual" && plan.price_annual == null) {
+      res.status(400).json({ error: "This plan has no annual price configured." }); return;
+    }
+    if (plan && expected <= 0) {
+      res.status(400).json({ error: "This plan does not have a positive price for the selected billing period." }); return;
+    }
+    if (expected > 0 && amountPaid !== expected) {
+      res.status(400).json({ error: `Record the full ${periodType} plan amount of KES ${expected.toLocaleString("en-KE")}. Partial subscription payments are not supported by this workflow.` });
+      return;
+    }
+
+    const now = new Date();
+    const currentExpiry = client.subscription_expires ? new Date(client.subscription_expires) : null;
+    const periodBase = currentExpiry && Number.isFinite(currentExpiry.getTime()) && currentExpiry > now ? currentExpiry : now;
+    const periodStart = periodBase.toISOString().slice(0, 10);
+    const dueDate = now.toISOString().slice(0, 10);
+    const requestedNextPaymentDate = req.body.nextPaymentDate;
+    const requestedDate = typeof requestedNextPaymentDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(requestedNextPaymentDate)
+      ? new Date(`${requestedNextPaymentDate}T00:00:00.000Z`) : null;
+    if (requestedNextPaymentDate !== undefined && requestedNextPaymentDate !== "" &&
+        (!requestedDate || !Number.isFinite(requestedDate.getTime()) || requestedDate.toISOString().slice(0, 10) !== requestedNextPaymentDate)) {
+      res.status(400).json({ error: "Next payment date must be a valid ISO date." }); return;
     }
 
     // 1. Generate invoice
     const gen = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
       method: "POST",
       headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ providerId: 1, planId: client.plan }),
+      body: JSON.stringify({ providerId: 1, planId: client.plan, periodType, periodStart, dueDate }),
     });
     const invoice: any = await gen.json();
     if (!gen.ok) { res.status(gen.status).json({ error: invoice?.error || "Failed to generate invoice" }); return; }
 
-    if (!expected) expected = Number(invoice.amount) || amountPaid;
+    const invoiceAmount = Number(invoice.amount);
+    if (!Number.isFinite(invoiceAmount) || invoiceAmount <= 0 || amountPaid !== invoiceAmount) {
+      try { await trackProformaFollowup(Number(client.id), invoice); }
+      catch (error: any) { console.error(`[record-payment] Unable to schedule follow-up for invoice ${invoice?.id}: ${error?.message || "unknown error"}`); }
+      res.status(409).json({ error: `The generated invoice is KES ${Number.isFinite(invoiceAmount) ? invoiceAmount.toLocaleString("en-KE") : "(invalid amount)"}. No payment was recorded and the invoice remains unpaid.`, invoice });
+      return;
+    }
+    if (!expected) expected = invoiceAmount;
 
     // 2. Mark invoice as paid
     const pay = await fetch(`${client.render_service_url}/api/admin/invoices/${invoice.id}/pay`, {
@@ -2489,13 +2525,11 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
     if (paidResult?.invoice) Object.assign(invoice, paidResult.invoice);
 
     // 3. Extend subscription expiry
-    const now = new Date();
-    const currentExpiry = client.subscription_expires ? new Date(client.subscription_expires) : null;
-    const newExpiry = currentExpiry && currentExpiry > now ? new Date(currentExpiry.getTime() + daysToAdd * 86400000) : new Date(now.getTime() + daysToAdd * 86400000);
+    const newExpiry = new Date(periodBase.getTime() + daysToAdd * 86400000);
 
     // 4. Next expected payment date (reminders driven off this)
-    const nextPaymentDate = (typeof req.body.nextPaymentDate === "string" && req.body.nextPaymentDate)
-      ? req.body.nextPaymentDate.slice(0, 10)
+    const nextPaymentDate = (typeof requestedNextPaymentDate === "string" && requestedNextPaymentDate)
+      ? requestedNextPaymentDate
       : newExpiry.toISOString().slice(0, 10);
     await query("UPDATE clients SET subscription_expires = $1, next_payment_date = $2 WHERE id = $3", [newExpiry, nextPaymentDate, client.id]);
     await query(
@@ -2508,8 +2542,12 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
 
     // If the client was auto/manually deactivated, reactivate now that payment is recorded
     if (client.status === "suspended") {
-      await resumeClientRecord(client);
-      await auditLog(req, "auto_resume_client", "client", client.id, client.name, "Resumed after payment recorded");
+      const resume = await resumeClientRecord(client);
+      if (resume.resumed) {
+        await auditLog(req, "auto_resume_client", "client", client.id, client.name, "Resumed after payment recorded");
+      } else {
+        console.warn(`[subscription] Payment recorded for client ${client.id}, but service resume was not confirmed.`);
+      }
     }
 
     // Clear any outstanding payment-due/overdue notifications for this client
@@ -2831,8 +2869,12 @@ app.post("/api/clients/:id/invoices/:invId/pay", requireAuth, requireAdmin, asyn
     );
     await query("UPDATE cp_notifications SET read = true WHERE read = false AND client_id = $1 AND type IN ('payment_due', 'payment_overdue')", [client.id]);
     if (client.status === "suspended") {
-      await resumeClientRecord(client);
-      await auditLog(req, "auto_resume_client", "client", client.id, client.name, `Resumed after ${invoice.invoiceNumber || `invoice ${invoice.id}`} was marked paid`);
+      const resume = await resumeClientRecord(client);
+      if (resume.resumed) {
+        await auditLog(req, "auto_resume_client", "client", client.id, client.name, `Resumed after ${invoice.invoiceNumber || `invoice ${invoice.id}`} was marked paid`);
+      } else {
+        console.warn(`[subscription] Invoice paid for client ${client.id}, but service resume was not confirmed.`);
+      }
     }
     await auditLog(req, "mark_invoice_paid", "client", client.id, client.name, `${invoice.invoiceNumber || invoice.id} paid; ${periodType} subscription extended through ${nextPaymentDate}`);
     res.json({ ...data, subscriptionExpires: nextExpiry.toISOString(), nextPaymentDate });
