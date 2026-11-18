@@ -115,6 +115,7 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
        VALUES ('starter', 'Starter', 100, 1200, '[]')
        ON CONFLICT (id) DO UPDATE SET price = 100, price_annual = 1200`
     );
+    await dbMod.query("UPDATE clients SET plan = 'starter' WHERE domain = 'fake.example.com'");
     // Clear this client's audit rows so the proxy-audit assertions below measure only
     // the writes made by this run. The client is keyed on a fixed domain and two tests
     // in this file write the same audited actions for it, so without this a second run
