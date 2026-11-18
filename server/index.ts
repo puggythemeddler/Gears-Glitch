@@ -574,6 +574,9 @@ const RATE_MAX = Number(process.env.API_RATE_MAX) || 200;
 const apiLimiter = rateLimit({
   windowMs: RATE_WINDOW_MIN * 60 * 1000,
   max: RATE_MAX,
+  // Authenticated Control Plane plan pushes use a dedicated limiter below;
+  // keep them out of the shared visitor/admin per-IP request budget.
+  skip: (req) => req.path === "/plans/sync" && req.method === "PUT",
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
@@ -2311,7 +2314,14 @@ app.delete("/api/admin/plans/:id", adminAuthMiddleware, asyncHandler(async (req:
 }));
 
 // ============ PLAN SYNC (from Control Plane) ============
-app.put("/api/plans/sync", controlPlaneAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+const planSyncLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Plan sync limit reached. Please wait before retrying." },
+});
+app.put("/api/plans/sync", controlPlaneAuthMiddleware, planSyncLimiter, asyncHandler(async (req: Request, res: Response) => {
   const { plans } = req.body || {};
   if (!Array.isArray(plans)) { res.status(400).json({ error: "plans array required" }); return; }
 

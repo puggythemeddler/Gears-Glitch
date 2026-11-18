@@ -254,7 +254,8 @@
     .plan-modal .form-grid { margin-bottom: 0.25rem; }
     .plan-feature-field { margin-bottom: 0; }
     .plan-feature-field .feature-hint { color: var(--text-muted); font-weight: 400; }
-    #feature-groups-container { min-height: 240px; height: clamp(240px, 38vh, 460px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    /* The modal body is the single scroll surface so feature groups remain reachable. */
+    #feature-groups-container { min-height: 0; height: auto; overflow: visible; }
     .plan-modal .modal-actions { flex: 0 0 auto; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); background: var(--surface); }
     .modal h2 { margin-bottom: 0.5rem; font-size: 1.1rem; }
     .modal .subtitle { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; }
@@ -324,7 +325,6 @@
       .stat-card .value { font-size: 1.5rem; }
       .modal { padding: 1rem; }
       .plan-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; padding: 0.75rem; }
-      #feature-groups-container { min-height: 240px; height: 38vh; }
       .plan-modal .modal-actions { position: sticky; bottom: 0; }
       .detail-panel { padding: 1rem; }
       .toolbar input[type="search"] { max-width: none; }
@@ -789,7 +789,7 @@
       <h2 id="plan-modal-title">Create Plan</h2>
       <div class="plan-modal-body">
         <div class="field plan-feature-field">
-          <label id="plan-features-label" for="feature-groups-container">Features <span class="feature-hint">(scroll within this list to see all groups)</span></label>
+          <label id="plan-features-label" for="feature-groups-container">Features <span class="feature-hint">(scroll the form to see all groups)</span></label>
           <div id="feature-groups-container" role="group" aria-labelledby="plan-features-label" tabindex="0" style="border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
         </div>
         <div class="form-grid">
