@@ -324,7 +324,8 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
-    assert.equal(gen.status, 200);
+    const generated: any = await gen.json();
+    assert.equal(gen.status, 200, JSON.stringify(generated));
 
     const audits: any[] = await db!.queryAll(
       "SELECT action FROM audit_log WHERE target_type = 'client' AND target_id = $1 AND action IN ('approve_upgrade_request','reject_upgrade_request','mark_invoice_paid','generate_invoice')",
