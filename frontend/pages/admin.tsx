@@ -1431,6 +1431,7 @@ function AdminGroups() {
 function AdminOrders() {
   const { data: oData, loading, error, refetch } = useFetch(() => api<{ orders: Order[] }>("/api/admin/orders"), []);
   const feedback = useFeedback();
+  const warrantyEnabled = useFeature("Warranty management");
   const [selected, setSelected] = useState<any | null>(null);
   const [customerDetail, setCustomerDetail] = useState<any | null>(null);
   const [statusMsg, setStatusMsg] = useState("");
@@ -1657,7 +1658,7 @@ function AdminOrders() {
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th>{featureFlags["Warranty management"] && <th>Warranty</th>}<th>License renewal</th><th>Serial</th><th></th></tr></thead>
+            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th>{warrantyEnabled && <th>Warranty</th>}<th>License renewal</th><th>Serial</th><th></th></tr></thead>
             <tbody>
               {(o.items || []).map((item: any, i: number) => (
                 <tr key={item.id || i}>
@@ -1665,7 +1666,7 @@ function AdminOrders() {
                   <td>{formatPrice(item.price)}</td>
                   <td>{item.quantity}</td>
                   <td>{formatPrice(item.lineTotal)}</td>
-                  {featureFlags["Warranty management"] && <td>
+                  {warrantyEnabled && <td>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem" }}>
                       <input type="checkbox" checked={!!item.hasWarranty} onChange={async () => {
                         try {
