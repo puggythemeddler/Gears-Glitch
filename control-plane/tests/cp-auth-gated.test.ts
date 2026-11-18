@@ -108,6 +108,13 @@ suite("CP auth hardening (control-plane DB)", { timeout: 120000 }, () => {
       "INSERT INTO clients (name, domain, admin_email, render_service_url, cp_secret, status, plan) VALUES ('Fake Co', 'fake.example.com', 'owner@fake.example.com', $1, $2, 'active', 'starter') ON CONFLICT (domain) DO UPDATE SET render_service_url = $1, cp_secret = $2",
       [fakeBackendUrl, CLIENT_SECRET]
     );
+    // Invoice proxy routes now require an authoritative Control Plane catalog
+    // rate; seed the fake client's plan rather than relying on an implicit default.
+    await dbMod.query(
+      `INSERT INTO custom_plans (id, name, price, price_annual, features)
+       VALUES ('starter', 'Starter', 100, 1200, '[]')
+       ON CONFLICT (id) DO UPDATE SET price = 100, price_annual = 1200`
+    );
     // Clear this client's audit rows so the proxy-audit assertions below measure only
     // the writes made by this run. The client is keyed on a fixed domain and two tests
     // in this file write the same audited actions for it, so without this a second run
