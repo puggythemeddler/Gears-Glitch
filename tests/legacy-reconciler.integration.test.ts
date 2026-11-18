@@ -228,6 +228,7 @@ describe("legacy schema reconciliation (schema.sql + 0020)", { skip: !HAS_DB && 
       INSERT INTO subscription_plans (id, name, price, tier_level, max_branches, features, is_active)
       VALUES ('plan-sync-flag-migration-test', 'Plan sync flag migration test', 0, 1, 1, '[]', 1)
       ON CONFLICT (id) DO UPDATE SET is_active = 1`);
+    await query(`ALTER TABLE subscription_plans ALTER COLUMN is_active DROP DEFAULT`);
     await query(`ALTER TABLE subscription_plans ALTER COLUMN is_active TYPE BOOLEAN USING is_active <> 0`);
     await query(`ALTER TABLE subscription_plans DROP COLUMN sync_to_others`);
 
