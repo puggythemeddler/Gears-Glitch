@@ -92,7 +92,8 @@ Click **Details** on any client to see:
 - Subscription status with days remaining
 - **Invoice table** with all subscription invoices:
   - **Generate** — create a new invoice for this client
-  - **Record Payment** — one-step payment recording: generate invoice, mark paid, extend `subscription_expires` (+30/365 days), set the next `next_payment_date`, log the payment in `client_payments`, compute the balance, auto-resume a suspended client, and clear outstanding payment notifications. A modal shows the expected amount (from the plan catalog), the amount paid, period (monthly/annual), next payment date, notes, and the resulting balance.
+  - **Record Payment** — requires the operator to review recent invoice and payment history and choose whether the payment is for the renewal currently due or an advance renewal. The action stops if invoice history is unavailable, an unpaid invoice already exists, or the subscription/payment history changed after review. Concurrent submissions for a client are serialized. A successful full payment generates and pays one invoice, extends `subscription_expires` (+30/365 days), sets the next `next_payment_date`, records the purpose in `client_payments` and the audit log, auto-resumes a suspended client, and clears outstanding payment notifications.
+  - **Mark paid** — use this for a specific existing proforma; the invoice list shows its covered billing dates so the operator can match it to the payment history.
   - **View** — open branded HTML invoice in new tab
   - **PDF** — download invoice as PDF
   - **Email** — send invoice to client's email (sent via the control plane's own SMTP)
