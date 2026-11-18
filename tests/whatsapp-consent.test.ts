@@ -9,7 +9,7 @@ import { sendWhatsAppMessage, sendWhatsAppDocument, sendWhatsAppDocumentMessage,
 import { processPendingDelivery } from "../server/notification-service";
 import { enqueueDelivery, listPendingDeliveries } from "../server/integrations-store";
 import { getPool, query, queryOne, runSchema } from "../server/db-helpers";
-import { updateSettings } from "../server/db";
+import { getSettings, updateSettings } from "../server/db";
 
 const HAS_DB = bootstrapTestDatabase();
 
@@ -232,6 +232,20 @@ describe("whatsapp send paths + Meta window/template rules (DB, mocked fetch)", 
       [name, category, approved]
     );
   }
+
+  test("disabling notifications keeps credentials for later but blocks outbound messages", async () => {
+    await grantTransactional("0712345678");
+    await openWindow("254712345678");
+    await updateSettings({ whatsappEnabled: false });
+
+    const result = await sendWhatsAppMessage("0712345678", "must not send", "customer", 1, "Cust");
+    const settings = await getSettings();
+    assert.equal(result.ok, false);
+    assert.match(result.error || "", /not configured or not enabled/i);
+    assert.equal(settings.whatsappEnabled, false);
+    assert.equal(settings.whatsappAccessToken, "test-token", "disable preserves credentials for reconnection");
+    assert.equal(fetchCalls.length, 0, "disabled notifications must not reach Meta");
+  });
 
   // ── opt-out beats everything ──
   test("opted-out recipient: text, document, buttons and list make NO Meta request", async () => {

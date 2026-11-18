@@ -12,6 +12,7 @@ import {
   buildWhatsAppWebhookUrl,
   signaturesMatch,
   verifyWhatsAppSignature,
+  verifyWhatsAppChallenge,
   testWhatsAppConnection,
   handleWhatsAppWebhook,
   isCustomWhatsAppVerifyTokenConfigured,
@@ -418,6 +419,65 @@ if (HAS_DB) {
       assert.equal(await verifyWhatsAppSignature(raw, buildWhatsAppSignature(raw, "wrong-secret")), false);
       // A signature computed over the *re-serialized* bytes must not verify.
       assert.equal(await verifyWhatsAppSignature(raw, buildWhatsAppSignature(compact, "app-secret-under-test")), false);
+    });
+
+    test("disconnect removes stored and environment credentials; fresh credentials reconnect and old webhook token stops verifying", async () => {
+      const { getSettings, updateSettings, disconnectWhatsApp } = await import("../server/db");
+      const envKeys = ["WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_APP_SECRET", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_BUSINESS_ACCOUNT_ID"] as const;
+      const previousEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
+      const settingKeys = ["whatsappEnabled", "adminWhatsAppEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId", "whatsappDisconnected"];
+      const historyId = "wamid-lifecycle-disconnect-preserved";
+      for (const key of envKeys) process.env[key] = `environment-${key.toLowerCase()}`;
+      try {
+        await query("DELETE FROM settings WHERE key = ANY($1::text[])", [settingKeys]);
+        await query("DELETE FROM whatsapp_logs WHERE wa_message_id = $1", [historyId]);
+        await updateSettings({
+          whatsappEnabled: true,
+          adminWhatsAppEnabled: true,
+          whatsappPhoneNumberId: "stored-phone-id",
+          whatsappAccessToken: "stored-access-token",
+          whatsappAppSecret: "stored-app-secret",
+          whatsappVerifyToken: "old-verify-token",
+          whatsappBusinessAccountId: "stored-business-id",
+        });
+        await query("INSERT INTO whatsapp_logs (phone_number, direction, message_type, content, status, wa_message_id) VALUES ($1, 'inbound', 'text', 'history remains', 'received', $2)", ["254712345678", historyId]);
+
+        assert.equal((await verifyWhatsAppChallenge("subscribe", "old-verify-token", "challenge")).ok, true);
+        await disconnectWhatsApp();
+
+        const disconnected = await getSettings();
+        assert.equal(disconnected.whatsappEnabled, false);
+        assert.equal(disconnected.adminWhatsAppEnabled, false);
+        assert.equal(disconnected.whatsappPhoneNumberId, "");
+        assert.equal(disconnected.whatsappAccessToken, "");
+        assert.equal(disconnected.whatsappAppSecret, "");
+        assert.equal(disconnected.whatsappVerifyToken, "");
+        assert.equal(disconnected.whatsappBusinessAccountId, "");
+        assert.equal((await verifyWhatsAppChallenge("subscribe", "old-verify-token", "challenge")).ok, false);
+        assert.equal(Number((await queryOne("SELECT COUNT(*) AS c FROM whatsapp_logs WHERE wa_message_id = $1", [historyId]) as any).c), 1, "disconnect preserves message history");
+
+        await updateSettings({
+          whatsappEnabled: true,
+          whatsappPhoneNumberId: "new-phone-id",
+          whatsappAccessToken: "new-access-token",
+          whatsappAppSecret: "new-app-secret",
+          whatsappVerifyToken: "new-verify-token",
+          whatsappBusinessAccountId: "new-business-id",
+        });
+        const reconnected = await getSettings();
+        assert.equal(reconnected.whatsappEnabled, true);
+        assert.equal(reconnected.whatsappPhoneNumberId, "new-phone-id");
+        assert.equal(reconnected.whatsappAccessToken, "new-access-token");
+        assert.equal(reconnected.whatsappVerifyToken, "new-verify-token");
+        assert.equal((await verifyWhatsAppChallenge("subscribe", "new-verify-token", "challenge")).ok, true);
+      } finally {
+        await query("DELETE FROM settings WHERE key = ANY($1::text[])", [settingKeys]);
+        await query("DELETE FROM whatsapp_logs WHERE wa_message_id = $1", [historyId]);
+        for (const key of envKeys) {
+          if (previousEnv[key] === undefined) delete process.env[key];
+          else process.env[key] = previousEnv[key]!;
+        }
+      }
     });
   });
 }

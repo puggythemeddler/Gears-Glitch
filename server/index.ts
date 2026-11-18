@@ -306,6 +306,7 @@ import {
   getWhatsAppConversations,
   listWhatsAppLogs,
   getWhatsAppStats,
+  disconnectWhatsApp,
   getUserTotp,
   setUserTotp,
   createGiftCard,
@@ -807,6 +808,7 @@ defineAudit("/api/admin/pages/:id", "pages");
 defineAudit("/api/admin/splashes", "splash");
 defineAudit("/api/admin/splashes/:id", "splash");
 defineAudit("/api/admin/whatsapp/templates", "whatsapp_template", { method: "POST" });
+defineAudit("/api/admin/whatsapp/disconnect", "integration", { action: "whatsapp_disconnected", method: "POST" });
 defineAudit("/api/admin/whatsapp/templates/:id", "whatsapp_template", { method: "DELETE" });
 defineAudit("/api/admin/whatsapp/templates/:id", "whatsapp_template", { action: "approved", method: "PATCH" });
 // Customer-initiated business events (actor resolves from req.customer)
@@ -9798,6 +9800,11 @@ app.post("/api/webhooks/whatsapp", asyncHandler(async (req: Request, res: Respon
 app.get("/api/admin/whatsapp/config", staffAuthMiddleware, requirePermission("whatsapp:view"), asyncHandler(async (_req: Request, res: Response) => {
   const config = await getWhatsAppConfig();
   res.json(config);
+}));
+
+app.post("/api/admin/whatsapp/disconnect", staffAuthMiddleware, requirePermission("whatsapp:manage"), asyncHandler(async (_req: Request, res: Response) => {
+  await disconnectWhatsApp();
+  res.json(await getWhatsAppConfig());
 }));
 
 app.post("/api/admin/whatsapp/test", staffAuthMiddleware, requirePermission("whatsapp:manage"), asyncHandler(async (_req: Request, res: Response) => {

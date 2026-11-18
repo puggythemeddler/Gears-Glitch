@@ -66,6 +66,7 @@ export default function WhatsAppSettings() {
   const [msg, setMsg] = useState("");
   const [testResult, setTestResult] = useState("");
   const [testLoading, setTestLoading] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [testNotifyLoading, setTestNotifyLoading] = useState(false);
   const [testNotifyResult, setTestNotifyResult] = useState("");
   const [config, setConfig] = useState<any>(null);
@@ -131,6 +132,28 @@ export default function WhatsAppSettings() {
       setTestResult(d.ok ? `Connected! Phone: ${d.phoneNumber}` : `Failed: ${d.error}`);
     } catch (e: any) { setTestResult("Error: " + e.message); }
     finally { setTestLoading(false); }
+  }
+
+  async function disconnectWhatsApp() {
+    if (!(await confirmDialog({
+      message: "Disconnect this store's WhatsApp integration? This disables WhatsApp notifications and removes its saved API credentials and webhook tokens. Message history, templates, and customer consent records will be kept.",
+      confirmLabel: "Disconnect",
+      danger: true,
+    }))) return;
+    setDisconnecting(true);
+    setMsg("");
+    setTestResult("");
+    try {
+      const updatedConfig = await api<any>("/api/admin/whatsapp/disconnect", { method: "POST" });
+      setConfig(updatedConfig);
+      const updatedSettings = await api<any>("/api/settings");
+      setSettings(updatedSettings);
+      setMsg("WhatsApp disconnected. Message history, templates, and consent records were kept.");
+      feedback.success({ title: "WhatsApp disconnected", message: "Saved credentials were removed. You can reconnect by entering the credentials again." });
+    } catch (e: any) {
+      setMsg("Error: " + e.message);
+      feedback.error({ title: "WhatsApp was not disconnected", message: e.message });
+    } finally { setDisconnecting(false); }
   }
 
   async function sendTestNotification() {
@@ -254,6 +277,7 @@ export default function WhatsAppSettings() {
           <RippleButton onClick={saveWhatsAppSettings} loading={saving}>Save</RippleButton>
           <RippleButton variant="ghost" onClick={testConnection} loading={testLoading}>Test Connection</RippleButton>
           <RippleButton variant="ghost" onClick={sendTestNotification} loading={testNotifyLoading}>Send Test Notification</RippleButton>
+          {(config?.configured || config?.enabled) && <RippleButton variant="ghost" onClick={disconnectWhatsApp} loading={disconnecting} disabled={saving || testLoading || testNotifyLoading}>Disconnect</RippleButton>}
         </div>
         {msg && <p style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: msg.startsWith("Error") ? "var(--danger)" : "var(--success)" }}>{msg}</p>}
         {testResult && <p style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: testResult.startsWith("Connected") ? "var(--success)" : "var(--danger)" }}>{testResult}</p>}
