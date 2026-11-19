@@ -4,6 +4,7 @@ import path from "path";
 import { spawn, ChildProcess } from "child_process";
 
 import { bootstrapTestDatabase } from "../server/test-db";
+import { grantShopPlanFeatureForTest } from "./helpers/plan-entitlements";
 const HAS_DB = bootstrapTestDatabase();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -38,6 +39,7 @@ describe("order lifecycle (confirmed -> paid guard, automatic invoices) over rea
   const fixtureProductIds: string[] = [];
   const fixtureCustomerIds: number[] = [];
   const fixtureOrderIds: number[] = [];
+  let restoreSerialEntitlement = async () => {};
 
   async function db(config?: { multiple?: boolean }) {
     const { Pool } = require("pg");
@@ -195,11 +197,16 @@ describe("order lifecycle (confirmed -> paid guard, automatic invoices) over rea
     const ready = await waitForHealth(`${base}/api/health`);
     assert.ok(ready, `server never became healthy.\nRecent child output:\n${childLog.slice(-40).join("\n")}`);
 
+    // Serial product creation and checkout require the feature even when the
+    // disposable database's baseline plan is Retail or Starter.
+    restoreSerialEntitlement = await grantShopPlanFeatureForTest("Serial number tracking");
+
     branchId = await ensureBranch();
   });
 
   after(async () => {
     if (child) { child.kill(); child = null; }
+    await restoreSerialEntitlement();
     try {
       const d = await db({ multiple: true });
       try {
