@@ -674,7 +674,7 @@
         <div class="field"><label for="inp-name">Business Name</label><input type="text" id="inp-name" placeholder="e.g. John's Electronics"></div>
         <div class="field"><label for="inp-email">Admin Email <span style="font-size:0.72rem;color:var(--text-muted)">(optional — defaults to your operator email)</span></label><input type="email" id="inp-email" placeholder="defaults to OPERATOR_ADMIN_EMAIL"></div>
         <div class="field"><label for="inp-domain">Domain (optional)</label><input type="text" id="inp-domain" placeholder="e.g. johns.gearglitch.com"></div>
-        <div class="field"><label for="inp-plan">Plan</label><select id="inp-plan"><option value="starter">Starter</option><option value="growth" selected>Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
+        <div class="field"><label for="inp-plan">Plan</label><select id="inp-plan"><option value="starter">Starter</option><option value="growth" selected>Growth</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select><div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.3rem"><small id="client-plan-status" role="status" aria-live="polite" style="color:var(--text-muted)">The current plan list will load when this form opens.</small><button type="button" id="client-plan-retry" class="btn btn-ghost btn-sm" style="display:none" onclick="refreshClientPlanOptions()">Retry</button></div></div>
         <div class="field">
           <label for="inp-admin-password">Initial Site Administrator Password <span style="font-size:0.72rem;color:var(--text-muted)">(min 8 characters — set once for this store, never emailed)</span></label>
           <div style="display:flex;gap:0.4rem;align-items:stretch">
@@ -1486,7 +1486,7 @@
     }
 
     // ─── MODALS ───────────────────────────────────────────
-    function showModal() { openModal(document.getElementById("modal-overlay")); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = false; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = operatorEmail || ""; document.getElementById("inp-domain").value = ""; const p = document.getElementById("inp-plan"); if (p.options.length) p.selectedIndex = 0; clearClientPasswordFields();
+    function showModal() { openModal(document.getElementById("modal-overlay")); document.getElementById("modal-form").style.display = ""; document.getElementById("modal-progress").style.display = "none"; document.getElementById("btn-create").disabled = true; document.getElementById("inp-name").value = ""; document.getElementById("inp-email").value = operatorEmail || ""; document.getElementById("inp-domain").value = ""; const p = document.getElementById("inp-plan"); if (p.options.length) p.selectedIndex = 0; clearClientPasswordFields(); refreshClientPlanOptions();
       // Show the owner upfront whether new-client provisioning can actually run.
       const warn = document.getElementById("provision-warning");
       try {
@@ -1497,7 +1497,6 @@
           } else if (warn) { warn.style.display = "none"; }
         }).catch(() => { if (warn) warn.style.display = "none"; });
       } catch { if (warn) warn.style.display = "none"; }
-      document.getElementById("btn-create").disabled = false;
     }
     function hideModal() { clearClientPasswordFields(); closeModal(document.getElementById("modal-overlay")); }
     function showExistingModal() { openModal(document.getElementById("existing-modal-overlay")); document.getElementById("inp-ex-name").value = ""; document.getElementById("inp-ex-email").value = operatorEmail || ""; document.getElementById("inp-ex-backend").value = ""; document.getElementById("inp-ex-frontend").value = ""; document.getElementById("inp-ex-domain").value = ""; document.getElementById("inp-ex-render-id").value = ""; document.getElementById("inp-ex-cp-secret").value = ""; }
@@ -2131,6 +2130,27 @@
       for (const id of ["inp-plan", "inp-ex-plan", "edit-plan"]) {
         const el = document.getElementById(id);
         if (el) { const cur = el.value; el.innerHTML = html; if (cur && [...el.options].some(o => o.value === cur)) el.value = cur; }
+      }
+    }
+
+    async function refreshClientPlanOptions() {
+      const status = document.getElementById("client-plan-status");
+      const retry = document.getElementById("client-plan-retry");
+      const submit = document.getElementById("btn-create");
+      if (!status || !retry || !submit) return;
+
+      submit.disabled = true;
+      retry.style.display = "none";
+      status.textContent = "Refreshing plan options…";
+      try {
+        const data = await api("/api/plans");
+        if (!data || !Array.isArray(data.plans)) throw new Error("Plan list unavailable");
+        populatePlanDropdowns(data.plans);
+        status.textContent = `Loaded ${data.plans.length} plan${data.plans.length === 1 ? "" : "s"} from the Control Plane.`;
+        submit.disabled = false;
+      } catch {
+        status.textContent = "Could not load current plans. Retry before creating this client.";
+        retry.style.display = "";
       }
     }
 
