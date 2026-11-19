@@ -4,6 +4,7 @@ import path from "path";
 import { spawn, ChildProcess } from "child_process";
 
 import { bootstrapTestDatabase } from "../server/test-db";
+import { grantShopPlanFeatureForTest } from "./helpers/plan-entitlements";
 const HAS_DB = bootstrapTestDatabase();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -42,6 +43,7 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
 
   // Branch fixture rows this run created, so teardown removes only those.
   const fixtureBranchIds: number[] = [];
+  let restoreSerialEntitlement = async () => {};
 
   /** Insert a branch straight into the DB, bypassing the plan's branch cap. */
   async function createFixtureBranch(name: string): Promise<number> {
@@ -193,6 +195,10 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
     const ready = await waitForHealth(`${base}/api/health`);
     assert.ok(ready, `server never became healthy.\nRecent child output:\n${childLog.slice(-40).join("\n")}`);
 
+    // This suite exercises serial lookup too; grant that feature on the
+    // disposable fixture plan and restore it during teardown.
+    restoreSerialEntitlement = await grantShopPlanFeatureForTest("Serial number tracking");
+
     // A multi-branch shop is the precondition for most of these rules: with one
     // branch the resolver falls back to granting it to everyone.
     const owner = jar();
@@ -277,6 +283,7 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
       child.kill();
       child = null;
     }
+    await restoreSerialEntitlement();
     try {
       const { Pool } = require("pg");
       const pool = new Pool({ connectionString: process.env.DATABASE_URL });

@@ -2864,7 +2864,7 @@ app.get("/api/pos/products/by-barcode/:code", posAuthMiddleware, asyncHandler(as
   res.json(publicProduct({ ...product, stockOnHand: available }));
 }));
 
-app.get("/api/pos/serials/lookup/:serialNumber", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/pos/serials/lookup/:serialNumber", posAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   const user = (req as any).user;
   let branchId: number;
   try {
@@ -3028,6 +3028,9 @@ app.post("/api/pos/checkout", posAuthMiddleware, asyncHandler(async (req: Reques
     for (const item of items) {
       const product = await getProduct(item.productId);
       if (!product) { res.status(400).json({ error: `Product ${item.productId} not found.` }); return; }
+      if (product.serialTracking && !featureListIncludes(await getEffectiveFeatures(req), "Serial number tracking")) {
+        res.status(403).json({ error: "This product requires serial number tracking, which is not included in your plan." }); return;
+      }
       const qty = Number(item.quantity);
       if (!Number.isInteger(qty) || qty <= 0) { res.status(400).json({ error: `Invalid quantity for ${product.name}.` }); return; }
       let serials = Array.isArray(item.serials) ? item.serials.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
@@ -5288,8 +5291,12 @@ app.get("/api/products/:id", asyncHandler(async (req: Request, res: Response) =>
 app.post("/api/products", ownerAuthMiddleware, requirePermission("product:create"), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body || {};
   const warrantyEnabled = featureListIncludes(await getEffectiveFeatures(req), "Warranty management");
+  const serialTrackingEnabled = featureListIncludes(await getEffectiveFeatures(req), "Serial number tracking");
   if (!warrantyEnabled && (Boolean(body.hasWarranty) || Number(body.warrantyDuration) > 0)) {
     res.status(403).json({ error: "Warranty management is not included in this plan." }); return;
+  }
+  if (!serialTrackingEnabled && Boolean(body.serialTracking)) {
+    res.status(403).json({ error: "Serial number tracking is not included in this plan." }); return;
   }
   const category = body.category;
   if (category && !(await getCategory(category))) {
@@ -5487,8 +5494,12 @@ app.put("/api/products/:id", ownerAuthMiddleware, requirePermission("product:upd
 
   const body = req.body || {};
   const warrantyEnabled = featureListIncludes(await getEffectiveFeatures(req), "Warranty management");
+  const serialTrackingEnabled = featureListIncludes(await getEffectiveFeatures(req), "Serial number tracking");
   if (!warrantyEnabled && (body.hasWarranty === true || Number(body.warrantyDuration) > 0)) {
     res.status(403).json({ error: "Warranty management is not included in this plan." }); return;
+  }
+  if (!serialTrackingEnabled && body.serialTracking !== undefined) {
+    res.status(403).json({ error: "Serial number tracking is not included in this plan." }); return;
   }
   if (body.category !== undefined && body.category && !(await getCategory(body.category))) {
     res.status(400).json({ error: "Choose a valid category." });
@@ -8145,6 +8156,9 @@ app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandl
   if (branchId !== undefined) { res.status(400).json({ error: "Stock location is fixed by the purchase order. Create a new order for a different branch." }); return; }
   const serialList = Array.isArray(serials) ? serials.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
   const assetTagList = Array.isArray(assetTags) ? assetTags.map((s: any) => String(s || "").trim()) : [];
+  if ((serialList.length || assetTagList.some(Boolean)) && !featureListIncludes(await getEffectiveFeatures(req), "Serial number tracking")) {
+    res.status(403).json({ error: "Serial number tracking is not included in this plan." }); return;
+  }
   if (serialList.length > Number(quantityReceived)) { res.status(400).json({ error: "More serials than quantity received." }); return; }
   const result = await receivePurchaseOrderItem(Number(req.params.itemId), Number(quantityReceived), serialList, assetTagList);
   if (!result.ok) { res.status(/not found/i.test(result.error || "") ? 404 : 409).json({ error: result.error }); return; }
@@ -8153,7 +8167,7 @@ app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandl
 
 // ============ SERIAL NUMBERS (warranty tracking, PO intake, sale linking) ============
 
-app.get("/api/serials", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/serials", posAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   const rawBranch = req.query.branchId;
   let branchId = rawBranch === "central" ? null : rawBranch ? Number(rawBranch) : undefined;
   if (branchId !== undefined && branchId !== null && (!Number.isInteger(branchId) || branchId < 1)) { res.status(400).json({ error: "Invalid branch filter." }); return; }
@@ -8172,7 +8186,7 @@ app.get("/api/serials", posAuthMiddleware, asyncHandler(async (req: Request, res
   res.json({ serials });
 }));
 
-app.get("/api/serials/reconciliation", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/serials/reconciliation", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   const rawBranch = req.query.branchId;
   const branchId = rawBranch === "central" ? null : rawBranch ? Number(rawBranch) : undefined;
   if (branchId !== undefined && branchId !== null && (!Number.isInteger(branchId) || branchId < 1)) { res.status(400).json({ error: "Invalid branch filter." }); return; }
@@ -8180,13 +8194,13 @@ app.get("/api/serials/reconciliation", adminAuthMiddleware, asyncHandler(async (
   res.json({ discrepancies });
 }));
 
-app.get("/api/serials/lookup/:serialNumber", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/serials/lookup/:serialNumber", posAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   const serial = await getSerialByNumber(String(req.params.serialNumber || ""));
   if (!serial) { res.status(404).json({ error: "Serial number not found." }); return; }
   res.json(serial);
 }));
 
-app.post("/api/serials", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   const { serialNumber, assetTag, productId, branchId, warrantyExpires } = req.body || {};
   if (!serialNumber || !String(serialNumber).trim()) { res.status(400).json({ error: "Serial number is required." }); return; }
   if (!productId) { res.status(400).json({ error: "Product is required." }); return; }
@@ -8201,7 +8215,7 @@ app.post("/api/serials", adminAuthMiddleware, asyncHandler(async (req: Request, 
   res.status(201).json(result.serial);
 }));
 
-app.post("/api/serials/:id/reconcile", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/:id/reconcile", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   const { serialNumber, assetTag, branchId, verifiedFromDeviceLabel } = req.body || {};
   if (verifiedFromDeviceLabel !== true) { res.status(400).json({ error: "Confirm that you checked the manufacturer serial directly on the device." }); return; }
   const id = Number(req.params.id);
@@ -8220,17 +8234,17 @@ app.post("/api/serials/:id/reconcile", adminAuthMiddleware, asyncHandler(async (
   res.json(result.serial);
 }));
 
-app.post("/api/serials/generate", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/generate", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   res.status(410).json({ error: "Generated codes cannot identify a device. Scan its manufacturer serial number and add an optional internal asset tag instead." });
 }));
 
-app.post("/api/serials/:id/void", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/:id/void", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   const result = await voidSerial(Number(req.params.id));
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.json({ ok: true });
 }));
 
-app.post("/api/serials/link", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/link", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   const { serialId, orderItemId } = req.body || {};
   if (!serialId || !orderItemId) { res.status(400).json({ error: "serialId and orderItemId are required." }); return; }
   const result = await linkSerialToOrderItem(Number(serialId), Number(orderItemId));
@@ -8238,7 +8252,7 @@ app.post("/api/serials/link", adminAuthMiddleware, asyncHandler(async (req: Requ
   res.json({ ok: true });
 }));
 
-app.post("/api/serials/link-by-number", posAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/link-by-number", posAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
   const { serialNumber, orderItemId } = req.body || {};
   if (!serialNumber || !orderItemId) { res.status(400).json({ error: "serialNumber and orderItemId are required." }); return; }
   const serial = await getSerialByNumber(String(serialNumber));
@@ -8295,6 +8309,9 @@ app.post("/api/purchases/:id/receive-all", adminAuthMiddleware, asyncHandler(asy
         const arr = Array.isArray(body.assetTagsByItem[k]) ? body.assetTagsByItem[k].map((s: any) => String(s || "").trim()) : [];
         if (arr.some(Boolean)) assetTagsByItem[Number(k)] = arr;
       }
+    }
+    if ((Object.values(serialsByItem).some((serials) => serials.length > 0) || Object.values(assetTagsByItem).some((tags) => tags.some(Boolean))) && !featureListIncludes(await getEffectiveFeatures(req), "Serial number tracking")) {
+      res.status(403).json({ error: "Serial number tracking is not included in this plan." }); return;
     }
     const result = await markPurchaseOrderReceived(id, serialsByItem, assetTagsByItem);
     if (!result.ok) { res.status(400).json({ error: result.error }); return; }

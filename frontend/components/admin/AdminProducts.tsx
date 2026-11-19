@@ -11,6 +11,7 @@ import { useFeature } from "@/lib/features";
 
 export default function AdminProducts() {
   const warrantyEnabled = useFeature("Warranty management");
+  const serialTrackingEnabled = useFeature("Serial number tracking");
   const feedback = useFeedback();
   const { data: pData, loading, error, refetch } = useFetch(() => api<{ products: Product[] }>("/api/admin/products"), []);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -230,7 +231,7 @@ export default function AdminProducts() {
       inStock: fd.get("inStock") === "true", isNonStock: fd.get("isNonStock") === "on",
       isHidden: fd.get("isHidden") === "on",
       ...(warrantyEnabled ? { hasWarranty: fd.get("hasWarranty") === "on", warrantyDuration: Number(fd.get("warrantyDuration") || 0) } : {}),
-      serialTracking: fd.get("serialTracking") === "on",
+      ...(serialTrackingEnabled ? { serialTracking: fd.get("serialTracking") === "on" } : {}),
       barcode: fd.get("barcode") || "",
       taxable: fd.get("taxable") === "on",
       subcategory: fd.get("subcategory") || "",
@@ -329,7 +330,7 @@ export default function AdminProducts() {
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="isNonStock" defaultChecked={editing?.isNonStock ?? false} /> Non-stock item</label></div>
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="isHidden" defaultChecked={editing?.isHidden ?? false} /> Hidden from online store (e.g. services — not shown to customers, not sold on the site)</label></div>
             {warrantyEnabled && <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="hasWarranty" defaultChecked={editing?.hasWarranty ?? false} /> Has warranty</label></div>}
-            <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="serialTracking" defaultChecked={editing?.serialTracking ?? false} /> Track individual devices (manufacturer serial required at receipt)</label></div>
+            {serialTrackingEnabled && <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="serialTracking" defaultChecked={editing?.serialTracking ?? false} /> Track individual devices (manufacturer serial required at receipt)</label></div>}
             <div className="field"><label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}><input type="checkbox" name="taxable" defaultChecked={editing?.taxable !== false} /> Taxable (eTims-compatible)</label></div>
             {warrantyEnabled && <div className="field"><label>Warranty duration (months)<input name="warrantyDuration" type="number" min="0" defaultValue={editing?.warrantyDuration || 0} /></label></div>}
             <div className="field"><label>Add images (multiple)<input type="file" ref={galleryRef} accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={gallery.length >= maxImages} /></label><p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>{gallery.length} of {maxImages} images used{gallery.length >= maxImages ? " — limit reached" : ""}.</p></div>
