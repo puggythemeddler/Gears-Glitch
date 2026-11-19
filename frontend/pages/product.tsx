@@ -8,12 +8,17 @@ import { confirmDialog } from "@/components/ConfirmDialog";
 import { PageHead } from "@/components/ui";
 import Icon from "@/components/icons";
 import { Media } from "@/components/Media";
+import { useFeature } from "@/lib/features";
 
 function productInitials(name: string) {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 }
 
 export default function ProductPage() {
+  const warrantyEnabled = useFeature("Warranty management");
+  const productReviewsEnabled = useFeature("Product reviews & ratings");
+  const customerReviewsEnabled = useFeature("Customer reviews");
+  const reviewsEnabled = productReviewsEnabled || customerReviewsEnabled;
   const feedback = useFeedback();
   const router = useRouter();
   const { id } = router.query;
@@ -60,10 +65,10 @@ export default function ProductPage() {
       api<{ images: ProductImage[] }>(`/api/products/${encodeURIComponent(id as string)}/images`).then((d) => {
         if (d.images && d.images.length >= 1) setImages(d.images);
       }).catch(() => {});
-      api<{ reviews: any[]; rating: { average: number; count: number }; distribution: Record<number, number>; totalPages: number }>(`/api/products/${encodeURIComponent(id as string)}/reviews`).then((d) => {
+      if (reviewsEnabled) api<{ reviews: any[]; rating: { average: number; count: number }; distribution: Record<number, number>; totalPages: number }>(`/api/products/${encodeURIComponent(id as string)}/reviews`).then((d) => {
         setReviews(d.reviews); setReviewsRating(d.rating); setReviewDistribution(d.distribution); setReviewTotalPages(d.totalPages);
       });
-      if (isCustomerLoggedIn()) {
+      if (reviewsEnabled && isCustomerLoggedIn()) {
         api<{ hasReviewed: boolean; review: any; canReview: boolean }>(`/api/products/${encodeURIComponent(id as string)}/reviews/check`).then((d) => { setUserReviewed(d.hasReviewed); if (d.review) setUserReview(d.review); setCanReview(Boolean(d.canReview)); }).catch(() => {});
       }
       if (p.category) {
@@ -80,7 +85,7 @@ export default function ProductPage() {
         ? "The catalogue is temporarily rate-limited. Please wait a little before trying again."
         : e.message || "Failed to load product.");
     });
-  }, [id]);
+  }, [id, reviewsEnabled]);
 
   useEffect(() => {
     if (!id || !isCustomerLoggedIn()) return;
@@ -320,7 +325,7 @@ export default function ProductPage() {
           <p className={`product-stock ${product.inStock ? "in-stock" : "out-of-stock"}`}>
             {product.inStock ? "In stock" : "Enquire for availability"}
           </p>
-          {product.hasWarranty && product.warrantyDuration ? (
+          {warrantyEnabled && product.hasWarranty && product.warrantyDuration ? (
             <p style={{ fontSize: "0.9rem", color: "var(--primary)", margin: "0.5rem 0" }}>
               &#x1F6E1;&#xFE0F; {product.warrantyDuration} month warranty
             </p>
@@ -398,7 +403,7 @@ export default function ProductPage() {
         </div>
       </article>
 
-      <section style={{ marginTop: "2rem" }}>
+      {reviewsEnabled && <section style={{ marginTop: "2rem" }}>
         <h2 style={{ marginBottom: "1rem" }}>Customer Reviews</h2>
 
         {reviewsRating.count > 0 && (
@@ -514,7 +519,7 @@ export default function ProductPage() {
             <button className="btn btn-sm btn-ghost" disabled={reviewPage >= reviewTotalPages} onClick={() => fetchReviews(reviewPage + 1)}>Next</button>
           </div>
         )}
-      </section>
+      </section>}
     </>
   );
 }

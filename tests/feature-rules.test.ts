@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   normalizeFeatureName,
   featureListIncludes,
+  featureListIncludesAny,
   parseFeatureOverrides,
   applyFeatureOverrides,
   parseBranchFeatureOverrides,
@@ -19,6 +20,8 @@ describe("feature-rules", () => {
     assert.equal(featureListIncludes(["Repair ticketing"], "repair ticketing"), true);
     assert.equal(featureListIncludes(["Repair ticketing"], "Lipa Mdogo Mdogo"), false);
     assert.equal(featureListIncludes(null, "anything"), false);
+    assert.equal(featureListIncludesAny(["Customer reviews"], ["Product reviews & ratings", "Customer reviews"]), true);
+    assert.equal(featureListIncludesAny(["Order management"], ["Product reviews & ratings", "Customer reviews"]), false);
   });
 
   it("parses only boolean overrides", () => {

@@ -8,6 +8,7 @@ import { useApp } from "@/lib/app-context";
 import { usePageTitle } from "@/lib/use-page-title";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
 import { Media } from "@/components/Media";
+import { useFeatureStatus } from "@/lib/features";
 
 const PRODUCTS_PER_PAGE = 12;
 
@@ -52,6 +53,7 @@ interface PaymentMethod {
 }
 
 export default function POSPage() {
+  const posEntitled = useFeatureStatus("POS integration");
   const { formatPrice } = useApp();
   usePageTitle("Point of sale - Gear&Glitch");
   const [products, setProducts] = useState<Product[]>([]);
@@ -114,6 +116,7 @@ export default function POSPage() {
   // Re-fetch everything that is branch-scoped: catalogue, categories and the
   // allowed-branch list. Called on mount and after a mid-session branch switch.
   const reloadCatalog = useCallback(async () => {
+    if (posEntitled !== true) return;
     setCatalogLoading(true);
     setCatalogError(null);
     void api<{ categories: { id: string; label: string }[] }>("/api/pos/categories").then((d) => {
@@ -147,9 +150,10 @@ export default function POSPage() {
     } finally {
       setCatalogLoading(false);
     }
-  }, []);
+  }, [posEntitled]);
 
   useEffect(() => {
+    if (posEntitled !== true) return;
     const role = getRole();
     setLoggedIn(!!role);
     if (sessionStorage.getItem("posUnlocked")) setPinUnlocked(true);
@@ -168,7 +172,7 @@ export default function POSPage() {
       if (d?.minTerm) setFinTerm(String(d.minTerm));
     }).catch(() => {});
     reloadCatalog();
-  }, [reloadCatalog]);
+  }, [reloadCatalog, posEntitled]);
 
   useEffect(() => {
     const q = search.toLowerCase().trim();
@@ -181,6 +185,7 @@ export default function POSPage() {
   }, [search, products, selectedCategory]);
 
   useEffect(() => {
+    if (posEntitled !== true) return;
     if (customerQuery.trim().length < 2) { setCustomers([]); return; }
     const timer = setTimeout(() => {
       api<{ customers: Customer[] }>("/api/pos/customers?q=" + encodeURIComponent(customerQuery)).then((d) => {
@@ -189,7 +194,7 @@ export default function POSPage() {
       }).catch(() => {});
     }, 300);
     return () => clearTimeout(timer);
-  }, [customerQuery]);
+  }, [customerQuery, posEntitled]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -563,6 +568,13 @@ export default function POSPage() {
     return () => { cancelled = true; clearInterval(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mpesaPending]);
+
+  if (posEntitled === null) {
+    return <div className="panel" role="status" style={{ margin: "2rem auto", maxWidth: 520 }}>Checking your plan access…</div>;
+  }
+  if (!posEntitled) {
+    return <div className="panel" role="status" style={{ margin: "2rem auto", maxWidth: 520 }}><h1>POS is not in this plan</h1><p>Upgrade this store’s plan to use the point of sale.</p><a className="btn btn-primary" href="/admin?view=shop-subscription">View plan options</a></div>;
+  }
 
   if (!loggedIn) {
     return (

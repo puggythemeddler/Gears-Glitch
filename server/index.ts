@@ -17,6 +17,7 @@ import crypto from "crypto";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import { shouldRejectUnlocatedStockWrite } from "./stock-location-guard";
+import { filterOnlineFulfillmentBranches } from "./online-fulfillment";
 import {
   initDb,
   getSettings,
@@ -442,7 +443,7 @@ import reportRouter from "./report-routes";
 import financingRouter from "./routes/financing";
 import { applyMpesaCallback } from "./financing/service";
 import { getFinancingConfig, saveFinancingConfig } from "./financing/config";
-import { getEffectiveFeatures, requireShopFeature, getBranchFeatureOverrides, saveBranchFeatureOverrides } from "./feature-access";
+import { getEffectiveFeatures, isShopFeatureEntitled, requireShopFeature, requireAnyShopFeature, getBranchFeatureOverrides, saveBranchFeatureOverrides } from "./feature-access";
 import { featureListIncludes } from "./feature-rules";
 import * as notifier from "./notify";
 import { startHeartbeatReporter, buildHeartbeatPayload, getSchemaVersion } from "./control-plane-heartbeat";
@@ -896,7 +897,132 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   res.status(403).json({ error: "This store is currently suspended. Please contact support." });
 });
 
-app.use("/api/warranty", warrantyRouter);
+// Plan-entitlement boundaries for complete module families. Keep these at the
+// API layer as well as hiding navigation so direct URLs and future UI routes
+// cannot expose modules excluded from a store's plan.
+app.use("/api/admin/products", requireShopFeature("Product listing"));
+app.use("/api/admin/products", (req: Request, res: Response, next: NextFunction) => {
+  if (/\/reviews(?:\/|$)/.test(req.path)) {
+    return requireAnyShopFeature(["Product reviews & ratings", "Customer reviews"])(req, res, next);
+  }
+  next();
+});
+app.use("/api/admin/reviews", requireAnyShopFeature(["Product reviews & ratings", "Customer reviews"]));
+app.use("/api/admin/products/bulk-edit", requireShopFeature("Bulk product edit"));
+app.use("/api/admin/products/:id/price-history", requireShopFeature("Price history tracking"));
+app.use("/api/admin/pricing/products", requireShopFeature("Product listing"));
+app.use("/api/admin/invoices", requireShopFeature("Invoice/quote PDF downloads"));
+app.use("/api/admin/credit-notes", requireShopFeature("Credit notes"));
+app.use("/api/admin/quotes", requireShopFeature("Quotations"));
+app.use("/api/quotes", requireShopFeature("Quotations"));
+app.use("/api/admin/orders", (req: Request, res: Response, next: NextFunction) => {
+  if (req.path.endsWith("/refunds")) return requireShopFeature("Returns management")(req, res, next);
+  next();
+});
+app.use("/api/products", (req: Request, res: Response, next: NextFunction) => {
+  // Catalog reads and product-view tracking stay public. Admin mutations use
+  // the Product listing entitlement; review endpoints use their own add-on.
+  if (/\/reviews(?:\/|$)/.test(req.path)) {
+    return getEffectiveFeatures(req).then((features) => {
+      if (featureListIncludes(features, "Product reviews & ratings") || featureListIncludes(features, "Customer reviews")) return next();
+      res.status(403).json({ error: "This feature is not included in your plan." });
+    }).catch(next);
+  }
+  if (req.path === "/import") return requireShopFeature("Bulk import/export")(req, res, next);
+  if (req.method === "GET" || req.path.endsWith("/view")) return next();
+  return requireShopFeature("Product listing")(req, res, next);
+});
+app.use("/api/categories", (req: Request, res: Response, next: NextFunction) => {
+  if (req.method === "GET") return next();
+  return requireShopFeature("Product listing")(req, res, next);
+});
+app.use("/api/orders", requireShopFeature("Order management"));
+app.use("/api/admin/orders", requireShopFeature("Order management"));
+app.use("/api/admin/customers", requireShopFeature("Customer management"));
+app.use("/api/admin/clients", (req: Request, res: Response, next: NextFunction) => {
+  if (isControlPlaneRequest(req)) return next();
+  return requireShopFeature("Client/tenant management")(req, res, next);
+});
+app.use("/api/admin/plans", (req: Request, res: Response, next: NextFunction) => {
+  if (isControlPlaneRequest(req)) return next();
+  return requireShopFeature("Client/tenant management")(req, res, next);
+});
+app.use("/api/admin/branches", (req: Request, res: Response, next: NextFunction) => {
+  if (isControlPlaneRequest(req)) return next();
+  return requireShopFeature("Branch management")(req, res, next);
+});
+app.use("/api/admin/coupons", requireShopFeature("Discount/coupon management"));
+app.use("/api/coupons/validate", requireShopFeature("Discount/coupon management"));
+app.use("/api/admin/gift-cards", requireShopFeature("Gift cards"));
+app.use("/api/gift-cards", requireShopFeature("Gift cards"));
+app.use("/api/admin/campaigns", requireShopFeature("Campaign pages"));
+app.use("/api/campaigns", requireShopFeature("Campaign pages"));
+app.use("/api/admin/providers", requireShopFeature("Provider management"));
+app.use("/api/provider", requireShopFeature("Provider management"));
+app.use("/api/admin/abandoned-carts", requireShopFeature("Cart recovery"));
+app.use("/api/loyalty", requireShopFeature("Loyalty program"));
+app.use("/api/admin/loyalty", requireShopFeature("Loyalty program"));
+app.use("/api/roles", requireShopFeature("Multiple staff accounts"));
+app.use("/api/permissions", requireShopFeature("Multiple staff accounts"));
+app.use("/api/staff", (req: Request, res: Response, next: NextFunction) => {
+  if (req.path === "/verify-password") return next();
+  if (req.path === "/technicians") return requireShopFeature("Technician accounts")(req, res, next);
+  return requireShopFeature("Multiple staff accounts")(req, res, next);
+});
+app.use("/api/orders", (req: Request, res: Response, next: NextFunction) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  if (body.couponCode) return requireShopFeature("Discount/coupon management")(req, res, next);
+  if (body.giftCardCode) return requireShopFeature("Gift cards")(req, res, next);
+  if (body.redeemPoints || body.loyaltyPoints || body.pointsToRedeem) return requireShopFeature("Loyalty program")(req, res, next);
+  next();
+});
+app.use("/api/stock", requireShopFeature("Stock control"));
+app.use("/api/admin/stock", requireShopFeature("Stock control"));
+app.use("/api/stock-on-hand", requireShopFeature("Stock control"));
+app.use("/api/stock-disposals", requireShopFeature("Stock control"));
+app.use("/api/pos", requireShopFeature("POS integration"));
+app.use("/api/pos/serials", requireShopFeature("Serial number tracking"));
+app.use("/api/serials", requireShopFeature("Serial number tracking"));
+app.use("/api/purchases", requireShopFeature("Purchase order management"));
+app.use("/api/admin/suppliers", requireShopFeature("Supplier management"));
+app.use("/api/stock-transfers", requireShopFeature("Stock transfers"));
+app.use("/api/stock-take", requireAnyShopFeature(["Stock take", "Stock take / inventory count"]));
+app.use("/api/admin/warranties", requireShopFeature("Warranty management"));
+app.use("/api/reports/repairs", requireShopFeature("Repair ticketing"));
+app.use("/api/reports/technician-repairs", requireShopFeature("Repair ticketing"));
+app.use("/api/reports/warranty", requireShopFeature("Warranty management"));
+app.use("/api/reports/serial", requireShopFeature("Serial number tracking"));
+app.use("/api/reports/tech-performance", requireShopFeature("Repair ticketing"));
+app.use("/api/reports/purchases", requireShopFeature("Purchase order management"));
+app.use("/api/reports/suppliers", requireShopFeature("Supplier management"));
+app.use("/api/reports/stock-take", requireAnyShopFeature(["Stock take", "Stock take / inventory count"]));
+app.use("/api/reports/stock-take-summary", requireAnyShopFeature(["Stock take", "Stock take / inventory count"]));
+app.use("/api/reports/visitors", requireShopFeature("Visitor analytics"));
+app.use("/api/reports/financing", requireShopFeature("Lipa Mdogo Mdogo"));
+app.use("/api/reports/loyalty", requireShopFeature("Loyalty program"));
+app.use("/api/reports/gift-cards", requireShopFeature("Gift cards"));
+app.use("/api/reports/campaigns", requireShopFeature("Campaign pages"));
+app.use("/api/reports/cart-recovery", requireShopFeature("Cart recovery"));
+app.use("/api/reports/quotes", requireShopFeature("Quotations"));
+app.use("/api/reports/tax", requireShopFeature("eTIMS/KRA compliance"));
+app.use("/api/reports/gross-profit", requireShopFeature("Analytics dashboard"));
+app.use("/api/reports/stock-summary", requireShopFeature("Stock control"));
+app.use("/api/reports/valuation", requireShopFeature("Stock control"));
+app.use("/api/reports/sales", requireShopFeature("Order management"));
+app.use("/api/reports/employee-sales", requireShopFeature("Order management"));
+app.use("/api/reports/payments", requireShopFeature("Order management"));
+app.use("/api/reports/receivables", requireShopFeature("Order management"));
+app.use("/api/reports/customers", requireShopFeature("Customer management"));
+app.use("/api/admin/order-items", (req: Request, res: Response, next: NextFunction) => {
+  if (req.path.endsWith("/warranty")) return requireShopFeature("Warranty management")(req, res, next);
+  if (req.path.endsWith("/software-license")) return requireShopFeature("Software license tracking")(req, res, next);
+  next();
+});
+app.use("/api/admin/notifications/warranty-reminder", requireShopFeature("Warranty management"));
+app.use("/api/repairs-page", requireShopFeature("Repair ticketing"));
+app.use("/api/admin/repairs-page", requireShopFeature("Repair ticketing"));
+
+app.use("/api/warranty", requireShopFeature("Warranty management"), warrantyRouter);
 app.use("/api/reports", reportRouter);
 app.use("/api/financing", financingRouter);
 
@@ -1106,7 +1232,7 @@ app.get("/api/shipping/counties", asyncHandler(async (_req: Request, res: Respon
 }));
 
 app.get("/api/store/branches", asyncHandler(async (_req: Request, res: Response) => {
-  const branches = (await listBranches()).filter((branch) => branch.isActive).map(({ id, name }) => ({ id, name }));
+  const branches = filterOnlineFulfillmentBranches(await listBranches()).map(({ id, name }) => ({ id, name }));
   res.json({ branches, requiresBranch: await getBranchCount() > 0 });
 }));
 
@@ -2370,15 +2496,16 @@ app.get("/api/admin/branches", allowControlPlane(ownerAuthMiddleware), requirePe
 }));
 
 app.post("/api/admin/branches", ownerAuthMiddleware, requirePermission("branch:view"), asyncHandler(async (req: Request, res: Response) => {
-  const { name, address, phone, email, managerId, planId } = req.body || {};
+  const { name, address, phone, email, managerId, planId, onlineFulfillmentEnabled } = req.body || {};
   if (!name || !name.trim()) { res.status(400).json({ error: "Branch name is required." }); return; }
+  if (onlineFulfillmentEnabled !== undefined && typeof onlineFulfillmentEnabled !== "boolean") { res.status(400).json({ error: "Online fulfillment setting must be true or false." }); return; }
 
   const allowed = await canCreateBranch();
   if (!allowed) {
     res.status(403).json({ error: "Branch limit reached. Upgrade your plan to add more branches." }); return;
   }
 
-  const branch = await createBranch({ name: name.trim(), address, phone, email, managerId: managerId || null, planId: planId || undefined });
+  const branch = await createBranch({ name: name.trim(), address, phone, email, managerId: managerId || null, planId: planId || undefined, onlineFulfillmentEnabled: onlineFulfillmentEnabled !== false });
   if (!branch) { res.status(500).json({ error: "Failed to create branch." }); return; }
   await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "created", "branch", String(branch.id), { name }, (req as any).user.role);
   res.status(201).json({ branch });
@@ -2387,14 +2514,15 @@ app.post("/api/admin/branches", ownerAuthMiddleware, requirePermission("branch:v
 app.put("/api/admin/branches/:id", ownerAuthMiddleware, requirePermission("branch:view"), asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid branch ID." }); return; }
-  const { name, address, phone, email, managerId, isActive, planId } = req.body || {};
+  const { name, address, phone, email, managerId, isActive, planId, onlineFulfillmentEnabled } = req.body || {};
   if (name !== undefined && !isStr(name)) { res.status(400).json({ error: "Branch name must be a non-empty string." }); return; }
   if (email !== undefined && email !== "" && !isEmail(email)) { res.status(400).json({ error: "Invalid email format." }); return; }
   if (address !== undefined && !isStr(address, 500)) { res.status(400).json({ error: "Address must be a valid string." }); return; }
   if (phone !== undefined && !isStr(phone, 50)) { res.status(400).json({ error: "Phone must be a valid string." }); return; }
-  const branch = await updateBranch(id, { name, address, phone, email, managerId, isActive, planId });
+  if (onlineFulfillmentEnabled !== undefined && typeof onlineFulfillmentEnabled !== "boolean") { res.status(400).json({ error: "Online fulfillment setting must be true or false." }); return; }
+  const branch = await updateBranch(id, { name, address, phone, email, managerId, isActive, onlineFulfillmentEnabled, planId });
   if (!branch) { res.status(404).json({ error: "Branch not found." }); return; }
-  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "branch", String(id), { name }, (req as any).user.role);
+  await logAudit((req as any).user.sub, (req as any).user.username || "Admin", "updated", "branch", String(id), { name, isActive, onlineFulfillmentEnabled }, (req as any).user.role);
   res.json({ branch });
 }));
 
@@ -3558,11 +3686,11 @@ app.post("/api/orders", customerAuthMiddleware, asyncHandler(async (req: Request
     const customerDetails = await findCustomerById(customerId);
     const cartItems = await getCartItems(customerId);
     if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
-    const activeBranches = (await listBranches()).filter((branch) => branch.isActive);
+    const activeBranches = filterOnlineFulfillmentBranches(await listBranches());
     const branchConfigured = await getBranchCount() > 0;
     let fulfillmentBranchId: number | undefined;
     if (branchConfigured) {
-      if (activeBranches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active fulfillment branch is configured." }); return; }
+      if (activeBranches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active branch is enabled for online fulfillment." }); return; }
       fulfillmentBranchId = Number(requestedBranchId);
       if (!isPosInt(fulfillmentBranchId) || !activeBranches.some((branch) => branch.id === fulfillmentBranchId)) {
         res.status(400).json({ error: "Choose an active fulfillment branch before placing this order." }); return;
@@ -3698,12 +3826,12 @@ app.post("/api/orders/create-pending", customerAuthMiddleware, asyncHandler(asyn
     if (cartItems.length === 0) { res.status(400).json({ error: "Cart is empty." }); return; }
     const hiddenInCart = await queryOne("SELECT id FROM products WHERE id = ANY($1) AND is_hidden = 1", [cartItems.map((ci: any) => ci.productId)]) as any;
     if (hiddenInCart) { res.status(400).json({ error: "One or more items in your cart are no longer available for purchase on the online store." }); return; }
-    const branches = (await listBranches()).filter((branch) => branch.isActive);
+    const branches = filterOnlineFulfillmentBranches(await listBranches());
     const branchesConfigured = await getBranchCount() > 0;
     const requestedBranchId = Number(req.body?.branchId);
-    if (branchesConfigured && branches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active fulfillment branch is configured." }); return; }
+    if (branchesConfigured && branches.length === 0) { res.status(409).json({ error: "Online ordering is paused until an active branch is enabled for online fulfillment." }); return; }
     if (branchesConfigured && (!isPosInt(requestedBranchId) || !branches.some((branch) => branch.id === requestedBranchId))) {
-      res.status(400).json({ error: "Choose an active fulfillment branch before creating this order." }); return;
+      res.status(400).json({ error: "Choose a branch enabled for online fulfillment before creating this order." }); return;
     }
     const order = await createOrder({
       customerId,
@@ -4557,13 +4685,14 @@ app.post("/api/admin/invoices/mark-overdue", ownerAuthMiddleware, requirePermiss
 }));
 
 app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware), cpOrPermission("invoice:view"), asyncHandler(async (req: Request, res: Response) => {
-  const { providerId, planId } = req.body || {};
+  const { providerId, planId, amount } = req.body || {};
   let pid: number | null = null;
   if (providerId !== undefined && providerId !== null && providerId !== "") {
     if (!isPosInt(Number(providerId))) { res.status(400).json({ error: "Provider ID must be a positive integer." }); return; }
     pid = Number(providerId);
   }
   if (planId !== undefined && !isStr(planId)) { res.status(400).json({ error: "Plan ID must be a valid string." }); return; }
+  if (amount !== undefined && (!Number.isFinite(Number(amount)) || Number(amount) <= 0)) { res.status(400).json({ error: "Invoice amount must be a positive number." }); return; }
   const { periodType, periodStart, dueDate, generationKey } = req.body || {};
   if (periodType !== undefined && periodType !== "monthly" && periodType !== "annual") { res.status(400).json({ error: "Period type must be monthly or annual." }); return; }
   const validDate = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !isNaN(new Date(`${value}T00:00:00.000Z`).getTime()) && new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
@@ -4574,7 +4703,7 @@ app.post("/api/admin/invoices/generate", allowControlPlane(ownerAuthMiddleware),
   }
   let invoice;
   try {
-    invoice = await generateProviderInvoice(pid, planId || "starter", { periodType, periodStart, dueDate, generationKey });
+    invoice = await generateProviderInvoice(pid, planId || "starter", { periodType, periodStart, dueDate, generationKey, amount: amount === undefined ? undefined : Number(amount) });
   } catch (err: any) {
     const suppliedRequestId = req.get("X-Request-ID") || "";
     const requestId = /^[a-f\d-]{36}$/i.test(suppliedRequestId) ? suppliedRequestId : crypto.randomUUID();
@@ -9565,7 +9694,7 @@ app.get("/api/stock-take/:id/report.pdf", ownerAuthMiddleware, requirePermission
   }
 }));
 
-app.post("/api/stock-take/:id/reopen", ownerAuthMiddleware, requirePermission("stock:update"), requirePermission("stock_take:reopen"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/stock-take/:id/reopen", ownerAuthMiddleware, requirePermission("stock:update"), requirePermission("stock_take:reopen"), requireAnyShopFeature(["Stock take", "Stock take / inventory count"]), asyncHandler(async (req: Request, res: Response) => {
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
     if (!session) return;
@@ -9579,7 +9708,7 @@ app.post("/api/stock-take/:id/reopen", ownerAuthMiddleware, requirePermission("s
   }
 }));
 
-app.post("/api/stock-take/:id/reverse", ownerAuthMiddleware, requirePermission("stock:update"), requirePermission("stock_take:reverse"), requireShopFeature("Stock take"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/stock-take/:id/reverse", ownerAuthMiddleware, requirePermission("stock:update"), requirePermission("stock_take:reverse"), requireAnyShopFeature(["Stock take", "Stock take / inventory count"]), asyncHandler(async (req: Request, res: Response) => {
   try {
     const session = await authorizeStockTake(req, res, Number(req.params.id));
     if (!session) return;
@@ -9759,14 +9888,27 @@ app.post("/api/admin/notify/test", adminAuthMiddleware, requirePermission("setti
   res.json(results);
 }));
 
-app.get("/api/admin/notifications/preferences", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
-  res.json(await getNotificationPreferences());
+function filterNotificationPreferencesByFeatures(preferences: Record<string, any>, features: string[]): Record<string, any> {
+  const visible: Record<string, any> = { ...preferences };
+  for (const key of Object.keys(visible)) {
+    if (key.startsWith("repair.") && !featureListIncludes(features, "Repair ticketing")) delete visible[key];
+    if (key.startsWith("warranty.") && !featureListIncludes(features, "Warranty management")) delete visible[key];
+    if (key.startsWith("software_license.") && !featureListIncludes(features, "Software license tracking")) delete visible[key];
+  }
+  return visible;
+}
+
+app.get("/api/admin/notifications/preferences", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (req: Request, res: Response) => {
+  const [preferences, features] = await Promise.all([getNotificationPreferences(), getEffectiveFeatures(req)]);
+  res.json(filterNotificationPreferencesByFeatures(preferences, features));
 }));
 
 app.put("/api/admin/notifications/preferences", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const prefs = await updateNotificationPreferences(req.body || {});
-    res.json(prefs);
+    const features = await getEffectiveFeatures(req);
+    const update = filterNotificationPreferencesByFeatures(req.body || {}, features);
+    const prefs = await updateNotificationPreferences(update);
+    res.json(filterNotificationPreferencesByFeatures(prefs, features));
   } catch (err: any) {
     res.status(400).json({ error: err?.message || "Failed to update notification preferences." });
   }
@@ -9776,12 +9918,19 @@ app.get("/api/admin/notifications/log", adminAuthMiddleware, requirePermission("
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
   const eventFilter = req.query.event ? String(req.query.event) : undefined;
-  const result = await listNotificationLog(limit, offset, eventFilter);
+  const features = await getEffectiveFeatures(req);
+  const excludedPrefixes = [
+    ...(!featureListIncludes(features, "Repair ticketing") ? ["repair."] : []),
+    ...(!featureListIncludes(features, "Warranty management") ? ["warranty."] : []),
+    ...(!featureListIncludes(features, "Software license tracking") ? ["software_license."] : []),
+  ];
+  const result = await listNotificationLog(limit, offset, eventFilter, undefined, excludedPrefixes);
   res.json(result);
 }));
 
-app.get("/api/admin/notifications/events", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ events: [
+app.get("/api/admin/notifications/events", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (req: Request, res: Response) => {
+  const features = await getEffectiveFeatures(req);
+  const events = [
     "order.created", "order.paid", "order.status_changed", "order.refunded", "order.processed",
     "payment.completed", "payment.failed",
     "customer.created", "customer.login",
@@ -9789,7 +9938,13 @@ app.get("/api/admin/notifications/events", adminAuthMiddleware, requirePermissio
     "warranty.created", "warranty.status_changed", "warranty.approved", "warranty.rejected", "warranty.resolved", "warranty.customer_update", "warranty.expiry_reminder", "warranty.expired",
     "invoice.created", "invoice.paid", "invoice.overdue",
     "subscription.changed", "subscription.expiring", "subscription.expired"
-  ] });
+  ].filter((event) => {
+    if (event.startsWith("repair.")) return featureListIncludes(features, "Repair ticketing");
+    if (event.startsWith("warranty.")) return featureListIncludes(features, "Warranty management");
+    if (event.startsWith("software_license.")) return featureListIncludes(features, "Software license tracking");
+    return true;
+  });
+  res.json({ events });
 }));
 
 // Warranty reminder lead time (days before expiry), admin configurable.
@@ -10009,6 +10164,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       // (deterministic key), so repeated sweeps never double-send.
       const sweepWarranties = async () => {
         try {
+          if (!(await isShopFeatureEntitled("Warranty management"))) return;
           const r = await runWarrantyNotificationSweep();
           if (r.reminders || r.expired) console.log(`[warranty-notify] reminders=${r.reminders} expired=${r.expired} checked=${r.checked}`);
         } catch (err: any) { console.error("[warranty-notify] Sweep error:", err.message); }
@@ -10018,6 +10174,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
       const sweepSoftwareLicenses = async () => {
         try {
+          if (!(await isShopFeatureEntitled("Software license tracking"))) return;
           const result = await runSoftwareLicenseReminderSweep();
           if (result.reminders || result.expired) console.log(`[software-license-notify] reminders=${result.reminders} expired=${result.expired} checked=${result.checked}`);
         } catch (err: any) { console.error("[software-license-notify] Sweep error:", err?.message || err); }
@@ -10030,6 +10187,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       // daily idempotency key, so overlapping instances do not spam recipients.
       const sweepRepairWorkflow = async () => {
         try {
+          if (!(await isShopFeatureEntitled("Repair ticketing"))) return;
           const due = await runRepairWorkflowSweep();
           const dayKey = new Date().toISOString().slice(0, 10);
           for (const t of due.diagnosisEscalated) {

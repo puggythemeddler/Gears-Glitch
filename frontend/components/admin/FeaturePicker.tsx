@@ -11,7 +11,7 @@ export const FEATURE_GROUPS = [
       "Product listing", "Order management", "POS integration",
       "Payment method configuration", "M-Pesa integration",
       "Discount/coupon management", "Returns management", "Customer management",
-      "Gift cards",
+      "Gift cards", "Provider management",
     ],
   },
   {
@@ -42,7 +42,7 @@ export const FEATURE_GROUPS = [
     group: "Repairs & Service",
     icon: "wrench",
     features: [
-      "Repair ticketing", "Technician accounts",
+      "Repair ticketing", "Warranty management", "Serial number tracking", "Software license tracking", "Technician accounts",
     ],
   },
   {

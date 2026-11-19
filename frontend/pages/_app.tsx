@@ -8,6 +8,7 @@ import CookieConsentBanner from "@/components/CookieConsent";
 import { FeedbackProvider } from "@/components/feedback/FeedbackProvider";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import OfflinePage from "@/components/OfflinePage";
+import { useFeatureStatus } from "@/lib/features";
 import "@/styles/globals.css";
 import "@/styles/animations.css";
 import "@/styles/marketing.css";
@@ -88,6 +89,26 @@ function PageTransition({ children }: { children: React.ReactNode }) {
   return <div className="page-enter">{children}</div>;
 }
 
+function FeatureAccessBoundary({ route, children }: { route: string; children: React.ReactNode }) {
+  const normalizedRoute = route.split("?")[0].replace(/\/$/, "") || "/";
+  const feature = ["/repairs", "/repair-book", "/repair-ticket", "/my-repairs"].includes(normalizedRoute)
+    ? "Repair ticketing"
+    : normalizedRoute === "/financing" ? "Lipa Mdogo Mdogo" : "";
+  const enabled = useFeatureStatus(feature || "__no_page_feature__");
+  if (!feature) return <>{children}</>;
+  if (enabled === null) return <main className="container" style={{ minHeight: "55vh", paddingBlock: "3rem" }} aria-live="polite">Checking page availability…</main>;
+  if (!enabled) return (
+    <main className="container" style={{ minHeight: "55vh", paddingBlock: "3rem" }}>
+      <section className="panel" role="status">
+        <h1>This page is not available</h1>
+        <p className="muted">This service is not currently offered here. Browse the store to see the services and products available.</p>
+        <a href="/" className="btn btn-primary">Back to store</a>
+      </section>
+    </main>
+  );
+  return <>{children}</>;
+}
+
 export default function MyApp({ Component, pageProps, router }: AppProps) {
   const activeNav = getActiveNav(router.asPath);
   const [offline, setOffline] = useState<false | "active" | "dismissing">(false);
@@ -122,7 +143,9 @@ export default function MyApp({ Component, pageProps, router }: AppProps) {
                 <LayoutStyles />
                 <Layout activeNav={activeNav}>
                   <PageTransition key={router.pathname}>
-                    <Component {...pageProps} />
+                    <FeatureAccessBoundary route={router.pathname}>
+                      <Component {...pageProps} />
+                    </FeatureAccessBoundary>
                   </PageTransition>
                 </Layout>
                 <CookieConsentBanner />

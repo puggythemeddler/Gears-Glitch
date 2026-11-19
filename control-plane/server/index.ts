@@ -1940,21 +1940,39 @@ app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, a
       syncToOthers: p.sync_to_others !== 0,
     }));
 
-    const results: { name: string; success: boolean; error?: string }[] = [];
-    for (const c of clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]) {
+    const results = await Promise.all((clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]).map(async (c) => {
       try {
-        const r = await fetch(`${c.render_service_url}/api/plans/sync`, {
+        const baseUrl = String(c.render_service_url || "").replace(/\/+$/, "");
+        const r = await fetch(`${baseUrl}/api/plans/sync`, {
           method: "PUT",
           headers: cpHeaders(c.cp_secret, { "Content-Type": "application/json" }),
           body: JSON.stringify({ plans: payload }),
+          // Render may need time to wake a sleeping service. Bound each client
+          // request so one unavailable tenant cannot leave Sync All hanging.
+          signal: AbortSignal.timeout(45000),
         });
-        results.push({ name: c.name, success: r.ok });
+        if (!r.ok) {
+          let detail = "";
+          try {
+            const body = await r.text();
+            if (body) {
+              try {
+                const parsed = JSON.parse(body);
+                if (typeof parsed?.error === "string") detail = parsed.error;
+              } catch { /* Keep the status if the client returned non-JSON text. */ }
+            }
+          } catch { /* The HTTP status remains useful if the response body is unavailable. */ }
+          const safeDetail = detail.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 180).trim();
+          return { name: c.name, success: false, error: `HTTP ${r.status}${safeDetail ? `: ${safeDetail}` : ""}` };
+        }
+        return { name: c.name, success: true };
       } catch (e: any) {
-        console.error(`[api] Plan sync failed for "${c.name}":`, e.message);
-        results.push({ name: c.name, success: false, error: "Plan sync failed" });
+        const timedOut = e?.name === "TimeoutError" || e?.name === "AbortError";
+        console.error(`[api] Plan sync failed for client ${c.id}:`, timedOut ? "request timed out" : e?.message || "request failed");
+        return { name: c.name, success: false, error: timedOut ? "Timed out after 45 seconds; the client backend may be asleep or unavailable." : "Could not reach the client backend. Check its deployment and Control Plane connection." };
       }
-    }
-    res.json({ results });
+    }));
+    res.json({ results, eligibleCount: clients.length });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to sync all" });
   }
@@ -2446,7 +2464,7 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
     const plan = await queryOne("SELECT * FROM custom_plans WHERE id = $1", [client.plan]).catch(() => null) as any;
     let expected = 0;
     if (plan) {
-      if (periodType === "annual" && plan.price_annual != null) expected = Number(plan.price_annual);
+      if (periodType === "annual") expected = Number(plan.price_annual) > 0 ? Number(plan.price_annual) : (Number(plan.price) || 0) * 12;
       else expected = Number(plan.price) || 0;
     }
 
@@ -2454,7 +2472,7 @@ app.post("/api/clients/:id/invoices/record-payment", requireAdmin, async (req, r
     const gen = await fetch(`${client.render_service_url}/api/admin/invoices/generate`, {
       method: "POST",
       headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ providerId: 1, planId: client.plan }),
+      body: JSON.stringify({ providerId: 1, planId: client.plan, periodType, amount: expected || amountPaid }),
     });
     const invoice: any = await gen.json();
     if (!gen.ok) { res.status(gen.status).json({ error: invoice?.error || "Failed to generate invoice" }); return; }
@@ -3241,6 +3259,38 @@ async function autoImportPlans() {
   }
 }
 
+// Keep granular repairs entitlements available on the shared Enterprise plan.
+// This is additive and idempotent: it preserves every existing feature and
+// leaves all other plans, prices and client assignments unchanged.
+async function ensureEnterpriseGranularRepairEntitlements() {
+  try {
+    const plan = await queryOne(
+      `SELECT id, features FROM custom_plans
+       WHERE LOWER(id) = 'enterprise' OR LOWER(name) = 'enterprise'
+       ORDER BY CASE WHEN LOWER(id) = 'enterprise' THEN 0 ELSE 1 END
+       LIMIT 1`
+    ) as any;
+    if (!plan) return;
+
+    let features: unknown = plan.features;
+    if (typeof features === "string") features = JSON.parse(features || "[]");
+    if (!Array.isArray(features)) {
+      console.warn("[startup-plans] Enterprise entitlements were not updated: feature list is not an array.");
+      return;
+    }
+
+    const additions = ["Warranty management", "Serial number tracking", "Software license tracking"];
+    const existing = new Set(features.filter((feature): feature is string => typeof feature === "string"));
+    const missing = additions.filter((feature) => !existing.has(feature));
+    if (!missing.length) return;
+
+    await query("UPDATE custom_plans SET features = $1 WHERE id = $2", [JSON.stringify([...features, ...missing]), plan.id]);
+    console.log(`[startup-plans] Added ${missing.length} granular repair entitlements to the Enterprise plan.`);
+  } catch (err: any) {
+    console.warn("[startup-plans] Enterprise entitlement update skipped:", err?.message || "unknown error");
+  }
+}
+
 // ─── STARTUP CLOUDINARY IMPORT ────────────────────────────
 async function autoImportCloudinary() {
   try {
@@ -3309,7 +3359,10 @@ export async function start(opts?: { background?: boolean }): Promise<import("ht
   const server = app.listen(PORT, () => {
     console.log(`[control-plane] Running on http://localhost:${PORT}`);
     if (!opts || opts.background !== false) {
-      setTimeout(autoImportPlans, 3000);
+      setTimeout(async () => {
+        await autoImportPlans();
+        await ensureEnterpriseGranularRepairEntitlements();
+      }, 3000);
       setTimeout(autoImportCloudinary, 4000);
       setTimeout(runStartupHealthCheck, 5000);
       scheduleAutoBackup();

@@ -6,9 +6,14 @@ import { PageHead } from "@/components/ui";
 import { Media } from "@/components/Media";
 import EmptyCartAnimation from "@/components/EmptyCartAnimation";
 import SantaGearAnimation from "@/components/SantaGearAnimation";
+import { useFeature } from "@/lib/features";
 
 export default function CartPage() {
   const { formatPrice, refreshCartCount } = useApp();
+  const couponsEnabled = useFeature("Discount/coupon management");
+  const giftCardsEnabled = useFeature("Gift cards");
+  const loyaltyEnabled = useFeature("Loyalty program");
+  const warrantyEnabled = useFeature("Warranty management");
   const [items, setItems] = useState<CartItem[]>([]);
   const [counties, setCounties] = useState<County[]>([]);
   const [selectedCounty, setSelectedCounty] = useState("");
@@ -53,8 +58,12 @@ export default function CartPage() {
     api<any>("/api/public-settings").then((s) => {
       if (s.mpesaTillNumber) setTillNumber(s.mpesaTillNumber);
     }).catch(() => {});
-    api<{ points: number }>("/api/loyalty/points").then((d) => setLoyaltyPoints(d.points)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!loggedIn || !loyaltyEnabled) return;
+    api<{ points: number }>("/api/loyalty/points").then((d) => setLoyaltyPoints(d.points)).catch(() => {});
+  }, [loggedIn, loyaltyEnabled]);
 
   async function loadGuestCart() {
     const guest = getGuestCart();
@@ -245,7 +254,7 @@ export default function CartPage() {
               <div className="cart-item__info">
                 <div className="cart-item__name">{item.name}</div>
                 <div className="cart-item__price">{formatPrice(item.price)}</div>
-                {item.hasWarranty && item.warrantyDuration ? (
+                {warrantyEnabled && item.hasWarranty && item.warrantyDuration ? (
                   <div style={{ fontSize: "0.8rem", color: "var(--primary)", marginTop: "0.25rem" }}>&#x1F6E1;&#xFE0F; {item.warrantyDuration}mo warranty</div>
                 ) : null}
               </div>
@@ -267,17 +276,17 @@ export default function CartPage() {
             {couponDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Coupon discount</span><span style={{ color: "var(--success)" }}>-{formatPrice(couponDiscount)}</span></div>}
             {giftCardDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Gift card</span><span style={{ color: "var(--success)" }}>-{formatPrice(giftCardDiscount)}</span></div>}
             {pointsDiscount > 0 && <div className="cart-summary__row"><span style={{ color: "var(--success)" }}>Points discount</span><span style={{ color: "var(--success)" }}>-{formatPrice(pointsDiscount)}</span></div>}
-            <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem" }}>
+            {couponsEnabled && <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem" }}>
               <input type="text" className="input" placeholder="Coupon code" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} style={{ flex: 1, minWidth: 120, fontSize: "0.85rem" }} />
               <button className="btn btn-sm" onClick={applyCoupon} style={{ fontSize: "0.85rem" }}>Apply</button>
               {couponMsg && <span style={{ fontSize: "0.8rem", color: couponDiscount > 0 ? "var(--success)" : "var(--danger)", width: "100%" }}>{couponMsg}</span>}
-            </div>
-            <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem" }}>
+            </div>}
+            {giftCardsEnabled && <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem" }}>
               <input type="text" className="input" placeholder="Gift card code" value={giftCardCode} onChange={(e) => setGiftCardCode(e.target.value)} style={{ flex: 1, minWidth: 120, fontSize: "0.85rem" }} />
               <button className="btn btn-sm" onClick={applyGiftCard} style={{ fontSize: "0.85rem" }}>Apply</button>
               {giftCardMsg && <span style={{ fontSize: "0.8rem", color: giftCardDiscount > 0 ? "var(--success)" : "var(--danger)", width: "100%" }}>{giftCardMsg}</span>}
-            </div>
-            {loyaltyPoints > 0 && (
+            </div>}
+            {loyaltyEnabled && loyaltyPoints > 0 && (
               <div className="cart-summary__row" style={{ flexWrap: "wrap", gap: "0.35rem", padding: "0.5rem 0" }}>
                 <span style={{ width: "100%", fontSize: "0.85rem", fontWeight: 600 }}>Loyalty Points: {loyaltyPoints} available</span>
                 <input type="number" className="input" placeholder="Points to redeem" value={redeemPoints || ""} onChange={(e) => setRedeemPoints(Number(e.target.value))} min={1} max={loyaltyPoints} style={{ flex: 1, minWidth: 80, fontSize: "0.85rem" }} />

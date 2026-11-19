@@ -654,13 +654,18 @@ export async function listNotificationLog(
   limit: number = 50,
   offset: number = 0,
   eventFilter?: string,
-  customerId?: number
+  customerId?: number,
+  excludedEventPrefixes: string[] = []
 ): Promise<{ logs: any[]; total: number }> {
   const { queryAll, queryOne } = await import("./db-helpers");
   const conds: string[] = [];
   const params: any[] = [];
   if (eventFilter) { params.push(eventFilter); conds.push(`event_type = $${params.length}`); }
   if (customerId) { params.push(customerId); conds.push(`customer_id = $${params.length}`); }
+  for (const prefix of excludedEventPrefixes) {
+    params.push(`${prefix}%`);
+    conds.push(`event_type NOT LIKE $${params.length}`);
+  }
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const countRow = await queryOne(`SELECT COUNT(*) as total FROM notification_log ${where}`, params) as any;
   const total = countRow?.total || 0;

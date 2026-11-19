@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS branches (
   manager_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   plan_id TEXT REFERENCES subscription_plans(id),
   is_active INTEGER NOT NULL DEFAULT 1,
+  online_fulfillment_enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (NOW()::text)
 );
 

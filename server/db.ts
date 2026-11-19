@@ -410,6 +410,7 @@ interface Branch {
   managerId: number | null;
   managerName: string;
   isActive: boolean;
+  onlineFulfillmentEnabled: boolean;
   planId: string | null;
   createdAt: string;
 }
@@ -696,6 +697,7 @@ function mapBranch(row: any): Branch {
     managerId: row.manager_id ?? null,
     managerName: row.manager_username ?? "",
     isActive: Boolean(row.is_active),
+    onlineFulfillmentEnabled: row.online_fulfillment_enabled === undefined ? true : Boolean(row.online_fulfillment_enabled),
     planId: row.plan_id ?? null,
     createdAt: row.created_at,
   };
@@ -789,6 +791,7 @@ async function initDb(): Promise<void> {
   await seedGroupsFromCategories();
   await seedClientsRow();
   await curatePlanFeatures();
+  await ensureEnterpriseGranularRepairEntitlements();
   await grantFinancingEntitlementToLegacy();
   await seedDemoProvider();
   await seedDemoCustomer();
@@ -911,7 +914,8 @@ async function curatePlanFeatures(): Promise<void> {
           "Multi-currency support", "Analytics dashboard",
           "POS integration", "Gift cards", "Barcode scanning",
           "Bulk import/export", "Bulk product edit", "Inventory forecasting",
-          "Repair ticketing", "Technician accounts", "Admin messaging",
+          "Repair ticketing", "Warranty management", "Serial number tracking",
+          "Software license tracking", "Technician accounts", "Admin messaging",
           "Loyalty program", "Campaign pages", "Cart recovery",
           "Audit log", "Visitor analytics",
           "eTIMS/KRA compliance", "Price history tracking", "SMS notifications",
@@ -926,6 +930,38 @@ async function curatePlanFeatures(): Promise<void> {
       await setStoreSetting("plan_features_curated_v2", "1");
     }
   } catch { console.warn("[db] plan feature curation skipped"); }
+}
+
+// The three repair-related capabilities became separate plan entitlements.
+// Preserve access for existing Enterprise subscribers by adding them to that
+// plan only; never replace the plan's feature list or change other plan data.
+async function ensureEnterpriseGranularRepairEntitlements(): Promise<void> {
+  try {
+    const plan = await queryOne(
+      `SELECT id, features FROM subscription_plans
+       WHERE LOWER(id) = 'enterprise' OR LOWER(name) = 'enterprise'
+       ORDER BY CASE WHEN LOWER(id) = 'enterprise' THEN 0 ELSE 1 END
+       LIMIT 1`
+    ) as any;
+    if (!plan) return;
+
+    let features: unknown = plan.features;
+    if (typeof features === "string") features = JSON.parse(features || "[]");
+    if (!Array.isArray(features)) {
+      console.warn("[db] Enterprise entitlements were not updated: feature list is not an array.");
+      return;
+    }
+
+    const additions = ["Warranty management", "Serial number tracking", "Software license tracking"];
+    const existing = new Set(features.filter((feature): feature is string => typeof feature === "string"));
+    const missing = additions.filter((feature) => !existing.has(feature));
+    if (!missing.length) return;
+
+    await query("UPDATE subscription_plans SET features = $1 WHERE id = $2", [JSON.stringify([...features, ...missing]), plan.id]);
+    console.log(`[db] Added ${missing.length} granular repair entitlements to the Enterprise plan.`);
+  } catch (err: any) {
+    console.warn("[db] Enterprise entitlement update skipped:", err?.message || "unknown error");
+  }
 }
 
 // Migration safety: installs that already had Lipa Mdogo Mdogo switched on
@@ -2076,7 +2112,7 @@ async function ensureDefaultSubscriptionPlans(): Promise<void> {
     { id: "starter", name: "Starter", description: "Perfect for small shops starting out", price: 0, price_annual: 0, tier_level: 1, max_products: 50, max_branches: 1, features: JSON.stringify(["Up to 50 products", "1 branch", "Basic support", "Order management", "Invoice/quote PDF downloads", "Messaging", "Product positioning", "Email notifications", "Customer reviews"]) },
     { id: "growth", name: "Growth", description: "For growing businesses", price: 4999, price_annual: 47990, tier_level: 2, max_products: 500, max_branches: 3, features: JSON.stringify(["Up to 500 products", "3 branches", "Priority support", "Analytics dashboard", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Product positioning", "Email notifications", "Multi-currency support", "Hero customization", "Customer reviews"]) },
     { id: "pro", name: "Pro", description: "For established shops", price: 12999, price_annual: 124790, tier_level: 3, max_products: null, max_branches: 10, features: JSON.stringify(["Unlimited products", "10 branches", "Premium support", "Advanced analytics", "Custom branding", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Product positioning", "Email notifications", "Multi-currency support", "Hero customization", "Customer reviews"]) },
-    { id: "enterprise", name: "Enterprise", description: "Custom solutions for large operations", price: 29999, price_annual: 287990, tier_level: 4, max_products: null, max_branches: 999, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Admin messaging", "Product listing", "Customer management", "Stock transfers", "Supplier management", "Product positioning", "Email notifications", "Multi-currency support", "Hero customization", "Customer reviews"]) },
+    { id: "enterprise", name: "Enterprise", description: "Custom solutions for large operations", price: 29999, price_annual: 287990, tier_level: 4, max_products: null, max_branches: 999, features: JSON.stringify(["Unlimited everything", "Dedicated support", "Custom integrations", "Order management", "Messaging", "Invoice/quote PDF downloads", "Credit notes", "Quotations", "Branch management", "Repair ticketing", "Warranty management", "Serial number tracking", "Software license tracking", "Technician accounts", "POS integration", "Inventory forecasting", "Loyalty program", "Admin messaging", "Product listing", "Customer management", "Stock transfers", "Supplier management", "Product positioning", "Email notifications", "Multi-currency support", "Hero customization", "Customer reviews"]) },
   ];
   for (const p of plans) {
     await query("INSERT INTO subscription_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [p.id, p.name, p.description, p.price, p.price_annual, p.tier_level, p.max_products, p.max_branches, p.features]);
@@ -2134,8 +2170,8 @@ async function getBranch(id: number): Promise<Branch | undefined> {
   return row ? mapBranch(row) : undefined;
 }
 
-async function createBranch(data: { name: string; address?: string; phone?: string; email?: string; managerId?: number; isActive?: boolean; planId?: string }): Promise<Branch> {
-  const result = await query("INSERT INTO branches (name, address, phone, email, manager_id, is_active, plan_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id", [data.name, data.address || "", data.phone || "", data.email || "", data.managerId || null, data.isActive !== false ? 1 : 0, data.planId || null]);
+async function createBranch(data: { name: string; address?: string; phone?: string; email?: string; managerId?: number; isActive?: boolean; onlineFulfillmentEnabled?: boolean; planId?: string }): Promise<Branch> {
+  const result = await query("INSERT INTO branches (name, address, phone, email, manager_id, is_active, online_fulfillment_enabled, plan_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id", [data.name, data.address || "", data.phone || "", data.email || "", data.managerId || null, data.isActive !== false ? 1 : 0, data.onlineFulfillmentEnabled !== false ? 1 : 0, data.planId || null]);
   const branchId = result.rows[0].id;
   if (data.planId) {
     try {
@@ -2146,7 +2182,7 @@ async function createBranch(data: { name: string; address?: string; phone?: stri
   return (await getBranch(branchId))!;
 }
 
-async function updateBranch(id: number, updates: Partial<{ name: string; address: string; phone: string; email: string; managerId: number; isActive: boolean; planId: string }>): Promise<Branch | null> {
+async function updateBranch(id: number, updates: Partial<{ name: string; address: string; phone: string; email: string; managerId: number; isActive: boolean; onlineFulfillmentEnabled: boolean; planId: string }>): Promise<Branch | null> {
   const existing = await getBranch(id);
   if (!existing) return null;
   const fields: string[] = []; const params: any[] = []; let idx = 1;
@@ -2156,6 +2192,7 @@ async function updateBranch(id: number, updates: Partial<{ name: string; address
   if (updates.email !== undefined) { fields.push(`email = $${idx}`); params.push(updates.email); idx++; }
   if (updates.managerId !== undefined) { fields.push(`manager_id = $${idx}`); params.push(updates.managerId); idx++; }
   if (updates.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(updates.isActive ? 1 : 0); idx++; }
+  if (updates.onlineFulfillmentEnabled !== undefined) { fields.push(`online_fulfillment_enabled = $${idx}`); params.push(updates.onlineFulfillmentEnabled ? 1 : 0); idx++; }
   if (updates.planId !== undefined) {
     fields.push(`plan_id = $${idx}`); params.push(updates.planId); idx++;
     try {
@@ -3551,11 +3588,15 @@ async function deleteUnpaidInvoice(id: number): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
-async function generateProviderInvoice(providerId: number | null | undefined, planId: string, options: { periodType?: "monthly" | "annual"; periodStart?: string; dueDate?: string; generationKey?: string } = {}): Promise<(Invoice & { created: boolean }) | null> {
+async function generateProviderInvoice(providerId: number | null | undefined, planId: string, options: { periodType?: "monthly" | "annual"; periodStart?: string; dueDate?: string; generationKey?: string; amount?: number } = {}): Promise<(Invoice & { created: boolean }) | null> {
   const plan = await getSubscriptionPlan(planId);
   if (!plan) return null;
   const periodType = options.periodType || "monthly";
-  if (periodType === "annual" && plan.priceAnnual == null) return null;
+  const planInvoiceAmount = periodType === "annual"
+    ? (Number(plan.priceAnnual) > 0 ? plan.priceAnnual : (Number(plan.price) || 0) * 12)
+    : plan.price;
+  const invoiceAmount = options.amount ?? planInvoiceAmount;
+  if (!Number.isFinite(Number(invoiceAmount)) || Number(invoiceAmount) <= 0) return null;
   let targetProvider = providerId ? await findProviderById(providerId) : undefined;
   if (!targetProvider) targetProvider = await getOrCreatePlatformProvider();
   const now = new Date();
@@ -3566,7 +3607,7 @@ async function generateProviderInvoice(providerId: number | null | undefined, pl
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (generation_key) WHERE generation_key IS NOT NULL DO NOTHING
      RETURNING *`,
-    [targetProvider.id, plan.id, periodType === "annual" ? plan.priceAnnual : plan.price, "KES", periodStart, periodEnd, dueDate, "", options.generationKey || null]
+    [targetProvider.id, plan.id, invoiceAmount, "KES", periodStart, periodEnd, dueDate, "", options.generationKey || null]
   );
   const created = result.rows.length > 0;
   let row = created

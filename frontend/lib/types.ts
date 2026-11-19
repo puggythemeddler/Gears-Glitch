@@ -257,6 +257,7 @@ export interface Branch {
   managerId: number | null;
   managerName: string;
   isActive: boolean;
+  onlineFulfillmentEnabled: boolean;
   planId: string | null;
   createdAt: string;
 }

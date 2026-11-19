@@ -42,6 +42,10 @@ export default function DashboardPage() {
     "Quotations": useFeature("Quotations"),
   };
   const hasFeature = (f?: string) => !f || featureFlags[f] === true;
+  const ordersEnabled = featureFlags["Order management"];
+  const repairsEnabled = featureFlags["Repair ticketing"];
+  const messagingEnabled = featureFlags["Messaging"];
+  const quotationsEnabled = featureFlags["Quotations"];
 
   useEffect(() => {
     const r = getRole();
@@ -56,18 +60,18 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!role) return;
-    loadOrders();
-    loadRepairs();
+    if (ordersEnabled) loadOrders(); else setOrders([]);
+    if (repairsEnabled) loadRepairs(); else setRepairs([]);
     loadWishlist();
-    loadQuotes();
-    loadMessages().then((c) => { prevMsgCountRef.current = c; });
+    if (quotationsEnabled) loadQuotes(); else setQuotes([]);
+    if (messagingEnabled) loadMessages().then((c) => { prevMsgCountRef.current = c; }); else setMessages([]);
     loadProfile();
-  }, [role]);
+  }, [role, ordersEnabled, repairsEnabled, quotationsEnabled, messagingEnabled]);
 
   const prevMsgCountRef = useRef(0);
 
   useEffect(() => {
-    if (!role) return;
+    if (!role || !messagingEnabled) return;
     const interval = setInterval(async () => {
       try {
         const newCount = await loadMessages();
@@ -79,7 +83,13 @@ export default function DashboardPage() {
       } catch {}
     }, 30000);
     return () => clearInterval(interval);
-  }, [role]);
+  }, [role, messagingEnabled]);
+
+  useEffect(() => {
+    if (activeSection === "repairs" && !repairsEnabled) setActiveSection("overview");
+    if (activeSection === "orders" && !ordersEnabled) setActiveSection("overview");
+    if (activeSection === "messages" && !messagingEnabled) setActiveSection("overview");
+  }, [activeSection, repairsEnabled, ordersEnabled, messagingEnabled]);
 
   async function loadOrders() {
     try {
@@ -168,10 +178,10 @@ export default function DashboardPage() {
         {activeSection === "overview" && (
           <div className="dash-section active">
             <h1>Welcome, {userName}</h1>
-            <p className="page-intro">Manage your orders, repairs, and messages.</p>
+            <p className="page-intro">Manage your orders and account{repairsEnabled ? ", repairs" : ""}{messagingEnabled ? ", and messages" : ""}.</p>
             <div className="stat-grid">
-              <div className="stat-card"><div className="stat-card__value">{orders.length}</div><div className="stat-card__label">Orders</div></div>
-              <div className="stat-card"><div className="stat-card__value">{repairs.length}</div><div className="stat-card__label">Repairs</div></div>
+              {ordersEnabled && <div className="stat-card"><div className="stat-card__value">{orders.length}</div><div className="stat-card__label">Orders</div></div>}
+              {repairsEnabled && <div className="stat-card"><div className="stat-card__value">{repairs.length}</div><div className="stat-card__label">Repairs</div></div>}
               <div className="stat-card"><div className="stat-card__value">{wishlist.length}</div><div className="stat-card__label">Wishlist</div></div>
             </div>
           </div>
@@ -232,7 +242,7 @@ export default function DashboardPage() {
         )}
 
         {/* REPAIRS */}
-        {activeSection === "repairs" && (
+        {repairsEnabled && activeSection === "repairs" && (
           <div className="dash-section active">
             <h2>My repairs</h2>
             {repairs.length === 0 ? <p className="muted">No repair tickets.</p> : (

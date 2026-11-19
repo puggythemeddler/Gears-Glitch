@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { Spinner } from "@/components/admin/shared";
 import RippleButton from "@/components/RippleButton";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
+import { useFeature } from "@/lib/features";
 
 const EVENT_LABELS: Record<string, string> = {
   "order.created": "New order",
@@ -43,6 +44,9 @@ const EVENT_LABELS: Record<string, string> = {
 
 export default function NotificationSettings() {
   const feedback = useFeedback();
+  const repairsEnabled = useFeature("Repair ticketing");
+  const warrantiesEnabled = useFeature("Warranty management");
+  const softwareLicensesEnabled = useFeature("Software license tracking");
   const [prefs, setPrefs] = useState<Record<string, { email: boolean; whatsapp: boolean }> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -64,6 +68,7 @@ export default function NotificationSettings() {
     api<any>("/api/admin/notifications/log?limit=50").then((d) => { setLogs(d.logs || []); setLogTotal(d.total || 0); setLogLoading(false); }).catch(() => setLogLoading(false));
   }
   function loadReminderDays() {
+    if (!warrantiesEnabled) return;
     api<{ days: number }>("/api/admin/notifications/warranty-reminder").then((d) => setReminderDays(d.days || 30)).catch(() => {});
   }
 
@@ -71,7 +76,7 @@ export default function NotificationSettings() {
     loadPrefs();
     loadLogs();
     loadReminderDays();
-  }, []);
+  }, [warrantiesEnabled]);
 
   function toggle(event: string, channel: "email" | "whatsapp") {
     if (!prefs) return;
@@ -136,14 +141,25 @@ export default function NotificationSettings() {
 
   if (loading) return <Spinner />;
 
-  const groups: { label: string; events: string[] }[] = [
+  const groups: { label: string; events: string[]; feature?: string }[] = [
     { label: "Orders & Payments", events: ["order.created", "order.paid", "order.status_changed", "order.refunded", "order.processed", "payment.completed", "payment.failed"] },
     { label: "Customers", events: ["customer.created", "customer.login"] },
-    { label: "Repairs", events: ["repair.created", "repair.status_changed", "repair.customer_update", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled"] },
-    { label: "Warranties", events: ["warranty.created", "warranty.status_changed", "warranty.customer_update", "warranty.expiry_reminder", "warranty.expired", "warranty.approved", "warranty.rejected", "warranty.resolved"] },
-    { label: "Software licenses", events: ["software_license.expiry_reminder", "software_license.expired"] },
+    { label: "Repairs", feature: "Repair ticketing", events: ["repair.created", "repair.status_changed", "repair.customer_update", "repair.quote_sent", "repair.quote_approved", "repair.quote_declined", "repair.completed", "repair.ready", "repair.cancelled"] },
+    { label: "Warranties", feature: "Warranty management", events: ["warranty.created", "warranty.status_changed", "warranty.customer_update", "warranty.expiry_reminder", "warranty.expired", "warranty.approved", "warranty.rejected", "warranty.resolved"] },
+    { label: "Software licenses", feature: "Software license tracking", events: ["software_license.expiry_reminder", "software_license.expired"] },
     { label: "Invoices & Subscriptions", events: ["invoice.created", "invoice.paid", "invoice.overdue", "subscription.changed", "subscription.expiring", "subscription.expired"] },
   ];
+  const visibleGroups = groups.filter((group) => !group.feature || (
+    group.feature === "Repair ticketing" ? repairsEnabled :
+    group.feature === "Warranty management" ? warrantiesEnabled : softwareLicensesEnabled
+  ));
+  const visibleLogs = logs.filter((log: any) => {
+    const event = String(log.event_type || "");
+    if (event.startsWith("repair.")) return repairsEnabled;
+    if (event.startsWith("warranty.")) return warrantiesEnabled;
+    if (event.startsWith("software_license.")) return softwareLicensesEnabled;
+    return true;
+  });
 
   return (
     <>
@@ -151,7 +167,7 @@ export default function NotificationSettings() {
 
       <div style={{ marginBottom: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
         <RippleButton variant={activeTab === "prefs" ? "primary" : "ghost"} onClick={() => setActiveTab("prefs")}>Preferences</RippleButton>
-        <RippleButton variant={activeTab === "log" ? "primary" : "ghost"} onClick={() => setActiveTab("log")}>Notification Log ({logTotal})</RippleButton>
+        <RippleButton variant={activeTab === "log" ? "primary" : "ghost"} onClick={() => setActiveTab("log")}>Notification Log ({visibleLogs.length})</RippleButton>
         <span style={{ flex: 1 }} />
         <RippleButton variant="ghost" onClick={sendTestNotification} loading={testNotifyLoading}>Send Test Notification</RippleButton>
         <RippleButton variant="ghost" onClick={sendCustomerTestNotification} loading={customerTestLoading}>Send Customer Test</RippleButton>
@@ -168,7 +184,7 @@ export default function NotificationSettings() {
 
       {activeTab === "prefs" && (
         <div className="panel" style={{ maxWidth: 760 }}>
-          {groups.map((g) => (
+          {visibleGroups.map((g) => (
             <div key={g.label} style={{ marginBottom: "1.5rem" }}>
               <h3 style={{ marginTop: 0, marginBottom: "0.5rem", fontSize: "0.95rem", textTransform: "uppercase", letterSpacing: "0.03em", color: "var(--text-secondary)" }}>{g.label}</h3>
               <div className="table-wrap" style={{ marginBottom: "1rem" }}>
@@ -197,7 +213,7 @@ export default function NotificationSettings() {
               </div>
             </div>
           ))}
-          <div style={{ marginBottom: "1.5rem" }}>
+          {warrantiesEnabled && <div style={{ marginBottom: "1.5rem" }}>
             <h3 style={{ marginTop: 0, marginBottom: "0.5rem", fontSize: "0.95rem", textTransform: "uppercase", letterSpacing: "0.03em", color: "var(--text-secondary)" }}>Warranty reminders</h3>
             <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: "0 0 0.5rem" }}>
               Send customers a reminder this many days before their warranty expires. Already-sent reminders are never repeated.
@@ -213,21 +229,21 @@ export default function NotificationSettings() {
               <input type="number" min={1} max={365} value={reminderDays} onChange={(e) => setReminderDays(Number(e.target.value) || 1)} style={{ width: 90 }} aria-label="Warranty reminder days" />
               <RippleButton variant="ghost" onClick={saveReminderDays} loading={reminderSaving}>Save Window</RippleButton>
             </div>
-          </div>
+          </div>}
           <RippleButton onClick={savePrefs} loading={saving}>Save Preferences</RippleButton>
         </div>
       )}
 
       {activeTab === "log" && (
         <div className="panel" style={{ maxWidth: 900 }}>
-          {logLoading ? <Spinner /> : logs.length === 0 ? (
+          {logLoading ? <Spinner /> : visibleLogs.length === 0 ? (
             <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>No notifications logged yet. Notifications above only log when the event fires and the channel is enabled.</p>
           ) : (
             <div className="table-wrap">
               <table className="data-table" style={{ fontSize: "0.8rem" }}>
                 <thead><tr><th>Event</th><th>Channel</th><th>Recipient</th><th>Status</th><th>Provider ID</th><th>Entity</th><th>Date</th></tr></thead>
                 <tbody>
-                  {logs.map((l: any) => (
+                  {visibleLogs.map((l: any) => (
                     <tr key={l.id}>
                       <td><span style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{l.event_type}</span></td>
                       <td><span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: 4, background: l.channel === "email" ? "var(--primary-light, #e0e7ff)" : "var(--success-light, #d1fae5)" }}>{l.channel}</span></td>

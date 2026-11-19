@@ -40,6 +40,13 @@ const STATIC_NAV_LINKS = [
   { id: "contact", label: "Contact", href: "/contact" },
 ];
 
+function isEntitledStorefrontLink(href: unknown, repairsEnabled: boolean, financingEnabled: boolean): boolean {
+  const path = typeof href === "string" ? href.trim().toLowerCase().split(/[?#]/, 1)[0].replace(/\/$/, "") : "";
+  if (["/repairs", "/repair-book", "/repair-ticket", "/my-repairs"].some((route) => path === route || path.startsWith(route + "/"))) return repairsEnabled;
+  if (path === "/financing" || path.startsWith("/financing/")) return financingEnabled;
+  return true;
+}
+
 export default function Layout({ children, activeNav }: LayoutProps) {
   const { isLoggedIn, userName, cartCount, settings, settingsLoaded, isDark, toggleDark, logout } = useApp();
   const [isStaff, setIsStaff] = useState(false);
@@ -54,6 +61,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { configLoading, layout } = useLayout();
   const multiCurrencyEnabled = useFeature("Multi-currency support");
+  const repairsEnabled = useFeature("Repair ticketing");
+  const financingEnabled = useFeature("Lipa Mdogo Mdogo");
   const [navLinks, setNavLinks] = useState(NAV_LINKS);
   const [footerConfig, setFooterConfig] = useState<any>(null);
   const router = useRouter();
@@ -119,7 +128,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
     for (const s of STATIC_NAV_LINKS) {
       if (!byId.has(s.id)) merged.push(s);
     }
-    return merged;
+    return merged.filter((link: any) => isEntitledStorefrontLink(link.href, repairsEnabled, financingEnabled));
   })();
 
   // Cart and wishlist already have persistent icon links in the header; avoid
@@ -131,9 +140,11 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   // defaults below are the real storefront destinations (all routes that exist),
   // so the footer is never an empty shell before one is saved.
   const footerColumns: any[] = (() => {
-    if (footerConfig?.columns?.length) return footerConfig.columns;
+    let columns: any[];
+    if (footerConfig?.columns?.length) columns = footerConfig.columns;
+    else {
     const catLinks = categories.slice(0, 6).map((c) => ({ label: c.label, href: "/" + c.id }));
-    return [
+    columns = [
       { title: "Shop", links: [...catLinks, { label: "All products", href: "/" }] },
       {
         title: "Support",
@@ -166,6 +177,10 @@ export default function Layout({ children, activeNav }: LayoutProps) {
         ],
       },
     ];
+    }
+    return columns
+      .map((column) => ({ ...column, links: (column.links || []).filter((link: any) => isEntitledStorefrontLink(link?.href, repairsEnabled, financingEnabled)) }))
+      .filter((column) => column.links.length > 0);
   })();
 
   function closeTransientMenus() {
@@ -381,7 +396,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
           </div>}
         </div>
         <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) router.push(`/?search=${encodeURIComponent(q)}`); }}>
-          <input className="header-search-input" name="q" type="search" placeholder="Search PCs, laptops, GPUs, repairs..." aria-label="Search products" />
+          <input className="header-search-input" name="q" type="search" placeholder={repairsEnabled ? "Search products and repairs..." : "Search products..."} aria-label="Search products" />
           <button type="submit" aria-label="Search">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
@@ -570,7 +585,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                 ) : (
                   storeName ? <span className="footer-brand-name">{storeName}</span> : <span className="footer-brand-name footer-brand-placeholder" aria-hidden="true" />
                 )}
-                <p className="footer-tagline">Kenya&apos;s trusted tech platform for gaming PCs, laptops, graphics cards, servers and accessories &mdash; plus real repairs with live tracking.</p>
+                <p className="footer-tagline">{repairsEnabled ? "Shop devices, accessories and expert repairs with live tracking." : "Shop devices and accessories online."}</p>
                 {(settings?.storePhone || settings?.storeEmail) && (
                   <div className="footer-contact">
                     {settings.storePhone && <span>{settings.storePhone}</span>}

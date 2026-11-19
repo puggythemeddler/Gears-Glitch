@@ -248,6 +248,14 @@
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center; }
     .modal-overlay.show { display: flex; }
     .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.5rem; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
+    .plan-modal { width: min(96vw, 1200px); max-width: 96vw; height: min(92dvh, 920px); max-height: 92dvh; display: flex; flex-direction: column; overflow: hidden; padding: 1.25rem; }
+    .plan-modal h2 { flex: 0 0 auto; }
+    .plan-modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0.25rem 0.2rem 0.5rem 0; scrollbar-gutter: stable; }
+    .plan-modal .form-grid { margin-bottom: 0.25rem; }
+    .plan-feature-field { margin-bottom: 0; }
+    .plan-feature-field .feature-hint { color: var(--text-muted); font-weight: 400; }
+    #feature-groups-container { min-height: 240px; height: clamp(240px, 38vh, 460px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    .plan-modal .modal-actions { flex: 0 0 auto; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); background: var(--surface); }
     .modal h2 { margin-bottom: 0.5rem; font-size: 1.1rem; }
     .modal .subtitle { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; }
     .field { margin-bottom: 1rem; }
@@ -264,6 +272,9 @@
     .detail-item { }
     .detail-item .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
     .detail-item .value { font-size: 0.95rem; margin-top: 0.2rem; }
+    /* Keep long client records usable even if a previously opened dialog left body scrolling locked. */
+    .client-detail-view { max-height: calc(100dvh - 9rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 0.25rem 1rem 0; }
+    .client-detail-view:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
     /* Shared status-notice language: compact stamp, clear copy, no stock checkmark slide. */
     .toast-container { position: fixed; top: calc(4.5rem + env(safe-area-inset-top, 0px)); right: 1.25rem; display: flex; flex-direction: column; gap: 0.625rem; z-index: 200; width: min(420px, calc(100vw - 2rem)); pointer-events: none; }
@@ -290,6 +301,7 @@
 
     @media (max-width: 768px) {
       .app-top { position: static; }
+      .client-detail-view { max-height: calc(100dvh - 12rem); }
       .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
       .tabs::-webkit-scrollbar { display: none; }
       .tab { white-space: nowrap; padding: 0.7rem 1rem; }
@@ -315,6 +327,9 @@
       .brand-sub { display: none; }
       .stat-card .value { font-size: 1.5rem; }
       .modal { padding: 1rem; }
+      .plan-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; padding: 0.75rem; }
+      #feature-groups-container { min-height: 240px; height: 38vh; }
+      .plan-modal .modal-actions { position: sticky; bottom: 0; }
       .detail-panel { padding: 1rem; }
       .toolbar input[type="search"] { max-width: none; }
       .header-actions { width: 100%; }
@@ -577,7 +592,7 @@
       <div id="ops-platform" style="display:none"><div class="empty"><p>Loading…</p></div></div>
     </div>
 
-    <div id="tab-client-detail" role="region" aria-label="Client details" style="display:none">
+    <div id="tab-client-detail" class="client-detail-view" role="region" aria-label="Client details. Scroll this panel to see invoices and branch details." tabindex="0" style="display:none">
       <div class="page-head">
         <div>
           <button class="btn btn-ghost btn-sm" onclick="closeClientDetails()" style="margin-right:0.5rem">&larr; Back</button>
@@ -732,8 +747,8 @@
       <p class="subtitle" id="payment-client-name"></p>
       <div class="form-grid">
         <div class="field"><label for="pay-expected">Expected Amount (KES)</label><input type="number" id="pay-expected" readonly></div>
-        <div class="field"><label for="pay-amount">Amount Paid (KES)</label><input type="number" id="pay-amount" min="0" oninput="updatePaymentBalance()"></div>
-        <div class="field"><label for="pay-period">Period</label><select id="pay-period" onchange="updatePaymentDate()"><option value="monthly">Monthly (30 days)</option><option value="annual">Annual (365 days)</option></select></div>
+        <div class="field"><label for="pay-amount">Amount Paid (KES)</label><input type="number" id="pay-amount" min="0" readonly aria-describedby="pay-note"><small class="muted">Set by the selected plan and billing period.</small></div>
+        <div class="field"><label for="pay-period">Period</label><select id="pay-period" onchange="updatePaymentDate(true)"><option value="monthly">Monthly (30 days)</option><option value="annual">Annual (365 days)</option></select></div>
         <div class="field"><label for="pay-next-date">Next Payment Date</label><input type="date" id="pay-next-date"></div>
       </div>
       <div id="pay-note" style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem"></div>
@@ -774,25 +789,27 @@
 
   <!-- Plan Modal (full-screen editor) -->
   <div class="modal-overlay" id="plan-modal-overlay">
-    <div class="modal" style="width:min(96vw,1200px);max-width:96vw;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;padding:1.25rem">
+    <div class="modal plan-modal">
       <h2 id="plan-modal-title">Create Plan</h2>
-      <div class="form-grid">
-        <div class="field"><label for="plan-id">Plan ID</label><input type="text" id="plan-id" placeholder="e.g. custom-basic"></div>
-        <div class="field"><label for="plan-name">Name</label><input type="text" id="plan-name" placeholder="e.g. Custom Basic"></div>
-        <div class="field"><label for="plan-price">Monthly Price (KES)</label><input type="number" id="plan-price" value="0" min="0"></div>
-        <div class="field"><label for="plan-price-annual">Annual Price (KES)</label><input type="number" id="plan-price-annual" value="0" min="0"></div>
-        <div class="field"><label for="plan-tier">Tier Level</label><input type="number" id="plan-tier" value="1" min="1"></div>
-        <div class="field"><label for="plan-max-products">Max Products</label><input type="number" id="plan-max-products" value="50" min="0"></div>
-        <div class="field"><label for="plan-max-branches">Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
-        <div class="field" style="display:flex;align-items:end;gap:1rem;flex-wrap:wrap">
-          <label style="margin:0"><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label>
-          <label style="margin:0" title="When on, client admins may submit changes to this plan for control-plane approval"><input type="checkbox" id="plan-sync-others" checked> Allow client sharing requests</label>
+      <div class="plan-modal-body">
+        <div class="field plan-feature-field">
+          <label id="plan-features-label" for="feature-groups-container">Features <span class="feature-hint">(scroll within this list to see all groups)</span></label>
+          <div id="feature-groups-container" role="group" aria-labelledby="plan-features-label" tabindex="0" style="border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
         </div>
-      </div>
-      <div class="field"><label for="plan-desc">Description</label><input type="text" id="plan-desc" placeholder="e.g. For small shops"></div>
-      <div class="field" style="flex:1;min-height:0;display:flex;flex-direction:column;margin-bottom:1rem">
-        <label id="plan-features-label">Features</label>
-        <div id="feature-groups-container" role="group" aria-labelledby="plan-features-label" style="flex:1;min-height:0;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem"></div>
+        <div class="form-grid">
+          <div class="field"><label for="plan-id">Plan ID</label><input type="text" id="plan-id" placeholder="e.g. custom-basic"></div>
+          <div class="field"><label for="plan-name">Name</label><input type="text" id="plan-name" placeholder="e.g. Custom Basic"></div>
+          <div class="field"><label for="plan-price">Monthly Price (KES)</label><input type="number" id="plan-price" value="0" min="0" step="0.01"><small class="muted">Standard annual amount: <strong id="plan-price-annual-calculated">KES 0</strong> (12 × monthly).</small></div>
+          <div class="field"><label for="plan-price-annual">Special Annual Price (KES, optional)</label><input type="number" id="plan-price-annual" value="" min="0" step="0.01" placeholder="Leave blank to use 12 × monthly"><small class="muted">When set, this overrides the calculated amount for annual subscriptions.</small></div>
+          <div class="field"><label for="plan-tier">Tier Level</label><input type="number" id="plan-tier" value="1" min="1"></div>
+          <div class="field"><label for="plan-max-products">Max Products</label><input type="number" id="plan-max-products" value="50" min="0"></div>
+          <div class="field"><label for="plan-max-branches">Max Branches</label><input type="number" id="plan-max-branches" value="1" min="1"></div>
+          <div class="field" style="display:flex;align-items:end;gap:1rem;flex-wrap:wrap">
+            <label style="margin:0"><input type="checkbox" id="plan-active" checked> Active (visible to clients)</label>
+            <label style="margin:0" title="When on, client admins may submit changes to this plan for control-plane approval"><input type="checkbox" id="plan-sync-others" checked> Allow client sharing requests</label>
+          </div>
+        </div>
+        <div class="field"><label for="plan-desc">Description</label><input type="text" id="plan-desc" placeholder="e.g. For small shops"></div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="hidePlanModal()">Cancel</button>
@@ -946,11 +963,11 @@
     }
 
     const FEATURE_GROUPS = [
-      { group: "Core Commerce", icon: "💳", features: ["Product listing","Order management","POS integration","Payment method configuration","M-Pesa integration","Discount/coupon management","Returns management","Customer management","Gift cards"] },
+      { group: "Core Commerce", icon: "💳", features: ["Product listing","Order management","POS integration","Payment method configuration","M-Pesa integration","Discount/coupon management","Returns management","Customer management","Gift cards","Provider management"] },
       { group: "Inventory & Stock", icon: "📦", features: ["Low stock alerts","Stock take","Stock control","Stock transfers","Supplier management","Purchase order management","Barcode scanning","Bulk import/export","Bulk product edit","Inventory forecasting"] },
       { group: "Invoicing & Finance", icon: "🧾", features: ["Tax invoices with VAT breakdown","Invoice/quote PDF downloads","Credit notes","Quotations","Price history tracking"] },
       { group: "Financing", icon: "🤝", features: ["Lipa Mdogo Mdogo"] },
-      { group: "Repairs & Service", icon: "🔧", features: ["Repair ticketing","Technician accounts"] },
+      { group: "Repairs & Service", icon: "🔧", features: ["Repair ticketing","Warranty management","Serial number tracking","Software license tracking","Technician accounts"] },
       { group: "Customer Engagement", icon: "💬", features: ["Messaging","Admin messaging","Email notifications","SMS notifications","Product reviews & ratings","Customer reviews","Loyalty program"] },
       { group: "WhatsApp & Communication", icon: "📱", features: ["WhatsApp integration"] },
       { group: "Multi-Location", icon: "🏢", features: ["Branch management","Multi-branch support","Client/tenant management"] },
@@ -2031,7 +2048,7 @@
             </div>
             <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">${esc(p.description || 'No description')}</div>
             <div style="font-size:1.15rem;font-weight:700;color:var(--primary-strong);margin-bottom:0.25rem">KES ${Number(p.price).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;color:var(--text-secondary)">/mo</span></div>
-            ${p.price_annual ? `<div style="font-size:0.85rem;color:var(--primary-strong);margin-bottom:0.25rem">KES ${Number(p.price_annual).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;color:var(--text-secondary)">/yr</span></div>` : ''}
+            ${Number((Number(p.price_annual) > 0 ? p.price_annual : Number(p.price || 0) * 12)) > 0 ? `<div style="font-size:0.85rem;color:var(--primary-strong);margin-bottom:0.25rem">KES ${Number(Number(p.price_annual) > 0 ? p.price_annual : Number(p.price || 0) * 12).toLocaleString()}<span style="font-size:0.75rem;font-weight:400;color:var(--text-secondary)">/yr${Number(p.price_annual) > 0 ? ' · special' : ''}</span></div>` : ''}
             <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem">Tier ${p.tier_level} · ${p.max_products || '∞'} products · ${p.max_branches || '∞'} branches</div>
             ${features.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.5rem">${features.slice(0, 12).map(f => `<span style="font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--tint-primary);color:var(--primary-strong)">${esc(f)}</span>`).join('')}${features.length > 12 ? `<span style="font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:4px;background:var(--border);color:var(--text-secondary)">+${features.length - 12} more</span>` : ''}</div>` : ''}
           </div>`;
@@ -2097,16 +2114,32 @@
       });
     }
 
+    function formatPlanPrice(value) {
+      if (!Number.isFinite(value)) return "";
+      const rounded = Math.round((value + Number.EPSILON) * 100) / 100;
+      return String(rounded);
+    }
+
+    function syncPlanPriceFields() {
+      const monthly = document.getElementById("plan-price");
+      const calculated = document.getElementById("plan-price-annual-calculated");
+      calculated.textContent = monthly.value === "" ? "—" : "KES " + Number(monthly.value * 12).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    document.getElementById("plan-price").addEventListener("input", syncPlanPriceFields);
+
     function showPlanModal(plan) {
       editingPlanId = plan ? plan.id : null;
       editingPlanFeatures = plan ? parsePlanFeatures(plan.features) : [];
+      const monthlyPrice = plan ? Number(plan.price) || 0 : 0;
       document.getElementById("plan-modal-title").textContent = plan ? "Edit Plan" : "Create Plan";
       document.getElementById("plan-id").value = plan ? plan.id : "";
       document.getElementById("plan-id").disabled = !!plan;
       document.getElementById("plan-name").value = plan ? plan.name : "";
       document.getElementById("plan-desc").value = plan ? (plan.description || "") : "";
-      document.getElementById("plan-price").value = plan ? plan.price : 0;
-      document.getElementById("plan-price-annual").value = plan ? (plan.price_annual || 0) : 0;
+      document.getElementById("plan-price").value = formatPlanPrice(monthlyPrice);
+      document.getElementById("plan-price-annual").value = plan && plan.price_annual != null ? formatPlanPrice(Number(plan.price_annual)) : "";
+      syncPlanPriceFields();
       document.getElementById("plan-tier").value = plan ? plan.tier_level : 1;
       document.getElementById("plan-max-products").value = plan ? (plan.max_products || 0) : 50;
       document.getElementById("plan-max-branches").value = plan ? (plan.max_branches || 1) : 1;
@@ -2123,7 +2156,8 @@
       const name = document.getElementById("plan-name").value.trim();
       const desc = document.getElementById("plan-desc").value.trim();
       const price = Number(document.getElementById("plan-price").value) || 0;
-      const priceAnnual = Number(document.getElementById("plan-price-annual").value) || 0;
+      const specialAnnualValue = document.getElementById("plan-price-annual").value.trim();
+      const priceAnnual = specialAnnualValue === "" ? null : Number(specialAnnualValue);
       const tier = Number(document.getElementById("plan-tier").value) || 1;
       const maxProducts = Number(document.getElementById("plan-max-products").value) || 0;
       const maxBranches = Number(document.getElementById("plan-max-branches").value) || 1;
@@ -2132,12 +2166,13 @@
       const syncToOthers = document.getElementById("plan-sync-others").checked;
 
       if (!name) { toast("Name required", "error"); return; }
+      if (priceAnnual !== null && (!Number.isFinite(priceAnnual) || priceAnnual < 0)) { toast("Special annual price must be a valid non-negative amount.", "error"); return; }
 
       try {
         if (editingPlanId) {
-          await api("/api/plans/" + editingPlanId, { method: "PUT", body: JSON.stringify({ name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
+          await api("/api/plans/" + editingPlanId, { method: "PUT", body: JSON.stringify({ name, description: desc, price, priceAnnual, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
         } else {
-          await api("/api/plans", { method: "POST", body: JSON.stringify({ id, name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
+          await api("/api/plans", { method: "POST", body: JSON.stringify({ id, name, description: desc, price, priceAnnual, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
         }
         toast("Plan saved."); hidePlanModal(); loadPlans();
       } catch (e) { toast("Failed: " + e.message, "error"); }
@@ -2186,7 +2221,16 @@
           try {
             const data = await api("/api/plans/sync-all", { method: "POST" });
             const r = data.results || [];
-            toast(`Synced: ${r.filter(x=>x.success).length} OK, ${r.filter(x=>!x.success).length} failed`);
+            const succeeded = r.filter(x => x.success);
+            const failed = r.filter(x => !x.success);
+            if (!r.length) {
+              toast("No active clients with backend URLs were found.", "info");
+            } else if (!failed.length) {
+              toast(`Plans synced to all ${succeeded.length} active client${succeeded.length === 1 ? "" : "s"}.`);
+            } else {
+              const failureSummary = failed.map(x => `${x.name}: ${x.error || "sync failed"}`).join("; ");
+              toast(`Plans synced to ${succeeded.length}/${r.length} clients. Failed: ${failureSummary}`, "error");
+            }
           } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });
@@ -2861,7 +2905,7 @@
         const planRows = (data.plan_split || []).map(p => {
           const clients = Number(p.clients || 0);
           const monthly = Number(p.price || 0);
-          const annual = Number(p.price_annual || 0);
+          const annual = Number(p.price_annual) > 0 ? Number(p.price_annual) : monthly * 12;
           return `<tr>
             <td>${esc(p.plan)}</td>
             <td>${esc(p.plan_name)}</td>
@@ -3553,7 +3597,7 @@
 
     function hidePaymentModal() { closeModal(document.getElementById("payment-modal-overlay")); }
 
-    function updatePaymentDate() {
+    function updatePaymentDate(updateAmount = false) {
       const period = document.getElementById("pay-period").value;
       const days = period === "annual" ? 365 : 30;
       const c = allClients.find(x => x.id === currentDetailClientId) || null;
@@ -3564,7 +3608,7 @@
       document.getElementById("pay-next-date").value = next.toISOString().slice(0, 10);
 
       const plan = c ? (paymentPlans.find(p => p.id === c.plan) || null) : null;
-      let expected = period === "annual" && plan && plan.price_annual != null ? Number(plan.price_annual) : (plan ? Number(plan.price) || 0 : 0);
+      let expected = plan ? (period === "annual" ? (Number(plan.price_annual) > 0 ? Number(plan.price_annual) : (Number(plan.price) || 0) * 12) : (Number(plan.price) || 0)) : 0;
       const note = document.getElementById("pay-note");
       if (expected <= 0 && pendingInvoiceAmount > 0) {
         expected = period === "annual" ? pendingInvoiceAmount * 12 : pendingInvoiceAmount;
@@ -3573,6 +3617,7 @@
         note.textContent = plan ? "Amount from the " + plan.name + " plan." : "";
       }
       document.getElementById("pay-expected").value = expected;
+      if (updateAmount) document.getElementById("pay-amount").value = expected > 0 ? expected : "";
       updatePaymentBalance();
     }
 

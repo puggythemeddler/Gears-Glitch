@@ -15,6 +15,7 @@ import { getBearerToken, verifyToken } from "./auth";
 import {
   applyFeatureOverrides,
   featureListIncludes,
+  featureListIncludesAny,
   isBranchFeatureEnabled,
   normalizeBranchFeatureOverrides,
   parseBranchFeatureOverrides,
@@ -30,6 +31,12 @@ const STAFF_ROLES = new Set(["admin", "owner", "technician", "manager", "staff"]
 
 export async function getShopFeatureOverrides(): Promise<FeatureOverrides> {
   return parseFeatureOverrides(await getStoreSetting(SHOP_OVERRIDES_KEY));
+}
+
+export async function isShopFeatureEntitled(feature: string): Promise<boolean> {
+  const plan = await getShopPlan();
+  const effective = applyFeatureOverrides(plan?.features || [], await getShopFeatureOverrides());
+  return featureListIncludes(effective, feature);
 }
 
 export async function saveShopFeatureOverrides(overrides: unknown): Promise<void> {
@@ -86,6 +93,22 @@ export function requireShopFeature(feature: string) {
       next();
     } catch (err: any) {
       console.error("[requireShopFeature]", err?.message || err);
+      next(err);
+    }
+  };
+}
+
+export function requireAnyShopFeature(features: string[]) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const effective = await getEffectiveFeatures(req);
+      if (!featureListIncludesAny(effective, features)) {
+        res.status(403).json({ error: "This feature is not included in your plan." });
+        return;
+      }
+      next();
+    } catch (err: any) {
+      console.error("[requireAnyShopFeature]", err?.message || err);
       next(err);
     }
   };

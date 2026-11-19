@@ -10,7 +10,7 @@ import EmptyState from "@/components/EmptyState";
 import { getLayoutList, useLayout } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import NotificationBell from "@/components/NotificationBell";
-import { useFeature } from "@/lib/features";
+import { fetchActiveFeatures, useFeature } from "@/lib/features";
 import { HERO_EFFECTS_DEFAULT, HERO_MOTION_INTENSITIES, HERO_INTENSITY_LABELS, normalizeHeroEffects } from "@/lib/hero-effects";
 import type { HeroEffectsConfig, HeroMotionIntensity } from "@/lib/hero-effects";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
@@ -114,7 +114,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   {
     label: "Sales",
     items: [
-      { key: "orders", label: "Orders" },
+      { key: "orders", label: "Orders", feature: "Order management" },
       { key: "pos", label: "POS", feature: "POS integration" },
       { key: "quotations", label: "Quotations", feature: "Quotations" },
       { key: "invoices", label: "Invoices", feature: "Invoice/quote PDF downloads" },
@@ -128,22 +128,22 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   {
     label: "Catalog",
     items: [
-      { key: "products", label: "Products" },
-      { key: "price-list", label: "Price List" },
-      { key: "groups", label: "Groups" },
-      { key: "categories", label: "Categories" },
-      { key: "category-positioning", label: "Category Order" },
+      { key: "products", label: "Products", feature: "Product listing" },
+      { key: "price-list", label: "Price List", feature: "Product listing" },
+      { key: "groups", label: "Groups", feature: "Product listing" },
+      { key: "categories", label: "Categories", feature: "Product listing" },
+      { key: "category-positioning", label: "Category Order", feature: "Product listing" },
       { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
     ],
   },
   {
     label: "Inventory",
     items: [
-      { key: "stock-on-hand", label: "Stock on Hand", feature: "Low stock alerts" },
+      { key: "stock-on-hand", label: "Stock on Hand", feature: "Stock control" },
       { key: "stock-transfers", label: "Stock Transfers", feature: "Stock transfers" },
       { key: "stock-take", label: "Stock Take", features: ["Stock take", "Stock take / inventory count"] },
       { key: "stock-control", label: "Stock Control", features: ["Stock control", "Stock take / inventory count"] },
-      { key: "serials", label: "Serial Numbers" },
+      { key: "serials", label: "Serial Numbers", feature: "Serial number tracking" },
       { key: "purchases", label: "Purchase Orders", feature: "Purchase order management" },
       { key: "suppliers", label: "Suppliers", feature: "Supplier management" },
     ],
@@ -151,21 +151,21 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   {
     label: "Customers",
     items: [
-      { key: "customers", label: "Customers" },
+      { key: "customers", label: "Customers", feature: "Customer management" },
     ],
   },
   {
     label: "Services",
     items: [
       { key: "repairs", label: "Repairs", feature: "Repair ticketing" },
-      { key: "warranties", label: "Warranty", feature: "Invoice/quote PDF downloads" },
+      { key: "warranties", label: "Warranty", feature: "Warranty management" },
     ],
   },
   {
     label: "Team",
     items: [
       { key: "users", label: "Users", feature: "Multiple staff accounts" },
-      { key: "roles", label: "Roles" },
+      { key: "roles", label: "Roles", feature: "Multiple staff accounts" },
       { key: "clients", label: "Clients", feature: "Client/tenant management" },
       { key: "branches", label: "Branches", feature: "Branch management" },
     ],
@@ -174,9 +174,9 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     label: "Finance",
     items: [
       { key: "financing", label: "Lipa Mdogo Mdogo", feature: "Lipa Mdogo Mdogo" },
-      { key: "providers", label: "Providers" },
+      { key: "providers", label: "Providers", feature: "Provider management" },
       { key: "shop-subscription", label: "Subscription" },
-      { key: "plans", label: "Subscription Plans" },
+      { key: "plans", label: "Subscription Plans", feature: "Client/tenant management" },
     ],
   },
   {
@@ -184,7 +184,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     items: [
       { key: "reports", label: "Reports", feature: "Analytics dashboard" },
       { key: "messages", label: "Messages", feature: "Messaging" },
-      { key: "reviews", label: "Reviews", feature: "Product reviews & ratings" },
+      { key: "reviews", label: "Reviews", features: ["Product reviews & ratings", "Customer reviews"] },
       { key: "audit", label: "Audit Log", feature: "Audit log" },
     ],
   },
@@ -205,7 +205,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
       { key: "notifications-settings", label: "Notifications" },
       { key: "about-us", label: "About Us" },
-      { key: "spec-templates", label: "Spec Templates" },
+      { key: "spec-templates", label: "Spec Templates", feature: "Spec templates" },
     ],
   },
   {
@@ -305,12 +305,26 @@ export default function AdminPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState<string[]>(["Sales", "Inventory", "Customers", "Services", "Team"]);
   const [navQuery, setNavQuery] = useState("");
+  const [featuresReady, setFeaturesReady] = useState(false);
   const router = useRouter();
   const featureFlags: Record<string, boolean> = {
+    "Product listing": useFeature("Product listing"),
+    "Order management": useFeature("Order management"),
+    "Customer management": useFeature("Customer management"),
+    "Payment method configuration": useFeature("Payment method configuration"),
+    "Provider management": useFeature("Provider management"),
+    "Spec templates": useFeature("Spec templates"),
+    "Bulk import/export": useFeature("Bulk import/export"),
+    "Bulk product edit": useFeature("Bulk product edit"),
+    "Price history tracking": useFeature("Price history tracking"),
+    "Returns management": useFeature("Returns management"),
     "Messaging": useFeature("Messaging"),
     "Credit notes": useFeature("Credit notes"),
     "Quotations": useFeature("Quotations"),
     "Repair ticketing": useFeature("Repair ticketing"),
+    "Warranty management": useFeature("Warranty management"),
+    "Serial number tracking": useFeature("Serial number tracking"),
+    "Software license tracking": useFeature("Software license tracking"),
     "Product positioning": useFeature("Product positioning"),
     "Email notifications": useFeature("Email notifications"),
     "Stock transfers": useFeature("Stock transfers"),
@@ -339,6 +353,11 @@ export default function AdminPage() {
     "Cart recovery": useFeature("Cart recovery"),
     "Lipa Mdogo Mdogo": useFeature("Lipa Mdogo Mdogo"),
   };
+  useEffect(() => {
+    let active = true;
+    fetchActiveFeatures().finally(() => { if (active) setFeaturesReady(true); });
+    return () => { active = false; };
+  }, []);
   const hasFeature = (f?: string) => !f || featureFlags[f] === true;
   // A nav item gated by `features: [...]` is visible if ANY listed feature is enabled
   // (OR semantics). Lets the old combined "Stock take / inventory count" flag keep
@@ -372,8 +391,8 @@ export default function AdminPage() {
   }, [view]);
 
   useEffect(() => {
-    if (view !== "dashboard" && !allVisibleKeys.includes(view)) setView("dashboard");
-  }, [view, allVisibleKeys]);
+    if (featuresReady && view !== "dashboard" && !allVisibleKeys.includes(view)) setView("dashboard");
+  }, [view, allVisibleKeys, featuresReady]);
 
   // ---- URL sync: deep-linkable views (?view=repairs) with working Back ----
   const ALL_VIEW_KEYS = useMemo(() => new Set<string>(["dashboard", ...NAV_GROUPS.flatMap((g) => g.items.map((i) => i.key))]), []);
@@ -720,7 +739,7 @@ export default function AdminPage() {
               <span className="admin-topbar-role">{staffRole}</span>
             </div>
             <div className="admin-topbar-actions">
-              <button type="button" className="admin-topbar-btn primary" onClick={() => { window.location.href = "/pos"; }} aria-label="Open POS" title="Open point of sale">POS</button>
+              {featureFlags["POS integration"] && <button type="button" className="admin-topbar-btn primary" onClick={() => { window.location.href = "/pos"; }} aria-label="Open POS" title="Open point of sale">POS</button>}
               {featureFlags["Messaging"] && canAccess("messages") && <NotificationBell onClick={() => setView("messages")} />}
               <button type="button" className="admin-topbar-btn" onClick={() => setView("help")} aria-label="Help" title="Help &amp; keyboard shortcuts (?)">?</button>
               <button type="button" className="admin-topbar-btn" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} title={isDark ? "Switch to light theme" : "Switch to dark theme"}>
@@ -898,34 +917,40 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
   const isAdmin = staffRole === "admin";
   const hasPerm = (p: string) => isAdmin || staffPermissions.includes(p);
   const { data: stats, loading: statsLoading, error: statsError } = useFetch(() => api<any>("/api/backoffice/stats"), []);
-  const { data: products, loading: prodLoading, error: prodError } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
+  const productListingEnabled = useFeature("Product listing");
+  const { data: products, loading: prodLoading, error: prodError } = useFetch(() => productListingEnabled ? api<{ products: Product[] }>("/api/products?includeHidden=1") : Promise.resolve(null), [productListingEnabled]);
   const { data: subReq, loading: subLoading, error: subError } = useFetch(() => isAdmin ? api<any>("/api/shop/subscription/requests") : Promise.resolve(null), []);
 
   // Today's numbers
   const today = reportToday();
   const recentTrend = reportDateRange("14d");
   const monthStart = `${today.slice(0, 7)}-01`;
-  const canOrders = hasPerm("order:view");
+  const orderManagementEnabled = useFeature("Order management");
+  const stockControlEnabled = useFeature("Stock control");
+  const messagingEnabled = useFeature("Messaging");
+  const multipleStaffEnabled = useFeature("Multiple staff accounts");
+  const canOrders = hasPerm("order:view") && orderManagementEnabled;
   const { data: todayReport, loading: todayLoading, error: todayError } = useFetch(
     () => canOrders ? api<any>(`/api/reports/sales?from=${today}&to=${today}`) : Promise.resolve(null),
-    [today]
+    [today, canOrders]
   );
   const { data: monthReport, loading: monthLoading, error: monthError } = useFetch(
     () => canOrders ? api<any>(`/api/reports/sales?from=${monthStart}&to=${today}`) : Promise.resolve(null),
-    [monthStart, today]
+    [monthStart, today, canOrders]
   );
   const { data: allTimeReport, loading: allTimeLoading, error: allTimeError } = useFetch(
     () => canOrders ? api<any>(`/api/reports/sales?from=1970-01-01&to=2099-12-31`) : Promise.resolve(null),
-    []
+    [canOrders]
   );
 
   // Attention panel data
-  const canStock = hasPerm("stock:list");
-  const canRepairs = hasPerm("repair:list");
-  const canMessages = hasPerm("messaging:view");
-  const { data: lowStock, loading: stockLoading, error: stockError } = useFetch(() => canStock ? api<any>("/api/stock/low-items") : Promise.resolve(null), []);
-  const { data: repairs, loading: repairsLoading, error: repairsError } = useFetch(() => canRepairs ? api<any>("/api/repairs") : Promise.resolve(null), []);
-  const { data: messages, loading: messagesLoading, error: messagesError } = useFetch(() => canMessages ? api<any>("/api/admin/messages") : Promise.resolve(null), []);
+  const canStock = hasPerm("stock:list") && stockControlEnabled;
+  const hasRepairFeature = useFeature("Repair ticketing");
+  const canRepairs = hasPerm("repair:list") && hasRepairFeature;
+  const canMessages = hasPerm("messaging:view") && messagingEnabled;
+  const { data: lowStock, loading: stockLoading, error: stockError } = useFetch(() => canStock ? api<any>("/api/stock/low-items") : Promise.resolve(null), [canStock]);
+  const { data: repairs, loading: repairsLoading, error: repairsError } = useFetch(() => canRepairs ? api<any>("/api/repairs") : Promise.resolve(null), [canRepairs]);
+  const { data: messages, loading: messagesLoading, error: messagesError } = useFetch(() => canMessages ? api<any>("/api/admin/messages") : Promise.resolve(null), [canMessages]);
 
   const pendingReqs = (subReq?.requests || []).filter((r: any) => r.status === "pending").length;
   const loading = statsLoading || prodLoading || subLoading;
@@ -1018,7 +1043,7 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
       )}
 
       <div className="stat-grid">
-        <StatCard value={products ? products.products?.length ?? 0 : prodError ? "Unavailable" : "Loading"} label="Total Products" onClick={() => nav("products")} />
+        {productListingEnabled && <StatCard value={products ? products.products?.length ?? 0 : prodError ? "Unavailable" : "Loading"} label="Total Products" onClick={() => nav("products")} />}
         {canOrders && <StatCard value={todayReport ? todayOrders : todayError ? "Unavailable" : "Loading"} label="Orders Today" onClick={() => nav("orders")} />}
         {canOrders && <StatCard value={todayReport ? todayRevenue : todayError ? "Unavailable" : "Loading"} label="Revenue Today (KES)" onClick={() => nav("reports")} />}
         {canOrders && <StatCard value={monthReport ? monthRevenue : monthError ? "Unavailable" : "Loading"} label="Revenue This Month (KES)" onClick={() => nav("reports")} />}
@@ -1027,7 +1052,7 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
         {canOrders && <StatCard value={allTimeReport ? allTimeOrders : allTimeError ? "Unavailable" : "Loading"} label="Orders All Time" onClick={() => nav("orders")} />}
         {canRepairs && <StatCard value={repairs ? openTickets.length : repairsError ? "Unavailable" : "Loading"} label="Open Repairs" onClick={() => nav("repairs")} />}
         {canStock && <StatCard value={lowStock ? lowItems.length : stockError ? "Unavailable" : "Loading"} label="Low-Stock Items" tone={lowItems.length > 0 ? "warning" : undefined} onClick={() => nav("stock-on-hand")} />}
-        {isAdmin && <StatCard value={stats ? stats.totalStaff ?? 0 : statsError ? "Unavailable" : "Loading"} label="Users" onClick={() => nav("users")} />}
+        {isAdmin && multipleStaffEnabled && <StatCard value={stats ? stats.totalStaff ?? 0 : statsError ? "Unavailable" : "Loading"} label="Users" onClick={() => nav("users")} />}
         {isAdmin && <StatCard value={subReq ? pendingReqs : subError ? "Unavailable" : "Loading"} label="Pending Sub. Requests" tone={pendingReqs > 0 ? "danger" : undefined} onClick={() => nav("shop-subscription")} />}
       </div>
 
@@ -1411,6 +1436,12 @@ function AdminGroups() {
 function AdminOrders() {
   const { data: oData, loading, error, refetch } = useFetch(() => api<{ orders: Order[] }>("/api/admin/orders"), []);
   const feedback = useFeedback();
+  const warrantyEnabled = useFeature("Warranty management");
+  const returnsEnabled = useFeature("Returns management");
+  const creditNotesEnabled = useFeature("Credit notes");
+  const invoiceDownloadsEnabled = useFeature("Invoice/quote PDF downloads");
+  const licenseTrackingEnabled = useFeature("Software license tracking");
+  const serialTrackingEnabled = useFeature("Serial number tracking");
   const [selected, setSelected] = useState<any | null>(null);
   const [customerDetail, setCustomerDetail] = useState<any | null>(null);
   const [statusMsg, setStatusMsg] = useState("");
@@ -1615,7 +1646,7 @@ function AdminOrders() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
           <h2 style={{ margin: 0 }}>Items</h2>
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            {creditedOrders[o.id] ? (
+            {creditNotesEnabled && (creditedOrders[o.id] ? (
               <span className="btn btn-sm" style={{ background: "var(--success-light)", color: "var(--success-text)", cursor: "default" }}>Credit Note Created</span>
             ) : (
               <RippleButton onClick={async () => {
@@ -1630,14 +1661,14 @@ function AdminOrders() {
                   feedback.success("Credit note created.");
                 } catch (e: any) { feedback.error({ title: "Failed to create credit note.", message: e.message }); }
               }} style={{ background: "var(--primary)", color: "var(--surface)" }}>Credit Note</RippleButton>
-            )}
-            <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>
-            <RippleButton variant="danger" onClick={() => { setRefundMsg(""); setRefundForm({ amount: "", reason: "", disposition: "sellable" }); }} style={{ background: "var(--danger)", color: "var(--surface)" }}>Refund</RippleButton>
+            ))}
+            {invoiceDownloadsEnabled && <RippleButton onClick={() => printInvoice(o.id)}>Print Invoice</RippleButton>}
+            {returnsEnabled && <RippleButton variant="danger" onClick={() => { setRefundMsg(""); setRefundForm({ amount: "", reason: "", disposition: "sellable" }); }} style={{ background: "var(--danger)", color: "var(--surface)" }}>Refund</RippleButton>}
           </div>
         </div>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Warranty</th><th>License renewal</th><th>Serial</th><th></th></tr></thead>
+            <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th>{warrantyEnabled && <th>Warranty</th>}{licenseTrackingEnabled && <th>License renewal</th>}{serialTrackingEnabled && <th>Serial</th>}<th></th></tr></thead>
             <tbody>
               {(o.items || []).map((item: any, i: number) => (
                 <tr key={item.id || i}>
@@ -1645,7 +1676,7 @@ function AdminOrders() {
                   <td>{formatPrice(item.price)}</td>
                   <td>{item.quantity}</td>
                   <td>{formatPrice(item.lineTotal)}</td>
-                  <td>
+                  {warrantyEnabled && <td>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem" }}>
                       <input type="checkbox" checked={!!item.hasWarranty} onChange={async () => {
                         try {
@@ -1664,8 +1695,8 @@ function AdminOrders() {
                       ) : null}
                       <span>{item.hasWarranty ? "mo" : ""}</span>
                     </div>
-                  </td>
-                  <td>
+                  </td>}
+                  {licenseTrackingEnabled && <td>
                     {isSoftwareLicenseProduct({ name: item.name, category: item.category, subcategory: item.subcategory }) ? (
                       <div style={{ minWidth: 190, display: "grid", gap: "0.35rem" }}>
                         <select aria-label={`Renewal type for ${item.name}`} value={item.licenseRenewalType || "unknown"} onChange={(e) => updateLicenseDraft(item.id, { licenseRenewalType: e.target.value })}>
@@ -1677,8 +1708,8 @@ function AdminOrders() {
                         {item.licenseRenewalType === "unknown" && <small className="muted">Set whether this license renews, then add its expiry date or a perpetual-term note.</small>}
                       </div>
                     ) : "—"}
-                  </td>
-                  <td>
+                  </td>}
+                  {serialTrackingEnabled && <td>
                     {item.serialNumber ? (
                       <div style={{ fontSize: "0.82rem", fontFamily: "monospace", color: "var(--primary)" }}>{item.serialNumber}</div>
                     ) : (
@@ -1694,9 +1725,9 @@ function AdminOrders() {
                         <RippleButton size="small" variant="ghost" loading={linking === item.id} onClick={() => linkSerial(item.id, serialInputs[item.id] || "")}>Link</RippleButton>
                       </div>
                     )}
-                  </td>
+                  </td>}
                   <td>
-                    {!item.cancelled && (
+                    {returnsEnabled && !item.cancelled && (
                       <RippleButton size="small" variant="ghost" onClick={() => { setRefundMsg(""); setRefundForm({ item, amount: String(item.lineTotal), reason: "", disposition: "sellable" }); }}>Return &amp; refund</RippleButton>
                     )}
                   </td>
@@ -1706,9 +1737,9 @@ function AdminOrders() {
           </table>
         </div>
 
-        {refundMsg && <p style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem 1rem", color: "var(--danger)" }}>{refundMsg}</p>}
+        {returnsEnabled && refundMsg && <p style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem 1rem", color: "var(--danger)" }}>{refundMsg}</p>}
 
-        {refunds.length > 0 && (
+        {returnsEnabled && refunds.length > 0 && (
           <div style={{ marginTop: "1rem" }}>
             <h2 style={{ margin: "0 0 0.75rem" }}>Refunds</h2>
             <p className="muted" style={{ margin: "0 0 0.75rem" }}>Communication status is recorded per channel. “Sent” means the mail or messaging provider accepted it; it does not confirm the customer read it.</p>
@@ -1748,7 +1779,7 @@ function AdminOrders() {
             </div>
           </div>
         )}
-        {refundForm && (
+        {returnsEnabled && refundForm && (
           <div className="modal-overlay" onClick={() => !refundSaving && setRefundForm(null)}>
             <section className="modal" role="dialog" aria-modal="true" aria-labelledby="refund-form-title" onClick={(e) => e.stopPropagation()}>
               <header className="modal-header">
@@ -2648,7 +2679,7 @@ function AdminBranches() {
   const { data: sData } = useFetch(() => api<{ staff: { id: number; username: string; role: string }[] }>("/api/staff"), []);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Branch | null>(null);
-  const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", managerId: "" });
+  const [form, setForm] = useState({ name: "", address: "", phone: "", email: "", managerId: "", onlineFulfillmentEnabled: true });
   const [saving, setSaving] = useState(false);
   const [branchPlanEditId, setBranchPlanEditId] = useState<number | null>(null);
   const [allPlans, setAllPlans] = useState<any[]>([]);
@@ -2667,13 +2698,13 @@ function AdminBranches() {
 
   function openNew() {
     setEditing(null);
-    setForm({ name: "", address: "", phone: "", email: "", managerId: "" });
+    setForm({ name: "", address: "", phone: "", email: "", managerId: "", onlineFulfillmentEnabled: true });
     setShowForm(true);
   }
 
   function openEdit(b: Branch) {
     setEditing(b);
-    setForm({ name: b.name, address: b.address, phone: b.phone, email: b.email, managerId: b.managerId ? String(b.managerId) : "" });
+    setForm({ name: b.name, address: b.address, phone: b.phone, email: b.email, managerId: b.managerId ? String(b.managerId) : "", onlineFulfillmentEnabled: b.onlineFulfillmentEnabled !== false });
     setShowForm(true);
   }
 
@@ -2687,6 +2718,7 @@ function AdminBranches() {
         phone: form.phone.trim(),
         email: form.email.trim(),
         managerId: form.managerId ? Number(form.managerId) : null,
+        onlineFulfillmentEnabled: form.onlineFulfillmentEnabled,
       };
       if (editing) {
         await api(`/api/admin/branches/${editing.id}`, { method: "PUT", body: JSON.stringify(body) });
@@ -2705,6 +2737,14 @@ function AdminBranches() {
     try {
       await api(`/api/admin/branches/${b.id}`, { method: "PUT", body: JSON.stringify({ isActive: !b.isActive }) });
       refetch();
+    } catch (err: any) { feedback.error(err.message); }
+  }
+
+  async function toggleOnlineFulfillment(b: Branch) {
+    try {
+      await api(`/api/admin/branches/${b.id}`, { method: "PUT", body: JSON.stringify({ onlineFulfillmentEnabled: !b.onlineFulfillmentEnabled }) });
+      refetch();
+      feedback.success(!b.onlineFulfillmentEnabled ? "Branch enabled for online checkout." : "Branch hidden from online checkout; internal operations remain active.");
     } catch (err: any) { feedback.error(err.message); }
   }
 
@@ -2751,6 +2791,13 @@ function AdminBranches() {
               </label>
               {owners.length === 0 && <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>No owner users found. Create an owner user in Users first.</p>}
             </div>
+            <div className="field">
+              <label style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
+                <input type="checkbox" checked={form.onlineFulfillmentEnabled} onChange={(e) => setForm({ ...form, onlineFulfillmentEnabled: e.target.checked })} />
+                Available for online orders
+              </label>
+              <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>Turn this off to keep a branch for internal stock and testing without showing it to customers at checkout.</p>
+            </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <RippleButton type="submit" loading={saving}>{editing ? "Update" : "Create"}</RippleButton>
               <RippleButton variant="secondary" onClick={() => { setShowForm(false); setEditing(null); }}>Cancel</RippleButton>
@@ -2769,7 +2816,7 @@ function AdminBranches() {
       </div>
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Owner</th><th>Plan</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Owner</th><th>Plan</th><th>Status</th><th>Online checkout</th><th>Actions</th></tr></thead>
           <tbody>
             {branches.map((b) => {
               const currentPlan = allPlans.find((p: any) => p.id === b.planId);
@@ -2803,6 +2850,11 @@ function AdminBranches() {
                   </td>
                   <td><span className={`plan-status ${b.isActive ? "active" : ""}`} style={{ background: b.isActive ? "var(--success)" : "var(--danger)", color: "var(--surface)", padding: "2px 8px", borderRadius: 4, fontSize: "0.8rem" }}>{b.isActive ? "Active" : "Inactive"}</span></td>
                   <td>
+                    <RippleButton size="small" variant={b.onlineFulfillmentEnabled ? "secondary" : "ghost"} disabled={!b.isActive} onClick={() => toggleOnlineFulfillment(b)}>
+                      {b.onlineFulfillmentEnabled ? "Shown to customers" : "Internal only"}
+                    </RippleButton>
+                  </td>
+                  <td>
                     <div style={{ display: "flex", gap: "0.25rem" }}>
                       <RippleButton size="small" onClick={() => openEdit(b)}>Edit</RippleButton>
                       <RippleButton size="small" variant="ghost" onClick={() => toggleBranch(b)}>{b.isActive ? "Deactivate" : "Activate"}</RippleButton>
@@ -2812,7 +2864,7 @@ function AdminBranches() {
                 </tr>
               );
             })}
-            {branches.length === 0 && <tr><td colSpan={8}><EmptyState icon="default" title="No branches yet" description="Create your first branch to start managing multi-location operations." actionLabel="+ Add Branch" onAction={openNew} /></td></tr>}
+            {branches.length === 0 && <tr><td colSpan={9}><EmptyState icon="default" title="No branches yet" description="Create your first branch to start managing multi-location operations." actionLabel="+ Add Branch" onAction={openNew} /></td></tr>}
           </tbody>
         </table>
       </div>
@@ -4896,54 +4948,78 @@ type ReportTabId =
   | "valuation" | "stock-take" | "suppliers" | "quotes" | "tax" | "serial" | "loyalty"
   | "gift-cards" | "campaigns" | "cart-recovery" | "financing";
 
-const REPORT_CATEGORIES: { key: string; label: string; tabs: { id: ReportTabId; label: string }[] }[] = [
+const REPORT_CATEGORIES: { key: string; label: string; tabs: { id: ReportTabId; label: string; feature?: string }[] }[] = [
   { key: "sales", label: "Sales", tabs: [
-    { id: "sales", label: "Sales" },
-    { id: "employee-sales", label: "Employee Sales" },
-    { id: "gross-profit", label: "Gross Profit" },
-    { id: "quotes", label: "Quotes" },
-    { id: "visitors", label: "Visitors" },
+    { id: "sales", label: "Sales", feature: "Order management" },
+    { id: "employee-sales", label: "Employee Sales", feature: "Order management" },
+    { id: "gross-profit", label: "Gross Profit", feature: "Analytics dashboard" },
+    { id: "quotes", label: "Quotes", feature: "Quotations" },
+    { id: "visitors", label: "Visitors", feature: "Visitor analytics" },
   ]},
   { key: "money", label: "Money", tabs: [
-    { id: "payments", label: "Payments" },
-    { id: "receivables", label: "Receivables" },
-    { id: "financing", label: "Lipa Mdogo Mdogo" },
-    { id: "tax", label: "Tax (eTIMS)" },
+    { id: "payments", label: "Payments", feature: "Order management" },
+    { id: "receivables", label: "Receivables", feature: "Order management" },
+    { id: "financing", label: "Lipa Mdogo Mdogo", feature: "Lipa Mdogo Mdogo" },
+    { id: "tax", label: "Tax (eTIMS)", feature: "eTIMS/KRA compliance" },
   ]},
   { key: "operations", label: "Operations", tabs: [
-    { id: "purchases", label: "Purchases" },
-    { id: "suppliers", label: "Suppliers" },
-    { id: "repairs", label: "Repairs" },
-    { id: "warranty", label: "Warranty" },
-    { id: "tech-performance", label: "Technician Performance" },
+    { id: "purchases", label: "Purchases", feature: "Purchase order management" },
+    { id: "suppliers", label: "Suppliers", feature: "Supplier management" },
+    { id: "repairs", label: "Repairs", feature: "Repair ticketing" },
+    { id: "warranty", label: "Warranty", feature: "Warranty management" },
+    { id: "tech-performance", label: "Technician Performance", feature: "Repair ticketing" },
   ]},
   { key: "inventory", label: "Inventory", tabs: [
-    { id: "stock", label: "Stock Summary" },
-    { id: "valuation", label: "Valuation" },
-    { id: "stock-take", label: "Stock Takes" },
-    { id: "serial", label: "Serials" },
+    { id: "stock", label: "Stock Summary", feature: "Stock control" },
+    { id: "valuation", label: "Valuation", feature: "Stock control" },
+    { id: "stock-take", label: "Stock Takes", feature: "Stock take" },
+    { id: "serial", label: "Serials", feature: "Serial number tracking" },
   ]},
   { key: "customers", label: "Customers & Marketing", tabs: [
-    { id: "customers", label: "Customers" },
-    { id: "loyalty", label: "Loyalty" },
-    { id: "gift-cards", label: "Gift Cards" },
-    { id: "campaigns", label: "Campaigns" },
-    { id: "cart-recovery", label: "Cart Recovery" },
+    { id: "customers", label: "Customers", feature: "Customer management" },
+    { id: "loyalty", label: "Loyalty", feature: "Loyalty program" },
+    { id: "gift-cards", label: "Gift Cards", feature: "Gift cards" },
+    { id: "campaigns", label: "Campaigns", feature: "Campaign pages" },
+    { id: "cart-recovery", label: "Cart Recovery", feature: "Cart recovery" },
   ]},
 ];
 
 function AdminReports() {
-  const hasVisitorAnalytics = useFeature("Visitor analytics");
+  const stockTakeEnabled = useFeature("Stock take");
+  const legacyStockTakeEnabled = useFeature("Stock take / inventory count");
+  const reportFeatures: Record<string, boolean> = {
+    "Order management": useFeature("Order management"),
+    "Customer management": useFeature("Customer management"),
+    "Analytics dashboard": useFeature("Analytics dashboard"),
+    "Quotations": useFeature("Quotations"),
+    "eTIMS/KRA compliance": useFeature("eTIMS/KRA compliance"),
+    "Stock control": useFeature("Stock control"),
+    "Visitor analytics": useFeature("Visitor analytics"),
+    "Lipa Mdogo Mdogo": useFeature("Lipa Mdogo Mdogo"),
+    "Purchase order management": useFeature("Purchase order management"),
+    "Supplier management": useFeature("Supplier management"),
+    "Repair ticketing": useFeature("Repair ticketing"),
+    "Warranty management": useFeature("Warranty management"),
+    "Stock take": stockTakeEnabled || legacyStockTakeEnabled,
+    "Serial number tracking": useFeature("Serial number tracking"),
+    "Loyalty program": useFeature("Loyalty program"),
+    "Gift cards": useFeature("Gift cards"),
+    "Campaign pages": useFeature("Campaign pages"),
+    "Cart recovery": useFeature("Cart recovery"),
+  };
   const [category, setCategory] = useState("sales");
-  const cat = REPORT_CATEGORIES.find((c) => c.key === category) ?? REPORT_CATEGORIES[0];
   const [tab, setTab] = useState<ReportTabId>("sales");
-  const visibleTabs = (cat?.tabs || []).filter((t) => t.id !== "visitors" || hasVisitorAnalytics);
-  const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0].id;
+  const visibleCategories = REPORT_CATEGORIES.map((c) => ({ ...c, tabs: c.tabs.filter((t) => !t.feature || reportFeatures[t.feature]) })).filter((c) => c.tabs.length > 0);
+  const cat = visibleCategories.find((c) => c.key === category) ?? visibleCategories[0];
+  const visibleTabs = cat?.tabs || [];
+  const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0]?.id || null;
+
+  if (!cat || !activeTab) return <div className="panel" role="status">No reports are included in this plan.</div>;
 
   return (
     <>
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
-        {REPORT_CATEGORIES.map((c) => (
+        {visibleCategories.map((c) => (
           <RippleButton key={c.key} size="small" variant={cat.key === c.key ? "primary" : "ghost"}
             onClick={() => { setCategory(c.key); setTab(c.tabs[0].id); }}>
             {c.label}
@@ -6629,6 +6705,9 @@ function AdminCustomers() {
 
 // ===================== CUSTOMER 360 =====================
 function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: () => void }) {
+  const repairsEnabled = useFeature("Repair ticketing");
+  const serialTrackingEnabled = useFeature("Serial number tracking");
+  const warrantyEnabled = useFeature("Warranty management");
   const [tab, setTab] = useState("overview");
   const [orders, setOrders] = useState<any[] | null>(null);
   const [repairs, setRepairs] = useState<any[] | null>(null);
@@ -6642,16 +6721,16 @@ function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: ()
     const guard = <T,>(p: Promise<T | null>): Promise<T | null> => p.catch(() => null);
     Promise.all([
       guard(api<{ orders: any[] }>(`/api/admin/orders?customerId=${customer.id}`)),
-      guard(api<{ tickets: any[] }>(`/api/repairs?customerId=${customer.id}`)),
-      guard(api<{ serials: any[] }>(`/api/serials?customerId=${customer.id}`)),
-      guard(api<{ warranties: any[] }>(`/api/admin/warranties?customerId=${customer.id}`)),
+      repairsEnabled ? guard(api<{ tickets: any[] }>(`/api/repairs?customerId=${customer.id}`)) : Promise.resolve(null),
+      serialTrackingEnabled ? guard(api<{ serials: any[] }>(`/api/serials?customerId=${customer.id}`)) : Promise.resolve(null),
+      warrantyEnabled ? guard(api<{ warranties: any[] }>(`/api/admin/warranties?customerId=${customer.id}`)) : Promise.resolve(null),
     ]).then(([o, r, s, w]) => {
       if (cancelled) return;
       setOrders(o?.orders || []); setRepairs(r?.tickets || []); setSerials(s?.serials || []); setWarranties(w?.warranties || []);
       setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [customer.id]);
+  }, [customer.id, repairsEnabled, serialTrackingEnabled, warrantyEnabled]);
 
   const lifetimeValue = (orders || []).reduce((sum, o) => sum + (Number(o.total) || 0), 0);
   const activeWarranties = (warranties || []).filter((w) => w.status === "active" || w.status === "expiring");
@@ -6660,9 +6739,9 @@ function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: ()
   const tabs: { key: string; label: string }[] = [
     { key: "overview", label: "Overview" },
     ...(orders && orders.length > 0 ? [{ key: "orders", label: `Orders (${orders.length})` }] : []),
-    ...(serials && serials.length > 0 ? [{ key: "assets", label: `Assets (${serials.length})` }] : []),
-    ...(repairs && repairs.length > 0 ? [{ key: "repairs", label: `Repairs (${repairs.length})` }] : []),
-    ...(warranties && warranties.length > 0 ? [{ key: "warranty", label: `Warranty (${warranties.length})` }] : []),
+    ...(serialTrackingEnabled && serials && serials.length > 0 ? [{ key: "assets", label: `Assets (${serials.length})` }] : []),
+    ...(repairsEnabled && repairs && repairs.length > 0 ? [{ key: "repairs", label: `Repairs (${repairs.length})` }] : []),
+    ...(warrantyEnabled && warranties && warranties.length > 0 ? [{ key: "warranty", label: `Warranty (${warranties.length})` }] : []),
   ];
 
   return (
@@ -6686,9 +6765,9 @@ function CustomerDetailPanel({ customer, onClose }: { customer: any; onClose: ()
             <div className="stat-grid" style={{ marginTop: "1rem" }}>
               <div className="stat-card"><div className="stat-card__value">{orders?.length || 0}</div><div className="stat-card__label">Orders</div></div>
               <div className="stat-card"><div className="stat-card__value">{formatPrice(lifetimeValue)}</div><div className="stat-card__label">Lifetime value</div></div>
-              <div className="stat-card"><div className="stat-card__value">{serials?.length || 0}</div><div className="stat-card__label">Serialised assets</div></div>
-              <div className="stat-card"><div className="stat-card__value">{activeWarranties.length}</div><div className="stat-card__label">Active warranties</div></div>
-              <div className="stat-card"><div className="stat-card__value">{openRepairs.length}</div><div className="stat-card__label">Open repairs</div></div>
+              {serialTrackingEnabled && <div className="stat-card"><div className="stat-card__value">{serials?.length || 0}</div><div className="stat-card__label">Serialised assets</div></div>}
+              {warrantyEnabled && <div className="stat-card"><div className="stat-card__value">{activeWarranties.length}</div><div className="stat-card__label">Active warranties</div></div>}
+              {repairsEnabled && <div className="stat-card"><div className="stat-card__value">{openRepairs.length}</div><div className="stat-card__label">Open repairs</div></div>}
             </div>
           )}
           {tab === "orders" && (

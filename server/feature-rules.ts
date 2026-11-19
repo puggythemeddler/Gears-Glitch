@@ -21,6 +21,10 @@ export function featureListIncludes(features: string[] | null | undefined, name:
   return (features || []).some((f) => normalizeFeatureName(f) === target);
 }
 
+export function featureListIncludesAny(features: string[] | null | undefined, names: string[]): boolean {
+  return names.some((name) => featureListIncludes(features, name));
+}
+
 export type FeatureOverrides = Record<string, boolean>;
 
 export function parseFeatureOverrides(raw: string | null | undefined): FeatureOverrides {

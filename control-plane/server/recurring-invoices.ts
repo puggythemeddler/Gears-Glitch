@@ -11,6 +11,7 @@ export interface RenewalInvoicePayload {
   providerId: number;
   planId: string;
   periodType: "monthly" | "annual";
+  amount: number;
   periodStart: string;
   dueDate: string;
   generationKey: string;
@@ -56,7 +57,9 @@ export async function processRenewalInvoiceCandidate(
 ): Promise<{ status: "outside_window" | "not_billable" | "open_invoice" | "generated" | "existing"; invoice?: GeneratedInvoice | ExistingInvoice }> {
   const dueDate = candidate.nextPaymentDate.slice(0, 10);
   if (!isRenewalDateInWindow(dueDate, now)) return { status: "outside_window" };
-  const amount = candidate.periodType === "annual" ? candidate.annualPrice : candidate.monthlyPrice;
+  const amount = candidate.periodType === "annual"
+    ? (Number(candidate.annualPrice) > 0 ? candidate.annualPrice : candidate.monthlyPrice * 12)
+    : candidate.monthlyPrice;
   if (!Number.isFinite(amount) || Number(amount) <= 0) return { status: "not_billable" };
 
   const openInvoice = (await dependencies.listInvoices()).find(invoice =>
@@ -68,6 +71,7 @@ export async function processRenewalInvoiceCandidate(
     providerId: 1,
     planId: candidate.plan,
     periodType: candidate.periodType,
+    amount: Number(amount),
     periodStart: dueDate,
     dueDate,
     generationKey: renewalGenerationKey(candidate.id, dueDate),

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Icon from "@/components/icons";
 import { Media } from "@/components/Media";
+import { useFeature } from "@/lib/features";
 
 interface Stat { value: string; label: string; }
 interface AboutData {
@@ -17,6 +18,7 @@ interface AboutData {
 }
 
 export default function AboutPage() {
+  const repairsEnabled = useFeature("Repair ticketing");
   const [data, setData] = useState<AboutData | null>(null);
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -206,7 +208,7 @@ export default function AboutPage() {
           <p>Ready to find your next device?</p>
           <div className="about-cta-row">
             <a className="btn btn-primary btn-lg" href="/group/laptops">Shop Laptops</a>
-            <a className="btn btn-secondary btn-lg" href="/repairs">Book a Repair</a>
+            {repairsEnabled && <a className="btn btn-secondary btn-lg" href="/repairs">Book a Repair</a>}
             <a className="btn btn-ghost btn-lg" href="/contact">Contact Us</a>
           </div>
         </section>

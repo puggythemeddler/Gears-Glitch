@@ -13,6 +13,7 @@ import {
   selectHeroFeatured,
 } from "@/lib/hero-effects";
 import { useHeroPointerEffects, usePrefersReducedMotion } from "@/components/motion/useHeroEffects";
+import { useFeature } from "@/lib/features";
 
 type SortKey = "newest" | "price-asc" | "price-desc" | "name";
 
@@ -56,6 +57,7 @@ function HeroStarRating({ average }: { average: number }) {
 
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const { isLoggedIn, userName, settings, isDark } = useApp();
+  const repairsEnabled = useFeature("Repair ticketing");
   const [activeIdx, setActiveIdx] = useState(0);
   const heroRef = useRef<HTMLDivElement>(null);
   const reducedMotion = usePrefersReducedMotion();
@@ -92,7 +94,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const variant = variants.length > 0 ? variants[0] : null;
   const headline = variant?.headline || hero?.headline || "Find your next";
   const headlineAccent = variant?.accent || hero?.headlineAccent || "device";
-  const subtitle = variant?.subtitle || hero?.subtitle || "Shop PCs, laptops, graphics cards and servers, or book a device repair.";
+  const subtitle = variant?.subtitle || hero?.subtitle || (repairsEnabled ? "Shop PCs, laptops, graphics cards and servers, or book a device repair." : "Shop PCs, laptops, graphics cards and accessories.");
 
   const badgeText = typeof hero?.badgeText === "string" ? hero.badgeText.trim() : "";
   const badgeActive = hero?.badgeActive !== false && badgeText.length > 0;
@@ -102,8 +104,10 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const shopNowLink = normalizeHref(typeof hero?.shopNowLink === "string" ? hero.shopNowLink : "", "/#catalogue");
   const configuredBrowseLink = typeof hero?.browseLink === "string" ? hero.browseLink.trim() : "";
   const usesLegacyCategoryLink = configuredBrowseLink === "/#categories" || configuredBrowseLink === "/categories";
-  const browseLabel = usesLegacyCategoryLink ? "Book a repair" : hero?.browseLabel || "Book a repair";
-  const browseLink = usesLegacyCategoryLink ? "/repairs" : normalizeHref(configuredBrowseLink, "/repairs");
+  const browseLabel = usesLegacyCategoryLink ? (repairsEnabled ? "Book a repair" : "Browse products") : hero?.browseLabel || (repairsEnabled ? "Book a repair" : "Browse products");
+  const configuredBrowsePath = normalizeHref(configuredBrowseLink, repairsEnabled ? "/repairs" : "/#catalogue").toLowerCase().split(/[?#]/, 1)[0].replace(/\/$/, "");
+  const browseTargetsRepairs = ["/repairs", "/repair-book", "/repair-ticket", "/my-repairs"].some((route) => configuredBrowsePath === route || configuredBrowsePath.startsWith(route + "/"));
+  const browseLink = usesLegacyCategoryLink ? (repairsEnabled ? "/repairs" : "/#catalogue") : normalizeHref(configuredBrowseLink, repairsEnabled ? "/repairs" : "/#catalogue");
 
   const showWhatsApp = hero?.showWhatsApp !== false;
   const waPhone = settings?.storePhone ? settings.storePhone.replace(/[^0-9]/g, "") : "";
@@ -149,10 +153,10 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
               {shopNowLabel}
             </Link>
-            <Link href={browseLink} className="dy-hero-btn dy-hero-btn--secondary">
+            {(repairsEnabled || !browseTargetsRepairs) && <Link href={browseLink} className="dy-hero-btn dy-hero-btn--secondary">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
               {browseLabel}
-            </Link>
+            </Link>}
             {showWhatsApp && waPhone && (
               <a
                 href={normalizeHref(`https://wa.me/${waPhone}?text=${encodeURIComponent("Hello! I'm interested in your products.")}`)}
