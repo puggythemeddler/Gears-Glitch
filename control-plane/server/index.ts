@@ -3468,6 +3468,37 @@ async function autoImportPlans() {
   }
 }
 
+// Keep the shared Enterprise plan aligned with the granular repair feature
+// gates. The update is additive and idempotent; no other plan field changes.
+async function ensureEnterpriseGranularRepairEntitlements() {
+  try {
+    const plan = await queryOne(
+      `SELECT id, features FROM custom_plans
+       WHERE LOWER(id) = 'enterprise' OR LOWER(name) = 'enterprise'
+       ORDER BY CASE WHEN LOWER(id) = 'enterprise' THEN 0 ELSE 1 END
+       LIMIT 1`
+    ) as any;
+    if (!plan) return;
+
+    let features: unknown = plan.features;
+    if (typeof features === "string") features = JSON.parse(features || "[]");
+    if (!Array.isArray(features)) {
+      console.warn("[startup-plans] Enterprise entitlements were not updated: feature list is not an array.");
+      return;
+    }
+
+    const additions = ["Warranty management", "Serial number tracking", "Software license tracking"];
+    const existing = new Set(features.filter((feature): feature is string => typeof feature === "string"));
+    const missing = additions.filter((feature) => !existing.has(feature));
+    if (!missing.length) return;
+
+    await query("UPDATE custom_plans SET features = $1 WHERE id = $2", [JSON.stringify([...features, ...missing]), plan.id]);
+    console.log(`[startup-plans] Added ${missing.length} granular repair entitlements to the Enterprise plan.`);
+  } catch (err: any) {
+    console.warn("[startup-plans] Enterprise entitlement update skipped:", err?.message || "unknown error");
+  }
+}
+
 // ─── STARTUP CLOUDINARY IMPORT ────────────────────────────
 async function autoImportCloudinary() {
   try {
@@ -3536,7 +3567,10 @@ export async function start(opts?: { background?: boolean }): Promise<import("ht
   const server = app.listen(PORT, () => {
     console.log(`[control-plane] Running on http://localhost:${PORT}`);
     if (!opts || opts.background !== false) {
-      setTimeout(autoImportPlans, 3000);
+      setTimeout(async () => {
+        await autoImportPlans();
+        await ensureEnterpriseGranularRepairEntitlements();
+      }, 3000);
       setTimeout(autoImportCloudinary, 4000);
       setTimeout(runStartupHealthCheck, 5000);
       scheduleAutoBackup();
