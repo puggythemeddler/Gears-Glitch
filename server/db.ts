@@ -1329,6 +1329,10 @@ async function getSettings(): Promise<Settings> {
   const s: { [key: string]: string } = {};
   for (const row of rows) s[row.key] = decryptSettingValue(row.key, row.value);
   const cloudinary = resolveCloudinaryConfig(s, process.env);
+  // A deliberate disconnect must suppress environment fallbacks too; otherwise
+  // the integration would silently reconnect on the next request when a token
+  // is also configured on the service.
+  const whatsappDisconnected = s.whatsappDisconnected === "true";
   return {
     storeName: s.storeName || process.env.STORE_NAME || "My Shop",
     phone: s.phone || "",
@@ -1345,14 +1349,14 @@ async function getSettings(): Promise<Settings> {
     emailSender: s.emailSender || process.env.EMAIL_FROM || process.env.FROM_EMAIL || "",
     emailSenderName: s.emailSenderName || process.env.STORE_NAME || process.env.SITE_NAME || "Gear&Glitch",
     emailNotificationsEnabled: s.emailNotificationsEnabled !== "false",
-    whatsappEnabled: s.whatsappEnabled === "true",
-    whatsappPhoneNumberId: s.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || "",
-    whatsappAccessToken: s.whatsappAccessToken || process.env.WHATSAPP_ACCESS_TOKEN || "",
-    whatsappAppSecret: s.whatsappAppSecret || process.env.WHATSAPP_APP_SECRET || "",
+    whatsappEnabled: !whatsappDisconnected && s.whatsappEnabled === "true",
+    whatsappPhoneNumberId: whatsappDisconnected ? "" : (s.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || ""),
+    whatsappAccessToken: whatsappDisconnected ? "" : (s.whatsappAccessToken || process.env.WHATSAPP_ACCESS_TOKEN || ""),
+    whatsappAppSecret: whatsappDisconnected ? "" : (s.whatsappAppSecret || process.env.WHATSAPP_APP_SECRET || ""),
     // No shared/default verification token: webhook verification stays closed
     // until each merchant configures a private value.
-    whatsappVerifyToken: s.whatsappVerifyToken || process.env.WHATSAPP_VERIFY_TOKEN || "",
-    whatsappBusinessAccountId: s.whatsappBusinessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
+    whatsappVerifyToken: whatsappDisconnected ? "" : (s.whatsappVerifyToken || process.env.WHATSAPP_VERIFY_TOKEN || ""),
+    whatsappBusinessAccountId: whatsappDisconnected ? "" : (s.whatsappBusinessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || ""),
     whatsappApiVersion: s.whatsappApiVersion || process.env.WHATSAPP_API_VERSION || "v21.0",
     adminWhatsAppEnabled: s.adminWhatsAppEnabled === "true",
     adminWhatsAppPhone: s.adminWhatsAppPhone || process.env.ADMIN_WHATSAPP_PHONE || "",
@@ -1382,6 +1386,24 @@ async function updateSettings(updates: { [key: string]: any }): Promise<Settings
       if (secretKeys.includes(key) && updates[key] === "") continue;
       await client.query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [key, encryptSettingValue(key, String(updates[key]))]);
     }
+    // Reconnection requires both identity and bearer credentials to be entered
+    // after a disconnect. An enable toggle alone cannot reactivate env secrets.
+    if (String(updates.whatsappPhoneNumberId || "").trim() && String(updates.whatsappAccessToken || "").trim()) {
+      await client.query("DELETE FROM settings WHERE key = 'whatsappDisconnected'");
+    }
+  });
+  return await getSettings();
+}
+
+async function disconnectWhatsApp(): Promise<Settings> {
+  await transaction(async (client) => {
+    await client.query(
+      "DELETE FROM settings WHERE key = ANY($1::text[])",
+      [["whatsappEnabled", "adminWhatsAppEnabled", "whatsappPhoneNumberId", "whatsappAccessToken", "whatsappAppSecret", "whatsappVerifyToken", "whatsappBusinessAccountId"]]
+    );
+    await client.query(
+      "INSERT INTO settings (key, value) VALUES ('whatsappDisconnected', 'true') ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"
+    );
   });
   return await getSettings();
 }
@@ -5674,7 +5696,7 @@ export {
   findStaffByUsername, findStaffByEmail, findStaffById, listStaff, updateStaffDetails, createStaff, updateStaffRole, changeStaffPassword, deleteStaff, findAdminByUsername,
   consumeAuthToken, getPasswordChangedAt,
   findCustomerByEmail, findCustomerById, updateCustomerLastLogin, updateCustomerStatus, updateCustomer, deleteCustomer, deactivateOldCustomers, createCustomer, changeCustomerPassword, listAllCustomers, listActiveCustomers, getCustomerDetails,
-  getSettings, updateSettings, getStoreSetting, setStoreSetting, getPaymentMethods, setPaymentMethods,
+  getSettings, updateSettings, disconnectWhatsApp, getStoreSetting, setStoreSetting, getPaymentMethods, setPaymentMethods,
   listProducts, getProduct, setProductImageUrl, createProduct, updateProduct, deleteProduct, getPriceHistory, applyProductMarkup,
   getProductImages, addProductImage, deleteProductImage, setProductImageOrder, setPrimaryImage,
   getMessagesForCustomer, getMessagesForProvider, sendMessage, markMessageRead, getUnreadMessageCount, listAllMessages,
