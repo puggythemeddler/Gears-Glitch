@@ -354,9 +354,21 @@
         <div class="field"><label for="login-totp">2FA Code</label><input type="text" id="login-totp" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autofocus onkeydown="if(event.key==='Enter')doLoginVerify()"></div>
       </div>
 
+      <div id="login-reset-request" style="display:none">
+        <p style="font-size:0.84rem;color:var(--text-muted);margin:0 0 0.75rem">We’ll email a single-use recovery link to the configured Control Plane recovery address. The link expires after 15 minutes.</p>
+      </div>
+
+      <div id="login-reset-form" style="display:none">
+        <p style="font-size:0.84rem;color:var(--text-muted);margin:0 0 0.75rem">Choose a new password. Your authenticator-based two-factor authentication will remain enabled.</p>
+        <div class="field"><label for="reset-new-password">New password</label><input type="password" id="reset-new-password" autocomplete="new-password" minlength="12" maxlength="128" onkeydown="if(event.key==='Enter')completePasswordReset()"></div>
+        <div class="field"><label for="reset-confirm-password">Confirm new password</label><input type="password" id="reset-confirm-password" autocomplete="new-password" minlength="12" maxlength="128" onkeydown="if(event.key==='Enter')completePasswordReset()"></div>
+      </div>
+
       <div id="login-error" role="alert" style="color:var(--danger-strong);font-size:0.82rem;margin-bottom:0.75rem"></div>
       <button class="btn btn-primary" style="width:100%" id="login-btn" onclick="doLogin()">Sign In</button>
       <button class="btn btn-ghost" style="width:100%;margin-top:0.5rem;display:none" id="login-back-btn" onclick="cancelTotp()">Back</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:0.5rem" id="login-forgot-btn" onclick="showPasswordResetRequest()">Forgot password?</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:0.5rem;display:none" id="login-reset-back-btn" onclick="showLogin()">Back to sign in</button>
     </div>
   </div>
 
@@ -884,24 +896,103 @@
     let editingPlanFeatures = [];
     let currentUser = null;
     let operatorEmail = "";
+    let passwordResetToken = "";
 
     // ─── AUTH ───────────────────────────────────────────────
     function getToken() { return localStorage.getItem("cp-token"); }
     function setToken(t) { localStorage.setItem("cp-token", t); }
     function clearAuth() { localStorage.removeItem("cp-token"); localStorage.removeItem("cp-user"); currentUser = null; }
+    function setLoginFeedback(text, success = false) {
+      const element = document.getElementById("login-error");
+      element.textContent = text;
+      element.style.color = success ? "var(--success-strong)" : "var(--danger-strong)";
+    }
 
     async function showLogin() {
       document.getElementById("main-app").style.display = "none";
       document.getElementById("login-screen").style.display = "flex";
-      document.getElementById("login-error").textContent = "";
+      setLoginFeedback("");
       // Reset to step 1
       document.getElementById("login-step-1").style.display = "";
       document.getElementById("login-step-2").style.display = "none";
+      document.getElementById("login-reset-request").style.display = "none";
+      document.getElementById("login-reset-form").style.display = "none";
+      document.getElementById("login-forgot-btn").style.display = "";
+      document.getElementById("login-reset-back-btn").style.display = "none";
       document.getElementById("login-back-btn").style.display = "none";
       document.getElementById("login-btn").textContent = "Sign In";
       document.getElementById("login-btn").onclick = doLogin;
+      document.getElementById("login-btn").style.display = "";
+      document.getElementById("login-btn").disabled = false;
       document.getElementById("login-totp").value = "";
       document.getElementById("login-pass").value = "";
+      document.getElementById("reset-new-password").value = "";
+      document.getElementById("reset-confirm-password").value = "";
+      passwordResetToken = "";
+    }
+
+    function showPasswordResetRequest() {
+      setLoginFeedback("");
+      document.getElementById("login-step-1").style.display = "none";
+      document.getElementById("login-step-2").style.display = "none";
+      document.getElementById("login-reset-form").style.display = "none";
+      document.getElementById("login-reset-request").style.display = "";
+      document.getElementById("login-forgot-btn").style.display = "none";
+      document.getElementById("login-reset-back-btn").style.display = "";
+      document.getElementById("login-back-btn").style.display = "none";
+      document.getElementById("login-btn").style.display = "";
+      document.getElementById("login-btn").disabled = false;
+      document.getElementById("login-btn").textContent = "Send recovery link";
+      document.getElementById("login-btn").onclick = requestPasswordReset;
+    }
+
+    function showPasswordResetForm(token) {
+      passwordResetToken = token;
+      setLoginFeedback("");
+      document.getElementById("login-step-1").style.display = "none";
+      document.getElementById("login-step-2").style.display = "none";
+      document.getElementById("login-reset-request").style.display = "none";
+      document.getElementById("login-reset-form").style.display = "";
+      document.getElementById("login-forgot-btn").style.display = "none";
+      document.getElementById("login-reset-back-btn").style.display = "";
+      document.getElementById("login-back-btn").style.display = "none";
+      document.getElementById("login-btn").style.display = "";
+      document.getElementById("login-btn").disabled = false;
+      document.getElementById("login-btn").textContent = "Set new password";
+      document.getElementById("login-btn").onclick = completePasswordReset;
+      document.getElementById("reset-new-password").focus();
+    }
+
+    async function requestPasswordReset() {
+      const button = document.getElementById("login-btn");
+      setLoginFeedback("");
+      button.disabled = true;
+      try {
+        const res = await fetch("/api/auth/password-reset/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const data = await res.json();
+        setLoginFeedback(data.message || "If password recovery is configured, a link has been sent.", true);
+      } catch {
+        setLoginFeedback("Could not request a recovery link. Try again later.");
+      } finally { button.disabled = false; }
+    }
+
+    async function completePasswordReset() {
+      const newPassword = document.getElementById("reset-new-password").value;
+      const confirmPassword = document.getElementById("reset-confirm-password").value;
+      const button = document.getElementById("login-btn");
+      setLoginFeedback("");
+      if (newPassword.length < 12 || newPassword.length > 128) { setLoginFeedback("Use a password between 12 and 128 characters."); return; }
+      if (newPassword !== confirmPassword) { setLoginFeedback("The passwords do not match."); return; }
+      button.disabled = true;
+      try {
+        const res = await fetch("/api/auth/password-reset/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: passwordResetToken, newPassword }) });
+        const data = await res.json();
+        if (!res.ok) { setLoginFeedback(data.error || "The reset link is invalid or expired."); return; }
+        await showLogin();
+        setLoginFeedback(data.message || "Password updated. Sign in with your new password and authenticator code.", true);
+      } catch {
+        setLoginFeedback("Password reset could not be completed. Request a new link and try again.");
+      } finally { button.disabled = false; }
     }
 
     function showTotpStep() {
@@ -1003,6 +1094,15 @@
     }
 
     async function initAuth() {
+      const resetMatch = location.hash.match(/^#reset=([A-Za-z0-9_-]{43})$/);
+      if (resetMatch) {
+        // Keep the bearer token out of the address bar and subsequent browser history.
+        history.replaceState(null, "", location.pathname + location.search);
+        clearAuth();
+        await showLogin();
+        showPasswordResetForm(resetMatch[1]);
+        return;
+      }
       const token = getToken();
       if (!token) { showLogin(); return; }
       try {
