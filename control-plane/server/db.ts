@@ -303,6 +303,19 @@ export async function initControlPlaneDb() {
   // TOTP 2FA columns for cp_users
   try { await query(`ALTER TABLE cp_users ADD COLUMN IF NOT EXISTS totp_secret TEXT DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE cp_users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false`); } catch {}
+  await query(`ALTER TABLE cp_users ADD COLUMN IF NOT EXISTS auth_version INTEGER NOT NULL DEFAULT 0`);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS cp_password_reset_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES cp_users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS cp_password_reset_tokens_user_idx ON cp_password_reset_tokens(user_id, expires_at)`);
 
   await query(`
     CREATE TABLE IF NOT EXISTS upgrade_requests (

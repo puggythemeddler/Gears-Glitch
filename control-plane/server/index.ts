@@ -86,6 +86,8 @@ const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "producti
 // ─── RATE LIMITING ───────────────────────────────────────
 // Strict limit on credential/2FA entry points to blunt brute-force.
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: "Too many auth attempts. Try again later." } });
+const passwordResetRequestLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 3, standardHeaders: true, legacyHeaders: false, message: { error: "Too many recovery requests. Try again later." } });
+const passwordResetCompleteLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false, message: { error: "Too many reset attempts. Try again later." } });
 // Low limit on destructive / provisioning endpoints to slow abuse and fat-finger.
 const destructiveLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "Too many requests. Try again later." } });
 // Control-plane APIs are internet-facing and often perform database or provider
@@ -134,14 +136,14 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "..", "..", "public")));
 
 // ─── AUTH: API KEY + JWT SESSION ──────────────────────────
-interface AuthUser { id: number; username: string; role: string; }
+interface AuthUser { id: number; username: string; role: string; authVersion?: number; }
 
 function generateApiKey(): string {
   return "cp_" + crypto.randomBytes(24).toString("hex");
 }
 
 function signToken(user: AuthUser): string {
-  return jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign({ id: user.id, username: user.username, role: user.role, av: user.authVersion ?? 0 }, JWT_SECRET, { expiresIn: "7d" });
 }
 
 function requireAuth(
@@ -160,14 +162,18 @@ function requireAuth(
         res.status(401).json({ error: "Invalid session" });
         return;
       }
-      queryOne("SELECT id, username, role FROM cp_users WHERE id = $1", [decoded.id])
+      queryOne("SELECT id, username, role, auth_version FROM cp_users WHERE id = $1", [decoded.id])
         .then((user) => {
           if (!user) {
             res.status(401).json({ error: "Session account no longer exists" });
             return;
           }
+          if (Number((decoded as any).av ?? 0) !== Number(user.auth_version ?? 0)) {
+            res.status(401).json({ error: "Session expired. Sign in again." });
+            return;
+          }
           (req as any).authVia = "jwt";
-          (req as any).user = { id: user.id, username: user.username, role: user.role };
+          (req as any).user = { id: user.id, username: user.username, role: user.role, authVersion: Number(user.auth_version ?? 0) };
           return next();
         })
         .catch(() => res.status(500).json({ error: "Auth error" }));
@@ -539,7 +545,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
     }
 
     await query("UPDATE cp_users SET last_login = NOW() WHERE id = $1", [user.id]);
-    const token = signToken({ id: user.id, username: user.username, role: user.role });
+    const token = signToken({ id: user.id, username: user.username, role: user.role, authVersion: Number(user.auth_version ?? 0) });
     let operatorEmail = process.env.OPERATOR_ADMIN_EMAIL || "";
     if (!operatorEmail) {
       try {
@@ -551,6 +557,95 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
   } catch (err: any) {
     console.error("[auth] Login error:", err.message);
     res.status(500).json({ error: "Login failed" });
+  }
+});
+
+const PASSWORD_RESET_MESSAGE = "If password recovery is configured, a one-time link has been sent to the Control Plane recovery email.";
+
+// Recovery email is an explicit deployment setting so tenant contact details
+// can never be used as an implicit destination for a privileged reset.
+app.post("/api/auth/password-reset/request", passwordResetRequestLimiter, async (_req, res) => {
+  let tokenHash = "";
+  try {
+    const recoveryEmail = String(process.env.CP_ADMIN_RECOVERY_EMAIL || "").trim();
+    const admin = await queryOne("SELECT id, username FROM cp_users WHERE username = $1 AND role = 'admin' ORDER BY id LIMIT 1", ["admin"]);
+    const mail = await getSmtpTransport();
+    if (!admin || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail) || !mail) {
+      res.status(202).json({ message: PASSWORD_RESET_MESSAGE });
+      return;
+    }
+
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    await query("DELETE FROM cp_password_reset_tokens WHERE user_id = $1", [admin.id]);
+    await query(
+      "INSERT INTO cp_password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '15 minutes')",
+      [admin.id, tokenHash]
+    );
+
+    const configuredPublicUrl = String(process.env.CP_PUBLIC_URL || "https://gear-glitch-control-plane.onrender.com");
+    const publicUrl = new URL(configuredPublicUrl);
+    if (process.env.NODE_ENV === "production" && publicUrl.protocol !== "https:") {
+      throw new Error("CP_PUBLIC_URL must use HTTPS in production");
+    }
+    const resetUrl = `${publicUrl.origin}/#reset=${rawToken}`;
+    await mail.transporter.sendMail({
+      from: `"${mail.fromName}" <${mail.fromEmail}>`,
+      to: recoveryEmail,
+      subject: "Gear&Glitch Control Plane password reset",
+      text: `A Control Plane password reset was requested. Use this one-time link within 15 minutes: ${resetUrl}\n\nIf you did not request this, ignore this email. Two-factor authentication remains enabled.`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#202124"><h2>Reset your Control Plane password</h2><p>A password reset was requested for the Gear&amp;Glitch Control Plane admin account.</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 18px;background:#ea580c;color:white;text-decoration:none;border-radius:8px">Reset password</a></p><p>This one-time link expires in 15 minutes. Two-factor authentication remains enabled.</p><p>If you did not request this, ignore this message.</p></div>`,
+    });
+    res.status(202).json({ message: PASSWORD_RESET_MESSAGE });
+  } catch {
+    if (tokenHash) {
+      try { await query("DELETE FROM cp_password_reset_tokens WHERE token_hash = $1", [tokenHash]); } catch { /* best-effort cleanup */ }
+    }
+    console.warn("[auth] Password recovery request could not be completed.");
+    res.status(202).json({ message: PASSWORD_RESET_MESSAGE });
+  }
+});
+
+app.post("/api/auth/password-reset/complete", passwordResetCompleteLimiter, async (req, res) => {
+  try {
+    const token = typeof req.body?.token === "string" ? req.body.token : "";
+    const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
+      res.status(400).json({ error: "This reset link is invalid or expired. Request a new one." });
+      return;
+    }
+    if (newPassword.length < 12 || newPassword.length > 128) {
+      res.status(400).json({ error: "Use a password between 12 and 128 characters." });
+      return;
+    }
+
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const resetUser = await withTransaction(async (client) => {
+      const tokenResult = await client.query(
+        "SELECT id, user_id FROM cp_password_reset_tokens WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > NOW() FOR UPDATE",
+        [tokenHash]
+      );
+      const reset = tokenResult.rows[0];
+      if (!reset) return null;
+      const userResult = await client.query("SELECT id, username, role FROM cp_users WHERE id = $1 FOR UPDATE", [reset.user_id]);
+      const user = userResult.rows[0];
+      if (!user || user.username !== "admin" || user.role !== "admin") return null;
+      await client.query("UPDATE cp_users SET password_hash = $1, auth_version = auth_version + 1 WHERE id = $2", [passwordHash, user.id]);
+      await client.query("UPDATE cp_password_reset_tokens SET consumed_at = NOW() WHERE id = $1", [reset.id]);
+      await client.query("DELETE FROM cp_password_reset_tokens WHERE user_id = $1 AND id <> $2", [user.id, reset.id]);
+      return user;
+    });
+
+    if (!resetUser) {
+      res.status(400).json({ error: "This reset link is invalid or expired. Request a new one." });
+      return;
+    }
+    await logAudit(resetUser.id, resetUser.username, "password_reset", "auth", null, "Control Plane admin", "email recovery; 2FA retained; previous sessions revoked");
+    res.json({ message: "Password updated. Two-factor authentication is still enabled. Sign in with your new password and authenticator code." });
+  } catch {
+    console.warn("[auth] Password recovery could not be completed.");
+    res.status(500).json({ error: "Password reset could not be completed. Request a new link and try again." });
   }
 });
 
@@ -690,7 +785,7 @@ app.put("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
     }
     if (password) {
       const hash = await bcrypt.hash(password, 12);
-      await query("UPDATE cp_users SET password_hash = $1 WHERE id = $2", [hash, id]);
+      await query("UPDATE cp_users SET password_hash = $1, auth_version = auth_version + 1 WHERE id = $2", [hash, id]);
     }
     res.json({ message: "User updated." });
   } catch (err: any) {

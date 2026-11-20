@@ -23,6 +23,8 @@ npm run dev             # http://localhost:4000
 | `CP_SECRETS_KEY` | No (recommended) | Dedicated AES-256-GCM key for secrets at rest (≥16 chars). Overrides the `JWT_SECRET` fallback so at-rest encryption is independent of the session-signing key. Set BEFORE writing secrets, or re-enter secrets via the UI after changing it |
 | `ALLOWED_ORIGINS` | No | Comma-separated browser-origin allowlist for the dashboard CORS policy (same-origin is always allowed; unspecified origins fail closed) |
 | `CP_ADMIN_PASSWORD` | No | Password used only when creating the initial `admin` account. If unset, the server generates a temporary random password and prints it once at first boot; set this variable before a fresh database is initialized to supply the initial password. It does not reset an existing account. |
+| `CP_ADMIN_RECOVERY_EMAIL` | No | Exact destination for the Control Plane admin's email-based password recovery link. Recovery is disabled when blank and never infers a destination from tenant data. Links are single-use and expire after 15 minutes; 2FA stays enabled. |
+| `CP_PUBLIC_URL` | No | Public Control Plane origin used to create password-recovery links (defaults to `https://gear-glitch-control-plane.onrender.com`). |
 | `OPERATOR_ADMIN_EMAIL` | No | Default admin email for new clients (defaults to `admin@gearandglitch.com`) |
 | `RENDER_API_KEY` | Yes | Render API key for provisioning/suspending services |
 | `RENDER_API_URL` | No | Defaults to `https://api.render.com/v1` |
