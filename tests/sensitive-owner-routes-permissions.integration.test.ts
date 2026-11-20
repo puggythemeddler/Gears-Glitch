@@ -5,6 +5,7 @@ import { spawn, ChildProcess } from "child_process";
 import { query, closePool } from "../server/db-helpers";
 
 import { bootstrapTestDatabase } from "../server/test-db";
+import { grantShopPlanFeaturesForTest } from "./helpers/plan-entitlements";
 const HAS_DB = bootstrapTestDatabase();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -40,6 +41,7 @@ describe("Sensitive owner routes require explicit permissions (DB)", { skip: !HA
   const tsxCli = path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");
 
   let managerToken = "";
+  let restoreSecurityEntitlements: (() => Promise<void>) | null = null;
 
   async function waitForHealth(url: string, timeoutMs = 120000): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
@@ -99,6 +101,11 @@ describe("Sensitive owner routes require explicit permissions (DB)", { skip: !HA
   }
 
   before(async () => {
+    restoreSecurityEntitlements = await grantShopPlanFeaturesForTest([
+      "Database backup and export",
+      "Audit log",
+      "Branch management",
+    ]);
     const port = 20000 + Math.floor(Math.random() * 20000);
     base = `http://127.0.0.1:${port}`;
 
@@ -137,6 +144,10 @@ describe("Sensitive owner routes require explicit permissions (DB)", { skip: !HA
     if (child) {
       child.kill();
       child = null;
+    }
+    if (restoreSecurityEntitlements) {
+      await restoreSecurityEntitlements();
+      restoreSecurityEntitlements = null;
     }
     await closePool();
   });
