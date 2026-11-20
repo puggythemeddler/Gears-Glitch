@@ -569,8 +569,13 @@ app.post("/api/auth/password-reset/request", passwordResetRequestLimiter, async 
   try {
     const recoveryEmail = String(process.env.CP_ADMIN_RECOVERY_EMAIL || "").trim();
     const admin = await queryOne("SELECT id, username FROM cp_users WHERE username = $1 AND role = 'admin' ORDER BY id LIMIT 1", ["admin"]);
-    const mail = await getSmtpTransport();
+    const mail = await getSmtpTransport({ preferEnvironment: true });
     if (!admin || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail) || !mail) {
+      console.warn("[auth] Password recovery email not sent; configuration check failed.", {
+        adminAvailable: !!admin,
+        recoveryAddressConfigured: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail),
+        smtpConfigured: !!mail,
+      });
       res.status(202).json({ message: PASSWORD_RESET_MESSAGE });
       return;
     }
@@ -597,11 +602,19 @@ app.post("/api/auth/password-reset/request", passwordResetRequestLimiter, async 
       html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#202124"><h2>Reset your Control Plane password</h2><p>A password reset was requested for the Gear&amp;Glitch Control Plane admin account.</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 18px;background:#ea580c;color:white;text-decoration:none;border-radius:8px">Reset password</a></p><p>This one-time link expires in 15 minutes. Two-factor authentication remains enabled.</p><p>If you did not request this, ignore this message.</p></div>`,
     });
     res.status(202).json({ message: PASSWORD_RESET_MESSAGE });
-  } catch {
+  } catch (error) {
     if (tokenHash) {
       try { await query("DELETE FROM cp_password_reset_tokens WHERE token_hash = $1", [tokenHash]); } catch { /* best-effort cleanup */ }
     }
-    console.warn("[auth] Password recovery request could not be completed.");
+    const details = error && typeof error === "object" ? error as { name?: unknown; code?: unknown; responseCode?: unknown } : {};
+    const safeName = typeof details.name === "string" ? details.name.slice(0, 60) : "UnknownError";
+    const safeCode = typeof details.code === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(details.code) ? details.code : undefined;
+    const safeResponseCode = Number.isInteger(details.responseCode) ? details.responseCode : undefined;
+    console.warn("[auth] Password recovery request could not be completed.", {
+      errorName: safeName,
+      errorCode: safeCode,
+      smtpResponseCode: safeResponseCode,
+    });
     res.status(202).json({ message: PASSWORD_RESET_MESSAGE });
   }
 });
