@@ -11,8 +11,8 @@ import Icon from "./icons";
 import { Media } from "./Media";
 import { normalizeHref } from "@/lib/links";
 import { useFeature } from "@/lib/features";
-import { getStorefrontCategories, getStorefrontGroups } from "@/lib/storefront-data";
-import type { ProductGroup } from "@/lib/types";
+import { getProducts, getStorefrontCategories, getStorefrontGroups } from "@/lib/storefront-data";
+import type { Product, ProductGroup } from "@/lib/types";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -40,12 +40,20 @@ const STATIC_NAV_LINKS = [
   { id: "contact", label: "Contact", href: "/contact" },
 ];
 
+type SearchSuggestion = { id: string; label: string; kind: "Product" | "Category" | "Department"; href: string };
+
 export default function Layout({ children, activeNav }: LayoutProps) {
   const { isLoggedIn, userName, cartCount, settings, settingsLoaded, isDark, toggleDark, logout } = useApp();
   const [isStaff, setIsStaff] = useState(false);
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([]);
   const [subcategories, setSubcategories] = useState<any[]>([]);
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
+  const [searchProducts, setSearchProducts] = useState<Product[]>([]);
+  const [searchProductsLoaded, setSearchProductsLoaded] = useState(false);
+  const [searchProductsLoading, setSearchProductsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeSearchSuggestion, setActiveSearchSuggestion] = useState(-1);
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [springboardOpen, setSpringboardOpen] = useState(false);
@@ -62,6 +70,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const sessionIdRef = useRef<string>("");
   const springboardBtnRef = useRef<HTMLButtonElement>(null);
   const springboardPanelRef = useRef<HTMLDivElement>(null);
+  const searchProductsRequestRef = useRef(false);
 
   useEffect(() => {
     let sid = sessionStorage.getItem("wa_sid");
@@ -96,6 +105,48 @@ export default function Layout({ children, activeNav }: LayoutProps) {
       .then((groups) => setProductGroups(groups.filter((group) => group.isActive)))
       .catch(() => setProductGroups([]));
   }, []);
+
+  function loadSearchProducts() {
+    if (searchProductsLoaded || searchProductsRequestRef.current) return;
+    searchProductsRequestRef.current = true;
+    setSearchProductsLoading(true);
+    getProducts()
+      .then(setSearchProducts)
+      .catch(() => setSearchProducts([]))
+      .finally(() => {
+        searchProductsRequestRef.current = false;
+        setSearchProductsLoaded(true);
+        setSearchProductsLoading(false);
+      });
+  }
+
+  const searchSuggestions: SearchSuggestion[] = (() => {
+    if (!searchOpen) return [];
+    const term = searchQuery.trim().toLocaleLowerCase();
+    const matches = (label: string) => !term || label.toLocaleLowerCase().includes(term);
+    const suggestions: SearchSuggestion[] = [];
+    const add = (item: SearchSuggestion) => {
+      if (suggestions.length < 8 && !suggestions.some((suggestion) => suggestion.kind === item.kind && suggestion.id === item.id)) suggestions.push(item);
+    };
+
+    categories.filter((category) => matches(category.label)).forEach((category) => add({
+      id: category.id, label: category.label, kind: "Category", href: `/${encodeURIComponent(category.id)}`,
+    }));
+    productGroups.filter((group) => matches(group.name)).forEach((group) => add({
+      id: group.id, label: group.name, kind: "Department", href: `/group/${encodeURIComponent(group.id)}`,
+    }));
+    searchProducts.filter((product) => matches(product.name)).forEach((product) => add({
+      id: product.id, label: product.name, kind: "Product", href: `/?search=${encodeURIComponent(product.name)}`,
+    }));
+    return suggestions;
+  })();
+
+  function selectSearchSuggestion(suggestion: SearchSuggestion) {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setActiveSearchSuggestion(-1);
+    void router.push(suggestion.href);
+  }
 
   useEffect(() => {
     let pinned = false;
@@ -197,15 +248,16 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   }, [router.events, springboardPinned]);
 
   useEffect(() => {
-    if (!springboardOpen && !settingsOpen) return;
+    if (!springboardOpen && !settingsOpen && !searchOpen) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (!springboardPinned && !target.closest(".springboard-wrap")) setSpringboardOpen(false);
       if (!target.closest(".header-settings-wrap")) setSettingsOpen(false);
+      if (!target.closest(".header-search-form")) { setSearchOpen(false); setActiveSearchSuggestion(-1); }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [springboardOpen, settingsOpen, springboardPinned]);
+  }, [springboardOpen, settingsOpen, searchOpen, springboardPinned]);
 
   useEffect(() => {
     if (!springboardOpen) return;
@@ -389,11 +441,79 @@ export default function Layout({ children, activeNav }: LayoutProps) {
             )}
           </div>}
         </div>
-        <form className="header-search-form" onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const q = fd.get("q")?.toString().trim(); if (q) router.push(`/?search=${encodeURIComponent(q)}`); }}>
-          <input className="header-search-input" name="q" type="search" placeholder="Search PCs, laptops, GPUs, repairs..." aria-label="Search products" />
-          <button type="submit" aria-label="Search">
+        <form
+          className="header-search-form"
+          role="search"
+          aria-label="Search this store"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (activeSearchSuggestion >= 0 && searchSuggestions[activeSearchSuggestion]) {
+              selectSearchSuggestion(searchSuggestions[activeSearchSuggestion]);
+              return;
+            }
+            const query = searchQuery.trim();
+            if (query) void router.push(`/?search=${encodeURIComponent(query)}`);
+            setSearchOpen(false);
+          }}
+        >
+          <input
+            className="header-search-input"
+            name="q"
+            type="search"
+            role="combobox"
+            aria-label="Search products, categories, or departments"
+            aria-autocomplete="list"
+            aria-expanded={searchOpen}
+            aria-controls="header-search-suggestions"
+            aria-activedescendant={activeSearchSuggestion >= 0 ? `header-search-option-${activeSearchSuggestion}` : undefined}
+            placeholder="Search products, categories, or departments..."
+            value={searchQuery}
+            onFocus={() => { setSearchOpen(true); loadSearchProducts(); }}
+            onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); setActiveSearchSuggestion(-1); loadSearchProducts(); }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" && searchSuggestions.length) {
+                e.preventDefault();
+                setActiveSearchSuggestion((index) => (index + 1) % searchSuggestions.length);
+              } else if (e.key === "ArrowUp" && searchSuggestions.length) {
+                e.preventDefault();
+                setActiveSearchSuggestion((index) => (index <= 0 ? searchSuggestions.length - 1 : index - 1));
+              } else if (e.key === "Escape") {
+                setSearchOpen(false);
+                setActiveSearchSuggestion(-1);
+              } else if (e.key === "Enter" && activeSearchSuggestion >= 0 && searchSuggestions[activeSearchSuggestion]) {
+                e.preventDefault();
+                selectSearchSuggestion(searchSuggestions[activeSearchSuggestion]);
+              }
+            }}
+          />
+          <button type="submit" aria-label="Search this store">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
+          {searchOpen && (
+            <div className="header-search-suggestions" id="header-search-suggestions" role="listbox" aria-label="Store catalogue suggestions">
+              {searchProductsLoading && <div className="header-search-empty" role="status">Loading this store’s catalogue…</div>}
+              {!searchProductsLoading && searchSuggestions.map((suggestion, index) => (
+                <button
+                  key={`${suggestion.kind}-${suggestion.id}`}
+                  id={`header-search-option-${index}`}
+                  className={`header-search-suggestion${activeSearchSuggestion === index ? " is-active" : ""}`}
+                  type="button"
+                  role="option"
+                  aria-selected={activeSearchSuggestion === index}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => selectSearchSuggestion(suggestion)}
+                >
+                  <span>{suggestion.label}</span>
+                  <small>{suggestion.kind}</small>
+                </button>
+              ))}
+              {!searchProductsLoading && searchSuggestions.length === 0 && (
+                <div className="header-search-empty" role="status">
+                  {searchQuery.trim() ? "No matching products, categories, or departments." : "No products or categories are available yet."}
+                </div>
+              )}
+            </div>
+          )}
         </form>
         <div className="header-right">
           <div className="header-right-nav">
