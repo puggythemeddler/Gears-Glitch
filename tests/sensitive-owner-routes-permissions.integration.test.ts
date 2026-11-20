@@ -101,11 +101,6 @@ describe("Sensitive owner routes require explicit permissions (DB)", { skip: !HA
   }
 
   before(async () => {
-    restoreSecurityEntitlements = await grantShopPlanFeaturesForTest([
-      "Database backup and export",
-      "Audit log",
-      "Branch management",
-    ]);
     const port = 20000 + Math.floor(Math.random() * 20000);
     base = `http://127.0.0.1:${port}`;
 
@@ -130,6 +125,11 @@ describe("Sensitive owner routes require explicit permissions (DB)", { skip: !HA
     const ready = await waitForHealth(`${base}/api/health`);
     assert.ok(ready, `server never became healthy.\nRecent child output:\n${childLog.slice(-40).join("\n")}`);
 
+    restoreSecurityEntitlements = await grantShopPlanFeaturesForTest([
+      "Database backup and export",
+      "Audit log",
+      "Branch management",
+    ]);
     await loadCsrf();
     adminToken = await login("admin", "qa-Admin-Pass-2026!");
 

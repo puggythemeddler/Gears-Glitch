@@ -197,7 +197,12 @@ describe("account-linked branch selection over real HTTP (DB)", { skip: !HAS_DB 
 
     // This suite exercises branch management and serial lookup over HTTP;
     // grant both only on the disposable fixture plan and restore them at teardown.
-    restorePlanEntitlements = await grantShopPlanFeaturesForTest(["Branch management", "Serial number tracking"]);
+    restorePlanEntitlements = await grantShopPlanFeaturesForTest([
+      "Branch management",
+      "Serial number tracking",
+      "Stock control",
+      "Analytics dashboard",
+    ]);
 
     // A multi-branch shop is the precondition for most of these rules: with one
     // branch the resolver falls back to granting it to everyone.

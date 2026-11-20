@@ -101,7 +101,6 @@ describe("pages API over real HTTP (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL 
   }
 
   before(async () => {
-    restorePagesEntitlement = await grantShopPlanFeatureForTest("Custom pages & landing pages");
     const port = 20000 + Math.floor(Math.random() * 20000);
     base = `http://127.0.0.1:${port}`;
 
@@ -129,6 +128,7 @@ describe("pages API over real HTTP (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL 
     const ready = await waitForHealth(`${base}/api/health`);
     assert.ok(ready, `server never became healthy.\nRecent child output:\n${childLog.slice(-40).join("\n")}`);
 
+    restorePagesEntitlement = await grantShopPlanFeatureForTest("Custom pages & landing pages");
     await loadCsrf();
     adminToken = await login("admin", "qa-Admin-Pass-2026!");
     techToken = await login("technician", "qa-Tech-Pass-2026!");
