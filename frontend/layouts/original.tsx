@@ -10,6 +10,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { normalizeHref } from "@/lib/links";
 import {
   heroEffectProfile,
+  cycleHeroIndex,
   selectHeroFeatured,
 } from "@/lib/hero-effects";
 import { useHeroPointerEffects, usePrefersReducedMotion } from "@/components/motion/useHeroEffects";
@@ -56,9 +57,13 @@ function HeroStarRating({ average }: { average: number }) {
 }
 
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
-  const { isLoggedIn, userName, settings, isDark } = useApp();
+  const { isDark } = useApp();
   const repairsEnabled = useFeature("Repair ticketing");
   const [activeIdx, setActiveIdx] = useState(0);
+  const [manualResetKey, setManualResetKey] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocusWithin, setIsFocusWithin] = useState(false);
+  const carouselPaused = isHovered || isFocusWithin;
   const heroRef = useRef<HTMLDivElement>(null);
   const reducedMotion = usePrefersReducedMotion();
   const effects = heroEffectProfile(hero, reducedMotion);
@@ -74,6 +79,22 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
 
   const featured = selectHeroFeatured(products, 6);
   const activeProductIndex = featured.length > 0 ? activeIdx % featured.length : 0;
+  const selectSlide = (index: number) => {
+    setActiveIdx(index);
+    setManualResetKey((key) => key + 1);
+  };
+  const stepSlide = (delta: number) => {
+    setActiveIdx((index) => cycleHeroIndex(index, delta, featured.length));
+    setManualResetKey((key) => key + 1);
+  };
+
+  useEffect(() => {
+    if (featured.length <= 1 || carouselPaused) return;
+    const timer = window.setTimeout(() => {
+      setActiveIdx((index) => cycleHeroIndex(index, 1, featured.length));
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [featured.length, activeProductIndex, manualResetKey, carouselPaused]);
 
   const isSafeHeroColor = (value: unknown): value is string =>
     typeof value === "string" && /^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(value.trim());
@@ -108,9 +129,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const browseLink = usesLegacyCategoryLink ? "/repairs" : normalizeHref(configuredBrowseLink, "/repairs");
   const browseLinkIsRepair = ["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"].some((path) => browseLink === path || browseLink.startsWith(path + "/"));
 
-  const showWhatsApp = hero?.showWhatsApp !== false;
-  const waPhone = settings?.storePhone ? settings.storePhone.replace(/[^0-9]/g, "") : "";
-
   const panel = featured.length > 0 ? featured[activeProductIndex] : null;
 
   return (
@@ -124,17 +142,6 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
       {effects.interactive && effects.parallax && <div className="dy-hero-bg-layer" aria-hidden="true" />}
       <div className="dy-hero-inner">
         <div className="dy-hero-content">
-          {isLoggedIn && userName && (
-            <p className="dy-hero-greeting">
-              Welcome back, {userName.split(/\s+/)[0]}
-              <span>&mdash; we saved you some great deals</span>
-            </p>
-          )}
-
-          <h1 className="dy-hero-headline">
-            {headline} <span style={{ color: "var(--primary)" }}>{headlineAccent}</span>
-          </h1>
-
           {badgeActive && (
             badgeLink !== "#" ? (
               <a href={badgeLink} className="hero-promotion">
@@ -144,6 +151,10 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
               <p className="hero-promotion">{badgeText}</p>
             )
           )}
+
+          <h1 className="dy-hero-headline">
+            {headline} <span style={{ color: "var(--primary)" }}>{headlineAccent}</span>
+          </h1>
 
           <p className="dy-hero-sub">{subtitle}</p>
 
@@ -156,21 +167,18 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
               {browseLabel}
             </Link>}
-            {showWhatsApp && waPhone && (
-              <a
-                href={normalizeHref(`https://wa.me/${waPhone}?text=${encodeURIComponent("Hello! I'm interested in your products.")}`)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="dy-hero-contact-link"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-                Chat with us on WhatsApp
-              </a>
-            )}
           </div>
         </div>
 
-        <div className="dy-hero-showcase">
+        <div
+          className={`dy-hero-showcase${carouselPaused ? " is-paused" : ""}`}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          onFocusCapture={() => setIsFocusWithin(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsFocusWithin(false);
+          }}
+        >
           {panel ? (
             <Link
               key={panel.id}
@@ -184,7 +192,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
                 <div className="dy-hero-panel-media-backdrop" aria-hidden="true" />
                 <div className="dy-hero-panel-media-inner">
                   {panel.imageUrl ? (
-                    <Media src={panel.imageUrl} alt={panel.name} width={640} height={360} fit="contain" fallbackLabel={panel.name} />
+                    <Media src={panel.imageUrl} alt={panel.name} width={640} height={360} loading="eager" fetchPriority="high" fit="contain" className="dy-hero-product-image" fallbackLabel={panel.name} />
                   ) : (
                     <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem", textAlign: "center" }}>
                       {panel.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
@@ -223,20 +231,38 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
             </div>
           )}
           {featured.length > 1 && (
-            <nav className="dy-hero-product-picker" aria-label="Choose a featured product">
-              {featured.map((product, index) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  className={`dy-hero-product-option${index === activeProductIndex ? " is-active" : ""}`}
-                  onClick={() => setActiveIdx(index)}
-                  aria-pressed={index === activeProductIndex}
-                  aria-label={`Show ${product.name}`}
-                >
-                  {product.name}
-                </button>
-              ))}
-            </nav>
+            <div className="dy-hero-carousel-controls" style={{ "--hero-carousel-duration": "5000ms" } as React.CSSProperties}>
+              <button type="button" className="dy-hero-arrow" aria-label="Previous featured product" onClick={() => stepSlide(-1)}>‹</button>
+              <nav
+                className="dy-hero-product-picker"
+                role="tablist"
+                aria-label="Choose a featured product"
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                  event.preventDefault();
+                  const next = cycleHeroIndex(activeProductIndex, event.key === "ArrowRight" ? 1 : -1, featured.length);
+                  selectSlide(next);
+                  event.currentTarget.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
+                }}
+              >
+                {featured.map((product, index) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    role="tab"
+                    className={`dy-hero-product-option${index === activeProductIndex ? " is-active" : ""}`}
+                    onClick={() => selectSlide(index)}
+                    aria-selected={index === activeProductIndex}
+                    tabIndex={index === activeProductIndex ? 0 : -1}
+                    aria-label={`Show ${product.name}`}
+                  >
+                    <span>{product.name}</span>
+                    {index === activeProductIndex && <span key={`${product.id}-${activeIdx}-${manualResetKey}`} className="dy-hero-product-progress" aria-hidden="true" />}
+                  </button>
+                ))}
+              </nav>
+              <button type="button" className="dy-hero-arrow" aria-label="Next featured product" onClick={() => stepSlide(1)}>›</button>
+            </div>
           )}
         </div>
       </div>
@@ -244,10 +270,11 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   );
 }
 
-// Only show store-authored highlights and opted-in live totals. Never invent
-// delivery, warranty, authenticity, or payment guarantees as default copy.
+// Preserve each store's configured trust copy. The Gears&Glitch storefront uses
+// the three trust labels explicitly selected for its flagship landing page.
 function GuaranteeStrip({ hero }: { hero?: any }) {
   const [liveStats, setLiveStats] = useState<any>(null);
+  const { settings } = useApp();
 
   useEffect(() => {
     fetch("/api/storefront-stats").then(r => r.json()).then(setLiveStats).catch(() => {});
@@ -255,7 +282,12 @@ function GuaranteeStrip({ hero }: { hero?: any }) {
 
   const showTrustStrip = hero?.showTrustStrip !== false;
 
-  const configured: string[] = (hero?.highlights?.length > 0 ? hero.highlights : [])
+  const storeName = String(settings?.storeName || "").toLowerCase();
+  const isGearGlitchStore = storeName.includes("gear") && storeName.includes("glitch");
+  const fallbackHighlights = isGearGlitchStore
+    ? ["Genuine Products", "Fast Delivery Across Kenya", "Secure Payments"]
+    : [];
+  const configured: string[] = (hero?.highlights?.length > 0 ? hero.highlights : fallbackHighlights)
     .map((h: any) => String(h).trim())
     .filter(Boolean);
   const items = configured.slice(0, 4);

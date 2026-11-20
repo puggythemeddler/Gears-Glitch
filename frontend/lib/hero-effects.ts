@@ -200,11 +200,35 @@ export function heroEffectVars(
   };
 }
 
-/** Featured showcase picks: image-backed products, capped, stable order. */
+const HERO_FEATURED_NAME_PRIORITY: RegExp[] = [
+  /amd\s+radeon\s+rx\s*7800\s*xt/i,
+  /xiaomi\s+redmibook\s+16\s+pro(?:\s*\(?(?:2026)\)?)?/i,
+  /mac\s*pc/i,
+  /lenovo\s+thinkbook\s+15\s+g2\s+itl/i,
+  /dell\s+inspiron\s+14\s+3520/i,
+];
+
+function heroFeaturedPriority(product: Product): number {
+  const name = String(product.name || "");
+  const configuredIndex = HERO_FEATURED_NAME_PRIORITY.findIndex((pattern) => pattern.test(name));
+  if (configuredIndex >= 0) return configuredIndex;
+
+  const broadName = `${name} ${String(product.category || "")}`;
+  if (/laptop|notebook|desktop|computer|\bpc\b|workstation|server|graphics\s*card|\bgpu\b|radeon|geforce/i.test(broadName)) return 10;
+  if (/thermal\s+paste/i.test(name)) return 30;
+  return 20;
+}
+
+/** Featured showcase picks: image-backed products, flagship gear first, stable otherwise. */
 export function selectHeroFeatured(products: Product[] | null | undefined, limit = 6): Product[] {
   if (!Array.isArray(products)) return [];
   const safeLimit = isFiniteNumber(limit) && limit > 0 ? Math.floor(limit) : 6;
-  return products.filter((p) => !!p && !!p.imageUrl).slice(0, safeLimit);
+  return products
+    .filter((p) => !!p && !!p.imageUrl)
+    .map((product, index) => ({ product, index, priority: heroFeaturedPriority(product) }))
+    .sort((a, b) => a.priority - b.priority || a.index - b.index)
+    .slice(0, safeLimit)
+    .map(({ product }) => product);
 }
 
 /** Manual carousel step with wrap-around; safe for empty/single-item sets. */
