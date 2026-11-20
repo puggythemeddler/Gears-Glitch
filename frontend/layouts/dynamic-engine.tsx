@@ -5,10 +5,11 @@ import { Motion } from "@/components/motion/Motion";
 import { Media } from "@/components/Media";
 import { motionGroupItemVars } from "@/lib/motion";
 import type { MotionConfig, MotionIntensity, MotionTrigger } from "@/lib/motion";
-import { heroEffectProfile, type HeroEffectsConfig } from "@/lib/hero-effects";
+import { cycleHeroIndex, heroEffectProfile, selectHeroFeatured, type HeroEffectsConfig } from "@/lib/hero-effects";
 import { useHeroPointerEffects, usePrefersReducedMotion } from "@/components/motion/useHeroEffects";
 import { normalizeHref } from "@/lib/links";
 import { api } from "@/lib/api";
+import { useApp } from "@/lib/app-context";
 import { isAllowedPersistentImageSrc, isHexColor } from "@/lib/image-allowlist";
 
 // Render a builder-supplied link as an anchor only when it actually points
@@ -49,6 +50,7 @@ export interface DynamicLayoutConfig {
     buttons?: { label: string; link: string; variant?: "secondary" | "outline" }[];
     backgroundImage?: string;
     featuredCategory?: string;
+    trustItems?: string[];
     animation?: MotionConfig | null;
     effects?: Partial<HeroEffectsConfig> | null;
   };
@@ -182,12 +184,13 @@ function CheckIcon() {
   );
 }
 
-const TRUST_ITEMS = ["Delivery nationwide", "1-year repair warranty", "Authorized dealers"];
+const DEFAULT_TRUST_ITEMS = ["Genuine Products", "Fast Delivery Across Kenya", "Secure Payments"];
 
-function TrustRow() {
+function TrustRow({ items = [] }: { items?: string[] }) {
+  if (items.length === 0) return null;
   return (
     <div className="dy-hero-trust">
-      {TRUST_ITEMS.map((t) => (
+      {items.slice(0, 3).map((t) => (
         <span key={t} className="dy-hero-trust-item">
           <CheckIcon />
           {t}
@@ -201,29 +204,21 @@ function ProductPanel({ item, interactive }: { item?: Product; interactive?: boo
   if (!item) return null;
   return (
     <a
-      href={`/product?id=${item.id}`}
+      href={`/product?id=${encodeURIComponent(item.id)}`}
       className={`dy-hero-panel${interactive ? " dy-hero-panel--interactive" : ""}`}
       style={{ textDecoration: "none", color: "var(--text)" }}
       aria-label={`View ${item.name}`}
     >
-      <span className="dy-hero-panel-tag">Featured</span>
-      <div className={`dy-hero-panel-media${interactive ? " dy-hero-panel-media--stage" : ""}`}>
-        {interactive ? (
-          <>
-            <div className="dy-hero-panel-media-backdrop" aria-hidden="true" />
-            <div className="dy-hero-panel-media-inner">
-              {item.imageUrl ? (
-                <Media src={item.imageUrl} alt={item.name} width={640} height={360} fit="cover" fallbackLabel={item.name} />
-              ) : (
-                <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem" }}>{item.name}</span>
-              )}
-            </div>
-          </>
-        ) : item.imageUrl ? (
-          <Media src={item.imageUrl} alt={item.name} width={640} height={360} fit="cover" fallbackLabel={item.name} />
-        ) : (
-          <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem" }}>{item.name}</span>
-        )}
+      <span className="dy-hero-panel-tag">{item.inStock ? "Available now" : "Out of stock"}</span>
+      <div className="dy-hero-panel-media dy-hero-panel-media--stage">
+        <div className="dy-hero-panel-media-backdrop" aria-hidden="true" />
+        <div className="dy-hero-panel-media-inner">
+          {item.imageUrl ? (
+            <Media src={item.imageUrl} alt={item.name} width={640} height={360} loading="eager" fetchPriority="high" fit="contain" className="dy-hero-product-image" fallbackLabel={item.name} />
+          ) : (
+            <span style={{ color: "var(--text-tertiary)", fontSize: "0.9rem" }}>{item.name}</span>
+          )}
+        </div>
       </div>
       <div className="dy-hero-panel-foot">
         <span className="dy-hero-panel-name">{item.name}</span>
@@ -234,38 +229,50 @@ function ProductPanel({ item, interactive }: { item?: Product; interactive?: boo
 }
 
 function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero"]; colors?: DynamicLayoutConfig["colors"]; products: Product[]; categories?: { id: string; label: string }[] }) {
+  const { settings } = useApp();
   const heroActive = !!hero && hero.enabled !== false && hero.style !== "none";
 
   // Hooks run unconditionally so the Studio can toggle style/enabled without
   // tripping React's "hooks changed order" guard.
   const isCarousel = heroActive && hero.style !== "minimal" && hero.style !== "split";
   const [current, setCurrent] = useState(0);
+  const [manualResetKey, setManualResetKey] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocusWithin, setIsFocusWithin] = useState(false);
+  const isPaused = isHovered || isFocusWithin;
   const heroRef = useRef<HTMLDivElement>(null);
   const reducedMotion = usePrefersReducedMotion();
   const effects = heroEffectProfile(hero, reducedMotion);
 
   const selectedProducts = hero?.featuredCategory
     ? products.filter((p) => p.category === hero.featuredCategory)
-    : products.some((p) => p.salePrice)
-      ? products.filter((p) => p.salePrice)
-      : products;
-  const featuredRaw = hero?.featuredCategory
-    ? selectedProducts.slice(0, 5)
-    : [...selectedProducts]
-        .map((product, index) => ({ product, index }))
-        .sort((a, b) => {
-          const coreDevice = /laptop|notebook|desktop|computer|\bpc\b|workstation|server|graphics card|gpu/i;
-          return Number(coreDevice.test(b.product.category || "")) - Number(coreDevice.test(a.product.category || "")) || a.index - b.index;
-        })
-        .slice(0, 5)
-        .map(({ product }) => product);
-  const featured = isCarousel ? featuredRaw : featuredRaw.slice(0, 1);
+    : products;
+  const featured = isCarousel
+    ? selectHeroFeatured(selectedProducts, 6)
+    : selectedProducts.slice(0, 1);
+  const activeIndex = featured.length > 0 ? current % featured.length : 0;
+  const configuredTrustItems = hero?.trustItems?.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()) || [];
+  const storeName = String(settings?.storeName || "").toLowerCase();
+  const isGearGlitchStore = storeName.includes("gear") && storeName.includes("glitch");
+  const trustItems = configuredTrustItems.length > 0
+    ? configuredTrustItems
+    : isGearGlitchStore ? DEFAULT_TRUST_ITEMS : [];
+  const selectSlide = (index: number) => {
+    setCurrent(index);
+    setManualResetKey((key) => key + 1);
+  };
+  const stepSlide = (delta: number) => {
+    setCurrent((index) => cycleHeroIndex(index, delta, featured.length));
+    setManualResetKey((key) => key + 1);
+  };
 
   useEffect(() => {
-    if (!isCarousel || featured.length <= 1 || reducedMotion) return;
-    const t = setInterval(() => setCurrent((c) => (c + 1) % featured.length), 5000);
-    return () => clearInterval(t);
-  }, [isCarousel, featured.length, reducedMotion]);
+    if (!isCarousel || featured.length <= 1 || isPaused || reducedMotion) return;
+    const timer = window.setTimeout(() => {
+      setCurrent((index) => cycleHeroIndex(index, 1, featured.length));
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [isCarousel, featured.length, current, manualResetKey, isPaused, reducedMotion]);
 
   // Pointer effects share the Original-layout implementation: CSS custom
   // properties written off the render path, with the active hero variant as a
@@ -309,17 +316,17 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
           {hero.ctaText && (
             <DyLink className="dy-hero-btn dy-hero-btn--primary" href={hero.ctaLink} fid="hero.ctaText">{hero.ctaText}</DyLink>
           )}
-          {(hero.buttons || []).map((b, i) => (
+          {(hero.buttons || []).slice(0, 1).map((b, i) => (
             <DyLink key={`${b.label}-${i}`} className="dy-hero-btn dy-hero-btn--secondary" href={b.link} fid={`hero.buttons.${i}.label`}>{b.label}</DyLink>
           ))}
         </div>
       )}
-      <TrustRow />
+      <TrustRow items={trustItems} />
     </>
   );
 
   const isMinimal = hero.style === "minimal";
-  const item = isMinimal ? undefined : isCarousel ? featured[current % Math.max(featured.length, 1)] : featured[0];
+  const item = isMinimal ? undefined : isCarousel ? featured[activeIndex] : featured[0];
 
   return (
     <div
@@ -337,20 +344,48 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
       ) : (
         <div className="dy-hero-inner">
           <div className="dy-hero-content">{content}</div>
-          <div className="dy-hero-showcase">
+          <div
+            className={`dy-hero-showcase${isPaused ? " is-paused" : ""}`}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            onFocusCapture={() => setIsFocusWithin(true)}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsFocusWithin(false);
+            }}
+          >
             <ProductPanel item={item} interactive={effects.allowPointer} />
             {isCarousel && featured.length > 1 && (
-              <div className="dy-hero-dots">
-                {featured.map((_: unknown, i: number) => (
-                  <button
-                    key={i}
-                    type="button"
-                    aria-label={`Go to slide ${i + 1}`}
-                    className={i === current ? "dy-hero-dot is-active" : "dy-hero-dot"}
-                    style={i === current ? { background: accent } : undefined}
-                    onClick={() => setCurrent(i)}
-                  />
-                ))}
+              <div className="dy-hero-carousel-controls" style={{ "--hero-carousel-duration": "5000ms", "--hero-carousel-accent": accent } as React.CSSProperties}>
+                <button type="button" className="dy-hero-arrow" aria-label="Previous featured product" onClick={() => stepSlide(-1)}>‹</button>
+                <nav
+                  className="dy-hero-product-picker"
+                  role="tablist"
+                  aria-label="Featured products"
+                  onKeyDown={(event) => {
+                    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                    event.preventDefault();
+                    const next = cycleHeroIndex(activeIndex, event.key === "ArrowRight" ? 1 : -1, featured.length);
+                    selectSlide(next);
+                    event.currentTarget.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
+                  }}
+                >
+                  {featured.map((product, i) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={i === activeIndex}
+                      tabIndex={i === activeIndex ? 0 : -1}
+                      aria-label={`Show ${product.name}`}
+                      className={i === activeIndex ? "dy-hero-product-option is-active" : "dy-hero-product-option"}
+                      onClick={() => selectSlide(i)}
+                    >
+                      <span>{product.name}</span>
+                      {i === activeIndex && <span key={`${product.id}-${current}-${manualResetKey}`} className="dy-hero-product-progress" aria-hidden="true" />}
+                    </button>
+                  ))}
+                </nav>
+                <button type="button" className="dy-hero-arrow" aria-label="Next featured product" onClick={() => stepSlide(1)}>›</button>
               </div>
             )}
           </div>
