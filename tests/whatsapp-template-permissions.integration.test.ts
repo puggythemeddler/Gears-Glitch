@@ -5,6 +5,7 @@ import { spawn, ChildProcess } from "child_process";
 import { query, queryOne, closePool } from "../server/db-helpers";
 
 import { bootstrapTestDatabase } from "../server/test-db";
+import { grantShopPlanFeatureForTest } from "./helpers/plan-entitlements";
 const HAS_DB = bootstrapTestDatabase();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -33,6 +34,7 @@ describe("WhatsApp template approval authorization over real HTTP + PostgreSQL (
   let csrfCookie = "";
   let csrfToken = "";
   const childLog: string[] = [];
+  let restoreWhatsAppEntitlement: (() => Promise<void>) | null = null;
 
   const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const viewerRoleId = `wa-viewer-${runId}`;
@@ -122,6 +124,10 @@ describe("WhatsApp template approval authorization over real HTTP + PostgreSQL (
   }
 
   before(async () => {
+    // This authorization test intentionally creates WhatsApp-specific roles.
+    // Give its disposable tenant the matching plan entitlement so it exercises
+    // staff permission boundaries rather than being rejected at plan level.
+    restoreWhatsAppEntitlement = await grantShopPlanFeatureForTest("WhatsApp integration");
     const port = 20000 + Math.floor(Math.random() * 20000);
     base = `http://127.0.0.1:${port}`;
 
@@ -183,6 +189,10 @@ describe("WhatsApp template approval authorization over real HTTP + PostgreSQL (
     if (child) {
       child.kill();
       child = null;
+    }
+    if (restoreWhatsAppEntitlement) {
+      await restoreWhatsAppEntitlement();
+      restoreWhatsAppEntitlement = null;
     }
     await closePool();
   });
