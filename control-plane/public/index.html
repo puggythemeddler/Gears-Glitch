@@ -1791,6 +1791,27 @@
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
+    async function syncClientPlans(id, name) {
+      confirmDialog({
+        title: "Sync plans to this client?",
+        message: `Push the current Control Plane plan catalog to "${name}"?`,
+        detail: "This updates plan definitions on this client only. It does not change the client's selected plan, products, orders, or other stores.",
+        confirmLabel: "Sync plans",
+        onConfirm: async () => {
+          const progress = toast(`Syncing plans to ${name}…`, "info", 0);
+          try {
+            const data = await api(`/api/clients/${id}/sync-plans`, { method: "POST" });
+            progress.remove();
+            if (data.error) { toast(data.error, "error"); return; }
+            toast(data.message || `Plans synced to ${name}.`);
+          } catch (e) {
+            progress.remove();
+            toast(`Plan sync failed: ${e && e.message ? e.message : "request could not be completed"}`, "error");
+          }
+        }
+      });
+    }
+
     async function suspendClient(id) {
       confirmDialog({
         title: "Suspend client?",
@@ -3644,6 +3665,7 @@
       document.getElementById("detail-actions").innerHTML = `
         ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Backend</a>' : ''}
         ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
+        ${c.render_service_url ? '<button class="btn btn-ghost btn-sm" data-admin onclick="syncClientPlans(' + Number(c.id) + ', ' + esc(JSON.stringify(c.name)) + ')">Sync plans</button>' : ''}
         <button class="btn btn-ghost btn-sm" onclick="editClient(${c.id}); closeClientDetails()">Edit</button>
       `;
 

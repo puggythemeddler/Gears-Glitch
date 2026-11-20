@@ -2080,6 +2080,7 @@ app.post("/api/clients/:id/sync-plans", requireAdmin, async (req, res) => {
       res.status(502).json({ ...failure, status: result.status });
       return;
     }
+    await auditLog(req, "sync_client_plans", "client", client.id, client.name, `Synced ${plans.length} plans to this client.`);
     res.json({ message: `Synced ${plans.length} plans to "${client.name}".` });
   } catch (err: any) {
     console.error("[api] Sync plans error:", err.message);
