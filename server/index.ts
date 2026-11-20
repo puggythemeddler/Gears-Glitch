@@ -397,6 +397,8 @@ import {
 } from "./branch-access";
 import {
   getAllPermissions,
+  filterPermissionsForFeatures,
+  isPermissionAvailableForFeatures,
   listRoles,
   getRole,
   createRole,
@@ -1844,12 +1846,12 @@ app.get("/api/pages/:slug", asyncHandler(async (req: Request, res: Response) => 
 }));
 
 // Admin: full list (includes drafts) + CRUD + publish/unpublish.
-app.get("/api/admin/pages", adminAuthMiddleware, requirePermission("settings:view"), asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/admin/pages", adminAuthMiddleware, requirePermission("pages:view"), asyncHandler(async (_req: Request, res: Response) => {
   const pages = await listPages();
   res.json(pages.map(serializePage));
 }));
 
-app.post("/api/admin/pages", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/pages", adminAuthMiddleware, requirePermission("pages:manage"), asyncHandler(async (req: Request, res: Response) => {
   const { slug, title, description, config, is_published } = req.body || {};
   const normalized = normalizeSlug(slug);
   if (!normalized) { res.status(400).json({ error: "Slug must be 3–80 lowercase letters, numbers, and dashes." }); return; }
@@ -1863,7 +1865,7 @@ app.post("/api/admin/pages", adminAuthMiddleware, requirePermission("settings:up
   res.status(201).json(serializePage(row));
 }));
 
-app.put("/api/admin/pages/:id", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+app.put("/api/admin/pages/:id", adminAuthMiddleware, requirePermission("pages:manage"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const existing = await getPageById(id);
   if (!existing) { res.status(404).json({ error: "Page not found." }); return; }
@@ -1901,7 +1903,7 @@ app.put("/api/admin/pages/:id", adminAuthMiddleware, requirePermission("settings
   res.json(serializePage(row));
 }));
 
-app.delete("/api/admin/pages/:id", adminAuthMiddleware, requirePermission("settings:update"), asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/admin/pages/:id", adminAuthMiddleware, requirePermission("pages:manage"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const ok = await deletePage(id);
   if (!ok) { res.status(404).json({ error: "Page not found." }); return; }
@@ -3984,7 +3986,7 @@ app.get("/api/admin/orders", ownerAuthMiddleware, requirePermission("order:view"
 // Warranty register: order items sold with warranty coverage, joined with the
 // customer and (when available) the serialized unit. Status is computed from
 // sale date + duration, or the serial's explicit warranty_expires.
-app.get("/api/admin/warranties", ownerAuthMiddleware, requirePermission("order:view"), requireShopFeature("Warranty management"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/admin/warranties", ownerAuthMiddleware, requirePermission("warranty:view"), requireShopFeature("Warranty management"), asyncHandler(async (req: Request, res: Response) => {
   // Pagination (R-8): keep the register query bounded/configurable instead of a
   // hard-capped LIMIT 2000. Defaults stay generous (1000) so the existing
   // client-side register/filter view keeps working; callers may pass ?limit= & ?offset=.
@@ -4103,7 +4105,7 @@ app.patch("/api/admin/orders/:id/status", ownerAuthMiddleware, requirePermission
   }
 }));
 
-app.patch("/api/admin/order-items/:id/warranty", ownerAuthMiddleware, requirePermission("order:view"), requireShopFeature("Warranty management"), asyncHandler(async (req: Request, res: Response) => {
+app.patch("/api/admin/order-items/:id/warranty", ownerAuthMiddleware, requirePermission("warranty:manage"), requireShopFeature("Warranty management"), asyncHandler(async (req: Request, res: Response) => {
   const { hasWarranty, warrantyDuration } = req.body || {};
   const itemId = Number(req.params.id);
   const row = await queryOne("SELECT order_id FROM order_items WHERE id = $1", [itemId]) as any;
@@ -6953,18 +6955,34 @@ app.delete("/api/staff/:id", adminAuthMiddleware, requirePermission("staff:delet
 
 // ============ PERMISSIONS & ROLES ============
 
-app.get("/api/permissions", adminAuthMiddleware, (_req: Request, res: Response) => {
-  res.json({ permissions: getAllPermissions() });
-});
+app.get("/api/permissions", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const features = await getEffectiveFeatures(req);
+  res.json({ permissions: filterPermissionsForFeatures(getAllPermissions(), features) });
+}));
 
-app.get("/api/roles", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ roles: await listRoles() });
+app.get("/api/roles", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const features = await getEffectiveFeatures(req);
+  const permissions = filterPermissionsForFeatures(getAllPermissions(), features);
+  const available = new Set(Object.keys(permissions));
+  const roles = (await listRoles()).map((role) => ({
+    ...role,
+    permissions: role.permissions.filter((permission) => available.has(permission)),
+    features: role.features.filter((feature) => features.some((enabled) => enabled.toLowerCase().trim() === feature.toLowerCase().trim())),
+  }));
+  res.json({ roles });
 }));
 
 app.get("/api/roles/:roleId", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const role = await getRole(String(req.params.roleId));
   if (!role) { res.status(404).json({ error: "Role not found." }); return; }
-  res.json({ role });
+  const features = await getEffectiveFeatures(req);
+  const permissions = filterPermissionsForFeatures(getAllPermissions(), features);
+  const available = new Set(Object.keys(permissions));
+  res.json({ role: {
+    ...role,
+    permissions: role.permissions.filter((permission) => available.has(permission)),
+    features: role.features.filter((feature) => features.some((enabled) => enabled.toLowerCase().trim() === feature.toLowerCase().trim())),
+  } });
 }));
 
 app.post("/api/roles", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -6980,6 +6998,13 @@ app.post("/api/roles", adminAuthMiddleware, asyncHandler(async (req: Request, re
   if (description !== undefined && !isStr(description, 1000)) { res.status(400).json({ error: "Description must be a valid string." }); return; }
   if (permissions !== undefined && !isArr(permissions)) { res.status(400).json({ error: "Permissions must be an array." }); return; }
   if (features !== undefined && !isArr(features)) { res.status(400).json({ error: "Features must be an array." }); return; }
+  const enabledFeatures = await getEffectiveFeatures(req);
+  if ((permissions || []).some((permission: string) => !isPermissionAvailableForFeatures(permission, enabledFeatures))) {
+    res.status(400).json({ error: "A selected permission belongs to a feature that is not included in this plan." }); return;
+  }
+  if ((features || []).some((feature: string) => !enabledFeatures.some((enabled) => enabled.toLowerCase().trim() === feature.toLowerCase().trim()))) {
+    res.status(400).json({ error: "A selected role feature is not included in this plan." }); return;
+  }
   const role = await createRole(roleId, name, description, permissions, features);
   res.status(201).json({ role });
 }));
@@ -6991,6 +7016,13 @@ app.put("/api/roles/:roleId", adminAuthMiddleware, asyncHandler(async (req: Requ
   if (updates.description !== undefined && !isStr(updates.description, 1000)) { res.status(400).json({ error: "Description must be a valid string." }); return; }
   if (updates.permissions !== undefined && !isArr(updates.permissions)) { res.status(400).json({ error: "Permissions must be an array." }); return; }
   if (updates.features !== undefined && !isArr(updates.features)) { res.status(400).json({ error: "Features must be an array." }); return; }
+  const enabledFeatures = await getEffectiveFeatures(req);
+  if ((updates.permissions || []).some((permission: string) => !isPermissionAvailableForFeatures(permission, enabledFeatures))) {
+    res.status(400).json({ error: "A selected permission belongs to a feature that is not included in this plan." }); return;
+  }
+  if ((updates.features || []).some((feature: string) => !enabledFeatures.some((enabled) => enabled.toLowerCase().trim() === feature.toLowerCase().trim()))) {
+    res.status(400).json({ error: "A selected role feature is not included in this plan." }); return;
+  }
   if (roleId === "admin" && updates.permissions && !updates.permissions.includes("admin:access")) {
     res.status(400).json({ error: "Cannot remove admin:access from the admin role." });
     return;
@@ -7029,8 +7061,10 @@ app.delete("/api/staff/:id/roles/:roleId", adminAuthMiddleware, asyncHandler(asy
 
 app.get("/api/staff/:id/permissions", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const effective = await getUserPermissions(id);
-  const direct = await getUserDirectPermissions(id);
+  const features = await getEffectiveFeatures(req);
+  const available = new Set(Object.keys(filterPermissionsForFeatures(getAllPermissions(), features)));
+  const effective = (await getUserPermissions(id)).filter((permission) => available.has(permission));
+  const direct = (await getUserDirectPermissions(id)).filter((permission) => available.has(permission));
   res.json({ effective, direct });
 }));
 
@@ -7038,6 +7072,10 @@ app.put("/api/staff/:id/permissions", adminAuthMiddleware, asyncHandler(async (r
   const perms: string[] = req.body?.permissions || [];
   if (!isArr(perms)) { res.status(400).json({ error: "permissions must be an array." }); return; }
   if (perms.some((p) => !isStr(p))) { res.status(400).json({ error: "Each permission must be a non-empty string." }); return; }
+  const features = await getEffectiveFeatures(req);
+  if (perms.some((permission) => !isPermissionAvailableForFeatures(permission, features))) {
+    res.status(400).json({ error: "A selected permission belongs to a feature that is not included in this plan." }); return;
+  }
   await setUserDirectPermissions(Number(req.params.id), perms);
   const effective = await getUserPermissions(Number(req.params.id));
   res.json({ ok: true, effective, direct: perms });
@@ -7964,7 +8002,7 @@ app.post("/api/repairs/:id/quote-response", customerAuthMiddleware, requireShopF
 }));
 
 // ============ PURCHASE ORDERS ============
-app.get("/api/purchases/branches", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/purchases/branches", adminAuthMiddleware, requirePermission("purchase:view"), requireShopFeature("Purchase order management"), asyncHandler(async (_req: Request, res: Response) => {
   res.json({ branches: await listActiveBranches() });
 }));
 
@@ -7973,11 +8011,11 @@ app.get("/api/admin/purchase-products", adminAuthMiddleware, asyncHandler(async 
   res.json({ products: products.map((product: any) => ({ id: product.id, name: product.name, barcode: product.barcode || "", price: product.price, costPrice: product.costPrice ?? null })) });
 }));
 
-app.get("/api/purchases", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/purchases", adminAuthMiddleware, requirePermission("purchase:view"), requireShopFeature("Purchase order management"), asyncHandler(async (_req: Request, res: Response) => {
   res.json({ orders: await listPurchaseOrders() });
 }));
 
-app.post("/api/purchases", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/purchases", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body || {};
   if (body.supplierId !== undefined && !isPosInt(Number(body.supplierId))) { res.status(400).json({ error: "supplierId must be a positive integer." }); return; }
   if (body.branchId === undefined || !isPosInt(Number(body.branchId))) { res.status(400).json({ error: "Choose an active branch for this purchase order." }); return; }
@@ -7998,15 +8036,15 @@ app.post("/api/purchases", adminAuthMiddleware, asyncHandler(async (req: Request
   res.status(201).json(po);
 }));
 
-app.get("/api/purchases/deleted", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/purchases/deleted", adminAuthMiddleware, requirePermission("purchase:view"), requireShopFeature("Purchase order management"), asyncHandler(async (_req: Request, res: Response) => {
   res.json({ orders: await listDeletedPurchaseOrders() });
 }));
 
-app.get("/api/purchases/completed", adminAuthMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/purchases/completed", adminAuthMiddleware, requirePermission("purchase:view"), requireShopFeature("Purchase order management"), asyncHandler(async (_req: Request, res: Response) => {
   res.json({ orders: await listCompletedPurchaseOrders() });
 }));
 
-app.get("/api/purchases/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/purchases/:id", adminAuthMiddleware, requirePermission("purchase:view"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const po = await getPurchaseOrder(Number(req.params.id));
   if (!po) { res.status(404).json({ error: "Purchase order not found." }); return; }
   res.json(po);
@@ -8014,7 +8052,7 @@ app.get("/api/purchases/:id", adminAuthMiddleware, asyncHandler(async (req: Requ
 
 const PURCHASE_DOCUMENT_TYPES = new Set<PurchaseOrderDocumentType>(["supplier_quote", "supplier_purchase_order", "invoice", "delivery_note"]);
 
-app.get("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission("purchase:view"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!isPosInt(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
   const po = await getPurchaseOrder(id);
@@ -8022,7 +8060,7 @@ app.get("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission("
   res.json({ documents: po.documents || [] });
 }));
 
-app.post("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const purchaseOrderId = Number(req.params.id);
   if (!isPosInt(purchaseOrderId)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
   const order = await getPurchaseOrder(purchaseOrderId);
@@ -8066,7 +8104,7 @@ app.post("/api/purchases/:id/documents", adminAuthMiddleware, requirePermission(
   res.status(201).json({ document: result.document, malwareScan: scanResult.status });
 }));
 
-app.get("/api/purchases/:id/documents/:documentId/download", adminAuthMiddleware, requirePermission("stock:list"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/purchases/:id/documents/:documentId/download", adminAuthMiddleware, requirePermission("purchase:view"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const purchaseOrderId = Number(req.params.id);
   const documentId = Number(req.params.documentId);
   if (!isPosInt(purchaseOrderId) || !isPosInt(documentId)) { res.status(400).json({ error: "Invalid purchase order document." }); return; }
@@ -8103,7 +8141,7 @@ app.get("/api/purchases/:id/documents/:documentId/download", adminAuthMiddleware
   res.status(200).send(document.fileData);
 }));
 
-app.delete("/api/purchases/:id/documents/:documentId", adminAuthMiddleware, requirePermission("stock:update"), asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/purchases/:id/documents/:documentId", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const purchaseOrderId = Number(req.params.id);
   const documentId = Number(req.params.documentId);
   if (!isPosInt(purchaseOrderId) || !isPosInt(documentId)) { res.status(400).json({ error: "Invalid purchase order document." }); return; }
@@ -8115,14 +8153,14 @@ app.delete("/api/purchases/:id/documents/:documentId", adminAuthMiddleware, requ
   res.json({ ok: true });
 }));
 
-app.patch("/api/purchases/:id/status", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.patch("/api/purchases/:id/status", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const { status } = req.body || {};
   if (!["pending", "ordered", "received", "cancelled"].includes(status)) { res.status(400).json({ error: "Invalid status." }); return; }
   await updatePurchaseOrderStatus(Number(req.params.id), status);
   res.json({ ok: true });
 }));
 
-app.patch("/api/purchases/:id/branch", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.patch("/api/purchases/:id/branch", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const branchId = Number((req.body || {}).branchId);
   if (!isPosInt(id) || !isPosInt(branchId)) { res.status(400).json({ error: "Select a valid active branch." }); return; }
@@ -8133,7 +8171,7 @@ app.patch("/api/purchases/:id/branch", adminAuthMiddleware, asyncHandler(async (
   res.json({ ok: true, order: await getPurchaseOrder(id) });
 }));
 
-app.post("/api/purchases/:id/items", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/purchases/:id/items", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body || {};
   if (body.name !== undefined && !isStr(body.name)) { res.status(400).json({ error: "Item name must be a valid string." }); return; }
   if (body.quantity !== undefined && !isPosInt(Number(body.quantity))) { res.status(400).json({ error: "Quantity must be a positive integer." }); return; }
@@ -8150,7 +8188,7 @@ app.post("/api/admin/auto-reorder", adminAuthMiddleware, asyncHandler(async (_re
   res.status(409).json({ error: "Automatic purchase-order creation is disabled. Review reorder suggestions, select an active supplier, and confirm real unit costs before placing an order." });
 }));
 
-app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   const { quantityReceived, serials, assetTags, branchId } = req.body || {};
   if (!quantityReceived || !isPosInt(Number(quantityReceived))) { res.status(400).json({ error: "quantityReceived must be a positive integer." }); return; }
   if (branchId !== undefined) { res.status(400).json({ error: "Stock location is fixed by the purchase order. Create a new order for a different branch." }); return; }
@@ -8167,7 +8205,7 @@ app.post("/api/purchases/items/:itemId/receive", adminAuthMiddleware, asyncHandl
 
 // ============ SERIAL NUMBERS (warranty tracking, PO intake, sale linking) ============
 
-app.get("/api/serials", posAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/serials", posAuthMiddleware, requireShopFeature("Serial number tracking"), requirePermission("serial:view"), asyncHandler(async (req: Request, res: Response) => {
   const rawBranch = req.query.branchId;
   let branchId = rawBranch === "central" ? null : rawBranch ? Number(rawBranch) : undefined;
   if (branchId !== undefined && branchId !== null && (!Number.isInteger(branchId) || branchId < 1)) { res.status(400).json({ error: "Invalid branch filter." }); return; }
@@ -8186,7 +8224,7 @@ app.get("/api/serials", posAuthMiddleware, requireShopFeature("Serial number tra
   res.json({ serials });
 }));
 
-app.get("/api/serials/reconciliation", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/serials/reconciliation", adminAuthMiddleware, requireShopFeature("Serial number tracking"), requirePermission("serial:view"), asyncHandler(async (req: Request, res: Response) => {
   const rawBranch = req.query.branchId;
   const branchId = rawBranch === "central" ? null : rawBranch ? Number(rawBranch) : undefined;
   if (branchId !== undefined && branchId !== null && (!Number.isInteger(branchId) || branchId < 1)) { res.status(400).json({ error: "Invalid branch filter." }); return; }
@@ -8194,13 +8232,13 @@ app.get("/api/serials/reconciliation", adminAuthMiddleware, requireShopFeature("
   res.json({ discrepancies });
 }));
 
-app.get("/api/serials/lookup/:serialNumber", posAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/serials/lookup/:serialNumber", posAuthMiddleware, requireShopFeature("Serial number tracking"), requirePermission("serial:view"), asyncHandler(async (req: Request, res: Response) => {
   const serial = await getSerialByNumber(String(req.params.serialNumber || ""));
   if (!serial) { res.status(404).json({ error: "Serial number not found." }); return; }
   res.json(serial);
 }));
 
-app.post("/api/serials", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials", adminAuthMiddleware, requireShopFeature("Serial number tracking"), requirePermission("serial:manage"), asyncHandler(async (req: Request, res: Response) => {
   const { serialNumber, assetTag, productId, branchId, warrantyExpires } = req.body || {};
   if (!serialNumber || !String(serialNumber).trim()) { res.status(400).json({ error: "Serial number is required." }); return; }
   if (!productId) { res.status(400).json({ error: "Product is required." }); return; }
@@ -8215,7 +8253,7 @@ app.post("/api/serials", adminAuthMiddleware, requireShopFeature("Serial number 
   res.status(201).json(result.serial);
 }));
 
-app.post("/api/serials/:id/reconcile", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/:id/reconcile", adminAuthMiddleware, requireShopFeature("Serial number tracking"), requirePermission("serial:manage"), asyncHandler(async (req: Request, res: Response) => {
   const { serialNumber, assetTag, branchId, verifiedFromDeviceLabel } = req.body || {};
   if (verifiedFromDeviceLabel !== true) { res.status(400).json({ error: "Confirm that you checked the manufacturer serial directly on the device." }); return; }
   const id = Number(req.params.id);
@@ -8234,17 +8272,17 @@ app.post("/api/serials/:id/reconcile", adminAuthMiddleware, requireShopFeature("
   res.json(result.serial);
 }));
 
-app.post("/api/serials/generate", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/generate", adminAuthMiddleware, requireShopFeature("Serial number tracking"), requirePermission("serial:manage"), asyncHandler(async (req: Request, res: Response) => {
   res.status(410).json({ error: "Generated codes cannot identify a device. Scan its manufacturer serial number and add an optional internal asset tag instead." });
 }));
 
-app.post("/api/serials/:id/void", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/:id/void", adminAuthMiddleware, requireShopFeature("Serial number tracking"), requirePermission("serial:manage"), asyncHandler(async (req: Request, res: Response) => {
   const result = await voidSerial(Number(req.params.id));
   if (!result.ok) { res.status(400).json({ error: result.error }); return; }
   res.json({ ok: true });
 }));
 
-app.post("/api/serials/link", adminAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/link", adminAuthMiddleware, requireShopFeature("Serial number tracking"), requirePermission("serial:manage"), asyncHandler(async (req: Request, res: Response) => {
   const { serialId, orderItemId } = req.body || {};
   if (!serialId || !orderItemId) { res.status(400).json({ error: "serialId and orderItemId are required." }); return; }
   const result = await linkSerialToOrderItem(Number(serialId), Number(orderItemId));
@@ -8252,7 +8290,7 @@ app.post("/api/serials/link", adminAuthMiddleware, requireShopFeature("Serial nu
   res.json({ ok: true });
 }));
 
-app.post("/api/serials/link-by-number", posAuthMiddleware, requireShopFeature("Serial number tracking"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/serials/link-by-number", posAuthMiddleware, requireShopFeature("Serial number tracking"), requirePermission("serial:manage"), asyncHandler(async (req: Request, res: Response) => {
   const { serialNumber, orderItemId } = req.body || {};
   if (!serialNumber || !orderItemId) { res.status(400).json({ error: "serialNumber and orderItemId are required." }); return; }
   const serial = await getSerialByNumber(String(serialNumber));
@@ -8262,7 +8300,7 @@ app.post("/api/serials/link-by-number", posAuthMiddleware, requireShopFeature("S
   res.json({ ok: true });
 }));
 
-app.delete("/api/purchases/:id", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/purchases/:id", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
@@ -8278,7 +8316,7 @@ app.delete("/api/purchases/:id", adminAuthMiddleware, asyncHandler(async (req: R
   }
 }));
 
-app.post("/api/purchases/:id/recall", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/purchases/:id/recall", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
@@ -8291,7 +8329,7 @@ app.post("/api/purchases/:id/recall", adminAuthMiddleware, asyncHandler(async (r
   }
 }));
 
-app.post("/api/purchases/:id/receive-all", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/purchases/:id/receive-all", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
@@ -8322,7 +8360,7 @@ app.post("/api/purchases/:id/receive-all", adminAuthMiddleware, asyncHandler(asy
   }
 }));
 
-app.post("/api/purchases/:id/restore", adminAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/purchases/:id/restore", adminAuthMiddleware, requirePermission("purchase:manage"), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid purchase order ID." }); return; }
@@ -8335,7 +8373,7 @@ app.post("/api/purchases/:id/restore", adminAuthMiddleware, asyncHandler(async (
   }
 }));
 
-app.get("/api/purchases/:id/pdf", requirePdfAuth("po-pdf", "id", "purchaseId", ["admin", "owner", "technician", "manager", "staff", "provider"]), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/purchases/:id/pdf", requirePdfAuth("po-pdf", "id", "purchaseId", ["admin", "owner", "technician", "manager", "staff", "provider"]), requireShopFeature("Purchase order management"), asyncHandler(async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) { res.status(400).json({ error: "Invalid ID." }); return; }
@@ -9776,13 +9814,13 @@ app.post("/api/stock-on-hand/snapshot", adminAuthMiddleware, requirePermission("
 
 // ============ SPEC TEMPLATES ============
 
-app.get("/api/spec-templates", ownerAuthMiddleware, requirePermission("spec:view"), asyncHandler(async (req: Request, res: Response) => {
+app.get("/api/spec-templates", ownerAuthMiddleware, requirePermission("spec:view"), requireShopFeature("Spec templates"), asyncHandler(async (req: Request, res: Response) => {
   const category = req.query.category as string | undefined;
   if (category) res.json({ fields: await getSpecTemplateFields(category) });
   else res.json({ fields: await getAllSpecTemplateFields() });
 }));
 
-app.post("/api/spec-templates", ownerAuthMiddleware, requirePermission("spec:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/spec-templates", ownerAuthMiddleware, requirePermission("spec:view"), requireShopFeature("Spec templates"), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body || {};
   if (body.category !== undefined && !isStr(body.category)) { res.status(400).json({ error: "category must be a valid string." }); return; }
   if (body.label !== undefined && !isStr(body.label)) { res.status(400).json({ error: "label must be a valid string." }); return; }
@@ -9792,7 +9830,7 @@ app.post("/api/spec-templates", ownerAuthMiddleware, requirePermission("spec:vie
   res.status(201).json(field);
 }));
 
-app.put("/api/spec-templates/:id", ownerAuthMiddleware, requirePermission("spec:view"), asyncHandler(async (req: Request, res: Response) => {
+app.put("/api/spec-templates/:id", ownerAuthMiddleware, requirePermission("spec:view"), requireShopFeature("Spec templates"), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body || {};
   if (body.category !== undefined && !isStr(body.category)) { res.status(400).json({ error: "category must be a valid string." }); return; }
   if (body.label !== undefined && !isStr(body.label)) { res.status(400).json({ error: "label must be a valid string." }); return; }
@@ -9802,7 +9840,7 @@ app.put("/api/spec-templates/:id", ownerAuthMiddleware, requirePermission("spec:
   res.json({ ok: true });
 }));
 
-app.delete("/api/spec-templates/:id", ownerAuthMiddleware, requirePermission("spec:view"), asyncHandler(async (req: Request, res: Response) => {
+app.delete("/api/spec-templates/:id", ownerAuthMiddleware, requirePermission("spec:view"), requireShopFeature("Spec templates"), asyncHandler(async (req: Request, res: Response) => {
   const ok = await deleteSpecTemplateField(Number(req.params.id));
   if (!ok) { res.status(404).json({ error: "Spec field not found." }); return; }
   res.json({ ok: true });

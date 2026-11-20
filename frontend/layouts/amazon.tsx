@@ -6,6 +6,8 @@ import { normalizeHref } from "@/lib/links";
 import CurrencySelector from "@/components/CurrencySelector";
 import { formatPrice } from "./shared";
 import { Media } from "@/components/Media";
+import { useApp } from "@/lib/app-context";
+import { useFeature } from "@/lib/features";
 
 export const LAYOUT_KEY = "amazon";
 export const LAYOUT_LABEL = "Amazon Style";
@@ -118,11 +120,15 @@ export function Footer({ settings }: { settings: any }) {
 export function HomePage({ products, categories, banners, hero }: {
   products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any;
 }) {
+  const { settings } = useApp();
+  const discountsEnabled = useFeature("Discount/coupon management");
+  const storeName = String(settings?.storeName || "our shop");
+  const isGearGlitchStore = storeName.toLowerCase().includes("gear") && storeName.toLowerCase().includes("glitch");
   const bestsellers = [...products].sort((a, b) => (b as any).viewCount || 0 - (a as any).viewCount || 0).slice(0, 4);
-  const deals = products.filter((p) => p.inStock && (p as any).oldPrice).slice(0, 4);
+  const deals = products.filter((p) => p.inStock && discountsEnabled && typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price).slice(0, 4);
 
-  const heroTitle = hero?.headline ? `${hero.headline} ${hero.headlineAccent || ""}` : "Premium Tech Deals";
-  const heroSub = hero?.subtitle || "Shop the latest computers, laptops, and accessories at unbeatable prices.";
+  const heroTitle = hero?.headline ? `${hero.headline} ${hero.headlineAccent || ""}` : isGearGlitchStore ? "Premium Tech Deals" : `Discover ${storeName}`;
+  const heroSub = hero?.subtitle || (isGearGlitchStore ? "Shop the latest computers, laptops, and accessories at unbeatable prices." : `Explore the products available from ${storeName}.`);
   const heroCtaLabel = hero?.shopNowLabel || "Shop Now";
   const heroCtaLink = normalizeHref(typeof hero?.shopNowLink === "string" ? hero.shopNowLink : "", categories[0] ? `/${categories[0].id}` : "/");
 
@@ -139,7 +145,7 @@ export function HomePage({ products, categories, banners, hero }: {
           {banners.slice(0, 2).map((b, i) => (
             <div key={i} className="amz-hero-side-item"><h3>{b.title || "Special Offer"}</h3><p>{b.subtitle || ""}</p></div>
           ))}
-          {banners.length === 0 && (
+          {banners.length === 0 && isGearGlitchStore && (
             <>
               <div className="amz-hero-side-item"><h3>Free Delivery</h3><p>On orders over KES 50,000</p></div>
               <div className="amz-hero-side-item"><h3>24/7 Support</h3><p>Call or chat with our team</p></div>

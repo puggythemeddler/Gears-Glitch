@@ -23,6 +23,11 @@ export default function HomePage() {
   const { settings } = useApp();
   const repairsEnabled = useFeature("Repair ticketing");
   const siteName = settings?.storeName || SITE;
+  const isGearGlitchStore = siteName.toLowerCase().includes("gear") && siteName.toLowerCase().includes("glitch");
+  const pageTitle = isGearGlitchStore ? `${siteName} — PCs, Laptops & Components${repairsEnabled ? " & Repairs" : ""}` : `${siteName} — Shop online`;
+  const pageDescription = isGearGlitchStore
+    ? repairsEnabled ? "Shop PCs, laptops, graphics cards, servers and printers, or book a device repair." : "Shop PCs, laptops, graphics cards, servers and printers."
+    : `Browse products available from ${siteName}.`;
 
   useEffect(() => {
     let cancelled = false;
@@ -85,12 +90,12 @@ export default function HomePage() {
   return (
     <>
       <Head>
-        <title>{siteName} — PCs, Laptops & Components{repairsEnabled ? " & Repairs" : ""}</title>
-        <meta name="description" content={repairsEnabled ? "Shop PCs, laptops, graphics cards, servers and printers, or book a device repair." : "Shop PCs, laptops, graphics cards, servers and printers."} />
+        <title>{pageTitle}</title>
+        <meta name="description" content={pageDescription} />
         <link rel="canonical" href={BASE} />
         <meta property="og:site_name" content={siteName} />
-        <meta property="og:title" content={`${siteName} — PCs, Laptops & Components${repairsEnabled ? " & Repairs" : ""}`} />
-        <meta property="og:description" content={repairsEnabled ? "Shop PCs, laptops, graphics cards, servers and printers, or book a device repair." : "Shop PCs, laptops, graphics cards, servers and printers."} />
+        <meta property="og:title" content={pageTitle} />
+        <meta property="og:description" content={pageDescription} />
         <meta property="og:url" content={BASE} />
         <meta property="og:type" content="website" />
       </Head>

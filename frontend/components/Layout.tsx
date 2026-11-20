@@ -64,6 +64,8 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const multiCurrencyEnabled = useFeature("Multi-currency support");
   const repairsEnabled = useFeature("Repair ticketing");
   const financingEnabled = useFeature("Lipa Mdogo Mdogo");
+  const campaignPagesEnabled = useFeature("Campaign pages");
+  const customPagesEnabled = useFeature("Custom pages & landing pages");
   const [navLinks, setNavLinks] = useState(NAV_LINKS);
   const [footerConfig, setFooterConfig] = useState<any>(null);
   const router = useRouter();
@@ -71,6 +73,16 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const springboardBtnRef = useRef<HTMLButtonElement>(null);
   const springboardPanelRef = useRef<HTMLDivElement>(null);
   const searchProductsRequestRef = useRef(false);
+
+  const isFeatureLinkAvailable = (href: string) => {
+    const path = href.split(/[?#]/, 1)[0].replace(/\/$/, "") || "/";
+    const under = (base: string) => path === base || path.startsWith(base + "/");
+    if (!repairsEnabled && ["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"].some(under)) return false;
+    if (!financingEnabled && under("/financing")) return false;
+    if (!campaignPagesEnabled && under("/campaign")) return false;
+    if (!customPagesEnabled && under("/pages")) return false;
+    return true;
+  };
 
   useEffect(() => {
     let sid = sessionStorage.getItem("wa_sid");
@@ -156,7 +168,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
 
   const resolvedNavLinks = (() => {
     const normalized = navLinks.map((l: any) => ({ id: l.id, label: l.label, href: normalizeHref(l.href || "/" + l.id, "/" + l.id) }));
-    const featureFiltered = normalized.filter((l) => repairsEnabled || (l.id !== "repairs" && !["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"].some((path) => l.href === path || l.href.startsWith(path + "/"))));
+    const featureFiltered = normalized.filter((l) => isFeatureLinkAvailable(l.href));
     if (!categoriesLoaded) return featureFiltered;
     const catHrefs = new Set(categories.map((c) => "/" + c.id));
     const kept = featureFiltered.filter((l) => (STATIC_NAV_IDS.has(l.id) && (l.id !== "repairs" || repairsEnabled)) || catHrefs.has(l.href) || categories.some((c) => c.id === l.id));
@@ -188,7 +200,7 @@ export default function Layout({ children, activeNav }: LayoutProps) {
   const footerColumns: any[] = (() => {
     if (footerConfig?.columns?.length) return footerConfig.columns.map((column: any) => ({
       ...column,
-      links: (column.links || []).filter((link: any) => (repairsEnabled || !["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"].some((path) => link.href === path || String(link.href || "").startsWith(path + "/"))) && (financingEnabled || !["/financing"].some((path) => link.href === path || String(link.href || "").startsWith(path + "/")))),
+      links: (column.links || []).filter((link: any) => isFeatureLinkAvailable(String(link.href || ""))),
     }));
     const catLinks = categories.slice(0, 6).map((c) => ({ label: c.label, href: "/" + c.id }));
     return [
@@ -699,7 +711,9 @@ export default function Layout({ children, activeNav }: LayoutProps) {
                 ) : (
                   storeName ? <span className="footer-brand-name">{storeName}</span> : <span className="footer-brand-name footer-brand-placeholder" aria-hidden="true" />
                 )}
-                <p className="footer-tagline">Kenya&apos;s trusted tech platform for gaming PCs, laptops, graphics cards, servers and accessories{repairsEnabled ? <> &mdash; plus real repairs with live tracking</> : null}.</p>
+                <p className="footer-tagline">{/gear\s*&?\s*glitch/i.test(storeName)
+                  ? <>Kenya&apos;s trusted tech platform for gaming PCs, laptops, graphics cards, servers and accessories{repairsEnabled ? <> &mdash; plus real repairs with live tracking</> : null}.</>
+                  : <>Browse products and order online from {storeName || "our store"}.</>}</p>
                 {(settings?.storePhone || settings?.storeEmail) && (
                   <div className="footer-contact">
                     {settings.storePhone && <span>{settings.storePhone}</span>}

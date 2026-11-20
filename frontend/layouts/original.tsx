@@ -57,7 +57,9 @@ function HeroStarRating({ average }: { average: number }) {
 }
 
 function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
-  const { isDark } = useApp();
+  const { isDark, settings } = useApp();
+  const storeName = String(settings?.storeName || "our shop").trim();
+  const isGearGlitchStore = storeName.toLowerCase().includes("gear") && storeName.toLowerCase().includes("glitch");
   const repairsEnabled = useFeature("Repair ticketing");
   const [activeIdx, setActiveIdx] = useState(0);
   const [manualResetKey, setManualResetKey] = useState(0);
@@ -114,20 +116,31 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   const variants = hero?.headlineVariants?.length > 0 ? hero.headlineVariants : [];
   const variant = variants.length > 0 ? variants[0] : null;
   const headline = variant?.headline || hero?.headline || "Find your next";
-  const headlineAccent = variant?.accent || hero?.headlineAccent || "device";
-  const subtitle = variant?.subtitle || hero?.subtitle || `Shop PCs, laptops, graphics cards and servers${repairsEnabled ? ", or book a device repair" : ""}.`;
+  const headlineAccent = variant?.accent || hero?.headlineAccent || (isGearGlitchStore ? "device" : "favourite");
+  const subtitle = variant?.subtitle || hero?.subtitle || (isGearGlitchStore
+    ? `Shop PCs, laptops, graphics cards and servers${repairsEnabled ? ", or book a device repair" : ""}.`
+    : featured[0]?.category
+      ? `Explore ${featured[0].category.toLowerCase()} and more from ${storeName}.`
+      : `Explore the products available from ${storeName}.`);
 
   const badgeText = typeof hero?.badgeText === "string" ? hero.badgeText.trim() : "";
-  const badgeActive = hero?.badgeActive !== false && badgeText.length > 0;
   const badgeLink = normalizeHref(typeof hero?.badgeLink === "string" ? hero.badgeLink : "");
+  const isRepairPath = (href: string) => {
+    const path = href.split(/[?#]/, 1)[0];
+    return ["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"].some((repairPath) => path === repairPath || path.startsWith(repairPath + "/"));
+  };
+  const badgeActive = hero?.badgeActive !== false && badgeText.length > 0 && (repairsEnabled || !isRepairPath(badgeLink));
 
-  const shopNowLabel = hero?.shopNowLabel || "Shop products";
-  const shopNowLink = normalizeHref(typeof hero?.shopNowLink === "string" ? hero.shopNowLink : "", "/#catalogue");
+  const configuredShopLink = normalizeHref(typeof hero?.shopNowLink === "string" ? hero.shopNowLink : "", "/#catalogue");
+  const shopNowLinkIsRepair = isRepairPath(configuredShopLink);
+  const shopNowLabel = !repairsEnabled && shopNowLinkIsRepair ? "Shop products" : hero?.shopNowLabel || "Shop products";
+  const shopNowLink = !repairsEnabled && shopNowLinkIsRepair ? "/#catalogue" : configuredShopLink;
   const configuredBrowseLink = typeof hero?.browseLink === "string" ? hero.browseLink.trim() : "";
-  const usesLegacyCategoryLink = configuredBrowseLink === "/#categories" || configuredBrowseLink === "/categories";
-  const browseLabel = usesLegacyCategoryLink ? "Book a repair" : hero?.browseLabel || "Book a repair";
-  const browseLink = usesLegacyCategoryLink ? "/repairs" : normalizeHref(configuredBrowseLink, "/repairs");
-  const browseLinkIsRepair = ["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"].some((path) => browseLink === path || browseLink.startsWith(path + "/"));
+  const usesLegacyCategoryLink = repairsEnabled && (configuredBrowseLink === "/#categories" || configuredBrowseLink === "/categories");
+  const browseLabel = usesLegacyCategoryLink ? "Book a repair" : hero?.browseLabel || (repairsEnabled ? "Book a repair" : "Browse categories");
+  const browseLink = usesLegacyCategoryLink ? "/repairs" : normalizeHref(configuredBrowseLink, repairsEnabled ? "/repairs" : "/#categories");
+  const browseLinkIsRepair = isRepairPath(browseLink);
+  const effectiveBrowseLink = !repairsEnabled && browseLinkIsRepair ? "/#categories" : browseLink;
 
   const panel = featured.length > 0 ? featured[activeProductIndex] : null;
 
@@ -163,7 +176,7 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
               {shopNowLabel}
             </Link>
-            {(repairsEnabled || !browseLinkIsRepair) && <Link href={browseLink} className="dy-hero-btn dy-hero-btn--secondary">
+            {(repairsEnabled || !browseLinkIsRepair || !configuredBrowseLink) && <Link href={effectiveBrowseLink} className="dy-hero-btn dy-hero-btn--secondary">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
               {browseLabel}
             </Link>}

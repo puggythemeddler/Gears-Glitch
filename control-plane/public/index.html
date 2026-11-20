@@ -1030,8 +1030,8 @@
       { group: "Customer Engagement", icon: "💬", features: ["Messaging","Admin messaging","Email notifications","SMS notifications","Product reviews & ratings","Customer reviews","Loyalty program"] },
       { group: "WhatsApp & Communication", icon: "📱", features: ["WhatsApp integration"] },
       { group: "Multi-Location", icon: "🏢", features: ["Branch management","Multi-branch support","Client/tenant management"] },
-      { group: "Marketing & Storefront", icon: "🌐", features: ["Product positioning","Hero customization","Theme customization","Custom branding","Shop subscription","Campaign pages","Cart recovery"] },
-      { group: "Analytics & Security", icon: "📊", features: ["Analytics dashboard","Audit log","Visitor analytics"] },
+      { group: "Marketing & Storefront", icon: "🌐", features: ["Product positioning","Hero customization","Theme customization","Custom branding","Shop subscription","Campaign pages","Cart recovery","Custom pages & landing pages"] },
+      { group: "Analytics & Security", icon: "📊", features: ["Analytics dashboard","Audit log","Visitor analytics","Database backup and export"] },
       { group: "Support & Account", icon: "🛡", features: ["Google Sign-In","Multiple staff accounts","Spec templates","Priority support","Dedicated account manager"] },
       { group: "Payments & Currency", icon: "💱", features: ["Multi-currency support","API access"] },
     ];
@@ -1068,9 +1068,10 @@
     const RETAIL_PLAN_FEATURES = [
       "Product listing", "Order management", "POS integration", "Payment method configuration",
       "M-Pesa integration", "Discount/coupon management", "Returns management", "Customer management",
-      "Low stock alerts", "Stock take", "Stock control", "Supplier management",
-      "Purchase order management", "Barcode scanning", "Bulk import/export", "Bulk product edit",
-      "Invoice/quote PDF downloads", "Email notifications", "Analytics dashboard",
+      "Barcode scanning", "Bulk import/export", "Invoice/quote PDF downloads", "Email notifications",
+      "Multiple staff accounts", "Low stock alerts", "Stock take", "Stock control",
+      "Supplier management", "Purchase order management", "Branch management", "Analytics dashboard", "Audit log",
+      "Hero customization", "Theme customization", "Custom branding",
     ];
 
     function applyRetailPlanTemplate() {
@@ -1079,14 +1080,14 @@
       document.getElementById("plan-id").value = "retail";
       document.getElementById("plan-name").value = "Retail";
       document.getElementById("plan-desc").value = "Retail sales, inventory, POS and online orders; no repair or warranty tools.";
-      document.getElementById("plan-price").value = "";
+      document.getElementById("plan-price").value = "10000";
       document.getElementById("plan-price-annual").value = "";
-      document.getElementById("plan-max-products").value = "";
-      document.getElementById("plan-max-branches").value = "";
-      document.getElementById("plan-active").checked = false;
+      document.getElementById("plan-max-products").value = "100";
+      document.getElementById("plan-max-branches").value = "1";
+      document.getElementById("plan-active").checked = true;
       document.getElementById("plan-sync-others").checked = false;
       renderFeatureGroups(editingPlanFeatures);
-      toast("Retail template applied. Set fees and limits before activating it.");
+      toast("Retail template applied with the current KES 10,000 monthly price and one-branch, 100-product limits.");
     }
 
     function clearPlanFeatures() {
@@ -2292,11 +2293,17 @@
 
       try {
         if (editingPlanId) {
-          await api("/api/plans/" + editingPlanId, { method: "PUT", body: JSON.stringify({ name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
+          const result = await api("/api/plans/" + editingPlanId, { method: "PUT", body: JSON.stringify({ name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
+          const sync = result.sync;
+          if (sync?.failed?.length) toast(`${result.message || "Plan updated."} Failed: ${sync.failed.join(", ")}.`, "error", 10000);
+          else toast(result.message || "Plan updated and synced.");
         } else {
-          await api("/api/plans", { method: "POST", body: JSON.stringify({ id, name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
+          const result = await api("/api/plans", { method: "POST", body: JSON.stringify({ id, name, description: desc, price, priceAnnual: priceAnnual || null, tierLevel: tier, maxProducts, maxBranches, features, isActive, syncToOthers }) });
+          const sync = result.sync;
+          if (sync?.failed?.length) toast(`${result.message || "Plan created."} Failed: ${sync.failed.join(", ")}.`, "error", 10000);
+          else toast(result.message || "Plan created.");
         }
-        toast("Plan saved."); hidePlanModal(); loadPlans();
+        hidePlanModal(); loadPlans();
       } catch (e) { toast("Failed: " + e.message, "error"); }
     }
 
@@ -2316,8 +2323,11 @@
         danger: !isActive,
         onConfirm: async () => {
           try {
-            await api("/api/plans/" + id, { method: "PUT", body: JSON.stringify({ isActive }) });
-            toast(isActive ? "Plan activated." : "Plan deactivated."); loadPlans();
+            const result = await api("/api/plans/" + id, { method: "PUT", body: JSON.stringify({ isActive }) });
+            const sync = result.sync;
+            if (sync?.failed?.length) toast(`${result.message || "Plan updated."} Failed: ${sync.failed.join(", ")}.`, "error", 10000);
+            else toast(result.message || (isActive ? "Plan activated." : "Plan deactivated."));
+            loadPlans();
           } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         }
       });

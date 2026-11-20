@@ -1896,16 +1896,61 @@ app.post("/api/plans", requireAdmin, async (req, res) => {
        ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10, sync_to_others=$11`,
       [planId, name, description || "", price || 0, priceAnnual || null, tierLevel || 1, maxProducts ?? 50, maxBranches ?? 1, JSON.stringify(features || []), isActive !== undefined ? isActive : true, syncToOthers !== false ? 1 : 0]
     );
-    res.status(201).json({ id: planId, message: `Plan "${name}" saved.` });
+    const sync = await syncPlanToAssignedClients(planId);
+    res.status(201).json({
+      id: planId,
+      message: sync.eligible === 0
+        ? `Plan "${name}" saved. No clients are currently assigned to this plan.`
+        : `Plan "${name}" saved and synced to ${sync.synced}/${sync.eligible} assigned client(s).`,
+      sync,
+    });
   } catch (err: any) {
     console.error("[api] Create plan error:", err.message);
     res.status(500).json({ error: "Failed to create plan" });
   }
 });
 
+async function syncPlanToAssignedClients(planId: string, previousName?: string) {
+  const plan = await queryOne("SELECT * FROM custom_plans WHERE id = $1", [planId]) as any;
+  if (!plan) return { eligible: 0, synced: 0, failed: [] as string[] };
+  const clients = await queryAll(
+    `SELECT name, render_service_url, cp_secret FROM clients
+     WHERE render_service_url != '' AND (LOWER(plan) IN (LOWER($1), LOWER($2)) OR ($3 <> '' AND LOWER(plan) = LOWER($3)))`,
+    [String(plan.id), String(plan.name), String(previousName || "")]
+  ) as any[];
+  const payload = {
+    id: plan.id, name: plan.name, description: plan.description || "",
+    price: plan.price, priceAnnual: plan.price_annual, tierLevel: plan.tier_level,
+    maxProducts: plan.max_products, maxBranches: plan.max_branches,
+    features: typeof plan.features === "string" ? JSON.parse(plan.features || "[]") : plan.features,
+    isActive: plan.is_active, syncToOthers: plan.sync_to_others !== 0,
+  };
+  const results = await Promise.all(clients.map(async (client) => {
+    try {
+      const baseUrl = String(client.render_service_url || "").replace(/\/+$/, "");
+      const response = await fetch(`${baseUrl}/api/plans/sync`, {
+        method: "PUT",
+        headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ plans: [payload] }),
+        signal: AbortSignal.timeout(45000),
+      });
+      return { name: client.name, success: response.ok };
+    } catch {
+      return { name: client.name, success: false };
+    }
+  }));
+  return {
+    eligible: clients.length,
+    synced: results.filter((result) => result.success).length,
+    failed: results.filter((result) => !result.success).map((result) => result.name),
+  };
+}
+
 app.put("/api/plans/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features, isActive, syncToOthers } = req.body || {};
+    const planId = String(req.params.id);
+    const currentPlan = await queryOne("SELECT name FROM custom_plans WHERE id = $1", [planId]) as any;
     const fields: string[] = []; const params: any[] = []; let idx = 1;
     if (name !== undefined) { fields.push(`name = $${idx}`); params.push(name); idx++; }
     if (description !== undefined) { fields.push(`description = $${idx}`); params.push(description); idx++; }
@@ -1918,9 +1963,15 @@ app.put("/api/plans/:id", requireAuth, requireAdmin, async (req, res) => {
     if (isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(isActive); idx++; }
     if (syncToOthers !== undefined) { fields.push(`sync_to_others = $${idx}`); params.push(syncToOthers ? 1 : 0); idx++; }
     if (fields.length === 0) { res.json({ message: "No changes" }); return; }
-    params.push(req.params.id);
+    params.push(planId);
     await query(`UPDATE custom_plans SET ${fields.join(", ")} WHERE id = $${idx}`, params);
-    res.json({ message: "Plan updated." });
+    const sync = await syncPlanToAssignedClients(planId, currentPlan?.name);
+    res.json({
+      message: sync.eligible === 0
+        ? "Plan updated. No clients are currently assigned to this plan."
+        : `Plan updated and synced to ${sync.synced}/${sync.eligible} assigned client(s).`,
+      sync,
+    });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to update plan" });
   }
@@ -3468,6 +3519,85 @@ async function autoImportPlans() {
   }
 }
 
+// Retail is a first-class Control Plane plan, not a hand-built feature list.
+// It stays focused on everyday commerce and stock; technical service modules
+// belong to the higher plans.
+const RETAIL_PLAN_FEATURES = [
+  "Product listing", "Order management", "POS integration",
+  "Payment method configuration", "M-Pesa integration",
+  "Discount/coupon management", "Returns management", "Customer management",
+  "Barcode scanning", "Bulk import/export",
+  "Invoice/quote PDF downloads", "Email notifications", "Multiple staff accounts",
+  "Low stock alerts", "Stock take", "Stock control",
+  "Supplier management", "Purchase order management", "Branch management",
+  "Analytics dashboard", "Audit log", "Hero customization", "Theme customization", "Custom branding",
+];
+
+async function ensureRetailPlan() {
+  try {
+    const matches = await queryAll(
+      `SELECT * FROM custom_plans WHERE LOWER(id) = 'retail' OR LOWER(name) = 'retail'
+       ORDER BY CASE WHEN LOWER(id) = 'retail' THEN 0 ELSE 1 END LIMIT 1`
+    ) as any[];
+    let plan = matches[0];
+    const migrationKey = "retail_plan_entitlements_v1";
+    const migrationApplied = await getControlPlaneSetting(migrationKey);
+    let shouldSync = !migrationApplied;
+    if (!plan) {
+      const result = await query(
+      `INSERT INTO custom_plans (id, name, description, price, price_annual, tier_level, max_products, max_branches, features, is_active, sync_to_others)
+         VALUES ('retail', 'Retail', 'For physical and online retail shops.', 10000, NULL, 1, 100, 1, $1, true, 0)
+         RETURNING *`,
+        [JSON.stringify(RETAIL_PLAN_FEATURES)]
+      );
+      plan = result.rows[0];
+      shouldSync = true;
+      console.log("[startup-plans] Added Retail plan with 100 products and one branch.");
+      await setControlPlaneSetting(migrationKey, "applied");
+    } else if (!migrationApplied) {
+      const current = typeof plan.features === "string" ? JSON.parse(plan.features || "[]") : plan.features;
+      if (!Array.isArray(current) || JSON.stringify(current) !== JSON.stringify(RETAIL_PLAN_FEATURES)
+        || Number(plan.max_products) !== 100 || Number(plan.max_branches) !== 1) {
+        await query("UPDATE custom_plans SET features = $1, max_products = 100, max_branches = 1 WHERE id = $2", [JSON.stringify(RETAIL_PLAN_FEATURES), plan.id]);
+        plan = { ...plan, features: JSON.stringify(RETAIL_PLAN_FEATURES) };
+        console.log("[startup-plans] Aligned Retail features with the retail-only defaults.");
+      }
+      await setControlPlaneSetting(migrationKey, "applied");
+    }
+
+    const features = typeof plan.features === "string" ? JSON.parse(plan.features || "[]") : plan.features;
+    const payload = {
+      id: plan.id, name: plan.name, description: plan.description || "",
+      price: plan.price, priceAnnual: plan.price_annual, tierLevel: plan.tier_level,
+      maxProducts: plan.max_products, maxBranches: plan.max_branches,
+      features, isActive: plan.is_active, syncToOthers: plan.sync_to_others !== 0,
+    };
+    if (shouldSync) {
+      const clients = await queryAll(
+        `SELECT id, name, plan, render_service_url, cp_secret FROM clients
+         WHERE render_service_url != '' AND LOWER(plan) IN (LOWER($1), LOWER($2))`,
+        [String(plan.id), String(plan.name)]
+      ) as any[];
+      for (const client of clients) {
+        try {
+          const response = await fetch(`${client.render_service_url}/api/plans/sync`, {
+            method: "PUT",
+            headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+            body: JSON.stringify({ plans: [payload] }),
+            signal: AbortSignal.timeout(45000),
+          });
+          if (!response.ok) console.warn(`[startup-plans] Retail plan sync failed for "${client.name}" (HTTP ${response.status}).`);
+          else console.log(`[startup-plans] Retail plan synced to "${client.name}".`);
+        } catch (error: any) {
+          console.warn(`[startup-plans] Retail plan sync failed for "${client.name}":`, error?.message || "unknown error");
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error("[startup-plans] Retail plan setup failed:", error?.message || "unknown error");
+  }
+}
+
 // Keep the shared Enterprise plan aligned with the granular repair feature
 // gates. The update is additive and idempotent; no other plan field changes.
 async function ensureEnterpriseGranularRepairEntitlements() {
@@ -3569,6 +3699,7 @@ export async function start(opts?: { background?: boolean }): Promise<import("ht
     if (!opts || opts.background !== false) {
       setTimeout(async () => {
         await autoImportPlans();
+        await ensureRetailPlan();
         await ensureEnterpriseGranularRepairEntitlements();
       }, 3000);
       setTimeout(autoImportCloudinary, 4000);

@@ -48,3 +48,21 @@ export function useFeature(featureName: string): boolean {
   }, [featureName]);
   return enabled;
 }
+
+export function useFeaturesReady(): boolean {
+  const key = currentKey();
+  const [ready, setReady] = useState(!!state && state.key === key);
+  useEffect(() => {
+    let cancelled = false;
+    if (state && state.key === key) {
+      setReady(true);
+    } else {
+      setReady(false);
+      fetchActiveFeatures().finally(() => {
+        if (!cancelled) setReady(true);
+      });
+    }
+    return () => { cancelled = true; };
+  }, [key]);
+  return ready;
+}
