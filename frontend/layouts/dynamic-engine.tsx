@@ -267,12 +267,12 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
   };
 
   useEffect(() => {
-    if (!isCarousel || featured.length <= 1 || isPaused) return;
+    if (!isCarousel || featured.length <= 1 || isPaused || reducedMotion) return;
     const timer = window.setTimeout(() => {
       setCurrent((index) => cycleHeroIndex(index, 1, featured.length));
     }, 5000);
     return () => window.clearTimeout(timer);
-  }, [isCarousel, featured.length, current, manualResetKey, isPaused]);
+  }, [isCarousel, featured.length, current, manualResetKey, isPaused, reducedMotion]);
 
   // Pointer effects share the Original-layout implementation: CSS custom
   // properties written off the render path, with the active hero variant as a

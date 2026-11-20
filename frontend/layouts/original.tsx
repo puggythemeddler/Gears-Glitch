@@ -89,12 +89,12 @@ function HeroSection({ products, hero }: { products: Product[]; hero?: any }) {
   };
 
   useEffect(() => {
-    if (featured.length <= 1 || carouselPaused) return;
+    if (featured.length <= 1 || carouselPaused || reducedMotion) return;
     const timer = window.setTimeout(() => {
       setActiveIdx((index) => cycleHeroIndex(index, 1, featured.length));
     }, 5000);
     return () => window.clearTimeout(timer);
-  }, [featured.length, activeProductIndex, manualResetKey, carouselPaused]);
+  }, [featured.length, activeProductIndex, manualResetKey, carouselPaused, reducedMotion]);
 
   const isSafeHeroColor = (value: unknown): value is string =>
     typeof value === "string" && /^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(value.trim());
