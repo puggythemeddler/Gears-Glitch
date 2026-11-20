@@ -192,8 +192,19 @@ export function LayoutEngine({
   const { layout, hero, layoutConfig } = useLayout();
 
   if (page === "home") {
+    const catalogueProducts = allProducts || products;
+    if (catalogueProducts.length === 0 && categories.length === 0) {
+      const storeName = String(settings?.storeName || "our shop");
+      return (
+        <section className="catalogue-empty" aria-labelledby="catalogue-empty-title" style={{ maxWidth: 900, margin: "clamp(2rem, 8vh, 5rem) auto", padding: "3rem 1.5rem", textAlign: "center" }}>
+          <span aria-hidden="true" style={{ display: "inline-grid", placeItems: "center", width: 56, height: 56, borderRadius: "50%", background: "var(--surface)", color: "var(--primary)", fontSize: "1.8rem", fontWeight: 700 }}>?</span>
+          <h1 id="catalogue-empty-title" style={{ margin: "1rem 0 0.5rem" }}>This catalogue is being prepared</h1>
+          <p style={{ color: "var(--text-secondary)", margin: 0 }}>Products and categories from {storeName} will appear here once they are added.</p>
+        </section>
+      );
+    }
     if (layoutConfig?.type === "dynamic" && layoutConfig.config) {
-      return <DynamicHomePage products={allProducts || products} categories={categories} banners={banners} config={layoutConfig.config} />;
+      return <DynamicHomePage products={catalogueProducts} categories={categories} banners={banners} config={layoutConfig.config} />;
     }
     const mod = getLayout(layout);
     return <mod.HomePage products={products} categories={categories} banners={banners} hero={hero} allProducts={allProducts || products} />;

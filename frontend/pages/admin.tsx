@@ -10,7 +10,7 @@ import EmptyState from "@/components/EmptyState";
 import { getLayoutList, useLayout } from "@/layouts";
 import { useApp } from "@/lib/app-context";
 import NotificationBell from "@/components/NotificationBell";
-import { useFeature } from "@/lib/features";
+import { useFeature, useFeaturesReady } from "@/lib/features";
 import { HERO_EFFECTS_DEFAULT, HERO_MOTION_INTENSITIES, HERO_INTENSITY_LABELS, normalizeHeroEffects } from "@/lib/hero-effects";
 import type { HeroEffectsConfig, HeroMotionIntensity } from "@/lib/hero-effects";
 import { confirmDialog, promptDialog } from "@/components/ConfirmDialog";
@@ -44,7 +44,7 @@ import { PageHead, DataTable, Tabs, StatusBadge, Modal } from "@/components/ui";
 import { isSoftwareLicenseProduct } from "@/lib/repairLicenseProducts";
 import { extractSupplierInvoiceText, parseSupplierInvoiceLines, type SupplierInvoiceLine } from "@/lib/supplier-invoice-ocr";
 
-export type AdminView = "dashboard" | "products" | "price-list" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
+export type AdminView = "dashboard" | "products" | "price-list" | "groups" | "categories" | "orders" | "pos" | "customers" | "coupons" | "gift-cards" | "campaigns" | "abandoned-carts" | "quotations" | "users" | "roles" | "plans" | "providers" | "invoices" | "reports" | "stock-take" | "stock-on-hand" | "stock-transfers" | "stock-control" | "purchases" | "serials" | "spec-templates" | "suppliers" | "clients" | "branches" | "shop-subscription" | "about-us" | "storefront" | "layout-builder" | "pages" | "settings" | "settings-store-info" | "settings-payments" | "settings-compliance" | "settings-compliance-integrations" | "settings-content" | "settings-system" | "delivery-fees" | "credit-notes" | "messages" | "product-positioning" | "email-settings" | "settings-integrations" | "reviews" | "whatsapp-settings" | "notifications-settings" | "audit" | "category-positioning" | "repairs" | "warranties" | "help" | "financing";
 
 type StaffRole = "admin" | "owner" | "technician" | "manager" | "staff" | "provider";
 
@@ -72,7 +72,7 @@ async function stepUpForHighRiskAction(action: string, notify: StepUpNotifier): 
 }
 // Which permission unlocks a view in the sidebar. Views absent from this map
 // (groups, categories, users, roles, plans, stock-on-hand, stock-transfers,
-// purchases, clients, storefront, settings, delivery-fees, email-settings,
+// clients, storefront, settings, delivery-fees, email-settings, and
 // category-positioning) are admin-only.
 const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   dashboard: "",
@@ -83,7 +83,7 @@ const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   customers: "customer:view",
   quotations: "quote:view",
   repairs: "repair:list",
-  warranties: "order:view",
+  warranties: "warranty:view",
   financing: "financing:view",
   coupons: "coupon:view",
   "gift-cards": "giftcard:view",
@@ -99,6 +99,8 @@ const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   "stock-take": "stock:list",
   "stock-control": "stock:list",
   suppliers: "supplier:view",
+  purchases: "purchase:view",
+  serials: "serial:view",
   branches: "branch:view",
   "spec-templates": "spec:view",
   "shop-subscription": "subscription:view",
@@ -106,15 +108,16 @@ const VIEW_PERMISSIONS: Partial<Record<AdminView, string>> = {
   "product-positioning": "positioning:view",
   "whatsapp-settings": "whatsapp:view",
   "settings-integrations": "settings:view",
+  "settings-compliance-integrations": "settings:view",
   "notifications-settings": "settings:view",
-  pages: "settings:view",
+  pages: "pages:view",
 };
 
 const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; feature?: string; features?: string[] }[] }[] = [
   {
     label: "Sales",
     items: [
-      { key: "orders", label: "Orders" },
+      { key: "orders", label: "Orders", feature: "Order management" },
       { key: "pos", label: "POS", feature: "POS integration" },
       { key: "quotations", label: "Quotations", feature: "Quotations" },
       { key: "invoices", label: "Invoices", feature: "Invoice/quote PDF downloads" },
@@ -128,18 +131,18 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   {
     label: "Catalog",
     items: [
-      { key: "products", label: "Products" },
-      { key: "price-list", label: "Price List" },
-      { key: "groups", label: "Groups" },
-      { key: "categories", label: "Categories" },
-      { key: "category-positioning", label: "Category Order" },
+      { key: "products", label: "Products", feature: "Product listing" },
+      { key: "price-list", label: "Price List", feature: "Product listing" },
+      { key: "groups", label: "Groups", feature: "Product listing" },
+      { key: "categories", label: "Categories", feature: "Product listing" },
+      { key: "category-positioning", label: "Category Order", feature: "Product listing" },
       { key: "product-positioning", label: "Product Positioning", feature: "Product positioning" },
     ],
   },
   {
     label: "Inventory",
     items: [
-      { key: "stock-on-hand", label: "Stock on Hand", feature: "Low stock alerts" },
+      { key: "stock-on-hand", label: "Stock on Hand", feature: "Stock control" },
       { key: "stock-transfers", label: "Stock Transfers", feature: "Stock transfers" },
       { key: "stock-take", label: "Stock Take", features: ["Stock take", "Stock take / inventory count"] },
       { key: "stock-control", label: "Stock Control", features: ["Stock control", "Stock take / inventory count"] },
@@ -151,7 +154,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
   {
     label: "Customers",
     items: [
-      { key: "customers", label: "Customers" },
+      { key: "customers", label: "Customers", feature: "Customer management" },
     ],
   },
   {
@@ -165,7 +168,7 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     label: "Team",
     items: [
       { key: "users", label: "Users", feature: "Multiple staff accounts" },
-      { key: "roles", label: "Roles" },
+      { key: "roles", label: "Roles", feature: "Multiple staff accounts" },
       { key: "clients", label: "Clients", feature: "Client/tenant management" },
       { key: "branches", label: "Branches", feature: "Branch management" },
     ],
@@ -174,9 +177,9 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     label: "Finance",
     items: [
       { key: "financing", label: "Lipa Mdogo Mdogo", feature: "Lipa Mdogo Mdogo" },
-      { key: "providers", label: "Providers" },
-      { key: "shop-subscription", label: "Subscription" },
-      { key: "plans", label: "Subscription Plans" },
+      { key: "providers", label: "Providers", feature: "Payment method configuration" },
+      { key: "shop-subscription", label: "Subscription", feature: "Shop subscription" },
+      { key: "plans", label: "Subscription Plans", feature: "Shop subscription" },
     ],
   },
   {
@@ -192,20 +195,19 @@ const NAV_GROUPS: { label: string; items: { key: AdminView; label: string; featu
     label: "Settings",
     items: [
       { key: "settings-store-info", label: "Store Info" },
-      { key: "settings-payments", label: "Payments" },
-      { key: "settings-compliance", label: "Compliance" },
-      { key: "delivery-fees", label: "Delivery Fees" },
-      { key: "settings-content", label: "Content" },
-      { key: "settings-system", label: "System" },
-      { key: "storefront", label: "Storefront" },
-      { key: "layout-builder", label: "Website Studio" },
+      { key: "settings-payments", label: "Payments", feature: "Payment method configuration" },
+      { key: "settings-compliance-integrations", label: "Compliance & Integrations", features: ["eTIMS/KRA compliance", "WhatsApp integration", "Multi-currency support", "Payment method configuration"] },
+      { key: "delivery-fees", label: "Delivery Fees", feature: "Order management" },
+      { key: "settings-content", label: "Content", features: ["Hero customization", "Custom pages & landing pages"] },
+      { key: "settings-system", label: "System", feature: "Database backup and export" },
+      { key: "storefront", label: "Storefront", feature: "Theme customization" },
+      { key: "layout-builder", label: "Website Studio", features: ["Theme customization", "Hero customization"] },
       { key: "pages", label: "Pages", feature: "Custom pages & landing pages" },
       { key: "email-settings", label: "Email", feature: "Email notifications" },
-      { key: "settings-integrations", label: "Integrations" },
       { key: "whatsapp-settings", label: "WhatsApp", feature: "WhatsApp integration" },
-      { key: "notifications-settings", label: "Notifications" },
-      { key: "about-us", label: "About Us" },
-      { key: "spec-templates", label: "Spec Templates" },
+      { key: "notifications-settings", label: "Notifications", features: ["Email notifications", "SMS notifications", "WhatsApp integration"] },
+      { key: "about-us", label: "About Us", feature: "Custom branding" },
+      { key: "spec-templates", label: "Spec Templates", feature: "Spec templates" },
     ],
   },
   {
@@ -256,6 +258,7 @@ const NAV_ICONS: Partial<Record<AdminView, string>> = {
   "settings-store-info": "store",
   "settings-payments": "card",
   "settings-compliance": "shield",
+  "settings-compliance-integrations": "shield",
   "delivery-fees": "truck",
   "settings-content": "image",
   "settings-system": "settings",
@@ -275,6 +278,7 @@ const NAV_ICONS: Partial<Record<AdminView, string>> = {
 
 export default function AdminPage() {
   const { isDark, toggleDark, settings, refreshSettings, logout } = useApp();
+  const featuresReady = useFeaturesReady();
   const [authed, setAuthed] = useState(false);
   const [staffRole, setStaffRole] = useState<StaffRole>("admin");
   const [staffPermissions, setStaffPermissions] = useState<string[]>([]);
@@ -314,6 +318,11 @@ export default function AdminPage() {
     "Repair ticketing": useFeature("Repair ticketing"),
     "Warranty management": useFeature("Warranty management"),
     "Serial number tracking": useFeature("Serial number tracking"),
+    "Spec templates": useFeature("Spec templates"),
+    "Product listing": useFeature("Product listing"),
+    "Order management": useFeature("Order management"),
+    "Customer management": useFeature("Customer management"),
+    "Payment method configuration": useFeature("Payment method configuration"),
     "Product positioning": useFeature("Product positioning"),
     "Email notifications": useFeature("Email notifications"),
     "Stock transfers": useFeature("Stock transfers"),
@@ -341,6 +350,13 @@ export default function AdminPage() {
     "Campaign pages": useFeature("Campaign pages"),
     "Cart recovery": useFeature("Cart recovery"),
     "Lipa Mdogo Mdogo": useFeature("Lipa Mdogo Mdogo"),
+    "Shop subscription": useFeature("Shop subscription"),
+    "Custom pages & landing pages": useFeature("Custom pages & landing pages"),
+    "Hero customization": useFeature("Hero customization"),
+    "Theme customization": useFeature("Theme customization"),
+    "Custom branding": useFeature("Custom branding"),
+    "Database backup and export": useFeature("Database backup and export"),
+    "SMS notifications": useFeature("SMS notifications"),
   };
   const hasFeature = (f?: string) => !f || featureFlags[f] === true;
   // A nav item gated by `features: [...]` is visible if ANY listed feature is enabled
@@ -375,8 +391,8 @@ export default function AdminPage() {
   }, [view]);
 
   useEffect(() => {
-    if (view !== "dashboard" && !allVisibleKeys.includes(view)) setView("dashboard");
-  }, [view, allVisibleKeys]);
+    if (featuresReady && view !== "dashboard" && !allVisibleKeys.includes(view)) setView("dashboard");
+  }, [view, allVisibleKeys, featuresReady]);
 
   // ---- URL sync: deep-linkable views (?view=repairs) with working Back ----
   const ALL_VIEW_KEYS = useMemo(() => new Set<string>(["dashboard", ...NAV_GROUPS.flatMap((g) => g.items.map((i) => i.key))]), []);
@@ -393,6 +409,10 @@ export default function AdminPage() {
     setUrlReady(true);
     const q = router.query.view;
     if (typeof q !== "string") return;
+    if (q === "settings-compliance" || q === "settings-integrations") {
+      if (view !== "settings-compliance-integrations") setView("settings-compliance-integrations");
+      return;
+    }
     if (q === "pos") { window.location.assign("/pos"); return; }
     if (ALL_VIEW_KEYS.has(q) && q !== view) setView(q as AdminView);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -737,7 +757,7 @@ export default function AdminPage() {
               <span className="admin-topbar-role">{staffRole}</span>
             </div>
             <div className="admin-topbar-actions">
-              <button type="button" className="admin-topbar-btn primary" onClick={() => { window.location.href = "/pos"; }} aria-label="Open POS" title="Open point of sale">POS</button>
+              {featureFlags["POS integration"] && <button type="button" className="admin-topbar-btn primary" onClick={() => { window.location.href = "/pos"; }} aria-label="Open POS" title="Open point of sale">POS</button>}
               {featureFlags["Messaging"] && canAccess("messages") && <NotificationBell onClick={() => setView("messages")} />}
               <button type="button" className="admin-topbar-btn" onClick={() => setView("help")} aria-label="Help" title="Help &amp; keyboard shortcuts (?)">?</button>
               <button type="button" className="admin-topbar-btn" onClick={toggleDark} aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"} title={isDark ? "Switch to light theme" : "Switch to dark theme"}>
@@ -787,7 +807,7 @@ export default function AdminPage() {
             {view === "pages" && <PagesManager />}
             {view === "settings-store-info" && <AdminStoreInfo />}
             {view === "settings-payments" && <AdminPayments />}
-            {view === "settings-compliance" && <AdminCompliance />}
+            {view === "settings-compliance-integrations" && <AdminComplianceIntegrations onNavigate={setView} />}
             {view === "settings-content" && <AdminContent />}
             {view === "settings-system" && <AdminSystem />}
             {view === "delivery-fees" && <AdminDeliveryFees />}
@@ -795,7 +815,6 @@ export default function AdminPage() {
             {view === "reviews" && <AdminReviews />}
             {view === "product-positioning" && <AdminProductPositioning />}
             {view === "email-settings" && <AdminEmailSettings />}
-            {view === "settings-integrations" && <IntegrationsSettings onNavigate={setView} />}
             {view === "whatsapp-settings" && <WhatsAppSettings />}
             {view === "notifications-settings" && <NotificationSettings />}
             {view === "category-positioning" && <CategoryPositioningPage />}
@@ -918,15 +937,19 @@ function AdminAuditLog() {
 function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole: StaffRole; staffPermissions: string[]; onNavigate: (v: AdminView) => void }) {
   const isAdmin = staffRole === "admin";
   const hasPerm = (p: string) => isAdmin || staffPermissions.includes(p);
+  const ordersEnabled = useFeature("Order management");
+  const staffEnabled = useFeature("Multiple staff accounts");
+  const subscriptionEnabled = useFeature("Shop subscription");
   const { data: stats, loading: statsLoading, error: statsError } = useFetch(() => api<any>("/api/backoffice/stats"), []);
   const { data: products, loading: prodLoading, error: prodError } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
-  const { data: subReq, loading: subLoading, error: subError } = useFetch(() => isAdmin ? api<any>("/api/shop/subscription/requests") : Promise.resolve(null), []);
+  const canSeeSubscription = isAdmin && subscriptionEnabled;
+  const { data: subReq, loading: subLoading, error: subError } = useFetch(() => canSeeSubscription ? api<any>("/api/shop/subscription/requests") : Promise.resolve(null), [canSeeSubscription]);
 
   // Today's numbers
   const today = reportToday();
   const recentTrend = reportDateRange("14d");
   const monthStart = `${today.slice(0, 7)}-01`;
-  const canOrders = hasPerm("order:view");
+  const canOrders = hasPerm("order:view") && ordersEnabled;
   const { data: todayReport, loading: todayLoading, error: todayError } = useFetch(
     () => canOrders ? api<any>(`/api/reports/sales?from=${today}&to=${today}`) : Promise.resolve(null),
     [today]
@@ -942,23 +965,28 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
 
   // Attention panel data
   const canStock = hasPerm("stock:list");
-  const canRepairs = hasPerm("repair:list");
-  const canMessages = hasPerm("messaging:view");
-  const { data: lowStock, loading: stockLoading, error: stockError } = useFetch(() => canStock ? api<any>("/api/stock/low-items") : Promise.resolve(null), []);
-  const { data: repairs, loading: repairsLoading, error: repairsError } = useFetch(() => canRepairs ? api<any>("/api/repairs") : Promise.resolve(null), []);
-  const { data: messages, loading: messagesLoading, error: messagesError } = useFetch(() => canMessages ? api<any>("/api/admin/messages") : Promise.resolve(null), []);
+  const repairsEnabled = useFeature("Repair ticketing");
+  const stockEnabled = useFeature("Stock control");
+  const lowStockEnabled = useFeature("Low stock alerts");
+  const messagingEnabled = useFeature("Messaging");
+  const canRepairs = hasPerm("repair:list") && repairsEnabled;
+  const canStockFeatures = canStock && stockEnabled && lowStockEnabled;
+  const canMessages = hasPerm("messaging:view") && messagingEnabled;
+  const { data: lowStock, loading: stockLoading, error: stockError } = useFetch(() => canStockFeatures ? api<any>("/api/stock/low-items") : Promise.resolve(null), [canStockFeatures]);
+  const { data: repairs, loading: repairsLoading, error: repairsError } = useFetch(() => canRepairs ? api<any>("/api/repairs") : Promise.resolve(null), [canRepairs]);
+  const { data: messages, loading: messagesLoading, error: messagesError } = useFetch(() => canMessages ? api<any>("/api/admin/messages") : Promise.resolve(null), [canMessages]);
 
   const pendingReqs = (subReq?.requests || []).filter((r: any) => r.status === "pending").length;
-  const loading = statsLoading || prodLoading || subLoading;
-  const checkingAttention = (canStock && stockLoading) || (canRepairs && repairsLoading) || (canMessages && messagesLoading);
+  const loading = statsLoading || prodLoading || (canSeeSubscription && subLoading);
+  const checkingAttention = (canStockFeatures && stockLoading) || (canRepairs && repairsLoading) || (canMessages && messagesLoading);
   const failedSections = [
     statsError && "team stats",
     prodError && "products",
     (canOrders && todayError) || (canOrders && monthError) || (canOrders && allTimeError) ? "sales figures" : null,
-    canStock && stockError && "stock status",
+    canStockFeatures && stockError && "stock status",
     canRepairs && repairsError && "repair queue",
     canMessages && messagesError && "messages",
-    isAdmin && subError && "subscription requests",
+    canSeeSubscription && subError && "subscription requests",
   ].filter(Boolean);
 
   const lowItems: { productId: string; name: string; quantityInStock: number; lowStockThreshold: number }[] = lowStock?.items || [];
@@ -978,7 +1006,7 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
   const allTimeOrders = allTimeReport?.totalOrders ?? 0;
 
   const attentionItems = [
-    canStock && lowItems.length > 0 ? { label: "Low stock", value: lowItems.length, note: outOfStock > 0 ? `${outOfStock} out of stock` : undefined, view: "stock-on-hand" as AdminView, tone: outOfStock > 0 ? "danger" : "warning" } : null,
+    canStockFeatures && lowItems.length > 0 ? { label: "Low stock", value: lowItems.length, note: outOfStock > 0 ? `${outOfStock} out of stock` : undefined, view: "stock-on-hand" as AdminView, tone: outOfStock > 0 ? "danger" : "warning" } : null,
     canRepairs && readyTickets > 0 ? { label: "Repairs ready", value: readyTickets, note: "awaiting collection", view: "repairs" as AdminView, tone: "success" } : null,
     canMessages && unreadMessages > 0 ? { label: "Unread messages", value: unreadMessages, view: "messages" as AdminView, tone: "warning" } : null,
     isAdmin && pendingReqs > 0 ? { label: "Subscription requests", value: pendingReqs, view: "shop-subscription" as AdminView, tone: "warning" } : null,
@@ -1047,18 +1075,18 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
         {canOrders && <StatCard value={allTimeReport ? allTimeRevenue : allTimeError ? "Unavailable" : "Loading"} label="Revenue All Time (KES)" onClick={() => nav("reports")} />}
         {canOrders && <StatCard value={allTimeReport ? allTimeOrders : allTimeError ? "Unavailable" : "Loading"} label="Orders All Time" onClick={() => nav("orders")} />}
         {canRepairs && <StatCard value={repairs ? openTickets.length : repairsError ? "Unavailable" : "Loading"} label="Open Repairs" onClick={() => nav("repairs")} />}
-        {canStock && <StatCard value={lowStock ? lowItems.length : stockError ? "Unavailable" : "Loading"} label="Low-Stock Items" tone={lowItems.length > 0 ? "warning" : undefined} onClick={() => nav("stock-on-hand")} />}
-        {isAdmin && <StatCard value={stats ? stats.totalStaff ?? 0 : statsError ? "Unavailable" : "Loading"} label="Users" onClick={() => nav("users")} />}
-        {isAdmin && <StatCard value={subReq ? pendingReqs : subError ? "Unavailable" : "Loading"} label="Pending Sub. Requests" tone={pendingReqs > 0 ? "danger" : undefined} onClick={() => nav("shop-subscription")} />}
+        {canStockFeatures && <StatCard value={lowStock ? lowItems.length : stockError ? "Unavailable" : "Loading"} label="Low-Stock Items" tone={lowItems.length > 0 ? "warning" : undefined} onClick={() => nav("stock-on-hand")} />}
+        {isAdmin && staffEnabled && <StatCard value={stats ? stats.totalStaff ?? 0 : statsError ? "Unavailable" : "Loading"} label="Users" onClick={() => nav("users")} />}
+        {canSeeSubscription && <StatCard value={subReq ? pendingReqs : subError ? "Unavailable" : "Loading"} label="Pending Sub. Requests" tone={pendingReqs > 0 ? "danger" : undefined} onClick={() => nav("shop-subscription")} />}
       </div>
 
       {canOrders && <section className="panel" aria-label="Recent sales trend" style={{ marginTop: "1rem" }}>
         <SalesTrendsChart from={recentTrend.from} to={today} branchId="" groupId="" compact />
       </section>}
 
-      {(canStock && lowItems.length > 0) || canRepairs ? (
+      {(canStockFeatures && lowItems.length > 0) || canRepairs ? (
         <div className="dash-cols">
-          {canStock && lowItems.length > 0 && (
+          {canStockFeatures && lowItems.length > 0 && (
             <div className="panel dash-lowstock">
               <h3>Low stock — top 5</h3>
               <ul>
@@ -2143,6 +2171,7 @@ function AdminRoles() {
   const feedback = useFeedback();
   const { data: rolesData, loading, error, refetch } = useFetch(() => api<{ roles: any[] }>("/api/roles"), []);
   const { data: permsData } = useFetch(() => api<{ permissions: Record<string, string> }>("/api/permissions"), []);
+  const { data: planFeatures } = useFetch(() => api<{ features: string[] }>("/api/shop/features"), []);
   const [editingRole, setEditingRole] = useState<any>(null);
   const [newRole, setNewRole] = useState(false);
   const [roleForm, setRoleForm] = useState({ id: "", name: "", description: "", permissions: [] as string[], features: [] as string[] });
@@ -2210,7 +2239,7 @@ function AdminRoles() {
             <div className="field">
               <label>Features</label>
               <p className="muted" style={{ fontSize: "0.8rem", margin: "0 0 0.5rem" }}>Leave empty to inherit all plan features. Selecting features limits this role to those — a user's final set is plan features intersected with this selection.</p>
-              <FeaturePicker selected={roleForm.features} onChange={(features) => setRoleForm((p) => ({ ...p, features }))} />
+              <FeaturePicker selected={roleForm.features} availableFeatures={planFeatures?.features || []} onChange={(features) => setRoleForm((p) => ({ ...p, features }))} />
             </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <RippleButton type="submit" loading={saving}>Save</RippleButton>
@@ -4419,7 +4448,7 @@ function AdminPayments() {
   );
 }
 
-function AdminCompliance() {
+function AdminCompliance({ showTitle = true }: { showTitle?: boolean }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const { data: settings, loading, error } = useFetch(() => api<any>("/api/settings"), []);
@@ -4446,7 +4475,7 @@ function AdminCompliance() {
 
   return (
     <>
-      <h1>Compliance</h1>
+      {showTitle ? <h1>Compliance</h1> : <h2>Compliance</h2>}
       <form onSubmit={handleSave} style={{ maxWidth: 500 }}>
         <div className="panel" style={{ marginBottom: "1rem" }}>
           <h3 style={{ marginTop: 0 }}>Google Sign-In</h3>
@@ -4470,6 +4499,16 @@ function AdminCompliance() {
         <RippleButton type="submit" loading={saving}>Save compliance settings</RippleButton>
       </form>
     </>
+  );
+}
+
+function AdminComplianceIntegrations({ onNavigate }: { onNavigate: (view: AdminView) => void }) {
+  return (
+    <div>
+      <h1>Compliance &amp; Integrations</h1>
+      <AdminCompliance showTitle={false} />
+      <IntegrationsSettings onNavigate={onNavigate} showTitle={false} />
+    </div>
   );
 }
 

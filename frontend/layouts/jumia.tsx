@@ -6,6 +6,8 @@ import { normalizeHref } from "@/lib/links";
 import CurrencySelector from "@/components/CurrencySelector";
 import { formatPrice } from "./shared";
 import { Media } from "@/components/Media";
+import { useApp } from "@/lib/app-context";
+import { useFeature } from "@/lib/features";
 
 export const LAYOUT_KEY = "jumia";
 export const LAYOUT_LABEL = "Jumia Style";
@@ -93,7 +95,7 @@ export function Header({ categories, settings, isLoggedIn, userName, cartCount, 
       <div className="jum-cat-icons">
         {categories.map((cat, i) => (
           <a key={cat.id} href={`/${cat.id}`} className="jum-cat-icon">
-             <span className="icon">{["Tech","Electronics","Audio","Mobile","Wearables","Accessories","Cameras","Repairs"][i % 8]}</span>
+            <span className="icon">{["Tech","Electronics","Audio","Mobile","Wearables","Accessories","Cameras","More"][i % 8]}</span>
             <span>{cat.label}</span>
           </a>
         ))}
@@ -121,6 +123,10 @@ export function Footer({ settings }: { settings: any }) {
 export function HomePage({ products, categories, banners, hero }: {
   products: Product[]; categories: { id: string; label: string }[]; banners: any[]; hero?: any;
 }) {
+  const { settings } = useApp();
+  const discountsEnabled = useFeature("Discount/coupon management");
+  const storeName = String(settings?.storeName || "our shop");
+  const isGearGlitchStore = storeName.toLowerCase().includes("gear") && storeName.toLowerCase().includes("glitch");
   const [slideIdx, setSlideIdx] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
   const heroTitle = hero?.headline ? `${hero.headline} ${hero.headlineAccent || ""}` : "";
@@ -128,9 +134,9 @@ export function HomePage({ products, categories, banners, hero }: {
   const heroCtaLabel = hero?.shopNowLabel || "Shop Now";
   const heroCtaLink = normalizeHref(typeof hero?.shopNowLink === "string" ? hero.shopNowLink : "", categories[0] ? `/${categories[0].id}` : "/");
   const slides = banners.length > 0 ? banners : [
-    { title: heroTitle || "Flash Sale Today", subtitle: heroSub || "Up to 50% off on select laptops" },
-    { title: "New Arrivals", subtitle: "Latest tech just landed" },
-    { title: "Free Delivery", subtitle: "On orders over KES 50,000" },
+    { title: heroTitle || (isGearGlitchStore && discountsEnabled ? "Offers and new arrivals" : `Welcome to ${storeName}`), subtitle: heroSub || (isGearGlitchStore ? "Browse products available from Gears&Glitch." : `Browse products available from ${storeName}.`) },
+    { title: "New Arrivals", subtitle: isGearGlitchStore ? "Latest tech just landed" : "See what is new in the shop" },
+    ...(isGearGlitchStore ? [{ title: "Free Delivery", subtitle: "On orders over KES 50,000" }] : []),
   ];
 
   useEffect(() => {
@@ -147,7 +153,8 @@ export function HomePage({ products, categories, banners, hero }: {
     return () => clearInterval(id);
   }, [slides.length, reducedMotion]);
 
-  const deals = products.filter((p) => p.inStock).slice(0, 8);
+  const availableProducts = products.filter((p) => p.inStock);
+  const deals = availableProducts.filter((p) => discountsEnabled && typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price).slice(0, 8);
 
   return (
     <div className="jum-layout">
@@ -166,33 +173,34 @@ export function HomePage({ products, categories, banners, hero }: {
       </div>
       )}
 
+      {deals.length > 0 && (
       <div className="jum-section">
         <div className="jum-section-header">
-          <h2>Flash Sales</h2>
-          <span className="jum-timer">Ends in 23:59:59</span>
+          <h2>Offers</h2>
         </div>
         <div className="jum-grid">
           {deals.slice(0, 6).map((p) => (
             <Link key={p.id} href={`/product?id=${encodeURIComponent(p.id)}`} className="jum-card">
-              <div className="jum-discount">-{Math.floor(Math.random() * 30 + 10)}%</div>
+              <div className="jum-discount">-{Math.round((1 - (p.salePrice as number) / p.price) * 100)}%</div>
               <div className="jum-card-img">
                 {p.imageUrl ? <Media src={p.imageUrl} alt={p.imageAlt || p.name} width={300} height={300} fit="contain" fallbackLabel={p.name} /> : p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
               </div>
               <div className="jum-card-body">
                 <h3>{p.name}</h3>
-                <div className="jum-card-price">{formatPrice(p.price)} <span className="jum-card-old">{formatPrice(Math.round(p.price * 1.3))}</span></div>
+                <div className="jum-card-price">{formatPrice(p.salePrice as number)} <span className="jum-card-old">{formatPrice(p.price)}</span></div>
               </div>
             </Link>
           ))}
         </div>
       </div>
+      )}
 
       <div className="jum-section">
         <div className="jum-section-header">
-          <h2>Daily Deals</h2>
+          <h2>{isGearGlitchStore ? "Featured products" : "Shop products"}</h2>
         </div>
         <div className="jum-grid">
-          {deals.slice(0, 8).map((p) => (
+          {availableProducts.slice(0, 8).map((p) => (
             <Link key={p.id} href={`/product?id=${encodeURIComponent(p.id)}`} className="jum-card">
               <div className="jum-card-img">
                 {p.imageUrl ? <Media src={p.imageUrl} alt={p.imageAlt || p.name} width={300} height={300} fit="contain" fallbackLabel={p.name} /> : p.name.split(/\s+/).slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}

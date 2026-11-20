@@ -11,6 +11,7 @@ import { normalizeHref } from "@/lib/links";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { isAllowedPersistentImageSrc, isHexColor } from "@/lib/image-allowlist";
+import { useFeature, useFeaturesReady } from "@/lib/features";
 
 // Render a builder-supplied link as an anchor only when it actually points
 // somewhere. Empty, "#", or unsafe links render as inert styled content so the
@@ -23,7 +24,18 @@ function DyLink({ href, className, style, fid, onClick, children }: {
   onClick?: () => void;
   children: React.ReactNode;
 }) {
+  const featuresReady = useFeaturesReady();
+  const repairsEnabled = useFeature("Repair ticketing");
+  const financingEnabled = useFeature("Lipa Mdogo Mdogo");
+  const campaignsEnabled = useFeature("Campaign pages");
+  const customPagesEnabled = useFeature("Custom pages & landing pages");
   const target = normalizeHref(href || "");
+  const path = target.split(/[?#]/, 1)[0].replace(/\/$/, "") || "/";
+  const under = (base: string) => path === base || path.startsWith(base + "/");
+  if (featuresReady && ((!repairsEnabled && ["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"].some(under))
+    || (!financingEnabled && under("/financing"))
+    || (!campaignsEnabled && under("/campaign"))
+    || (!customPagesEnabled && under("/pages")))) return null;
   if (!target || target === "#") {
     return (
       <span className={className} style={{ ...style, cursor: "default" } as React.CSSProperties} data-fid={fid} onClick={onClick}>
@@ -230,6 +242,7 @@ function ProductPanel({ item, interactive }: { item?: Product; interactive?: boo
 
 function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero"]; colors?: DynamicLayoutConfig["colors"]; products: Product[]; categories?: { id: string; label: string }[] }) {
   const { settings } = useApp();
+  const repairsEnabled = useFeature("Repair ticketing");
   const heroActive = !!hero && hero.enabled !== false && hero.style !== "none";
 
   // Hooks run unconditionally so the Studio can toggle style/enabled without
@@ -254,9 +267,17 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
   const configuredTrustItems = hero?.trustItems?.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()) || [];
   const storeName = String(settings?.storeName || "").toLowerCase();
   const isGearGlitchStore = storeName.includes("gear") && storeName.includes("glitch");
+  const repairPaths = ["/repairs", "/repair-book", "/my-repairs", "/repair-ticket"];
+  const isRepairLink = (href?: string) => {
+    const path = normalizeHref(href || "").split(/[?#]/, 1)[0];
+    return repairPaths.some((repairPath) => path === repairPath || path.startsWith(repairPath + "/"));
+  };
   const trustItems = configuredTrustItems.length > 0
     ? configuredTrustItems
     : isGearGlitchStore ? DEFAULT_TRUST_ITEMS : [];
+  const primaryCtaEnabled = !!hero?.ctaText && (repairsEnabled || !isRepairLink(hero.ctaLink));
+  const secondaryButton = (hero?.buttons || []).find((button) => repairsEnabled || !isRepairLink(button.link));
+  const secondaryButtonIndex = (hero?.buttons || []).indexOf(secondaryButton!);
   const selectSlide = (index: number) => {
     setCurrent(index);
     setManualResetKey((key) => key + 1);
@@ -309,16 +330,14 @@ function HeroInner({ hero, colors, products }: { hero: DynamicLayoutConfig["hero
   const content = (
     <>
       {hero.badge && <div className="dy-hero-badge" data-fid="hero.badge">{hero.badge}</div>}
-      <h1 className="dy-hero-headline" data-fid="hero.headline">{hero.headline || "Welcome to our store"}</h1>
-      {hero.subtitle && <p className="dy-hero-sub" data-fid="hero.subtitle">{hero.subtitle}</p>}
-      {(hero.ctaText || (hero.buttons || []).length > 0) && (
+      <h1 className="dy-hero-headline" data-fid="hero.headline">{hero.headline || (isGearGlitchStore ? "Welcome to Gears&Glitch" : `Welcome to ${settings?.storeName || "our store"}`)}</h1>
+      {(hero.subtitle || !isGearGlitchStore) && <p className="dy-hero-sub" data-fid="hero.subtitle">{hero.subtitle || `Explore the products available from ${settings?.storeName || "our store"}.`}</p>}
+      {(primaryCtaEnabled || secondaryButton) && (
         <div className="dy-hero-cta-row">
-          {hero.ctaText && (
+          {primaryCtaEnabled && (
             <DyLink className="dy-hero-btn dy-hero-btn--primary" href={hero.ctaLink} fid="hero.ctaText">{hero.ctaText}</DyLink>
           )}
-          {(hero.buttons || []).slice(0, 1).map((b, i) => (
-            <DyLink key={`${b.label}-${i}`} className="dy-hero-btn dy-hero-btn--secondary" href={b.link} fid={`hero.buttons.${i}.label`}>{b.label}</DyLink>
-          ))}
+          {secondaryButton && <DyLink className="dy-hero-btn dy-hero-btn--secondary" href={secondaryButton.link} fid={`hero.buttons.${secondaryButtonIndex}.label`}>{secondaryButton.label}</DyLink>}
         </div>
       )}
       <TrustRow items={trustItems} />

@@ -121,7 +121,7 @@ function ProviderCard({ entry, gmail, onConnect }: { entry: HealthEntry; gmail?:
   );
 }
 
-export default function IntegrationsSettings({ onNavigate }: { onNavigate?: (view: AdminView) => void }) {
+export default function IntegrationsSettings({ onNavigate, showTitle = true }: { onNavigate?: (view: AdminView) => void; showTitle?: boolean }) {
   const feedback = useFeedback();
   const [checks, setChecks] = useState<HealthEntry[] | null>(null);
   const [gmail, setGmail] = useState<GmailStatus | null>(null);
@@ -154,7 +154,7 @@ export default function IntegrationsSettings({ onNavigate }: { onNavigate?: (vie
   return (
     <div className="page">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
-        <h3>Integrations</h3>
+        {showTitle ? <h1>Integrations</h1> : <h2>Integrations</h2>}
         <RippleButton size="small" variant="ghost" onClick={load}>Refresh</RippleButton>
       </div>
       <p style={{ color: "var(--muted)", fontSize: "0.9rem", maxWidth: 720, marginTop: 0 }}>

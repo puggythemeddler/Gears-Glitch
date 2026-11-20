@@ -4,6 +4,7 @@ import path from "path";
 import { spawn, ChildProcess } from "child_process";
 
 import { bootstrapTestDatabase } from "../server/test-db";
+import { grantShopPlanFeatureForTest } from "./helpers/plan-entitlements";
 const HAS_DB = bootstrapTestDatabase();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -26,6 +27,7 @@ describe("pages API over real HTTP (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL 
   let csrfCookie = "";
   let csrfToken = "";
   const childLog: string[] = [];
+  let restorePagesEntitlement: (() => Promise<void>) | null = null;
 
   const runId = Date.now().toString(36).slice(-5);
   const qaSlug = `qa-http-${runId}`;
@@ -126,15 +128,20 @@ describe("pages API over real HTTP (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL 
     const ready = await waitForHealth(`${base}/api/health`);
     assert.ok(ready, `server never became healthy.\nRecent child output:\n${childLog.slice(-40).join("\n")}`);
 
+    restorePagesEntitlement = await grantShopPlanFeatureForTest("Custom pages & landing pages");
     await loadCsrf();
     adminToken = await login("admin", "qa-Admin-Pass-2026!");
     techToken = await login("technician", "qa-Tech-Pass-2026!");
   });
 
-  after(() => {
+  after(async () => {
     if (child) {
       child.kill();
       child = null;
+    }
+    if (restorePagesEntitlement) {
+      await restorePagesEntitlement();
+      restorePagesEntitlement = null;
     }
   });
 

@@ -32,6 +32,12 @@ const PERMISSIONS: PermissionMap = {
   "repair:cancel": "Cancel repairs",
   "repair:payment": "Record and refund repair payments",
   "repair:payment:void": "Void repair payment or refund entries",
+  "warranty:view": "View warranty claims",
+  "warranty:manage": "Update warranty claims",
+  "serial:view": "View serial number records",
+  "serial:manage": "Create and reconcile serial number records",
+  "purchase:view": "View purchase orders",
+  "purchase:manage": "Create and receive purchase orders",
   "product:list": "View products",
   "product:create": "Create products",
   "product:update": "Update products",
@@ -45,6 +51,8 @@ const PERMISSIONS: PermissionMap = {
   "stock_take:reverse": "Reverse applied stock-take adjustments",
   "settings:view": "View store settings",
   "settings:update": "Update store settings",
+  "pages:view": "View custom pages",
+  "pages:manage": "Create, edit and delete custom pages",
   "calendar:view": "View repair calendar",
   "calendar:schedule": "Schedule repairs",
   "reports:view": "View reports",
@@ -85,6 +93,57 @@ const PERMISSIONS: PermissionMap = {
   "financing:payment": "Record and reverse financing payments",
 };
 
+// Plan entitlements constrain role and direct permissions at the API boundary.
+// When a plan is edited, the matching permission choices appear automatically;
+// permissions for disabled features remain stored but cannot be assigned or used.
+const PERMISSION_FEATURES: Record<string, string[]> = {
+  "staff:list": ["Multiple staff accounts"], "staff:create": ["Multiple staff accounts"],
+  "staff:update": ["Multiple staff accounts"], "staff:delete": ["Multiple staff accounts"],
+  "repair:list": ["Repair ticketing"], "repair:create": ["Repair ticketing"], "repair:view": ["Repair ticketing"],
+  "repair:update": ["Repair ticketing"], "repair:assign": ["Repair ticketing"], "repair:cancel": ["Repair ticketing"],
+  "repair:payment": ["Repair ticketing"], "repair:payment:void": ["Repair ticketing"],
+  "warranty:view": ["Warranty management"], "warranty:manage": ["Warranty management"],
+  "serial:view": ["Serial number tracking"], "serial:manage": ["Serial number tracking"],
+  "purchase:view": ["Purchase order management"], "purchase:manage": ["Purchase order management"],
+  "calendar:view": ["Repair ticketing"], "calendar:schedule": ["Repair ticketing"],
+  "product:list": ["Product listing"], "product:create": ["Product listing"],
+  "product:update": ["Product listing"], "product:delete": ["Product listing"],
+  "stock:list": ["Stock control", "Stock take", "Stock take / inventory count"],
+  "stock:update": ["Stock control"], "stock:view_low": ["Low stock alerts"],
+  "stock:on_hand": ["Stock control"], "stock:transfer": ["Stock transfers"],
+  "stock_take:reopen": ["Stock take", "Stock take / inventory count"],
+  "stock_take:reverse": ["Stock take", "Stock take / inventory count"],
+  "reports:view": ["Analytics dashboard"], "reports:export": ["Analytics dashboard"],
+  "messaging:view": ["Messaging"], "messaging:send": ["Messaging"],
+  "invoice:view": ["Invoice/quote PDF downloads"], "invoice:download": ["Invoice/quote PDF downloads"],
+  "credit_note:view": ["Credit notes"], "credit_note:create": ["Credit notes"],
+  "quote:view": ["Quotations"], "quote:create": ["Quotations"], "quote:update": ["Quotations"],
+  "order:view": ["Order management"], "order:without_payment": ["Order management"],
+  "customer:view": ["Customer management"], "coupon:view": ["Discount/coupon management"],
+  "giftcard:view": ["Gift cards"], "campaign:view": ["Campaign pages"], "cart:view": ["Cart recovery"],
+  "provider:view": ["Payment method configuration"], "spec:view": ["Spec templates"],
+  "supplier:view": ["Supplier management"], "branch:view": ["Branch management"],
+  "subscription:view": ["Shop subscription"], "positioning:view": ["Product positioning"],
+  "pages:view": ["Custom pages & landing pages"], "pages:manage": ["Custom pages & landing pages"],
+  "whatsapp:view": ["WhatsApp integration"], "whatsapp:manage": ["WhatsApp integration"],
+  "whatsapp:approve": ["WhatsApp integration"], "review:view": ["Product reviews & ratings", "Customer reviews"],
+  "audit:view": ["Audit log"], "financing:view": ["Lipa Mdogo Mdogo"],
+  "data:backup": ["Database backup and export"],
+  "financing:manage": ["Lipa Mdogo Mdogo"], "financing:approve": ["Lipa Mdogo Mdogo"],
+  "financing:payment": ["Lipa Mdogo Mdogo"],
+};
+
+function isPermissionAvailableForFeatures(permission: string, features: string[]): boolean {
+  const required = PERMISSION_FEATURES[permission];
+  if (!required) return true;
+  const enabled = new Set(features.map((feature) => feature.toLowerCase().trim()));
+  return required.some((feature) => enabled.has(feature.toLowerCase().trim()));
+}
+
+function filterPermissionsForFeatures<T extends Record<string, unknown>>(permissions: T, features: string[]): T {
+  return Object.fromEntries(Object.entries(permissions).filter(([permission]) => isPermissionAvailableForFeatures(permission, features))) as T;
+}
+
 interface DefaultRoles {
   [key: string]: string[];
 }
@@ -94,9 +153,10 @@ const DEFAULT_ROLES: DefaultRoles = {
     "staff:list", "staff:create", "staff:update", "staff:delete",
     "repair:list", "repair:create", "repair:view", "repair:update",
     "repair:assign", "repair:cancel", "repair:payment", "repair:payment:void",
+    "warranty:view", "warranty:manage", "serial:view", "serial:manage", "purchase:view", "purchase:manage",
     "product:list", "product:create", "product:update", "product:delete",
     "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "stock_take:reopen", "stock_take:reverse",
-    "settings:view", "settings:update",
+    "settings:view", "settings:update", "pages:view", "pages:manage",
     "calendar:view", "calendar:schedule",
     "reports:view", "reports:export",
     "messaging:view", "messaging:send",
@@ -111,14 +171,14 @@ const DEFAULT_ROLES: DefaultRoles = {
   ],
   technician: [
     "repair:list", "repair:view", "repair:update",
-    "calendar:view", "calendar:schedule", "product:list",
+    "calendar:view", "calendar:schedule", "product:list", "serial:view",
   ],
   staff: [
     "repair:list", "repair:view", "repair:update",
-    "calendar:view", "calendar:schedule", "product:list",
+    "calendar:view", "calendar:schedule", "product:list", "serial:view",
   ],
   manager: [
-    "staff:list",
+    "staff:list", "warranty:view", "serial:view", "serial:manage", "purchase:view",
     "repair:list", "repair:view", "repair:update", "repair:assign",
     "product:list", "product:update",
     "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer",
@@ -144,9 +204,10 @@ const DEFAULT_ROLES: DefaultRoles = {
     "staff:list", "staff:create", "staff:update", "staff:delete",
     "repair:list", "repair:create", "repair:view", "repair:update",
     "repair:assign", "repair:cancel", "repair:payment", "repair:payment:void",
+    "warranty:view", "warranty:manage", "serial:view", "serial:manage", "purchase:view", "purchase:manage",
     "product:list", "product:create", "product:update", "product:delete",
     "stock:list", "stock:update", "stock:view_low", "stock:on_hand", "stock:transfer", "stock_take:reopen", "stock_take:reverse",
-    "settings:view", "settings:update",
+    "settings:view", "settings:update", "pages:view", "pages:manage",
     "calendar:view", "calendar:schedule",
     "reports:view", "reports:export",
     "messaging:view", "messaging:send",
@@ -387,6 +448,8 @@ export {
   DEFAULT_ROLES,
   initRoles,
   getAllPermissions,
+  isPermissionAvailableForFeatures,
+  filterPermissionsForFeatures,
   listRoles,
   getRole,
   createRole,

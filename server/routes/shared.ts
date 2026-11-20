@@ -405,10 +405,16 @@ export function generateSubscriptionInvoiceHtml(data: SubscriptionInvoiceData): 
 // ============ PERMISSION HELPER ============
 export function requirePermission(permission: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const { hasPermission } = await import("../permissions");
+    const { hasPermission, isPermissionAvailableForFeatures } = await import("../permissions");
     const uid = (req as any).user?.sub;
     if (!uid || !(await hasPermission(uid, permission))) {
       res.status(403).json({ error: `Missing permission: ${permission}` });
+      return;
+    }
+    const { getEffectiveFeatures } = await import("../feature-access");
+    const features = await getEffectiveFeatures(req);
+    if (!isPermissionAvailableForFeatures(permission, features)) {
+      res.status(403).json({ error: "This permission is not included in the active plan." });
       return;
     }
     next();
