@@ -879,14 +879,19 @@ export async function checkClientHealth(
 }
 
 // ─── WELCOME EMAIL ───────────────────────────────────────
-export async function getSmtpTransport() {
-  const cfg = await getSmtpConfig();
-  const host = cfg?.host || process.env.SMTP_HOST || "";
-  const port = cfg?.port || Number(process.env.SMTP_PORT || 587);
-  const user = cfg?.user || process.env.SMTP_USER || "";
-  const pass = cfg?.pass || process.env.SMTP_PASS || "";
-  const fromEmail = cfg?.from_email || process.env.FROM_EMAIL || "noreply@gearglitch.com";
-  const fromName = cfg?.from_name || process.env.FROM_NAME || "Gear&Glitch";
+export async function getSmtpTransport(options: { preferEnvironment?: boolean } = {}) {
+  const environmentIsComplete = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  // Password recovery must be operable even when the Control Plane's saved
+  // SMTP record is stale or cannot be decrypted. Prefer a complete Render
+  // environment configuration for this security-critical path.
+  const useEnvironment = options.preferEnvironment && environmentIsComplete;
+  const cfg = useEnvironment ? null : await getSmtpConfig();
+  const host = useEnvironment ? process.env.SMTP_HOST! : cfg?.host || process.env.SMTP_HOST || "";
+  const port = useEnvironment ? Number(process.env.SMTP_PORT || 587) : cfg?.port || Number(process.env.SMTP_PORT || 587);
+  const user = useEnvironment ? process.env.SMTP_USER! : cfg?.user || process.env.SMTP_USER || "";
+  const pass = useEnvironment ? process.env.SMTP_PASS! : cfg?.pass || process.env.SMTP_PASS || "";
+  const fromEmail = useEnvironment ? process.env.FROM_EMAIL || process.env.SMTP_USER! : cfg?.from_email || process.env.FROM_EMAIL || "noreply@gearglitch.com";
+  const fromName = useEnvironment ? process.env.FROM_NAME || "Gear&Glitch" : cfg?.from_name || process.env.FROM_NAME || "Gear&Glitch";
   if (!host || !user || !pass) return null;
   const nodemailer = await import("nodemailer");
   const transporter = nodemailer.createTransport({
