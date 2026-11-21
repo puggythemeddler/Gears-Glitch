@@ -448,7 +448,7 @@ import financingRouter from "./routes/financing";
 import { applyMpesaCallback } from "./financing/service";
 import { getFinancingConfig, saveFinancingConfig } from "./financing/config";
 import { getEffectiveFeatures, requireShopFeature, getBranchFeatureOverrides, saveBranchFeatureOverrides } from "./feature-access";
-import { featureListIncludes } from "./feature-rules";
+import { featureListIncludes, retainEntitledBranchOverrides } from "./feature-rules";
 import {
   SERVICE_CATALOGUE_FEATURE,
   getServiceCatalogConfig,
@@ -2387,6 +2387,15 @@ app.put("/api/plans/sync", controlPlaneAuthMiddleware, planSyncLimiter, asyncHan
       }));
       if (JSON.stringify(cleaned) !== JSON.stringify(overrides)) {
         await setStoreSetting("featureOverrides", JSON.stringify(cleaned));
+      }
+      const branchOverrides = await getBranchFeatureOverrides();
+      const cleanedBranchOverrides = retainEntitledBranchOverrides(
+        Array.isArray(p.features) ? p.features : [],
+        branchOverrides,
+        [...added]
+      );
+      if (JSON.stringify(cleanedBranchOverrides) !== JSON.stringify(branchOverrides)) {
+        await saveBranchFeatureOverrides(cleanedBranchOverrides);
       }
     }
     if (existing && plansEqual(existing, p)) {

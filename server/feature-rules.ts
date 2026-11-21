@@ -53,6 +53,22 @@ export function applyFeatureOverrides(
   return base.filter((feature) => !blocked.has(normalizeFeatureName(feature)));
 }
 
+// Keep branch-specific switches inside the tenant's current plan. If a plan
+// newly grants a feature, clear its old branch switches so that entitlement is
+// inherited everywhere unless an admin chooses to disable it again.
+export function retainEntitledBranchOverrides(
+  baseFeatures: string[] | null | undefined,
+  overrides: BranchFeatureOverrides,
+  newlyAddedFeatures: string[] = []
+): BranchFeatureOverrides {
+  const included = new Set((baseFeatures || []).map(normalizeFeatureName));
+  const added = new Set(newlyAddedFeatures.map(normalizeFeatureName));
+  return Object.fromEntries(Object.entries(overrides).filter(([feature]) => {
+    const normalized = normalizeFeatureName(feature);
+    return included.has(normalized) && !added.has(normalized);
+  }));
+}
+
 // Branch overrides are keyed by feature name, then by branch id:
 //   { "Lipa Mdogo Mdogo": { "3": false } }
 export type BranchFeatureOverrides = Record<string, Record<string, boolean>>;
