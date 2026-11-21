@@ -857,7 +857,7 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/clients", requireAuth, requireAdmin, async (_req, res) => {
   try {
     const clients = await queryAll(
-      "SELECT id, name, domain, admin_email, plan, status, render_service_url, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, phone, address, usage_over_limit, is_test FROM clients ORDER BY created_at DESC"
+      "SELECT id, name, domain, admin_email, plan, status, render_service_id, render_service_url, auto_deploy_enabled, vercel_project_url, created_at, last_health_check, health_status, uptime_pct, total_checks, failed_checks, usage_orders, usage_customers, usage_revenue, subscription_expires, feature_flags, notes, phone, address, usage_over_limit, is_test FROM clients ORDER BY created_at DESC"
     );
     res.json({ clients });
   } catch (err: any) {
@@ -1281,12 +1281,13 @@ app.post("/api/deploy-test", destructiveLimiter, requireAdmin, async (req, res) 
 async function setClientAutoDeployAll(req: any, res: any, enabled: boolean) {
   try {
     const clients = await queryAll(
-      "SELECT name, render_service_id FROM clients WHERE render_service_id IS NOT NULL AND render_service_id != ''"
+      "SELECT id, name, render_service_id FROM clients WHERE render_service_id IS NOT NULL AND render_service_id != ''"
     );
     const results: { name: string; success: boolean; error?: string }[] = [];
-    for (const c of clients as { name: string; render_service_id: string }[]) {
+    for (const c of clients as { id: number; name: string; render_service_id: string }[]) {
       try {
         const ok = await setAutoDeploy(c.render_service_id, enabled);
+        if (ok) await query("UPDATE clients SET auto_deploy_enabled = $1 WHERE id = $2", [enabled, c.id]);
         results.push({ name: c.name, success: ok, error: ok ? undefined : "HTTP error" });
       } catch (e: any) {
         console.error(`[api] Auto-deploy update failed for "${c.name}":`, e.message);
@@ -1310,6 +1311,26 @@ app.post("/api/deploy/enable-auto-deploy", requireAdmin, async (req, res) => {
 
 app.post("/api/deploy/disable-auto-deploy", requireAdmin, async (req, res) => {
   await setClientAutoDeployAll(req, res, false);
+});
+
+// Update native Render auto-deploy for one client and persist only after Render accepts it.
+app.post("/api/clients/:id/auto-deploy", requireAdmin, async (req, res) => {
+  try {
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") { res.status(400).json({ error: "enabled must be true or false" }); return; }
+    const client: any = await queryOne("SELECT id, name, render_service_id FROM clients WHERE id = $1", [Number(req.params.id)]);
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    if (!client.render_service_id) { res.status(400).json({ error: "Client has no Render service ID" }); return; }
+    const ok = await setAutoDeploy(client.render_service_id, enabled);
+    if (!ok) { res.status(502).json({ error: "Render did not accept the auto-deploy change" }); return; }
+    await query("UPDATE clients SET auto_deploy_enabled = $1 WHERE id = $2", [enabled, client.id]);
+    const action = enabled ? "enable_auto_deploy" : "disable_auto_deploy";
+    await auditLog(req, action, "client", client.id, client.name, `${enabled ? "Enabled" : "Disabled"} auto-deploy for ${client.name}`);
+    res.json({ ok: true, enabled });
+  } catch (err: any) {
+    console.error(`[api] Client auto-deploy update failed:`, err.message);
+    res.status(500).json({ error: "Failed to update client auto-deploy" });
+  }
 });
 
 // Redeploy a single client

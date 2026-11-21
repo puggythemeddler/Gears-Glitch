@@ -478,7 +478,7 @@
           <button class="btn btn-ghost btn-sm" data-admin onclick="deployAll()">Deploy All Clients</button>
         </div>
       </div>
-      <p class="tab-intro">All client Render backends auto-deploy from <strong>main</strong> on every push. Use Deploy All Clients to trigger a manual redeploy; the More menu can pause or restore auto-deploy for every client.</p>
+      <p class="tab-intro">Choose which client Render backends auto-deploy from <strong>main</strong> on every push. Use each client’s More menu to pause or restore it individually, or use the global controls for all clients.</p>
       <div class="toolbar">
         <input type="search" id="deploy-search" class="input" placeholder="Search client, commit, message...">
         <select id="deploy-status-filter" class="select">
@@ -1560,6 +1560,9 @@
         } else if (c.status === "suspended") {
           subBadge = '<span class="badge badge-suspended">Suspended</span>';
         }
+        const autoDeployBadge = c.render_service_id
+          ? `<span class="badge ${c.auto_deploy_enabled === false ? 'badge-suspended' : 'badge-active'}">Auto-deploy ${c.auto_deploy_enabled === false ? 'Off' : 'On'}</span>`
+          : '<span class="badge badge-unknown">Auto-deploy unavailable</span>';
         const moreMenu = `
           <details class="actions-menu">
             <summary class="btn btn-ghost btn-sm" aria-expanded="false">More &#9662;</summary>
@@ -1567,6 +1570,7 @@
               ${c.render_service_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + jsStr(c.render_service_url) + '/api/health\',\'_blank\')">Backend</button>' : ''}
               ${c.vercel_project_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + jsStr(c.vercel_project_url) + '\',\'_blank\')">Frontend</button>' : ''}
               ${isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="editClient(${c.id})">Edit</button>
+              ${c.render_service_id ? `<button class="btn btn-ghost btn-sm" onclick="setClientAutoDeploy(${c.id}, ${c.auto_deploy_enabled === false ? 'true' : 'false'}, '${jsStr(c.name)}')">${c.auto_deploy_enabled === false ? 'Enable' : 'Pause'} Auto-Deploy</button>` : ''}
               <button class="btn btn-ghost btn-sm" onclick="pushSecret(${c.id}, '${jsStr(c.name)}')" title="Push/rotate the control-plane secret onto the client's Render service">Push Secret</button>
               <button class="btn btn-ghost btn-sm" onclick="redeployClient(${c.id})">Redeploy</button>
               ${c.is_test ? '<button class="btn btn-ghost btn-sm" onclick="setTestSite(' + c.id + ', false)">Unset Test Site</button>' : '<button class="btn btn-ghost btn-sm" onclick="setTestSite(' + c.id + ', true)">Set as Test Site</button>'}
@@ -1576,7 +1580,7 @@
             </div>
           </details>`;
         html += `<tr>
-          <td><strong>${esc(c.name)}</strong>${c.is_test ? ' <span class="badge" style="background:var(--tint-primary);color:var(--primary-strong)">TEST SITE</span>' : ''}<br><span style="color:var(--text-muted);font-size:0.75rem">${esc(c.admin_email)}</span></td>
+          <td><strong>${esc(c.name)}</strong>${c.is_test ? ' <span class="badge" style="background:var(--tint-primary);color:var(--primary-strong)">TEST SITE</span>' : ''}<br><span style="color:var(--text-muted);font-size:0.75rem">${esc(c.admin_email)}</span><br>${autoDeployBadge}</td>
           <td>${esc(c.domain)}</td>
           <td><span style="text-transform:capitalize">${esc(c.plan)}</span>${c.usage_over_limit ? ' <span class="badge badge-overlimit" style="font-size:0.7rem">OVER LIMIT</span>' : ''}</td>
           <td>${subBadge}</td>
@@ -2028,6 +2032,7 @@
             const data = await api("/api/deploy/enable-auto-deploy", { method: "POST" });
             const r = data.results || [];
             toast(`Auto-deploy enabled on ${r.filter(x=>x.success).length}/${r.length} services`, r.some(x=>!x.success) ? "error" : "");
+            loadClients();
           } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         },
       });
@@ -2045,6 +2050,24 @@
             const r = data.results || [];
             toast(`Auto-deploy disabled on ${r.filter(x=>x.success).length}/${r.length} services`, r.some(x=>!x.success) ? "error" : "");
             loadClients();
+          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
+        },
+      });
+    }
+
+    async function setClientAutoDeploy(id, enabled, name) {
+      confirmDialog({
+        title: `${enabled ? 'Enable' : 'Pause'} auto-deploy for ${name}?`,
+        message: enabled
+          ? `${name} will deploy automatically on each push to main.`
+          : `${name} will stop deploying automatically on pushes to main. You can still redeploy it manually from the Control Plane.`,
+        confirmLabel: enabled ? "Enable Auto-Deploy" : "Pause Auto-Deploy",
+        onConfirm: async () => {
+          toast(`${enabled ? "Enabling" : "Pausing"} auto-deploy for ${name}...`);
+          try {
+            await api(`/api/clients/${id}/auto-deploy`, { method: "POST", body: JSON.stringify({ enabled }) });
+            toast(`Auto-deploy ${enabled ? "enabled" : "paused"} for ${name}`);
+            await loadClients();
           } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
         },
       });
