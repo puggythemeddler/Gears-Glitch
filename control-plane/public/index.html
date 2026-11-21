@@ -240,6 +240,10 @@
     .feature-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
     .feature-chip[aria-pressed="true"] { background: var(--btn-primary-bg); color: var(--on-primary); border-color: var(--btn-primary-bg); }
     .feature-chip[aria-pressed="false"] { background: var(--tint-danger); color: var(--danger-strong); border-color: var(--danger); text-decoration: line-through; }
+    #feature-groups-container .feature-group-row { position: relative; margin-bottom: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); }
+    #feature-groups-container details { border: 0; }
+    #feature-groups-container summary { padding-right: 7.5rem !important; }
+    #feature-groups-container .feature-group-action { position: absolute; top: 0.4rem; right: 0.6rem; z-index: 1; }
     .chip-btn { font-size: 0.7rem; font-weight: 400; font-family: inherit; padding: 0.1rem 0.4rem; border-radius: var(--radius); background: var(--border); color: var(--text); border: none; cursor: pointer; }
     .chip-btn:hover, .chip-btn:focus-visible { background: var(--btn-primary-bg); color: var(--on-primary); }
     .chip-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
@@ -900,7 +904,7 @@
           <label id="plan-features-label" for="plan-feature-search">Plan features</label>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
             <input type="search" id="plan-feature-search" aria-label="Search plan features" placeholder="Search features…" oninput="renderFeatureGroups(editingPlanFeatures)" style="flex:1;min-width:220px">
-            <button type="button" class="btn btn-ghost btn-sm" onclick="applyRetailPlanTemplate()">Apply Retail template</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-apply-retail-template" onclick="applyRetailPlanTemplate()">Apply Retail template</button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="clearPlanFeatures()">Clear selection</button>
             <span id="plan-feature-count" class="muted" aria-live="polite"></span>
           </div>
@@ -1192,18 +1196,17 @@
         if (!visibleFeatures.length) continue;
         const allOn = grp.features.every(f => selectedFeatures.includes(f));
         const count = grp.features.filter(f => selectedFeatures.includes(f)).length;
-        html += `<details data-feature-group="${esc(grp.group)}" ${query || openGroups.has(grp.group) ? 'open' : ''} style="margin-bottom:0.5rem;border:1px solid var(--border);border-radius:var(--radius)">
-          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'var(--tint-primary)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="if(event.target.closest('button'))return;event.preventDefault();this.parentElement.open=!this.parentElement.open">
+         html += `<div class="feature-group-row"><details data-feature-group="${esc(grp.group)}" ${query || openGroups.has(grp.group) ? 'open' : ''}>
+          <summary style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;cursor:pointer;background:${allOn ? 'var(--tint-primary)' : 'var(--bg)'};font-weight:600;font-size:0.85rem;list-style:none;user-select:none" onclick="event.preventDefault();this.parentElement.open=!this.parentElement.open">
             <span style="font-size:0.65rem;opacity:0.5;transition:transform 0.2s;transform:${allOn ? 'rotate(90deg)' : 'none'}">&#9654;</span>
             <span>${grp.icon}</span>
             <span style="flex:1">${grp.group}</span>
             <span style="font-size:0.7rem;font-weight:400;opacity:0.6">${count}/${grp.features.length}</span>
-            <button type="button" class="chip-btn" data-plan-group="${esc(grp.group)}" data-action="${allOn ? 'none' : 'all'}">${allOn ? 'All' : 'Select all'}</button>
           </summary>
           <div style="display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.5rem 0.75rem 0.75rem">
             ${visibleFeatures.map(f => `<button type="button" class="feature-chip" aria-pressed="${selectedFeatures.includes(f) ? 'true' : 'false'}" data-plan-feature="${esc(f)}">${esc(f)}</button>`).join('')}
           </div>
-        </details>`;
+        </details><button type="button" class="chip-btn feature-group-action" data-plan-group="${esc(grp.group)}" data-action="${allOn ? 'none' : 'all'}">${allOn ? 'Deselect all' : 'Select all'}</button></div>`;
       }
       container.innerHTML = html;
     }
@@ -2677,6 +2680,7 @@
       document.getElementById("plan-active").checked = plan ? plan.is_active : true;
       document.getElementById("plan-sync-others").checked = plan ? plan.sync_to_others !== 0 : true;
       document.getElementById("plan-feature-search").value = "";
+      document.getElementById("btn-apply-retail-template").hidden = !!plan;
       renderFeatureGroups(editingPlanFeatures);
       openModal(document.getElementById("plan-modal-overlay"));
     }
