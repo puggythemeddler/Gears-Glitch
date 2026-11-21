@@ -1,4 +1,4 @@
-name: Deploy Test Site
+name: Deploy Storefront Frontend
 
 on:
   push:
@@ -22,62 +22,10 @@ jobs:
       - run: npm run typecheck
         working-directory: control-plane
 
-  deploy-test:
+  deploy-storefront:
     needs: check
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to test site only
-        env:
-          GIT_SHA: ${{ github.sha }}
-          GIT_MSG: ${{ github.event.head_commit.message }}
-          CP_URL: ${{ secrets.CONTROL_PLANE_URL }}
-          CP_API_KEY: ${{ secrets.CONTROL_PLANE_API_KEY }}
-        run: |
-          echo "Triggering deploy for the test site only..."
-
-          # Check that secrets are configured
-          if [ -z "$CP_URL" ] || [ -z "$CP_API_KEY" ]; then
-            echo "⚠️  Skipping — GitHub Actions secrets not configured."
-            echo "Set these in your repo: Settings → Secrets and variables → Actions"
-            echo "  CONTROL_PLANE_URL    (e.g. https://gear-glitch-control-plane.onrender.com)"
-            echo "  CONTROL_PLANE_API_KEY (an ADMIN user's per-user API key from the control plane:"
-            echo "                          Settings → Users → your admin account → API Key, starts with 'cp_')"
-            exit 0
-          fi
-
-          if [ -z "$GIT_MSG" ]; then GIT_MSG="manual dispatch"; fi
-          GIT_MSG=$(echo "$GIT_MSG" | head -n 1)
-
-          PAYLOAD=$(jq -n --arg sha "$GIT_SHA" --arg msg "$GIT_MSG" --arg by "push" \
-            '{commit: {sha: $sha, message: $msg}, triggered_by: $by}')
-
-          RESP=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "x-api-key: $CP_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD" \
-            "$CP_URL/api/deploy-test")
-
-          BODY=$(echo "$RESP" | sed '$d')
-          HTTP_CODE=$(echo "$RESP" | tail -n 1)
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ Deploy test failed (HTTP $HTTP_CODE):"
-            echo "$BODY"
-            echo ""
-            echo "The test site deploy failed — production was NOT touched."
-            echo "Mark a client as the test site in the control plane (Set as Test Site)."
-            exit 1
-          fi
-
-          SUCCESS=$(echo "$BODY" | jq -r '[.results[] | select(.success == true)] | length' 2>/dev/null || echo "0")
-          FAILED=$(echo "$BODY" | jq -r '[.results[] | select(.success == false)] | length' 2>/dev/null || echo "0")
-
-          echo "Test site deploy complete: $SUCCESS succeeded, $FAILED failed"
-          if [ "$FAILED" != "0" ]; then
-            echo "$BODY" | jq -r '.results[] | select(.success == false) | "  ✗ \(.name): \(.error)"'
-            exit 1
-          fi
-
       - name: Deploy main storefront frontend to Vercel (production)
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

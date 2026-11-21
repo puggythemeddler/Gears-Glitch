@@ -393,6 +393,7 @@
           <summary class="btn btn-ghost btn-sm" aria-expanded="false">More &#9662;</summary>
           <div class="menu">
             <button class="btn btn-ghost btn-sm" onclick="healthCheckAll()" data-admin>Health Check</button>
+            <button class="btn btn-ghost btn-sm" onclick="enableAutoDeployAll()" data-admin>Enable Auto-Deploy All</button>
             <button class="btn btn-ghost btn-sm" onclick="disableAutoDeployAll()" data-admin>Disable Auto-Deploy</button>
             <button class="btn btn-ghost btn-sm" onclick="showExistingModal()" data-admin>+ Add Existing</button>
           </div>
@@ -477,7 +478,7 @@
           <button class="btn btn-ghost btn-sm" data-admin onclick="deployAll()">Deploy All Clients</button>
         </div>
       </div>
-      <p class="tab-intro">Every push to main deploys to the <strong>test site</strong> first (automatic). Production deploys to all clients are deliberate and manual — test the test site before deploying everyone.</p>
+      <p class="tab-intro">All client Render backends auto-deploy from <strong>main</strong> on every push. Use Deploy All Clients to trigger a manual redeploy; the More menu can pause or restore auto-deploy for every client.</p>
       <div class="toolbar">
         <input type="search" id="deploy-search" class="input" placeholder="Search client, commit, message...">
         <select id="deploy-status-filter" class="select">
@@ -1986,7 +1987,7 @@
     async function setTestSite(id, value) {
       confirmDialog({
         title: value ? "Set as test site?" : "Unset test site?",
-        message: value ? "This client will receive every push to main first. Only one client can be the test site." : "This client will no longer receive automatic test deploys.",
+        message: value ? "Mark this tenant as the test site for reporting and manual test deploys. All client backends receive main pushes when auto-deploy is enabled." : "Remove this tenant's test-site designation. Auto-deploy behavior is controlled separately.",
         confirmLabel: value ? "Set as Test Site" : "Unset",
         onConfirm: async () => {
           toast(value ? "Setting test site..." : "Unsetting test site...");
@@ -2016,10 +2017,26 @@
       try { const data = await api("/api/health-check", { method: "POST" }); const r = data.results || []; toast(`Health: ${r.filter(x=>x.status==="healthy").length} healthy, ${r.filter(x=>x.status==="sleeping").length} sleeping, ${r.filter(x=>x.status==="down").length} down`); loadClients(); } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
     }
 
+    async function enableAutoDeployAll() {
+      confirmDialog({
+        title: "Enable auto-deploy on all clients?",
+        message: "Every client Render backend, including the test site, will deploy automatically on each push to main. These deployments are independent of CI results.",
+        confirmLabel: "Enable Auto-Deploy All",
+        onConfirm: async () => {
+          toast("Enabling auto-deploy...");
+          try {
+            const data = await api("/api/deploy/enable-auto-deploy", { method: "POST" });
+            const r = data.results || [];
+            toast(`Auto-deploy enabled on ${r.filter(x=>x.success).length}/${r.length} services`, r.some(x=>!x.success) ? "error" : "");
+          } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
+        },
+      });
+    }
+
     async function disableAutoDeployAll() {
       confirmDialog({
         title: "Disable auto-deploy on all clients?",
-        message: "Stops Render from deploying every client on every push. After this, pushes only deploy the test site, and production clients deploy when you run Deploy All. The control plane service keeps auto-deploying so this dashboard is always current.",
+        message: "Stops all client Render backends from deploying automatically on pushes to main. You can still redeploy from the Control Plane. The Control Plane service continues to auto-deploy.",
         confirmLabel: "Disable Auto-Deploy",
         onConfirm: async () => {
           toast("Disabling auto-deploy...");

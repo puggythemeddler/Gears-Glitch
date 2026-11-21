@@ -84,7 +84,7 @@ The control plane serves a Content Security Policy via Helmet (`control-plane/se
   - **Backend/Frontend** — links to client's live URLs
   - **Edit** — change plan, expiry, notes, phone, address, and per-client feature overrides
   - **Redeploy** — trigger a Render deploy for this client individually
-  - **Set as Test Site / Unset Test Site** — mark this client as the test site (only one at a time; a **TEST SITE** badge shows on its row). Every push to `main` auto-deploys here first.
+  - **Set as Test Site / Unset Test Site** — mark this client as the test site (only one at a time; a **TEST SITE** badge shows on its row). The badge identifies the test tenant; all client Render backends auto-deploy from `main` when auto-deploy is enabled.
   - **Suspend/Resume** — pause or unpause the client's Render service
   - **Delete** — removes DB + all cloud resources
 
@@ -140,8 +140,9 @@ Use the **Feature Overrides** picker in the Edit Client modal to fine-tune what 
 - History of all deployments (last 300 entries), each row showing **Client**, **Version** (short git commit ID — full SHA on hover — plus the first line of the commit message), **Status**, **Source** (`GitHub push` vs `Manual`), and **Triggered** timestamp.
 - **Filters** — a status dropdown (Test deploy / Production deploy / Failed / Backup / Backup failed) and a search box that filters by client name, commit SHA, or commit message (`GET /api/deploys?status=...&q=...`).
 - **Deploy Test Site** — deploys only the client marked as the test site (production clients untouched).
-- **Deploy All Clients** — deliberate manual production rollout to every active client.
-- Pushes to `main` land here automatically with their git ID (see *GitHub Actions Auto-Deploy* below).
+- **Deploy All Clients** — manually triggers a redeploy for every active client.
+- **Enable/Disable Auto-Deploy** — toggles native Render auto-deploy for every client backend. When enabled, each client deploys from `main` on every push, independently of CI status.
+- Render records native automatic deployments; manual deploy buttons are available for immediate redeploys.
 
 ### Operations (Client Health & Ops Center)
 The **Operations** tab (admin only) is the single pane for tenant health and incident response. It uses the existing 5-minute health pull **plus** a client-pushed heartbeat (`POST /api/heartbeat`, every ~2 min per client) to derive per-client health, catch stale reporters, and self-heal without waiting for the next pull cycle. See [`OPS_CENTER.md`](OPS_CENTER.md) for the full reference. Sub-tabs:
@@ -322,7 +323,9 @@ JWT sessions are re-validated against the DB on every request — the role on th
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/deploy-all` | Deploy latest code to all clients (manual production rollout) |
-| POST | `/api/deploy-test` | Deploy latest code to the test site only (called by GitHub Actions on every push) |
+| POST | `/api/deploy-test` | Manually deploy latest code to the test site only |
+| POST | `/api/deploy/enable-auto-deploy` | Enable native Render auto-deploy for all client backends |
+| POST | `/api/deploy/disable-auto-deploy` | Disable native Render auto-deploy for all client backends |
 | POST | `/api/health-check` | Check health of all clients |
 | GET | `/api/payment-reminders` | Payment reminder windows (7d / 2d / due / overdue) from `next_payment_date` |
 | GET | `/api/notifications` | Unread count + last 60 in-app notifications |
@@ -388,18 +391,18 @@ Admin-only routes for the client health & operations surface (heartbeat ingestio
 | POST | `/api/smtp` | Set/update SMTP configuration |
 | POST | `/api/smtp/test` | Send a test email to verify configuration |
 
-## GitHub Actions Auto-Deploy (Test-Site First)
+## GitHub Actions and Render Deployments
 
-Deploys are split into two workflows so **clients never receive untested, error-prone updates**:
+Render's native auto-deploy is enabled for all client backends, so each backend deploys from `main` on every push. This happens independently of CI completion; keep branch protection enabled if merges must wait for checks. The Control Plane also provides manual deploy controls and a global switch to disable client auto-deploy.
 
 ### `ci.yml` — typecheck gate on every push/PR
-A separate continuous-integration workflow runs on every push to `main` and every PR. It runs the **server** (`npm run typecheck` + `npm run build` at the repo root) and the **control plane** (typecheck + build in `control-plane/`), plus two DB-backed test suites against ephemeral PostgreSQL 17 service containers: the **server isolation suite** (`npm run test` at the root) and the **control-plane Ops Center suite** (`npm run test` in `control-plane/`, covering heartbeat ingest, alert dedupe/cooldown, incident CRUD, drift, support/maintenance sweeps, and diagnostic-report redaction). Any failure blocks the workflow, so broken code is caught before it reaches the auto-deploy step. Branch protection can require this workflow to pass before a PR merges.
+A separate continuous-integration workflow runs on every push to `main` and every PR. It runs the **server** (`npm run typecheck` + `npm run build` at the repo root) and the **control plane** (typecheck + build in `control-plane/`), plus two DB-backed test suites against ephemeral PostgreSQL 17 service containers: the **server isolation suite** (`npm run test` at the root) and the **control-plane Ops Center suite** (`npm run test` in `control-plane/`, covering heartbeat ingest, alert dedupe/cooldown, incident CRUD, drift, support/maintenance sweeps, and diagnostic-report redaction). CI reports failures, but Render auto-deploys independently; branch protection can require this workflow to pass before a PR merges.
 
-### `deploy-test.yml` — automatic, on every push
-Runs on every push to `main` (and via manual dispatch). Its first job (`check`) runs **`npm run typecheck` for the server and the control plane** and aborts the workflow if either fails; only a green build proceeds to the deploy job. It calls `POST /api/deploy-test`, which deploys **only the client marked as the test site** (`is_test = 1`). Production clients are never touched. The workflow sends the push's git commit SHA and message, which the control plane records in the deploy log. If no test site is configured — or the deploy fails — the workflow fails (red), and production was still untouched.
+### `deploy-test.yml` — CI-gated storefront deployment
+Runs on every push to `main` (and via manual dispatch). It runs server and Control Plane typechecks before triggering the main storefront's Vercel production deployment. Render client backends deploy through Render's native auto-deploy setting; this workflow does not trigger a second test-backend deployment.
 
-### `deploy-all-clients.yml` — manual only
-Production rollout is **deliberate and manual**. This workflow has **no push trigger** — it can only be started from the Actions tab, and it aborts unless you type `DEPLOY` in the `confirm` input. It runs the same server + control-plane typecheck gate first, then calls `POST /api/deploy-all`, deploys every active client's Render service, and records the git ID in the deploy log.
+### `deploy-all-clients.yml` — manual redeploy
+This workflow has **no push trigger** — it can only be started from the Actions tab, and it aborts unless you type `DEPLOY` in the `confirm` input. It runs the same server + Control Plane typecheck gate first, then calls `POST /api/deploy-all` to manually redeploy every active client's Render service.
 
 ### Required GitHub Secrets
 - `CONTROL_PLANE_URL` — your control plane's URL
