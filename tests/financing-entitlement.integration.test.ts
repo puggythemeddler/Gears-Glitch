@@ -19,6 +19,7 @@ import { featureListIncludes } from "../server/feature-rules";
 import { bootstrapTestDatabase } from "../server/test-db";
 const HAS_DB = bootstrapTestDatabase();
 const FEATURE = "Lipa Mdogo Mdogo";
+const INCLUDED_FEATURE = "Repair ticketing";
 
 function fakeReq(body: any = {}): any {
   return { headers: {}, query: {}, params: {}, body };
@@ -34,7 +35,7 @@ function fakeRes(): any {
 }
 
 // DB-backed coverage for the shared feature-access layer that now gates
-// financing: entitlement resolution (plan + control-plane overrides), the
+// financing: entitlement resolution (plan plus narrowing overrides), the
 // persistence of per-branch activation, and the two server-side gates. Gated
 // like the other *.integration tests - CI provides Postgres via DATABASE_URL.
 describe("feature access integration (DB)", { skip: !HAS_DB && "TEST_DATABASE_URL not set (disposable test DB only)" }, () => {
@@ -50,6 +51,8 @@ describe("feature access integration (DB)", { skip: !HAS_DB && "TEST_DATABASE_UR
 
   beforeEach(async () => {
     await query("DELETE FROM settings WHERE key IN ('featureOverrides', 'branchFeatureOverrides', 'financing_config', 'financing_entitlement_migrated_v1')");
+    await query("INSERT INTO subscription_plans (id, name, features) VALUES ('feature-access-test', 'Feature Access Test', $1) ON CONFLICT(id) DO UPDATE SET features = EXCLUDED.features", [JSON.stringify([INCLUDED_FEATURE])]);
+    await query("INSERT INTO settings (key, value) VALUES ('shop_plan_id', 'feature-access-test') ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value");
   });
 
   it("round-trips shop-level feature overrides", async () => {
@@ -57,12 +60,13 @@ describe("feature access integration (DB)", { skip: !HAS_DB && "TEST_DATABASE_UR
     assert.deepEqual(await getShopFeatureOverrides(), { [FEATURE]: true, "Repair ticketing": false });
   });
 
-  it("force-adds an override feature and excludes a blocked one", async () => {
+  it("does not let overrides grant off-plan features and can block included features", async () => {
     await saveShopFeatureOverrides({ [FEATURE]: true });
-    assert.equal(featureListIncludes(await getEffectiveFeatures(fakeReq()), FEATURE), true);
-
-    await saveShopFeatureOverrides({ [FEATURE]: false });
     assert.equal(featureListIncludes(await getEffectiveFeatures(fakeReq()), FEATURE), false);
+    assert.equal(featureListIncludes(await getEffectiveFeatures(fakeReq()), INCLUDED_FEATURE), true);
+
+    await saveShopFeatureOverrides({ [INCLUDED_FEATURE]: false });
+    assert.equal(featureListIncludes(await getEffectiveFeatures(fakeReq()), INCLUDED_FEATURE), false);
   });
 
   it("round-trips and normalizes branch overrides", async () => {
@@ -78,33 +82,34 @@ describe("feature access integration (DB)", { skip: !HAS_DB && "TEST_DATABASE_UR
     assert.equal(await checkBranchFeature(FEATURE, null), null);
   });
 
-  it("requireShopFeature admits overridden entitlements and rejects others", async () => {
+  it("requireShopFeature rejects off-plan override grants and admits included features", async () => {
     await saveShopFeatureOverrides({ [FEATURE]: true });
     const mw = requireShopFeature(FEATURE);
     let allowed = false;
     const res = fakeRes();
     await mw(fakeReq(), res, () => { allowed = true; });
-    assert.equal(allowed, true);
-    assert.equal(res.statusCode, 0);
+    assert.equal(allowed, false);
+    assert.equal(res.statusCode, 403);
 
-    await saveShopFeatureOverrides({});
-    const denied = fakeRes();
-    await mw(fakeReq(), denied, () => {});
-    assert.equal(denied.statusCode, 403);
+    const included = fakeRes();
+    let includedAllowed = false;
+    await requireShopFeature(INCLUDED_FEATURE)(fakeReq(), included, () => { includedAllowed = true; });
+    assert.equal(includedAllowed, true);
+    assert.equal(included.statusCode, 0);
   });
 
   it("requireBranchFeature rejects a disabled branch and admits an entitled one", async () => {
-    await saveShopFeatureOverrides({ [FEATURE]: true });
-    await saveBranchFeatureOverrides({ [FEATURE]: { "3": false } });
-    const mw = requireBranchFeature(FEATURE);
+    await saveShopFeatureOverrides({});
+    await saveBranchFeatureOverrides({ [INCLUDED_FEATURE]: { "3": false } });
+    const mw = requireBranchFeature(INCLUDED_FEATURE);
 
     const denied = fakeRes();
-    await mw(fakeReq({ branchId: 3 }), denied, () => {});
+    await requireBranchFeature(INCLUDED_FEATURE)(fakeReq({ branchId: 3 }), denied, () => {});
     assert.equal(denied.statusCode, 403);
 
     let allowed = false;
     const ok = fakeRes();
-    await mw(fakeReq({ branchId: 4 }), ok, () => { allowed = true; });
+    await requireBranchFeature(INCLUDED_FEATURE)(fakeReq({ branchId: 4 }), ok, () => { allowed = true; });
     assert.equal(allowed, true);
     assert.equal(ok.statusCode, 0);
   });

@@ -28,9 +28,10 @@ describe("feature-rules", () => {
     assert.deepEqual(parseFeatureOverrides(null), {});
   });
 
-  it("applies false to remove and true to force-add", () => {
+  it("allows overrides to block included features but never grant excluded features", () => {
     const out = applyFeatureOverrides(["A", "B", "C"], { B: false, D: true });
-    assert.deepEqual(out, ["A", "C", "D"]);
+    assert.deepEqual(out, ["A", "C"]);
+    assert.deepEqual(applyFeatureOverrides(["Stock control"], { "stock CONTROL": false }), []);
   });
 
   it("parses branch overrides keyed by feature then branch", () => {

@@ -4941,6 +4941,13 @@ async function setShopPlan(planId: string): Promise<boolean> {
 async function applyControlPlaneShopPlan(planId: string): Promise<boolean> {
   const plan = await getSubscriptionPlan(planId);
   if (!plan) return false;
+  const current = await queryOne("SELECT value FROM settings WHERE key = 'shop_plan_id'") as any;
+  if (String(current?.value || "") !== String(planId)) {
+    // A plan switch should inherit the new plan cleanly. Per-store feature
+    // blocks belong to the old assignment; retaining them can hide newly
+    // included stock/POS tools on the new plan.
+    await query("DELETE FROM settings WHERE key = 'featureOverrides'");
+  }
   await query("INSERT INTO settings (key, value) VALUES ('shop_plan_id', $1) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [planId]);
   return true;
 }

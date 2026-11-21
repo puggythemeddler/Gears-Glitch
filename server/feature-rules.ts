@@ -5,7 +5,7 @@
 // (the convention already used by subscription plans, e.g. "Repair ticketing").
 //
 // Three independent layers, never collapsed into one flag:
-//   1. entitlement - the feature is in the tenant plan or an explicit override
+//   1. entitlement - the feature is in the tenant plan (store overrides only narrow)
 //   2. activation  - the tenant (and optionally a branch) has switched it on
 //   3. right       - the caller holds the permission required by the route
 // Branch overrides only ever *disable* an entitled feature for a branch; an
@@ -39,18 +39,18 @@ export function parseFeatureOverrides(raw: string | null | undefined): FeatureOv
   return out;
 }
 
-// Apply control-plane overrides to a base plan feature list: false removes a
-// feature, true force-adds one.
+// Apply control-plane overrides to an entitled plan feature list. Overrides
+// can temporarily block features included by the plan; they cannot grant a
+// feature the plan does not include.
 export function applyFeatureOverrides(
   baseFeatures: string[] | null | undefined,
   overrides: FeatureOverrides
 ): string[] {
   const base = baseFeatures || [];
-  const effective = base.filter((f) => overrides[f] !== false);
-  for (const [key, value] of Object.entries(overrides)) {
-    if (value === true && !effective.includes(key)) effective.push(key);
-  }
-  return effective;
+  const blocked = new Set(Object.entries(overrides)
+    .filter(([, value]) => value === false)
+    .map(([key]) => normalizeFeatureName(key)));
+  return base.filter((feature) => !blocked.has(normalizeFeatureName(feature)));
 }
 
 // Branch overrides are keyed by feature name, then by branch id:

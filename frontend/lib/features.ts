@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { getStaffToken, getStaffRole } from "./api";
 
-let state: { key: string; features: string[] } | null = null;
+let state: { key: string; features: string[]; loadedAt: number } | null = null;
+const FEATURE_CACHE_TTL_MS = 30_000;
 let promise: Promise<string[]> | null = null;
 let promiseKey: string | null = null;
 
@@ -12,25 +13,33 @@ function currentKey(): string {
 
 export async function fetchActiveFeatures(): Promise<string[]> {
   const key = currentKey();
-  if (state && state.key === key) return state.features;
+  if (state && state.key === key && Date.now() - state.loadedAt < FEATURE_CACHE_TTL_MS) return state.features;
   if (promise && promiseKey === key) return promise;
 
   const headers: Record<string, string> = {};
   const token = typeof window !== "undefined" ? getStaffToken() : null;
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  promise = fetch("/api/shop/features", { headers })
+  const request = fetch("/api/shop/features", { headers })
     .then((r) => r.json())
     .then((d) => {
-      state = { key, features: d.features || [] };
+      state = { key, features: d.features || [], loadedAt: Date.now() };
       return state.features;
     })
     .catch(() => {
-      state = { key, features: [] };
+      state = { key, features: [], loadedAt: Date.now() };
       return state.features;
     });
+  const tracked = request.finally(() => {
+    if (promise === tracked) { promise = null; promiseKey = null; }
+  });
+  promise = tracked;
   promiseKey = key;
-  return promise;
+  return tracked;
+}
+
+export function invalidateActiveFeatures(): void {
+  if (state) state.loadedAt = 0;
 }
 
 export function hasFeature(features: string[], name: string): boolean {
@@ -41,10 +50,16 @@ export function useFeature(featureName: string): boolean {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    fetchActiveFeatures().then((features) => {
+    const refresh = () => fetchActiveFeatures().then((features) => {
       if (!cancelled) setEnabled(hasFeature(features, featureName));
     });
-    return () => { cancelled = true; };
+    void refresh();
+    const handleFocus = () => { invalidateActiveFeatures(); void refresh(); };
+    if (typeof window !== "undefined") window.addEventListener("focus", handleFocus);
+    return () => {
+      cancelled = true;
+      if (typeof window !== "undefined") window.removeEventListener("focus", handleFocus);
+    };
   }, [featureName]);
   return enabled;
 }
