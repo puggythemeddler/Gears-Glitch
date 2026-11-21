@@ -124,6 +124,7 @@
     #client-list input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
     #client-list input[type="checkbox"]:disabled { cursor: not-allowed; }
     #client-list .client-select-cell { width: 42px; text-align: center; }
+    #client-list .client-health-meta { display: block; margin-top: 0.2rem; color: var(--text-muted); font-size: 0.7rem; white-space: nowrap; }
     #client-count { font-size: 0.85rem; color: var(--text-muted); }
     .btn { padding: 0.5rem 1rem; border-radius: var(--radius); border: none; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: transform 0.12s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; }
     .btn-primary { background: var(--btn-primary-bg); color: var(--on-primary); }
@@ -1542,6 +1543,19 @@
       return Math.round((expiry.getTime() - today.getTime()) / 86400000);
     }
 
+    function formatHealthCheckAge(value) {
+      if (!value) return { label: "Never checked", title: "No health check has been recorded." };
+      const checkedAt = new Date(value);
+      if (Number.isNaN(checkedAt.getTime())) return { label: "Check time unknown", title: "The saved health-check time is invalid." };
+      const minutes = Math.floor(Math.max(0, Date.now() - checkedAt.getTime()) / 60000);
+      let age;
+      if (minutes < 1) age = "just now";
+      else if (minutes < 60) age = `${minutes}m ago`;
+      else if (minutes < 1440) age = `${Math.floor(minutes / 60)}h ago`;
+      else age = `${Math.floor(minutes / 1440)}d ago`;
+      return { label: `Checked ${age}`, title: `Last health check: ${checkedAt.toLocaleString()}` };
+    }
+
     function sortClients(key) {
       if (clientSort.key === key) clientSort.dir = clientSort.dir === "asc" ? "desc" : "asc";
       else clientSort = { key, dir: "asc" };
@@ -1611,6 +1625,7 @@
         const uptime = c.uptime_pct != null ? Number(c.uptime_pct).toFixed(1) : "—";
         const revenue = c.usage_revenue ? Number(c.usage_revenue).toLocaleString() : "—";
         const orders = c.usage_orders || "—";
+        const healthCheckAge = formatHealthCheckAge(c.last_health_check);
         const daysLeft = daysUntilClientExpiry(c);
         let subBadge = '<span class="badge badge-unknown">No plan</span>';
         if (daysLeft != null) {
@@ -1646,7 +1661,7 @@
           <td><span style="text-transform:capitalize">${esc(c.plan)}</span>${c.usage_over_limit ? ' <span class="badge badge-overlimit" style="font-size:0.7rem">OVER LIMIT</span>' : ''}</td>
           <td>${subBadge}</td>
           <td><span class="badge badge-${c.status}">${c.status}</span></td>
-          <td><span class="badge badge-${c.health_status}">${c.health_status}</span></td>
+          <td><span class="badge badge-${c.health_status}">${c.health_status}</span><span class="client-health-meta" title="${esc(healthCheckAge.title)}">${esc(healthCheckAge.label)}</span></td>
           <td><span style="font-weight:600;color:${c.uptime_pct >= 99 ? 'var(--success-strong)' : c.uptime_pct >= 95 ? 'var(--warning-strong)' : 'var(--danger-strong)'}">${uptime}%</span></td>
           <td>${orders}</td>
           <td>KES ${revenue}</td>
