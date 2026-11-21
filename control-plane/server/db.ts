@@ -160,6 +160,7 @@ export async function initControlPlaneDb() {
       neon_db_url TEXT DEFAULT '',
       cloudinary_folder TEXT DEFAULT '',
       render_service_id TEXT DEFAULT '',
+      auto_deploy_enabled BOOLEAN NOT NULL DEFAULT true,
       render_service_url TEXT DEFAULT '',
       vercel_project_id TEXT DEFAULT '',
       vercel_project_url TEXT DEFAULT '',
@@ -230,6 +231,9 @@ export async function initControlPlaneDb() {
     );
   } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS subscription_expires TIMESTAMP`); } catch {}
+  // Render auto-deploy preference is tracked per client; existing clients
+  // default to enabled to match the rollout policy already applied in Render.
+  try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_deploy_enabled BOOLEAN NOT NULL DEFAULT true`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS feature_flags TEXT DEFAULT '{}'`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`); } catch {}
   try { await query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS usage_orders INTEGER DEFAULT 0`); } catch {}

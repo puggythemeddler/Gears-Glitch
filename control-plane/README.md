@@ -326,6 +326,7 @@ JWT sessions are re-validated against the DB on every request — the role on th
 | POST | `/api/deploy-test` | Manually deploy latest code to the test site only |
 | POST | `/api/deploy/enable-auto-deploy` | Enable native Render auto-deploy for all client backends |
 | POST | `/api/deploy/disable-auto-deploy` | Disable native Render auto-deploy for all client backends |
+| POST | `/api/clients/:id/auto-deploy` | Enable or pause native Render auto-deploy for one client (`{ enabled: boolean }`) |
 | POST | `/api/health-check` | Check health of all clients |
 | GET | `/api/payment-reminders` | Payment reminder windows (7d / 2d / due / overdue) from `next_payment_date` |
 | GET | `/api/notifications` | Unread count + last 60 in-app notifications |
