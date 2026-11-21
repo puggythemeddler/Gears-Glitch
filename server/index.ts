@@ -2371,8 +2371,8 @@ app.put("/api/plans/sync", controlPlaneAuthMiddleware, planSyncLimiter, asyncHan
     const existing = await getSubscriptionPlan(p.id);
     const isActivePlan = String(activePlan?.id || "").toLowerCase() === String(p.id || "").toLowerCase();
     if (existing && isActivePlan) {
-      const oldFeatures = new Set((existing.features || []).map((feature) => String(feature).toLowerCase().trim()));
-      const nextFeatures = new Set((Array.isArray(p.features) ? p.features : []).map((feature: unknown) => String(feature).toLowerCase().trim()));
+      const oldFeatures = new Set<string>((existing.features || []).map((feature) => String(feature).toLowerCase().trim()));
+      const nextFeatures = new Set<string>((Array.isArray(p.features) ? p.features : []).map((feature: unknown) => String(feature).toLowerCase().trim()));
       const added = new Set([...nextFeatures].filter((feature) => !oldFeatures.has(feature)));
       for (const feature of (Array.isArray(p.features) ? p.features : [])) {
         if (added.has(String(feature).toLowerCase().trim())) activatedFeatures.add(String(feature));
