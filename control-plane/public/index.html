@@ -1302,6 +1302,7 @@
     }
 
     function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
+    function escAttr(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
     function jsStr(s) { return String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
     let toastContainer = null;
     function toast(msg, type = "success", timeout = 4000) {
@@ -3675,7 +3676,7 @@
       document.getElementById("detail-actions").innerHTML = `
         ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Backend</a>' : ''}
         ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
-        ${c.render_service_url ? '<button class="btn btn-ghost btn-sm" data-admin onclick="syncClientPlans(' + Number(c.id) + ', ' + esc(JSON.stringify(c.name)) + ')">Sync plans</button>' : ''}
+        ${c.render_service_url ? '<button class="btn btn-ghost btn-sm" data-admin data-client-name="' + escAttr(c.name) + '" onclick="syncClientPlans(' + Number(c.id) + ', this.dataset.clientName)">Sync plans</button>' : ''}
         <button class="btn btn-ghost btn-sm" onclick="editClient(${c.id}); closeClientDetails()">Edit</button>
       `;
 
