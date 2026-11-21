@@ -71,7 +71,7 @@ The control plane serves a Content Security Policy via Helmet (`control-plane/se
 ### Clients
 - **Stats**: Total clients, active count, total revenue, total orders
 - **Payment reminders banner** — clients whose `next_payment_date` is within 1 week, 2 days, due today, or overdue (computed by `GET /api/payment-reminders` from each client's `next_payment_date`)
-- **Composable filters** — combine search and status filters with service health (down, not checked, healthy), subscription expiry (expired, within 7/30 days, or no expiry), and auto-deploy state. Expiry filtering uses the same calendar-day calculation as each row's subscription badge.
+- **Composable filters and saved views** — combine search and status filters with service health (down, not checked, healthy), subscription expiry (expired, within 7/30 days, or no expiry), and auto-deploy state. Built-in views cover needs-attention clients (failed or down) and 7/30-day or expired subscriptions; the selected view is remembered in this browser. Expiry filtering uses the same calendar-day calculation as each row's subscription badge.
 - **Client table**: Name, domain, plan, subscription status (color-coded), health, uptime %, orders, revenue, contact fields (phone, address)
 - **Subscription column**:
   - Green = active, OK

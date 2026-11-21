@@ -429,6 +429,13 @@
       <div id="payment-reminders" style="display:none;margin-bottom:var(--space-4)"></div>
       <div id="client-toolbar" class="toolbar">
         <input type="search" id="client-search" class="input" placeholder="Search name, email, or domain…" aria-label="Search clients">
+        <select id="client-saved-view-filter" class="select" aria-label="Saved client views">
+          <option value="">All clients</option>
+          <option value="needs-attention">Needs attention</option>
+          <option value="expiring-7">Expiring in 7 days</option>
+          <option value="expiring-30">Expiring in 30 days</option>
+          <option value="expired">Expired subscriptions</option>
+        </select>
         <select id="client-status-filter" class="select" aria-label="Filter by status">
           <option value="">All statuses</option>
           <option value="active">Active</option>
@@ -1519,6 +1526,7 @@
 
     let clientSort = { key: "name", dir: "asc" };
     let clientSearch = "";
+    let clientSavedView = "";
     let clientStatusFilter = "";
     let clientHealthFilter = "";
     let clientExpiryFilter = "";
@@ -1547,6 +1555,10 @@
     function applyClientFilters(clients) {
       let list = clients.filter(c => {
         const daysLeft = daysUntilClientExpiry(c);
+        if (clientSavedView === "needs-attention" && c.status !== "failed" && c.health_status !== "down") return false;
+        if (clientSavedView === "expiring-7" && (daysLeft == null || daysLeft < 0 || daysLeft > 7)) return false;
+        if (clientSavedView === "expiring-30" && (daysLeft == null || daysLeft < 0 || daysLeft > 30)) return false;
+        if (clientSavedView === "expired" && (daysLeft == null || daysLeft >= 0)) return false;
         if (clientStatusFilter && c.status !== clientStatusFilter) return false;
         if (clientHealthFilter && (c.health_status || "unknown") !== clientHealthFilter) return false;
         if (clientExpiryFilter === "none" && c.subscription_expires) return false;
@@ -2426,11 +2438,29 @@
     }
 
     const searchInput = document.getElementById("client-search");
+    const savedViewFilter = document.getElementById("client-saved-view-filter");
     const statusFilter = document.getElementById("client-status-filter");
     const healthFilter = document.getElementById("client-health-filter");
     const expiryFilter = document.getElementById("client-expiry-filter");
     const autoDeployFilter = document.getElementById("client-auto-deploy-filter");
     let searchTimer = null;
+    if (savedViewFilter) {
+      try {
+        const saved = localStorage.getItem("cp-client-saved-view") || "";
+        if ([...savedViewFilter.options].some(option => option.value === saved)) {
+          clientSavedView = saved;
+          savedViewFilter.value = saved;
+        }
+      } catch { /* Saved views remain usable when browser storage is unavailable. */ }
+      savedViewFilter.addEventListener("change", (e) => {
+        clientSavedView = e.target.value;
+        try {
+          if (clientSavedView) localStorage.setItem("cp-client-saved-view", clientSavedView);
+          else localStorage.removeItem("cp-client-saved-view");
+        } catch { /* Filtering still works without browser storage. */ }
+        renderTable(allClients);
+      });
+    }
     if (searchInput) searchInput.addEventListener("input", (e) => {
       clientSearch = e.target.value.trim();
       clearTimeout(searchTimer);
