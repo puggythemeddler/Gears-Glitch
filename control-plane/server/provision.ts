@@ -256,9 +256,8 @@ async function createRenderService(clientName: string, dbUrl: string, clientSlug
       name: `${slug}-backend`,
       repo: `https://github.com/${GIT_REPO.full}`,
       branch: "main",
-      // Client deploys go through the control-plane gate (test site first,
-      // then manual deploy-all), never straight from a push.
-      autoDeploy: "no",
+      // Keep newly provisioned client backends current on every main push.
+      autoDeploy: "yes",
       ...(RENDER_OWNER_ID ? { ownerId: RENDER_OWNER_ID } : {}),
       envVars,
       serviceDetails: {
@@ -644,9 +643,7 @@ export async function deployRenderService(renderServiceId: string) {
   return res.ok;
 }
 
-// Flip Render's native auto-deploy for a client service. Disabling it means a
-// push to the repo no longer deploys the client directly — only deploys the
-// control plane triggers (deploy-test / deploy-all) reach the service.
+// Flip Render's native auto-deploy for a client service.
 export async function setAutoDeploy(renderServiceId: string, enabled: boolean) {
   const res = await fetch(
     `https://api.render.com/v1/services/${renderServiceId}`,

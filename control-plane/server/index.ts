@@ -1236,7 +1236,7 @@ app.post("/api/deploy-all", destructiveLimiter, requireAdmin, async (req, res) =
   }
 });
 
-// Deploy the test site only (every push lands here first for safe rollout)
+// Manually deploy the test site only.
 app.post("/api/deploy-test", destructiveLimiter, requireAdmin, async (req, res) => {
   try {
     const { commit, triggered_by } = req.body || {};
@@ -1278,10 +1278,7 @@ app.post("/api/deploy-test", destructiveLimiter, requireAdmin, async (req, res) 
   }
 });
 
-// Disable native auto-deploy on all client Render services so a push to the
-// repo no longer deploys every client directly. From here on, only the control
-// plane deploys clients (test site on push, then manual deploy-all).
-app.post("/api/deploy/disable-auto-deploy", requireAdmin, async (_req, res) => {
+async function setClientAutoDeployAll(req: any, res: any, enabled: boolean) {
   try {
     const clients = await queryAll(
       "SELECT name, render_service_id FROM clients WHERE render_service_id IS NOT NULL AND render_service_id != ''"
@@ -1289,19 +1286,30 @@ app.post("/api/deploy/disable-auto-deploy", requireAdmin, async (_req, res) => {
     const results: { name: string; success: boolean; error?: string }[] = [];
     for (const c of clients as { name: string; render_service_id: string }[]) {
       try {
-        const ok = await setAutoDeploy(c.render_service_id, false);
+        const ok = await setAutoDeploy(c.render_service_id, enabled);
         results.push({ name: c.name, success: ok, error: ok ? undefined : "HTTP error" });
       } catch (e: any) {
         console.error(`[api] Auto-deploy update failed for "${c.name}":`, e.message);
         results.push({ name: c.name, success: false, error: "Auto-deploy update failed" });
       }
     }
-    await auditLog(_req, "disable_auto_deploy", "system", null, undefined, `Disabled auto-deploy on ${results.filter(r=>r.success).length}/${results.length} services`);
+    const action = enabled ? "enable_auto_deploy" : "disable_auto_deploy";
+    const verb = enabled ? "Enabled" : "Disabled";
+    await auditLog(req, action, "system", null, undefined, `${verb} auto-deploy on ${results.filter(r=>r.success).length}/${results.length} services`);
     res.json({ ok: true, results });
   } catch (err: any) {
-    console.error("[api] Disable auto-deploy error:", err.message);
-    res.status(500).json({ error: "Failed to disable auto-deploy: " + err.message });
+    console.error(`[api] ${enabled ? "Enable" : "Disable"} auto-deploy error:`, err.message);
+    res.status(500).json({ error: `Failed to ${enabled ? "enable" : "disable"} auto-deploy: ` + err.message });
   }
+}
+
+// Native Render auto-deploy applies independently to every client backend.
+app.post("/api/deploy/enable-auto-deploy", requireAdmin, async (req, res) => {
+  await setClientAutoDeployAll(req, res, true);
+});
+
+app.post("/api/deploy/disable-auto-deploy", requireAdmin, async (req, res) => {
+  await setClientAutoDeployAll(req, res, false);
 });
 
 // Redeploy a single client
