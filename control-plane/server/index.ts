@@ -1333,6 +1333,94 @@ app.post("/api/clients/:id/auto-deploy", requireAdmin, async (req, res) => {
   }
 });
 
+// Apply native Render auto-deploy to an explicitly selected client set.
+app.post("/api/clients/auto-deploy/bulk", requireAdmin, async (req, res) => {
+  try {
+    const rawIds = req.body?.client_ids;
+    if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 100) {
+      res.status(400).json({ error: "Select between 1 and 100 clients" }); return;
+    }
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") { res.status(400).json({ error: "enabled must be true or false" }); return; }
+    const ids = [...new Set(rawIds.map(Number))];
+    if (ids.some(id => !Number.isSafeInteger(id) || id <= 0)) { res.status(400).json({ error: "client_ids must contain valid client IDs" }); return; }
+    const clients = await queryAll(
+      "SELECT id, name, render_service_id FROM clients WHERE id = ANY($1::int[])", [ids]
+    ) as { id: number; name: string; render_service_id: string }[];
+    const byId = new Map(clients.map(client => [Number(client.id), client]));
+    const results: { id: number; name: string; success: boolean; error?: string }[] = [];
+    for (const id of ids) {
+      const client = byId.get(id);
+      if (!client) { results.push({ id, name: `Client ${id}`, success: false, error: "Client not found" }); continue; }
+      if (!client.render_service_id) { results.push({ id, name: client.name, success: false, error: "No Render service configured" }); continue; }
+      try {
+        const ok = await setAutoDeploy(client.render_service_id, enabled);
+        if (ok) {
+          await query("UPDATE clients SET auto_deploy_enabled = $1 WHERE id = $2", [enabled, id]);
+          await auditLog(req, enabled ? "enable_auto_deploy" : "disable_auto_deploy", "client", id, client.name,
+            `${enabled ? "Enabled" : "Disabled"} auto-deploy for ${client.name}`);
+        }
+        results.push({ id, name: client.name, success: ok, error: ok ? undefined : "Render did not accept the change" });
+      } catch (e: any) {
+        console.error(`[api] Selected auto-deploy update failed for "${client.name}":`, e.message);
+        results.push({ id, name: client.name, success: false, error: "Auto-deploy update failed" });
+      }
+    }
+    const succeeded = results.filter(result => result.success).length;
+    await auditLog(req, enabled ? "bulk_enable_auto_deploy" : "bulk_disable_auto_deploy", "system", null, undefined,
+      `${enabled ? "Enabled" : "Disabled"} auto-deploy on ${succeeded}/${ids.length} selected clients`);
+    res.json({ ok: succeeded === ids.length, results });
+  } catch (err: any) {
+    console.error("[api] Bulk client auto-deploy error:", err.message);
+    res.status(500).json({ error: "Failed to update selected clients" });
+  }
+});
+
+// Redeploy an explicitly selected set of client backends from the Clients page.
+app.post("/api/clients/redeploy/bulk", destructiveLimiter, requireAdmin, async (req, res) => {
+  try {
+    const rawIds = req.body?.client_ids;
+    if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 100) {
+      res.status(400).json({ error: "Select between 1 and 100 clients" }); return;
+    }
+    const ids = [...new Set(rawIds.map(Number))];
+    if (ids.some(id => !Number.isSafeInteger(id) || id <= 0)) {
+      res.status(400).json({ error: "client_ids must contain valid client IDs" }); return;
+    }
+    const clients = await queryAll(
+      "SELECT id, name, render_service_id FROM clients WHERE id = ANY($1::int[])", [ids]
+    ) as { id: number; name: string; render_service_id: string | null }[];
+    const byId = new Map(clients.map(client => [Number(client.id), client]));
+    const results: { id: number; name: string; success: boolean; error?: string }[] = [];
+    for (const id of ids) {
+      const client = byId.get(id);
+      if (!client) { results.push({ id, name: `Client ${id}`, success: false, error: "Client not found" }); continue; }
+      if (!client.render_service_id) { results.push({ id, name: client.name, success: false, error: "No Render service configured" }); continue; }
+      try {
+        const ok = await deployRenderService(client.render_service_id);
+        if (ok) {
+          await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [client.id, "deploy"]);
+          await query("UPDATE clients SET health_status = 'deploying' WHERE id = $1", [client.id]);
+          await auditLog(req, "redeploy_client", "client", client.id, client.name, "Redeploy triggered from bulk client selection");
+        } else {
+          await query("INSERT INTO deploy_log (client_id, status) VALUES ($1, $2)", [client.id, "failed"]);
+        }
+        results.push({ id, name: client.name, success: ok, error: ok ? undefined : "Render did not accept the deployment" });
+      } catch (e: any) {
+        console.error(`[api] Selected redeploy failed for "${client.name}":`, e.message);
+        results.push({ id, name: client.name, success: false, error: "Deployment request failed" });
+      }
+    }
+    const succeeded = results.filter(result => result.success).length;
+    await auditLog(req, "bulk_redeploy_clients", "system", null, undefined,
+      `Triggered redeploy for ${succeeded}/${ids.length} selected clients`);
+    res.json({ ok: succeeded === ids.length, results });
+  } catch (err: any) {
+    console.error("[api] Bulk client redeploy error:", err.message);
+    res.status(500).json({ error: "Failed to redeploy selected clients" });
+  }
+});
+
 // Redeploy a single client
 app.post("/api/clients/:id/redeploy", destructiveLimiter, requireAdmin, async (req, res) => {
   try {

@@ -121,6 +121,9 @@
     .toolbar .input, .toolbar .select, .toolbar input[type="search"], .toolbar select { padding: 0.4rem 0.6rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.82rem; outline: none; }
     .toolbar input[type="search"] { flex: 1; min-width: 220px; max-width: 340px; }
     .input:focus, .select:focus, .toolbar input:focus, .toolbar select:focus { border-color: var(--primary); outline: 2px solid var(--tint-primary); outline-offset: 1px; }
+    #client-list input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
+    #client-list input[type="checkbox"]:disabled { cursor: not-allowed; }
+    #client-list .client-select-cell { width: 42px; text-align: center; }
     #client-count { font-size: 0.85rem; color: var(--text-muted); }
     .btn { padding: 0.5rem 1rem; border-radius: var(--radius); border: none; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: transform 0.12s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; }
     .btn-primary { background: var(--btn-primary-bg); color: var(--on-primary); }
@@ -433,6 +436,21 @@
           <option value="suspended">Suspended</option>
           <option value="failed">Failed</option>
         </select>
+        <select id="client-auto-deploy-filter" class="select" aria-label="Filter by auto-deploy state">
+          <option value="">All auto-deploy states</option>
+          <option value="on">Auto-deploy on</option>
+          <option value="off">Auto-deploy paused</option>
+          <option value="unavailable">No Render service</option>
+        </select>
+        <button id="select-visible-clients" class="btn btn-ghost btn-sm" type="button" onclick="toggleVisibleClientSelection()" data-admin>Select visible</button>
+        <span id="client-selection-summary" aria-live="polite" style="font-size:0.82rem;color:var(--text-muted)">No clients selected</span>
+        <div id="client-single-actions" class="btn-row" style="display:none" data-admin></div>
+        <div id="client-bulk-actions" class="btn-row" style="display:none" data-admin>
+          <button class="btn btn-primary btn-sm" type="button" onclick="redeploySelectedClients()">Redeploy selected</button>
+          <button class="btn btn-success btn-sm" type="button" onclick="setSelectedAutoDeploy(true)">Enable Auto-Deploy</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="setSelectedAutoDeploy(false)">Pause Auto-Deploy</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="clearClientSelection()">Clear selection</button>
+        </div>
         <span id="client-count"></span>
       </div>
       <div id="client-list"><div class="empty"><p>Loading clients…</p></div></div>
@@ -892,6 +910,7 @@
 
   <script>
     let allClients = [];
+    let selectedClientIds = new Set();
     let editingClientId = null;
     let editingClientOverrides = {};
     let editingClientPlanFeatures = new Set();
@@ -1458,6 +1477,8 @@
       try {
         const data = await api("/api/clients");
         allClients = data.clients || [];
+        const selectableIds = new Set(allClients.map(c => String(c.id)));
+        selectedClientIds = new Set([...selectedClientIds].filter(id => selectableIds.has(String(id))));
         renderStats(allClients);
         renderTable(allClients);
         // Populate pull-plans dropdown
@@ -1486,6 +1507,7 @@
     let clientSort = { key: "name", dir: "asc" };
     let clientSearch = "";
     let clientStatusFilter = "";
+    let clientAutoDeployFilter = "";
 
     function sortClients(key) {
       if (clientSort.key === key) clientSort.dir = clientSort.dir === "asc" ? "desc" : "asc";
@@ -1500,6 +1522,9 @@
     function applyClientFilters(clients) {
       let list = clients.filter(c => {
         if (clientStatusFilter && c.status !== clientStatusFilter) return false;
+        if (clientAutoDeployFilter === "on" && (!c.render_service_id || c.auto_deploy_enabled === false)) return false;
+        if (clientAutoDeployFilter === "off" && (!c.render_service_id || c.auto_deploy_enabled !== false)) return false;
+        if (clientAutoDeployFilter === "unavailable" && c.render_service_id) return false;
         if (clientSearch) {
           const q = clientSearch.toLowerCase();
           const hay = ((c.name || "") + " " + (c.admin_email || "") + " " + (c.domain || "")).toLowerCase();
@@ -1524,6 +1549,7 @@
         const addBtn = currentUser && currentUser.role === "admin" ? '<button class="btn btn-primary" onclick="showModal()">+ Add Your First Client</button>' : "";
         document.getElementById("client-list").innerHTML = '<div class="empty"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div><p>No clients yet</p>' + addBtn + '</div>';
         document.getElementById("client-count").textContent = "0 clients";
+        updateClientSelectionControls([]);
         return;
       }
       const list = applyClientFilters(clients);
@@ -1532,11 +1558,12 @@
       const prevScrollLeft = prevTable ? prevTable.scrollLeft : 0;
       if (!list.length) {
         document.getElementById("client-list").innerHTML = '<div class="empty"><p>No clients match your search or filters.</p></div>';
+        updateClientSelectionControls([]);
         return;
       }
       const isAdmin = currentUser && currentUser.role === "admin";
       const thSort = (label, key) => '<th aria-sort="' + (clientSort.key === key ? (clientSort.dir === "asc" ? "ascending" : "descending") : "none") + '"><button type="button" class="th-sort" onclick="sortClients(\'' + key + '\')">' + label + sortArrow(key) + '</button></th>';
-      let html = '<table><thead><tr>' + thSort("Name", "name") + '<th>Domain</th><th>Plan</th><th>Subscription</th>' + thSort("Status", "status") + '<th>Health</th>' + thSort("Uptime", "uptime") + thSort("Orders", "orders") + thSort("Revenue", "revenue") + '<th>Actions</th></tr></thead><tbody>';
+      let html = '<table><thead><tr>' + (isAdmin ? '<th scope="col" class="client-select-cell">Select</th>' : '') + thSort("Name", "name") + '<th>Domain</th><th>Plan</th><th>Subscription</th>' + thSort("Status", "status") + '<th>Health</th>' + thSort("Uptime", "uptime") + thSort("Orders", "orders") + thSort("Revenue", "revenue") + '<th>Actions</th></tr></thead><tbody>';
       for (const c of list) {
         const uptime = c.uptime_pct != null ? Number(c.uptime_pct).toFixed(1) : "—";
         const revenue = c.usage_revenue ? Number(c.usage_revenue).toLocaleString() : "—";
@@ -1567,19 +1594,12 @@
           <details class="actions-menu">
             <summary class="btn btn-ghost btn-sm" aria-expanded="false">More &#9662;</summary>
             <div class="menu">
-              ${c.render_service_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + jsStr(c.render_service_url) + '/api/health\',\'_blank\')">Backend</button>' : ''}
-              ${c.vercel_project_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + jsStr(c.vercel_project_url) + '\',\'_blank\')">Frontend</button>' : ''}
-              ${isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="editClient(${c.id})">Edit</button>
-              ${c.render_service_id ? `<button class="btn btn-ghost btn-sm" onclick="setClientAutoDeploy(${c.id}, ${c.auto_deploy_enabled === false ? 'true' : 'false'}, '${jsStr(c.name)}')">${c.auto_deploy_enabled === false ? 'Enable' : 'Pause'} Auto-Deploy</button>` : ''}
-              <button class="btn btn-ghost btn-sm" onclick="pushSecret(${c.id}, '${jsStr(c.name)}')" title="Push/rotate the control-plane secret onto the client's Render service">Push Secret</button>
-              <button class="btn btn-ghost btn-sm" onclick="redeployClient(${c.id})">Redeploy</button>
-              ${c.is_test ? '<button class="btn btn-ghost btn-sm" onclick="setTestSite(' + c.id + ', false)">Unset Test Site</button>' : '<button class="btn btn-ghost btn-sm" onclick="setTestSite(' + c.id + ', true)">Set as Test Site</button>'}
-              ${c.status === 'active' ? '<button class="btn btn-warning btn-sm" onclick="suspendClient(' + c.id + ')">Suspend</button>' : ''}
-              ${c.status === 'suspended' ? '<button class="btn btn-success btn-sm" onclick="resumeClient(' + c.id + ')">Resume</button>' : ''}
-              <button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${jsStr(c.name)}')">Delete</button>` : ''}
+              ${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id}, '${jsStr(c.name)}')">Delete</button>` : `${c.render_service_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + jsStr(c.render_service_url) + '/api/health\',\'_blank\')">Backend</button>' : ''}
+              ${c.vercel_project_url ? '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' + jsStr(c.vercel_project_url) + '\',\'_blank\')">Frontend</button>' : ''}`}
             </div>
           </details>`;
         html += `<tr>
+          ${isAdmin ? `<td class="client-select-cell"><input type="checkbox" data-client-select="${c.id}" aria-label="Select ${esc(c.name)}" onchange="setClientSelection(${c.id}, this.checked)" ${selectedClientIds.has(String(c.id)) ? 'checked' : ''}></td>` : ''}
           <td><strong>${esc(c.name)}</strong>${c.is_test ? ' <span class="badge" style="background:var(--tint-primary);color:var(--primary-strong)">TEST SITE</span>' : ''}<br><span style="color:var(--text-muted);font-size:0.75rem">${esc(c.admin_email)}</span><br>${autoDeployBadge}</td>
           <td>${esc(c.domain)}</td>
           <td><span style="text-transform:capitalize">${esc(c.plan)}</span>${c.usage_over_limit ? ' <span class="badge badge-overlimit" style="font-size:0.7rem">OVER LIMIT</span>' : ''}</td>
@@ -1597,6 +1617,7 @@
       }
       html += '</tbody></table>';
       document.getElementById("client-list").innerHTML = html;
+      updateClientSelectionControls(list);
       const newTable = document.querySelector("#client-list table");
       if (newTable && prevScrollLeft > 0) newTable.scrollLeft = prevScrollLeft;
     }
@@ -2055,20 +2076,121 @@
       });
     }
 
-    async function setClientAutoDeploy(id, enabled, name) {
+    function updateClientSelectionControls(visibleClients = applyClientFilters(allClients)) {
+      const selectable = visibleClients;
+      const selectedVisible = selectable.filter(client => selectedClientIds.has(String(client.id))).length;
+      const selectButton = document.getElementById("select-visible-clients");
+      const summary = document.getElementById("client-selection-summary");
+      const singleActions = document.getElementById("client-single-actions");
+      const actions = document.getElementById("client-bulk-actions");
+      if (selectButton) {
+        selectButton.disabled = selectable.length === 0;
+        selectButton.textContent = selectable.length > 0 && selectedVisible === selectable.length ? "Clear visible selection" : "Select visible";
+      }
+      if (summary) {
+        const selectedTotal = selectedClientIds.size;
+        summary.textContent = selectedTotal ? `${selectedTotal} selected${selectedVisible < selectedTotal ? ` · ${selectedVisible} visible` : ""}` : "No clients selected";
+      }
+      const selectedClients = allClients.filter(client => selectedClientIds.has(String(client.id)));
+      const missingRender = selectedClients.some(client => !client.render_service_id);
+      if (singleActions) {
+        const client = selectedClients.length === 1 ? selectedClients[0] : null;
+        const buttons = client ? [
+          client.render_service_url ? `<button class="btn btn-ghost btn-sm" type="button" onclick="window.open('${jsStr(client.render_service_url)}/api/health','_blank','noopener')">Backend</button>` : "",
+          client.vercel_project_url ? `<button class="btn btn-ghost btn-sm" type="button" onclick="window.open('${jsStr(client.vercel_project_url)}','_blank','noopener')">Frontend</button>` : "",
+          `<button class="btn btn-ghost btn-sm" type="button" onclick="editClient(${client.id})">Edit</button>`,
+          `<button class="btn btn-ghost btn-sm" type="button" onclick="pushSecret(${client.id}, '${jsStr(client.name)}')" title="Push or rotate the Control Plane secret">Push Secret</button>`,
+          `<button class="btn btn-ghost btn-sm" type="button" onclick="setTestSite(${client.id}, ${client.is_test ? "false" : "true"})">${client.is_test ? "Unset Test Site" : "Set as Test Site"}</button>`,
+          client.status === "suspended"
+            ? `<button class="btn btn-success btn-sm" type="button" onclick="resumeClient(${client.id})">Resume</button>`
+            : `<button class="btn btn-warning btn-sm" type="button" onclick="suspendClient(${client.id})">Suspend</button>`,
+        ].filter(Boolean).join("") : "";
+        singleActions.innerHTML = buttons;
+        singleActions.style.display = buttons ? "flex" : "none";
+      }
+      if (actions) {
+        actions.style.display = selectedClientIds.size ? "flex" : "none";
+        actions.querySelectorAll("button").forEach(button => {
+          const isClear = button.textContent.toLowerCase().includes("clear");
+          button.disabled = missingRender && !isClear;
+          button.title = missingRender && !isClear ? "One or more selected clients have no Render service configured" : "";
+        });
+      }
+      document.querySelectorAll("[data-client-select]").forEach(checkbox => {
+        checkbox.checked = selectedClientIds.has(String(checkbox.getAttribute("data-client-select")));
+      });
+    }
+
+    function toggleVisibleClientSelection() {
+      const visible = applyClientFilters(allClients);
+      if (!visible.length) return;
+      const allVisibleSelected = visible.every(client => selectedClientIds.has(String(client.id)));
+      for (const client of visible) {
+        if (allVisibleSelected) selectedClientIds.delete(String(client.id));
+        else selectedClientIds.add(String(client.id));
+      }
+      updateClientSelectionControls(visible);
+    }
+
+    function setClientSelection(id, selected) {
+      if (selected) selectedClientIds.add(String(id));
+      else selectedClientIds.delete(String(id));
+      updateClientSelectionControls();
+    }
+
+    function clearClientSelection() {
+      selectedClientIds.clear();
+      updateClientSelectionControls();
+    }
+
+    async function setSelectedAutoDeploy(enabled) {
+      const clientIds = [...selectedClientIds].map(Number);
+      if (!clientIds.length) return;
+      const selectedNames = allClients.filter(client => selectedClientIds.has(String(client.id))).map(client => client.name);
       confirmDialog({
-        title: `${enabled ? 'Enable' : 'Pause'} auto-deploy for ${name}?`,
+        title: `${enabled ? 'Enable' : 'Pause'} auto-deploy for ${clientIds.length} selected ${clientIds.length === 1 ? 'client' : 'clients'}?`,
         message: enabled
-          ? `${name} will deploy automatically on each push to main.`
-          : `${name} will stop deploying automatically on pushes to main. You can still redeploy it manually from the Control Plane.`,
-        confirmLabel: enabled ? "Enable Auto-Deploy" : "Pause Auto-Deploy",
+          ? `These clients will deploy automatically on each push to main: ${selectedNames.join(", ")}.`
+          : `These clients will stop deploying automatically on pushes to main: ${selectedNames.join(", ")}. Manual redeployment will remain available.`,
+        confirmLabel: enabled ? "Enable for selected" : "Pause for selected",
         onConfirm: async () => {
-          toast(`${enabled ? "Enabling" : "Pausing"} auto-deploy for ${name}...`);
+          toast(`${enabled ? "Enabling" : "Pausing"} auto-deploy for ${clientIds.length} selected clients...`);
           try {
-            await api(`/api/clients/${id}/auto-deploy`, { method: "POST", body: JSON.stringify({ enabled }) });
-            toast(`Auto-deploy ${enabled ? "enabled" : "paused"} for ${name}`);
+            const data = await api("/api/clients/auto-deploy/bulk", { method: "POST", body: JSON.stringify({ client_ids: clientIds, enabled }) });
+            const results = data.results || [];
+            const succeeded = results.filter(result => result.success).length;
+            const failed = results.filter(result => !result.success);
+            const failureNames = failed.map(result => `${result.name}: ${result.error || "failed"}`).join("; ");
+            toast(`${enabled ? "Enabled" : "Paused"} auto-deploy for ${succeeded}/${results.length} selected clients${failed.length ? `. Failed: ${failureNames}` : ""}`, failed.length ? "error" : "success", failed.length ? 9000 : 4000);
             await loadClients();
           } catch (e) { toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error"); }
+        },
+      });
+    }
+
+    async function redeploySelectedClients() {
+      const clientIds = [...selectedClientIds].map(Number);
+      if (!clientIds.length) return;
+      const selectedNames = allClients.filter(client => selectedClientIds.has(String(client.id))).map(client => client.name);
+      confirmDialog({
+        title: `Redeploy ${clientIds.length} selected ${clientIds.length === 1 ? "client" : "clients"}?`,
+        message: `Trigger a deployment for: ${selectedNames.join(", ")}. Each site may be briefly unavailable while its service restarts.`,
+        confirmLabel: "Redeploy selected",
+        onConfirm: async () => {
+          const progress = toast(`Starting redeploys for ${clientIds.length} selected clients…`, "info", 0);
+          try {
+            const data = await api("/api/clients/redeploy/bulk", { method: "POST", body: JSON.stringify({ client_ids: clientIds }) });
+            progress.remove();
+            const results = data.results || [];
+            const succeeded = results.filter(result => result.success).length;
+            const failed = results.filter(result => !result.success);
+            const failureNames = failed.map(result => `${result.name}: ${result.error || "failed"}`).join("; ");
+            toast(`Redeploy started for ${succeeded}/${results.length} selected clients${failed.length ? `. Failed: ${failureNames}` : ""}`, failed.length ? "error" : "success", failed.length ? 9000 : 4000);
+            await loadClients();
+          } catch (e) {
+            progress.remove();
+            toast("Failed: " + (e && e.message ? e.message : "request could not be completed"), "error");
+          }
         },
       });
     }
@@ -2276,6 +2398,7 @@
 
     const searchInput = document.getElementById("client-search");
     const statusFilter = document.getElementById("client-status-filter");
+    const autoDeployFilter = document.getElementById("client-auto-deploy-filter");
     let searchTimer = null;
     if (searchInput) searchInput.addEventListener("input", (e) => {
       clientSearch = e.target.value.trim();
@@ -2283,6 +2406,7 @@
       searchTimer = setTimeout(() => renderTable(allClients), 120);
     });
     if (statusFilter) statusFilter.addEventListener("change", (e) => { clientStatusFilter = e.target.value; renderTable(allClients); });
+    if (autoDeployFilter) autoDeployFilter.addEventListener("change", (e) => { clientAutoDeployFilter = e.target.value; renderTable(allClients); });
 
     const deploySearchInput = document.getElementById("deploy-search");
     const deployStatusSelect = document.getElementById("deploy-status-filter");
