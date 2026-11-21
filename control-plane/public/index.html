@@ -1814,6 +1814,29 @@
       });
     }
 
+    async function applyClientPlan(id, name, planId) {
+      if (!planId) { toast("Assign a plan to this client first.", "error"); return; }
+      confirmDialog({
+        title: "Apply plan to this site?",
+        message: `Apply the Control Plane’s ${planId} plan to “${name}”?`,
+        detail: "This updates the site's active feature access only. It does not change billing dates, payment history, products, orders, or other clients. Sync plan definitions first if the site does not have this plan yet.",
+        confirmLabel: "Apply plan",
+        onConfirm: async () => {
+          const progress = toast(`Applying ${planId} to ${name}…`, "info", 0);
+          try {
+            const data = await api(`/api/clients/${id}/apply-plan`, { method: "POST" });
+            progress.remove();
+            if (data.error) { toast(data.error, "error"); return; }
+            toast(data.message || `${planId} plan applied to ${name}.`);
+            loadClients();
+          } catch (e) {
+            progress.remove();
+            toast(`Plan apply failed: ${e && e.message ? e.message : "request could not be completed"}`, "error");
+          }
+        }
+      });
+    }
+
     async function suspendClient(id) {
       confirmDialog({
         title: "Suspend client?",
@@ -3677,6 +3700,7 @@
         ${c.render_service_url ? '<a href="' + esc(c.render_service_url) + '/api/health" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Backend</a>' : ''}
         ${c.vercel_project_url ? '<a href="' + esc(c.vercel_project_url) + '" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">Frontend</a>' : ''}
         ${c.render_service_url ? '<button class="btn btn-ghost btn-sm" data-admin data-client-name="' + escAttr(c.name) + '" onclick="syncClientPlans(' + Number(c.id) + ', this.dataset.clientName)">Sync plans</button>' : ''}
+        ${c.render_service_url ? '<button class="btn btn-primary btn-sm" data-admin data-client-name="' + escAttr(c.name) + '" data-plan="' + escAttr(c.plan || '') + '" onclick="applyClientPlan(' + Number(c.id) + ', this.dataset.clientName, this.dataset.plan)">Apply plan to site</button>' : ''}
         <button class="btn btn-ghost btn-sm" onclick="editClient(${c.id}); closeClientDetails()">Edit</button>
       `;
 

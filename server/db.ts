@@ -4936,6 +4936,15 @@ async function setShopPlan(planId: string): Promise<boolean> {
   return true;
 }
 
+// Apply the Control Plane's assigned plan without resetting the tenant's
+// subscription activation date. Billing dates are managed by the Control Plane.
+async function applyControlPlaneShopPlan(planId: string): Promise<boolean> {
+  const plan = await getSubscriptionPlan(planId);
+  if (!plan) return false;
+  await query("INSERT INTO settings (key, value) VALUES ('shop_plan_id', $1) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value", [planId]);
+  return true;
+}
+
 async function createSubscriptionRequest(planId: string, createdBy: number, notes: string = ""): Promise<boolean> {
   const plan = await getSubscriptionPlan(planId);
   if (!plan) return false;
@@ -5736,7 +5745,7 @@ export {
   applyStockTakeAdjustments, getStockTakeVarianceReport, getStockTakeRecoveryState, listStockTakeEvents, reopenStockTakeSession, reverseStockTakeAdjustments,
   createStockSnapshot, getStockSnapshot, listStockSnapshotDates, getCurrentStockLevels,
   logAudit, getAuditLog, addAuditLog, listAuditLogs,
-  getShopPlan, setShopPlan,
+  getShopPlan, setShopPlan, applyControlPlaneShopPlan,
   createSubscriptionRequest, listSubscriptionRequests, reviewSubscriptionRequest,
   getSpecTemplateFields, getAllSpecTemplateFields, createSpecTemplateField, updateSpecTemplateField, deleteSpecTemplateField,
   listSuppliers, getSupplier, createSupplier, updateSupplier, deleteSupplier,

@@ -2139,6 +2139,36 @@ app.post("/api/clients/:id/sync-plans", requireAdmin, async (req, res) => {
   }
 });
 
+// Apply this client's Control Plane plan assignment to its active storefront
+// subscription. This is intentionally distinct from syncing plan definitions.
+app.post("/api/clients/:id/apply-plan", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]) as any;
+    if (!client) { res.status(404).json({ error: "Client not found." }); return; }
+    if (!client.render_service_url || !client.cp_secret) { res.status(400).json({ error: "This client has no connected backend and Control Plane key." }); return; }
+    const planId = String(client.plan || "").trim();
+    if (!planId) { res.status(400).json({ error: "Assign a plan to this client in the Control Plane first." }); return; }
+
+    const result = await fetch(`${String(client.render_service_url).replace(/\/+$/, "")}/api/control-plane/shop-plan`, {
+      method: "PUT",
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ planId }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const data: any = await result.json().catch(() => ({}));
+    if (!result.ok) {
+      res.status(502).json({ error: data.error || `Client rejected the plan assignment (HTTP ${result.status}). Sync plan definitions first if this plan is missing.` });
+      return;
+    }
+    const planName = data.plan?.name || planId;
+    await auditLog(req, "apply_client_plan", "client", client.id, client.name, `Applied ${planName} (${planId}) to the storefront subscription.`);
+    res.json({ ok: true, planId, planName, message: `${planName} plan applied to ${client.name}.` });
+  } catch (err: any) {
+    console.error("[api] Apply client plan error:", err?.message || err);
+    res.status(500).json({ error: "Could not apply the plan to this client." });
+  }
+});
+
 // Push plans to ALL active clients
 app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, async (_req, res) => {
   try {

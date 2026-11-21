@@ -204,6 +204,7 @@ import {
   getAuditLog,
   getShopPlan,
   setShopPlan,
+  applyControlPlaneShopPlan,
   getStoreSetting,
   setStoreSetting,
   createSubscriptionRequest,
@@ -8830,6 +8831,18 @@ app.delete("/api/admin/splashes/:id", staffAuthMiddleware, requirePermission("re
 }));
 
 // ============ SHOP SUBSCRIPTION ============
+
+// The Control Plane is the billing/plan assignment authority. Applying its
+// assigned plan must not reset the tenant's subscription activation date.
+app.put("/api/control-plane/shop-plan", controlPlaneAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { planId } = req.body || {};
+  if (!isStr(planId)) { res.status(400).json({ error: "A valid planId is required." }); return; }
+  const current = await getShopPlan();
+  const applied = await applyControlPlaneShopPlan(planId);
+  if (!applied) { res.status(404).json({ error: `Plan '${planId}' is not synced to this store yet. Sync plans, then apply again.` }); return; }
+  await logAudit(0, "control-plane", "control_plane_plan_applied", "shop_subscription", planId, { from: current?.id || null, to: planId }, "admin");
+  res.json({ ok: true, plan: await getShopPlan() });
+}));
 
 app.get("/api/shop/subscription", allowControlPlane(staffAuthMiddleware), requirePermission("subscription:view"), asyncHandler(async (_req: Request, res: Response) => {
   const plan = await getShopPlan();
