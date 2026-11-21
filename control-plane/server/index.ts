@@ -1705,7 +1705,7 @@ app.put("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
         included = new Set(features.map((feature: unknown) => String(feature).toLowerCase().trim()));
       } catch {}
       if (!feature_flags || typeof feature_flags !== "object" || Array.isArray(feature_flags)) { res.status(400).json({ error: "Client feature blocks must be an object." }); return; }
-      normalizedFeatureFlags = Object.fromEntries(Object.entries(feature_flags).filter(([feature, value]) => included.has(feature.toLowerCase().trim()) && value === false));
+      normalizedFeatureFlags = Object.fromEntries(Object.entries(feature_flags).filter(([feature, value]) => included.has(feature.toLowerCase().trim()) && value === false)) as Record<string, boolean>;
     }
 
     if (planSyncRequest) {
@@ -3582,7 +3582,7 @@ app.post("/api/clients/:id/features", requireAuth, requireAdmin, async (req, res
       body: JSON.stringify({ overrides: req.body.overrides || {} }),
     });
     if (!r.ok) { res.status(r.status).json({ error: "Failed to set overrides" }); return; }
-    const result = await r.json();
+    const result = await r.json() as { overrides?: Record<string, boolean> };
     // Also store in control-plane local DB for reference
     await query("UPDATE clients SET feature_flags = $1 WHERE id = $2", [JSON.stringify(result.overrides || {}), client.id]);
     await auditLog(req, "set_client_features", "client", client.id, client.name, JSON.stringify(result.overrides || {}).slice(0, 500));
