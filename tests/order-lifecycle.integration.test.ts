@@ -200,7 +200,7 @@ describe("order lifecycle (confirmed -> paid guard, automatic invoices) over rea
     // Product creation, checkout, and serial tracking require these features
     // even when the disposable database's baseline plan is Retail or Starter.
     restoreSerialEntitlement = await grantShopPlanFeaturesForTest([
-      "Product listing", "Order management", "POS integration", "Serial number tracking",
+      "Product listing", "Order management", "POS integration", "Serial number tracking", "Multiple staff accounts",
     ]);
 
     branchId = await ensureBranch();
