@@ -79,14 +79,11 @@ The control plane serves a Content Security Policy via Helmet (`control-plane/se
   - Gray = no plan/expiry set
   - **OVER LIMIT** badge — shown when client usage exceeds plan max products
 - **Actions per client**:
-  - **Details** — opens full client panel with invoices
-  - **More ▾** — a scrollable dropdown grouping Backend/Frontend links, Edit, Push Secret, Redeploy, Suspend/Resume, and Delete. It scrolls internally (`max-height` + `overflow-y: auto`) and is no longer clipped by the table, so every action is reachable even for rows at the bottom of the viewport.
-  - **Backend/Frontend** — links to client's live URLs
-  - **Edit** — change plan, expiry, notes, phone, address, and per-client feature overrides
-  - **Redeploy** — trigger a Render deploy for this client individually
+  - **Details** — opens the full client panel with invoices
+  - **Client selection toolbar** — admins can select visible or individual clients. With one selected, Backend/Frontend, Edit, Push Secret, Test Site, and Suspend/Resume actions appear above the table. With multiple selected, the toolbar offers bulk redeploy and auto-deploy controls. Render-dependent bulk actions disable if any selected client has no Render service.
+  - **More ▾** — admins see Delete only; non-admin operators see the Backend/Frontend links. Keeping Delete here prevents it from being confused with routine group actions.
   - **Set as Test Site / Unset Test Site** — mark this client as the test site (only one at a time; a **TEST SITE** badge shows on its row). The badge identifies the test tenant; all client Render backends auto-deploy from `main` when auto-deploy is enabled.
-  - **Suspend/Resume** — pause or unpause the client's Render service
-  - **Delete** — removes DB + all cloud resources
+  - **Delete** — removes the database and cloud resources; this remains a per-client action.
 
 ### Client Details Panel
 Click **Details** on any client to see:
@@ -327,6 +324,8 @@ JWT sessions are re-validated against the DB on every request — the role on th
 | POST | `/api/deploy/enable-auto-deploy` | Enable native Render auto-deploy for all client backends |
 | POST | `/api/deploy/disable-auto-deploy` | Disable native Render auto-deploy for all client backends |
 | POST | `/api/clients/:id/auto-deploy` | Enable or pause native Render auto-deploy for one client (`{ enabled: boolean }`) |
+| POST | `/api/clients/auto-deploy/bulk` | Enable or pause auto-deploy for selected clients (`{ client_ids: number[], enabled: boolean }`) |
+| POST | `/api/clients/redeploy/bulk` | Trigger redeploys for selected clients (`{ client_ids: number[] }`) |
 | POST | `/api/health-check` | Check health of all clients |
 | GET | `/api/payment-reminders` | Payment reminder windows (7d / 2d / due / overdue) from `next_payment_date` |
 | GET | `/api/notifications` | Unread count + last 60 in-app notifications |
