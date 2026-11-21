@@ -436,6 +436,19 @@
           <option value="suspended">Suspended</option>
           <option value="failed">Failed</option>
         </select>
+        <select id="client-health-filter" class="select" aria-label="Filter by service health">
+          <option value="">All health states</option>
+          <option value="down">Unhealthy (down)</option>
+          <option value="unknown">Not checked</option>
+          <option value="healthy">Healthy</option>
+        </select>
+        <select id="client-expiry-filter" class="select" aria-label="Filter by subscription expiry">
+          <option value="">All subscription dates</option>
+          <option value="expired">Expired</option>
+          <option value="7">Expires within 7 days</option>
+          <option value="30">Expires within 30 days</option>
+          <option value="none">No expiry date</option>
+        </select>
         <select id="client-auto-deploy-filter" class="select" aria-label="Filter by auto-deploy state">
           <option value="">All auto-deploy states</option>
           <option value="on">Auto-deploy on</option>
@@ -1507,7 +1520,19 @@
     let clientSort = { key: "name", dir: "asc" };
     let clientSearch = "";
     let clientStatusFilter = "";
+    let clientHealthFilter = "";
+    let clientExpiryFilter = "";
     let clientAutoDeployFilter = "";
+
+    function daysUntilClientExpiry(client) {
+      if (!client || !client.subscription_expires) return null;
+      const dateText = String(client.subscription_expires).slice(0, 10);
+      const expiry = new Date(dateText + "T00:00:00");
+      if (Number.isNaN(expiry.getTime())) return null;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return Math.round((expiry.getTime() - today.getTime()) / 86400000);
+    }
 
     function sortClients(key) {
       if (clientSort.key === key) clientSort.dir = clientSort.dir === "asc" ? "desc" : "asc";
@@ -1521,7 +1546,13 @@
 
     function applyClientFilters(clients) {
       let list = clients.filter(c => {
+        const daysLeft = daysUntilClientExpiry(c);
         if (clientStatusFilter && c.status !== clientStatusFilter) return false;
+        if (clientHealthFilter && (c.health_status || "unknown") !== clientHealthFilter) return false;
+        if (clientExpiryFilter === "none" && c.subscription_expires) return false;
+        if (clientExpiryFilter === "expired" && (daysLeft == null || daysLeft >= 0)) return false;
+        if (clientExpiryFilter === "7" && (daysLeft == null || daysLeft < 0 || daysLeft > 7)) return false;
+        if (clientExpiryFilter === "30" && (daysLeft == null || daysLeft < 0 || daysLeft > 30)) return false;
         if (clientAutoDeployFilter === "on" && (!c.render_service_id || c.auto_deploy_enabled === false)) return false;
         if (clientAutoDeployFilter === "off" && (!c.render_service_id || c.auto_deploy_enabled !== false)) return false;
         if (clientAutoDeployFilter === "unavailable" && c.render_service_id) return false;
@@ -1568,11 +1599,9 @@
         const uptime = c.uptime_pct != null ? Number(c.uptime_pct).toFixed(1) : "—";
         const revenue = c.usage_revenue ? Number(c.usage_revenue).toLocaleString() : "—";
         const orders = c.usage_orders || "—";
-        const expires = c.subscription_expires ? new Date(c.subscription_expires) : null;
-        const now = new Date();
+        const daysLeft = daysUntilClientExpiry(c);
         let subBadge = '<span class="badge badge-unknown">No plan</span>';
-        if (expires) {
-          const daysLeft = Math.ceil((expires.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysLeft != null) {
           if (daysLeft < 0) {
             subBadge = `<span class="badge badge-overdue">Expired ${Math.abs(daysLeft)}d ago</span>`;
           } else if (daysLeft <= 7) {
@@ -2398,6 +2427,8 @@
 
     const searchInput = document.getElementById("client-search");
     const statusFilter = document.getElementById("client-status-filter");
+    const healthFilter = document.getElementById("client-health-filter");
+    const expiryFilter = document.getElementById("client-expiry-filter");
     const autoDeployFilter = document.getElementById("client-auto-deploy-filter");
     let searchTimer = null;
     if (searchInput) searchInput.addEventListener("input", (e) => {
@@ -2406,6 +2437,8 @@
       searchTimer = setTimeout(() => renderTable(allClients), 120);
     });
     if (statusFilter) statusFilter.addEventListener("change", (e) => { clientStatusFilter = e.target.value; renderTable(allClients); });
+    if (healthFilter) healthFilter.addEventListener("change", (e) => { clientHealthFilter = e.target.value; renderTable(allClients); });
+    if (expiryFilter) expiryFilter.addEventListener("change", (e) => { clientExpiryFilter = e.target.value; renderTable(allClients); });
     if (autoDeployFilter) autoDeployFilter.addEventListener("change", (e) => { clientAutoDeployFilter = e.target.value; renderTable(allClients); });
 
     const deploySearchInput = document.getElementById("deploy-search");
