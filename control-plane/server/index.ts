@@ -933,6 +933,13 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
       return;
     }
 
+    const selectedPlan = await queryOne(
+      "SELECT id FROM custom_plans WHERE id = $1 OR LOWER(name) = LOWER($1) ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END LIMIT 1",
+      [String(plan || "starter").trim()]
+    ) as any;
+    if (!selectedPlan) { res.status(400).json({ error: "Select a plan that exists in the Control Plane." }); return; }
+    plan = String(selectedPlan.id);
+
     // Guard: refuse to start provisioning (and refuse to insert a placeholder
     // row) when required API credentials are missing, instead of letting the
     // background batch fail and leave a status='failed' client.
@@ -1004,6 +1011,10 @@ app.post("/api/clients", destructiveLimiter, requireAuth, requireAdmin, async (r
             clientId,
           ]
         );
+        const applied = await syncPlanToAssignedClients(String(plan), undefined, clientId);
+        if (applied.failed.length) {
+          console.warn(`[api] Client "${name}" provisioned, but its assigned plan has not yet applied. Use Apply plan to site after the backend is ready.`);
+        }
         console.log(`[api] Client "${name}" provisioned successfully.`);
       })
       .catch(async (err: any) => {
@@ -1058,6 +1069,13 @@ app.post("/api/clients/existing", requireAdmin, async (req, res) => {
       return;
     }
 
+    const selectedPlan = await queryOne(
+      "SELECT id, name, features FROM custom_plans WHERE id = $1 OR LOWER(name) = LOWER($1) ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END LIMIT 1",
+      [String(plan || "growth").trim()]
+    ) as any;
+    if (!selectedPlan) { res.status(400).json({ error: "Select a plan that exists in the Control Plane." }); return; }
+    plan = String(selectedPlan.id);
+
     const DOMAIN_BASE = process.env.DOMAIN_BASE || "gearglitch.com";
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
     if (!domain) domain = `${slug}.${DOMAIN_BASE}`;
@@ -1078,13 +1096,19 @@ app.post("/api/clients/existing", requireAdmin, async (req, res) => {
       [name, uniqueDomain, adminEmail, plan || "growth", renderServiceId || "", backendUrl || "", frontendUrl || "", encryptSecret(secret)]
     );
 
+    let planSyncWarning = "";
+    if (backendUrl && cpSecret) {
+      const sync = await syncPlanToAssignedClients(String(selectedPlan.id), undefined, result.rows[0].id, Array.isArray(selectedPlan.features) ? selectedPlan.features : JSON.parse(selectedPlan.features || "[]"));
+      if (sync.failed.length) planSyncWarning = " The client was added, but its plan could not be applied; retry Apply plan to site after confirming its Control Plane key.";
+    }
+
     await auditLog(req, "add_existing_client", "client", result.rows[0].id, name);
     res.status(201).json({
       clientId: result.rows[0].id,
       cpSecretGenerated: !cpSecret,
       message: cpSecret
-        ? `Client "${name}" added successfully.`
-        : `Client "${name}" added. A control-plane secret was generated — push it to the client with POST /api/clients/${result.rows[0].id}/push-secret (requires renderServiceId) or set CONTROL_PLANE_SECRET manually.`,
+        ? `Client "${name}" added successfully.${planSyncWarning}`
+        : `Client "${name}" added. A control-plane secret was generated — push it to the client with POST /api/clients/${result.rows[0].id}/push-secret (requires renderServiceId) or set CONTROL_PLANE_SECRET manually, then apply the plan.${planSyncWarning}`,
     });
   } catch (err: any) {
     console.error("[api] Add existing client error:", err.message);
@@ -1633,6 +1657,32 @@ app.put("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
     const client = await queryOne("SELECT * FROM clients WHERE id = $1", [id]);
     if (!client) { res.status(404).json({ error: "Client not found" }); return; }
 
+    let normalizedPlan: string | undefined;
+    let selectedPlan: any;
+    let planSyncRequest: { planId: string; previousPlan: string; newlyAddedFeatures: string[]; clearFeatureBlocks: boolean } | null = null;
+    if (plan !== undefined) {
+      if (typeof plan !== "string" || !plan.trim()) { res.status(400).json({ error: "Select a valid client plan." }); return; }
+      selectedPlan = await queryOne(
+        "SELECT id, name, features FROM custom_plans WHERE id = $1 OR LOWER(name) = LOWER($1) ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END LIMIT 1",
+        [plan.trim()]
+      ) as any;
+      if (!selectedPlan) { res.status(400).json({ error: "The selected plan is not available in the Control Plane." }); return; }
+      normalizedPlan = String(selectedPlan.id);
+      if (client.render_service_url) {
+        const planChanged = normalizedPlan !== String(client.plan || "");
+        let oldPlanFeatures: string[] = [];
+        try {
+          const oldPlan = await queryOne("SELECT features FROM custom_plans WHERE id = $1 OR LOWER(name) = LOWER($1) LIMIT 1", [String(client.plan || "")]) as any;
+          oldPlanFeatures = Array.isArray(oldPlan?.features) ? oldPlan.features : JSON.parse(oldPlan?.features || "[]");
+        } catch {}
+        let newPlanFeatures: string[] = [];
+        try { newPlanFeatures = Array.isArray(selectedPlan.features) ? selectedPlan.features : JSON.parse(selectedPlan.features || "[]"); } catch {}
+        const oldSet = new Set(oldPlanFeatures.map((feature) => String(feature).toLowerCase().trim()));
+        const newlyAddedFeatures = newPlanFeatures.filter((feature) => !oldSet.has(String(feature).toLowerCase().trim()));
+        planSyncRequest = { planId: normalizedPlan, previousPlan: String(client.plan || ""), newlyAddedFeatures: planChanged ? newlyAddedFeatures : [], clearFeatureBlocks: planChanged };
+      }
+    }
+
     let normalizedAdminEmail: string | undefined;
     if (admin_email !== undefined) {
       if (typeof admin_email !== "string") { res.status(400).json({ error: "Enter a valid billing/contact email address." }); return; }
@@ -1643,12 +1693,32 @@ app.put("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
       }
     }
 
+    let normalizedFeatureFlags: Record<string, boolean> | undefined;
+    if (feature_flags !== undefined && !(normalizedPlan !== undefined && normalizedPlan !== String(client.plan || ""))) {
+      const currentPlan = selectedPlan || await queryOne(
+        "SELECT features FROM custom_plans WHERE id = $1 OR LOWER(name) = LOWER($1) ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END LIMIT 1",
+        [String(client.plan || "")]
+      ) as any;
+      let included = new Set<string>();
+      try {
+        const features = Array.isArray(currentPlan?.features) ? currentPlan.features : JSON.parse(currentPlan?.features || "[]");
+        included = new Set(features.map((feature: unknown) => String(feature).toLowerCase().trim()));
+      } catch {}
+      if (!feature_flags || typeof feature_flags !== "object" || Array.isArray(feature_flags)) { res.status(400).json({ error: "Client feature blocks must be an object." }); return; }
+      normalizedFeatureFlags = Object.fromEntries(Object.entries(feature_flags).filter(([feature, value]) => included.has(feature.toLowerCase().trim()) && value === false)) as Record<string, boolean>;
+    }
+
+    if (planSyncRequest) {
+      const sync = await syncPlanToAssignedClients(planSyncRequest.planId, planSyncRequest.previousPlan, id, planSyncRequest.newlyAddedFeatures, planSyncRequest.clearFeatureBlocks);
+      if (sync.failed.length) {
+        res.status(502).json({ error: `Could not apply ${selectedPlan?.name || planSyncRequest.planId} to ${client.name}. Check the client backend connection and Control Plane key, then retry.` });
+        return;
+      }
+    }
+
     if (is_test !== undefined) {
       const testValue = is_test ? 1 : 0;
-      if (testValue) {
-        // Only one client may be the test site at a time
-        await query("UPDATE clients SET is_test = 0 WHERE is_test = 1");
-      }
+      if (testValue) await query("UPDATE clients SET is_test = 0 WHERE is_test = 1");
       await query("UPDATE clients SET is_test = $1 WHERE id = $2", [testValue, id]);
       await auditLog(req, "set_test_site", "client", id, client.name, testValue ? "Marked as test site" : "Unmarked as test site");
     }
@@ -1658,12 +1728,15 @@ app.put("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
     let idx = 1;
 
     if (normalizedAdminEmail !== undefined && normalizedAdminEmail !== client.admin_email) { fields.push(`admin_email = $${idx}`); params.push(normalizedAdminEmail); idx++; }
-    if (plan !== undefined) { fields.push(`plan = $${idx}`); params.push(plan); idx++; }
+    if (normalizedPlan !== undefined) { fields.push(`plan = $${idx}`); params.push(normalizedPlan); idx++; }
     if (subscription_expires !== undefined) { fields.push(`subscription_expires = $${idx}`); params.push(subscription_expires); idx++; }
     if (phone !== undefined) { fields.push(`phone = $${idx}`); params.push(phone); idx++; }
     if (address !== undefined) { fields.push(`address = $${idx}`); params.push(address); idx++; }
     if (notes !== undefined) { fields.push(`notes = $${idx}`); params.push(notes); idx++; }
-    if (feature_flags !== undefined) { fields.push(`feature_flags = $${idx}`); params.push(JSON.stringify(feature_flags)); idx++; }
+
+    if (normalizedPlan !== undefined && normalizedPlan !== String(client.plan || "")) {
+      fields.push(`feature_flags = $${idx}`); params.push("{}"); idx++;
+    } else if (normalizedFeatureFlags !== undefined) { fields.push(`feature_flags = $${idx}`); params.push(JSON.stringify(normalizedFeatureFlags)); idx++; }
     if (render_service_id !== undefined) { fields.push(`render_service_id = $${idx}`); params.push(render_service_id); idx++; }
     if (render_service_url !== undefined) { fields.push(`render_service_url = $${idx}`); params.push(render_service_url); idx++; }
     if (vercel_project_id !== undefined) { fields.push(`vercel_project_id = $${idx}`); params.push(vercel_project_id); idx++; }
@@ -2004,7 +2077,7 @@ app.post("/api/plans", requireAdmin, async (req, res) => {
        ON CONFLICT(id) DO UPDATE SET name=$2, description=$3, price=$4, price_annual=$5, tier_level=$6, max_products=$7, max_branches=$8, features=$9, is_active=$10, sync_to_others=$11`,
       [planId, name, description || "", price || 0, priceAnnual || null, tierLevel || 1, maxProducts ?? 50, maxBranches ?? 1, JSON.stringify(features || []), isActive !== undefined ? isActive : true, syncToOthers !== false ? 1 : 0]
     );
-    const sync = await syncPlanToAssignedClients(planId);
+    const sync = await syncPlanToAssignedClients(planId, undefined, undefined, Array.isArray(features) ? features : []);
     res.status(201).json({
       id: planId,
       message: sync.eligible === 0
@@ -2018,14 +2091,50 @@ app.post("/api/plans", requireAdmin, async (req, res) => {
   }
 });
 
-async function syncPlanToAssignedClients(planId: string, previousName?: string) {
+async function pruneClientFeatureBlocks(clientId: number, rawOverrides: unknown, planFeatures: unknown, newlyAdded: unknown = []): Promise<Record<string, boolean>> {
+  let overrides: Record<string, boolean> = {};
+  try { overrides = typeof rawOverrides === "string" ? JSON.parse(rawOverrides || "{}") : ((rawOverrides || {}) as Record<string, boolean>); } catch {}
+  let features: unknown = planFeatures;
+  try { if (typeof features === "string") features = JSON.parse(features || "[]"); } catch { features = []; }
+  const included = new Set((Array.isArray(features) ? features : []).map((feature) => String(feature).toLowerCase().trim()));
+  const added = new Set((Array.isArray(newlyAdded) ? newlyAdded : []).map((feature) => String(feature).toLowerCase().trim()));
+  const cleaned = Object.fromEntries(Object.entries(overrides).filter(([feature, value]) => {
+    const normalized = String(feature).toLowerCase().trim();
+    return included.has(normalized) && !added.has(normalized) && value === false;
+  }));
+  if (JSON.stringify(cleaned) !== JSON.stringify(overrides)) {
+    await query("UPDATE clients SET feature_flags = $1 WHERE id = $2", [JSON.stringify(cleaned), clientId]);
+  }
+  return cleaned;
+}
+
+async function pushClientFeatureBlocks(client: { id: number; name: string; render_service_url: string; cp_secret: string; feature_flags: unknown }, planFeatures: unknown, newlyAdded: unknown = []): Promise<boolean> {
+  const cleaned = await pruneClientFeatureBlocks(client.id, client.feature_flags, planFeatures, newlyAdded);
+  try {
+    const response = await fetch(`${String(client.render_service_url || "").replace(/\/+$/, "")}/api/admin/features/overrides`, {
+      method: "POST",
+      headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ overrides: cleaned }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) console.warn(`[plan-sync] Feature blocks failed for "${client.name}" (HTTP ${response.status}).`);
+    return response.ok;
+  } catch (error: any) {
+    console.warn(`[plan-sync] Feature blocks failed for "${client.name}":`, error?.message || "request failed");
+    return false;
+  }
+}
+
+async function syncPlanToAssignedClients(planId: string, previousName?: string, targetClientId?: number, newlyAddedFeatures: string[] = [], clearFeatureBlocks = false) {
   const plan = await queryOne("SELECT * FROM custom_plans WHERE id = $1", [planId]) as any;
   if (!plan) return { eligible: 0, synced: 0, failed: [] as string[] };
-  const clients = await queryAll(
-    `SELECT name, render_service_url, cp_secret FROM clients
-     WHERE render_service_url != '' AND (LOWER(plan) IN (LOWER($1), LOWER($2)) OR ($3 <> '' AND LOWER(plan) = LOWER($3)))`,
-    [String(plan.id), String(plan.name), String(previousName || "")]
-  ) as any[];
+  const clients = targetClientId
+    ? await queryAll("SELECT id, name, render_service_url, cp_secret, feature_flags FROM clients WHERE id = $1 AND render_service_url != ''", [targetClientId]) as any[]
+    : await queryAll(
+      `SELECT id, name, render_service_url, cp_secret, feature_flags FROM clients
+       WHERE render_service_url != '' AND (LOWER(plan) IN (LOWER($1), LOWER($2)) OR ($3 <> '' AND LOWER(plan) = LOWER($3)))`,
+      [String(plan.id), String(plan.name), String(previousName || "")]
+    ) as any[];
   const payload = {
     id: plan.id, name: plan.name, description: plan.description || "",
     price: plan.price, priceAnnual: plan.price_annual, tierLevel: plan.tier_level,
@@ -2042,7 +2151,20 @@ async function syncPlanToAssignedClients(planId: string, previousName?: string) 
         body: JSON.stringify({ plans: [payload] }),
         signal: AbortSignal.timeout(45000),
       });
-      return { name: client.name, success: response.ok };
+      if (!response.ok) return { name: client.name, success: false };
+      const syncData: any = await response.json().catch(() => ({}));
+      const applied = await fetch(`${baseUrl}/api/control-plane/shop-plan`, {
+        method: "PUT",
+        headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ planId: plan.id }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (applied.ok) {
+        const blockSource = clearFeatureBlocks ? { ...client, feature_flags: {} } : client;
+        const blocksSynced = await pushClientFeatureBlocks(blockSource, plan.features, [...newlyAddedFeatures, ...(Array.isArray(syncData.activatedFeatures) ? syncData.activatedFeatures : [])]);
+        return { name: client.name, success: blocksSynced };
+      }
+      return { name: client.name, success: false };
     } catch {
       return { name: client.name, success: false };
     }
@@ -2058,7 +2180,7 @@ app.put("/api/plans/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, description, price, priceAnnual, tierLevel, maxProducts, maxBranches, features, isActive, syncToOthers } = req.body || {};
     const planId = String(req.params.id);
-    const currentPlan = await queryOne("SELECT name FROM custom_plans WHERE id = $1", [planId]) as any;
+    const currentPlan = await queryOne("SELECT name, features FROM custom_plans WHERE id = $1", [planId]) as any;
     const fields: string[] = []; const params: any[] = []; let idx = 1;
     if (name !== undefined) { fields.push(`name = $${idx}`); params.push(name); idx++; }
     if (description !== undefined) { fields.push(`description = $${idx}`); params.push(description); idx++; }
@@ -2073,7 +2195,16 @@ app.put("/api/plans/:id", requireAuth, requireAdmin, async (req, res) => {
     if (fields.length === 0) { res.json({ message: "No changes" }); return; }
     params.push(planId);
     await query(`UPDATE custom_plans SET ${fields.join(", ")} WHERE id = $${idx}`, params);
-    const sync = await syncPlanToAssignedClients(planId, currentPlan?.name);
+    let previousFeatures: string[] = [];
+    try { previousFeatures = Array.isArray(currentPlan?.features) ? currentPlan.features : JSON.parse(currentPlan?.features || "[]"); } catch {}
+    const nextFeatures: string[] = features !== undefined
+      ? features
+      : (await queryOne("SELECT features FROM custom_plans WHERE id = $1", [planId]) as any)?.features || [];
+    let normalizedNextFeatures: string[] = [];
+    try { normalizedNextFeatures = Array.isArray(nextFeatures) ? nextFeatures : JSON.parse(nextFeatures || "[]"); } catch {}
+    const previousSet = new Set(previousFeatures.map((feature) => String(feature).toLowerCase().trim()));
+    const newlyAddedFeatures = normalizedNextFeatures.filter((feature) => !previousSet.has(String(feature).toLowerCase().trim()));
+    const sync = await syncPlanToAssignedClients(planId, currentPlan?.name, undefined, newlyAddedFeatures);
     res.json({
       message: sync.eligible === 0
         ? "Plan updated. No clients are currently assigned to this plan."
@@ -2131,18 +2262,53 @@ app.post("/api/clients/:id/sync-plans", requireAdmin, async (req, res) => {
       res.status(502).json({ ...failure, status: result.status });
       return;
     }
+    const syncData: any = await result.json().catch(() => ({}));
+    const assignedPlan = await queryOne("SELECT id FROM custom_plans WHERE id = $1 OR LOWER(name) = LOWER($1) ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END LIMIT 1", [String(client.plan || "")]) as any;
+    if (assignedPlan) {
+      const applied = await fetch(`${String(client.render_service_url).replace(/\/+$/, "")}/api/control-plane/shop-plan`, {
+        method: "PUT", headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ planId: assignedPlan.id }), signal: AbortSignal.timeout(20000),
+      });
+      if (!applied.ok) { res.status(502).json({ error: `Plan catalog synced, but the assigned ${assignedPlan.id} plan could not be applied (HTTP ${applied.status}). Retry Apply plan to site.` }); return; }
+      const assigned = await queryOne("SELECT features FROM custom_plans WHERE id = $1", [assignedPlan.id]) as any;
+      const blocksSynced = await pushClientFeatureBlocks(client, assigned?.features, syncData.activatedFeatures);
+      if (!blocksSynced) { res.status(502).json({ error: "The plan was applied, but this client’s feature blocks could not be synced. Retry Apply plan to site." }); return; }
+    }
     await auditLog(req, "sync_client_plans", "client", client.id, client.name, `Synced ${plans.length} plans to this client.`);
-    res.json({ message: `Synced ${plans.length} plans to "${client.name}".` });
+    res.json({ message: `Synced plan catalog and applied the assigned plan to "${client.name}".` });
   } catch (err: any) {
     console.error("[api] Sync plans error:", err.message);
     res.status(500).json({ error: "Failed to sync plans" });
   }
 });
 
+// Apply this client's Control Plane plan assignment to its active storefront
+// subscription. This is intentionally distinct from syncing plan definitions.
+app.post("/api/clients/:id/apply-plan", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const client = await queryOne("SELECT * FROM clients WHERE id = $1", [Number(req.params.id)]) as any;
+    if (!client) { res.status(404).json({ error: "Client not found." }); return; }
+    if (!client.render_service_url || !client.cp_secret) { res.status(400).json({ error: "This client has no connected backend and Control Plane key." }); return; }
+    const planId = String(client.plan || "").trim();
+    if (!planId) { res.status(400).json({ error: "Assign a plan to this client in the Control Plane first." }); return; }
+    const sync = await syncPlanToAssignedClients(planId, undefined, client.id);
+    if (sync.failed.length) {
+      res.status(502).json({ error: `Could not sync and apply the ${planId} plan to ${client.name}. Check the client backend connection and Control Plane key, then retry.` });
+      return;
+    }
+    const planName = (await queryOne("SELECT name FROM custom_plans WHERE id = $1", [planId]) as any)?.name || planId;
+    await auditLog(req, "apply_client_plan", "client", client.id, client.name, `Applied ${planName} (${planId}) to the storefront subscription.`);
+    res.json({ ok: true, planId, planName, message: `${planName} plan applied to ${client.name}.` });
+  } catch (err: any) {
+    console.error("[api] Apply client plan error:", err?.message || err);
+    res.status(500).json({ error: "Could not apply the plan to this client." });
+  }
+});
+
 // Push plans to ALL active clients
 app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, async (_req, res) => {
   try {
-    const clients = await queryAll("SELECT id, name, render_service_url, cp_secret FROM clients WHERE status = 'active' AND render_service_url != ''");
+    const clients = await queryAll("SELECT id, name, plan, feature_flags, render_service_url, cp_secret FROM clients WHERE status = 'active' AND render_service_url != ''");
     const plans = await queryAll("SELECT * FROM custom_plans ORDER BY tier_level");
     const payload = plans.map((p: any) => ({
       id: p.id, name: p.name, description: p.description,
@@ -2153,7 +2319,7 @@ app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, a
       syncToOthers: p.sync_to_others !== 0,
     }));
 
-    const results = await Promise.all((clients as { id: number; name: string; render_service_url: string; cp_secret: string }[]).map(async (c) => {
+    const results = await Promise.all((clients as { id: number; name: string; plan: string; feature_flags: unknown; render_service_url: string; cp_secret: string }[]).map(async (c) => {
       try {
         const baseUrl = String(c.render_service_url || "").replace(/\/+$/, "");
         const r = await fetch(`${baseUrl}/api/plans/sync`, {
@@ -2167,6 +2333,20 @@ app.post("/api/plans/sync-all", destructiveLimiter, requireAuth, requireAdmin, a
         if (!r.ok) {
           console.error(`[api] Plan sync failed for client ${c.id}: HTTP ${r.status}`);
           return { name: c.name, success: false, ...planSyncFailure(r.status), status: r.status };
+        }
+        const syncData: any = await r.json().catch(() => ({}));
+        const assignedPlan = await queryOne("SELECT id FROM custom_plans WHERE id = $1 OR LOWER(name) = LOWER($1) ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END LIMIT 1", [String(c.plan || "")]) as any;
+        if (assignedPlan) {
+          const applied = await fetch(`${baseUrl}/api/control-plane/shop-plan`, {
+            method: "PUT",
+            headers: cpHeaders(c.cp_secret, { "Content-Type": "application/json" }),
+            body: JSON.stringify({ planId: assignedPlan.id }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (!applied.ok) return { name: c.name, success: false, ...planSyncFailure(applied.status), status: applied.status, stage: "apply_plan" };
+          const plan = await queryOne("SELECT features FROM custom_plans WHERE id = $1", [assignedPlan.id]) as any;
+          const blocksSynced = await pushClientFeatureBlocks(c, plan?.features, syncData.activatedFeatures);
+          if (!blocksSynced) return { name: c.name, success: false, error: "Feature block sync failed", reason: "client_write_failed" };
         }
         return { name: c.name, success: true };
       } catch (e: any) {
@@ -3402,10 +3582,11 @@ app.post("/api/clients/:id/features", requireAuth, requireAdmin, async (req, res
       body: JSON.stringify({ overrides: req.body.overrides || {} }),
     });
     if (!r.ok) { res.status(r.status).json({ error: "Failed to set overrides" }); return; }
+    const result = await r.json() as { overrides?: Record<string, boolean> };
     // Also store in control-plane local DB for reference
-    await query("UPDATE clients SET feature_flags = $1 WHERE id = $2", [JSON.stringify(req.body.overrides || {}), client.id]);
-    await auditLog(req, "set_client_features", "client", client.id, client.name, JSON.stringify(req.body.overrides || {}).slice(0, 500));
-    res.json(await r.json());
+    await query("UPDATE clients SET feature_flags = $1 WHERE id = $2", [JSON.stringify(result.overrides || {}), client.id]);
+    await auditLog(req, "set_client_features", "client", client.id, client.name, JSON.stringify(result.overrides || {}).slice(0, 500));
+    res.json(result);
   } catch { res.status(500).json({ error: "Failed to set feature overrides" }); }
 });
 
@@ -3675,32 +3856,10 @@ async function ensureRetailPlan() {
     }
 
     const features = typeof plan.features === "string" ? JSON.parse(plan.features || "[]") : plan.features;
-    const payload = {
-      id: plan.id, name: plan.name, description: plan.description || "",
-      price: plan.price, priceAnnual: plan.price_annual, tierLevel: plan.tier_level,
-      maxProducts: plan.max_products, maxBranches: plan.max_branches,
-      features, isActive: plan.is_active, syncToOthers: plan.sync_to_others !== 0,
-    };
     if (shouldSync) {
-      const clients = await queryAll(
-        `SELECT id, name, plan, render_service_url, cp_secret FROM clients
-         WHERE render_service_url != '' AND LOWER(plan) IN (LOWER($1), LOWER($2))`,
-        [String(plan.id), String(plan.name)]
-      ) as any[];
-      for (const client of clients) {
-        try {
-          const response = await fetch(`${client.render_service_url}/api/plans/sync`, {
-            method: "PUT",
-            headers: cpHeaders(client.cp_secret, { "Content-Type": "application/json" }),
-            body: JSON.stringify({ plans: [payload] }),
-            signal: AbortSignal.timeout(45000),
-          });
-          if (!response.ok) console.warn(`[startup-plans] Retail plan sync failed for "${client.name}" (HTTP ${response.status}).`);
-          else console.log(`[startup-plans] Retail plan synced to "${client.name}".`);
-        } catch (error: any) {
-          console.warn(`[startup-plans] Retail plan sync failed for "${client.name}":`, error?.message || "unknown error");
-        }
-      }
+      const sync = await syncPlanToAssignedClients(String(plan.id), undefined, undefined, features);
+      if (sync.failed.length) console.warn(`[startup-plans] Retail plan applied to ${sync.synced}/${sync.eligible} assigned client(s); retry via Sync plans for: ${sync.failed.join(", ")}.`);
+      else console.log(`[startup-plans] Retail plan applied to ${sync.synced}/${sync.eligible} assigned client(s).`);
     }
   } catch (error: any) {
     console.error("[startup-plans] Retail plan setup failed:", error?.message || "unknown error");
@@ -3732,6 +3891,8 @@ async function ensureEnterpriseGranularRepairEntitlements() {
     if (!missing.length) return;
 
     await query("UPDATE custom_plans SET features = $1 WHERE id = $2", [JSON.stringify([...features, ...missing]), plan.id]);
+    const sync = await syncPlanToAssignedClients(String(plan.id), undefined, undefined, missing);
+    if (sync.failed.length) console.warn(`[startup-plans] Enterprise feature additions applied to ${sync.synced}/${sync.eligible} assigned client(s); retry via Sync plans for: ${sync.failed.join(", ")}.`);
     console.log(`[startup-plans] Added ${missing.length} granular repair entitlements to the Enterprise plan.`);
   } catch (err: any) {
     console.warn("[startup-plans] Enterprise entitlement update skipped:", err?.message || "unknown error");

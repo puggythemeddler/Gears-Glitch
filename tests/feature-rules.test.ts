@@ -6,6 +6,7 @@ import {
   featureListIncludes,
   parseFeatureOverrides,
   applyFeatureOverrides,
+  retainEntitledBranchOverrides,
   parseBranchFeatureOverrides,
   branchFeatureOverride,
   isBranchFeatureEnabled,
@@ -28,9 +29,21 @@ describe("feature-rules", () => {
     assert.deepEqual(parseFeatureOverrides(null), {});
   });
 
-  it("applies false to remove and true to force-add", () => {
+  it("allows overrides to block included features but never grant excluded features", () => {
     const out = applyFeatureOverrides(["A", "B", "C"], { B: false, D: true });
-    assert.deepEqual(out, ["A", "C", "D"]);
+    assert.deepEqual(out, ["A", "C"]);
+    assert.deepEqual(applyFeatureOverrides(["Stock control"], { "stock CONTROL": false }), []);
+  });
+
+  it("cleans branch switches when plan entitlements are removed or newly added", () => {
+    const overrides = {
+      "Stock control": { "1": false },
+      "Repair ticketing": { "1": false },
+    };
+    assert.deepEqual(
+      retainEntitledBranchOverrides(["Stock control", "POS integration"], overrides, ["POS integration"]),
+      { "Stock control": { "1": false } }
+    );
   });
 
   it("parses branch overrides keyed by feature then branch", () => {

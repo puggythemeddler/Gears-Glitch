@@ -204,6 +204,7 @@ import {
   getAuditLog,
   getShopPlan,
   setShopPlan,
+  applyControlPlaneShopPlan,
   getStoreSetting,
   setStoreSetting,
   createSubscriptionRequest,
@@ -447,7 +448,7 @@ import financingRouter from "./routes/financing";
 import { applyMpesaCallback } from "./financing/service";
 import { getFinancingConfig, saveFinancingConfig } from "./financing/config";
 import { getEffectiveFeatures, requireShopFeature, getBranchFeatureOverrides, saveBranchFeatureOverrides } from "./feature-access";
-import { featureListIncludes } from "./feature-rules";
+import { featureListIncludes, retainEntitledBranchOverrides } from "./feature-rules";
 import {
   SERVICE_CATALOGUE_FEATURE,
   getServiceCatalogConfig,
@@ -2363,9 +2364,40 @@ app.put("/api/plans/sync", controlPlaneAuthMiddleware, planSyncLimiter, asyncHan
   const { plans } = req.body || {};
   if (!Array.isArray(plans)) { res.status(400).json({ error: "plans array required" }); return; }
 
+  const activePlan = await getShopPlan();
   let updated = 0;
+  const activatedFeatures = new Set<string>();
   for (const p of plans) {
     const existing = await getSubscriptionPlan(p.id);
+    const isActivePlan = String(activePlan?.id || "").toLowerCase() === String(p.id || "").toLowerCase();
+    if (existing && isActivePlan) {
+      const oldFeatures = new Set<string>((existing.features || []).map((feature) => String(feature).toLowerCase().trim()));
+      const nextFeatures = new Set<string>((Array.isArray(p.features) ? p.features : []).map((feature: unknown) => String(feature).toLowerCase().trim()));
+      const added = new Set([...nextFeatures].filter((feature) => !oldFeatures.has(feature)));
+      for (const feature of (Array.isArray(p.features) ? p.features : [])) {
+        if (added.has(String(feature).toLowerCase().trim())) activatedFeatures.add(String(feature));
+      }
+      let overrides: Record<string, boolean> = {};
+      try { overrides = JSON.parse((await getStoreSetting("featureOverrides")) || "{}"); } catch {}
+      const cleaned = Object.fromEntries(Object.entries(overrides).filter(([feature, value]) => {
+        const normalized = String(feature).toLowerCase().trim();
+        // New plan features inherit as enabled; removed features no longer have
+        // an override, and true overrides are redundant under plan authority.
+        return nextFeatures.has(normalized) && !added.has(normalized) && value === false;
+      }));
+      if (JSON.stringify(cleaned) !== JSON.stringify(overrides)) {
+        await setStoreSetting("featureOverrides", JSON.stringify(cleaned));
+      }
+      const branchOverrides = await getBranchFeatureOverrides();
+      const cleanedBranchOverrides = retainEntitledBranchOverrides(
+        Array.isArray(p.features) ? p.features : [],
+        branchOverrides,
+        [...added]
+      );
+      if (JSON.stringify(cleanedBranchOverrides) !== JSON.stringify(branchOverrides)) {
+        await saveBranchFeatureOverrides(cleanedBranchOverrides);
+      }
+    }
     if (existing && plansEqual(existing, p)) {
       // Already identical — leave the existing plan untouched.
       continue;
@@ -2390,7 +2422,7 @@ app.put("/api/plans/sync", controlPlaneAuthMiddleware, planSyncLimiter, asyncHan
     updated++;
   }
 
-  res.json({ ok: true, synced: updated, skipped: plans.length - updated });
+  res.json({ ok: true, synced: updated, skipped: plans.length - updated, activatedFeatures: [...activatedFeatures] });
 }));
 
 // True when the incoming synced plan matches the client's existing copy,
@@ -8831,6 +8863,18 @@ app.delete("/api/admin/splashes/:id", staffAuthMiddleware, requirePermission("re
 
 // ============ SHOP SUBSCRIPTION ============
 
+// The Control Plane is the billing/plan assignment authority. Applying its
+// assigned plan must not reset the tenant's subscription activation date.
+app.put("/api/control-plane/shop-plan", controlPlaneAuthMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  const { planId } = req.body || {};
+  if (!isStr(planId)) { res.status(400).json({ error: "A valid planId is required." }); return; }
+  const current = await getShopPlan();
+  const applied = await applyControlPlaneShopPlan(planId);
+  if (!applied) { res.status(404).json({ error: `Plan '${planId}' is not synced to this store yet. Sync plans, then apply again.` }); return; }
+  await logAudit(0, "control-plane", "control_plane_plan_applied", "shop_subscription", planId, { from: current?.id || null, to: planId }, "admin");
+  res.json({ ok: true, plan: await getShopPlan() });
+}));
+
 app.get("/api/shop/subscription", allowControlPlane(staffAuthMiddleware), requirePermission("subscription:view"), asyncHandler(async (_req: Request, res: Response) => {
   const plan = await getShopPlan();
   const activatedRow = await queryOne("SELECT value FROM settings WHERE key = 'subscription_activated_at'") as any;
@@ -8890,14 +8934,19 @@ app.get("/api/shop/features", asyncHandler(async (req: Request, res: Response) =
 }));
 
 // Set feature overrides (control-plane only)
-app.post("/api/admin/features/overrides", allowControlPlane(adminAuthMiddleware), requirePermission("subscription:view"), asyncHandler(async (req: Request, res: Response) => {
+app.post("/api/admin/features/overrides", allowControlPlane(adminAuthMiddleware), cpOrPermission("subscription:view"), asyncHandler(async (req: Request, res: Response) => {
   const { overrides } = req.body || {};
   if (!overrides || typeof overrides !== "object") { res.status(400).json({ error: "overrides object required" }); return; }
-  await setStoreSetting("featureOverrides", JSON.stringify(overrides));
-  res.json({ ok: true });
+  const plan = await getShopPlan();
+  const included = new Set((plan?.features || []).map((feature) => String(feature).toLowerCase().trim()));
+  const clean = Object.fromEntries(Object.entries(overrides as Record<string, unknown>).filter(([feature, value]) =>
+    included.has(String(feature).toLowerCase().trim()) && value === false
+  ));
+  await setStoreSetting("featureOverrides", JSON.stringify(clean));
+  res.json({ ok: true, overrides: clean });
 }));
 
-app.get("/api/admin/features/overrides", allowControlPlane(adminAuthMiddleware), requirePermission("subscription:view"), asyncHandler(async (_req: Request, res: Response) => {
+app.get("/api/admin/features/overrides", allowControlPlane(adminAuthMiddleware), cpOrPermission("subscription:view"), asyncHandler(async (_req: Request, res: Response) => {
   const raw = await getStoreSetting("featureOverrides");
   let overrides: Record<string, boolean> = {};
   try { if (raw) overrides = JSON.parse(raw); } catch {}

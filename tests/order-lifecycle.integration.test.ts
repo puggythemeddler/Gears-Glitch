@@ -4,7 +4,7 @@ import path from "path";
 import { spawn, ChildProcess } from "child_process";
 
 import { bootstrapTestDatabase } from "../server/test-db";
-import { grantShopPlanFeatureForTest } from "./helpers/plan-entitlements";
+import { grantShopPlanFeaturesForTest } from "./helpers/plan-entitlements";
 const HAS_DB = bootstrapTestDatabase();
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -197,9 +197,11 @@ describe("order lifecycle (confirmed -> paid guard, automatic invoices) over rea
     const ready = await waitForHealth(`${base}/api/health`);
     assert.ok(ready, `server never became healthy.\nRecent child output:\n${childLog.slice(-40).join("\n")}`);
 
-    // Serial product creation and checkout require the feature even when the
-    // disposable database's baseline plan is Retail or Starter.
-    restoreSerialEntitlement = await grantShopPlanFeatureForTest("Serial number tracking");
+    // Product creation, checkout, and serial tracking require these features
+    // even when the disposable database's baseline plan is Retail or Starter.
+    restoreSerialEntitlement = await grantShopPlanFeaturesForTest([
+      "Product listing", "Order management", "POS integration", "Serial number tracking", "Multiple staff accounts",
+    ]);
 
     branchId = await ensureBranch();
   });

@@ -940,7 +940,11 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
   const ordersEnabled = useFeature("Order management");
   const staffEnabled = useFeature("Multiple staff accounts");
   const subscriptionEnabled = useFeature("Shop subscription");
-  const { data: stats, loading: statsLoading, error: statsError } = useFetch(() => api<any>("/api/backoffice/stats"), []);
+  const canSeeStaff = isAdmin && staffEnabled;
+  const { data: staffData, loading: statsLoading, error: statsError } = useFetch(
+    () => canSeeStaff ? api<{ staff: unknown[] }>("/api/staff") : Promise.resolve(null),
+    [canSeeStaff]
+  );
   const { data: products, loading: prodLoading, error: prodError } = useFetch(() => api<{ products: Product[] }>("/api/products?includeHidden=1"), []);
   const canSeeSubscription = isAdmin && subscriptionEnabled;
   const { data: subReq, loading: subLoading, error: subError } = useFetch(() => canSeeSubscription ? api<any>("/api/shop/subscription/requests") : Promise.resolve(null), [canSeeSubscription]);
@@ -980,7 +984,7 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
   const loading = statsLoading || prodLoading || (canSeeSubscription && subLoading);
   const checkingAttention = (canStockFeatures && stockLoading) || (canRepairs && repairsLoading) || (canMessages && messagesLoading);
   const failedSections = [
-    statsError && "team stats",
+    canSeeStaff && statsError && "team stats",
     prodError && "products",
     (canOrders && todayError) || (canOrders && monthError) || (canOrders && allTimeError) ? "sales figures" : null,
     canStockFeatures && stockError && "stock status",
@@ -1076,7 +1080,7 @@ function AdminDashboard({ staffRole, staffPermissions, onNavigate }: { staffRole
         {canOrders && <StatCard value={allTimeReport ? allTimeOrders : allTimeError ? "Unavailable" : "Loading"} label="Orders All Time" onClick={() => nav("orders")} />}
         {canRepairs && <StatCard value={repairs ? openTickets.length : repairsError ? "Unavailable" : "Loading"} label="Open Repairs" onClick={() => nav("repairs")} />}
         {canStockFeatures && <StatCard value={lowStock ? lowItems.length : stockError ? "Unavailable" : "Loading"} label="Low-Stock Items" tone={lowItems.length > 0 ? "warning" : undefined} onClick={() => nav("stock-on-hand")} />}
-        {isAdmin && staffEnabled && <StatCard value={stats ? stats.totalStaff ?? 0 : statsError ? "Unavailable" : "Loading"} label="Users" onClick={() => nav("users")} />}
+        {canSeeStaff && <StatCard value={staffData ? staffData.staff?.length ?? 0 : statsError ? "Unavailable" : "Loading"} label="Users" onClick={() => nav("users")} />}
         {canSeeSubscription && <StatCard value={subReq ? pendingReqs : subError ? "Unavailable" : "Loading"} label="Pending Sub. Requests" tone={pendingReqs > 0 ? "danger" : undefined} onClick={() => nav("shop-subscription")} />}
       </div>
 

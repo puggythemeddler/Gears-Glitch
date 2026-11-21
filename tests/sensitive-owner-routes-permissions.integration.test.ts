@@ -129,6 +129,7 @@ describe("Sensitive owner routes require explicit permissions (DB)", { skip: !HA
       "Database backup and export",
       "Audit log",
       "Branch management",
+      "Multiple staff accounts",
     ]);
     await loadCsrf();
     adminToken = await login("admin", "qa-Admin-Pass-2026!");
